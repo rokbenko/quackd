@@ -97,6 +97,7 @@ class WebRtcCamera:
         self.detections: dict[str, Any] | None = None
         self._frame: Image.Image | None = None
         self._task: asyncio.Task[None] | None = None
+        self._tracks: set[asyncio.Task[None]] = set()
         self._first = asyncio.Event()
         self._pc: Any = None
         self._closing = False
@@ -117,11 +118,14 @@ class WebRtcCamera:
 
     async def close(self) -> None:
         self._closing = True
-        if self._task is not None:
-            self._task.cancel()
+        for task in (self._task, *self._tracks):
+            if task is None:
+                continue
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._task
-            self._task = None
+                await task
+        self._task = None
+        self._tracks.clear()
         if self._pc is not None:
             with contextlib.suppress(Exception):
                 await self._pc.close()
@@ -213,7 +217,11 @@ class WebRtcCamera:
         @pc.on("track")
         def _on_track(track: Any) -> None:
             if track.kind == "video":
-                asyncio.create_task(self._drain(track))  # noqa: RUF006 - lifetime is the session
+                # Keep the reference: the event loop holds only a weak one, so a decode task
+                # nobody is holding can be collected mid-session and the video simply stops.
+                task = asyncio.create_task(self._drain(track), name="quackd-microduck-decode")
+                self._tracks.add(task)
+                task.add_done_callback(self._tracks.discard)
 
         @pc.on("datachannel")
         def _on_datachannel(channel: Any) -> None:
