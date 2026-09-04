@@ -306,6 +306,16 @@ async def test_a_duck_nobody_is_watching_reads_as_unknown_never_as_standing(
     await t.close()
 
 
+async def test_a_frame_with_no_safety_block_is_not_a_verdict_either(robotd: FakeRobotd) -> None:
+    """Frames arriving is not the same as frames that say anything about falling."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    t._last_state = {"t": 2.0, "policy": "walk"}  # a state frame carrying no safety block
+    state = await t.get_state()
+    assert state.posture == "unknown" and state.extras["fall_detection"] is False
+    await t.close()
+
+
 async def test_stale_state_stops_being_believed(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()

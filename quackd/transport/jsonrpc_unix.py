@@ -343,11 +343,15 @@ class JsonRpcUnixTransport:
         # never started looks exactly like a robot that is fine. Same invariant the Open Duck
         # bridge states in `bridge.py`.
         age = self.state_age_s()
-        fresh = age is not None and age <= STATE_STALE_AFTER_S
-        state = (self._last_state or {}) if fresh else {}
-        safety = state.get("safety") or {}
+        arriving = age is not None and age <= STATE_STALE_AFTER_S
+        state = (self._last_state or {}) if arriving else {}
+        safety = state.get("safety")
         policy = str(state.get("policy") or "unknown")
-        fallen = bool(safety.get("fallen"))
+        fallen = bool((safety or {}).get("fallen"))
+        # Frames arriving is not the same as frames that say anything about falling. Upstream
+        # declares `safety` on every state frame, but a frame without one would otherwise read
+        # as "not fallen" on the strength of a key that was never there.
+        fresh = arriving and isinstance(safety, dict) and "fallen" in safety
         posture: Posture
         if not fresh:
             posture = "unknown"
