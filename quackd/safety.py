@@ -283,7 +283,10 @@ class Heartbeat:
                 self.beats += 1
             except Exception as e:
                 self.failure = e
-                self.log(f"heartbeat failed: {e} — stopping the duck")
+                # "sending stop", not "stopping the duck": the heartbeat fails precisely when
+                # the link is in doubt, which is when a stop is least likely to arrive. What
+                # actually stops a body whose deadman we cannot reach is the deadman itself.
+                self.log(f"heartbeat failed: {e} — sending stop")
                 with contextlib.suppress(Exception):
                     await self.transport.stop()
                 self.abort.set()

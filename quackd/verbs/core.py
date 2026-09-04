@@ -165,6 +165,15 @@ async def report_state(ctx: VerbContext, _: NoParams) -> VerbResult:
 
 async def stop(ctx: VerbContext, _: NoParams) -> VerbResult:
     await ctx.transport.stop()
+    # `stop` is the verb the pilot is told to reach for when anything looks wrong, and it is
+    # asked for most often when the link is the thing that is wrong. A transport that knows it
+    # could not deliver says so; reporting success anyway would be the one reassuring line in
+    # the log that was not true. Transports that cannot tell report nothing and are unchanged.
+    if undelivered := getattr(ctx.transport, "stop_error", None):
+        return VerbResult.fail(
+            f"stop could not be delivered: {undelivered}. If this robot has a deadman it is "
+            "what stops the legs now; otherwise use the hardware switch."
+        )
     return VerbResult.success("stopped (velocity zeroed)")
 
 

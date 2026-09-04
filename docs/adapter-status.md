@@ -34,19 +34,27 @@ own pages.
 
 ## Microduck
 
-Read: 2026-08-28. Upstream contract: `duck-ipc-proto` **API v16** (`API_VERSION`),
+Read: 2026-09-04, pinned at [`bc41fb5`](https://github.com/pollen-robotics/microduck/tree/bc41fb5c9a9b39894669c1e022e375cf83800382)
+(upstream `main`, 2026-09-03). Upstream contract: `duck-ipc-proto` **API v23** (`API_VERSION`),
 JSON-RPC 2.0, one object per line (NDJSON), one unix socket per service.
-Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/main/duck-ipc-proto/src/lib.rs) ·
-[architecture.md](https://github.com/pollen-robotics/microduck/blob/main/docs/design/architecture.md) (draft, 2026-07-22) ·
-[robotd-design.md](https://github.com/pollen-robotics/microduck/blob/main/docs/design/robotd-design.md) ·
-[remote-webrtc.md](https://github.com/pollen-robotics/microduck/blob/main/docs/design/remote-webrtc.md) ·
-[roadmap.md](https://github.com/pollen-robotics/microduck/blob/main/docs/project/roadmap.md) (2026-08-26).
+Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/duck-ipc-proto/src/lib.rs) ·
+[architecture.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/architecture.md) ·
+[robotd-design.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/robotd-design.md) ·
+[remote-webrtc.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/remote-webrtc.md) ·
+[roadmap.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/project/roadmap.md).
+
+The previous read was 2026-08-28 against `main`, unpinned — the one adapter ADR-0022 let keep a
+moving link. Upstream moved seven API versions in the week that followed and nothing here showed
+it, which is what the pin is for. What actually changed for the names quackd uses: the version
+number, `Skill` (an enum then, a free string now), and three additive fields
+(`RobotState.theremin`, `RobotState.chorale`, `HealthResult.cpu_temp_c`). Everything else read
+identically.
 
 ### VERIFIED (read from upstream source)
 
 | Thing | Value | Used for |
 |---|---|---|
-| API version | `16` | `hello` handshake; mismatch → we refuse rather than guess |
+| API version | `23` | `hello` handshake; mismatch → we refuse rather than guess |
 | Framing | `NDJSON: one JSON-RPC 2.0 object per line` | wire |
 | Runtime dir | env `DUCK_RUNTIME_DIR` overrides `/run` | socket path |
 | Sockets | `/run/robotd.sock`, `/run/configd.sock`, `/run/updaterd.sock`, `/run/padd/pad.sock` (pad.input only), `/run/tofd/tof.sock` (tof.stream only) | addresses |
@@ -55,12 +63,15 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 | `robot.stop` | request; zero velocity, *not* limp | `stop`, every run's final stop |
 | `robot.head` | notification `{neck_pitch, head_pitch, head_yaw, head_roll}` | (not used; `robot.look` preferred) |
 | `robot.look` | request `{x, y, z, neck_pitch}` → `{head, clamped}` | `gaze`, re-centering before steering |
-| `robot.do` | request `{skill}` → `{accepted, reason?}`; skills `ground_pick | kick_left | kick_right | sit_toggle | roulade` | `kick`, `grab`, `sit`/`stand` |
+| `robot.do` | request `{skill}` → `{accepted, reason?}`, answered on accept/refuse rather than on completion. `Skill` is now `String` — "a name, not an enumeration" — and `ground_pick | kick_left | kick_right | sit_toggle | roulade` are the names a *stock* robot answers to; a robot's skills are config, and an unknown one is refused with the list it does know | `kick`, `grab`, `sit`/`stand` |
 | `robot.pose` | notification `{z, roll, pitch, active}` | `pose` intent (no verb yet) |
-| `robot.enable` | request `{on, toggle?}` | `stand_up` |
-| `robot.init` / `robot.relax` | torque on + ramp / torque **off** (collapse) | **never sent by quackd** |
+| `robot.enable` | request `{on, toggle?}` (`toggle` is `#[serde(default)]`, so `{on}` alone is valid). Policy execution, **not a flag**: upstream says it "can bring a limp robot up as a side effect of being asked to drive", so treat it as motion | `stand_up` |
+| `robot.init` / `robot.relax` | power the joints + ramp to home pose (moves every joint) / torque **off** (collapse) | **never sent by quackd** |
 | `robot.sound` | request `{tag, hold?}`; tags `alarm | greet | inquire | peck | chirp | coo | wheee` — no TTS | `quack` and `say` (text → tag) |
-| `robot.subscribe` → `robot.state` | request `{hz?}`, then notifications `{t, move{requested,applied,limited_by}, head[4], policy, safety{fallen,limp,gravity,gain?}, loop{hz,..}, joints[15], targets, odom, ...}` | state |
+| `robot.subscribe` → `robot.state` | request `{hz?}`, then notifications `{t, move{requested,applied,limited_by}, head[4], policy, safety{fallen,limp,gravity,gain?}, loop{hz,missed}, joints, targets, odom, theremin?, chorale?}` | state |
+| `robot.state is not pushed until robot.subscribe` | the loop publishes into a bounded broadcast and never waits on a subscriber, so a slow client gets a gap rather than backpressure | why the transport subscribes inside `connect()` |
+| `robot.subscribe -> SubscribeResult.skills` | the answer carries `{accepted, walk?, stand?, unavailable?, sitstand?, ground_pick?, skills[]}` — what is constant for the process | learning the robot's real skill list instead of assuming five |
+| `safety.fallen gates nothing upstream` | "computed every tick … debounced 0.2 s", and "a report, not a rule" | refusing to walk a fallen duck is quackd's own rule, so quackd must read the frame |
 | `robot.health` | request → `{healthy, degraded?, reason?, battery{volts,percent}?, motors?}` | heartbeat every 500 ms; battery abort |
 | `robot.mode` / `robot.setMode` | `{mode: walk|roller}` | (not used yet) |
 | `tof.stream` → `tof.frame` | 8×8 depth on tofd's socket | (not used yet) |
@@ -71,12 +82,12 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 
 | Thing | Status upstream | What quackd does |
 |---|---|---|
-| `robot.state.policy == 'sit' means sitting` | assumption: the state frame names the active policy; we assume a sitting robot's name contains `sit` | `jsonrpc` infers posture from it and lists the assumption in `extras.assumptions`; `sit`/`stand` verbs read posture first |
+| `robot.state.policy == 'sit' means sitting` | assumption: the state frame names the policy that drove the tick, and we assume a sitting robot's is named something containing `sit`. Upstream notes two gaits can "both report `walk`", so the name is a policy and not a posture | `jsonrpc` infers posture from it and lists the assumption in `extras.assumptions`. `sit`/`stand` read posture first and **refuse** when it is unknown, because upstream has one `sit_toggle` rather than a sit and a stand: firing it unaimed is a coin flip whose losing side sits a standing duck down |
 | `WebSocket agent gateway` | architecture.md §5.3 designs "open a WebSocket, poll a frame, send intents"; roadmap M5 in progress, not shipped | `--robot microduck:websocket` is a stub that raises with the links |
 | `get_frame` | §5.3: "JPEG on demand, or 1–2 fps push"; not in duck-ipc-proto | not called anywhere; the stub will use it when it exists |
-| `camera snapshot over a unix socket` | today the camera reaches clients only through `mediad`'s WebRTC `control` datachannel; no socket-level frame method | `jsonrpc.get_frame()` returns `None` unless `--camera-url` points at an HTTP snapshot you provide |
-| `mediad feature events ('ball at (x,y)', 'person detected')` | designed ("features, not frames"), not built | our `Detector` protocol is the stand-in; a socket-reading detector slots in later |
-| `stand_up` | no such RPC; `robotd` recovers from falls itself (limp → settle → ramp → standing policy) | `stand_up` sends `robot.enable {on: true}` and checks `safety.fallen` afterwards |
+| `camera snapshot over a unix socket` | today the camera reaches clients only through `mediad`'s WebRTC track; no socket-level frame method, and `robotctl`/`duckctl` have no camera subcommand either | `jsonrpc.get_frame()` returns `None` unless `--camera-url` points at an HTTP snapshot you provide. With one, frames are pulled on a 2 Hz timer and served from memory, so `observe` costs no round trip and a failed fetch is reported by `camera_health()` rather than raised. Without one the manifest drops `camera` and the four verbs that need eyes, instead of advertising sight the robot has not got |
+| `mediad media.detections notifications` | **built**, not merely designed: `mediad/src/detect.rs` emits `{width, height, took_ms, boxes[{x0,y0,x1,y1,score}]}` at ~2 Hz (RKNN on the NPU, ONNX on CPU) — and it detects *ducks*, not balls. UNVERIFIED because it is broadcast to WebRTC signalling clients while `remote-webrtc.md` still says perception consumes pixels locally: source and design doc disagree | unreachable from `robotd`'s socket either way, so our `Detector` protocol is still the stand-in |
+| `stand_up` | no such RPC; `robotd` recovers from falls itself (limp → settle → ramp → standing policy) | `stand_up` sends `robot.enable {on: true}` and checks `safety.fallen` afterwards — and fails rather than claiming "upright" when nothing is reporting falls |
 
 ### What we do not touch
 
@@ -87,12 +98,44 @@ The same principle holds on every adapter: `disable_motors` is never sent to a R
 On an Open Duck the guarantee is stronger than a promise: the bridge protocol has no word
 that reaches torque, so going limp is unreachable rather than merely forbidden.
 
+### Getting a picture off a real Microduck
+
+There is no camera method in `duck-ipc-proto`, no snapshot or MJPEG route in `mediad` (its HTTP
+port serves one page), and no camera subcommand in `robotctl` or `duckctl`. The camera reaches
+clients as an H.264 WebRTC track and nowhere else. Two ways to point quackd at it:
+
+| | `--camera-url webrtc://<duck>:8443` | `--camera-url http://<host>:9872/snapshot.jpg` |
+|---|---|---|
+| Where it runs | your machine | wherever the snapshot server is |
+| Touches the robot | nothing | a snapshot server has to hold `/dev/video0`, so `mediad` must be stopped first — it holds the device for the life of its process |
+| Needs | `quackd[microduck-camera]` (aiortc, av, websockets) | nothing |
+| Costs | one media session, so it competes with the browser console | `mediad`, and therefore the console and the WebRTC path, while it runs |
+
+The WebRTC route is the one to reach for on a robot you do not own. Signalling is
+gst-plugins-rs `net/webrtc`, read from `mediad/webclient/index.html` at the pin: the producer
+offers and quackd answers. **There is no authentication** — upstream's own note is that a
+pairing PIN which is `000000` on every robot "authenticates nobody" — so tunnel it
+(`ssh -L 8443:127.0.0.1:8443 radxa@<duck>`) rather than trusting the network.
+
+`mediad` opens a `control` datachannel at every peer whether it wants one or not. quackd reads
+`media.detections` off it and writes nothing: motion goes over `robotd`'s socket, where the
+allowlist, the confirm gates and the deadman feed already are, and two ways to move one robot
+would mean two places to be sure about.
+
+Neither route has been run against a Microduck.
+
 ## How to help
 
 **Built an Open Duck Mini v2?** That is the row most likely to flip this year, because it
 is the only body here you can build from scratch and the only one whose robot side quackd
 ships and already exercises. [open-duck-hardware-checklist.md](open-duck-hardware-checklist.md)
 is the order to try it in, and there is an issue template waiting for the result.
+
+**Got your hands on a Microduck?** [microduck-hardware-checklist.md](microduck-hardware-checklist.md)
+is the order to try it in, and there is an issue template waiting for the result. Nothing in it
+installs anything on the robot or needs `sudo`, because the first Microduck most people touch
+will belong to somebody else. `microduck-lookout` is the task to point at it first: nothing in
+its allowlist moves a leg.
 
 Ran `--robot open_duck:bridge` against a duck you built, `microduck:jsonrpc` against a real
 duck, `reachy_mini:sdk` against a Reachy Mini (or its `--mockup-sim` daemon), `lerobot:real`

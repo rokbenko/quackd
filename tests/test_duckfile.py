@@ -52,6 +52,7 @@ def test_bundled_list() -> None:
         "reachy-spots-duck-kicks",
         "open-duck-scout",
         "open-duck-lookout",
+        "microduck-lookout",
     }
 
 

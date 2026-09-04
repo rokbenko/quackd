@@ -152,6 +152,36 @@ def open_duck_lookout_strategy(obs: Observation, step: int, history: list[Exchan
 #: Inside the Open Duck Mini v2's neck travel, which is about 23 degrees either way.
 _LOOKOUT_SWEEP = (20.0, -20.0, 0.0)
 
+#: The Microduck runs its own gaze IK and clamps rather than forcing, so this can be wider.
+_MICRODUCK_SWEEP = (45.0, -45.0, 0.0)
+
+
+def microduck_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Head only, no legs — and it reports an unreadable posture rather than ignoring it.
+
+    On real hardware `posture` is `unknown` when no `robot.state` frames are arriving, which
+    means nothing can tell whether the duck is upright and every verb that moves it will
+    refuse. Saying so is the useful answer, and it is the one thing this task exists to find
+    out before anybody lets the duck walk.
+    """
+    if _count_calls(history, "say") > 0:
+        return ToolCall(name="declare_success", arguments={"reason": "reported what is in view"})
+    posture = (obs.features.get("state") or {}).get("posture")
+    if posture == "unknown":
+        return ToolCall(
+            name="say",
+            arguments={"text": "posture is unknown: nothing is reporting whether I am upright"},
+        )
+    allowed = obs.features.get("allowed", [])
+    if balls := _detections(obs, "ball"):
+        return ToolCall(name="say", arguments={"text": _where(balls[0])})
+    if "gaze" not in allowed:
+        return ToolCall(name="say", arguments={"text": "no ball in view, and no head to look"})
+    looks = _count_calls(history, "gaze")
+    if looks >= len(_MICRODUCK_SWEEP):
+        return ToolCall(name="say", arguments={"text": "no ball in view"})
+    return ToolCall(name="gaze", arguments={"bearing_deg": _MICRODUCK_SWEEP[looks]})
+
 
 def generic_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
     allowed = obs.features.get("allowed", [])
@@ -171,6 +201,7 @@ STRATEGIES: dict[str, Strategy] = {
     "reachy-spotter": reachy_spotter_strategy,
     "open-duck-scout": open_duck_scout_strategy,
     "open-duck-lookout": open_duck_lookout_strategy,
+    "microduck-lookout": microduck_lookout_strategy,
 }
 
 

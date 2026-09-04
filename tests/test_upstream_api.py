@@ -132,6 +132,21 @@ def test_verified_vocabulary_matches_upstream_enums() -> None:
     )
 
 
+def test_microduck_refs_are_pinned_to_a_commit() -> None:
+    """The Microduck was the one upstream cited at `main` rather than at a hash.
+
+    ADR-0022 asked every adapter for a pin and grandfathered this one, and in the week that
+    followed upstream went from API v16 to v23 with nothing here to show it. A pin in the URL
+    is what makes that visible next time.
+    """
+    assert len(upstream_api.PIN) == 40 and upstream_api.PIN.isalnum()
+    assert upstream_api.PIN in upstream_api.API_VERSION.source
+    assert upstream_api.PIN in upstream_api.ROBOT_SUBSCRIBE.source
+    assert "/blob/main/" not in upstream_api.IPC_PROTO
+    for ref in upstream_api.all_refs():
+        assert "/blob/main/" not in ref.source, ref
+
+
 def test_reachy_verified_vocabulary_matches_the_sdk_read() -> None:
     # pinned to what was read; the sdk backend asserts the same strings at runtime
     assert reachy_api.MDNS_SERVICE.name == "_reachy-mini._tcp.local."

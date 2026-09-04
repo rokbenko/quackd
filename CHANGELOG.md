@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The Microduck's hardware path, audited against upstream rather than against itself. Still
+nothing has run on a robot; what changed is that several things which could not have worked
+now can, and several claims that were not true no longer are.
+
+### Fixed
+
+- **The API version quackd was written against had moved on.** `upstream_api.py` was the one
+  adapter ADR-0022 let cite `main` instead of a commit hash, and in the week after it was
+  read upstream went from `API_VERSION` 16 to 23. The handshake refuses on mismatch rather
+  than guessing — correct behaviour, and it meant the first real Microduck anyone connected
+  to would have closed the socket before a single intent was sent. The file now carries `PIN`
+  and `READ_ON` like the other four, every ref links to a line at that hash, and a test keeps
+  `/blob/main/` out. Re-reading all of them found the rest of the drift is small and additive:
+  `Skill` is a free string now (a robot's real list arrives in `robot.subscribe`'s answer),
+  and `RobotState.theremin`, `RobotState.chorale` and `HealthResult.cpu_temp_c` are new.
+- **`robot.subscribe` was never sent, so nothing was ever known about the robot.** It lived
+  in the `subscribe()` generator, which nothing in the CLI, the agent loop, the MCP server or
+  the executor iterates, and upstream does not push state until asked. Every fact derived from
+  the state frame was therefore empty for the life of a session — and empty read as safe:
+  `fallen` was `False` because nobody was looking, so the precondition layer `docs/safety.md`
+  advertises was inert on the one backend where a fall is a real robot on a real floor.
+  `connect()` now subscribes, frames carry an arrival time and stop being believed when they
+  stop arriving, and a duck nobody is watching reads as `unknown` rather than as standing.
+- **`sit` and `stand` could do the opposite of what they said.** Both send upstream's single
+  `sit_toggle`, and posture was the only thing telling them apart, so with posture permanently
+  unknown `stand` would sit a standing duck down and report success. They refuse rather than
+  fire a toggle nobody can aim. `stand_up` no longer reports "upright" when nothing reports
+  falls.
+- **One dropped camera frame ended the run.** `get_frame` raised beneath a comment promising
+  it would not, and `AgentLoop._observe` calls it every step and catches nothing. Frames are
+  now pulled on a timer and served from memory, `get_frame` never raises, and `camera_health()`
+  carries the failure.
+- **`doctor` accepted `--camera-url` and never fetched a frame**, so a wrong snapshot URL
+  passed preflight and failed at the first `observe`. It now fetches one and prints its size.
+- **The manifest claimed a camera on every backend.** Upstream serves no frames over
+  `robotd`'s socket, so on a real duck `--camera-url` is the whole camera; `observe`, `go_to`,
+  `search_scan` and `approach_and` were advertised while only able to answer "this transport
+  has no camera". They are absent unless something is serving frames.
+- **The heartbeat logged a stop it had not delivered.** `stop()` swallowed every error. It
+  still never raises — it is called from the paths that run because the socket died — but it
+  records why it failed and says so, and the heartbeat no longer asserts the outcome.
+- An unknown sound tag became a chirp silently; JSON-RPC errors lost their code, so `BUSY` and
+  `PERMISSION_DENIED` were the same thing to a caller.
+
+### Added
+
+- **Video off a real Microduck** (`--camera-url webrtc://host:8443`, `quackd[microduck-camera]`).
+  There is no camera method in `duck-ipc-proto`, no snapshot route in `mediad` and no camera
+  subcommand in `robotctl`, so a picture means being a WebRTC peer. It runs on your machine and
+  writes nothing to the robot — the alternative needs `mediad` stopped, because its `v4l2src`
+  holds `/dev/video0`. Signalling is read off `mediad`'s own web client at the pin and tested
+  through a fake socket; the H.264 and the ICE are not tested and have never met a duck.
+- [docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md), an issue
+  template, and `microduck-lookout` — a bring-up task whose allowlist moves no legs, which
+  copes with having no camera and stops to say so when posture reads `unknown`. The checklist
+  assumes the duck is borrowed: nothing in it installs anything or needs `sudo`.
+- CI runs on Windows. `robotd` speaks over a unix socket, Windows cannot open one, and the test
+  covering quackd's `ssh -L` answer only runs there — so it had never run anywhere.
+
 ## [0.6.0] — 2026-09-04
 
 A run stops starting from nothing. Every release so far built a pilot with no past: the

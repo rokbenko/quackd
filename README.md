@@ -428,6 +428,7 @@ requires: [search_scan, walk_to, kick]  # the honest minimum a body must provide
 | `reachy-spots-duck-kicks` | a Reachy Mini head spots the ball, a Microduck kicks it, the head judges the kick | **heterogeneous flock**, two bodies under one contract, the spotter judges and the world vetoes |
 | `open-duck-scout` | find the ball, walk up to it, say where it is | **Open Duck Mini v2** (`--robot open_duck:sim2d` is its default), the kick free shape of `find-and-kick`, ground truth checked on 10 of 10 seeds |
 | `open-duck-lookout` | stand still, look around, say what you can see | **Open Duck Mini v2**, and the task to point at a real duck first: nothing in its allowlist moves a leg, and it works on a duck with no head at all |
+| `microduck-lookout` | stand still, look around, say what you can see | the same idea for a **Microduck**: the task to point at real hardware first, since nothing in its allowlist moves a leg. It copes with having no camera, and it stops and says so if posture reads `unknown`, which is the one thing worth knowing before letting the duck walk. See [docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md) |
 
 Full spec: [docs/duck-spec.md](docs/duck-spec.md). Add yours to [`ducks/`](ducks/).
 

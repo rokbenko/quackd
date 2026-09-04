@@ -18,6 +18,7 @@ from quackd.adapters.manifest import (
     Health,
     RobotManifest,
     SafetyAuthority,
+    Sensor,
     verb_spec,
 )
 from quackd.adapters.microduck.verbs import MICRODUCK_VERBS, microduck_conditions
@@ -39,19 +40,33 @@ _APPROACH_AND_DESCRIPTION = "walk_to a target, then run another verb (kick, grab
 BLURB = "a small biped duck robot (25 cm, 800 g)"
 
 
-def microduck_manifest(backend: str, robot_id: str = "microduck") -> RobotManifest:
-    """The Microduck as data. Static: no connection needed (validate, announce, doctor)."""
+def microduck_manifest(
+    backend: str, robot_id: str = "microduck", *, camera: bool = True
+) -> RobotManifest:
+    """The Microduck as data. Static: no connection needed (validate, announce, doctor).
+
+    `camera` is the one thing a description of the robot cannot settle on its own. Upstream has
+    no socket-level camera method at all — the camera reaches clients through `mediad`'s WebRTC
+    track — so on the jsonrpc backend a frame exists only when `--camera-url` names something
+    serving one. Advertising `observe` either way promises the pilot vision it may not have.
+    """
     core = [
-        verb_spec(CORE["observe"], core=True),
         verb_spec(CORE["report_state"], core=True),
         verb_spec(CORE["stop"], core=True),
         verb_spec(MICRODUCK_VERBS["say"], core=True),
         verb_spec(CORE["move"], core=True, description=_MOVE_DESCRIPTION),
-        verb_spec(CORE["go_to"], core=True, description=_GO_TO_DESCRIPTION),
-        verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
-        verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
     ]
+    if camera:
+        core += [
+            verb_spec(CORE["observe"], core=True),
+            verb_spec(CORE["go_to"], core=True, description=_GO_TO_DESCRIPTION),
+            verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
+            verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
+        ]
     extensions = [verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n != "say"]
+    sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
+    if camera:
+        sensors.insert(0, "camera")
     return RobotManifest(
         id=robot_id,
         vendor="pollen-robotics",
@@ -59,7 +74,7 @@ def microduck_manifest(backend: str, robot_id: str = "microduck") -> RobotManife
         embodiment="biped",
         mobility="legged",
         intents=["twist", "skill", "gaze", "sound", "pose"],
-        sensors=["camera", "battery", "odometry", "imu", "tof"],
+        sensors=sensors,
         verbs=core + extensions,
         # exactly the 0.3 attachments: walk/kick/grab need standing, sit/stand/gaze not fallen
         preconditions={
@@ -93,7 +108,14 @@ class MicroduckAdapter:
 
     async def connect(self) -> RobotManifest:
         await self.transport.connect()
-        self.manifest = microduck_manifest(self.backend, self.robot_id)
+        # sim and mock always have a camera. A real duck has one only if a frame actually
+        # arrived: a URL that was typed but never answered is not a camera, and advertising
+        # `observe` on the strength of one is how a pilot gets told it can see.
+        if hasattr(self.transport, "camera_working"):
+            camera = bool(self.transport.camera_working)
+        else:
+            camera = getattr(self.transport, "camera_url", True) is not None
+        self.manifest = microduck_manifest(self.backend, self.robot_id, camera=camera)
         return self.manifest
 
     async def disconnect(self) -> None:
@@ -195,6 +217,11 @@ def make(
     camera_url: str | None = None,
     token: str | None = None,
 ) -> MicroduckAdapter:
+    # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
+    # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
+    # socket has no auth at all — access is filesystem permissions on /run/robotd.sock — and
+    # mediad's own note is that a pairing PIN which is 000000 on every robot "authenticates
+    # nobody". Reach both over ssh rather than trusting the network.
     from quackd.transport.factory import make_transport
 
     transport = make_transport(

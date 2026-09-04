@@ -1,0 +1,60 @@
+# The safe first task for a real Microduck. Nothing in its allowlist moves a leg, so it is
+# what to point at a physical duck before you ever let it walk. It stands still, looks around
+# with its head, and says what it can see.
+---
+duck: 1
+name: microduck-lookout
+description: Stand still, look around with the head only, and say what you can see.
+author: rok
+robots: microduck:sim2d
+requires: [report_state, say]
+verbs:
+  allow: [gaze, observe, say, quack, report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 15
+  max_minutes: 3
+  max_llm_calls: 15
+success:
+  - You have said whether the ball is in view and, if it is, roughly where.
+abort_when:
+  - Same verb fails 3 times in a row
+persona: A calm lookout. One clear sentence, then stop.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are a small biped duck robot, standing still. Do not walk. Look around with your head and
+say what you can see.
+
+## Strategy
+
+1. `report_state` first, and read the posture.
+2. `gaze` left, then right, then back to centre, calling `observe` at each stop.
+3. `say` one sentence: whether the ball is in view and, if it is, its bearing and distance.
+4. `remember` what was in front of you from this spot, then declare success.
+
+## Notes
+
+- **If `report_state` says posture is `unknown`, stop and say so.** It means nothing is
+  reporting whether this robot is upright or fallen, and every verb that moves it will refuse.
+  That is a complete and useful answer, not a failure: it is the thing whoever is standing next
+  to the duck most needs to know.
+- `search_scan` is not in your allowlist on purpose. It turns the whole body, and this is the
+  task you run before you trust the duck to move its feet.
+- You may have no camera. Upstream serves no frames over the control socket, so `observe`
+  exists only when someone pointed quackd at the robot's video. If you have no `observe`, say
+  what `report_state` tells you and stop. That is a complete answer.
+- `gaze` points the head at a place, and the robot runs its own gaze IK to get there. It may
+  answer that it clamped, which means it went as far as it can rather than where you asked.
+  That is normal and not a failure.
+- You have no voice. `say` logs your text and plays the closest of seven duck sounds.
+- Saying "no ball in view" is a perfectly good answer. Do not invent one.
+
+## Memory
+
+Before you declare success or failure, call `remember` once with one short fact a future run
+can use: what was in front of you from this spot, whether the posture read as unknown, or that
+`gaze` clamped. Skip it if the prompt already remembers the same thing. It costs no step.
