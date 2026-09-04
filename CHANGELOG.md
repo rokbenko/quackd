@@ -50,6 +50,12 @@ now can, and several claims that were not true no longer are.
   records why it failed and says so, and the heartbeat no longer asserts the outcome.
 - An unknown sound tag became a chirp silently; JSON-RPC errors lost their code, so `BUSY` and
   `PERMISSION_DENIED` were the same thing to a caller.
+- **Loading a second `.duck` over MCP refunded the budget.** `robot_load_duckfile` is a tool
+  the model itself holds, and adopting a contract built a fresh `Budget` and cleared the
+  consecutive-failure tallies, so a pilot that had spent its steps or been refused a verb
+  could load a wider duck and start counting from zero. The limits still become the new
+  contract's; the steps, the llm calls, the clock and the failure counts now stay the
+  session's, and the tool's reply says what carried over.
 
 ### Added
 
