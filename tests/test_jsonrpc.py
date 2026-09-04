@@ -459,6 +459,27 @@ async def test_a_request_with_no_answer_times_out_and_forgets_itself(robotd: Fak
     await t.close()
 
 
+async def test_a_substituted_sound_says_it_was_substituted(robotd: FakeRobotd) -> None:
+    """Seven tags and no TTS, so substituting is right — doing it silently was not."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    ack = await t.send_intent(Intent.sound("trumpet", "ta-da"))
+    assert ack.accepted and ack.reason is not None and "not a duck sound" in ack.reason
+    assert robotd.requests[-1]["params"] == {"tag": "chirp"}
+    assert (await t.send_intent(Intent.sound("greet", "hi"))).reason is None
+    await t.close()
+
+
+async def test_an_upstream_error_carries_its_code(robotd: FakeRobotd) -> None:
+    """`BUSY` and `PERMISSION_DENIED` are different answers, and both were flattened to text."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    with pytest.raises(TransportError) as caught:
+        await t.request("robot.notAMethod")
+    assert caught.value.code == up.ERR_METHOD_NOT_FOUND
+    await t.close()
+
+
 async def test_no_camera_without_url(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()

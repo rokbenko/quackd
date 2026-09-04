@@ -13,7 +13,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Windows is here because it is a documented path, not a courtesy: a Microduck's
+        # robotd speaks over a unix socket, Windows cannot open one, and quackd's answer is a
+        # specific `ssh -L` message covered by a test that only runs on Windows. Without a
+        # Windows job that test never ran anywhere, and neither did the path it describes.
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v7
@@ -33,4 +37,7 @@ jobs:
         env:
           QUACKD_STRICT_SEEDS: "1"
       - name: Validate starter ducks
+        # bash explicitly: pwsh is the default shell on the Windows runner and does not expand
+        # a glob for an external command, so this would hand quackd the literal `ducks/*.duck`.
+        shell: bash
         run: uv run quackd validate ducks/*.duck

@@ -22,7 +22,16 @@ Skill = Literal["ground_pick", "kick_left", "kick_right", "sit_toggle", "roulade
 
 
 class TransportError(RuntimeError):
-    """The transport could not do what was asked (connection, refusal, protocol)."""
+    """The transport could not do what was asked (connection, refusal, protocol).
+
+    `code` carries the upstream error number when there was one, so a caller can tell a
+    "busy, try again" from a "not allowed, do not" without reading the message text. It is
+    None for everything that failed before an answer arrived.
+    """
+
+    def __init__(self, *args: object, code: int | None = None) -> None:
+        super().__init__(*args)
+        self.code = code
 
 
 class HeartbeatError(TransportError):

@@ -213,6 +213,11 @@ def make(
     camera_url: str | None = None,
     token: str | None = None,
 ) -> MicroduckAdapter:
+    # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
+    # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
+    # socket has no auth at all — access is filesystem permissions on /run/robotd.sock — and
+    # mediad's own note is that a pairing PIN which is 000000 on every robot "authenticates
+    # nobody". Reach both over ssh rather than trusting the network.
     from quackd.transport.factory import make_transport
 
     transport = make_transport(

@@ -213,8 +213,13 @@ class JsonRpcUnixTransport:
                     del self._pending[int(msg["id"])]
                     if "error" in msg:
                         err = msg["error"]
+                        # Carrying the number lets a caller tell BUSY (retry) from
+                        # PERMISSION_DENIED (do not) without parsing the message text. The
+                        # codes are in `upstream_api` and were spelled nowhere else.
                         pending.set_exception(
-                            TransportError(f"{err.get('code')}: {err.get('message')}")
+                            TransportError(
+                                f"{err.get('code')}: {err.get('message')}", code=err.get("code")
+                            )
                         )
                     else:
                         pending.set_result(msg.get("result"))
@@ -406,11 +411,15 @@ class JsonRpcUnixTransport:
                     clamped = isinstance(res, dict) and res.get("clamped")
                     return Ack(accepted=True, reason="clamped" if clamped else None)
                 case "sound":
-                    tag = p.get("tag", "chirp")
-                    if tag not in up.SOUND_TAG_LIST:
-                        tag = "chirp"
+                    asked = p.get("tag", "chirp")
+                    tag = asked if asked in up.SOUND_TAG_LIST else "chirp"
                     res = await self.request(up.ROBOT_SOUND.name, {"tag": tag})
-                    return _ack(res)
+                    ack = _ack(res)
+                    if tag != asked and ack.accepted:
+                        # Upstream has seven tags and no TTS. Substituting is right; doing it
+                        # without saying so meant a verb reporting a sound nobody asked for.
+                        return Ack(accepted=True, reason=f"{asked!r} is not a duck sound; {tag}")
+                    return ack
                 case "enable":
                     res = await self.request(up.ROBOT_ENABLE.name, {"on": bool(p.get("on", True))})
                     return _ack(res)
