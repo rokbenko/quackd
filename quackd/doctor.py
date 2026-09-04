@@ -113,19 +113,28 @@ def _probe(
     from quackd.adapters.factory import make_adapter, parse_robot_spec
     from quackd.transport.base import TransportError
 
-    async def go() -> tuple[Any, Any, str | None]:
+    async def go() -> tuple[Any, Any, dict[str, Any] | None]:
         adapter = make_adapter(
             parse_robot_spec(robot), address=address, camera_url=camera_url, token=token
         )
         live = await adapter.connect()
         try:
             health = await adapter.health()
-            return live, health, None
+            # A camera URL that nothing checks is a camera URL that fails mid-run. doctor used
+            # to accept --camera-url, hand it to the transport and never ask for a frame, so a
+            # typo'd or unreachable snapshot server passed here and failed at the first observe.
+            camera: dict[str, Any] | None = None
+            if camera_url:
+                frame = await adapter.get_frame()
+                probe = getattr(getattr(adapter, "transport", None), "camera_health", None)
+                camera = dict(probe()) if callable(probe) else {"configured": True}
+                camera["frame"] = f"{frame.width}x{frame.height}" if frame is not None else None
+            return live, health, camera
         finally:
             await adapter.disconnect()
 
     try:
-        live, health, _ = asyncio.run(go())
+        live, health, camera = asyncio.run(go())
     except (TransportError, OSError) as e:
         console.print(f"[red]{robot} at {address}: {escape(str(e))}[/red]")
         return False
@@ -146,13 +155,29 @@ def _probe(
         t.add_row("  beyond the description", f"[green]{', '.join(gained)}[/green]")
     for key, value in (live.extras.get("expression_features") or {}).items():
         t.add_row(f"  {key}", "[green]yes[/green]" if value else "[dim]no[/dim]")
+    camera_ok = True
+    if camera is not None:
+        frame = camera.get("frame")
+        camera_ok = frame is not None
+        t.add_row(
+            "camera",
+            f"[green]{frame}[/green]" if camera_ok else "[red]no frame[/red]",
+        )
+        t.add_row("  url", str(camera.get("url") or camera_url))
+        if camera.get("error"):
+            t.add_row("  error", f"[red]{escape(str(camera['error']))}[/red]")
     console.print(t)
     if lost:
         console.print(
             f"[dim]a .duck that requires {lost[0]} will be refused on this robot, and one "
             "that merely allows it runs without it[/dim]"
         )
-    return bool(health.ok)
+    if not camera_ok:
+        console.print(
+            "[yellow]--camera-url was given but no frame came back, so observe, go_to, "
+            "search_scan and approach_and cannot see anything on this run[/yellow]"
+        )
+    return bool(health.ok) and camera_ok
 
 
 def run_doctor(

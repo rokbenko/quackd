@@ -27,6 +27,24 @@ SCRIPT: list[tuple[str, dict[str, float | str]]] = [
 ]
 
 
+async def test_a_microduck_with_no_camera_does_not_advertise_the_verbs_that_need_one() -> None:
+    """Upstream serves no frames over robotd's socket, so `--camera-url` is the whole camera.
+
+    The manifest used to say `camera` either way, which made `observe` a core verb on a run
+    that could only ever answer "this transport has no camera".
+    """
+    from quackd.adapters.microduck import microduck_manifest
+
+    seeing = microduck_manifest("jsonrpc", camera=True)
+    blind = microduck_manifest("jsonrpc", camera=False)
+    needs_eyes = {"observe", "go_to", "search_scan", "approach_and"}
+    assert needs_eyes <= set(seeing.verb_names())
+    assert not (needs_eyes & set(blind.verb_names()))
+    assert "camera" in seeing.sensors and "camera" not in blind.sensors
+    # the verbs that do not look are unaffected
+    assert {"move", "stop", "say", "gaze", "quack"} <= set(blind.verb_names())
+
+
 async def test_connect_returns_the_manifest_and_the_registry_matches_the_default() -> None:
     adapter = MicroduckAdapter(MockTransport())
     assert isinstance(adapter, RobotAdapter)

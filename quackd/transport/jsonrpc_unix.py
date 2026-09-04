@@ -48,6 +48,11 @@ STATE_HZ = 10
 #: whose stream has stopped stops reading as upright (`up.STATE_NEEDS_SUBSCRIBE`).
 STATE_STALE_AFTER_S = 3.0 / STATE_HZ
 
+#: How often to pull a snapshot when `--camera-url` names one. The pilot looks about once a
+#: second, and these frames cross an ssh tunnel, so twice a second keeps `observe` instant
+#: without spending the link on frames nobody reads.
+CAMERA_FPS = 2.0
+
 
 def default_address() -> str:
     root = os.environ.get(up.RUNTIME_DIR_ENV.name, "/run")
@@ -78,12 +83,18 @@ class JsonRpcUnixTransport:
         api_version: int = int(up.API_VERSION.name),
         request_timeout_s: float = 2.0,
         state_hz: int = STATE_HZ,
+        camera_fps: float = CAMERA_FPS,
     ) -> None:
         self.address = address or default_address()
         self.camera_url = camera_url
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s
         self.state_hz = state_hz
+        self.camera_fps = camera_fps
+        self._camera_task: asyncio.Task[None] | None = None
+        self._frame: Image.Image | None = None
+        self._frame_at: float | None = None
+        self._frame_error: str | None = None
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -133,6 +144,10 @@ class JsonRpcUnixTransport:
         result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
+        if self.camera_url:
+            self._camera_task = asyncio.create_task(
+                self._camera_loop(), name="quackd-jsonrpc-camera"
+            )
 
     async def _await_first_state(self, timeout_s: float = 1.0) -> bool:
         """Wait briefly for the first state frame, so `connect()` returns a duck we can see.
@@ -148,6 +163,11 @@ class JsonRpcUnixTransport:
         return self._last_state_at is not None
 
     async def close(self) -> None:
+        if self._camera_task is not None:
+            self._camera_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._camera_task
+            self._camera_task = None
         if self._pump is not None:
             self._pump.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -223,20 +243,63 @@ class JsonRpcUnixTransport:
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
-    async def get_frame(self) -> Image.Image | None:
-        if not self.camera_url:
-            return None  # no socket-level camera method upstream (up.CAMERA_SNAPSHOT)
-        url = self.camera_url
+    async def _fetch_frame(self) -> Image.Image:
+        url = self.camera_url or ""
 
         def fetch() -> bytes:
             with urllib.request.urlopen(url, timeout=3) as resp:
                 return resp.read()
 
-        try:
-            data = await asyncio.to_thread(fetch)
-            return Image.open(io.BytesIO(data)).convert("RGB")
-        except Exception as e:  # snapshot failures must not kill a run
-            raise TransportError(f"camera snapshot failed: {e}") from e
+        data = await asyncio.to_thread(fetch)
+        return Image.open(io.BytesIO(data)).convert("RGB")
+
+    async def _camera_loop(self) -> None:
+        """Keep the newest frame, on a timer, so `get_frame` is a memory read.
+
+        Same shape as the camera daemon quackd already ships for the Open Duck: capture on a
+        clock rather than on request, so a slow or broken camera cannot stall the caller and a
+        run asking for a frame every step does not pay an HTTP round trip every step.
+        """
+        period = 1.0 / max(0.1, self.camera_fps)
+        while True:
+            started = time.monotonic()
+            try:
+                self._frame = await self._fetch_frame()
+                self._frame_at = time.monotonic()
+                self._frame_error = None
+            except Exception as e:  # a camera hiccup must not end a run
+                self._frame_error = str(e)
+            await asyncio.sleep(max(0.0, period - (time.monotonic() - started)))
+
+    async def get_frame(self) -> Image.Image | None:
+        """The newest frame, or None when there is no camera to read.
+
+        Never raises. It used to raise `TransportError` on a failed snapshot, directly under a
+        comment saying snapshot failures must not kill a run — and `AgentLoop._observe` calls
+        this every step without catching anything, so one dropped HTTP response ended the
+        session. `camera_health()` is where the failure is visible instead.
+        """
+        if not self.camera_url:
+            return None  # no socket-level camera method upstream (up.CAMERA_SNAPSHOT)
+        if self._camera_task is None:  # not connected: fetch once rather than nothing
+            with contextlib.suppress(Exception):
+                self._frame = await self._fetch_frame()
+                self._frame_at = time.monotonic()
+        return self._frame
+
+    def camera_health(self) -> dict[str, Any]:
+        """What the camera is doing, for `doctor` and for the run's own state."""
+        if not self.camera_url:
+            return {"configured": False}
+        age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
+        return {
+            "configured": True,
+            "url": self.camera_url,
+            "ok": self._frame is not None,
+            "age_s": age,
+            "size": list(self._frame.size) if self._frame is not None else None,
+            "error": self._frame_error,
+        }
 
     def state_age_s(self) -> float | None:
         """Seconds since the last `robot.state` frame, or None if none has ever arrived."""
@@ -290,6 +353,7 @@ class JsonRpcUnixTransport:
                 "fall_detection": fresh,
                 "state_age_s": round(age, 3) if age is not None else None,
                 "subscribed": self.subscribed,
+                "camera": self.camera_health(),
                 "assumptions": [up.POSTURE_FROM_POLICY.name],
             },
         )

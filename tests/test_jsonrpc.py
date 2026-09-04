@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from quackd.duckfile.parser import parse_duck_text
 from quackd.safety import Executor
@@ -327,6 +328,45 @@ async def test_a_blind_duck_refuses_to_walk(registry: VerbRegistry, robotd: Fake
     result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
     assert not result.ok and "cannot tell" in result.summary
     assert not [r for r in robotd.notifications if r["method"] == "robot.move"]
+    await t.close()
+
+
+async def test_a_broken_camera_does_not_end_the_run(robotd: FakeRobotd) -> None:
+    """`get_frame` used to raise, under a comment promising it would not.
+
+    `AgentLoop._observe` calls it every step and catches nothing, and the loop's own handlers
+    only cover SafetyStop, so one refused HTTP response ended the session at the CLI.
+    """
+    t = JsonRpcUnixTransport(
+        f"tcp://127.0.0.1:{robotd.port}", camera_url="http://127.0.0.1:1/snapshot.jpg"
+    )
+    await t.connect()
+    assert await t.get_frame() is None  # no frame, but no exception either
+    for _ in range(200):  # the capture loop records the reason on its own clock
+        if t._frame_error is not None:
+            break
+        await asyncio.sleep(0.01)
+    health = t.camera_health()
+    assert health["configured"] is True and health["ok"] is False and health["error"]
+    await t.close()
+
+
+async def test_camera_serves_the_newest_frame_from_memory(robotd: FakeRobotd) -> None:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url="http://example/x.jpg")
+    made = Image.new("RGB", (8, 8), (1, 2, 3))
+
+    async def fake_fetch() -> Image.Image:
+        return made
+
+    t._fetch_frame = fake_fetch  # type: ignore[method-assign]
+    await t.connect()
+    for _ in range(100):  # the capture loop runs on its own clock
+        if t._frame is not None:
+            break
+        await asyncio.sleep(0.01)
+    assert await t.get_frame() is made
+    health = t.camera_health()
+    assert health["ok"] is True and health["size"] == [8, 8] and health["error"] is None
     await t.close()
 
 
