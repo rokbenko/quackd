@@ -38,6 +38,7 @@ SIZE = 64  # rendered diameter of one avatar
 GAP = 10  # space between circles
 PER_ROW = 12
 RING = "#d0d7de"  # a hairline, so a white or dark avatar still reads as a circle
+PNG_MAGIC = bytes.fromhex("89504e470d0a1a0a")  # the 8 bytes every PNG starts with
 
 
 def _get(url: str) -> bytes:
@@ -163,18 +164,26 @@ def humans() -> list[dict[str, str]]:
 
 
 def avatar_data_uri(url: str) -> str:
-    """The avatar, fetched at exactly the size we draw it and inlined."""
+    """The avatar at twice the drawn size, so it stays sharp, inlined with its real type.
+
+    The type is sniffed rather than assumed: GitHub serves whatever the person uploaded,
+    and the fallback URL for somebody the contributors list has not caught up on asks for
+    `.png` explicitly, so hardcoding jpeg mislabelled exactly those avatars."""
     payload = _get(f"{url}{'&' if '?' in url else '?'}s={SIZE * 2}")
-    return "data:image/jpeg;base64," + base64.b64encode(payload).decode("ascii")
+    kind = "png" if payload.startswith(PNG_MAGIC) else "jpeg"
+    return f"data:image/{kind};base64," + base64.b64encode(payload).decode("ascii")
 
 
 def _caption(person: dict[str, str]) -> str:
     """What hovering a face says. Silent about lines when they could not be counted,
     rather than reporting everybody as zero."""
     added, commits = int(person["added"]), int(person["commits"])
+    parts = []
     if added:
-        return f"{person['login']}: {added:,} lines added over {commits} commits"
-    return f"{person['login']}: {commits} commits"
+        parts.append(f"{added:,} lines added")
+    if commits:  # zero means the contributors list has not caught up, not that they did nothing
+        parts.append(f"{commits} commits")
+    return f"{person['login']}: {', '.join(parts)}" if parts else person["login"]
 
 
 def render(people: list[dict[str, str]]) -> str:
