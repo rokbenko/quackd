@@ -43,6 +43,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -96,24 +97,42 @@ class WebRtcCamera:
         self.producer: dict[str, Any] | None = None
         self.detections: dict[str, Any] | None = None
         self._frame: Image.Image | None = None
+        self._frame_at: float | None = None
         self._task: asyncio.Task[None] | None = None
         self._tracks: set[asyncio.Task[None]] = set()
         self._first = asyncio.Event()
+        self._settled = asyncio.Event()
+        """Set when there is an answer either way: a frame decoded, or it definitively cannot."""
         self._pc: Any = None
         self._closing = False
 
     # ── what the transport uses ─────────────────────────────────────────────────────────
 
-    def latest(self) -> Image.Image | None:
+    def latest(self, *, max_age_s: float | None = None) -> Image.Image | None:
+        """The newest decoded frame, or None if it is too old to steer on.
+
+        A session that dies leaves its last frame in memory. Handing that out forever is how a
+        stopped video turns into a robot walking at something that is no longer there.
+        """
+        if self._frame is None or self._frame_at is None:
+            return None
+        if max_age_s is not None and time.monotonic() - self._frame_at > max_age_s:
+            return None
         return self._frame
 
     async def start(self, *, wait: bool = True) -> bool:
-        """Open the session. With `wait`, resolve only once a frame has actually decoded."""
+        """Open the session. With `wait`, resolve once a frame decodes — or once it cannot.
+
+        Every terminal failure sets `_settled` as well: a missing extra, a refused connection,
+        `mediad` with no producer, the robot ending the session. Waiting out the full timeout
+        for an answer already in hand is how a bring-up check that says it will "say so rather
+        than hang" hangs for fifteen seconds.
+        """
         self._task = asyncio.create_task(self._run(), name="quackd-microduck-webrtc")
         if not wait:
             return False
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(self._first.wait(), timeout=self.timeout_s)
+            await asyncio.wait_for(self._settled.wait(), timeout=self.timeout_s)
         return self._frame is not None
 
     async def close(self) -> None:
@@ -132,10 +151,12 @@ class WebRtcCamera:
             self._pc = None
 
     def health(self) -> dict[str, Any]:
+        age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
         return {
             "configured": True,
             "url": self.address,
             "ok": self._frame is not None,
+            "age_s": age,
             "frames": self.frames,
             "size": list(self._frame.size) if self._frame is not None else None,
             "producer": (self.producer or {}).get("id"),
@@ -155,6 +176,10 @@ class WebRtcCamera:
             if not self._closing:
                 self.error = str(e)
                 log.warning("webrtc camera: %s", e)
+        finally:
+            # Whatever happened, there is nothing more to wait for: the socket is closed and
+            # no frame is coming from this attempt.
+            self._settled.set()
 
     async def _pump(self, ws: Any) -> None:
         """The five-message exchange. Split out so it can be driven by a fake socket."""
@@ -240,8 +265,10 @@ class WebRtcCamera:
             except Exception:  # the track ended, or the session did
                 return
             self._frame = frame.to_image()
+            self._frame_at = time.monotonic()
             self.frames += 1
             self._first.set()
+            self._settled.set()
 
     def _on_control(self, data: Any) -> None:
         with contextlib.suppress(Exception):

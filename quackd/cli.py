@@ -8,7 +8,9 @@ boring. Commands are thin: they parse, load `.env`, wire objects together, and h
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import glob
+import sys
 from typing import Any
 
 import typer
@@ -25,6 +27,27 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+
+def _tolerate_narrow_encodings() -> None:
+    """Stop a non-UTF-8 stdout turning quackd's own output into a crash.
+
+    Windows uses the ANSI codepage when Python writes to a pipe, and quackd prints ✓ and 🦆 and
+    the status emoji in `doctor`. On cp1252 those raise UnicodeEncodeError and take the command
+    with them — `quackd doctor` and `quackd validate`, which are the first two commands
+    docs/microduck-hardware-checklist.md puts in front of a Windows user, and the last step of
+    CI's own Windows job. Replacing what the codepage cannot carry costs a glyph; raising costs
+    the command.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if encoding.startswith("utf") or not hasattr(stream, "reconfigure"):
+            continue
+        with contextlib.suppress(Exception):
+            stream.reconfigure(errors="replace")
+
+
+_tolerate_narrow_encodings()
 console = Console()
 err_console = Console(stderr=True)
 

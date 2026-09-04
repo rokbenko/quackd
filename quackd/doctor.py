@@ -125,10 +125,21 @@ def _probe(
             # to accept --camera-url, hand it to the transport and never ask for a frame, so a
             # typo'd or unreachable snapshot server passed here and failed at the first observe.
             camera: dict[str, Any] | None = None
-            if camera_url:
+            transport = getattr(adapter, "transport", None)
+            probe = getattr(transport, "camera_health", None)
+            # Only report on a camera the adapter actually reads. `camera_url` is accepted and
+            # ignored by reachy_mini, lerobot and rosbridge, and gating their verdict on a
+            # frame from an unrelated path fails a healthy robot.
+            if camera_url and callable(probe):
+                # Frames arrive on a timer, so ask for one and give the capture loop a moment
+                # rather than reading memory that cannot have been filled yet.
                 frame = await adapter.get_frame()
-                probe = getattr(getattr(adapter, "transport", None), "camera_health", None)
-                camera = dict(probe()) if callable(probe) else {"configured": True}
+                for _ in range(50):
+                    if frame is not None:
+                        break
+                    await asyncio.sleep(0.1)
+                    frame = await adapter.get_frame()
+                camera = dict(probe())
                 camera["frame"] = f"{frame.width}x{frame.height}" if frame is not None else None
             return live, health, camera
         finally:

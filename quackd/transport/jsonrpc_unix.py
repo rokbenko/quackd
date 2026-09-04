@@ -1,14 +1,26 @@
 """EXPERIMENTAL: the real robot, over robotd's JSON-RPC socket.
 
-Every method name here is VERIFIED against upstream's `duck-ipc-proto` (see
-`upstream_api.py`), but nobody has run this against a shipped Microduck yet — hardware
-ships at Christmas 2026. What is honest today: the handshake, the intent vocabulary, the
-deadman-friendly `move` notifications, and the health poll. What is not: frames (there is
-no socket-level camera method upstream; `--camera-url` is a hook for an HTTP snapshot),
-and posture, which we infer from the policy name (UNVERIFIED).
+Every method name here is VERIFIED against upstream's `duck-ipc-proto` at a pinned commit
+(see `upstream_api.py`), but nobody has run this against a Microduck. What is honest today:
+the handshake and its version refusal, the intent vocabulary, the deadman-friendly `move`
+notifications, the state subscription, and the health poll. What is not: posture, which is
+inferred from the policy name (UNVERIFIED), and everything about the camera.
+
+Two rules run through this file, and both exist because the robot is on a floor and quackd
+is at the other end of an ssh tunnel:
+
+- **Silence is not consent.** A state frame that stops arriving, or arrives without a
+  `safety` block, reads as `unknown` rather than as a standing duck, because `fallen: false`
+  from a stream nobody is watching is not a fact about the robot. The preconditions refuse
+  on `unknown`, so a link that dies stops the duck instead of freeing it.
+- **A frame kept is not a frame seen.** `get_frame` expires what it caches. `go_to` steers
+  on every tick, so a camera that died with the ball in shot would otherwise show the ball
+  in shot forever while the duck walked at it.
 
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
+Frames: `--camera-url http://.../snapshot.jpg`, or `webrtc://host:8443` for `mediad`'s own
+video track, which is the only camera upstream offers.
 """
 
 from __future__ import annotations
@@ -47,15 +59,40 @@ log = logging.getLogger("quackd.transport.jsonrpc")
 #: the loop's 50 Hz costs the robot proportionally less (`up.ROBOT_SUBSCRIBE`).
 STATE_HZ = 10
 
-#: How old a state frame may be before `get_state` stops believing it. Three missed frames:
-#: long enough that ordinary jitter does not blank the posture, short enough that a robot
-#: whose stream has stopped stops reading as upright (`up.STATE_NEEDS_SUBSCRIBE`).
-STATE_STALE_AFTER_S = 3.0 / STATE_HZ
 
-#: How often to pull a snapshot when `--camera-url` names one. The pilot looks about once a
-#: second, and these frames cross an ssh tunnel, so twice a second keeps `observe` instant
-#: without spending the link on frames nobody reads.
-CAMERA_FPS = 2.0
+def state_stale_after_s(hz: float) -> float:
+    """How old a state frame may be before `get_state` stops believing it.
+
+    Derived from the rate actually subscribed at, not from the default: a transport built with
+    `state_hz=2` gets a 2.5 s window, where a fixed 0.3 s one would have declared every healthy
+    duck blind half a second after each frame and refused every verb that moves it, with a
+    message saying the stream was dead while it streamed exactly as asked.
+
+    Five frame periods, floored at one second so link jitter on an ssh tunnel does not blank
+    the posture (`up.STATE_NEEDS_SUBSCRIBE`).
+    """
+    return max(1.0, 5.0 / max(0.1, hz))
+
+
+#: The window at the default rate, for tests and for anything reading the module constant.
+STATE_STALE_AFTER_S = state_stale_after_s(STATE_HZ)
+
+#: How often to pull a snapshot when `--camera-url` names one. `go_to` and `search_scan` steer
+#: at 10 Hz, so this is the rate a control decision can be stale by: keep it well above the
+#: pilot's roughly-once-a-second glance, and below what an ssh tunnel will carry.
+CAMERA_FPS = 5.0
+
+
+def camera_stale_after_s(fps: float) -> float:
+    """How old a frame may be before `get_frame` stops handing it out.
+
+    A cached frame that never expires is worse than no frame at all: `go_to` steers on every
+    tick, and a camera that died with the ball in shot would show the ball in shot forever
+    while the duck walked at it. Four frame periods, floored at two seconds so a slow-but-
+    working camera is not dropped, and floored again by the fetch timeout so one slow HTTP
+    round trip cannot look like a dead camera.
+    """
+    return max(2.0, 4.0 / max(0.1, fps))
 
 
 def default_address() -> str:
@@ -114,6 +151,8 @@ class JsonRpcUnixTransport:
         self.hello: dict[str, Any] | None = None
         self.stop_error: str | None = None
         """Why the last `stop` did not reach the robot, or None if it did (or none was sent)."""
+        self.camera_working = False
+        """Whether a frame actually arrived during connect. What the manifest narrows on."""
         self.subscribed: dict[str, Any] | None = None
         """`robot.subscribe`'s answer: the policies and the skill names this robot actually has."""
 
@@ -134,11 +173,20 @@ class JsonRpcUnixTransport:
         except OSError as e:
             raise TransportError(f"cannot connect to {self.address}: {e}") from e
         self._pump = asyncio.create_task(self._read_loop(), name="quackd-jsonrpc-pump")
+        # Past this point a task and a socket are open, so every exit has to close them. The
+        # callers retry (`mcp_server`, `flock.member`), so a leak here is one task and one fd
+        # per attempt, not one per process.
+        try:
+            await self._handshake()
+        except BaseException:
+            await self.close()
+            raise
+
+    async def _handshake(self) -> None:
         result = await self.request(up.HELLO.name, {"api_version": self.api_version})
         self.hello = result if isinstance(result, dict) else {"result": result}
         remote = self.hello.get("api_version")
         if remote is not None and int(remote) != self.api_version:
-            await self.close()
             raise TransportError(
                 f"robotd speaks API v{remote}, quackd was written against v{self.api_version} "
                 f"({up.IPC_PROTO}); refusing rather than guessing"
@@ -151,14 +199,28 @@ class JsonRpcUnixTransport:
         result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
+        # `camera_working` is what the manifest narrows on, and it has to mean "a frame
+        # arrived", not "a URL was typed": a typo'd host, a missing extra or a mediad that
+        # never reached PLAYING would otherwise still advertise observe, go_to, search_scan
+        # and approach_and, every one of which can then only answer "no camera".
         if is_webrtc_url(self.camera_url):
             # The only camera upstream actually offers. Nothing is installed on the robot.
             self._webrtc = WebRtcCamera(str(self.camera_url))
-            await self._webrtc.start()
+            self.camera_working = await self._webrtc.start()
         elif self.camera_url:
             self._camera_task = asyncio.create_task(
                 self._camera_loop(), name="quackd-jsonrpc-camera"
             )
+            self.camera_working = await self._await_first_frame()
+
+    async def _await_first_frame(self, timeout_s: float = 5.0) -> bool:
+        """Wait for the snapshot loop's first frame, so `connect()` knows if there is a camera."""
+        deadline = time.monotonic() + timeout_s
+        while self._frame is None and self._frame_error is None:
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.02)
+        return self._frame is not None
 
     async def _await_first_state(self, timeout_s: float = 1.0) -> bool:
         """Wait briefly for the first state frame, so `connect()` returns a duck we can see.
@@ -301,12 +363,25 @@ class JsonRpcUnixTransport:
         if not self.camera_url:
             return None  # no socket-level camera method upstream (up.CAMERA_SNAPSHOT)
         if self._webrtc is not None:
-            return self._webrtc.latest()
+            return self._webrtc.latest(max_age_s=camera_stale_after_s(self.camera_fps))
         if self._camera_task is None:  # not connected: fetch once rather than nothing
             with contextlib.suppress(Exception):
                 self._frame = await self._fetch_frame()
                 self._frame_at = time.monotonic()
-        return self._frame
+        return None if self.frame_age_s() is None else self._frame
+
+    def frame_age_s(self) -> float | None:
+        """Seconds since the newest usable frame, or None if there is none to steer on.
+
+        None covers both "nothing has ever arrived" and "what we have is too old to act on".
+        The callers already treat a missing frame as a reason to stop — `go_to` fails on the
+        next tick rather than driving at a memory — so expiry is what turns a dead camera back
+        into a stop instead of twenty seconds of blind walking.
+        """
+        if self._frame is None or self._frame_at is None:
+            return None
+        age = time.monotonic() - self._frame_at
+        return None if age > camera_stale_after_s(self.camera_fps) else age
 
     def camera_health(self) -> dict[str, Any]:
         """What the camera is doing, for `doctor` and for the run's own state."""
@@ -343,7 +418,7 @@ class JsonRpcUnixTransport:
         # never started looks exactly like a robot that is fine. Same invariant the Open Duck
         # bridge states in `bridge.py`.
         age = self.state_age_s()
-        arriving = age is not None and age <= STATE_STALE_AFTER_S
+        arriving = age is not None and age <= state_stale_after_s(self.state_hz)
         state = (self._last_state or {}) if arriving else {}
         safety = state.get("safety")
         policy = str(state.get("policy") or "unknown")

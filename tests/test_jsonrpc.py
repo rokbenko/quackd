@@ -7,6 +7,7 @@ our framing, handshake, deadman feeding, and error handling — not that a real 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import sys
 import time
@@ -20,9 +21,10 @@ from quackd.safety import Executor
 from quackd.transport import upstream_api as up
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.transport.jsonrpc_unix import (
-    STATE_STALE_AFTER_S,
     JsonRpcUnixTransport,
+    camera_stale_after_s,
     parse_address,
+    state_stale_after_s,
 )
 from quackd.verbs.registry import VerbRegistry
 
@@ -53,6 +55,7 @@ class FakeRobotd:
         self.server: asyncio.AbstractServer | None = None
         self.port = 0
         self._arrived = asyncio.Event()
+        self._stream: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
@@ -60,6 +63,11 @@ class FakeRobotd:
 
     async def stop(self) -> None:
         assert self.server is not None
+        if self._stream is not None:
+            self._stream.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._stream
+            self._stream = None
         self.server.close()
         await self.server.wait_closed()
 
@@ -70,6 +78,26 @@ class FakeRobotd:
                 self._arrived.clear()
                 await self._arrived.wait()
         return self.notifications
+
+    async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
+        """Stream `robot.state` the way a real robotd does, until the connection goes away."""
+        frame = {
+            "jsonrpc": "2.0",
+            "method": "robot.state",
+            "params": {
+                "t": 1.0,
+                "policy": self.policy,
+                "safety": {"fallen": self.fallen, "limp": False},
+            },
+        }
+        line = (json.dumps(frame) + "\n").encode()
+        while not writer.is_closing():
+            try:
+                writer.write(line)
+                await writer.drain()
+            except (ConnectionError, OSError):
+                return
+            await asyncio.sleep(1.0 / max(1, hz))
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         while line := await reader.readline():
@@ -107,22 +135,11 @@ class FakeRobotd:
                 result = {"accepted": params.get("tag") in up.SOUND_TAG_LIST}
             elif method == "robot.subscribe":
                 result = {"accepted": True, "walk": "alpha_walking.onnx"}
-                writer.write(
-                    (
-                        json.dumps(
-                            {
-                                "jsonrpc": "2.0",
-                                "method": "robot.state",
-                                "params": {
-                                    "t": 1.0,
-                                    "policy": self.policy,
-                                    "safety": {"fallen": self.fallen, "limp": False},
-                                },
-                            }
-                        )
-                        + "\n"
-                    ).encode()
-                )
+                # A real robotd streams until the connection ends. Sending one frame and
+                # stopping made every posture assertion race the staleness window, which is
+                # a flake on a loaded CI box and, worse, meant nothing ever exercised the
+                # steady state — only the first 300 ms after connecting.
+                self._stream = asyncio.create_task(self._publish(writer, params.get("hz") or 10))
             elif method == "robot.neverAnswered":
                 # A robotd that accepts a call and never replies, which is what a wedged
                 # daemon looks like from here. Also feeds a junk line, to prove the pump
@@ -228,7 +245,9 @@ async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships(
     because the fake was pinned to the same stale number. Naming 16 explicitly means a future
     bump has to come past this test rather than sliding through with the fake.
     """
-    assert CURRENT_API >= 23
+    # Named, not `>= 23`: a bump has to come past this line and past a fresh read of upstream,
+    # rather than sailing through because the number only went up.
+    assert CURRENT_API == 23, "re-read duck-ipc-proto at a new pin before changing this"
     fake = FakeRobotd(api_version=16)
     await fake.start()
     try:
@@ -320,7 +339,7 @@ async def test_stale_state_stops_being_believed(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert (await t.get_state()).posture == "standing"
-    t._last_state_at = time.monotonic() - 10 * STATE_STALE_AFTER_S
+    t._last_state_at = time.monotonic() - 10 * state_stale_after_s(t.state_hz)
     state = await t.get_state()
     assert state.posture == "unknown" and state.extras["fall_detection"] is False
     await t.close()
@@ -365,13 +384,31 @@ async def test_a_broken_camera_does_not_end_the_run(robotd: FakeRobotd) -> None:
     )
     await t.connect()
     assert await t.get_frame() is None  # no frame, but no exception either
-    for _ in range(200):  # the capture loop records the reason on its own clock
-        if t._frame_error is not None:
-            break
-        await asyncio.sleep(0.01)
+    # load-bearing: a *working* camera also returns a frame here, so the useful assertion is
+    # that connect knew it had failed and said why.
+    assert t.camera_working is False
     health = t.camera_health()
     assert health["configured"] is True and health["ok"] is False and health["error"]
     await t.close()
+
+
+async def test_a_dead_camera_stops_handing_out_its_last_good_frame(robotd: FakeRobotd) -> None:
+    """A cached frame that never expires is worse than no frame at all.
+
+    `go_to` steers on `get_frame()` every tick for up to 20 s. A camera that died with the
+    ball in shot would show the ball in shot forever, and the duck would walk at it. Callers
+    already treat a missing frame as a reason to stop, so expiry is what turns a dead camera
+    back into a stop.
+    """
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url="http://example/x.jpg")
+    t._camera_task = object()  # type: ignore[assignment]  # pretend the capture loop is running
+    t._frame = Image.new("RGB", (8, 8))
+
+    t._frame_at = time.monotonic()
+    assert await t.get_frame() is not None
+    t._frame_at = time.monotonic() - 10 * camera_stale_after_s(t.camera_fps)
+    assert await t.get_frame() is None
+    assert t.frame_age_s() is None
 
 
 async def test_camera_serves_the_newest_frame_from_memory(robotd: FakeRobotd) -> None:

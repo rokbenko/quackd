@@ -28,3 +28,4 @@ Thumbs.db
 # optional model weights (never vendor upstream assets)
 *.onnx
 *.pt
+*.stackdump

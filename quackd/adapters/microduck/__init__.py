@@ -108,10 +108,14 @@ class MicroduckAdapter:
 
     async def connect(self) -> RobotManifest:
         await self.transport.connect()
-        # sim and mock always have a camera; a real duck has one only if something is serving
-        # frames, because upstream offers none over robotd's socket.
-        camera = getattr(self.transport, "camera_url", True) is not None
-        self.manifest = microduck_manifest(self.backend, self.robot_id, camera=bool(camera))
+        # sim and mock always have a camera. A real duck has one only if a frame actually
+        # arrived: a URL that was typed but never answered is not a camera, and advertising
+        # `observe` on the strength of one is how a pilot gets told it can see.
+        if hasattr(self.transport, "camera_working"):
+            camera = bool(self.transport.camera_working)
+        else:
+            camera = getattr(self.transport, "camera_url", True) is not None
+        self.manifest = microduck_manifest(self.backend, self.robot_id, camera=camera)
         return self.manifest
 
     async def disconnect(self) -> None:
