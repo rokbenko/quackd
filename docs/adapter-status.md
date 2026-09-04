@@ -131,6 +131,12 @@ is the only body here you can build from scratch and the only one whose robot si
 ships and already exercises. [open-duck-hardware-checklist.md](open-duck-hardware-checklist.md)
 is the order to try it in, and there is an issue template waiting for the result.
 
+**Got your hands on a Microduck?** [microduck-hardware-checklist.md](microduck-hardware-checklist.md)
+is the order to try it in, and there is an issue template waiting for the result. Nothing in it
+installs anything on the robot or needs `sudo`, because the first Microduck most people touch
+will belong to somebody else. `microduck-lookout` is the task to point at it first: nothing in
+its allowlist moves a leg.
+
 Ran `--robot open_duck:bridge` against a duck you built, `microduck:jsonrpc` against a real
 duck, `reachy_mini:sdk` against a Reachy Mini (or its `--mockup-sim` daemon), `lerobot:real`
 against an arm, or `rosbridge:ws` against a bridge? Open an issue with `quackd doctor` output and the first lines of

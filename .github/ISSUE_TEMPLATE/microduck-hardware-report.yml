@@ -1,0 +1,132 @@
+name: Microduck hardware report
+description: You ran quackd against a real Microduck. Tell us what happened.
+labels: ["microduck", "hardware", "adapter-status"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Nobody has run `microduck:jsonrpc` against a physical Microduck, so yours
+        is the first real evidence either way, and a report that says "it did not work" is
+        worth as much as one that says it did.
+
+        Please follow [docs/microduck-hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/microduck-hardware-checklist.md)
+        first. It is ordered so the duck's feet stay off the ground until step 9, and nothing
+        in it installs anything on the robot or needs `sudo`.
+  - type: input
+    id: quackd_version
+    attributes:
+      label: quackd version
+      description: Output of `quackd --version`
+    validations:
+      required: true
+  - type: input
+    id: api_version
+    attributes:
+      label: The robot's API version
+      description: >-
+        What the handshake said. quackd prints both numbers when they differ, and it refuses
+        rather than guessing. A mismatch is the single most likely reason this did not work.
+    validations:
+      required: true
+  - type: input
+    id: release
+    attributes:
+      label: Robot release
+      description: "`robotctl version` on the duck"
+    validations:
+      required: false
+  - type: dropdown
+    id: step
+    attributes:
+      label: Which checklist step did you reach?
+      options:
+        - "1 — ssh forward"
+        - "2 — doctor, handshake and health"
+        - "3 — posture is not unknown"
+        - "4 — dry run moves nothing"
+        - "5 — sound"
+        - "6 — video"
+        - "7 — head, on a stand"
+        - "8 — deadman: tunnel pulled mid-walk"
+        - "9 — feet down"
+        - "10 — a real task"
+    validations:
+      required: true
+  - type: dropdown
+    id: posture
+    attributes:
+      label: Did `posture` track the real robot?
+      description: >-
+        quackd assumes a sitting robot reports a policy whose name contains `sit`, and says so
+        in `extras.assumptions`. This is the assumption most likely to be wrong.
+      options:
+        - "Yes — sitting read as sitting, standing as standing"
+        - "No — it read something else"
+        - "It stayed `unknown` (no state frames arrived)"
+        - "I did not sit the robot down"
+    validations:
+      required: true
+  - type: dropdown
+    id: deadman
+    attributes:
+      label: Did the deadman stop the legs when you pulled the link?
+      description: Step 8. This is the protection every later step depends on.
+      options:
+        - "Yes — velocity went to zero"
+        - "No — the legs kept driving"
+        - "I did not test it"
+    validations:
+      required: true
+  - type: dropdown
+    id: camera
+    attributes:
+      label: How did you get frames, if you did?
+      options:
+        - "webrtc:// — mediad's video track"
+        - "An HTTP snapshot server on the robot"
+        - "No camera"
+    validations:
+      required: true
+  - type: textarea
+    id: detections
+    attributes:
+      label: Did `media.detections` arrive?
+      description: >-
+        Upstream's source says `mediad` broadcasts these and upstream's design doc says
+        perception stays local. One of the two is out of date and we cannot tell which.
+    validations:
+      required: false
+  - type: textarea
+    id: skills
+    attributes:
+      label: What did `robot.subscribe` list in `skills`?
+      description: >-
+        `Skill` is a free string now, and this list is where a client learns what a robot can
+        actually do. quackd assumes the five a stock robot answers to.
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`quackd doctor` output"
+      description: With `--robot microduck:jsonrpc --address ...`, so it includes the live probe.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: transcript
+    attributes:
+      label: The first lines of `transcript.jsonl`
+      description: >-
+        From the run directory. This is the artefact that flips the adapter-status row; the
+        memory file is an index of what you tried, not evidence.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: anything_else
+    attributes:
+      label: Anything that surprised you
+      description: Especially anything quackd claimed that turned out not to be true.
+    validations:
+      required: false
