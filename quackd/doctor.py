@@ -306,7 +306,9 @@ def run_doctor(
     console.print(t)
     console.print(
         f"[dim]upstream contract: duck-ipc-proto API v{up.API_VERSION.name} · "
-        f"VERIFIED refs: {len(up.refs_by_status('VERIFIED'))}[/dim]"
+        f"microduck upstream pinned at {up.PIN[:7]} (read {up.READ_ON}) · "
+        f"VERIFIED refs: {len(up.refs_by_status('VERIFIED'))} · "
+        "the jsonrpc backend has never been run against a robotd[/dim]"
     )
 
     from quackd.adapters.lerobot import upstream_api as lerobot_api

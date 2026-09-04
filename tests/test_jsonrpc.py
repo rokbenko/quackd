@@ -26,8 +26,11 @@ DUCK = parse_duck_text(
 )
 
 
+CURRENT_API = int(up.API_VERSION.name)
+
+
 class FakeRobotd:
-    def __init__(self, *, api_version: int = 16, healthy: bool = True) -> None:
+    def __init__(self, *, api_version: int = CURRENT_API, healthy: bool = True) -> None:
         self.api_version = api_version
         self.healthy = healthy
         self.notifications: list[dict[str, Any]] = []
@@ -138,7 +141,7 @@ async def robotd():
 async def test_handshake_and_intents(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
-    assert t.hello == {"api_version": 16, "daemon_version": "0.9.9"}
+    assert t.hello == {"api_version": CURRENT_API, "daemon_version": "0.9.9"}
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.2))).accepted
     notifications = await robotd.wait_notifications(1)
     assert notifications[-1] == {
@@ -186,11 +189,29 @@ async def test_subscribe_yields_state_and_posture(robotd: FakeRobotd) -> None:
 
 
 async def test_api_version_mismatch_refuses() -> None:
-    fake = FakeRobotd(api_version=17)
+    fake = FakeRobotd(api_version=CURRENT_API + 1)
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        with pytest.raises(TransportError, match="API v17"):
+        with pytest.raises(TransportError, match=f"API v{CURRENT_API + 1}"):
+            await t.connect()
+    finally:
+        await fake.stop()
+
+
+async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships() -> None:
+    """A robotd on the old contract is refused, not guessed at.
+
+    `API_VERSION` was 16 for a week after upstream had moved to 23, and nothing here noticed
+    because the fake was pinned to the same stale number. Naming 16 explicitly means a future
+    bump has to come past this test rather than sliding through with the fake.
+    """
+    assert CURRENT_API >= 23
+    fake = FakeRobotd(api_version=16)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        with pytest.raises(TransportError, match="API v16"):
             await t.connect()
     finally:
         await fake.stop()
