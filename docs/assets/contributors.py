@@ -175,15 +175,14 @@ def avatar_data_uri(url: str) -> str:
 
 
 def _caption(person: dict[str, str]) -> str:
-    """What hovering a face says. Silent about lines when they could not be counted,
-    rather than reporting everybody as zero."""
-    added, commits = int(person["added"]), int(person["commits"])
-    parts = []
-    if added:
-        parts.append(f"{added:,} lines added")
-    if commits:  # zero means the contributors list has not caught up, not that they did nothing
-        parts.append(f"{commits} commits")
-    return f"{person['login']}: {', '.join(parts)}" if parts else person["login"]
+    """What hovering a face says.
+
+    Only the line count, which comes from the git history in the checkout and is therefore
+    the same on every machine. The commit count comes from an eventually consistent API,
+    and putting it here made the committed file flip between two versions depending on
+    whether that API had caught up when the workflow happened to run."""
+    added = int(person["added"])
+    return f"{person['login']}: {added:,} lines added" if added else person["login"]
 
 
 def render(people: list[dict[str, str]]) -> str:
