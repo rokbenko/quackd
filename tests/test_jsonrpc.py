@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 from typing import Any
 
 import pytest
@@ -17,7 +18,11 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.safety import Executor
 from quackd.transport import upstream_api as up
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.transport.jsonrpc_unix import JsonRpcUnixTransport, parse_address
+from quackd.transport.jsonrpc_unix import (
+    STATE_STALE_AFTER_S,
+    JsonRpcUnixTransport,
+    parse_address,
+)
 from quackd.verbs.registry import VerbRegistry
 
 DUCK = parse_duck_text(
@@ -30,9 +35,12 @@ CURRENT_API = int(up.API_VERSION.name)
 
 
 class FakeRobotd:
-    def __init__(self, *, api_version: int = CURRENT_API, healthy: bool = True) -> None:
+    def __init__(
+        self, *, api_version: int = CURRENT_API, healthy: bool = True, fallen: bool = False
+    ) -> None:
         self.api_version = api_version
         self.healthy = healthy
+        self.fallen = fallen
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.server: asyncio.AbstractServer | None = None
@@ -101,7 +109,7 @@ class FakeRobotd:
                                 "params": {
                                     "t": 1.0,
                                     "policy": "walk",
-                                    "safety": {"fallen": False, "limp": False},
+                                    "safety": {"fallen": self.fallen, "limp": False},
                                 },
                             }
                         )
@@ -247,6 +255,79 @@ def test_parse_address() -> None:
 async def test_unix_socket_on_windows_explains_ssh_forward() -> None:
     with pytest.raises(TransportError, match="ssh -L"):
         await JsonRpcUnixTransport("unix:///run/robotd.sock").connect()
+
+
+async def test_connect_subscribes_so_state_arrives_without_anyone_iterating(
+    robotd: FakeRobotd,
+) -> None:
+    """The bug this file could not see: `robot.subscribe` was only ever sent by `subscribe()`.
+
+    Nothing in the CLI, the agent loop, the MCP server or the executor iterates that generator,
+    and upstream does not push state until asked — so on hardware every frame-derived fact was
+    permanently empty while reading as safe.
+    """
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert [r["method"] for r in robotd.requests] == ["hello", "robot.subscribe"]
+    assert t.subscribed == {"accepted": True, "walk": "alpha_walking.onnx"}
+
+    state = await t.get_state()  # no subscribe() call anywhere in this test
+    assert state.policy == "walk" and state.posture == "standing"
+    assert state.extras["fall_detection"] is True
+    await t.close()
+
+
+async def test_a_duck_nobody_is_watching_reads_as_unknown_never_as_standing(
+    robotd: FakeRobotd,
+) -> None:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    t._last_state_at = None  # the stream never started
+    state = await t.get_state()
+    assert state.posture == "unknown"
+    assert state.extras["fall_detection"] is False
+    # `fallen` is a plain bool and still False here, which is exactly why posture and
+    # fall_detection have to carry the difference.
+    assert state.fallen is False
+    await t.close()
+
+
+async def test_stale_state_stops_being_believed(robotd: FakeRobotd) -> None:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert (await t.get_state()).posture == "standing"
+    t._last_state_at = time.monotonic() - 10 * STATE_STALE_AFTER_S
+    state = await t.get_state()
+    assert state.posture == "unknown" and state.extras["fall_detection"] is False
+    await t.close()
+
+
+async def test_a_fallen_duck_refuses_to_walk(registry: VerbRegistry) -> None:
+    fake = FakeRobotd(fallen=True)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        assert (await t.get_state()).posture == "fallen"
+        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        assert not result.ok and "fallen" in result.summary
+        assert not [r for r in fake.notifications if r["method"] == "robot.move"]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_blind_duck_refuses_to_walk(registry: VerbRegistry, robotd: FakeRobotd) -> None:
+    """`fallen: false` from a stream that never started must not read as permission to walk."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    t._last_state_at = None
+    ex = Executor(registry, t, contract=DUCK.frontmatter)
+    result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+    assert not result.ok and "cannot tell" in result.summary
+    assert not [r for r in robotd.notifications if r["method"] == "robot.move"]
+    await t.close()
 
 
 async def test_no_camera_without_url(robotd: FakeRobotd) -> None:

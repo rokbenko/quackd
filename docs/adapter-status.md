@@ -82,12 +82,12 @@ identically.
 
 | Thing | Status upstream | What quackd does |
 |---|---|---|
-| `robot.state.policy == 'sit' means sitting` | assumption: the state frame names the active policy; we assume a sitting robot's name contains `sit` | `jsonrpc` infers posture from it and lists the assumption in `extras.assumptions`; `sit`/`stand` verbs read posture first |
+| `robot.state.policy == 'sit' means sitting` | assumption: the state frame names the policy that drove the tick, and we assume a sitting robot's is named something containing `sit`. Upstream notes two gaits can "both report `walk`", so the name is a policy and not a posture | `jsonrpc` infers posture from it and lists the assumption in `extras.assumptions`. `sit`/`stand` read posture first and **refuse** when it is unknown, because upstream has one `sit_toggle` rather than a sit and a stand: firing it unaimed is a coin flip whose losing side sits a standing duck down |
 | `WebSocket agent gateway` | architecture.md §5.3 designs "open a WebSocket, poll a frame, send intents"; roadmap M5 in progress, not shipped | `--robot microduck:websocket` is a stub that raises with the links |
 | `get_frame` | §5.3: "JPEG on demand, or 1–2 fps push"; not in duck-ipc-proto | not called anywhere; the stub will use it when it exists |
 | `camera snapshot over a unix socket` | today the camera reaches clients only through `mediad`'s WebRTC `control` datachannel; no socket-level frame method | `jsonrpc.get_frame()` returns `None` unless `--camera-url` points at an HTTP snapshot you provide |
 | `mediad media.detections notifications` | **built**, not merely designed: `mediad/src/detect.rs` emits `{width, height, took_ms, boxes[{x0,y0,x1,y1,score}]}` at ~2 Hz (RKNN on the NPU, ONNX on CPU) — and it detects *ducks*, not balls. UNVERIFIED because it is broadcast to WebRTC signalling clients while `remote-webrtc.md` still says perception consumes pixels locally: source and design doc disagree | unreachable from `robotd`'s socket either way, so our `Detector` protocol is still the stand-in |
-| `stand_up` | no such RPC; `robotd` recovers from falls itself (limp → settle → ramp → standing policy) | `stand_up` sends `robot.enable {on: true}` and checks `safety.fallen` afterwards |
+| `stand_up` | no such RPC; `robotd` recovers from falls itself (limp → settle → ramp → standing policy) | `stand_up` sends `robot.enable {on: true}` and checks `safety.fallen` afterwards — and fails rather than claiming "upright" when nothing is reporting falls |
 
 ### What we do not touch
 

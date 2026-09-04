@@ -38,6 +38,16 @@ from quackd.transport.base import (
 
 STATUS = "EXPERIMENTAL — verified method names, unverified against hardware"
 
+#: How often we ask robotd for a state frame. Ten a second is the rate the walk verb already
+#: feeds intents at, and upstream decimates per-subscriber server-side, so asking for less than
+#: the loop's 50 Hz costs the robot proportionally less (`up.ROBOT_SUBSCRIBE`).
+STATE_HZ = 10
+
+#: How old a state frame may be before `get_state` stops believing it. Three missed frames:
+#: long enough that ordinary jitter does not blank the posture, short enough that a robot
+#: whose stream has stopped stops reading as upright (`up.STATE_NEEDS_SUBSCRIBE`).
+STATE_STALE_AFTER_S = 3.0 / STATE_HZ
+
 
 def default_address() -> str:
     root = os.environ.get(up.RUNTIME_DIR_ENV.name, "/run")
@@ -67,11 +77,13 @@ class JsonRpcUnixTransport:
         camera_url: str | None = None,
         api_version: int = int(up.API_VERSION.name),
         request_timeout_s: float = 2.0,
+        state_hz: int = STATE_HZ,
     ) -> None:
         self.address = address or default_address()
         self.camera_url = camera_url
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s
+        self.state_hz = state_hz
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -79,9 +91,13 @@ class JsonRpcUnixTransport:
         self._notifications: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
         self._next_id = 1
         self._last_state: dict[str, Any] | None = None
+        self._last_state_at: float | None = None
+        self._state_arrived = asyncio.Event()
         self._last_health: dict[str, Any] | None = None
         self._t0 = time.monotonic()
         self.hello: dict[str, Any] | None = None
+        self.subscribed: dict[str, Any] | None = None
+        """`robot.subscribe`'s answer: the policies and the skill names this robot actually has."""
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -109,6 +125,27 @@ class JsonRpcUnixTransport:
                 f"robotd speaks API v{remote}, quackd was written against v{self.api_version} "
                 f"({up.IPC_PROTO}); refusing rather than guessing"
             )
+        # Nothing arrives until we ask (up.STATE_NEEDS_SUBSCRIBE), and everything that decides
+        # whether the duck may walk reads the frames this starts: posture, `safety.fallen`, the
+        # preconditions in the manifest. Subscribing here rather than in `subscribe()` is what
+        # makes those true for every caller instead of only for one that happens to iterate the
+        # stream. The answer also names the robot's real skills and policies.
+        result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
+        self.subscribed = result if isinstance(result, dict) else {}
+        await self._await_first_state()
+
+    async def _await_first_state(self, timeout_s: float = 1.0) -> bool:
+        """Wait briefly for the first state frame, so `connect()` returns a duck we can see.
+
+        The subscribe *reply* and the first state *notification* are two messages and nothing
+        orders them, so without this the first `get_state()` after connecting can honestly
+        report `unknown` on a robot that is about to start streaming. Not fatal if it never
+        comes: `get_state` already reads that as unknown and the preconditions refuse, which is
+        the outcome we want anyway. Returning the answer lets `doctor` say which happened.
+        """
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._state_arrived.wait(), timeout=timeout_s)
+        return self._last_state_at is not None
 
     async def close(self) -> None:
         if self._pump is not None:
@@ -149,7 +186,11 @@ class JsonRpcUnixTransport:
                         pending.set_result(msg.get("result"))
             elif "method" in msg:
                 if msg["method"] == up.ROBOT_STATE.name:
+                    # Before the queue push, deliberately: the queue is bounded and drops when
+                    # nobody drains it, and freshness must not depend on anyone consuming.
                     self._last_state = msg.get("params") or {}
+                    self._last_state_at = time.monotonic()
+                    self._state_arrived.set()
                 with contextlib.suppress(asyncio.QueueFull):
                     self._notifications.put_nowait(msg)
 
@@ -197,18 +238,34 @@ class JsonRpcUnixTransport:
         except Exception as e:  # snapshot failures must not kill a run
             raise TransportError(f"camera snapshot failed: {e}") from e
 
+    def state_age_s(self) -> float | None:
+        """Seconds since the last `robot.state` frame, or None if none has ever arrived."""
+        if self._last_state_at is None:
+            return None
+        return time.monotonic() - self._last_state_at
+
     async def get_state(self) -> DuckState:
         health = self._last_health
         if health is None:
             with contextlib.suppress(TransportError):
                 health = await self.request(up.ROBOT_HEALTH.name)
                 self._last_health = health if isinstance(health, dict) else None
-        state = self._last_state or {}
+
+        # A duck nobody is watching reads as unknown, never as standing. `fallen` is a plain
+        # bool on the wire and in DuckState, so silence and "upright" are the same value there
+        # — the difference has to live in `posture` and in `fall_detection`, or a stream that
+        # never started looks exactly like a robot that is fine. Same invariant the Open Duck
+        # bridge states in `bridge.py`.
+        age = self.state_age_s()
+        fresh = age is not None and age <= STATE_STALE_AFTER_S
+        state = (self._last_state or {}) if fresh else {}
         safety = state.get("safety") or {}
         policy = str(state.get("policy") or "unknown")
         fallen = bool(safety.get("fallen"))
         posture: Posture
-        if fallen:
+        if not fresh:
+            posture = "unknown"
+        elif fallen:
             posture = "fallen"
         elif "sit" in policy:  # up.POSTURE_FROM_POLICY — an assumption
             posture = "sitting"
@@ -228,6 +285,11 @@ class JsonRpcUnixTransport:
                 "move": state.get("move"),
                 "loop": state.get("loop"),
                 "odom": state.get("odom"),
+                # False means quackd cannot see falls at all right now, so `fallen: false` above
+                # is silence rather than a verdict. The preconditions read this.
+                "fall_detection": fresh,
+                "state_age_s": round(age, 3) if age is not None else None,
+                "subscribed": self.subscribed,
                 "assumptions": [up.POSTURE_FROM_POLICY.name],
             },
         )
@@ -280,8 +342,9 @@ class JsonRpcUnixTransport:
             return Ack(accepted=False, reason=str(e))
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
-        if topic in ("state", up.ROBOT_STATE.name):
-            await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": 10})
+        if topic in ("state", up.ROBOT_STATE.name) and self.subscribed is None:
+            # connect() normally does this; only a transport used without it needs asking twice.
+            self.subscribed = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         while True:
             msg = await self._notifications.get()
             yield {"topic": msg.get("method"), **(msg.get("params") or {})}
