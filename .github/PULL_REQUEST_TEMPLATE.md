@@ -17,3 +17,14 @@
 - [ ] No upstream assets, from Pollen Robotics or the Open Duck Mini project (logos, meshes, videos) added
 - [ ] CHANGELOG.md updated under *Unreleased*
 - [ ] `uv run quackd validate ducks/*.duck` passes (CI runs it)
+
+<!--
+What happens next: your commits are merged as they are, under your name, and never
+squashed or retyped. Anything that needs fixing on top lands in separate commits so you
+can see exactly what changed after you and why, and the review comment lists everything
+that was found rather than just a verdict. Two things worth doing before you open this:
+rebase on `main` (a checklist ticked against an old base is not evidence about the
+merge), and check that any claim you make in prose is actually true of the code, because
+that is where this project's honesty tends to leak. Details in CONTRIBUTING.md, under
+"How your PR gets handled".
+-->

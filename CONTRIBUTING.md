@@ -106,6 +106,51 @@ arrive 🧪 in the status tables until someone runs it against the real thing.
 - No Pollen Robotics assets — no logos, meshes, or videos — ever.
 - Tone: confident, playful, honest about status.
 
+## How your PR gets handled
+
+Written down because 0.6 was the first release built on other people's pull requests, and
+the way those two were handled is the way the next one will be.
+
+**Your commits stay yours.** A PR is merged with `git merge` into a scratch integration
+branch, never squashed, rebased or retyped, so your authorship survives verbatim and your
+commits appear on `main` under your name. Not one line of your diff is edited in place.
+
+**Corrections land separately.** Anything that needs fixing on top goes in its own
+follow-up commit with its own message, so `git log` keeps the credit and the correction
+distinguishable forever. You can read exactly what was changed after you and why, and
+disagree with it.
+
+**You get told everything that was found, not a verdict.** The review comment lists every
+defect with the reasoning, including the ones that were nobody's fault. If something is
+declined, the comment says why.
+
+**You get credited** in the CHANGELOG entry, in the release note, and in the row of faces
+in the README, which is generated from the contributor list and orders people by lines
+added.
+
+### For whoever is doing the merging
+
+1. **Run the gate on the merged result, not on their branch.** A PR from a fork gets no CI
+   here until a maintainer approves the run, so a green checklist in the description is
+   usually not evidence about anything. Check how far behind `main` the branch is too: one
+   of 0.6's contributions was 67 commits behind, from before robot adapters existed, so its
+   ticked boxes had been measured against a repository two releases old.
+2. **Check the claims, not only the code.** Both 0.6 contributions were well made and both
+   asserted something false in prose. One said the README listed a gap among its
+   limitations when it never had, and that sentence was about to ship in a permanent ADR.
+   This project's credibility is that it does not say things that are not so, and a PR is
+   where that leaks in.
+3. **Fix it on top, in named commits.** One commit per theme reads better than one per
+   defect and much better than one big one.
+4. **Anything no test could see becomes a test.** That is the rule the whole repository
+   runs on: a stale count in a docstring, a promise the code does not keep, a key two files
+   have to agree on. If the review found it by reading, the next one should find it by
+   failing.
+5. **Expect the review to surface older breakage.** Auditing 0.6's two contributions turned
+   up six claims that had gone stale on `main` before either arrived. Fix those in the same
+   release and say so in the CHANGELOG rather than leaving them for later.
+6. **Reply properly and say thank you.** Somebody spent their evening on this.
+
 ## Reporting bugs and proposing verbs
 
 Use the issue templates. `quackd doctor` output and the relevant `transcript.jsonl` lines

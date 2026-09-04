@@ -103,7 +103,7 @@ Low level skills and high level goals are different layers. The robot knows the 
 
 **This project.** quackd (pronounced "quacked", named after the Microduck's daemons `robotd`, `mediad`, `padd` and friends) is an independent, unofficial brain for it, and since 0.4 for any small robot that has an adapter. It is a Python program that
 
-- takes a goal in plain language, from a chat, a command line, or a `.duck` task file,
+- takes a goal in human language, from a chat, a command line, or a `.duck` task file,
 - reads what a robot can do from its adapter's manifest, so the model only ever sees the verbs that manifest declares, and a verb outside it does not exist,
 - asks an LLM, cloud or local, one step at a time, which of the robot's skills to use next,
 - runs that skill on the robot (or the simulator), looks at the camera, and asks again,
@@ -261,7 +261,7 @@ Since 0.4 the robot is an *adapter* that declares a *manifest*: what body it has
 
 ```mermaid
 flowchart LR
-    HUMAN["Human<br/>goal in plain language"]
+    HUMAN["Human<br/>goal in human language"]
     LLM["LLM<br/>Claude · OpenAI · Gemini · Grok · local (Ollama, vLLM, llama.cpp) · fake"]
     subgraph quackd
         LOOP["agent loop<br/>observe → think → enforce → act"]
@@ -340,7 +340,7 @@ git clone https://github.com/rokbenko/quackd && cd quackd && uv sync --extra dev
 ## Usage
 
 ```bash
-# a goal in plain language (bundled simulator, scripted pilot, no key needed)
+# a goal in human language (bundled simulator, scripted pilot, no key needed)
 uvx quackd run --goal "find the ball and kick it" --provider fake
 
 # the same goal with Claude
