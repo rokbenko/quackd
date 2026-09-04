@@ -115,8 +115,8 @@ def lines_added() -> dict[str, int]:
 def already_drawn() -> set[str]:
     """Who the committed image currently shows, so a bad answer cannot drop somebody.
 
-    The login is everything before the first colon in a `<title>`, which is the one part
-    of the caption that must not change shape without this being updated with it."""
+    A `<title>` is the login, and older files wrote "login: n lines added", so take
+    everything before the first colon and this keeps reading both."""
     if not OUT.exists():
         return set()
     titles = re.findall(r"<title>([^<]+)</title>", OUT.read_text(encoding="utf-8"))
@@ -175,14 +175,13 @@ def avatar_data_uri(url: str) -> str:
 
 
 def _caption(person: dict[str, str]) -> str:
-    """What hovering a face says.
+    """What hovering a face says: the login, and nothing that changes on every commit.
 
-    Only the line count, which comes from the git history in the checkout and is therefore
-    the same on every machine. The commit count comes from an eventually consistent API,
-    and putting it here made the committed file flip between two versions depending on
-    whether that API had caught up when the workflow happened to run."""
-    added = int(person["added"])
-    return f"{person['login']}: {added:,} lines added" if added else person["login"]
+    The line count decides the order and deliberately does not appear here. Putting it in
+    the file meant the image changed every time anybody pushed anything, so the workflow
+    committed a refresh after every single push. Now the bytes only move when the people
+    or their avatars do, which is what a committed asset should do."""
+    return person["login"]
 
 
 def render(people: list[dict[str, str]]) -> str:
