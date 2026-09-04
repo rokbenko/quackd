@@ -26,6 +26,7 @@ from typing import Any
 
 from PIL import Image
 
+from quackd.adapters.microduck.webrtc import WebRtcCamera, is_webrtc_url
 from quackd.transport import upstream_api as up
 from quackd.transport.base import (
     Ack,
@@ -92,6 +93,7 @@ class JsonRpcUnixTransport:
         self.state_hz = state_hz
         self.camera_fps = camera_fps
         self._camera_task: asyncio.Task[None] | None = None
+        self._webrtc: WebRtcCamera | None = None
         self._frame: Image.Image | None = None
         self._frame_at: float | None = None
         self._frame_error: str | None = None
@@ -144,7 +146,11 @@ class JsonRpcUnixTransport:
         result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
-        if self.camera_url:
+        if is_webrtc_url(self.camera_url):
+            # The only camera upstream actually offers. Nothing is installed on the robot.
+            self._webrtc = WebRtcCamera(str(self.camera_url))
+            await self._webrtc.start()
+        elif self.camera_url:
             self._camera_task = asyncio.create_task(
                 self._camera_loop(), name="quackd-jsonrpc-camera"
             )
@@ -163,6 +169,9 @@ class JsonRpcUnixTransport:
         return self._last_state_at is not None
 
     async def close(self) -> None:
+        if self._webrtc is not None:
+            await self._webrtc.close()
+            self._webrtc = None
         if self._camera_task is not None:
             self._camera_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -281,6 +290,8 @@ class JsonRpcUnixTransport:
         """
         if not self.camera_url:
             return None  # no socket-level camera method upstream (up.CAMERA_SNAPSHOT)
+        if self._webrtc is not None:
+            return self._webrtc.latest()
         if self._camera_task is None:  # not connected: fetch once rather than nothing
             with contextlib.suppress(Exception):
                 self._frame = await self._fetch_frame()
@@ -291,6 +302,8 @@ class JsonRpcUnixTransport:
         """What the camera is doing, for `doctor` and for the run's own state."""
         if not self.camera_url:
             return {"configured": False}
+        if self._webrtc is not None:
+            return self._webrtc.health()
         age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
         return {
             "configured": True,

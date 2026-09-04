@@ -55,6 +55,11 @@ lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
 lerobot = ["lerobot>=0.6; python_version >= '3.12'"]
 rosbridge = ["roslibpy>=2,<3"]
+# The Microduck's camera reaches clients only as an H.264 WebRTC track from mediad — there is
+# no camera method in duck-ipc-proto and no snapshot endpoint — so a picture means being a
+# WebRTC peer. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not
+# pointing quackd at a real Microduck, and never imported unless --camera-url says webrtc://.
+microduck-camera = ["aiortc>=1.9", "av>=12", "websockets>=13"]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py
   # can import the metadata hook that rewrites the README for PyPI.

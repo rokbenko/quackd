@@ -98,6 +98,32 @@ The same principle holds on every adapter: `disable_motors` is never sent to a R
 On an Open Duck the guarantee is stronger than a promise: the bridge protocol has no word
 that reaches torque, so going limp is unreachable rather than merely forbidden.
 
+### Getting a picture off a real Microduck
+
+There is no camera method in `duck-ipc-proto`, no snapshot or MJPEG route in `mediad` (its HTTP
+port serves one page), and no camera subcommand in `robotctl` or `duckctl`. The camera reaches
+clients as an H.264 WebRTC track and nowhere else. Two ways to point quackd at it:
+
+| | `--camera-url webrtc://<duck>:8443` | `--camera-url http://<host>:9872/snapshot.jpg` |
+|---|---|---|
+| Where it runs | your machine | wherever the snapshot server is |
+| Touches the robot | nothing | a snapshot server has to hold `/dev/video0`, so `mediad` must be stopped first — it holds the device for the life of its process |
+| Needs | `quackd[microduck-camera]` (aiortc, av, websockets) | nothing |
+| Costs | one media session, so it competes with the browser console | `mediad`, and therefore the console and the WebRTC path, while it runs |
+
+The WebRTC route is the one to reach for on a robot you do not own. Signalling is
+gst-plugins-rs `net/webrtc`, read from `mediad/webclient/index.html` at the pin: the producer
+offers and quackd answers. **There is no authentication** — upstream's own note is that a
+pairing PIN which is `000000` on every robot "authenticates nobody" — so tunnel it
+(`ssh -L 8443:127.0.0.1:8443 radxa@<duck>`) rather than trusting the network.
+
+`mediad` opens a `control` datachannel at every peer whether it wants one or not. quackd reads
+`media.detections` off it and writes nothing: motion goes over `robotd`'s socket, where the
+allowlist, the confirm gates and the deadman feed already are, and two ways to move one robot
+would mean two places to be sure about.
+
+Neither route has been run against a Microduck.
+
 ## How to help
 
 **Built an Open Duck Mini v2?** That is the row most likely to flip this year, because it

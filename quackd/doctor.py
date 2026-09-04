@@ -39,6 +39,7 @@ EXTRAS = {
     "lan (mqtt)": ("paho.mqtt.client", "quackd[lan]"),
     "lerobot": ("lerobot", "quackd[lerobot]"),
     "rosbridge": ("roslibpy", "quackd[rosbridge]"),
+    "microduck camera (webrtc)": ("aiortc", "quackd[microduck-camera]"),
 }
 # Robot SDKs are looked up by distribution metadata only: importing reachy_mini pulls
 # onnxruntime and GStreamer, and lerobot pulls torch, into a diagnostics command, which is

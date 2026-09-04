@@ -649,7 +649,9 @@ _TOKEN = typer.Option(
 _CAMERA_URL = typer.Option(
     None,
     "--camera-url",
-    help="An HTTP snapshot to read frames from, overriding whatever the robot advertises. "
+    help="Where frames come from, overriding whatever the robot advertises. An HTTP snapshot "
+    "(http://host:9872/snapshot.jpg), or webrtc://host:8443 to pull mediad's video track off a "
+    "Microduck, which is the only camera upstream offers and needs quackd[microduck-camera]. "
     "Needed when you reach the robot through a tunnel and its own URL is not routable.",
 )
 _VERBOSE = typer.Option(False, "--verbose", "-v", help="Log every intent to stderr.")
