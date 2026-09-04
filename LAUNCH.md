@@ -102,7 +102,9 @@ please correct it" framing.
   rosbridge bases all exist today, so `reachy_mini:sdk`, `lerobot:real` and `rosbridge:ws` can
   each flip from 🧪 to ✅ as soon as one person runs one of them. That is a post per body:
   "it works on the real thing", with `quackd doctor` output and a transcript.
-- **Third beat: Christmas 2026**, when Microducks ship: a hardware run of the five Microduck
+- **Third beat: when Microducks arrive**, which is around Christmas 2026 for the earliest
+  pre-orders and four to six months out for later ones, so this beat lands per person rather
+  than on one date: a hardware run of the five Microduck
   starters, `jsonrpc` flipped to ✅, and the WebSocket backend if upstream shipped it. That's
   the launch that earns v1.
 

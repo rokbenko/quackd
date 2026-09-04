@@ -140,11 +140,23 @@ class RobotSession:
         return verb.name
 
     def adopt(self, duck: DuckFile) -> None:
+        """Take on a task contract. Loading a second one never refunds the first.
+
+        `robot_load_duckfile` is a tool the *model* holds, so a fresh `Budget` here was the
+        way out of one: a pilot that had spent its steps, or been refused a verb, could load
+        a wider duck and start counting from zero. The limits become the new contract's. The
+        steps, the llm calls, the clock and the failure tallies stay the session's."""
+        spent = self.executor.budget
         self.duck = duck
         self.executor.contract = duck.frontmatter
         self.executor.budget = Budget(duck.frontmatter.budgets, now=self.transport.now)
-        self.executor.budget.start()
-        self.executor.consecutive_failures.clear()
+        if spent is None:  # the first contract of the session, from --duck or the first load
+            self.executor.budget.start()
+            self.executor.consecutive_failures.clear()
+            return
+        self.executor.budget.steps = spent.steps
+        self.executor.budget.llm_calls = spent.llm_calls
+        self.executor.budget.started_at = spent.started_at
 
     async def connect(self) -> None:
         connected = await self.transport.connect()
@@ -310,14 +322,21 @@ class RobotSession:
                     "error": "; ".join(p.message for p in problems),
                     "problems": [p.message for p in problems],
                 }
+        reloaded = self.executor.budget is not None
         self.adopt(duck)
+        note = f"The executor now enforces this contract for every call to {self.name}."
+        budget = self.executor.budget
+        if reloaded and budget is not None:
+            # say it, so a human reading the session sees the carry-over rather than
+            # wondering why the new contract's budget is already part spent
+            note += f" What this session already spent still counts: {budget.status()}."
         return {
             "ok": True,
             "robot": self.name,
             "name": duck.name,
             "contract": duck.frontmatter.model_dump(),
             "instructions": duck.body,
-            "note": f"The executor now enforces this contract for every call to {self.name}.",
+            "note": note,
         }
 
 

@@ -128,6 +128,37 @@ async def test_contract_is_enforced_after_loading_a_duck() -> None:
         assert bad["ok"] is False
 
 
+async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
+    # regression: `robot_load_duckfile` is a tool the model holds, and adopting a contract
+    # built a fresh Budget, so a pilot out of steps could load a wider duck and carry on
+    async with connected() as (client, session, _transport):
+        assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
+        results = [
+            _data(await client.call_tool("robot_run_verb", {"verb": "quack"})) for _ in range(6)
+        ]
+        assert results[5]["ok"] is False and "budget" in results[5]["summary"]
+        spent = session.executor.budget
+        assert spent is not None and spent.steps == 5
+
+        # find-and-kick allows more steps than hello-world, and the five are still gone
+        loaded = _data(await client.call_tool("robot_load_duckfile", {"path": "find-and-kick"}))
+        assert loaded["ok"] and "already spent" in loaded["note"]
+        carried = session.executor.budget
+        assert carried is not None and carried is not spent
+        assert carried.steps == 5 and carried.started_at == spent.started_at
+        assert carried.limits.max_steps > 5  # a real widening, not a budget that happens to match
+
+
+async def test_reloading_a_duck_keeps_the_failure_tally() -> None:
+    # the same escape by another door: abort_when counts consecutive failures, and adopting
+    # a contract used to clear them, so a reload reset the count as well as the budget
+    async with connected() as (client, session, _transport):
+        assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
+        session.executor.consecutive_failures["walk"] = 2
+        assert _data(await client.call_tool("robot_load_duckfile", {"path": "find-and-kick"}))["ok"]
+        assert session.executor.consecutive_failures == {"walk": 2}
+
+
 async def test_load_duckfile_refuses_flock_ducks() -> None:
     # regression: only serve() guarded flock ducks; the load tool adopted them silently
     async with connected() as (client, session, _transport):
