@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import io
 import json
+import logging
 import os
 import sys
 import time
@@ -38,6 +39,8 @@ from quackd.transport.base import (
 )
 
 STATUS = "EXPERIMENTAL — verified method names, unverified against hardware"
+
+log = logging.getLogger("quackd.transport.jsonrpc")
 
 #: How often we ask robotd for a state frame. Ten a second is the rate the walk verb already
 #: feeds intents at, and upstream decimates per-subscriber server-side, so asking for less than
@@ -109,6 +112,8 @@ class JsonRpcUnixTransport:
         self._last_health: dict[str, Any] | None = None
         self._t0 = time.monotonic()
         self.hello: dict[str, Any] | None = None
+        self.stop_error: str | None = None
+        """Why the last `stop` did not reach the robot, or None if it did (or none was sent)."""
         self.subscribed: dict[str, Any] | None = None
         """`robot.subscribe`'s answer: the policies and the skill names this robot actually has."""
 
@@ -367,6 +372,7 @@ class JsonRpcUnixTransport:
                 "state_age_s": round(age, 3) if age is not None else None,
                 "subscribed": self.subscribed,
                 "camera": self.camera_health(),
+                "stop_error": self.stop_error,
                 "assumptions": [up.POSTURE_FROM_POLICY.name],
             },
         )
@@ -437,8 +443,26 @@ class JsonRpcUnixTransport:
                 raise HeartbeatError(f"robotd unhealthy: {health.get('reason') or 'no reason'}")
 
     async def stop(self) -> None:
-        with contextlib.suppress(TransportError):
+        """Zero the velocity. Never raises — but never pretends it landed, either.
+
+        The protocol asks that this be safe to call from anywhere at any time, including from
+        the exception paths that run *because* the socket died, so it cannot raise. It used to
+        swallow the failure silently, which meant the heartbeat could log "stopping the duck"
+        while delivering nothing. What actually stops a Microduck in that situation is robotd's
+        own deadman: `robot.move` notifications stop arriving and the velocity goes to zero
+        (`up.DEADMAN`). That is a real protection and this is not a substitute for it.
+        """
+        try:
             await self.request(up.ROBOT_STOP.name)
+            self.stop_error = None
+        except TransportError as e:
+            self.stop_error = str(e)
+            log.warning(
+                "stop could not be delivered to %s (%s). The robot's own deadman zeroes "
+                "velocity when robot.move stops arriving, which is what stops it now.",
+                self.address,
+                e,
+            )
 
     def now(self) -> float:
         return time.monotonic() - self._t0

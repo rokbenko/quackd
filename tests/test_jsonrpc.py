@@ -37,11 +37,17 @@ CURRENT_API = int(up.API_VERSION.name)
 
 class FakeRobotd:
     def __init__(
-        self, *, api_version: int = CURRENT_API, healthy: bool = True, fallen: bool = False
+        self,
+        *,
+        api_version: int = CURRENT_API,
+        healthy: bool = True,
+        fallen: bool = False,
+        policy: str = "walk",
     ) -> None:
         self.api_version = api_version
         self.healthy = healthy
         self.fallen = fallen
+        self.policy = policy
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.server: asyncio.AbstractServer | None = None
@@ -109,7 +115,7 @@ class FakeRobotd:
                                 "method": "robot.state",
                                 "params": {
                                     "t": 1.0,
-                                    "policy": "walk",
+                                    "policy": self.policy,
                                     "safety": {"fallen": self.fallen, "limp": False},
                                 },
                             }
@@ -117,6 +123,13 @@ class FakeRobotd:
                         + "\n"
                     ).encode()
                 )
+            elif method == "robot.neverAnswered":
+                # A robotd that accepts a call and never replies, which is what a wedged
+                # daemon looks like from here. Also feeds a junk line, to prove the pump
+                # skips what it cannot parse instead of dying on it.
+                writer.write(b"{not json at all\n")
+                await writer.drain()
+                continue
             else:
                 writer.write(
                     (
@@ -367,6 +380,82 @@ async def test_camera_serves_the_newest_frame_from_memory(robotd: FakeRobotd) ->
     assert await t.get_frame() is made
     health = t.camera_health()
     assert health["ok"] is True and health["size"] == [8, 8] and health["error"] is None
+    await t.close()
+
+
+async def test_stop_says_when_it_could_not_be_delivered(robotd: FakeRobotd) -> None:
+    """A stop into a dead socket used to be swallowed, so the log claimed a stop it never sent."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    await t.stop()
+    assert t.stop_error is None
+
+    t._writer = None  # the link is gone, which is exactly when a stop gets asked for
+    await t.stop()  # must not raise: this runs from the exception paths
+    assert t.stop_error is not None and "not connected" in t.stop_error
+    assert (await t.get_state()).extras["stop_error"] == t.stop_error
+    await t.close()
+
+
+async def test_quackd_never_sends_the_two_methods_that_move_or_drop_every_joint(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """`robot.init` moves every joint and `robot.relax` collapses the robot.
+
+    docs/adapter-status.md promises neither is ever sent. Nothing asserted it, and both names
+    are one typo away from `robot.enable` in the same match statement.
+    """
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    ex = Executor(registry, t, contract=DUCK.frontmatter)
+    for verb, params in (
+        ("walk", {"vx": 0.1, "duration_s": 0.2}),
+        ("kick", {"leg": "left"}),
+        ("quack", {"text": "hi"}),
+        ("gaze", {"direction": "left"}),
+    ):
+        await ex.run_verb(verb, params)
+    await t.stop()
+    spoken = {r["method"] for r in robotd.requests} | {n["method"] for n in robotd.notifications}
+    assert not spoken & {"robot.init", "robot.relax"}
+    await t.close()
+
+
+async def test_a_sitting_policy_reads_as_sitting(registry: VerbRegistry) -> None:
+    """The `"sit" in policy` branch had never been exercised over the wire."""
+    fake = FakeRobotd(policy="sit_rise")
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        assert (await t.get_state()).posture == "sitting"
+        # and a sitting duck is refused a walk, rather than dragged along the floor
+        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        assert not result.ok and "sitting" in result.summary
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_malformed_line_does_not_kill_the_pump(robotd: FakeRobotd) -> None:
+    """One unparseable line must not take the connection down with it."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=0.05)
+    await t.connect()
+    with pytest.raises(TransportError):
+        await t.request("robot.neverAnswered")  # the fake answers this with junk
+    assert t._pump is not None and not t._pump.done()
+    await t.heartbeat()  # and the link still works afterwards
+    assert (await t.get_state()).battery_percent == 66.0
+    await t.close()
+
+
+async def test_a_request_with_no_answer_times_out_and_forgets_itself(robotd: FakeRobotd) -> None:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=0.05)
+    await t.connect()
+    with pytest.raises(TransportError, match="no answer within"):
+        await t.request("robot.neverAnswered")
+    assert not t._pending  # a timed-out request must not leak its future
     await t.close()
 
 
