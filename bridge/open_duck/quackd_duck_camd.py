@@ -172,7 +172,11 @@ class PiCamera:
 #: The scene `--fake` paints. These are the colours and the horizon quackd's own simulator
 #: uses, copied rather than imported, because nothing on the robot may import quackd. An
 #: orange ball on a pale floor under a pale sky is what its colour detector is tuned for, so
-#: `--fake` is a smoke test of the whole chain and not just of the plumbing.
+#: `--fake` exercises the detector as well as the plumbing. It does NOT exercise the camera:
+#: this synthesises a JPEG directly, so the resize, the red/blue swap, the rotation and the
+#: encode that `PiCamera.jpeg` performs are all skipped, and so is the question of whether the
+#: field of view is yours. Those are covered by a `PiCamera` test with a stubbed capture, and
+#: on real hardware by step 5b of the checklist.
 FAKE_SKY = (204, 222, 240)
 FAKE_FLOOR = (236, 229, 212)
 FAKE_BALL = (255, 140, 0)

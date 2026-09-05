@@ -58,7 +58,14 @@ python /opt/quackd/quackd_duck_bridge.py serve --fake --seconds 120 \
 ```
 
 `--fake` paints a duck's eye view with a ball on the floor, so `quackd run open-duck-scout`
-should complete against it. If it does, everything except the robot itself works.
+should complete against it. If it does, the socket, the protocol, the JPEG transport and the
+verbs all work.
+
+**It does not exercise the camera.** `--fake` synthesises a JPEG directly, so none of the
+resize, the red/blue swap, the rotation or the JPEG encode that a real capture goes through
+are running, and the detector's field of view is still the simulator's. Those are what step
+5b checks, and they are the difference between `go_to` arriving and announcing it from half a
+metre away.
 
 On your laptop, forwarding **both** ports, because the bridge binds loopback and so does the
 camera. Export the token `install.sh` wrote, or pass `--token`:
