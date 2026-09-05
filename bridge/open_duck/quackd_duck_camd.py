@@ -55,6 +55,8 @@ DEFAULT_SIZE = 256
 STALE_PERIODS = 4.0
 #: ...but a very low --fps must still expire in human time, not eventually.
 MIN_STALE_S = 1.5
+#: How long a client may hold a connection open without finishing a request.
+REQUEST_TIMEOUT_S = 5.0
 SNAPSHOT_PATH = "/snapshot.jpg"
 HEALTH_PATH = "/healthz"
 
@@ -231,6 +233,10 @@ def make_handler(store: FrameStore, fps: float = DEFAULT_FPS) -> type[BaseHTTPRe
     class Handler(BaseHTTPRequestHandler):
         server_version = f"quackd-duck-camd/{CAMD_VERSION}"
         protocol_version = "HTTP/1.1"
+        # ThreadingHTTPServer gives every connection a thread and HTTP/1.1 keeps them alive,
+        # so without this one half-open connection pins a thread for the life of the process
+        # — on the board that is also running a 50 Hz control loop.
+        timeout = REQUEST_TIMEOUT_S
 
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
@@ -370,7 +376,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.bind not in ("127.0.0.1", "localhost"):
         log.warning(
             "binding %s: this serves a live view of wherever your robot is, to anyone on "
-            "that network, with no authentication. Prefer --bind 127.0.0.1 and an ssh tunnel.",
+            "that network, with no authentication and no way to add any. There is no control "
+            "path in this process, so the worst case is a stranger watching your room rather "
+            "than driving your duck - but that is worth deciding on purpose. Prefer "
+            "--bind 127.0.0.1 and an ssh tunnel.",
             args.bind,
         )
 

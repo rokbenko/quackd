@@ -9,10 +9,14 @@ loopback, which is the only way to know the two halves agree.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
+import json
+import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -79,7 +83,12 @@ def test_the_deadman_zeroes_velocity_and_holds_the_head(daemon: ModuleType) -> N
     )
     fresh = core.command_for_tick()
     assert fresh.vx == pytest.approx(0.1) and fresh.vyaw == pytest.approx(0.4)
+    # the head is slewed by the control loop now, so it needs ticks to get anywhere
+    for _ in range(30):
+        clock.t += 0.02
+        fresh = core.command_for_tick()
     held = fresh.head
+    assert held[2] == pytest.approx(0.2, abs=1e-6), "and it does arrive, given the time"
 
     clock.t += core.deadman_s + 0.01
     stale = core.command_for_tick()
@@ -136,19 +145,46 @@ def test_the_head_is_pinned_to_neutral_unless_head_control_was_asked_for(
 
 
 def test_head_control_is_clamped_inside_upstream_and_rate_limited(daemon: ModuleType) -> None:
-    core = daemon.BridgeCore(limits=daemon.Limits(head_enabled=True))
+    """The rate limit is per second, in the control loop. It used to be
+    `HEAD_SLEW_RAD_S * deadman_s` applied once per received *message*, which is not a rate at
+    all: one `gaze` sends exactly one message, so the head moved 0.3 rad and stopped short of
+    a target the verb then reported as reached, while a 10 Hz sender got 3 rad/s on the joint
+    the constant exists to protect."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock, limits=daemon.Limits(head_enabled=True))
     hello(core)
     ceiling = daemon.HEAD_YAW[1] * daemon.HEAD_SAFETY
-    for _ in range(50):  # the slew limit means it takes several commands to get there
-        core.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
-    yaw = core.command_for_tick().head[2]
-    assert yaw == pytest.approx(ceiling)
     assert ceiling < daemon.HEAD_YAW[1], "quackd stays inside upstream's own clamp"
 
-    core2 = daemon.BridgeCore(limits=daemon.Limits(head_enabled=True))
-    hello(core2)
-    core2.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
-    assert core2.command_for_tick().head[2] < ceiling, "one command cannot snap the neck"
+    # one command, then let the loop run: the head arrives, which it never used to
+    core.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
+    core.command_for_tick()  # the first tick only seeds the clock
+    yaw = 0.0
+    for _ in range(100):
+        clock.t += 0.02
+        yaw = core.command_for_tick().head[2]
+    assert yaw == pytest.approx(ceiling), "one gaze must reach its target, not stop 0.3 rad in"
+
+    # and no client can buy extra speed by sending more often
+    fast_clock = Clock()
+    fast = daemon.BridgeCore(now=fast_clock, limits=daemon.Limits(head_enabled=True))
+    hello(fast)
+    fast.command_for_tick()
+    for _ in range(10):
+        fast.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
+    fast_clock.t += 0.1
+    assert fast.command_for_tick().head[2] == pytest.approx(daemon.HEAD_SLEW_RAD_S * 0.1, abs=1e-6)
+
+
+def test_a_resumed_stall_does_not_become_one_catch_up_leap(daemon: ModuleType) -> None:
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock, limits=daemon.Limits(head_enabled=True))
+    hello(core)
+    core.handle({"method": "duck.command", "params": {"head": {"head_yaw": 9.0}}}, authed=True)
+    core.command_for_tick()
+    clock.t += 5.0  # the loop was starved for five seconds
+    moved = core.command_for_tick().head[2]
+    assert moved == pytest.approx(daemon.HEAD_SLEW_RAD_S * daemon.HEAD_SLEW_MAX_DT_S, abs=1e-6)
 
 
 # ── the protocol ────────────────────────────────────────────────────────────────────────
@@ -315,7 +351,7 @@ async def test_the_real_daemon_and_the_real_client_agree(daemon: ModuleType) -> 
         await asyncio.sleep(0.05)
         assert controller.get_last_command()[0][0] == pytest.approx(daemon.VX[1])
 
-        assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.3})).ok
+        assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.5})).ok
         await asyncio.sleep(0.05)
         assert controller.get_last_command()[0][0] == 0.0, "a move ends stopped, not coasting"
 
@@ -371,17 +407,48 @@ def test_an_unknown_gesture_is_refused_rather_than_silently_dropped(daemon: Modu
     assert reply["error"]["code"] == -32602
 
 
-def test_the_deadman_rests_the_antennas_too(daemon: ModuleType) -> None:
+def test_a_gesture_outlives_a_stale_command_but_not_a_stop(daemon: ModuleType) -> None:
+    """The deadman used to rest the antennas, which sounds careful and made `express` a
+    guaranteed no-op: `duck.antennas` does not refresh the command timestamp, and verbs are
+    separate tool calls with an LLM round trip between them, so the command was always stale
+    by the time a gesture arrived. Two 9 g servos on a GPIO pin are not motion; the deadman is
+    about the legs. A gesture self-expires, and `duck.stop` still rests them at once."""
     clock = Clock()
     core = daemon.BridgeCore(now=clock, capabilities={"antennas": True})
     hello(core)
+    clock.t += 30.0  # an LLM turn: nothing has commanded the legs in ages
     core.handle({"id": 8, "method": "duck.antennas", "params": {"gesture": "perk"}}, authed=True)
+
+    assert core.command_for_tick().triggers == (1.0, 1.0), "the gesture must actually play"
+    assert core.deadman_tripped is True, "even though the legs are quite rightly stopped"
+
+    clock.t += daemon.GESTURE_S + 0.01
+    assert core.command_for_tick().triggers == (0.0, 0.0), "and then it rests, on its own"
+
+    core.handle({"id": 9, "method": "duck.antennas", "params": {"gesture": "perk"}}, authed=True)
     assert core.command_for_tick().triggers == (1.0, 1.0)
-    clock.t += core.deadman_s + 0.01
-    assert core.command_for_tick().triggers == (0.0, 0.0)
+    core.handle({"id": 10, "method": "duck.stop"}, authed=True)
+    assert core.command_for_tick().triggers == (0.0, 0.0), "a stop still rests them at once"
 
 
-# ── a camera nobody can fetch a frame from is not a camera ──────────────────────────────
+def test_droop_is_a_different_position_from_rest(daemon: ModuleType) -> None:
+    """`droop` returned the antennas exact resting value, so it was an accepted no-op that
+    reported success. Upstream maps -1..1 with 0 as rest, so a droop needs a negative number,
+    one a physical trigger axis cannot produce."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock, capabilities={"antennas": True})
+    hello(core)
+    rest = core.command_for_tick().triggers
+    seen = {}
+    for gesture in ("perk", "droop", "wiggle"):
+        core.handle(
+            {"id": 1, "method": "duck.antennas", "params": {"gesture": gesture}}, authed=True
+        )
+        clock.t += 0.02
+        seen[gesture] = core.command_for_tick().triggers
+        assert seen[gesture] != rest, gesture + " must move the antennas somewhere"
+    assert len(set(seen.values())) == 3, "and the three must be distinguishable"
+    assert seen["droop"][0] < 0 < seen["perk"][0]
 
 
 def test_a_camera_with_no_snapshot_url_is_not_advertised(daemon: ModuleType, tmp_path) -> None:
@@ -814,3 +881,152 @@ def test_the_hello_says_whether_there_is_any_authentication(daemon: ModuleType) 
     assert daemon.BridgeCore().hello()["safety"]["auth"] == "none"
     assert daemon.BridgeCore(token="s3cret").hello()["safety"]["auth"] == "token"
     assert daemon.BridgeCore().hello()["safety"]["fall_detection"] is False
+
+
+# ── the monkeypatch the entire bridge rests on ──────────────────────────────────────────
+
+FAKE_PAD = '''class XBoxController:
+    def __init__(self, command_freq=20, only_head_control=False):
+        raise AssertionError("the real pad was constructed; the shim did not take")
+'''
+
+FAKE_BUTTONS = '''class Buttons:
+    def __init__(self):
+        raise AssertionError("Buttons.__init__ has side effects we have not read")
+'''
+
+FAKE_LOOP = '''import json
+import os
+import time
+
+time.sleep(BOOT_DELAY)
+from mini_bdx_runtime.xbox_controller import XBoxController
+
+pad = XBoxController(20)
+seen = []
+# Written every tick rather than in a finally: Windows terminate() is TerminateProcess, so
+# no handler runs and no exit path is guaranteed. Ticks on disk while it runs is also the
+# stronger claim - it proves the loop is being fed, not merely that it once exited tidily.
+while True:
+    cmds, buttons, lt, rt = pad.get_last_command()
+    seen.append([float(c) for c in cmds])
+    buttons.a_button_upstream_added_later.triggered
+    with open(os.environ["TICKS"], "w") as fh:
+        json.dump(seen[-40:], fh)
+    time.sleep(0.02)
+'''
+
+
+def _fake_runtime(root: Path, *, boot_delay: float = 0.0) -> Path:
+    """Enough of `mini_bdx_runtime` and upstream's walk script for the shim to be real.
+
+    The import form is the point. Upstream writes
+    `from mini_bdx_runtime.xbox_controller import XBoxController`, so rebinding the module
+    attribute works only because `install_shim` runs before the script is executed. If that
+    ordering broke, or upstream renamed the class, the socket would control nothing and the
+    duck would be driven by something its owner could not see — which is why the fake pad
+    raises rather than returning zeros."""
+    pkg = root / "mini_bdx_runtime"
+    pkg.mkdir(parents=True, exist_ok=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "xbox_controller.py").write_text(FAKE_PAD)
+    (pkg / "buttons.py").write_text(FAKE_BUTTONS)
+    scripts = root / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    (scripts / "polynomial_coefficients.pkl").write_bytes(b"")
+    script = scripts / "v2_rl_walk_mujoco.py"
+    script.write_text(FAKE_LOOP.replace("BOOT_DELAY", str(boot_delay)))
+    return script
+
+
+def _serve_in_subprocess(tmp_path: Path, script: Path, watchdog_s: str) -> subprocess.Popen:
+    runner = tmp_path / "run.py"
+    runner.write_text(
+        "import sys, importlib.util\n"
+        f"sys.path.insert(0, {str(tmp_path)!r})\n"
+        f'spec = importlib.util.spec_from_file_location("qdb", {str(DAEMON)!r})\n'
+        'm = importlib.util.module_from_spec(spec); sys.modules["qdb"] = m\n'
+        "spec.loader.exec_module(m)\n"
+        "sys.exit(m.main(["
+        f'"serve", "--script", {str(script)!r}, "--port", "0",'
+        f'"--token-file", {str(tmp_path / "none")!r},'
+        f'"--patch-watchdog-s", "{watchdog_s}",'
+        "]))\n"
+    )
+    env = {**os.environ, "TICKS": str(tmp_path / "ticks.json"), "PYTHONPATH": str(tmp_path)}
+    return subprocess.Popen([sys.executable, str(runner)], env=env)
+
+
+def test_the_shim_intercepts_the_import_form_upstream_actually_uses(tmp_path: Path) -> None:
+    """PAD_SUBSTITUTION is the single assumption the whole bridge stands on, and nothing
+    executed `install_shim`, `runpy` or `main()`'s serve path: NetworkController was always
+    constructed directly, so the rebind itself had no test at all."""
+    script = _fake_runtime(tmp_path)
+    proc = _serve_in_subprocess(tmp_path, script, "10")
+    try:
+        time.sleep(3.0)
+        assert proc.poll() is None, f"the bridge exited early with {proc.returncode}"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+    ticks = tmp_path / "ticks.json"
+    assert ticks.exists(), "upstream's loop never ran, so the shim never fed it"
+    seen = json.loads(ticks.read_text())
+    assert seen and all(len(v) == 7 for v in seen), "seven floats, every tick"
+
+
+def test_a_slow_boot_is_not_mistaken_for_a_missing_shim(tmp_path: Path) -> None:
+    """The watchdog was a fixed 20 s covering onnxruntime, the Feetech bus, a hard two second
+    settle and the IMU on a 512 MB Pi with a cold page cache — and it exits with os._exit
+    into fourteen energised servos."""
+    script = _fake_runtime(tmp_path, boot_delay=1.5)
+    proc = _serve_in_subprocess(tmp_path, script, "6")
+    try:
+        time.sleep(4.0)
+        assert proc.poll() is None, "a boot slower than half the budget must not be killed"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=15)
+
+
+async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) -> None:
+    """The one real-socket test moved for exactly DEADMAN_S, so `vx == 0` at the end passed
+    whether the verb's own stop landed or the client had simply starved the deadman. Sample
+    the age *while* it walks instead, and require real margin rather than a survivable miss."""
+    core = daemon.BridgeCore(capabilities={"camera": False, "speaker": False})
+    server = daemon.Server(core, "127.0.0.1", 0)
+    server.start()
+    try:
+        adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
+        manifest = await adapter.connect()
+        ex = Executor(
+            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
+        )
+        ages: list[int] = []
+
+        async def sample() -> None:
+            # Only once the duck is actually being driven. Before the first command the age
+            # is measured from connect, which says nothing about how the verb feeds it.
+            start_seq = core.snapshot.seq
+            while True:
+                if core.snapshot.seq > start_seq:
+                    ages.append(core.state()["command_age_ms"])
+                await asyncio.sleep(0.02)
+
+        watcher = asyncio.create_task(sample())
+        assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 1.0})).ok
+        watcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher
+
+        assert len(ages) > 20, "the sampler has to have actually looked"
+        worst = max(ages)
+        budget = core.deadman_s * 1000
+        assert worst < budget * 0.5, (
+            f"the worst command age was {worst} ms against a {budget:.0f} ms deadman; "
+            "the client is not feeding it with margin"
+        )
+        await adapter.disconnect()
+    finally:
+        server.stop()
+        server.join(timeout=2)

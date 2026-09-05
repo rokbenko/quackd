@@ -78,6 +78,11 @@ CAMERA_TIMEOUT_S = 1.0
 #: A frame older than this is not steering material. camd expires its own frames sooner; this
 #: is the client's backstop for a camera server that does not stamp them at all.
 CAMERA_STALE_AFTER_S = 2.0
+#: The deadman window quackd will drive behind. Below two command intervals it trips on
+#: ordinary jitter; above this it stops firing before quackd's own 0.5 s heartbeat, so the
+#: laptop would notice the link was gone before the robot did.
+DEADMAN_MIN_MS = 200
+DEADMAN_MAX_MS = 500
 
 
 def parse_address(address: str) -> tuple[str, int]:
@@ -147,6 +152,8 @@ class OpenDuckBridge:
         self.safety: dict[str, Any] = {}
         #: Set when the bridge says it has no authentication but we sent a token anyway.
         self.auth_warning: str | None = None
+        #: The window the bridge said it enforces, or None if it claims no deadman at all.
+        self.deadman_ms: int | None = None
         #: Set when the read pump sees EOF. Without it every later request waited out the
         #: full timeout on a socket nobody was reading.
         self._closed = False
@@ -195,6 +202,20 @@ class OpenDuckBridge:
         self.bridge_version = self.hello.get("bridge_version")
         self.runtime_commit = (self.hello.get("runtime") or {}).get("commit")
         self.safety = dict(self.hello.get("safety") or {})
+        # upstream_api.COMMAND_TTL states the invariant this implements: "the manifest claims
+        # a deadman only when a bridge says it has one". It was a hardcoded True.
+        window = self.safety.get("deadman_ms")
+        self.deadman_ms = int(window) if window is not None else None
+        if self.deadman_ms is not None and not (
+            DEADMAN_MIN_MS <= self.deadman_ms <= DEADMAN_MAX_MS
+        ):
+            await self.close()
+            raise TransportError(
+                f"the bridge reports a {self.deadman_ms} ms deadman, which is outside the "
+                f"{DEADMAN_MIN_MS}-{DEADMAN_MAX_MS} ms quackd can drive safely. Below that it "
+                "trips on ordinary jitter; above it, it no longer fires before quackd's own "
+                "0.5 s heartbeat. Fix --deadman-ms on the robot."
+            )
         # A bridge that accepted our token without checking one is indistinguishable from a
         # bridge that checked it, which is exactly how an unreadable token file left
         # authentication silently off while four places in the docs promised it was on.

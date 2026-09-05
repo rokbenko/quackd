@@ -146,17 +146,49 @@ without moving, which is a perfectly good first result and the one to prefer. On
 
 ## 8. Walk in place, feet still off the ground
 
-Watch `loop_hz` while it runs, either in a second terminal with
-`quackd doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871` or in the run's own
-`report_state`. Anything below 35 Hz fails the heartbeat on purpose, because a starved Pi
-walks badly with no other symptom.
+This is the first thing that moves a leg. `--provider fake` has no script for a free-form
+goal, so this one needs a real model:
+
+```bash
+quackd run --goal "walk in place with small forward steps, do not turn, then stop" \
+    --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+    --provider anthropic --max-steps 6
+```
+
+Watch `loop_hz` in the run's own `report_state`. Anything below 35 Hz fails the heartbeat on
+purpose, because a starved Pi walks badly with no other symptom — and a *paused* policy
+reports about 10 Hz, which quackd now names as a pause rather than blaming the CPU.
+
+Read it from the run, not from a second `quackd doctor` in another terminal: a second client
+is fine to have connected, but the run's own state is what the pilot is acting on.
+
+> Abort if the gait is visibly stuttering. That is the deadman tripping, and step 5 is where
+> you find out why.
 
 ## 9. Test the deadman before you need it
 
 With the duck walking in place on the stand, pull your laptop's Wi-Fi.
 
-> The duck must stop within about a third of a second. **An untested deadman is not a
-> deadman.** Do not go to step 10 until you have seen this work.
+> The duck must stop within about a third of a second — the window `doctor` printed at step
+> 4, not necessarily 300 ms. **An untested deadman is not a deadman.** Do not go to step 10
+> until you have seen this work.
+
+Then test the other shutdown, still on the stand. With it walking in place:
+
+```bash
+sudo systemctl stop quackd-duck-bridge
+```
+
+> The duck must decelerate to a stand over about half a second, not freeze mid-stride. It
+> stays stiff afterwards: stopping the bridge does not de-energise anything, because
+> de-energising a standing duck drops it. The power switch is still the only e-stop.
+
+## 9b. Test the abort you will actually reach for
+
+Start the same walk again and press Ctrl-C.
+
+> The duck must stop within a tick, not at the end of the verb. Press it twice if you want
+> the process gone immediately.
 
 ## 10. Feet down
 

@@ -54,7 +54,10 @@ the walk policy is Apache-2.0.
   The manifest therefore says `deadman: true` with `native: none`, because the authority is
   our code, not a robot feature.
 - **Head control is off unless the daemon is started with it on**, and then clamped to 80
-  percent of the runtime's own range and rate limited to 1 rad/s. The range is not what
+  percent of the runtime's own range and rate limited to 1 rad/s, applied per elapsed
+  second inside the control loop. (Until 0.7 that limit was applied per *received message*
+  and scaled by the deadman window, which is not a rate: one `gaze` moved the head 0.3 rad
+  and stopped, while a 10 Hz sender got 3 rad/s.) The range is not what
   breaks a neck linkage; a step command arriving from a network at 10 Hz is. Whether the
   head slots do anything at all without upstream's mode button is UNVERIFIED, and quackd
   will not press that button to find out.

@@ -77,8 +77,12 @@ DEADMAN_S = 0.3
 #: does and the policy has seen it; a neck snapping to centre is not.
 HEAD_HOLDS_ON_DEADMAN = True
 #: Head targets move no faster than this, which is what protects the neck from a step
-#: command arriving over a network at 10 Hz.
+#: command arriving over a network at 10 Hz. Applied per elapsed second, in the control
+#: loop, because a limit expressed per received message is not a rate limit at all.
 HEAD_SLEW_RAD_S = 1.0
+#: The longest gap the slew will integrate over. Without it, a loop resuming after a stall
+#: would take one catch-up leap of exactly the size the limit exists to prevent.
+HEAD_SLEW_MAX_DT_S = 0.1
 #: Fraction of the runtime's head range quackd will use when head control is enabled.
 HEAD_SAFETY = 0.8
 #: How long one antenna gesture plays before the antennas return to rest, and how fast a
@@ -86,10 +90,20 @@ HEAD_SAFETY = 0.8
 #: shape in trigger space over time, and this is the only channel the bridge has to them.
 GESTURE_S = 1.0
 GESTURE_WIGGLE_HZ = 3.0
+#: Where a drooped antenna sits. Upstream maps -1..1 onto the servo with 0 as rest, so rest
+#: and droop were the same number until this existed. Short of -1 because nobody has watched
+#: these two 9 g servos hit their stop.
+DROOP_POSITION = -0.6
 #: If upstream never constructs our controller within this long, the loop is reading a real
 #: pad (or the class was renamed) while our socket does nothing. That is a duck moving for
 #: reasons its owner cannot see, so we exit instead.
-PATCH_WATCHDOG_S = 20.0
+#:
+#: The clock starts before `runpy`, so this window has to cover importing onnxruntime,
+#: building an InferenceSession, opening the Feetech bus, `RLWalk.start()` (which contains a
+#: hard two-second sleep) and constructing the IMU — on a 512 MB Pi Zero 2 W with a cold page
+#: cache. It was 20 s, which is a plausible way to lose a bring-up to a false positive, and
+#: `--patch-watchdog-s` exists because nobody here has measured the real number (up.LOOP_HEADROOM).
+PATCH_WATCHDOG_S = 150.0
 #: How long a shutdown waits after zeroing before it interrupts the loop. At 50 Hz that is
 #: ~25 ticks of zero velocity, which is enough for the walk policy to come to a stand rather
 #: than be killed mid-stride with torque on. Well inside the unit's TimeoutStopSec=8.
@@ -195,10 +209,19 @@ class BridgeCore:
         self.stopped_until = 0.0
         self.sounds: list[str] = []
         self.gestures: list[str] = []
-        self.greeted = False
         self._seq = 0
         self._last_tick: float | None = None
         self._gesture: tuple[str, float] | None = None
+        #: Where the head is being asked to go, and where the slew has actually got it to.
+        #: Two fields rather than one because the limit is a rate: the target arrives from
+        #: the network whenever a client feels like it, and the position moves in the
+        #: control loop, at a bounded speed, in the only place that knows how much time
+        #: has passed.
+        self.head_target: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        self.head_now: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        self._head_tick: float | None = None
+        #: So a deadman trip is logged once when it happens, rather than 50 times a second.
+        self._was_stale = False
 
     # ── what the control thread calls, once per tick ────────────────────────────────
 
@@ -217,7 +240,12 @@ class BridgeCore:
         if name == "perk":
             return (1.0, 1.0)
         if name == "droop":
-            return (0.0, 0.0)
+            # Upstream's Antennas.set_position takes -1..1 with 0 as rest, so returning 0.0
+            # commanded the exact resting position and `express(droop)` was a physical no-op
+            # that reported success. A physical trigger axis cannot produce a negative value,
+            # so this is a place quackd sends something a gamepad never could — recorded as
+            # ANTENNA_GESTURES in upstream_api.py.
+            return (DROOP_POSITION, DROOP_POSITION)
         phase = math.sin(2 * math.pi * GESTURE_WIGGLE_HZ * elapsed)
         return (0.5 + 0.35 * phase, 0.5 - 0.35 * phase)
 
@@ -235,8 +263,27 @@ class BridgeCore:
         self._last_tick = now
         self.ticks += 1
         snap = self.snapshot
+        # The head is a rate-limited servo of its own, stepped here rather than in `_apply`:
+        # the slew has to be per unit of time, and this is the only place that knows how much
+        # time has passed. See `_step_head`.
+        head = self._step_head(now)
+        # Evaluated every tick regardless of the deadman. An antenna gesture is not motion —
+        # two 9 g servos on a GPIO pin cannot move the robot — and `duck.antennas` does not
+        # refresh the command timestamp, so cancelling it on a stale command meant a gesture
+        # that arrived between two LLM turns (which is every gesture) never played at all,
+        # while `express` returned success.
+        triggers = self.triggers_for(now)
         stale = (now - snap.at) > self.deadman_s
         self.deadman_tripped = stale
+        if stale and not self._was_stale:
+            log.warning(
+                "deadman: no command for %.0f ms, velocities zeroed (tick %d)",
+                (now - snap.at) * 1000,
+                self.ticks,
+            )
+        elif self._was_stale and not stale:
+            log.info("deadman: commands are arriving again (tick %d)", self.ticks)
+        self._was_stale = stale
         if not stale and self.fallen is not True:
             return Snapshot(
                 seq=snap.seq,
@@ -244,14 +291,45 @@ class BridgeCore:
                 vx=snap.vx,
                 vy=snap.vy,
                 vyaw=snap.vyaw,
-                head=snap.head,
-                triggers=self.triggers_for(now),
+                head=head,
+                triggers=triggers,
             )
-        # zero the velocities and rest the antennas; hold the head, because a neck that
-        # snaps is the failure upstream warns about and a velocity dropping to zero is not
-        self._gesture = None
-        head = snap.head if HEAD_HOLDS_ON_DEADMAN else (0.0, 0.0, 0.0, 0.0)
-        return Snapshot(seq=snap.seq, at=snap.at, head=head)
+        # Zero the velocities; hold the head, because a neck that snaps is the failure
+        # upstream warns about and a velocity dropping to zero is not.
+        #
+        # "Hold" means do not re-centre it. It deliberately does NOT mean freeze it where it
+        # happens to be: a head command is a *position*, already clamped, and letting it
+        # finish travelling there at the rate limit is bounded and finite — unlike a
+        # velocity, which would mean walking forever. Freezing it instead meant `gaze` could
+        # never reach a target more than one deadman window away (0.3 rad at 1 rad/s), which
+        # is most of this neck's travel, so the verb reported an angle the head never took.
+        # `duck.stop` still pins the target, because a stop should stop everything.
+        if not HEAD_HOLDS_ON_DEADMAN:
+            self.head_target = (0.0, 0.0, 0.0, 0.0)
+        return Snapshot(seq=snap.seq, at=snap.at, head=head, triggers=triggers)
+
+    def _step_head(self, now: float) -> tuple[float, float, float, float]:
+        """Move the head toward its target at no more than HEAD_SLEW_RAD_S.
+
+        This used to live in `_apply`, where the step was `HEAD_SLEW_RAD_S * self.deadman_s`
+        applied once per *received message*. Two things were wrong with that. A single `gaze`
+        sends exactly one message, so the head moved 0.3 rad once and stopped — short of a
+        target the verb then reported as reached. And a faster sender bypassed the limit
+        entirely: at 10 Hz the same constant is 3 rad/s on the joint it exists to protect,
+        and a burst of buffered commands is unbounded. Time is the only honest denominator."""
+        if self._head_tick is None:
+            self._head_tick = now
+            return self.head_now
+        dt = max(0.0, now - self._head_tick)
+        self._head_tick = now
+        # a resumed stall must not become one catch-up leap
+        step = HEAD_SLEW_RAD_S * min(dt, HEAD_SLEW_MAX_DT_S)
+        moved = tuple(
+            max(current - step, min(current + step, target))
+            for current, target in zip(self.head_now, self.head_target, strict=True)
+        )
+        self.head_now = (moved[0], moved[1], moved[2], moved[3])
+        return self.head_now
 
     # ── the protocol ────────────────────────────────────────────────────────────────
 
@@ -283,10 +361,14 @@ class BridgeCore:
                 return self._err(
                     msg_id, 2, "bad or missing token; see the bridge's token file"
                 ), False
-            self.greeted = True
+            log.info("client authenticated (auth: %s)", "token" if self.token else "none")
             return self._ok(msg_id, self.hello()), True
 
-        if not self.greeted or (self.token is not None and not authed):
+        # `authed` is per connection. This used to also consult a `greeted` flag that lived
+        # on the core, so once *any* client had said hello, a second connection could send
+        # `duck.command` without a handshake at all — skipping the protocol and version
+        # checks on a socket that walks a robot.
+        if not authed:
             return self._err(msg_id, 2, "say duck.hello first"), authed
 
         if method == "duck.command":
@@ -358,14 +440,18 @@ class BridgeCore:
             if epoch is None or int(epoch) < self.stop_epoch:
                 return
         snap = self.snapshot
-        head = list(snap.head)
+        # Only the target moves here. The position is stepped toward it by the control loop
+        # at a bounded rate (`_step_head`), which is the only place that knows how much time
+        # has passed — a step applied per received message is not a rate limit.
         if self.limits.head_enabled:
             asked = params.get("head") or {}
+            target = list(self.head_target)
             for i, name in enumerate(HEAD_ORDER):
                 if name in asked:
-                    target = clamp(float(asked[name]), head_bounds(name, self.limits.head_safety))
-                    step = HEAD_SLEW_RAD_S * self.deadman_s
-                    head[i] = max(head[i] - step, min(head[i] + step, target))
+                    target[i] = clamp(
+                        float(asked[name]), head_bounds(name, self.limits.head_safety)
+                    )
+            self.head_target = (target[0], target[1], target[2], target[3])
         self._seq += 1
         self.snapshot = Snapshot(
             seq=self._seq,
@@ -373,7 +459,7 @@ class BridgeCore:
             vx=clamp(float(params.get("vx", 0.0)), self.limits.vx),
             vy=clamp(float(params.get("vy", 0.0)), self.limits.vy),
             vyaw=clamp(float(params.get("vyaw", 0.0)), self.limits.vyaw),
-            head=(head[0], head[1], head[2], head[3]),
+            head=self.head_now,
             triggers=snap.triggers,
         )
 
@@ -383,7 +469,10 @@ class BridgeCore:
         self.stop_epoch += 1
         self.stopped_until = self.now() + self.stop_latch_s
         self._gesture = None
-        self.snapshot = Snapshot(seq=self._seq, at=self.now(), head=self.snapshot.head)
+        # A stop must not leave the neck still travelling toward a target nobody asked for
+        # any more.
+        self.head_target = self.head_now
+        self.snapshot = Snapshot(seq=self._seq, at=self.now(), head=self.head_now)
 
     def hello(self) -> dict[str, Any]:
         return {
@@ -423,6 +512,9 @@ class BridgeCore:
             "ticks": self.ticks,
             "command_age_ms": int((self.now() - snap.at) * 1000),
             "tick_age_ms": self._tick_age_ms(),
+            "head": list(self.head_now),
+            "head_target": list(self.head_target),
+            "head_yaw_deg": math.degrees(self.head_now[HEAD_ORDER.index("head_yaw")]),
             "deadman_tripped": self.deadman_tripped,
             "stop_latched": self.now() < self.stopped_until,
             # so a client that missed a stop's reply can resynchronise from any state read
@@ -506,11 +598,20 @@ class _Buttons:
 
 def make_buttons() -> Any:
     """Prefer upstream's own Buttons so every attribute it reads exists, without calling a
-    constructor whose side effects we have not read."""
+    constructor whose side effects we have not read.
+
+    Subclassed rather than instantiated bare: `object.__new__(Buttons)` gave an object with
+    no `__getattr__`, so the net written so that "an attribute we did not anticipate must not
+    raise mid-stride" lived only on `_Buttons` — which is reached when `mini_bdx_runtime` is
+    absent, i.e. never on the robot. Nothing pins the owner's checkout to the commit we read,
+    so upstream adding a button its loop then reads would raise inside the 50 Hz loop."""
     try:
         from mini_bdx_runtime.buttons import Buttons  # type: ignore[import-not-found]
 
-        return object.__new__(Buttons)
+        class _SafeButtons(Buttons):  # type: ignore[misc, valid-type]
+            __getattr__ = _Buttons.__getattr__
+
+        return object.__new__(_SafeButtons)
     except Exception:
         return _Buttons()
 
@@ -618,9 +719,10 @@ class Server(threading.Thread):
 
     def _accept(self) -> None:
         try:
-            conn, _ = self._listener.accept()
+            conn, addr = self._listener.accept()
         except OSError:
             return
+        log.info("client connected from %s:%s", *addr[:2])
         conn.setblocking(False)
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._sel.register(conn, selectors.EVENT_READ, _Client(conn))
@@ -674,8 +776,8 @@ class Server(threading.Thread):
         #
         # Safe to be choosy: the immediate zero is a latency optimisation, and the deadman is
         # what actually guarantees a vanished pilot stops the duck 300 ms later.
+        log.info("client disconnected (it %s driving)", "was" if client.commanded else "was not")
         if client.commanded:
-            log.info("the commanding client disconnected; zeroing")
             self.core._zero()
         with contextlib.suppress(KeyError, ValueError):
             self._sel.unregister(client.conn)
@@ -793,17 +895,49 @@ def install_settle(
     return asked
 
 
-def watchdog(core: BridgeCore, seconds: float = PATCH_WATCHDOG_S) -> None:
+def watchdog(
+    core: BridgeCore, seconds: float = PATCH_WATCHDOG_S, server: Server | None = None
+) -> None:
+    """Exit if upstream never asks us for a controller.
+
+    Polled rather than slept in one go, so a slow boot reads as a slow boot in the journal
+    instead of as silence followed by a hard exit. `seconds <= 0` disables it."""
+    if seconds <= 0:
+        log.warning("the patch watchdog is disabled; a duck driven by a real pad will be silent")
+        return
+
     def check() -> None:
-        time.sleep(seconds)
-        if core.controller_built_at is None:
-            log.error(
-                "the walk loop never constructed our controller after %.0fs. It is reading a "
-                "real gamepad, or upstream renamed XBoxController. Refusing to keep a socket "
-                "open that controls nothing, and exiting.",
-                seconds,
-            )
-            os._exit(3)
+        started = time.monotonic()
+        warned = False
+        while core.controller_built_at is None:
+            waited = time.monotonic() - started
+            if waited >= seconds:
+                break
+            if not warned and waited >= seconds / 2:
+                warned = True
+                log.warning(
+                    "upstream has not asked for a controller after %.0fs of a %.0fs budget. "
+                    "That is normal on a cold Pi (onnxruntime, the servo bus, a two second "
+                    "settle); raise --patch-watchdog-s if your boot is slower than this.",
+                    waited,
+                    seconds,
+                )
+            time.sleep(1.0)
+        if core.controller_built_at is not None:
+            return
+        # Close the socket first: for the whole of this window a client could connect, be
+        # accepted, and believe it was driving something.
+        if server is not None:
+            with contextlib.suppress(Exception):
+                server.stop()
+        log.error(
+            "the walk loop never constructed our controller after %.0fs. Most likely it is "
+            "still starting up, in which case raise --patch-watchdog-s. Otherwise it is "
+            "reading a real gamepad, or upstream renamed XBoxController. Either way this "
+            "socket controls nothing, so exiting rather than pretending.",
+            seconds,
+        )
+        os._exit(3)
 
     threading.Thread(target=check, name="quackd-duck-bridge-watchdog", daemon=True).start()
 
@@ -852,6 +986,25 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
             "will be serving %s. Set that flag false and let camd have the device. See "
             "docs/adapters/open_duck.md.",
             args.camera_url,
+        )
+    # Narrowing these is the obvious first-power-on precaution; widening them past what
+    # upstream's own pad allows is not something quackd should quietly do on the owner's
+    # behalf. Refused rather than silently clamped, so the number in the unit is the number
+    # in force.
+    for name, asked, bound in (
+        ("--max-vx", args.max_vx, VX[1]),
+        ("--max-vy", args.max_vy, VY[1]),
+        ("--max-vyaw", args.max_vyaw, VYAW[1]),
+    ):
+        if abs(asked) > bound + 1e-9:
+            raise SystemExit(
+                f"{name}={asked} is above the runtime's own clamp of {bound}. quackd never "
+                "asks this robot for more than its own gamepad could."
+            )
+    if not 0.0 < args.head_safety <= 1.0:
+        raise SystemExit(
+            f"--head-safety={args.head_safety} must be in (0, 1]: it is the fraction of "
+            "upstream's head range quackd will use, not a multiplier on it."
         )
     limits = Limits(
         vx=(-abs(args.max_vx), abs(args.max_vx)),
@@ -962,6 +1115,13 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--head-safety", type=float, default=HEAD_SAFETY)
     p.add_argument(
+        "--patch-watchdog-s",
+        type=float,
+        default=PATCH_WATCHDOG_S,
+        help="how long upstream may take to ask for a controller before this gives up. It "
+        "covers onnxruntime, the servo bus and a two second settle on a cold Pi. 0 disables",
+    )
+    p.add_argument(
         "--settle-s",
         type=float,
         default=SETTLE_S,
@@ -1039,7 +1199,7 @@ def main(argv: list[str] | None = None) -> int:
         script = os.path.abspath(os.path.expanduser(args.script))
         workdir = script_workdir(args)
         install_shim(core)
-        watchdog(core)
+        watchdog(core, args.patch_watchdog_s, server)
         # Upstream opens its motion data and its sounds by relative path, so the loop has to
         # run from the script's own directory. Doing it here as well as in the unit means a
         # hand-edited or hand-run invocation cannot get it wrong.

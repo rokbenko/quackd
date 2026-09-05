@@ -4,8 +4,12 @@ Documentation=https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_du
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/dev/ttyACM0
-StartLimitIntervalSec=120
-StartLimitBurst=3
+# No start rate limit. With Restart=no below, the only thing a burst limit could
+# throttle is a human editing paths and trying again — and bring-up is exactly that
+# loop. It used to be 3 in 120 s, so the fourth `systemctl start` failed with an
+# error about none of the problems being debugged and needed `reset-failed`, which
+# appeared nowhere in the docs.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

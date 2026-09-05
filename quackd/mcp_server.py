@@ -26,7 +26,7 @@ from quackd.adapters.base import adapter_name, backend_name
 from quackd.adapters.manifest import RobotManifest
 from quackd.agent.transcript import png_bytes
 from quackd.duckfile.parser import DuckParseError, load_duck
-from quackd.duckfile.schema import DuckFile
+from quackd.duckfile.schema import Budgets, DuckFile
 from quackd.duckfile.validate import validate_duck
 from quackd.memory import RobotMemory
 from quackd.perception import detector_for
@@ -146,11 +146,19 @@ class RobotSession:
         way out of one: a pilot that had spent its steps, or been refused a verb, could load
         a wider duck and start counting from zero. The limits become the new contract's. The
         steps, the llm calls, the clock and the failure tallies stay the session's."""
+        # "First contract" used to be spelled `budget is None`, which stopped being true when
+        # a contractless session gained a default budget of its own. Ask the question
+        # directly: it is the first if no duck has been adopted yet.
+        first = self.duck is None
         spent = self.executor.budget
         self.duck = duck
         self.executor.contract = duck.frontmatter
         self.executor.budget = Budget(duck.frontmatter.budgets, now=self.transport.now)
-        if spent is None:  # the first contract of the session, from --duck or the first load
+        if first or spent is None:
+            # The contract's budget is the task's, counted from when the task starts. The
+            # carry-over below exists to stop a *second* load refunding a spent budget, and
+            # applying it to the first would make "hello-world allows 5 steps" depend on
+            # whatever happened before the duck was loaded.
             self.executor.budget.start()
             self.executor.consecutive_failures.clear()
             return
@@ -453,10 +461,18 @@ def build_fleet_server(
             from quackd.perception.color_blob import ColorBlobDetector
 
             det = ColorBlobDetector()
+        # A session with no `.duck` has no contract, and used to have no Budget either — so
+        # `quackd serve-mcp --robot open_duck:bridge`, which is the setup this module's own
+        # docstring advertises, handed an MCP client unlimited, uncounted control of a
+        # physical biped. The default budget is generous; what matters is that it is finite
+        # and that the step count is visible. Loading a duck replaces it with the contract's.
+        budget = Budget(Budgets(), now=transport.now)
+        budget.start()
         executor = Executor(
             registry=reg,
             transport=transport,
             contract=None,
+            budget=budget,
             detector=det,
             dry_run=dry_run,
             confirm=allow_all if yes else deny_all,

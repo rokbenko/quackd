@@ -117,8 +117,14 @@ COMMAND_VECTOR = UpstreamRef(
     "VERIFIED",
     src(_PAD),
     "the seven floats the policy consumes every tick, in this order: metres per second, "
-    "radians per second, then four head angles in radians. The training environment's "
-    "sample_command in Open_Duck_Playground agrees element for element",
+    "radians per second, then four head values in radians. The training environment's "
+    "sample_command in Open_Duck_Playground agrees element for element. Re-read 2026-09-05: "
+    "the last four are OFFSETS, not absolute joint angles. The walk loop recomputes "
+    "motor_targets = init_pos + action * action_scale each tick and then does "
+    "motor_targets[5:9] = last_commands[3:] + motor_targets[5:9], so a head value is added "
+    "to wherever the policy is holding the head. They do not accumulate, because the base is "
+    "rebuilt every tick, but quackd clamping them to 80 percent of the joint range bounds an "
+    "offset rather than a joint",
 )
 COMMAND_RANGES = UpstreamRef(
     "vx +-0.15, vy +-0.2, vyaw +-1.0, neck_pitch -0.34..1.1, head_pitch -0.78..0.3, "
@@ -231,13 +237,40 @@ WALK_POLICY = UpstreamRef(
 # ── UNVERIFIED: what the bridge assumes, and what quackd does about it ───────────────────
 
 PAD_SUBSTITUTION = UpstreamRef(
-    "PAD_SUBSTITUTION",
-    "UNVERIFIED",
+    "from mini_bdx_runtime.xbox_controller import XBoxController",
+    "VERIFIED",
     src(_WALK),
-    "the bridge rebinds XBoxController before upstream's script module executes, so the "
-    "loop reads a network-fed command instead of a local pad. Upstream offers no such "
-    "integration point. The bridge refuses to serve if its factory was never called, so a "
-    "rename upstream is a loud failure rather than a duck moving for invisible reasons",
+    "read 2026-09-05: upstream uses the from-import form and constructs the class inside "
+    "RLWalk.__init__ under `if self.commands:`, which argparse defaults to true. The bridge "
+    "rebinds the module attribute before `runpy` executes the script, so the from-import "
+    "resolves to quackd's factory. Upstream still offers no integration point, so this "
+    "remains a substitution rather than an API: the bridge refuses to serve if its factory "
+    "was never called, and a test drives the real rebind against a fake runtime",
+)
+CONTROL_RATE_OF_READS = UpstreamRef(
+    "self.last_commands, self.buttons, lt, rt = self.xbox_controller.get_last_command()",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: called once per control-loop iteration at control_freq (50 Hz), not at "
+    "the separate command_freq of 20 Hz. This is what quackd measures its loop rate from, so "
+    "MIN_LOOP_HZ can be judged against 50. Note the call happens BEFORE upstream's pause "
+    "check, and a paused loop sleeps 0.1 s a tick, so a paused duck reports about 10 Hz",
+)
+SOUND_BUTTON = UpstreamRef(
+    "self.buttons.B.triggered",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: B plays a random sound, A toggles pause, X toggles the projector, LB "
+    "sets a phase-frequency factor and the dpad nudges a phase offset. quackd pulses only B, "
+    "and never A: pause is a toggle whose real state the bridge cannot read",
+)
+ANTENNA_TRIGGERS = UpstreamRef(
+    "self.antennas.set_position_left(right_trigger)",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop drives the antennas from the pad's trigger values, and "
+    "cross-wires them (left trigger to the right antenna). quackd's gestures are symmetric, "
+    "so the crossing does not change what they look like",
 )
 COMMAND_TTL = UpstreamRef(
     "COMMAND_TTL",
@@ -277,7 +310,10 @@ ANTENNA_GESTURES = UpstreamRef(
     "UNVERIFIED",
     src(f"{_PKG}/antennas.py"),
     "upstream exposes servo positions, not named gestures, so perk, droop and wiggle are "
-    "quackd's own vocabulary, turned into positions by the bridge",
+    "quackd's own vocabulary, turned into positions by the bridge. Antennas.set_position "
+    "accepts -1..1 with 0 as rest (read 2026-09-05), but a physical trigger axis only "
+    "produces 0..1 — so quackd's droop sends a negative value upstream's own pad never "
+    "could. Whether the runtime passes it through unclamped is the part nobody has checked",
 )
 LOOP_HEADROOM = UpstreamRef(
     "LOOP_HEADROOM",

@@ -37,6 +37,20 @@ say "checking the robot's own runtime"
 
 say "checking that nothing else owns the serial bus"
 [ -e "$PORT_DEV" ] || die "$PORT_DEV is missing. Is the servo board plugged in and powered?"
+# USB CDC device numbers are assignment-ordered, not stable: anything that enumerates ahead
+# of the servo board - a USB serial console left plugged in, or the board itself
+# re-enumerating after a brownout - makes it ttyACM1, and the unit's ConditionPathExists then
+# silently skips the service or upstream opens the wrong device.
+if [ "$(ls /dev/ttyACM* 2>/dev/null | wc -l)" -gt 1 ]; then
+  warn "more than one /dev/ttyACM* is present, so $PORT_DEV is not a stable name for the
+  servo board. Find its by-id path and use that:
+      ls -l /dev/serial/by-id/
+  then set PORT_DEV=... and edit ConditionPathExists= in the unit to match."
+fi
+if [ -d /dev/serial/by-id ]; then
+  printf 'stable names for what is plugged in now:\n'
+  ls -l /dev/serial/by-id/ 2>/dev/null | sed 's/^/  /'
+fi
 [ -r "$PORT_DEV" ] || die "$PORT_DEV is not readable by you. sudo usermod -aG dialout $USER, then log out and in."
 if pgrep -f 'v2_rl_walk_mujoco.py' >/dev/null; then
   die "upstream's walk script is already running. The Feetech bus has exactly one owner,
