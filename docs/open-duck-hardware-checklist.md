@@ -4,9 +4,15 @@ Nobody has run quackd against a physical Open Duck Mini v2. If you have one, thi
 the order to do it in. Every step has an abort condition, and they are ordered so that the
 duck's feet do not touch the ground until step 10.
 
-**Before anything else.** This robot has no get-up-after-fall policy. If it goes over, quackd
-cannot recover it and every verb that moves it will refuse until you pick it up. Work with
-the duck on a stand, keep a hand near the power switch, and do not skip the stand.
+**Before anything else.** This robot has no get-up-after-fall policy, **and nothing detects a
+fall.** The bridge does not read the IMU — that bus has one owner, and it is upstream's own
+loop — so `posture` reads `unknown` whether the duck is upright or on its side, and no verb
+refuses because it has gone over. **You are the fall detector.** Work with the duck on a
+stand, keep a hand near the power switch, and do not skip the stand.
+
+quackd says this about itself rather than leaving you to find out: every observation the
+pilot sees carries `fall-blind`, `quackd doctor` prints it, and the first run that could move
+a leg on a fall-blind robot asks you to confirm you are watching before it starts.
 
 ## 1. Upstream's own teleop works first
 

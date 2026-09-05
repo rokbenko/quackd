@@ -66,6 +66,14 @@ say "checking upstream's motion data is where its loop will look"
   by relative path from that directory, inside RLWalk.__init__ and *after* it has powered
   the servos, so a missing one is a traceback over fourteen energised joints."
 
+say "checking the walk policy is not paused on boot"
+if grep -q '"start_paused"[[:space:]]*:[[:space:]]*true' "$DUCK_CONFIG" 2>/dev/null; then
+  die "duck_config.json has start_paused true. quackd cannot release it: upstream toggles
+  pause on its gamepad's A button and the bridge replaces that pad, so a bridge started
+  paused can never walk — and the paused loop runs at about 10 Hz, which quackd's heartbeat
+  reports as a starved Pi. Set start_paused false in $DUCK_CONFIG."
+fi
+
 say "checking who owns the camera"
 if grep -q '"camera"[[:space:]]*:[[:space:]]*true' "$DUCK_CONFIG" 2>/dev/null; then
   warn "duck_config.json has expression_features.camera true, so the robot's own runtime
@@ -105,12 +113,27 @@ sudo install -m 0755 -D "$HERE/quackd_duck_bridge.py" /opt/quackd/quackd_duck_br
 sudo install -m 0755 -D "$HERE/quackd_duck_camd.py" /opt/quackd/quackd_duck_camd.py
 
 say "generating a token"
-if [ ! -f "$TOKEN_FILE" ]; then
-  sudo install -d -m 0700 "$(dirname "$TOKEN_FILE")"
+# `[ ! -f ]` ran unprivileged against a root-only directory, so it was fail-open: every
+# re-run of this script silently rotated a live token and locked out the laptop that had the
+# old one. `sudo test -f` actually looks.
+if ! sudo test -f "$TOKEN_FILE"; then
+  sudo install -d -m 0750 "$(dirname "$TOKEN_FILE")"
   openssl rand -hex 32 | sudo tee "$TOKEN_FILE" >/dev/null
-  sudo chmod 600 "$TOKEN_FILE"
   printf 'wrote a new token to %s\n' "$TOKEN_FILE"
+else
+  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
 fi
+# The service has to be able to read it. Installed 0600 root:root inside a 0700 root
+# directory, it could not: os.path.exists() swallowed the EACCES, the bridge started with no
+# token, and the handshake then accepted every client while four places in the docs promised
+# otherwise. Group-read for the service user, and verified rather than assumed.
+sudo chgrp "$SVC_USER" "$(dirname "$TOKEN_FILE")" "$TOKEN_FILE"
+sudo chmod 0750 "$(dirname "$TOKEN_FILE")"
+sudo chmod 0640 "$TOKEN_FILE"
+sudo -u "$SVC_USER" test -r "$TOKEN_FILE" || die "$SVC_USER still cannot read $TOKEN_FILE.
+  The bridge refuses to start rather than run with authentication silently disabled, so fix
+  the ownership before starting it."
+printf '%s can read the token\n' "$SVC_USER"
 
 # The shipped units are valid systemd files with pi's paths in them, so they can be read and
 # reasoned about on their own. What gets installed is those files with your user, your venv,

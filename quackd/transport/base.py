@@ -63,6 +63,15 @@ class DuckState(BaseModel):
         parts = [f"posture={self.posture}", f"policy={self.policy}"]
         if self.fallen:
             parts.append("FALLEN")
+        # An unchanging `posture=unknown` reads as "no news". It is not: on a backend where
+        # nothing watches for falls, `fallen=False` is silence, and a pilot told elsewhere
+        # that moving verbs refuse when it is down will read an accepted move as proof it is
+        # upright. Say so in every observation instead. Backends that always know (the
+        # simulator, the mock) set no such key and are unchanged.
+        if self.extras.get("fall_detection") is False:
+            parts.append("fall-blind=nothing-detects-falls")
+        if self.extras.get("state_stale"):
+            parts.append("state=UNREADABLE")
         if self.battery_percent is not None:
             parts.append(f"battery={self.battery_percent:.0f}%")
         if self.holding:

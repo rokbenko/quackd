@@ -11,6 +11,10 @@ StartLimitBurst=3
 Type=simple
 User=pi
 SupplementaryGroups=dialout i2c audio video
+# The bridge reads /etc/quackd/duck-bridge.token as this user and REFUSES TO START if
+# it exists but cannot be read, rather than running with authentication silently off.
+# install.sh group-owns it to this user and verifies that; if you installed by hand,
+# make sure this user can read it (or use LoadCredential= and --token-file=%d/...).
 # scripts/, not the repository root. Upstream's walk script opens
 # "./polynomial_coefficients.pkl" and "../mini_bdx_runtime/assets/" relative to the working
 # directory, and both only resolve from here. The bridge chdir's here itself as well, so a

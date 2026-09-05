@@ -114,18 +114,24 @@ def _probe(
     from quackd.adapters.factory import make_adapter, parse_robot_spec
     from quackd.transport.base import TransportError
 
-    async def go() -> tuple[Any, Any, dict[str, Any] | None]:
+    async def go() -> tuple[Any, Any, dict[str, Any] | None, dict[str, Any]]:
         adapter = make_adapter(
             parse_robot_spec(robot), address=address, camera_url=camera_url, token=token
         )
         live = await adapter.connect()
+        transport = getattr(adapter, "transport", None)
+        # What the robot says about its own guarantees, rather than what quackd's static
+        # description claims on its behalf. This is the checklist's go/no-go gate, so a
+        # deadman window or an absent token has to be visible here.
+        told: dict[str, Any] = dict(getattr(transport, "safety", None) or {})
+        if warning := getattr(transport, "auth_warning", None):
+            told["auth_warning"] = warning
         try:
             health = await adapter.health()
             # A camera URL that nothing checks is a camera URL that fails mid-run. doctor used
             # to accept --camera-url, hand it to the transport and never ask for a frame, so a
             # typo'd or unreachable snapshot server passed here and failed at the first observe.
             camera: dict[str, Any] | None = None
-            transport = getattr(adapter, "transport", None)
             probe = getattr(transport, "camera_health", None)
             # Only report on a camera the adapter actually reads. `camera_url` is accepted and
             # ignored by reachy_mini, lerobot and rosbridge, and gating their verdict on a
@@ -141,12 +147,12 @@ def _probe(
                     frame = await adapter.get_frame()
                 camera = dict(probe())
                 camera["frame"] = f"{frame.width}x{frame.height}" if frame is not None else None
-            return live, health, camera
+            return live, health, camera, told
         finally:
             await adapter.disconnect()
 
     try:
-        live, health, camera = asyncio.run(go())
+        live, health, camera, told = asyncio.run(go())
     except (TransportError, OSError) as e:
         console.print(f"[red]{robot} at {address}: {escape(str(e))}[/red]")
         return False
@@ -167,6 +173,20 @@ def _probe(
         t.add_row("  beyond the description", f"[green]{', '.join(gained)}[/green]")
     for key, value in (live.extras.get("expression_features") or {}).items():
         t.add_row(f"  {key}", "[green]yes[/green]" if value else "[dim]no[/dim]")
+    if told:
+        # What the robot says about its own guarantees, not what quackd's static description
+        # claims on its behalf. The deadman window is a free parameter and whether there is a
+        # token at all is the difference between the documented setup and an open port, so
+        # both belong in front of the operator at the checklist's go/no-go gate.
+        t.add_row("safety", "[dim]as this bridge reported it[/dim]")
+        for key in ("deadman_ms", "auth", "fall_detection", "getup_policy", "estop"):
+            if key in told:
+                reported = told[key]
+                worrying = (key == "auth" and reported == "none") or (
+                    key in ("fall_detection", "getup_policy") and reported is False
+                )
+                shown = str(reported)
+                t.add_row(f"  {key}", f"[yellow]{shown}[/yellow]" if worrying else shown)
     camera_ok = True
     if camera is not None:
         frame = camera.get("frame")
@@ -188,6 +208,14 @@ def _probe(
         console.print(
             "[yellow]--camera-url was given but no frame came back, so observe, go_to, "
             "search_scan and approach_and cannot see anything on this run[/yellow]"
+        )
+    if warning := told.get("auth_warning"):
+        console.print(f"[yellow]{escape(str(warning))}[/yellow]")
+    if told.get("fall_detection") is False:
+        console.print(
+            "[yellow]nothing on this robot detects a fall, so posture never becomes "
+            "'fallen' and no verb refuses because it is down. You are the fall "
+            "detector: keep it on a stand and watch it.[/yellow]"
         )
     return bool(health.ok) and camera_ok
 

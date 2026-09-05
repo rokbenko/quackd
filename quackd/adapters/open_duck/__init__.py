@@ -233,17 +233,24 @@ class OpenDuckAdapter:
         return await self.transport.send_intent(intent)
 
     async def health(self) -> Health:
+        failure: str | None = None
         try:
             await self.transport.heartbeat()
         except HeartbeatError as e:
-            return Health(ok=False, reason=str(e))
+            failure = str(e)
+        # The state is read either way. Returning `Health(ok=False, reason=...)` with no
+        # extras meant `doctor` printed the heartbeat's complaint and suppressed every row
+        # that would have explained it — so a paused policy showed only "the Pi is starved".
         state = await self.transport.get_state()
         return Health(
-            ok=True,
+            ok=failure is None,
+            reason=failure,
             battery_percent=None,  # this robot reports no battery, on any backend
             extras={
                 "policy": state.policy,
                 "policy_running": state.extras.get("policy_running"),
+                "fall_detection": state.extras.get("fall_detection"),
+                "loop_hz": state.extras.get("loop_hz"),
                 "fallen": state.fallen,
             },
         )

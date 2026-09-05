@@ -723,3 +723,94 @@ async def test_a_second_move_right_after_a_stop_still_drives(daemon: ModuleType)
     finally:
         server.stop()
         server.join(timeout=2)
+
+
+# ── a paused policy, a wedged loop, and a token nobody can read ─────────────────────────
+
+
+def test_a_paused_policy_is_named_rather_than_blamed_on_the_pi(daemon: ModuleType) -> None:
+    """Upstream calls get_last_command() *before* its pause check and then sleeps 0.1 s a
+    tick, so a paused loop still ticks — at about 10 Hz. That tripped the heartbeat's
+    MIN_LOOP_HZ floor and killed the session in under a second with "the Pi is starved and
+    the gait is degrading", which is the wrong subsystem and the wrong remedy."""
+    core = daemon.BridgeCore()
+    core.paused = True
+    health = core.health()
+    assert health["healthy"] is False
+    assert health["paused"] is True
+    assert "paused" in health["reason"] and "start_paused" in health["reason"]
+    assert "A button" in health["reason"], "and it says why quackd cannot just unpause it"
+
+
+def test_serve_refuses_to_start_a_policy_it_could_never_release(
+    daemon: ModuleType, tmp_path
+) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "v2_rl_walk_mujoco.py").write_text("pass\n")
+    (scripts / "polynomial_coefficients.pkl").write_bytes(b"")
+    config = tmp_path / "duck_config.json"
+    config.write_text('{"start_paused": true, "expression_features": {}}')
+    code = daemon.main(
+        [
+            "serve",
+            "--script",
+            str(scripts / "v2_rl_walk_mujoco.py"),
+            "--duck-config",
+            str(config),
+            "--token-file",
+            str(tmp_path / "none"),
+            "--port",
+            "0",
+        ]
+    )
+    assert code == 2, "better not to start than to be diagnosed as a starved Pi all evening"
+
+
+def test_a_wedged_control_loop_stops_reporting_itself_healthy(daemon: ModuleType) -> None:
+    """loop_hz, ticks and _last_tick are all written by the control thread, so if it blocks
+    inside a Feetech read they freeze at whatever they were and the server thread keeps
+    answering "healthy, 50 Hz" forever — while the deadman, which lives in that same
+    function, cannot fire either. Only the clock keeps moving."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    controller = daemon.NetworkController(core)
+    hello(core)
+    for _ in range(5):
+        clock.t += 0.02
+        controller.get_last_command()
+    assert core.health()["healthy"] is True
+
+    clock.t += daemon.TICK_STALE_S + 0.05  # the loop stops calling us
+    health = core.health()
+    assert health["healthy"] is False
+    assert "not ticked" in health["reason"]
+    assert health["tick_age_ms"] >= int(daemon.TICK_STALE_S * 1000)
+
+
+def test_a_token_the_service_cannot_read_refuses_to_start(daemon: ModuleType, tmp_path) -> None:
+    """`os.path.exists()` returned False for a token behind a directory the service user
+    could not traverse, so the bridge started with authentication silently off — and from
+    the client's side that is indistinguishable from a bridge that checked its token."""
+    missing = tmp_path / "nope.token"
+    assert daemon.read_token(str(missing)) is None, "no file is honestly no token"
+
+    empty = tmp_path / "empty.token"
+    empty.write_text("   \n")
+    assert daemon.read_token(str(empty)) is None, "an empty token must not authenticate"
+
+    good = tmp_path / "good.token"
+    good.write_text("s3cret\n")
+    assert daemon.read_token(str(good)) == "s3cret"
+
+    unreadable = tmp_path / "unreadable"  # a directory where a file is expected: EISDIR
+    unreadable.mkdir()
+    with pytest.raises(SystemExit) as caught:
+        daemon.read_token(str(unreadable))
+    assert "silently disabled" in str(caught.value)
+
+
+def test_the_hello_says_whether_there_is_any_authentication(daemon: ModuleType) -> None:
+    assert daemon.BridgeCore().hello()["safety"]["auth"] == "none"
+    assert daemon.BridgeCore(token="s3cret").hello()["safety"]["auth"] == "token"
+    assert daemon.BridgeCore().hello()["safety"]["fall_detection"] is False

@@ -131,6 +131,14 @@ class OpenDuckBridge:
         #: from the stop's reply, and re-learned from any state read in case that reply was
         #: lost.
         self.stop_epoch = 0
+        #: The tick count at the previous heartbeat. A count that has not moved between two
+        #: beats means the control loop is wedged, which no rate can show: `loop_hz` is
+        #: written by that same thread and freezes with it.
+        self._last_ticks: int | None = None
+        #: The bridge's own `safety` block, as it reported it at connect.
+        self.safety: dict[str, Any] = {}
+        #: Set when the bridge says it has no authentication but we sent a token anyway.
+        self.auth_warning: str | None = None
         #: Set when the read pump sees EOF. Without it every later request waited out the
         #: full timeout on a socket nobody was reading.
         self._closed = False
@@ -173,6 +181,16 @@ class OpenDuckBridge:
         self.features = {k: bool(v) for k, v in caps.items()}
         self.bridge_version = self.hello.get("bridge_version")
         self.runtime_commit = (self.hello.get("runtime") or {}).get("commit")
+        self.safety = dict(self.hello.get("safety") or {})
+        # A bridge that accepted our token without checking one is indistinguishable from a
+        # bridge that checked it, which is exactly how an unreadable token file left
+        # authentication silently off while four places in the docs promised it was on.
+        if self.token and self.safety.get("auth") == "none":
+            self.auth_warning = (
+                "this bridge has no token configured, so the one you supplied was not "
+                "checked and anything that can reach this port can walk the duck. Check the "
+                "token file on the robot is readable by the service user."
+            )
         if not self.camera_url:
             self.camera_url = (self.hello.get("camera") or {}).get("url")
 
@@ -272,10 +290,19 @@ class OpenDuckBridge:
 
     async def get_state(self) -> DuckState:
         state = self._last_state
+        stale: str | None = None
         if state is None:
-            with contextlib.suppress(TransportError):
+            try:
                 result = await self.request(STATE)
                 state = result if isinstance(result, dict) else {}
+            except TransportError as e:
+                # Swallowed, but recorded. A failed state read must not take a run down — the
+                # heartbeat is what ends it — yet it must not be dressed up as a healthy duck
+                # either. Everything below would otherwise be invented: posture standing-ish,
+                # policy `stand`, a pose of exactly (0, 0, 0), and both preconditions passing
+                # on all of it, so quackd would start a `move` into a link that is not there.
+                stale = str(e)
+                state = {}
         state = state or {}
         # Resynchronise the stop epoch from any state read. If a stop's own reply were lost,
         # this client would keep sending an epoch the bridge has moved past and have every
@@ -295,12 +322,16 @@ class OpenDuckBridge:
             posture = "standing"
         else:
             posture = "unknown"
+        # This robot has no odometry, and the bridge sends no pose. Defaulting the three to
+        # 0.0 put `pose=(0.00, 0.00, 0.00 rad)` in front of the model on every single
+        # observation, unchanged after the duck had walked across a room. None is the honest
+        # answer and `summary()` omits it, which is what the Microduck transport already does.
         pose = state.get("pose") or {}
         return DuckState(
             t=self.now(),
-            x=float(pose.get("x", 0.0)),
-            y=float(pose.get("y", 0.0)),
-            theta=float(pose.get("theta", 0.0)),
+            x=_maybe_float(pose.get("x")),
+            y=_maybe_float(pose.get("y")),
+            theta=_maybe_float(pose.get("theta")),
             policy="walk" if state.get("moving") else "stand",
             posture=posture,
             fallen=fallen,
@@ -310,10 +341,12 @@ class OpenDuckBridge:
                 "policy_running": running,
                 "fall_detection": detects_falls,
                 "loop_hz": state.get("loop_hz"),
+                "tick_age_ms": state.get("tick_age_ms"),
                 "command_age_ms": state.get("command_age_ms"),
                 "deadman_tripped": state.get("deadman_tripped"),
                 "pad_override": state.get("pad_override"),
                 "stop_error": self.stop_error,
+                "state_stale": stale,
                 "assumptions": [up.FALL_SIGNAL.name, up.COMMAND_TTL.name],
             },
         )
@@ -393,6 +426,19 @@ class OpenDuckBridge:
             return
         if health.get("healthy") is False:
             raise HeartbeatError(f"the duck is unhealthy: {health.get('reason') or 'no reason'}")
+        # The loop has not ticked twice yet, so there is no rate to judge. This window used to
+        # abort a perfectly healthy duck during ONNX load and servo init, while the socket was
+        # already listening and answering.
+        if int(health.get("ticks") or 0) < 2:
+            return
+        # A stalled tick counter is the wedged-loop case: the rate below is written by the
+        # control thread, so it stays frozen at whatever it last was.
+        if self._last_ticks is not None and int(health["ticks"]) == self._last_ticks:
+            raise HeartbeatError(
+                f"the walk loop has not ticked between two heartbeats (still "
+                f"{health['ticks']} ticks); it is wedged, not slow"
+            )
+        self._last_ticks = int(health["ticks"])
         loop_hz = health.get("loop_hz")
         if loop_hz is not None and float(loop_hz) < MIN_LOOP_HZ:
             raise HeartbeatError(
@@ -422,6 +468,10 @@ class OpenDuckBridge:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
+
+
+def _maybe_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 def _ack(result: Any) -> Ack:

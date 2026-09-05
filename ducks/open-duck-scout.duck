@@ -44,9 +44,11 @@ Find the ball, walk up to it, and say where it is.
   1 rad/s, and asking for more is silently clamped.
 - You have no voice. `say` logs your text and plays the duck sound closest to its mood.
 - You cannot kick, pick anything up, or sit down. Those verbs do not exist for you.
-- **If you fall over, you cannot get back up.** There is no recovery policy on this robot.
-  Every verb that moves you will refuse until a human stands you up, so do not thrash: if
-  moving keeps failing, declare failure and say a human is needed.
+- **If you fall over, you cannot get back up.** There is no recovery policy on this robot,
+  and on real hardware nothing detects a fall either: your state says `fall-blind` and
+  `posture=unknown` whether you are upright or on your side. So an accepted `move` is not
+  evidence that you are standing. Do not thrash. If moving keeps failing, or what you see
+  stops making sense, stop, declare failure and say a human is needed.
 - If `search_scan` finds nothing twice in a row, declare failure rather than looping.
 
 ## Memory

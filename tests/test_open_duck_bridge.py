@@ -57,6 +57,9 @@ class FakeBridge:
         self.capabilities = FULL_DUCK if capabilities is None else capabilities
         self.healthy = healthy
         self.loop_hz = loop_hz
+        self.ticks = 0
+        self.safety: dict[str, Any] = {}
+        self.silent = False
         self.fallen = fallen
         self.token = token
         self.notifications: list[dict[str, Any]] = []
@@ -97,6 +100,8 @@ class FakeBridge:
                 continue
             self.requests.append(msg)
             method, params = msg["method"], msg.get("params") or {}
+            if self.silent:  # the socket is up and nothing comes back
+                continue
             result: Any
             if method == "duck.hello":
                 if self.token is not None and params.get("token") != self.token:
@@ -112,9 +117,15 @@ class FakeBridge:
                     "runtime": {"commit": "3203734", "dirty": False},
                     "capabilities": self.capabilities,
                     "camera": {"url": "http://127.0.0.1:9872/snapshot.jpg"},
+                    "safety": self.safety,
                 }
             elif method == "duck.health":
-                result = {"healthy": self.healthy, "loop_hz": self.loop_hz}
+                # `ticks` advances on every beat, because a real loop that is merely slow is
+                # still ticking. The client needs two beats before it will judge a rate at
+                # all (during ONNX load and servo init there is no rate yet), and a count
+                # that does not move is how a wedged loop is told from a slow one.
+                self.ticks += 7
+                result = {"healthy": self.healthy, "loop_hz": self.loop_hz, "ticks": self.ticks}
                 if not self.healthy:
                     result["reason"] = "the serial bus stopped answering"
             elif method == "duck.state":
@@ -403,5 +414,63 @@ async def test_the_token_can_come_from_the_environment(monkeypatch) -> None:
     t = OpenDuckBridge(fake.address)
     await t.connect()
     assert fake.requests[0]["params"]["token"] == "from-the-env"
+    await t.close()
+    await fake.stop()
+
+
+# ── an unreadable state, and a fall nobody is watching for ──────────────────────────────
+
+
+async def test_a_state_that_could_not_be_read_is_not_a_healthy_duck() -> None:
+    """The client used to suppress the error and return a default frame, so `fallen` was
+    False, `policy_running` was None, both preconditions passed, and quackd would start a
+    `move` into a link that was not there. `report_state` printed a pose of exactly
+    (0, 0, 0) for a robot that has no odometry at all."""
+    fake = FakeBridge()
+    await fake.start()
+    t = OpenDuckBridge(fake.address, request_timeout_s=0.2)
+    await t.connect()
+    fake.silent = True  # the socket is still up; nothing answers on it
+
+    state = await t.get_state()
+    assert state.extras["state_stale"], "a failed read is silence, not a verdict"
+    assert state.posture == "unknown"
+    assert "UNREADABLE" in state.summary()
+    assert state.x is None and state.y is None and state.theta is None
+
+    from quackd.adapters.open_duck.verbs import open_duck_conditions
+
+    for name, check in open_duck_conditions().items():
+        assert check(state) is not None, f"{name} must refuse on a state it could not read"
+    await t.close()
+    await fake.stop()
+
+
+async def test_a_fall_blind_duck_says_so_in_every_observation() -> None:
+    """`posture=unknown` on its own reads as "no news". It is not: nothing is watching, so
+    `fallen=False` is silence, and a pilot told that moving verbs refuse when it is down
+    would read an accepted move as proof that it is upright."""
+    fake = FakeBridge(fallen=None)  # the bridge cannot see falls at all
+    await fake.start()
+    t = OpenDuckBridge(fake.address)
+    await t.connect()
+    state = await t.get_state()
+    assert state.extras["fall_detection"] is False
+    assert "fall-blind" in state.summary()
+    assert state.posture == "unknown"
+    await t.close()
+    await fake.stop()
+
+
+async def test_a_bridge_with_no_token_says_so_when_one_was_sent() -> None:
+    """An unreadable token file left authentication off while the client happily sent one,
+    and nothing anywhere could tell the difference."""
+    fake = FakeBridge()
+    fake.safety = {"auth": "none", "deadman_ms": 300}
+    await fake.start()
+    t = OpenDuckBridge(fake.address, token="s3cret")
+    await t.connect()
+    assert t.safety["auth"] == "none"
+    assert t.auth_warning and "was not checked" in t.auth_warning
     await t.close()
     await fake.stop()

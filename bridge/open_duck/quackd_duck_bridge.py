@@ -94,6 +94,9 @@ PATCH_WATCHDOG_S = 20.0
 #: ~25 ticks of zero velocity, which is enough for the walk policy to come to a stand rather
 #: than be killed mid-stride with torque on. Well inside the unit's TimeoutStopSec=8.
 SETTLE_S = 0.5
+#: A loop that has not ticked for this long is wedged, not slow. Above one 20 ms period plus
+#: GC jitter, below quackd's own 0.5 s heartbeat, so the bridge notices first.
+TICK_STALE_S = 0.25
 
 log = logging.getLogger("quackd-duck-bridge")
 
@@ -224,8 +227,11 @@ class BridgeCore:
         now = self.now()
         if self._last_tick is not None:
             dt = now - self._last_tick
+            # Seeding the average from a single sample let one sub-millisecond first gap
+            # plant a four-figure rate that then took hundreds of ticks to decay.
             if dt > 0:
-                self.loop_hz = 0.9 * self.loop_hz + 0.1 * (1.0 / dt) if self.loop_hz else 1.0 / dt
+                sample = 1.0 / dt
+                self.loop_hz = 0.9 * self.loop_hz + 0.1 * sample if self.ticks > 1 else sample
         self._last_tick = now
         self.ticks += 1
         snap = self.snapshot
@@ -395,6 +401,11 @@ class BridgeCore:
                 "head_on_deadman": "hold",
                 "stop_is_limp": False,
                 "getup_policy": False,
+                "fall_detection": self.fallen is not None,
+                # The docs promise a token in four places. Saying which it actually is lets
+                # `check`, `doctor` and the client all see when there is none, instead of a
+                # missing token being indistinguishable from a working one.
+                "auth": "token" if self.token else "none",
                 "estop": "the power switch, and nothing else",
             },
         }
@@ -411,6 +422,7 @@ class BridgeCore:
             "loop_hz": round(self.loop_hz, 1),
             "ticks": self.ticks,
             "command_age_ms": int((self.now() - snap.at) * 1000),
+            "tick_age_ms": self._tick_age_ms(),
             "deadman_tripped": self.deadman_tripped,
             "stop_latched": self.now() < self.stopped_until,
             # so a client that missed a stop's reply can resynchronise from any state read
@@ -420,15 +432,39 @@ class BridgeCore:
             "unknowns": ["fall detection", "battery", "whether the pause took"],
         }
 
+    def _tick_age_ms(self) -> int | None:
+        return None if self._last_tick is None else int((self.now() - self._last_tick) * 1000)
+
     def health(self) -> dict[str, Any]:
         healthy = self.controller_built_at is not None
         reason = None if healthy else "the walk loop never asked for a controller"
+        # A wedged loop is invisible from a rate: loop_hz, ticks and _last_tick are all
+        # written by the control thread itself, so if it blocks inside a Feetech read the
+        # server thread keeps answering "healthy, 50.0 Hz" forever while the duck stands
+        # frozen with torque on — and the deadman, which lives in that same function, cannot
+        # fire either. The clock is the one thing that keeps moving. This buys a diagnosis
+        # and an abort, not a stop: nothing reaches a loop that is not reading.
+        age = self._tick_age_ms()
+        if healthy and age is not None and age > TICK_STALE_S * 1000:
+            healthy = False
+            reason = f"the walk loop has not ticked for {age / 1000:.2f}s"
+        if self.paused:
+            # Checked before the rate is reported, because a paused loop runs at ~10 Hz and
+            # would otherwise be diagnosed as a starved Pi.
+            healthy = False
+            reason = (
+                "the walk policy is paused (start_paused in duck_config.json). quackd cannot "
+                "unpause it: upstream's only unpause is its gamepad's A button, and the "
+                "bridge replaced that pad"
+            )
         if self.fallen is True:
             healthy, reason = False, "the duck is down and this robot has no get-up policy"
         return {
             "healthy": healthy,
             "reason": reason,
+            "paused": self.paused,
             "loop_hz": round(self.loop_hz, 1),
+            "tick_age_ms": age,
             "ticks": self.ticks,
         }
 
@@ -657,6 +693,37 @@ def read_duck_config(path: str) -> dict[str, Any]:
         return {}
 
 
+def read_token(path: str | None) -> str | None:
+    """The bridge's token, or None if it genuinely has none.
+
+    `os.path.exists()` was the wrong probe. The installer wrote the token 0600 root:root
+    inside a 0700 root:root directory while the unit ran as another user, so traversing it
+    raised EACCES, `exists()` swallowed that and returned False, and the bridge started with
+    authentication silently off — indistinguishable, from the client's side, from a bridge
+    that checked the token it was sent. Four places in the docs promise that token.
+
+    So: no file is no token, and the daemon says so. An unreadable file is a configuration
+    error and refuses to start. An empty one is not a token either — an empty string would
+    otherwise authenticate every client that sent nothing."""
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            token = fh.read().strip()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise SystemExit(
+            f"cannot read the token file {path}: {e}. The service user has to be able to "
+            "read it — check the owner and mode, or point --token-file somewhere it can. "
+            "Refusing to start with authentication silently disabled."
+        ) from e
+    if not token:
+        log.warning("%s is empty, so this bridge has no token at all", path)
+        return None
+    return token
+
+
 def capabilities_from(config: dict[str, Any]) -> dict[str, bool]:
     """A real duck is whatever its owner soldered, and duck_config.json is where it says so."""
     features = config.get("expression_features") or {}
@@ -793,10 +860,7 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         head_enabled=bool(args.enable_head),
         head_safety=args.head_safety,
     )
-    token = None
-    if args.token_file and os.path.exists(args.token_file):
-        with open(args.token_file, encoding="utf-8") as fh:
-            token = fh.read().strip()
+    token = read_token(args.token_file)
     core = BridgeCore(
         limits=limits,
         capabilities=caps,
@@ -927,6 +991,23 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if (problem := preflight(args)) is not None:
             log.error("%s", problem)
+            return 2
+        if core.paused:
+            # Refusing here is the whole fix. quackd cannot unpause: upstream toggles pause
+            # on its gamepad's A button and this process replaced that pad, so a bridge
+            # started paused can never walk. Worse, a paused loop sleeps 0.1 s a tick, so it
+            # reports ~10 Hz and quackd's heartbeat kills the session in under a second
+            # blaming a starved Pi. Better to not start than to be diagnosed wrong all
+            # evening. Deliberately not a `duck.resume` that blind-pulses A: it is a toggle,
+            # the bridge cannot read upstream's real pause bit, and a wrong guess starts a
+            # walk policy on a biped that cannot get up.
+            log.error(
+                "duck_config.json has start_paused true, so upstream's loop will sit in its "
+                "pause branch and quackd has no way to release it — the A button belongs to "
+                "the gamepad this bridge replaced. Set start_paused false in %s and start "
+                "again.",
+                args.duck_config,
+            )
             return 2
     if args.bind not in ("127.0.0.1", "localhost") and core.token is None:
         log.warning(

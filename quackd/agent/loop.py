@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -84,6 +85,10 @@ class RunConfig:
     memory: RobotMemory | None = None
     """What this robot remembers between runs. None = off: no `remember` tool, no
     episode written at the end, the prompt says nothing about earlier runs."""
+    acknowledge: Callable[[str], bool] | None = None
+    """Asked once, before the first leg moves, when the robot cannot see a fall and cannot
+    recover from one — so the only guard is the person in the room. None means nobody is
+    there to ask (MCP, tests), and the warning is logged instead of blocking."""
 
 
 @dataclass
@@ -206,6 +211,32 @@ class AgentLoop:
 
     # ── the loop ────────────────────────────────────────────────────────────────────
 
+    #: Verbs that can put the robot on the floor. A fall-blind robot only needs a human
+    #: watching if the task can actually make it walk.
+    _LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
+
+    async def _fall_blind_warning(self, registry: VerbRegistry, allow: list[str]) -> str | None:
+        """Why the human has to watch this one, or None if they do not.
+
+        Deliberately a one-time gate and not a precondition. On the Open Duck's bridge
+        backend `fall_detection` is a constant False — the IMU has one owner and it is
+        upstream's loop — so refusing per verb would refuse every locomotion verb forever
+        and decommission the robot. The Microduck is a different case: it goes blind and
+        comes back, and it has `stand_up`, so it keeps its per-call refusal and is not
+        gated here."""
+        if not any(registry.canonical(n) in self._LOCOMOTION for n in allow):
+            return None
+        if "stand_up" in registry:  # it can recover; being briefly blind is survivable
+            return None
+        state = await self.cfg.transport.get_state()
+        if state.extras.get("fall_detection") is not False:
+            return None
+        return (
+            "nothing on this robot detects a fall, and it has no way to get up. quackd will "
+            "not know it is down, no verb will refuse because it is, and this task can make "
+            "it walk. Keep it on a stand with a hand near the power switch, and watch it."
+        )
+
     async def run(self) -> RunResult:
         cfg = self.cfg
         # connect FIRST: an adapter answers with its manifest, and the vocabulary (tools,
@@ -243,6 +274,10 @@ class AgentLoop:
         if dropped:
             allow = [n for n in allow if n in registry]
             cfg.log(f"this robot does not have {', '.join(dropped)}; running without")
+        if (warning := await self._fall_blind_warning(registry, allow)) is not None:
+            cfg.log(warning)
+            if cfg.acknowledge is not None and not cfg.acknowledge(warning):
+                raise Aborted("nobody confirmed they were watching a robot that cannot see a fall")
         tools = registry.tool_schemas(allow) + META_TOOLS
         memory_text: str | None = None
         if cfg.memory is not None:

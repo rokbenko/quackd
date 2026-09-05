@@ -256,6 +256,12 @@ def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
     return typer.confirm(f"⚠️  run {name}({params})?", default=False)
 
 
+def _acknowledge_prompt(why: str) -> bool:
+    """Asked once, before anything moves, when the human is the only safety left."""
+    err_console.print(f"[yellow]⚠️  {why}[/yellow]")
+    return typer.confirm("Are you watching the robot right now?", default=False)
+
+
 def _run_impl(
     duckfile: str | None,
     goal: str | None,
@@ -399,6 +405,7 @@ def _run_impl(
         log=log,
         on_frame=recorder.capture if recorder is not None else None,
         memory=robot_memory,
+        acknowledge=None if yes else _acknowledge_prompt,
     )
     console.print(
         f"🦆 [bold]{duck.name}[/bold] · provider=[cyan]{llm.name}[/cyan] "
