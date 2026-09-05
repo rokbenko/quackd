@@ -151,6 +151,12 @@ class MicroduckAdapter:
     async def stop(self) -> None:
         await self.transport.stop()
 
+    @property
+    def stop_error(self) -> str | None:
+        """`jsonrpc` has recorded this since 0.6, but nothing could read it: `stop` in
+        `verbs/core.py` looks for it on the object it was handed, which is this adapter."""
+        return getattr(self.transport, "stop_error", None)
+
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)
 

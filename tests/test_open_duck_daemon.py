@@ -12,6 +12,7 @@ import asyncio
 import importlib.util
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 
@@ -519,3 +520,153 @@ def test_serve_refuses_before_it_binds_when_upstreams_data_is_not_there(
 
     missing = daemon.parser().parse_args(["serve", "--script", str(tmp_path / "nope.py")])
     assert "does not exist" in (daemon.preflight(missing) or "")
+
+
+# ── a stop has to outlive the commands already in flight ────────────────────────────────
+
+
+def test_a_stop_is_not_undone_by_the_next_command(daemon: ModuleType) -> None:
+    """`duck.stop` used to publish zeros and nothing else, so the very next `duck.command` —
+    one already in flight when the operator hit the brake, or the tail of a verb that had not
+    noticed yet — put the velocity straight back 100 ms later. `stopped_upto` was computed
+    for exactly this and then never read by anything."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    hello(core)
+
+    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    assert core.command_for_tick().vx == pytest.approx(0.1)
+
+    reply, _ = core.handle({"id": 9, "method": "duck.stop"}, authed=True)
+    assert reply["result"]["stopped"] is True
+    assert reply["result"]["latched_ms"] == int(core.deadman_s * 1000)
+
+    # the command that was already on the wire when the stop was sent
+    clock.t += 0.05
+    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    snap = core.command_for_tick()
+    assert snap.vx == 0.0, "a stop that lasts one tick is not a stop"
+    assert core.state()["stop_latched"] is True
+
+    # ...and it is a latch, not a mute: a deliberate command afterwards still drives
+    clock.t += core.stop_latch_s + 0.01
+    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    assert core.command_for_tick().vx == pytest.approx(0.1)
+    assert core.state()["stop_latched"] is False
+
+
+def test_a_stop_leaves_the_duck_stopped_even_with_nobody_commanding(daemon: ModuleType) -> None:
+    """Dropping the command rather than zeroing it leaves `snap.at` stale, so the deadman
+    keeps the duck down after the latch expires until something deliberately drives."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    hello(core)
+    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    core.handle({"id": 1, "method": "duck.stop"}, authed=True)
+    clock.t += 5.0
+    assert core.command_for_tick().vx == 0.0
+    assert core.deadman_tripped is True
+
+
+# ── only the client that was driving gets to stop the duck ──────────────────────────────
+
+
+def test_a_watching_client_does_not_stop_a_walking_duck(daemon: ModuleType) -> None:
+    """The hardware checklist tells the operator to run `quackd doctor` in a second terminal
+    while the duck walks, and doctor disconnects with a bare FIN. Zeroing on *any* drop cut
+    the velocity mid-stride, and looked exactly like the Wi-Fi latency step 5 warns about."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    server = daemon.Server(core, "127.0.0.1", 0)
+    try:
+        hello(core)
+        driver = daemon._Client(conn=_FakeConn(), commanded=True)
+        watcher = daemon._Client(conn=_FakeConn())
+
+        core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+        server._drop(watcher)
+        assert core.snapshot.vx == pytest.approx(0.1), "a watcher must not zero the duck"
+        assert core.state()["stop_latched"] is False
+
+        server._drop(driver)
+        assert core.snapshot.vx == 0.0, "the client that was driving must"
+    finally:
+        server.stop()
+
+
+class _FakeConn:
+    """Enough socket for `_drop`, which unregisters and closes."""
+
+    def close(self) -> None:
+        self.closed = True
+
+    def fileno(self) -> int:
+        return -1
+
+
+# ── shutting the bridge down must not topple it ─────────────────────────────────────────
+
+
+def test_a_shutdown_settles_the_duck_while_the_loop_is_still_running(daemon: ModuleType) -> None:
+    """There was no signal handling at all, so `systemctl stop` killed the interpreter between
+    two 20 ms ticks with the servos holding their last goal and torque on — a duck stopped
+    mid-stride topples with rigid legs. The `finally` in main() looked like it covered this
+    and did not: it runs after the loop has already exited, so its zeros had no reader."""
+    import signal as signal_module
+
+    signals = (signal_module.SIGTERM, signal_module.SIGINT)
+    previous = {s: signal_module.getsignal(s) for s in signals}
+    interrupted = threading.Event()
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    controller = daemon.NetworkController(core)
+    try:
+        daemon.install_settle(core, seconds=0.05, interrupt=interrupted.set)
+        hello(core)
+        core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+        assert controller.get_last_command()[0][0] == pytest.approx(0.1)
+
+        handler = signal_module.getsignal(signal_module.SIGTERM)
+        assert callable(handler)
+        handler(signal_module.SIGTERM, None)  # what systemctl stop delivers
+
+        # the loop is still ticking, and what it now reads is zero
+        for _ in range(5):
+            assert controller.get_last_command()[0][0] == 0.0
+        assert interrupted.wait(timeout=2.0), "the loop must then be asked to exit"
+    finally:
+        for sig, handler in previous.items():
+            signal_module.signal(sig, handler)
+
+
+async def test_a_stop_that_cannot_be_delivered_fails_the_verb(daemon: ModuleType) -> None:
+    """End to end, through the real client and the real adapter, which is where this broke.
+
+    `verbs/core.py` reads `stop_error` off the object it was handed — the adapter — and no
+    adapter forwarded it, so an undeliverable stop was recorded as `ok: true` with the words
+    "stopped (velocity zeroed)" in the transcript the hardware checklist asks people to
+    attach. The link being down is exactly when `stop` is asked for."""
+    core = daemon.BridgeCore(capabilities={"camera": False, "speaker": True})
+    server = daemon.Server(core, "127.0.0.1", 0)
+    server.start()
+    try:
+        adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
+        manifest = await adapter.connect()
+        ex = Executor(
+            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
+        )
+        assert (await ex.run_verb("stop")).ok
+        assert adapter.stop_error is None
+
+        server.stop()
+        server.join(timeout=2)
+        await asyncio.sleep(0.2)  # let the client's pump see the close
+
+        result = await ex.run_verb("stop")
+        assert not result.ok, "a stop that never left must not be reported as a stop"
+        assert "could not be delivered" in result.summary
+        assert adapter.stop_error, "and the adapter must carry the reason"
+        assert (await adapter.get_state()).extras["stop_error"] == adapter.stop_error
+    finally:
+        server.stop()
+        server.join(timeout=2)

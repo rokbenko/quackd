@@ -19,7 +19,7 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
-from quackd.transport.base import DuckState
+from quackd.transport.base import DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbRegistry, VerbResult
 
@@ -200,3 +200,73 @@ async def test_heartbeat_failure_stops_and_aborts() -> None:
     await hb.stop()
     assert transport.stops >= 1
     assert hb.failure is not None
+
+
+# ── the abort has to reach the verb that is already moving ──────────────────────────────
+
+
+async def test_an_abort_cancels_the_running_verb_and_stops(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """Setting the flag was never enough. `asyncio.wait_for` only watches the clock, so a
+    kill switch, a Ctrl-C or a failed heartbeat left the legs moving until the verb finished
+    on its own — up to a `go_to`'s whole timeout — and the verb's own 10 Hz resend kept
+    feeding the daemon's deadman the entire time, so nothing else stopped it either."""
+    # MockTransport.sleep advances a virtual clock and returns, so a normal `move` finishes
+    # before anything could interrupt it. A verb that takes real wall-clock time is the
+    # honest model of the closed loop this is about.
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(500):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(0.01)
+        return VerbResult.success("finished on its own")
+
+    registry.register(Verb("long_walk", "walks for a long time", long_walk, timeout_s=30))
+    ex = Executor(registry, mock_transport, contract=duck("long_walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    await asyncio.sleep(0.15)  # let it get going
+    assert len(mock_transport.intents_of("move")) >= 1
+
+    ex.abort.set()
+    with pytest.raises(Aborted):
+        await asyncio.wait_for(running, timeout=1.0)
+
+    assert mock_transport.intents[-1].kind == "stop", "the abort must leave a stop behind"
+    # and it must actually stop commanding, not merely have sent one stop on the way past
+    settled = len(mock_transport.intents_of("move"))
+    await asyncio.sleep(0.2)
+    assert len(mock_transport.intents_of("move")) == settled
+
+
+async def test_stop_still_runs_on_an_aborted_executor(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """The abort is set exactly when the pilot reaches for the brake — a failed heartbeat, a
+    kill switch — so refusing `stop` closed the panic button at the only moment it mattered.
+    Everything else stays refused."""
+    ex = Executor(registry, mock_transport, contract=duck("walk, stop").frontmatter)
+    ex.abort.set()
+
+    before = mock_transport.stops
+    result = await ex.run_verb("stop")
+    assert result.ok and mock_transport.stops == before + 1
+
+    with pytest.raises(Aborted):
+        await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+
+
+async def test_a_stop_that_never_left_is_not_reported_as_a_stop(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`stop` is asked for most often when the link is the thing that is wrong. The guard in
+    verbs/core.py reads `stop_error` off whatever it was handed, which in a real run is the
+    adapter — and no adapter forwarded it, so the check was dead everywhere and an
+    undeliverable stop was written into the transcript as a success."""
+    ex = Executor(registry, mock_transport, contract=duck("stop").frontmatter)
+    assert (await ex.run_verb("stop")).ok
+
+    mock_transport.stop_error = "duck.stop: no answer within 2s"
+    result = await ex.run_verb("stop")
+    assert not result.ok
+    assert "could not be delivered" in result.summary
+    assert "deadman" in result.summary

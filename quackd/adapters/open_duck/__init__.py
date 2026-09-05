@@ -254,6 +254,14 @@ class OpenDuckAdapter:
     async def stop(self) -> None:
         await self.transport.stop()
 
+    @property
+    def stop_error(self) -> str | None:
+        """Forwarded from the transport, because `stop` in `verbs/core.py` reads this off
+        whatever object it was handed — and what it is handed is the adapter, not the
+        transport underneath. Without the forward the check was dead on every backend, and a
+        stop that never left the laptop was recorded as one that had zeroed the legs."""
+        return getattr(self.transport, "stop_error", None)
+
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)
 

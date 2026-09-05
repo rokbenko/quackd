@@ -413,13 +413,18 @@ def _run_impl(
             f"[dim]memory: {m['notes']} notes, {m['episodes']} earlier runs "
             f"({m['path']}) · --no-memory to run fresh[/dim]"
         )
-    console.print("[dim]Ctrl-C or q stops the duck.[/dim]")
+    console.print("[dim]Ctrl-C or q stops the duck. Press it twice to quit at once.[/dim]")
+
+    def killed(msg: str) -> None:
+        """Always printed, unlike `log`, which is --verbose only. Someone who has just hit
+        Ctrl-C on a walking robot needs to see that it registered."""
+        err_console.print(f"[yellow]{msg}[/yellow]")
 
     async def main() -> Any:
         from quackd.agent.loop import AgentLoop
 
         loop = AgentLoop(cfg)
-        ks = KillSwitch(loop.executor.abort, log=log)
+        ks = KillSwitch(loop.executor.abort, log=killed)
         ks.install()
         try:
             return await loop.run()

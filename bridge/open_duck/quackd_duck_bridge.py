@@ -27,6 +27,7 @@ Nothing here has been run on a physical duck.
 
 from __future__ import annotations
 
+import _thread
 import argparse
 import contextlib
 import hmac
@@ -35,6 +36,7 @@ import logging
 import math
 import os
 import selectors
+import signal
 import socket
 import sys
 import threading
@@ -88,6 +90,10 @@ GESTURE_WIGGLE_HZ = 3.0
 #: pad (or the class was renamed) while our socket does nothing. That is a duck moving for
 #: reasons its owner cannot see, so we exit instead.
 PATCH_WATCHDOG_S = 20.0
+#: How long a shutdown waits after zeroing before it interrupts the loop. At 50 Hz that is
+#: ~25 ticks of zero velocity, which is enough for the walk policy to come to a stand rather
+#: than be killed mid-stride with torque on. Well inside the unit's TimeoutStopSec=8.
+SETTLE_S = 0.5
 
 log = logging.getLogger("quackd-duck-bridge")
 
@@ -172,6 +178,12 @@ class BridgeCore:
         self.ticks = 0
         self.deadman_tripped = False
         self.stopped_upto = 0
+        #: A stop holds the duck down for this long, rather than lasting one tick. See
+        #: `_zero()`. Sized at one deadman window: long enough to outlive the commands
+        #: already in flight when the stop was sent, short enough that a human who
+        #: deliberately drives again a moment later is not fighting it.
+        self.stop_latch_s = self.deadman_s
+        self.stopped_until = 0.0
         self.sounds: list[str] = []
         self.gestures: list[str] = []
         self.greeted = False
@@ -271,7 +283,15 @@ class BridgeCore:
         if method == "duck.stop":
             self._zero()
             return self._ok(
-                msg_id, {"stopped": True, "limp": False, "ignore_seq_upto": self._seq}
+                msg_id,
+                {
+                    "stopped": True,
+                    "limp": False,
+                    "ignore_seq_upto": self._seq,
+                    # how long commands will be dropped for, so a client can say honestly
+                    # that the stop holds rather than that zeros were published once
+                    "latched_ms": int(self.stop_latch_s * 1000),
+                },
             ), authed
         if method == "duck.state":
             return self._ok(msg_id, self.state()), authed
@@ -305,6 +325,14 @@ class BridgeCore:
         return self._err(msg_id, -32601, f"unknown method {method!r}"), authed
 
     def _apply(self, params: dict[str, Any]) -> None:
+        # A stop that lasts one tick is not a stop. `duck.stop` used to publish zeros and
+        # nothing more, so the very next `duck.command` — one already in flight when the
+        # operator hit the brake, or the tail of a verb that had not noticed yet — put the
+        # velocity straight back 100 ms later. Commands arriving inside the latch are
+        # dropped entirely, which also leaves `snap.at` stale, so the duck stays stopped
+        # until something deliberately drives it again.
+        if self.now() < self.stopped_until:
+            return
         snap = self.snapshot
         head = list(snap.head)
         if self.limits.head_enabled:
@@ -328,6 +356,7 @@ class BridgeCore:
     def _zero(self) -> None:
         self._seq += 1
         self.stopped_upto = self._seq
+        self.stopped_until = self.now() + self.stop_latch_s
         self._gesture = None
         self.snapshot = Snapshot(seq=self._seq, at=self.now(), head=self.snapshot.head)
 
@@ -364,6 +393,7 @@ class BridgeCore:
             "ticks": self.ticks,
             "command_age_ms": int((self.now() - snap.at) * 1000),
             "deadman_tripped": self.deadman_tripped,
+            "stop_latched": self.now() < self.stopped_until,
             "pad_override": False,
             "unknowns": ["fall detection", "battery", "whether the pause took"],
         }
@@ -489,6 +519,9 @@ class _Client:
     buf: bytes = b""
     authed: bool = False
     out: list[bytes] = field(default_factory=list)
+    #: Whether this connection has ever driven the duck. Only a client that was actually
+    #: commanding gets to zero it on the way out — see `Server._drop`.
+    commanded: bool = False
 
 
 class Server(threading.Thread):
@@ -538,6 +571,11 @@ class Server(threading.Thread):
         client: _Client = key.data
         try:
             data = client.conn.recv(8192)
+        except (BlockingIOError, InterruptedError):
+            # a spurious readability wakeup, not a closed socket. Reading it as EOF dropped a
+            # healthy control client and, before `_drop` learned who was driving, stopped the
+            # duck for it.
+            return
         except OSError:
             data = b""
         if not data:
@@ -556,6 +594,8 @@ class Server(threading.Thread):
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if msg.get("method") == "duck.command":
+                client.commanded = True
             reply, client.authed = self.core.handle(msg, authed=client.authed)
             if reply is not None:
                 self._send(client, reply)
@@ -568,8 +608,17 @@ class Server(threading.Thread):
             self._drop(client)
 
     def _drop(self, client: _Client) -> None:
-        # a control client that vanished must not leave the duck walking
-        self.core._zero()
+        # A control client that vanished must not leave the duck walking — but only a client
+        # that was actually driving. This used to zero on *any* disconnect, and the hardware
+        # checklist tells the operator to run `quackd doctor` from a second terminal while the
+        # duck walks, so following the instructions cut the velocity mid-stride and looked
+        # exactly like the Wi-Fi latency step 5 had just warned about.
+        #
+        # Safe to be choosy: the immediate zero is a latency optimisation, and the deadman is
+        # what actually guarantees a vanished pilot stops the duck 300 ms later.
+        if client.commanded:
+            log.info("the commanding client disconnected; zeroing")
+            self.core._zero()
         with contextlib.suppress(KeyError, ValueError):
             self._sel.unregister(client.conn)
         client.conn.close()
@@ -605,6 +654,54 @@ def install_shim(core: BridgeCore) -> None:
         return NetworkController(core, command_freq, only_head_control)
 
     xc.XBoxController = factory
+
+
+def install_settle(
+    core: BridgeCore,
+    seconds: float = SETTLE_S,
+    interrupt: Callable[[], None] = _thread.interrupt_main,
+) -> threading.Event:
+    """Zero the command on SIGTERM/SIGINT, then let the loop run long enough to act on it.
+
+    The process had no signal handling at all, so `systemctl stop`, a restart, a reboot or a
+    Ctrl-C killed the interpreter between two 20 ms ticks. The Feetech servos hold their last
+    goal position with torque on, so a duck stopped mid-stride topples with rigid legs — the
+    load case the unit's own comment says strips printed gears.
+
+    The `finally` in `main()` looked like it covered this and did not: it runs *after*
+    `runpy.run_path` has returned, so the zeros it published had no reader left. The settle
+    has to happen while the loop is still ticking, which means from a signal handler.
+
+    The handler itself does two cheap things and returns. A helper thread then waits out the
+    settle window — during which the still-running loop consumes ~25 ticks of zero velocity
+    and comes to a stand — before raising KeyboardInterrupt in the main thread, so upstream's
+    own cleanup and ours both run inside the unit's TimeoutStopSec. A second signal gives up
+    waiting and exits now.
+
+    Torque stays on throughout: `stop_is_limp` is False by design, and de-energising a
+    standing duck drops it.
+
+    `interrupt` is injectable only so a test can watch the settle happen without a
+    KeyboardInterrupt landing in the test runner."""
+    asked = threading.Event()
+
+    def handler(signum: int, _frame: Any) -> None:
+        if asked.is_set():  # the human is not convinced; stop asking nicely
+            os._exit(1)
+        asked.set()
+        core._zero()
+        log.info("signal %d: zeroed the command, settling for %.1fs", signum, seconds)
+
+    def settle() -> None:
+        asked.wait()
+        time.sleep(seconds)
+        interrupt()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(ValueError, OSError, AttributeError):
+            signal.signal(sig, handler)
+    threading.Thread(target=settle, name="quackd-duck-bridge-settle", daemon=True).start()
+    return asked
 
 
 def watchdog(core: BridgeCore, seconds: float = PATCH_WATCHDOG_S) -> None:
@@ -778,6 +875,14 @@ def parser() -> argparse.ArgumentParser:
         "head control can break the head, so it is off unless you ask",
     )
     p.add_argument("--head-safety", type=float, default=HEAD_SAFETY)
+    p.add_argument(
+        "--settle-s",
+        type=float,
+        default=SETTLE_S,
+        help="on SIGTERM or Ctrl-C, hold the loop at zero velocity this long before letting "
+        "it exit, so the duck comes to a stand instead of being killed mid-stride. Must stay "
+        "under the unit's TimeoutStopSec",
+    )
     p.add_argument("--fake", action="store_true", help="run a synthetic loop, no robot needed")
     p.add_argument("--seconds", type=float, default=0.0, help="--fake: stop after this long")
     return p
@@ -810,11 +915,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     server = Server(core, args.bind, args.port)
     server.start()
+    # Armed before anything can walk, and armed under --fake too, so the dry run rehearses
+    # the shutdown as well as the protocol.
+    install_settle(core, args.settle_s)
     log.info(
-        "listening on %s:%d, deadman %d ms, head %s",
+        "listening on %s:%d, deadman %d ms, settle %.1f s, head %s",
         args.bind,
         server.port,
         args.deadman_ms,
+        args.settle_s,
         "on" if args.enable_head else "off",
     )
     try:
@@ -839,9 +948,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     finally:
-        # zero first, let the policy settle, then let upstream's own cleanup run
-        core._zero()
-        time.sleep(0.5)
+        # No zero-and-sleep here. It used to sit in this block looking like the shutdown
+        # settle, but it runs after the loop has already exited, so the zeros it published
+        # had no reader and the sleep settled nothing. The settle that works is
+        # `install_settle`, which acts while the loop is still ticking.
         server.stop()
 
 

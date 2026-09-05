@@ -121,6 +121,14 @@ class OpenDuckBridge:
         self.features: dict[str, bool] = {}
         self.bridge_version: str | None = None
         self.runtime_commit: str | None = None
+        #: Why the last `stop` did not reach the duck, or None if it did. `stop` is the verb
+        #: the pilot is told to reach for when something is wrong, and it is asked for most
+        #: often when the link is the thing that is wrong — so a stop that was never delivered
+        #: must not be logged as one that was.
+        self.stop_error: str | None = None
+        #: Set when the read pump sees EOF. Without it every later request waited out the
+        #: full timeout on a socket nobody was reading.
+        self._closed = False
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -181,6 +189,10 @@ class OpenDuckBridge:
         while True:
             line = await self._reader.readline()
             if not line:
+                # Mark the link dead before failing the waiters: otherwise every later
+                # request sat out its full timeout waiting for a pump that had exited, and
+                # `stop` in particular blocked for seconds before reporting anything.
+                self._closed = True
                 for fut in self._pending.values():
                     if not fut.done():
                         fut.set_exception(TransportError("the bridge closed the connection"))
@@ -206,6 +218,8 @@ class OpenDuckBridge:
                     self._notifications.put_nowait(msg)
 
     def _write(self, obj: dict[str, Any]) -> None:
+        if self._closed:
+            raise TransportError("the bridge closed the connection")
         if self._writer is None:
             raise TransportError("not connected to the bridge")
         self._writer.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
@@ -289,6 +303,7 @@ class OpenDuckBridge:
                 "command_age_ms": state.get("command_age_ms"),
                 "deadman_tripped": state.get("deadman_tripped"),
                 "pad_override": state.get("pad_override"),
+                "stop_error": self.stop_error,
                 "assumptions": [up.FALL_SIGNAL.name, up.COMMAND_TTL.name],
             },
         )
@@ -375,8 +390,15 @@ class OpenDuckBridge:
             )
 
     async def stop(self) -> None:
-        with contextlib.suppress(TransportError):
+        try:
             await self.request(STOP)
+        except (TransportError, OSError) as e:
+            # Recorded rather than raised: `stop` must never itself take a run down. What
+            # actually zeroes the legs when this fails is the daemon's own deadman, 300 ms
+            # after the commands stop arriving — which is exactly what has just happened.
+            self.stop_error = str(e)
+        else:
+            self.stop_error = None
 
     def now(self) -> float:
         return time.monotonic() - self._t0

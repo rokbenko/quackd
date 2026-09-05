@@ -178,9 +178,16 @@ class RobotSession:
 
     async def run(self, name: str, params: dict[str, Any] | None) -> dict[str, Any]:
         self.calls += 1
-        if self.executor.abort.is_set():
+        # `stop` is exempt on purpose, the same way the Executor exempts it. An aborted
+        # session is exactly the situation the pilot reaches for the brake in — the heartbeat
+        # has just fired, and a verb that was already walking may still be finishing — and
+        # refusing `stop` here closed the only control the tool surface offers.
+        if self.executor.abort.is_set() and self.registry.canonical(name) != "stop":
             return _result(
-                VerbResult.fail("session aborted (heartbeat failed or kill switch); restart quackd")
+                VerbResult.fail(
+                    "session aborted (heartbeat failed or kill switch); restart quackd. "
+                    "`stop` still works and is worth sending."
+                )
             )
         try:
             result = await self.executor.run_verb(name, params or {}, source="mcp")
