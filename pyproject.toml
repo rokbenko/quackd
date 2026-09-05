@@ -130,7 +130,9 @@ line-ending = "lf"
 [tool.mypy]
 # No python_version pin: each CI job checks with its own interpreter. Pinning 3.11 made
 # mypy reject numpy's stubs (PEP 695 `type` statements) when running under 3.12.
-packages = ["quackd"]
+# `bridge/` is the code that runs on the robot, and it was the only Python here that nothing
+# type-checked. mypy takes packages OR files, not both, so both are listed as paths.
+files = ["quackd", "bridge"]
 ignore_missing_imports = true
 warn_unused_ignores = false
 check_untyped_defs = true

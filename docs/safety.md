@@ -6,7 +6,7 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 
 | Layer | Owner | What it guarantees |
 |---|---|---|
-| Body | the robot's own controller (the Microduck's `robotd` at 50 Hz, onboard) | Joint and thermal clamps, fall detection, and, on the Microduck, a **deadman**: velocity goes to zero when `robot.move` notifications stop. The body is the sole safety authority; clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority` and is not the same everywhere (see "On other bodies"). |
+| Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives joint and thermal clamps, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those* — no fall detection, no thermal clamp, no deadman of its own (its command source is a local gamepad, which is never silent), and no way to get up if it goes over; its deadman is quackd's own daemon on the Pi, and the human watching is the only fall detector. The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `quackd doctor` prints what the robot itself reported (see "On other bodies"). |
 | Conversation | quackd `Executor` | The LLM and MCP clients can only do what the `.duck` allows, as often as the budget allows, with a human in the loop where the contract says so. |
 | Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. |
 

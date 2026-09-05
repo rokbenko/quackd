@@ -8,7 +8,9 @@ chain. That is what turns `observe` from a promise into a picture.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import logging
 import sys
 import threading
 import time
@@ -17,6 +19,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from PIL import Image
 
 from quackd.adapters.open_duck import OpenDuckAdapter
 from quackd.adapters.open_duck.bridge import OpenDuckBridge
@@ -145,11 +148,27 @@ def test_nothing_in_this_server_can_move_the_robot(camd: ModuleType) -> None:
 # ── two processes cannot own one camera ─────────────────────────────────────────────────
 
 
-def test_it_refuses_to_fight_the_runtime_for_the_camera(camd: ModuleType, tmp_path) -> None:
+def test_the_camera_flag_warns_rather_than_refusing(camd: ModuleType, tmp_path, caplog) -> None:
+    """It used to `return 2` on `expression_features.camera`, to avoid fighting the robot's
+    own runtime for the device. Reading upstream at the pin on 2026-09-05 settled it: the
+    walk loop the bridge runs references no camera at all, so the process quackd starts
+    cannot be the other owner. Refusing was avoiding a collision that could not happen — and
+    it was the flag the docs tell owners to leave true if they want the runtime's own eyes.
+
+    It still warns, because another upstream script could open the device, and it still fails
+    when there is genuinely no camera. What it must not do is fail *because of the flag*."""
     config = tmp_path / "duck_config.json"
     config.write_text('{"expression_features": {"camera": true}}')
     assert camd.runtime_owns_the_camera(str(config)) is True
-    assert camd.main(["--duck-config", str(config), "--seconds", "0.1"]) == 2
+
+    with caplog.at_level(logging.WARNING, logger="quackd-duck-camd"):
+        code = camd.main(["--duck-config", str(config), "--seconds", "0.1"])
+    warned = " ".join(r.message for r in caplog.records)
+    assert "walk loop opens the camera" in warned or "no camera" in warned.lower()
+    if code == 2:
+        # this machine has no picamzero, so it fails on the camera itself; the point is that
+        # the reason is the hardware and not the configuration flag
+        assert "no camera" in warned.lower(), warned
 
     config.write_text('{"expression_features": {"camera": false}}')
     assert camd.runtime_owns_the_camera(str(config)) is False
@@ -320,3 +339,129 @@ def test_the_camera_binds_loopback_by_default(camd: ModuleType) -> None:
     assert camd.parser().parse_args([]).bind == "127.0.0.1"
     unit = (REPO / "bridge" / "open_duck" / "quackd-duck-camd.service").read_text(encoding="utf-8")
     assert "--bind 127.0.0.1" in unit and "--bind 0.0.0.0" not in unit
+
+
+# ── the transforms --fake never runs, and the geometry nobody could set ─────────────────
+
+
+def test_the_chain_test_now_actually_looks_at_the_frame(camd: ModuleType) -> None:
+    """The one end-to-end camera test asserted a size and a mode and never constructed a
+    detector, so `--fake` would have passed unchanged with the colours inverted, the
+    rotation wrong and the field of view wrong — while checklist step 4 told the operator
+    "everything except the robot itself works"."""
+    from quackd.perception.color_blob import ColorBlobDetector
+
+    jpeg, size = camd.FakeCamera(96).jpeg()
+    frame = Image.open(io.BytesIO(jpeg)).convert("RGB")
+    assert size == (96, 96)
+    balls = [d for d in ColorBlobDetector().detect(frame) if d.label == "ball"]
+    assert balls, "the synthetic scene has to be one quackd's own detector can see"
+    assert balls[0].est_distance_m is not None
+
+
+def test_the_colour_order_the_real_camera_path_applies(camd: ModuleType) -> None:
+    """`--no-swap-rb` is offered in the README as the fix for frames that "come out wrong".
+    It is not: the default is correct by a double negative (picamzero hands back RGB-ordered
+    data, cvtColor reverses it to the BGR cv2.imencode expects), and setting the flag inverts
+    the image — which lands an orange ball at H≈103, inside the *person* hue range. None of
+    cv2.resize, cvtColor, rotate or imencode run under --fake, so nothing caught it."""
+    import numpy as np
+
+    from quackd.perception.color_blob import ColorBlobDetector
+
+    # a bright orange disc on a pale floor, in the RGB order picamzero returns
+    frame = np.full((240, 320, 3), (236, 229, 212), dtype=np.uint8)
+    cv2 = pytest.importorskip("cv2")
+    cv2.circle(frame, (160, 150), 40, (255, 140, 0), -1)
+
+    class Stub(camd.PiCamera):
+        def __init__(self, swap_rb: bool) -> None:  # no picamzero, no camera
+            self.camera = None
+            self.size = 128
+            self.rotate = 0
+            self.swap_rb = swap_rb
+
+        def capture_array(self):  # type: ignore[no-untyped-def]
+            return frame
+
+    def label_for(swap_rb: bool) -> str | None:
+        stub = Stub(swap_rb)
+        stub.camera = type("C", (), {"capture_array": lambda _self: frame})()
+        jpeg, _ = stub.jpeg()
+        seen = ColorBlobDetector().detect(Image.open(io.BytesIO(jpeg)).convert("RGB"))
+        return seen[0].label if seen else None
+
+    assert label_for(True) == "ball", "the shipped default has to see an orange ball"
+    assert label_for(False) != "ball", "and flipping it is not a remedy, it is a relabelling"
+
+
+def test_a_camera_that_stops_capturing_stops_being_served(camd: ModuleType) -> None:
+    """After one successful capture the only 503 was unreachable, so a ribbon working loose
+    on a walking duck left camd answering 200 with the same JPEG forever. `go_to` then
+    visually servos on a photograph, and `lost > 30` cannot save it because the frozen frame
+    still contains the ball."""
+    store = camd.FrameStore()
+    store.put(camd._TINY_JPEG, (2, 2), now=time.monotonic())
+    server = camd.serve(store, "127.0.0.1", 0, 5.0)
+    port = server.server_address[1]
+    try:
+        status, body, kind = get(f"http://127.0.0.1:{port}/snapshot.jpg")
+        assert status == 200 and kind == "image/jpeg"
+
+        # the capture loop dies; nothing replaces the frame
+        store._at = time.monotonic() - 30.0
+        status, body, kind = get(f"http://127.0.0.1:{port}/snapshot.jpg")
+        assert status == 503, "a frame that old is not a picture of now"
+        assert b"stale" in body or b"stopped" in body
+    finally:
+        server.shutdown()
+
+
+def test_a_served_frame_says_how_old_it_is(camd: ModuleType) -> None:
+    store = camd.FrameStore()
+    store.put(camd._TINY_JPEG, (2, 2), now=time.monotonic())
+    server = camd.serve(store, "127.0.0.1", 0, 5.0)
+    port = server.server_address[1]
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/snapshot.jpg", timeout=3) as r:
+            assert r.headers.get("X-Frame-Age") is not None
+            assert float(r.headers["X-Frame-Age"]) < 1.0
+    finally:
+        server.shutdown()
+
+
+async def test_quackd_refuses_a_frozen_frame_and_says_why(camd: ModuleType) -> None:
+    """The client half. camd expires the frame; the bridge client must not then treat the
+    503 as a hard error that ends the session — `jsonrpc`'s own docstring records that one
+    dropped HTTP response did exactly that once — nor walk on regardless."""
+    from quackd.adapters.open_duck.bridge import OpenDuckBridge
+
+    store = camd.FrameStore()
+    store.put(camd.FakeCamera(96).jpeg()[0], (96, 96), now=time.monotonic())
+    server = camd.serve(store, "127.0.0.1", 0, 5.0)
+    port = server.server_address[1]
+    try:
+        t = OpenDuckBridge(camera_url=f"http://127.0.0.1:{port}/snapshot.jpg")
+        assert await t.get_frame() is not None
+        assert t.camera_health()["error"] is None
+        assert t.camera_health()["frames"] == 1
+
+        store._at = time.monotonic() - 30.0
+        assert await t.get_frame() is None, "a photograph is not something to steer on"
+        assert "stale" in (t.camera_health()["error"] or "") or "old" in (
+            t.camera_health()["error"] or ""
+        )
+    finally:
+        server.shutdown()
+
+
+async def test_doctor_can_finally_probe_this_robots_camera(camd: ModuleType) -> None:
+    """`doctor` gates its frame probe on a `camera_health` method that only the Microduck
+    transport had, so `--camera-url` was accepted here, never checked, and a typo passed the
+    checklist's go/no-go step to fail at the first observe with the duck on the floor."""
+    from quackd.adapters.open_duck.bridge import OpenDuckBridge
+
+    assert callable(getattr(OpenDuckBridge(), "camera_health", None))
+    unreachable = OpenDuckBridge(camera_url="http://127.0.0.1:1/snapshot.jpg")
+    assert await unreachable.get_frame() is None
+    assert unreachable.camera_health()["error"], "an unreachable camera has to be visible"

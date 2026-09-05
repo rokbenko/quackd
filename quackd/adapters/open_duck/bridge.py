@@ -25,6 +25,7 @@ import json
 import math
 import os
 import time
+import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
 from typing import Any
@@ -70,6 +71,18 @@ ANTENNAS = "duck.antennas"
 #: Below this the walk loop is starving and the gait is degrading silently, so the
 #: heartbeat fails and the run aborts rather than letting the duck stumble (up.LOOP_HEADROOM).
 MIN_LOOP_HZ = 35.0
+#: How long a frame fetch may take. Well under the 3 s it used to allow: `go_to` sends its
+#: next command after this returns, and the daemon's deadman is 300 ms, so a long stall here
+#: is a duck walking blind rather than a slow picture.
+CAMERA_TIMEOUT_S = 1.0
+#: A frame older than this is not steering material. camd expires its own frames sooner; this
+#: is the client's backstop for a camera server that does not stamp them at all.
+CAMERA_STALE_AFTER_S = 2.0
+#: The deadman window quackd will drive behind. Below two command intervals it trips on
+#: ordinary jitter; above this it stops firing before quackd's own 0.5 s heartbeat, so the
+#: laptop would notice the link was gone before the robot did.
+DEADMAN_MIN_MS = 200
+DEADMAN_MAX_MS = 500
 
 
 def parse_address(address: str) -> tuple[str, int]:
@@ -121,6 +134,36 @@ class OpenDuckBridge:
         self.features: dict[str, bool] = {}
         self.bridge_version: str | None = None
         self.runtime_commit: str | None = None
+        #: Why the last `stop` did not reach the duck, or None if it did. `stop` is the verb
+        #: the pilot is told to reach for when something is wrong, and it is asked for most
+        #: often when the link is the thing that is wrong — so a stop that was never delivered
+        #: must not be logged as one that was.
+        self.stop_error: str | None = None
+        #: Echoed on every `duck.command` so the bridge can tell a command this client sent
+        #: after a stop from one that was already in flight when the stop went out. Learned
+        #: from the stop's reply, and re-learned from any state read in case that reply was
+        #: lost.
+        self.stop_epoch = 0
+        #: The tick count at the previous heartbeat. A count that has not moved between two
+        #: beats means the control loop is wedged, which no rate can show: `loop_hz` is
+        #: written by that same thread and freezes with it.
+        self._last_ticks: int | None = None
+        #: The bridge's own `safety` block, as it reported it at connect.
+        self.safety: dict[str, Any] = {}
+        #: Set when the bridge says it has no authentication but we sent a token anyway.
+        self.auth_warning: str | None = None
+        #: Set when the robot's runtime is not the commit quackd's refs were read at.
+        self.runtime_warning: str | None = None
+        #: The window the bridge said it enforces, or None if it claims no deadman at all.
+        self.deadman_ms: int | None = None
+        #: Set when the read pump sees EOF. Without it every later request waited out the
+        #: full timeout on a socket nobody was reading.
+        self._closed = False
+        #: Frame bookkeeping, so `doctor` can prove the camera works before anything walks.
+        self.camera_stale_after_s = CAMERA_STALE_AFTER_S
+        self.frame_age_s: float | None = None
+        self.camera_error: str | None = None
+        self.frames = 0
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -160,6 +203,41 @@ class OpenDuckBridge:
         self.features = {k: bool(v) for k, v in caps.items()}
         self.bridge_version = self.hello.get("bridge_version")
         self.runtime_commit = (self.hello.get("runtime") or {}).get("commit")
+        # Every upstream name the bridge borrows was read at one commit, and the class rebind
+        # the whole thing stands on is the part a rename would break silently. This is a
+        # warning, not a refusal: an owner tracking upstream's branch is doing the normal
+        # thing, and quackd has no business refusing to talk to their duck over it.
+        if self.runtime_commit and not self.runtime_commit.startswith(up.PIN[:7]):
+            self.runtime_warning = (
+                f"this duck's Open_Duck_Mini_Runtime is at {self.runtime_commit[:7]}, and "
+                f"quackd read upstream at {up.PIN[:7]} ({up.READ_ON}). That is normal, but "
+                "it is also where a renamed XBoxController would hide: if the bridge exits "
+                "saying the walk loop never asked for a controller, this is why."
+            )
+        self.safety = dict(self.hello.get("safety") or {})
+        # upstream_api.COMMAND_TTL states the invariant this implements: "the manifest claims
+        # a deadman only when a bridge says it has one". It was a hardcoded True.
+        window = self.safety.get("deadman_ms")
+        self.deadman_ms = int(window) if window is not None else None
+        if self.deadman_ms is not None and not (
+            DEADMAN_MIN_MS <= self.deadman_ms <= DEADMAN_MAX_MS
+        ):
+            await self.close()
+            raise TransportError(
+                f"the bridge reports a {self.deadman_ms} ms deadman, which is outside the "
+                f"{DEADMAN_MIN_MS}-{DEADMAN_MAX_MS} ms quackd can drive safely. Below that it "
+                "trips on ordinary jitter; above it, it no longer fires before quackd's own "
+                "0.5 s heartbeat. Fix --deadman-ms on the robot."
+            )
+        # A bridge that accepted our token without checking one is indistinguishable from a
+        # bridge that checked it, which is exactly how an unreadable token file left
+        # authentication silently off while four places in the docs promised it was on.
+        if self.token and self.safety.get("auth") == "none":
+            self.auth_warning = (
+                "this bridge has no token configured, so the one you supplied was not "
+                "checked and anything that can reach this port can walk the duck. Check the "
+                "token file on the robot is readable by the service user."
+            )
         if not self.camera_url:
             self.camera_url = (self.hello.get("camera") or {}).get("url")
 
@@ -181,6 +259,10 @@ class OpenDuckBridge:
         while True:
             line = await self._reader.readline()
             if not line:
+                # Mark the link dead before failing the waiters: otherwise every later
+                # request sat out its full timeout waiting for a pump that had exited, and
+                # `stop` in particular blocked for seconds before reporting anything.
+                self._closed = True
                 for fut in self._pending.values():
                     if not fut.done():
                         fut.set_exception(TransportError("the bridge closed the connection"))
@@ -206,6 +288,8 @@ class OpenDuckBridge:
                     self._notifications.put_nowait(msg)
 
     def _write(self, obj: dict[str, Any]) -> None:
+        if self._closed:
+            raise TransportError("the bridge closed the connection")
         if self._writer is None:
             raise TransportError("not connected to the bridge")
         self._writer.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
@@ -235,29 +319,86 @@ class OpenDuckBridge:
     # ── protocol ────────────────────────────────────────────────────────────────────
 
     async def get_frame(self) -> Image.Image | None:
-        """The camera lives in its own process on the Pi: encoding a 512 by 512 JPEG inside
-        a 20 ms control tick is not affordable (up.CAM), so the bridge advertises a URL."""
+        """The camera lives in its own process on the Pi: encoding a JPEG inside a 20 ms
+        control tick is not affordable (up.CAM), so the bridge advertises a URL.
+
+        Returns None rather than raising when there is no usable frame. `jsonrpc`'s own
+        docstring records that raising here ended a session once, over a single dropped
+        HTTP response, and the callers all have a clean `img is None` branch."""
         if not self.camera_url:
             return None
         url = self.camera_url
 
-        def fetch() -> bytes:
-            with urllib.request.urlopen(url, timeout=3) as resp:
-                return bytes(resp.read())
+        def fetch() -> tuple[bytes, float | None]:
+            try:
+                with urllib.request.urlopen(url, timeout=CAMERA_TIMEOUT_S) as resp:
+                    # camd stamps every frame with how old it is. Without this the client
+                    # cannot tell a live camera from one that stopped capturing an hour ago
+                    # and is serving its last good JPEG — which is what a ribbon working
+                    # loose on a walking duck looks like from here.
+                    header = resp.headers.get("X-Frame-Age")
+                    return bytes(resp.read()), (float(header) if header is not None else None)
+            except urllib.error.HTTPError as e:
+                # camd explains itself in the body ("the last frame is 30.1s old..."), and
+                # that sentence is far more use to whoever is standing next to the duck than
+                # "HTTP Error 503". Read it first, raise after: raising inside a suppress()
+                # block hands the new exception straight back to the suppressor.
+                reason: str | None = None
+                with contextlib.suppress(Exception):
+                    reason = json.loads(e.read()).get("reason")
+                if reason:
+                    raise TransportError(str(reason)) from e
+                raise
 
         try:
-            data = await asyncio.to_thread(fetch)
-            return Image.open(io.BytesIO(data)).convert("RGB")
+            data, age = await asyncio.to_thread(fetch)
+            frame = Image.open(io.BytesIO(data)).convert("RGB")
         except Exception as e:
-            raise TransportError(f"camera snapshot failed: {e}") from e
+            self.camera_error = str(e)
+            self.frame_age_s = None
+            return None
+        self.camera_error = None
+        self.frame_age_s = age
+        if age is not None and age > self.camera_stale_after_s:
+            self.camera_error = f"the newest frame is {age:.1f}s old; the camera has stopped"
+            return None
+        self.frames += 1
+        return frame
+
+    def camera_health(self) -> dict[str, Any]:
+        """What `doctor` probes for. It existed only on the Microduck transport, so
+        `--camera-url` was accepted here, never checked, and a typo'd or unreachable snapshot
+        server passed the checklist's go/no-go gate and failed at the first `observe` — with
+        the duck already on the floor."""
+        return {
+            "url": self.camera_url,
+            "frames": self.frames,
+            "age_s": self.frame_age_s,
+            "stale_after_s": self.camera_stale_after_s,
+            "error": self.camera_error,
+        }
 
     async def get_state(self) -> DuckState:
         state = self._last_state
+        stale: str | None = None
         if state is None:
-            with contextlib.suppress(TransportError):
+            try:
                 result = await self.request(STATE)
                 state = result if isinstance(result, dict) else {}
+            except TransportError as e:
+                # Swallowed, but recorded. A failed state read must not take a run down — the
+                # heartbeat is what ends it — yet it must not be dressed up as a healthy duck
+                # either. Everything below would otherwise be invented: posture standing-ish,
+                # policy `stand`, a pose of exactly (0, 0, 0), and both preconditions passing
+                # on all of it, so quackd would start a `move` into a link that is not there.
+                stale = str(e)
+                state = {}
         state = state or {}
+        # Resynchronise the stop epoch from any state read. If a stop's own reply were lost,
+        # this client would keep sending an epoch the bridge has moved past and have every
+        # command dropped for the rest of the window; one state read recovers it.
+        if state.get("stop_epoch") is not None:
+            self.stop_epoch = int(state["stop_epoch"])
         # `fallen` is tri-state on the wire: None means the bridge cannot see falls at all.
         # A duck nobody is watching must read as unknown, never as standing (up.FALL_SIGNAL).
         raw_fallen = state.get("fallen")
@@ -271,12 +412,16 @@ class OpenDuckBridge:
             posture = "standing"
         else:
             posture = "unknown"
+        # This robot has no odometry, and the bridge sends no pose. Defaulting the three to
+        # 0.0 put `pose=(0.00, 0.00, 0.00 rad)` in front of the model on every single
+        # observation, unchanged after the duck had walked across a room. None is the honest
+        # answer and `summary()` omits it, which is what the Microduck transport already does.
         pose = state.get("pose") or {}
         return DuckState(
             t=self.now(),
-            x=float(pose.get("x", 0.0)),
-            y=float(pose.get("y", 0.0)),
-            theta=float(pose.get("theta", 0.0)),
+            x=_maybe_float(pose.get("x")),
+            y=_maybe_float(pose.get("y")),
+            theta=_maybe_float(pose.get("theta")),
             policy="walk" if state.get("moving") else "stand",
             posture=posture,
             fallen=fallen,
@@ -286,9 +431,12 @@ class OpenDuckBridge:
                 "policy_running": running,
                 "fall_detection": detects_falls,
                 "loop_hz": state.get("loop_hz"),
+                "tick_age_ms": state.get("tick_age_ms"),
                 "command_age_ms": state.get("command_age_ms"),
                 "deadman_tripped": state.get("deadman_tripped"),
                 "pad_override": state.get("pad_override"),
+                "stop_error": self.stop_error,
+                "state_stale": stale,
                 "assumptions": [up.FALL_SIGNAL.name, up.COMMAND_TTL.name],
             },
         )
@@ -304,11 +452,12 @@ class OpenDuckBridge:
                             "vx": float(p.get("vx", 0.0)),
                             "vy": float(p.get("vy", 0.0)),
                             "vyaw": float(p.get("wz", 0.0)),
+                            "epoch": self.stop_epoch,
                         },
                     )
                     return Ack()
                 case "stop":
-                    await self.request(STOP)
+                    self._note_stop(await self.request(STOP))
                     return Ack()
                 case "look":
                     return await self._look(p)
@@ -349,7 +498,7 @@ class OpenDuckBridge:
         for name, bounds in (("neck_pitch", NECK_PITCH_RANGE), ("head_roll", HEAD_ROLL_RANGE)):
             if name in p:
                 head[name] = _clamp(float(p[name]), bounds)
-        await self.notify(COMMAND, {"head": head})
+        await self.notify(COMMAND, {"head": head, "epoch": self.stop_epoch})
         clamped = any(abs(head[k] - v) > 1e-9 for k, v in wanted.items())
         return Ack(accepted=True, reason="clamped to this neck's travel" if clamped else None)
 
@@ -367,6 +516,19 @@ class OpenDuckBridge:
             return
         if health.get("healthy") is False:
             raise HeartbeatError(f"the duck is unhealthy: {health.get('reason') or 'no reason'}")
+        # The loop has not ticked twice yet, so there is no rate to judge. This window used to
+        # abort a perfectly healthy duck during ONNX load and servo init, while the socket was
+        # already listening and answering.
+        if int(health.get("ticks") or 0) < 2:
+            return
+        # A stalled tick counter is the wedged-loop case: the rate below is written by the
+        # control thread, so it stays frozen at whatever it last was.
+        if self._last_ticks is not None and int(health["ticks"]) == self._last_ticks:
+            raise HeartbeatError(
+                f"the walk loop has not ticked between two heartbeats (still "
+                f"{health['ticks']} ticks); it is wedged, not slow"
+            )
+        self._last_ticks = int(health["ticks"])
         loop_hz = health.get("loop_hz")
         if loop_hz is not None and float(loop_hz) < MIN_LOOP_HZ:
             raise HeartbeatError(
@@ -374,15 +536,32 @@ class OpenDuckBridge:
                 "the Pi is starved and the gait is degrading"
             )
 
+    def _note_stop(self, result: Any) -> None:
+        """Adopt the epoch the bridge just moved to, so the next command is accepted at once
+        and the ones still in flight behind this stop are not."""
+        if isinstance(result, dict) and result.get("stop_epoch") is not None:
+            self.stop_epoch = int(result["stop_epoch"])
+
     async def stop(self) -> None:
-        with contextlib.suppress(TransportError):
-            await self.request(STOP)
+        try:
+            self._note_stop(await self.request(STOP))
+        except (TransportError, OSError) as e:
+            # Recorded rather than raised: `stop` must never itself take a run down. What
+            # actually zeroes the legs when this fails is the daemon's own deadman, 300 ms
+            # after the commands stop arriving — which is exactly what has just happened.
+            self.stop_error = str(e)
+        else:
+            self.stop_error = None
 
     def now(self) -> float:
         return time.monotonic() - self._t0
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
+
+
+def _maybe_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 def _ack(result: Any) -> Ack:

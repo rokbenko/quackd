@@ -174,7 +174,12 @@ class Executor:
         nested: bool = False,
     ) -> VerbResult:
         params = params or {}
-        if self.abort.is_set():
+        # `stop` is the one verb an aborted session must still be able to run. The abort is
+        # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
+        # which is the moment the pilot reaches for the brake, and refusing it here closed
+        # the panic button exactly when it was needed.
+        canonical = self.registry.canonical(name)
+        if self.abort.is_set() and canonical != "stop":
             raise Aborted("run aborted")
         if not self.is_allowed(name):
             raise VerbNotAllowed(
@@ -214,9 +219,7 @@ class Executor:
 
         self.log(f"→ {name}({parsed.model_dump()})")
         try:
-            result = await asyncio.wait_for(
-                verb.execute(self.context(), parsed), timeout=verb.timeout_s
-            )
+            result = await self._execute(verb, parsed, interruptible=canonical != "stop")
         except TimeoutError:
             await self.transport.stop()
             result = VerbResult.fail(f"{name} timed out after {verb.timeout_s:g}s; stopped")
@@ -227,6 +230,48 @@ class Executor:
             result = VerbResult.fail(f"{name} raised {type(e).__name__}: {e}; stopped")
         self.log(f"← {name}: {'ok' if result.ok else 'FAIL'} {result.summary}")
         return self._record(name, params, result)
+
+    async def _execute(self, verb: Verb, parsed: Any, *, interruptible: bool) -> VerbResult:
+        """Run one verb, racing it against the abort event as well as the clock.
+
+        `asyncio.wait_for` knows only about the clock, so a kill switch, a Ctrl-C or a failed
+        heartbeat used to set a flag that nothing looked at until the verb returned on its
+        own. On a robot that meant the legs kept moving for the rest of a `go_to` — up to its
+        whole timeout — after the human had already reached for the brake, and the verb's own
+        10 Hz resend kept feeding the deadman throughout, so nothing else stopped it either.
+
+        `stop` is never interruptible: it is what the abort is trying to achieve."""
+        verb_task: asyncio.Task[VerbResult] = asyncio.ensure_future(
+            verb.execute(self.context(), parsed)
+        )
+        abort_task: asyncio.Task[bool] | None = None
+        waiting: set[asyncio.Future[Any]] = {verb_task}
+        if interruptible:
+            abort_task = asyncio.ensure_future(self.abort.wait())
+            waiting.add(abort_task)
+        try:
+            done, _ = await asyncio.wait(
+                waiting, return_when=asyncio.FIRST_COMPLETED, timeout=verb.timeout_s
+            )
+        finally:
+            # the loser is always cancelled: an abort waiter left behind would otherwise
+            # accumulate one task per verb for the life of the run
+            if abort_task is not None and not abort_task.done():
+                abort_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await abort_task
+        if verb_task in done:
+            return verb_task.result()
+
+        # Nothing the verb does from here can be trusted to end, so take the legs back first
+        # and let the caller decide what to report.
+        verb_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await verb_task
+        if abort_task is not None and abort_task in done:
+            await self.transport.stop()
+            raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
+        raise TimeoutError
 
     # ── abort conditions the executor enforces itself ───────────────────────────────
 
@@ -315,11 +360,16 @@ class KillSwitch:
         self._thread: threading.Thread | None = None
 
     def _fire(self, why: str) -> None:
-        self.log(f"kill switch: {why}")
+        self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self.abort.set)
 
     def _on_sigint(self, _signum: int, _frame: Any) -> None:
+        # The first Ctrl-C is the orderly one: it aborts, which cancels the running verb and
+        # sends a stop. Handing the signal back means a second one is a plain KeyboardInterrupt
+        # again, so a human who is not convinced the first worked is never stuck holding a key
+        # that quackd has quietly swallowed.
+        self._restore()
         self._fire("Ctrl-C")
 
     def _watch_keys(self) -> None:
@@ -344,8 +394,11 @@ class KillSwitch:
             )
             self._thread.start()
 
-    def uninstall(self) -> None:
+    def _restore(self) -> None:
         if self._previous is not None:
             with contextlib.suppress(ValueError):
                 signal.signal(signal.SIGINT, self._previous)
             self._previous = None
+
+    def uninstall(self) -> None:
+        self._restore()

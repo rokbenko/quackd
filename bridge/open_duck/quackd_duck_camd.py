@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import io
 import json
 import logging
@@ -41,8 +42,21 @@ from typing import Any
 
 CAMD_VERSION = "0.1.0"
 DEFAULT_PORT = 9872
-DEFAULT_FPS = 1.0
-DEFAULT_SIZE = 512
+# 1 fps was the rate for a pilot that looks about once a second. But `go_to` and
+# `search_scan` close a visual loop at 10 Hz, and holding a steering correction for a whole
+# frame period at 1 fps gives a per-frame loop gain above 1 — a divergent weave that swings
+# the target back out of frame. The sibling Microduck transport already learned this and
+# runs at 5. Paired with a smaller default frame, because camd exists precisely because CPU
+# on a Pi Zero 2 W is scarce.
+DEFAULT_FPS = 5.0
+DEFAULT_SIZE = 256
+#: A frame this many capture periods old is not a picture of now. Wide enough that ordinary
+#: jitter never trips it.
+STALE_PERIODS = 4.0
+#: ...but a very low --fps must still expire in human time, not eventually.
+MIN_STALE_S = 1.5
+#: How long a client may hold a connection open without finishing a request.
+REQUEST_TIMEOUT_S = 5.0
 SNAPSHOT_PATH = "/snapshot.jpg"
 HEALTH_PATH = "/healthz"
 
@@ -124,6 +138,13 @@ class PiCamera:
         from picamzero import Camera  # type: ignore[import-not-found]
 
         self.camera = Camera()
+        # picamzero's capture_array() is switch_mode_and_capture_array(still_configuration),
+        # and that configuration defaults to the full sensor — so every tick reconfigured the
+        # pipeline and copied ~24-36 MB before resizing to a thumbnail, inside a 140 MB
+        # cgroup. Asking for the size we actually want drops the copy by more than an order
+        # of magnitude.
+        with contextlib.suppress(Exception):
+            self.camera.still_size = (size, size)
         self.size = size
         self.rotate = rotate
         self.swap_rb = swap_rb
@@ -151,7 +172,11 @@ class PiCamera:
 #: The scene `--fake` paints. These are the colours and the horizon quackd's own simulator
 #: uses, copied rather than imported, because nothing on the robot may import quackd. An
 #: orange ball on a pale floor under a pale sky is what its colour detector is tuned for, so
-#: `--fake` is a smoke test of the whole chain and not just of the plumbing.
+#: `--fake` exercises the detector as well as the plumbing. It does NOT exercise the camera:
+#: this synthesises a JPEG directly, so the resize, the red/blue swap, the rotation and the
+#: encode that `PiCamera.jpeg` performs are all skipped, and so is the question of whether the
+#: field of view is yours. Those are covered by a `PiCamera` test with a stubbed capture, and
+#: on real hardware by step 5b of the checklist.
 FAKE_SKY = (204, 222, 240)
 FAKE_FLOOR = (236, 229, 212)
 FAKE_BALL = (255, 140, 0)
@@ -204,30 +229,65 @@ def capture_loop(store: FrameStore, source: Any, fps: float, stop: threading.Eve
 # ── the server ──────────────────────────────────────────────────────────────────────────
 
 
-def make_handler(store: FrameStore) -> type[BaseHTTPRequestHandler]:
+def make_handler(store: FrameStore, fps: float = DEFAULT_FPS) -> type[BaseHTTPRequestHandler]:
+    # A frame older than this is not a picture of now. Several capture periods, so ordinary
+    # jitter never trips it, with a floor so a very low --fps still expires eventually.
+    stale_after = max(MIN_STALE_S, STALE_PERIODS / max(0.1, fps))
+
     class Handler(BaseHTTPRequestHandler):
         server_version = f"quackd-duck-camd/{CAMD_VERSION}"
         protocol_version = "HTTP/1.1"
+        # ThreadingHTTPServer gives every connection a thread and HTTP/1.1 keeps them alive,
+        # so without this one half-open connection pins a thread for the life of the process
+        # — on the board that is also running a 50 Hz control loop.
+        timeout = REQUEST_TIMEOUT_S
 
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
             if path in (SNAPSHOT_PATH, "/"):
-                jpeg, _at = store.get()
+                jpeg, at = store.get()
                 if jpeg is None:
                     self._json(503, {"ok": False, "reason": "no frame captured yet"})
                     return
-                self._bytes(200, "image/jpeg", jpeg)
+                # The timestamp used to be read and thrown away, so once one frame had been
+                # captured this could never 503 again: a ribbon working loose on a walking
+                # duck left camd answering 200 with the same JPEG forever, `observe`
+                # reporting a confident detection, and `go_to` visually servoing on a
+                # photograph. `lost > 30` could not save it either, because the frozen frame
+                # still contained the ball.
+                age = time.monotonic() - at
+                if age > stale_after:
+                    self._json(
+                        503,
+                        {
+                            "ok": False,
+                            "reason": f"the last frame is {age:.1f}s old (stale after "
+                            f"{stale_after:.1f}s); the camera has stopped",
+                            "age_s": round(age, 2),
+                        },
+                    )
+                    return
+                self._bytes(200, "image/jpeg", jpeg, age=age)
                 return
             if path == HEALTH_PATH:
-                self._json(200, store.health(now=time.monotonic()))
+                health = store.health(now=time.monotonic())
+                health["stale_after_s"] = round(stale_after, 2)
+                self._json(200, health)
                 return
             self._json(404, {"ok": False, "reason": f"nothing at {path}"})
 
-        def _bytes(self, code: int, content_type: str, payload: bytes) -> None:
+        def _bytes(
+            self, code: int, content_type: str, payload: bytes, *, age: float | None = None
+        ) -> None:
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-store")
+            if age is not None:
+                # Age is the standard header; the float one is what quackd actually reads,
+                # because whole seconds cannot express a 200 ms frame.
+                self.send_header("Age", str(int(age)))
+                self.send_header("X-Frame-Age", f"{age:.3f}")
             self.end_headers()
             self.wfile.write(payload)
 
@@ -240,8 +300,10 @@ def make_handler(store: FrameStore) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def serve(store: FrameStore, host: str, port: int) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer((host, port), make_handler(store))
+def serve(
+    store: FrameStore, host: str, port: int, fps: float = DEFAULT_FPS
+) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), make_handler(store, fps))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="quackd-duck-camd", daemon=True).start()
     return server
@@ -270,11 +332,21 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument(
-        "--fps", type=float, default=DEFAULT_FPS, help="quackd looks about once a second"
+        "--fps",
+        type=float,
+        default=DEFAULT_FPS,
+        help="capture rate. go_to and search_scan steer on these frames, so a low rate is a "
+        "slow visual loop, not just a stale picture",
     )
     p.add_argument("--size", type=int, default=DEFAULT_SIZE)
     p.add_argument("--rotate", type=int, choices=[0, 90, 180, 270], default=DEFAULT_ROTATE)
-    p.add_argument("--no-swap-rb", action="store_true", help="skip upstream's red and blue swap")
+    p.add_argument(
+        "--no-swap-rb",
+        action="store_true",
+        help="skip upstream's red and blue swap. The default is correct and this inverts "
+        "the image: an orange ball then detects as a person. For wrong-looking colours try "
+        "white balance or --rotate instead",
+    )
     p.add_argument("--duck-config", default="~/duck_config.json")
     p.add_argument("--fake", action="store_true", help="a synthetic frame, no camera needed")
     p.add_argument("--seconds", type=float, default=0.0, help="stop after this long")
@@ -289,12 +361,20 @@ def main(argv: list[str] | None = None) -> int:
         format="quackd-duck-camd %(levelname)s %(message)s",
     )
     if not args.fake and runtime_owns_the_camera(args.duck_config):
-        log.error(
-            "duck_config.json has expression_features.camera true, so the robot's own "
-            "runtime owns the camera and this server would fight it for the device. Set "
-            "that flag false and let this serve the camera, or do not run this."
+        # Downgraded from a refusal on 2026-09-05, after reading upstream at the pin: the
+        # walk loop `v2_rl_walk_mujoco.py` references no camera at all, so the process the
+        # bridge runs cannot be contending for the device. Refusing here was avoiding a
+        # collision that could not happen, on the strength of a flag rather than a reading.
+        #
+        # Still a warning, because some *other* upstream script might open it, and two owners
+        # of one camera is a genuine failure - it just shows up honestly now: the capture
+        # fails, /healthz says so, and snapshots expire instead of freezing.
+        log.warning(
+            "duck_config.json has expression_features.camera true. Nothing in upstream's "
+            "walk loop opens the camera, so this should be fine, but if you also run one of "
+            "upstream's own camera scripts the two will fight for the device and captures "
+            "here will start failing. Setting that flag false is still the tidier setup."
         )
-        return 2
 
     store = FrameStore()
     source: Any = FakeCamera(args.size) if args.fake else None
@@ -308,7 +388,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.bind not in ("127.0.0.1", "localhost"):
         log.warning(
             "binding %s: this serves a live view of wherever your robot is, to anyone on "
-            "that network, with no authentication. Prefer --bind 127.0.0.1 and an ssh tunnel.",
+            "that network, with no authentication and no way to add any. There is no control "
+            "path in this process, so the worst case is a stranger watching your room rather "
+            "than driving your duck - but that is worth deciding on purpose. Prefer "
+            "--bind 127.0.0.1 and an ssh tunnel.",
             args.bind,
         )
 
@@ -316,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     threading.Thread(
         target=capture_loop, args=(store, source, args.fps, stop), name="capture", daemon=True
     ).start()
-    server = serve(store, args.bind, args.port)
+    server = serve(store, args.bind, args.port, args.fps)
     port = server.server_address[1]
     log.info(
         "serving http://%s:%s%s at %.1f fps. Point the bridge at it with "

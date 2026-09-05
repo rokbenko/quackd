@@ -121,6 +121,12 @@ thing that broke.
 > **Abort the whole session if the legs keep driving.** The deadman is the protection every
 > step below this one depends on. Nothing else quackd does matters if it is not there.
 
+The command, since this step never named one. `--provider fake` has no script for a free-form goal, so it needs a real model:
+
+```bash
+quackd run --goal "walk in place with small steps, do not turn, then stop" \n    --robot microduck:jsonrpc --address unix:///run/robotd.sock \n    --provider anthropic --max-steps 6
+```
+
 ## 9. Feet down
 
 Now, and only now, put the duck on the floor and run a short walk. Hand on the gamepad.

@@ -85,6 +85,8 @@ def open_duck_manifest(
     head: bool = True,
     bridge_version: str | None = None,
     runtime_commit: str | None = None,
+    deadman: bool = True,
+    deadman_ms: int | None = None,
 ) -> RobotManifest:
     """The Open Duck Mini v2 as data.
 
@@ -143,9 +145,12 @@ def open_duck_manifest(
         preconditions=preconditions,
         # The robot's own runtime has no deadman: its only command source is a local pygame
         # pad, which is never silent. The deadman is quackd's own bridge daemon, which zeroes
-        # the velocity inside the 50 Hz loop when commands stop. So `deadman` is true and
-        # `native` stays `none`: the authority is our code, not a robot feature (ADR-0024).
-        safety_authority=SafetyAuthority(native="none", deadman=True, heartbeat_hz=2.0),
+        # the velocity inside the 50 Hz loop when commands stop, so `native` stays `none`:
+        # the authority is our code, not a robot feature (ADR-0024). Whether there is one at
+        # all now comes from what the bridge reported at connect rather than from this
+        # literal: the command-TTL note in upstream_api says the manifest claims a deadman
+        # only when a bridge says it has one, and it used to claim it regardless.
+        safety_authority=SafetyAuthority(native="none", deadman=deadman, heartbeat_hz=2.0),
         frame=Frame(
             reference="body",
             note="trunk frame: vx forward, vy left, +vyaw left. The head is four joints "
@@ -184,6 +189,7 @@ def open_duck_manifest(
             "no_battery": "nothing in the runtime reports a battery, so battery aborts cannot fire",
             "bridge_version": bridge_version,
             "runtime_commit": runtime_commit,
+            "deadman_ms": deadman_ms,
         },
     )
 
@@ -214,8 +220,24 @@ class OpenDuckAdapter:
             head=bool(self._features.get("head", True)),
             bridge_version=getattr(self.transport, "bridge_version", None),
             runtime_commit=getattr(self.transport, "runtime_commit", None),
+            # sim2d and mock have no `safety` block and are unchanged; a bridge that reports
+            # none has not told us it has a deadman, so the manifest stops saying it does
+            deadman=self._deadman_claim(),
+            deadman_ms=getattr(self.transport, "deadman_ms", None),
         )
         return self.manifest
+
+    def _deadman_claim(self) -> bool:
+        """True only when this backend has actually said it has one.
+
+        The Open Duck's runtime has no deadman of its own — its command source is a local
+        pad, which is never silent — so the guarantee is entirely quackd's daemon on the Pi.
+        A bridge that reports no `safety` block has not told us it has one, and the manifest
+        must not say so on its behalf. sim2d and mock have no such block and are unchanged:
+        the claim is about hardware."""
+        if not hasattr(self.transport, "safety"):
+            return True
+        return bool(getattr(self.transport, "deadman_ms", None))
 
     async def disconnect(self) -> None:
         await self.transport.close()
@@ -233,17 +255,24 @@ class OpenDuckAdapter:
         return await self.transport.send_intent(intent)
 
     async def health(self) -> Health:
+        failure: str | None = None
         try:
             await self.transport.heartbeat()
         except HeartbeatError as e:
-            return Health(ok=False, reason=str(e))
+            failure = str(e)
+        # The state is read either way. Returning `Health(ok=False, reason=...)` with no
+        # extras meant `doctor` printed the heartbeat's complaint and suppressed every row
+        # that would have explained it — so a paused policy showed only "the Pi is starved".
         state = await self.transport.get_state()
         return Health(
-            ok=True,
+            ok=failure is None,
+            reason=failure,
             battery_percent=None,  # this robot reports no battery, on any backend
             extras={
                 "policy": state.policy,
                 "policy_running": state.extras.get("policy_running"),
+                "fall_detection": state.extras.get("fall_detection"),
+                "loop_hz": state.extras.get("loop_hz"),
                 "fallen": state.fallen,
             },
         )
@@ -253,6 +282,14 @@ class OpenDuckAdapter:
 
     async def stop(self) -> None:
         await self.transport.stop()
+
+    @property
+    def stop_error(self) -> str | None:
+        """Forwarded from the transport, because `stop` in `verbs/core.py` reads this off
+        whatever object it was handed — and what it is handed is the adapter, not the
+        transport underneath. Without the forward the check was dead on every backend, and a
+        stop that never left the laptop was recorded as one that had zeroed the legs."""
+        return getattr(self.transport, "stop_error", None)
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)

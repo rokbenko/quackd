@@ -7,9 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The Microduck's hardware path, audited against upstream rather than against itself. Still
-nothing has run on a robot; what changed is that several things which could not have worked
-now can, and several claims that were not true no longer are.
+Two hardware paths, each audited against upstream rather than against itself. Still nothing
+has run on a robot; what changed is that several things which could not have worked now can,
+and several claims that were not true no longer are.
+
+### The Open Duck Mini v2 hardware path
+
+An audit of `open_duck:bridge` against upstream at its pinned commit. A duck set up exactly
+the way `install.sh` and the docs instruct could not start the bridge; if it could, it would
+have had no camera verbs; and the operator's Ctrl-C would not have stopped it.
+
+**The duck could not be started at all.** The shipped `ExecStart` exits 2 before binding a
+socket, because `--script-arg --onnx_model_path` makes argparse refuse a value beginning with
+a dash — and it was the only `serve --script` invocation shipped anywhere, so it was the one
+an owner would copy. `WorkingDirectory` was one level above the data: upstream opens
+`./polynomial_coefficients.pkl` and `../mini_bdx_runtime/assets/` relative to the working
+directory, and the first is read inside `RLWalk.__init__` *after* the servo bus is powered, so
+the wrong directory is a traceback over fourteen energised joints. A pre-flight now refuses
+before the socket and before the servos. And no configuration produced both frames and the
+verbs that use them: the camera capability came from `expression_features.camera`, but that
+flag says who owns the *device*, and camd refused to start while it was true — so a
+correctly configured duck reported no camera and dropped `observe`, `go_to`, `search_scan` and
+`approach_and`, making both starter tasks and three checklist steps unreachable.
+
+**The operator's stop did not stop the duck.** An abort never reached the verb that was
+moving: `asyncio.wait_for` watches only the clock, so a kill switch, a Ctrl-C or a failed
+heartbeat set a flag nothing read until the verb returned on its own, while the verb's own
+10 Hz resend kept feeding the daemon's deadman. `stop` was then refused by the very gate that
+made it necessary, in both the executor and the MCP session. `duck.stop` lasted one tick and
+was undone by the next command. Nothing settled the duck on shutdown — the `finally` that
+looked like it did runs after the loop has exited, so its zeros had no reader — and
+`systemctl stop` killed the interpreter between two 20 ms ticks with the servos holding their
+last goal. Any client's disconnect zeroed a walking duck, including the `doctor` the checklist
+tells you to run from a second terminal. And `stop` reported a success it could not know,
+because the guard reads `stop_error` off the adapter and no adapter forwarded it.
+
+**It claimed guards it did not have.** The task file told the pilot every moving verb would
+refuse if it fell; nothing detects a fall on this backend, so none ever did, and an accepted
+`move` read to the model as evidence it was upright. A duck with `start_paused` could never
+walk and was misdiagnosed as a starved Pi. A wedged control loop reported itself healthy at
+50 Hz forever. A failed state read was dressed up as a healthy duck, with a fabricated pose
+for a robot that has no odometry. And the token was unreadable by the service user, so the
+bridge ran with authentication silently off while four places in the docs promised otherwise.
+
+**The camera was not safe to steer on.** camd served a frozen frame forever once capture
+stopped; its 1 fps default gives a divergent per-frame loop gain against a 10 Hz visual loop;
+`doctor` could not probe it at all; `go_to`'s command cadence was frame-fetch-bound against a
+300 ms deadman; and every distance was wrong, because the detector assumes the simulator's 90°
+field of view where a Pi Camera Module 2 is about 62 — 0.23 m against 0.38 m for the same
+ball, enough for `go_to` to announce arrival outside the task's own success criterion.
+`--no-swap-rb`, offered in the README as the cure for wrong colours, inverts a correct image
+and relabels an orange ball as a person.
+
+**Nine of ten upstream unknowns were closed by reading, not guessing** — the import form the
+shim depends on, that `get_last_command` runs at 50 Hz and before the pause check, that `B` is
+the sound button, that the antennas are trigger-driven and unclamped, that the head slots are
+written unconditionally with no mode button, that the walk loop opens no camera, and that the
+IMU in use is `raw_imu.Imu` (a dict of gyro and accelero) rather than `imu.Imu` (a quaternion).
+The four head floats turn out to be **offsets** added to the walk policy's own head targets,
+not absolute joint angles. Fall detection was deliberately left unimplemented: which axis
+reads gravity depends on an axis remap, a config flag and a tare offset, and a fall detector
+that is wrong fails as a confident "not fallen".
+
+### The Microduck's hardware path
 
 ### Fixed
 

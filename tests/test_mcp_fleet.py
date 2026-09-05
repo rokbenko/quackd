@@ -113,9 +113,13 @@ async def test_contracts_and_budgets_are_per_robot() -> None:
         assert loaded["ok"] and loaded["robot"] == "duck" and "Task" in loaded["instructions"]
         refused = _data(await client.call_tool("robot_run_verb", {"verb": "kick", "robot": "duck"}))
         assert refused["ok"] is False and "allowlist" in refused["summary"]
-        # the other robot did not adopt anything: no allowlist, no budget
-        assert fleet.sessions["reachy"].duck is None
-        assert fleet.sessions["reachy"].executor.budget is None
+        # the other robot did not adopt anything: no allowlist, and the default budget it
+        # started with rather than the duck's. A contractless session is not an unlimited
+        # one — that used to mean an MCP client had uncounted control of a physical robot.
+        reachy = fleet.sessions["reachy"]
+        assert reachy.duck is None
+        assert reachy.executor.budget is not None
+        assert reachy.executor.budget.limits != fleet.sessions["duck"].executor.budget.limits
         for _ in range(6):
             ok = _data(
                 await client.call_tool("robot_run_verb", {"verb": "observe", "robot": "reachy"})

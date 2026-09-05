@@ -117,8 +117,14 @@ COMMAND_VECTOR = UpstreamRef(
     "VERIFIED",
     src(_PAD),
     "the seven floats the policy consumes every tick, in this order: metres per second, "
-    "radians per second, then four head angles in radians. The training environment's "
-    "sample_command in Open_Duck_Playground agrees element for element",
+    "radians per second, then four head values in radians. The training environment's "
+    "sample_command in Open_Duck_Playground agrees element for element. Re-read 2026-09-05: "
+    "the last four are OFFSETS, not absolute joint angles. The walk loop recomputes "
+    "motor_targets = init_pos + action * action_scale each tick and then does "
+    "motor_targets[5:9] = last_commands[3:] + motor_targets[5:9], so a head value is added "
+    "to wherever the policy is holding the head. They do not accumulate, because the base is "
+    "rebuilt every tick, but quackd clamping them to 80 percent of the joint range bounds an "
+    "offset rather than a joint",
 )
 COMMAND_RANGES = UpstreamRef(
     "vx +-0.15, vy +-0.2, vyaw +-1.0, neck_pitch -0.34..1.1, head_pitch -0.78..0.3, "
@@ -187,6 +193,26 @@ CAM = UpstreamRef(
     src(f"{_PKG}/camera.py"),
     "picamzero, 512 by 512, returned base64. Too slow to run inside a 20 ms control tick",
 )
+WALK_LOOP_OPENS_NO_CAMERA = UpstreamRef(
+    "v2_rl_walk_mujoco.py references no camera",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop imports and constructs nothing camera-related, so the "
+    "process the bridge runs never opens the device. camd refusing to start whenever "
+    "expression_features.camera is true was therefore avoiding a contention that this "
+    "process cannot cause. It warns instead - some other upstream script might still open "
+    "it, and two owners of one camera is a real failure, just not this one",
+)
+IMU_CLASS = UpstreamRef(
+    "raw_imu.Imu.get_data() -> {gyro, accelero}",
+    "VERIFIED",
+    src(f"{_PKG}/raw_imu.py"),
+    "read 2026-09-05: the walk loop imports Imu from raw_imu (NOT imu, whose own get_data "
+    "returns a quaternion), and its get_data returns a dict of two 3-vectors: gyro in rad/s "
+    "and accelero in m/s^2, from a BNO055. It remaps axes Y->X, X->Y, Z->Z and flips signs "
+    "depending on duck_config.imu_upside_down, and subtracts a tare offset from accelero[0]. "
+    "There is no fall or tilt detection anywhere in it",
+)
 ANTENNAS = UpstreamRef(
     "Antennas.set_position_left(position), .set_position_right(position)",
     "VERIFIED",
@@ -231,13 +257,40 @@ WALK_POLICY = UpstreamRef(
 # ── UNVERIFIED: what the bridge assumes, and what quackd does about it ───────────────────
 
 PAD_SUBSTITUTION = UpstreamRef(
-    "PAD_SUBSTITUTION",
-    "UNVERIFIED",
+    "from mini_bdx_runtime.xbox_controller import XBoxController",
+    "VERIFIED",
     src(_WALK),
-    "the bridge rebinds XBoxController before upstream's script module executes, so the "
-    "loop reads a network-fed command instead of a local pad. Upstream offers no such "
-    "integration point. The bridge refuses to serve if its factory was never called, so a "
-    "rename upstream is a loud failure rather than a duck moving for invisible reasons",
+    "read 2026-09-05: upstream uses the from-import form and constructs the class inside "
+    "RLWalk.__init__ under `if self.commands:`, which argparse defaults to true. The bridge "
+    "rebinds the module attribute before `runpy` executes the script, so the from-import "
+    "resolves to quackd's factory. Upstream still offers no integration point, so this "
+    "remains a substitution rather than an API: the bridge refuses to serve if its factory "
+    "was never called, and a test drives the real rebind against a fake runtime",
+)
+CONTROL_RATE_OF_READS = UpstreamRef(
+    "self.last_commands, self.buttons, lt, rt = self.xbox_controller.get_last_command()",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: called once per control-loop iteration at control_freq (50 Hz), not at "
+    "the separate command_freq of 20 Hz. This is what quackd measures its loop rate from, so "
+    "MIN_LOOP_HZ can be judged against 50. Note the call happens BEFORE upstream's pause "
+    "check, and a paused loop sleeps 0.1 s a tick, so a paused duck reports about 10 Hz",
+)
+SOUND_BUTTON = UpstreamRef(
+    "self.buttons.B.triggered",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: B plays a random sound, A toggles pause, X toggles the projector, LB "
+    "sets a phase-frequency factor and the dpad nudges a phase offset. quackd pulses only B, "
+    "and never A: pause is a toggle whose real state the bridge cannot read",
+)
+ANTENNA_TRIGGERS = UpstreamRef(
+    "self.antennas.set_position_left(right_trigger)",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop drives the antennas from the pad's trigger values, and "
+    "cross-wires them (left trigger to the right antenna). quackd's gestures are symmetric, "
+    "so the crossing does not change what they look like",
 )
 COMMAND_TTL = UpstreamRef(
     "COMMAND_TTL",
@@ -248,21 +301,29 @@ COMMAND_TTL = UpstreamRef(
     "the consumer, so a dead server thread still stops the duck. It reports the window at "
     "connect and the manifest claims a deadman only when a bridge says it has one",
 )
-HEAD_WITHOUT_THE_MODE_BUTTON = UpstreamRef(
-    "HEAD_WITHOUT_THE_MODE_BUTTON",
-    "UNVERIFIED",
-    src(_PAD),
-    "whether writing the four head slots has any effect without upstream's head-control "
-    "mode button is unknown, and quackd will not press that button. Head control is off "
-    "unless the bridge is started with it enabled, and is clamped inside the runtime ranges",
+HEAD_APPLIED_UNCONDITIONALLY = UpstreamRef(
+    "self.motor_targets[5:9] = self.last_commands[3:] + self.motor_targets[5:9]",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop writes the four head slots on every tick with no "
+    "conditional, no mode flag and no toggle, and it never reads button Y at all. The "
+    "head-control mode button lives inside XBoxController, which the bridge replaces, so "
+    "writing the head slots takes effect without pressing anything. quackd still keeps head "
+    "control off unless asked, and clamped, because upstream's README warns it can break the "
+    "head - but the reason is the hardware, not an unknown",
 )
 FALL_SIGNAL = UpstreamRef(
     "FALL_SIGNAL",
     "UNVERIFIED",
     src("scripts/imu_server.py"),
-    "upstream has no fall flag. A bridge that can see the IMU infers a fall from gravity "
-    "and latches it; one that cannot reports posture unknown and quackd says so rather "
-    "than guessing. Either way there is no recovery to attempt",
+    "upstream has no fall flag, and IMU_CLASS confirms there is no tilt detection to borrow. "
+    "The accelerometer would give it away - gravity moves off the upright axis - but which "
+    "axis is upright depends on the axis remap, on duck_config.imu_upside_down and on a tare "
+    "offset, so it cannot be known without a duck to hold still. quackd therefore does NOT "
+    "guess: it reports posture unknown, says fall-blind in every observation, and asks the "
+    "operator once whether they are watching. A fall detector that is wrong is worse than "
+    "none, because the failure mode is a confident 'not fallen'. Closing this needs someone "
+    "to record accelero with the duck upright and on its side",
 )
 SOUND_FILE_NAMES = UpstreamRef(
     "SOUND_FILE_NAMES",
@@ -277,7 +338,11 @@ ANTENNA_GESTURES = UpstreamRef(
     "UNVERIFIED",
     src(f"{_PKG}/antennas.py"),
     "upstream exposes servo positions, not named gestures, so perk, droop and wiggle are "
-    "quackd's own vocabulary, turned into positions by the bridge",
+    "quackd's own vocabulary, turned into positions by the bridge. Antennas.set_position "
+    "accepts -1..1 with 0 as rest, and the walk loop passes the trigger value straight "
+    "through with no clamping (both read 2026-09-05) - so quackd's negative droop does reach "
+    "the servo, even though a physical trigger axis only produces 0..1 and upstream's own "
+    "pad could never ask for it. What no one has watched is what the two 9 g servos do there",
 )
 LOOP_HEADROOM = UpstreamRef(
     "LOOP_HEADROOM",

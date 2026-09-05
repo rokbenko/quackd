@@ -306,3 +306,38 @@ def test_the_bring_up_task_does_not_require_the_dangerous_flag() -> None:
     headless = open_duck_manifest("bridge", head=False)
     assert not headless.provides("gaze")
     assert not [v for v in lookout.frontmatter.requires if not headless.provides(v)]
+
+
+async def test_a_fall_blind_robot_asks_the_human_once_before_it_walks() -> None:
+    """Not a precondition. On the bridge backend `fall_detection` is a constant False — the
+    IMU has one owner and it is upstream's loop — so refusing per verb would refuse every
+    locomotion verb forever and decommission the robot. Ask the person in the room once,
+    before a leg moves, and let them say no."""
+    from quackd.adapters.open_duck.mock import OpenDuckMock
+    from quackd.agent.loop import AgentLoop, RunConfig
+    from quackd.agent.providers.fake import FakeProvider
+    from quackd.duckfile.parser import parse_duck_text
+    from quackd.safety import Aborted
+
+    duck = parse_duck_text(
+        "---\nduck: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
+        "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
+    )
+
+    class Blind(OpenDuckMock):
+        async def get_state(self):  # type: ignore[no-untyped-def]
+            state = await super().get_state()
+            return state.model_copy(update={"extras": {**state.extras, "fall_detection": False}})
+
+    asked: list[str] = []
+    adapter = OpenDuckAdapter(Blind())
+    with pytest.raises(Aborted, match="watching"):
+        await AgentLoop(
+            RunConfig(
+                duck=duck,
+                provider=FakeProvider(),
+                transport=adapter,
+                acknowledge=lambda why: (asked.append(why), False)[1],
+            )
+        ).run()
+    assert asked and "no way to get up" in asked[0]

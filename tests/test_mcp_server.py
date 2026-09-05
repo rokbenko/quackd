@@ -198,3 +198,20 @@ async def test_confirm_gated_verbs_need_yes() -> None:
 async def test_bundled_ducks_load_by_name(path: str) -> None:
     async with connected() as (client, _session, _transport):
         assert _data(await client.call_tool("robot_load_duckfile", {"path": path}))["ok"]
+
+
+async def test_stop_still_works_after_the_session_aborts() -> None:
+    """The abort gate refused every verb by name, `stop` included. But the abort is set
+    exactly when the pilot needs the brake — the heartbeat has just failed, and a verb that
+    was already walking may still be finishing — so this closed the only control the tool
+    surface offers at the one moment it mattered. Everything else stays refused."""
+    async with connected() as (client, session, _transport):
+        session.executor.abort.set()
+
+        walked = await client.call_tool("robot_run_verb", {"verb": "walk", "params": {"vx": 0.1}})
+        assert not _data(walked)["ok"]
+        assert "aborted" in _data(walked)["summary"]
+
+        stopped = await client.call_tool("robot_run_verb", {"verb": "stop", "params": {}})
+        assert _data(stopped)["ok"], "stop must survive the abort"
+        assert "stopped" in _data(stopped)["summary"]

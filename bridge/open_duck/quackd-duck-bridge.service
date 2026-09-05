@@ -4,22 +4,38 @@ Documentation=https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_du
 After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/dev/ttyACM0
-StartLimitIntervalSec=120
-StartLimitBurst=3
+# No start rate limit. With Restart=no below, the only thing a burst limit could
+# throttle is a human editing paths and trying again — and bring-up is exactly that
+# loop. It used to be 3 in 120 s, so the fourth `systemctl start` failed with an
+# error about none of the problems being debugged and needed `reset-failed`, which
+# appeared nowhere in the docs.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=pi
 SupplementaryGroups=dialout i2c audio video
-WorkingDirectory=/home/pi/Open_Duck_Mini_Runtime
+# The bridge reads /etc/quackd/duck-bridge.token as this user and REFUSES TO START if
+# it exists but cannot be read, rather than running with authentication silently off.
+# install.sh group-owns it to this user and verifies that; if you installed by hand,
+# make sure this user can read it (or use LoadCredential= and --token-file=%d/...).
+# scripts/, not the repository root. Upstream's walk script opens
+# "./polynomial_coefficients.pkl" and "../mini_bdx_runtime/assets/" relative to the working
+# directory, and both only resolve from here. The bridge chdir's here itself as well, so a
+# hand-edited unit that disagrees still works.
+WorkingDirectory=/home/pi/Open_Duck_Mini_Runtime/scripts
 Environment=PYTHONUNBUFFERED=1
 Environment=SDL_VIDEODRIVER=dummy
 # The interpreter MUST be the virtualenv you installed Open_Duck_Mini_Runtime into:
 # the bridge imports mini_bdx_runtime, and the system python does not have it.
+#
+# --script-arg uses the = form on purpose. Written as `--script-arg --onnx_model_path`,
+# argparse refuses a value beginning with a dash and the unit exits 2 before the bridge
+# ever binds a socket.
 ExecStart=/home/pi/.virtualenvs/open-duck-mini-runtime/bin/python \
     /opt/quackd/quackd_duck_bridge.py serve \
     --script /home/pi/Open_Duck_Mini_Runtime/scripts/v2_rl_walk_mujoco.py \
-    --script-arg --onnx_model_path --script-arg /home/pi/BEST_WALK_ONNX_2.onnx \
+    --script-arg=--onnx_model_path --script-arg=/home/pi/BEST_WALK_ONNX_2.onnx \
     --bind 127.0.0.1 --deadman-ms 300
 Nice=-5
 OOMScoreAdjust=-500

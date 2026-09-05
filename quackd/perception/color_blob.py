@@ -57,6 +57,8 @@ class ColorBlobDetector:
     name: str = "color_blob"
     targets: tuple[Target, ...] = DEFAULT_TARGETS
     fov_deg: float = DEFAULT_FOV_DEG
+    calibrated: bool = True
+    """False when `fov_deg` is the simulator default on a real lens."""
     min_area_px: int = 12
     max_per_label: int = 1
     extra: dict[str, int] = field(default_factory=dict)
@@ -98,6 +100,7 @@ class ColorBlobDetector:
                         cy=cy / h,
                         area=area / (w * h),
                         confidence=min(1.0, 0.5 + area / 400.0),
+                        calibrated=self.calibrated,
                         bearing_deg=round(bearing, 1),
                         est_distance_m=round(dist, 3),
                     )

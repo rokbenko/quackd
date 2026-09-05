@@ -95,21 +95,52 @@ class ExpressParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
+def _stale(state: DuckState) -> str | None:
+    """A state read that failed is silence, not a verdict.
+
+    The bridge used to swallow the error and hand back a default frame, so `fallen` was
+    False, `policy_running` was None, both preconditions passed, and quackd would start a
+    `move` into a link that was not there. Refusing is the fail-closed answer, and it is
+    bounded: the heartbeat ends the run a beat later anyway."""
+    why = state.extras.get("state_stale")
+    if not why:
+        return None
+    return f"the duck's state could not be read ({why}), so quackd cannot tell what it is doing"
+
+
 def _not_fallen(state: DuckState) -> str | None:
     """The one precondition that matters on this body. There is no get-up policy for the
-    Open Duck Mini v2, so a fallen duck is a job for a human, not for another verb."""
+    Open Duck Mini v2, so a fallen duck is a job for a human, not for another verb.
+
+    Deliberately NOT blind-refusing the way the Microduck's does. There, `fall_detection`
+    goes quiet and comes back; here it is a constant False on the only hardware backend, so
+    refusing on it would refuse every locomotion verb forever and decommission the robot.
+    The blindness is surfaced instead — in `summary()`, in the manifest, in `doctor` and in
+    a warning before the first run — and the human on the stand is the guard."""
+    if stale := _stale(state):
+        return stale
     if not state.fallen:
         return None
     return "the duck has fallen and this robot has no get-up policy; stand it up by hand"
 
 
 def _policy_running(state: DuckState) -> str | None:
-    """The walk policy can be paused, by `start_paused` in duck_config.json or by the A
-    button on the robot's own gamepad. A backend that does not report it is assumed running."""
+    """The walk policy can be paused by `start_paused` in duck_config.json. A backend that
+    does not report it is assumed running.
+
+    Upstream's own unpause is its gamepad's A button, and the bridge replaced that pad, so
+    there is no A button in the process to press — which is why this names the config file
+    and not a control the operator no longer has."""
+    if stale := _stale(state):
+        return stale
     running = state.extras.get("policy_running")
     if running in (None, True):
         return None
-    return "the walk policy is paused; unpause it on the robot (the A button, or start_paused)"
+    return (
+        "the walk policy is paused. quackd cannot unpause it: upstream's only unpause is its "
+        "gamepad's A button, and the bridge replaced that pad. Set start_paused false in "
+        "duck_config.json on the robot and restart quackd-duck-bridge"
+    )
 
 
 def open_duck_conditions() -> dict[str, Precondition]:
