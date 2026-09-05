@@ -126,6 +126,11 @@ class OpenDuckBridge:
         #: often when the link is the thing that is wrong — so a stop that was never delivered
         #: must not be logged as one that was.
         self.stop_error: str | None = None
+        #: Echoed on every `duck.command` so the bridge can tell a command this client sent
+        #: after a stop from one that was already in flight when the stop went out. Learned
+        #: from the stop's reply, and re-learned from any state read in case that reply was
+        #: lost.
+        self.stop_epoch = 0
         #: Set when the read pump sees EOF. Without it every later request waited out the
         #: full timeout on a socket nobody was reading.
         self._closed = False
@@ -272,6 +277,11 @@ class OpenDuckBridge:
                 result = await self.request(STATE)
                 state = result if isinstance(result, dict) else {}
         state = state or {}
+        # Resynchronise the stop epoch from any state read. If a stop's own reply were lost,
+        # this client would keep sending an epoch the bridge has moved past and have every
+        # command dropped for the rest of the window; one state read recovers it.
+        if state.get("stop_epoch") is not None:
+            self.stop_epoch = int(state["stop_epoch"])
         # `fallen` is tri-state on the wire: None means the bridge cannot see falls at all.
         # A duck nobody is watching must read as unknown, never as standing (up.FALL_SIGNAL).
         raw_fallen = state.get("fallen")
@@ -319,11 +329,12 @@ class OpenDuckBridge:
                             "vx": float(p.get("vx", 0.0)),
                             "vy": float(p.get("vy", 0.0)),
                             "vyaw": float(p.get("wz", 0.0)),
+                            "epoch": self.stop_epoch,
                         },
                     )
                     return Ack()
                 case "stop":
-                    await self.request(STOP)
+                    self._note_stop(await self.request(STOP))
                     return Ack()
                 case "look":
                     return await self._look(p)
@@ -364,7 +375,7 @@ class OpenDuckBridge:
         for name, bounds in (("neck_pitch", NECK_PITCH_RANGE), ("head_roll", HEAD_ROLL_RANGE)):
             if name in p:
                 head[name] = _clamp(float(p[name]), bounds)
-        await self.notify(COMMAND, {"head": head})
+        await self.notify(COMMAND, {"head": head, "epoch": self.stop_epoch})
         clamped = any(abs(head[k] - v) > 1e-9 for k, v in wanted.items())
         return Ack(accepted=True, reason="clamped to this neck's travel" if clamped else None)
 
@@ -389,9 +400,15 @@ class OpenDuckBridge:
                 "the Pi is starved and the gait is degrading"
             )
 
+    def _note_stop(self, result: Any) -> None:
+        """Adopt the epoch the bridge just moved to, so the next command is accepted at once
+        and the ones still in flight behind this stop are not."""
+        if isinstance(result, dict) and result.get("stop_epoch") is not None:
+            self.stop_epoch = int(result["stop_epoch"])
+
     async def stop(self) -> None:
         try:
-            await self.request(STOP)
+            self._note_stop(await self.request(STOP))
         except (TransportError, OSError) as e:
             # Recorded rather than raised: `stop` must never itself take a run down. What
             # actually zeroes the legs when this fails is the daemon's own deadman, 300 ms

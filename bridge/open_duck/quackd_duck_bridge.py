@@ -178,10 +178,16 @@ class BridgeCore:
         self.ticks = 0
         self.deadman_tripped = False
         self.stopped_upto = 0
-        #: A stop holds the duck down for this long, rather than lasting one tick. See
-        #: `_zero()`. Sized at one deadman window: long enough to outlive the commands
-        #: already in flight when the stop was sent, short enough that a human who
-        #: deliberately drives again a moment later is not fighting it.
+        #: Bumped by every stop. A `duck.command` carries the epoch its sender last knew
+        #: about, so one composed before the stop it had not yet heard of is distinguishable
+        #: from one a pilot deliberately sent afterwards — which is the whole difference
+        #: between discarding an in-flight packet and refusing to drive again. See `_apply`.
+        self.stop_epoch = 0
+        #: How long after a stop a stale command is still refused. This bounds the epoch
+        #: check rather than replacing it: if the stop's reply were lost, the client would
+        #: never learn the new epoch, and without a window every later command would be
+        #: dropped forever. Long enough to outlive a link round trip, and irrelevant to a
+        #: client that is up to date.
         self.stop_latch_s = self.deadman_s
         self.stopped_until = 0.0
         self.sounds: list[str] = []
@@ -288,8 +294,10 @@ class BridgeCore:
                     "stopped": True,
                     "limp": False,
                     "ignore_seq_upto": self._seq,
-                    # how long commands will be dropped for, so a client can say honestly
-                    # that the stop holds rather than that zeros were published once
+                    # The client echoes this on every later command, which is how the
+                    # bridge tells a deliberate one from a packet that was already in
+                    # flight when the brake went on.
+                    "stop_epoch": self.stop_epoch,
                     "latched_ms": int(self.stop_latch_s * 1000),
                 },
             ), authed
@@ -328,11 +336,21 @@ class BridgeCore:
         # A stop that lasts one tick is not a stop. `duck.stop` used to publish zeros and
         # nothing more, so the very next `duck.command` — one already in flight when the
         # operator hit the brake, or the tail of a verb that had not noticed yet — put the
-        # velocity straight back 100 ms later. Commands arriving inside the latch are
-        # dropped entirely, which also leaves `snap.at` stale, so the duck stays stopped
-        # until something deliberately drives it again.
+        # velocity straight back 100 ms later.
+        #
+        # What must be discarded is a command composed *before* its sender knew about the
+        # stop, and only that. A plain time window cannot tell the two apart and would break
+        # ordinary driving: `_turn` ends every scan step with a stop, so the next step's
+        # opening commands would be swallowed and the duck would under-rotate all the way
+        # through a `search_scan`. The epoch makes the distinction exact, and the window
+        # only bounds it, so a stop whose reply was lost cannot wedge the duck for good.
+        #
+        # A client that sends no epoch at all is held to the blunt window instead: it cannot
+        # prove it has heard, so it is not given the benefit of the doubt.
         if self.now() < self.stopped_until:
-            return
+            epoch = params.get("epoch")
+            if epoch is None or int(epoch) < self.stop_epoch:
+                return
         snap = self.snapshot
         head = list(snap.head)
         if self.limits.head_enabled:
@@ -356,6 +374,7 @@ class BridgeCore:
     def _zero(self) -> None:
         self._seq += 1
         self.stopped_upto = self._seq
+        self.stop_epoch += 1
         self.stopped_until = self.now() + self.stop_latch_s
         self._gesture = None
         self.snapshot = Snapshot(seq=self._seq, at=self.now(), head=self.snapshot.head)
@@ -394,6 +413,9 @@ class BridgeCore:
             "command_age_ms": int((self.now() - snap.at) * 1000),
             "deadman_tripped": self.deadman_tripped,
             "stop_latched": self.now() < self.stopped_until,
+            # so a client that missed a stop's reply can resynchronise from any state read
+            # rather than having its commands dropped until the window expires
+            "stop_epoch": self.stop_epoch,
             "pad_override": False,
             "unknowns": ["fall detection", "battery", "whether the pause took"],
         }

@@ -541,18 +541,36 @@ def test_a_stop_is_not_undone_by_the_next_command(daemon: ModuleType) -> None:
     assert reply["result"]["stopped"] is True
     assert reply["result"]["latched_ms"] == int(core.deadman_s * 1000)
 
-    # the command that was already on the wire when the stop was sent
+    epoch = reply["result"]["stop_epoch"]
+
+    # the command that was already on the wire when the stop was sent: it carries the epoch
+    # its sender knew about, which is now stale
     clock.t += 0.05
-    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    core.handle({"method": "duck.command", "params": {"vx": 0.1, "epoch": epoch - 1}}, authed=True)
     snap = core.command_for_tick()
     assert snap.vx == 0.0, "a stop that lasts one tick is not a stop"
     assert core.state()["stop_latched"] is True
 
-    # ...and it is a latch, not a mute: a deliberate command afterwards still drives
+    # ...but a command from a client that has *heard* the stop is deliberate, and must drive
+    # immediately. A blunt time window cannot tell these apart, and swallowing this one would
+    # make the duck under-rotate through every step of a search_scan, because `_turn` ends
+    # each step with a stop.
+    core.handle({"method": "duck.command", "params": {"vx": 0.1, "epoch": epoch}}, authed=True)
+    assert core.command_for_tick().vx == pytest.approx(0.1)
+
+
+def test_a_client_that_sends_no_epoch_is_held_to_the_window(daemon: ModuleType) -> None:
+    """It cannot prove it has heard the stop, so it does not get the benefit of the doubt."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    hello(core)
+    core.handle({"id": 1, "method": "duck.stop"}, authed=True)
+    core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
+    assert core.command_for_tick().vx == 0.0
+
     clock.t += core.stop_latch_s + 0.01
     core.handle({"method": "duck.command", "params": {"vx": 0.1}}, authed=True)
-    assert core.command_for_tick().vx == pytest.approx(0.1)
-    assert core.state()["stop_latched"] is False
+    assert core.command_for_tick().vx == pytest.approx(0.1), "the window bounds it"
 
 
 def test_a_stop_leaves_the_duck_stopped_even_with_nobody_commanding(daemon: ModuleType) -> None:
@@ -667,6 +685,41 @@ async def test_a_stop_that_cannot_be_delivered_fails_the_verb(daemon: ModuleType
         assert "could not be delivered" in result.summary
         assert adapter.stop_error, "and the adapter must carry the reason"
         assert (await adapter.get_state()).extras["stop_error"] == adapter.stop_error
+    finally:
+        server.stop()
+        server.join(timeout=2)
+
+
+async def test_a_second_move_right_after_a_stop_still_drives(daemon: ModuleType) -> None:
+    """Every `move` ends with a stop, and `_turn` ends every step of a `search_scan` with
+    one. So the command that opens the *next* move arrives milliseconds after a stop, and it
+    is deliberate — it has to take effect.
+
+    A stop latch that went purely on elapsed time would swallow it and leave the duck
+    under-rotating through the whole scan, which is why the bridge matches on the stop epoch
+    the client echoes rather than on the clock alone."""
+    core = daemon.BridgeCore(capabilities={"camera": False, "speaker": False})
+    server = daemon.Server(core, "127.0.0.1", 0)
+    server.start()
+    controller = daemon.NetworkController(core, 20)
+    try:
+        adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
+        manifest = await adapter.connect()
+        ex = Executor(
+            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
+        )
+        assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.2})).ok
+        await asyncio.sleep(0.05)
+        assert controller.get_last_command()[0][0] == 0.0, "a move ends stopped"
+
+        # immediately again, exactly as search_scan's next turn step would
+        moving = asyncio.create_task(ex.run_verb("move", {"vx": 0.12, "duration_s": 0.4}))
+        await asyncio.sleep(0.15)
+        assert controller.get_last_command()[0][0] == pytest.approx(0.12), (
+            "the stop latch must not swallow the next deliberate command"
+        )
+        assert (await moving).ok
+        await adapter.disconnect()
     finally:
         server.stop()
         server.join(timeout=2)
