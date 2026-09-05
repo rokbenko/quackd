@@ -152,6 +152,8 @@ class OpenDuckBridge:
         self.safety: dict[str, Any] = {}
         #: Set when the bridge says it has no authentication but we sent a token anyway.
         self.auth_warning: str | None = None
+        #: Set when the robot's runtime is not the commit quackd's refs were read at.
+        self.runtime_warning: str | None = None
         #: The window the bridge said it enforces, or None if it claims no deadman at all.
         self.deadman_ms: int | None = None
         #: Set when the read pump sees EOF. Without it every later request waited out the
@@ -201,6 +203,17 @@ class OpenDuckBridge:
         self.features = {k: bool(v) for k, v in caps.items()}
         self.bridge_version = self.hello.get("bridge_version")
         self.runtime_commit = (self.hello.get("runtime") or {}).get("commit")
+        # Every upstream name the bridge borrows was read at one commit, and the class rebind
+        # the whole thing stands on is the part a rename would break silently. This is a
+        # warning, not a refusal: an owner tracking upstream's branch is doing the normal
+        # thing, and quackd has no business refusing to talk to their duck over it.
+        if self.runtime_commit and not self.runtime_commit.startswith(up.PIN[:7]):
+            self.runtime_warning = (
+                f"this duck's Open_Duck_Mini_Runtime is at {self.runtime_commit[:7]}, and "
+                f"quackd read upstream at {up.PIN[:7]} ({up.READ_ON}). That is normal, but "
+                "it is also where a renamed XBoxController would hide: if the bridge exits "
+                "saying the walk loop never asked for a controller, this is why."
+            )
         self.safety = dict(self.hello.get("safety") or {})
         # upstream_api.COMMAND_TTL states the invariant this implements: "the manifest claims
         # a deadman only when a bridge says it has one". It was a hardcoded True.

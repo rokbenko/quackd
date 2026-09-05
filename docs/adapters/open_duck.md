@@ -136,9 +136,12 @@ whether this duck has a camera as far as quackd is concerned**, because it is th
 frames can come from; `expression_features.camera` decides who owns the *device*. Without a
 URL the bridge advertises no camera, and `observe`,
 `go_to`, `search_scan` and `approach_and` do not exist for that duck rather than existing
-and failing. Two processes cannot own one camera either: if `expression_features.camera` is
-true the robot's own runtime owns it and `camd` refuses to start rather than fight for the
-device. Set that flag false and let quackd serve frames.
+and failing. On camera ownership: upstream's walk loop — the script the bridge runs — opens no camera at
+all, so `camd` and the bridge cannot be fighting over the device. `camd` used to refuse to
+start when `expression_features.camera` was true and now only warns, because the collision it
+was avoiding cannot happen in that process. Setting the flag false is still tidier, and if
+you run one of upstream's *own* camera scripts alongside, the two really will contend — which
+now shows up honestly, as failing captures and expiring snapshots rather than a frozen frame.
 
 ### What is honestly degraded on hardware
 
@@ -150,7 +153,7 @@ less than its name suggests, and they are worth knowing before you write a task.
 | `say`, `quack` | The only channel the bridge has to the speaker is upstream's random-sound button, so the mood quackd picks is logged but selects nothing. A duck says *something*, not the right thing |
 | a fall | Nothing detects one. `posture` reads `unknown`, never `standing`, and the `not_fallen` precondition never fires on hardware. Every observation says `fall-blind`, `doctor` says so, and a task that can make the duck walk asks you once whether you are watching. You are the fall detector |
 | a battery | Nothing reports one, so `abort_when: battery below N%` parses and can never fire |
-| `gaze` | Off unless the daemon was started with head control enabled. Whether the head slots move at all without upstream's mode button is unverified, and quackd will not press it. Note also that upstream *adds* those four floats to the walk policy's own head targets, so they are offsets from wherever the policy is holding the head, not absolute joint angles |
+| `gaze` | Off unless the daemon was started with head control enabled. The head slots *are* written every tick with no mode button involved (the mode button lives inside the pad class the bridge replaced), so this works — it is off by default because upstream warns the neck can be damaged, not because it is unknown. Upstream *adds* the four values to the walk policy's own head targets, so they are offsets from wherever the policy is holding the head, not absolute joint angles |
 
 ## VERIFIED (read from upstream source on 2026-09-03)
 
@@ -179,6 +182,9 @@ less than its name suggests, and they are worth knowing before you write a task.
 | `expression_features.eyes, .projector, .antennas, .speaker, .microphone, .camera` | what narrows the manifest at connect |
 | `Sounds(volume, sound_directory)` | the speaker, and the absence of any text to speech |
 | `Cam.get_encoded_image()` | the camera, too slow for a 20 ms tick |
+| `v2_rl_walk_mujoco.py references no camera` | the walk loop opens no camera, so camd cannot be fighting it |
+| `raw_imu.Imu.get_data() -> {gyro, accelero}` | the IMU the loop actually uses, and what it returns |
+| `self.motor_targets[5:9] = self.last_commands[3:] + self.motor_targets[5:9]` | the head slots are written every tick, unconditionally, and `Y` is never read |
 | `Antennas.set_position_left(position), .set_position_right(position)` | `express` |
 | `scripts/imu_server.py` | the only network-facing script upstream has |
 | `the runtime has no network control API` | why the bridge exists |
@@ -191,7 +197,6 @@ less than its name suggests, and they are worth knowing before you write a task.
 | Thing | What quackd does |
 |---|---|
 | `COMMAND_TTL` | quackd's own deadman, in the consumer, reported at connect; the manifest claims one only when a bridge says it has one |
-| `HEAD_WITHOUT_THE_MODE_BUTTON` | head control is off unless asked for, clamped and rate limited, and the mode button is never pressed |
 | `FALL_SIGNAL` | a bridge that can see the IMU latches a fall; one that cannot reports posture unknown. Either way there is no recovery to attempt |
 | `SOUND_FILE_NAMES` | quackd sends a mood from its own vocabulary and the bridge resolves it, never spelling a `.wav` name |
 | `ANTENNA_GESTURES` | perk, droop and wiggle are quackd's words, turned into servo positions by the bridge |

@@ -124,8 +124,11 @@ def _probe(
         # description claims on its behalf. This is the checklist's go/no-go gate, so a
         # deadman window or an absent token has to be visible here.
         told: dict[str, Any] = dict(getattr(transport, "safety", None) or {})
-        if warning := getattr(transport, "auth_warning", None):
-            told["auth_warning"] = warning
+        for key in ("auth_warning", "runtime_warning"):
+            if warning := getattr(transport, key, None):
+                told[key] = warning
+        if commit := getattr(transport, "runtime_commit", None):
+            told["runtime_commit"] = commit
         try:
             health = await adapter.health()
             # A camera URL that nothing checks is a camera URL that fails mid-run. doctor used
@@ -179,7 +182,8 @@ def _probe(
         # token at all is the difference between the documented setup and an open port, so
         # both belong in front of the operator at the checklist's go/no-go gate.
         t.add_row("safety", "[dim]as this bridge reported it[/dim]")
-        for key in ("deadman_ms", "auth", "fall_detection", "getup_policy", "estop"):
+        for key in ("deadman_ms", "auth", "fall_detection", "getup_policy", "estop",
+                    "runtime_commit"):
             if key in told:
                 reported = told[key]
                 worrying = (key == "auth" and reported == "none") or (
@@ -209,8 +213,9 @@ def _probe(
             "[yellow]--camera-url was given but no frame came back, so observe, go_to, "
             "search_scan and approach_and cannot see anything on this run[/yellow]"
         )
-    if warning := told.get("auth_warning"):
-        console.print(f"[yellow]{escape(str(warning))}[/yellow]")
+    for key in ("auth_warning", "runtime_warning"):
+        if warning := told.get(key):
+            console.print(f"[yellow]{escape(str(warning))}[/yellow]")
     if told.get("fall_detection") is False:
         console.print(
             "[yellow]nothing on this robot detects a fall, so posture never becomes "

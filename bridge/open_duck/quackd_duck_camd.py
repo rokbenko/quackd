@@ -357,12 +357,20 @@ def main(argv: list[str] | None = None) -> int:
         format="quackd-duck-camd %(levelname)s %(message)s",
     )
     if not args.fake and runtime_owns_the_camera(args.duck_config):
-        log.error(
-            "duck_config.json has expression_features.camera true, so the robot's own "
-            "runtime owns the camera and this server would fight it for the device. Set "
-            "that flag false and let this serve the camera, or do not run this."
+        # Downgraded from a refusal on 2026-09-05, after reading upstream at the pin: the
+        # walk loop `v2_rl_walk_mujoco.py` references no camera at all, so the process the
+        # bridge runs cannot be contending for the device. Refusing here was avoiding a
+        # collision that could not happen, on the strength of a flag rather than a reading.
+        #
+        # Still a warning, because some *other* upstream script might open it, and two owners
+        # of one camera is a genuine failure - it just shows up honestly now: the capture
+        # fails, /healthz says so, and snapshots expire instead of freezing.
+        log.warning(
+            "duck_config.json has expression_features.camera true. Nothing in upstream's "
+            "walk loop opens the camera, so this should be fine, but if you also run one of "
+            "upstream's own camera scripts the two will fight for the device and captures "
+            "here will start failing. Setting that flag false is still the tidier setup."
         )
-        return 2
 
     store = FrameStore()
     source: Any = FakeCamera(args.size) if args.fake else None

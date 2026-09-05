@@ -217,3 +217,53 @@ Open an issue with the Open Duck hardware report template, and attach:
 
 A report earns a row on this adapter's page and our thanks. Only a run on the maintainer's
 own duck flips a status to ✅, which is the same rule every other adapter lives under.
+
+## Five numbers only you can measure
+
+Everything else about this adapter has been read from upstream's source at a pinned commit.
+These five cannot be, and each one is currently a guess that quackd is open about. If you
+record any of them, say so in the issue — they are the difference between a default someone
+chose and a default someone measured.
+
+1. **How long the bridge takes to reach "listening on".** `--patch-watchdog-s` defaults to
+   150 s to cover onnxruntime, the servo bus, a two second settle and the IMU on a cold Pi.
+   Nobody has timed it. From `journalctl -u quackd-duck-bridge`:
+
+   ```bash
+   journalctl -u quackd-duck-bridge -o short-precise | grep -E "Started|listening on"
+   ```
+
+2. **camd's real peak memory**, against the `MemoryMax=140M` in its unit. If this is close,
+   the cap is wrong and picamera2 will be OOM-killed on a walking duck:
+
+   ```bash
+   systemctl show quackd-duck-camd -p MemoryPeak
+   ```
+
+3. **What the loop actually leaves you.** `MIN_LOOP_HZ` is 35 against a 50 Hz policy, and
+   that floor is calibrated against nothing. Watch `loop_hz` in `report_state` through a
+   whole walking run and report the minimum you saw.
+
+4. **Your camera's field of view and colour**, from step 5b. `--fov-deg` defaults to the
+   simulator's 90; a Pi Camera Module 2 is about 62. Report the tape-measured distance and
+   what `observe` said, at two distances if you can.
+
+5. **The accelerometer, upright and on its side.** This is the one that would give this
+   robot fall detection. quackd will not guess it: the axis that reads gravity depends on
+   the IMU's remap, on `imu_upside_down`, and on a tare offset, so a wrong guess means a
+   confident "not fallen" — worse than admitting blindness. Hold the duck still in each
+   pose and record `accelero`:
+
+   ```bash
+   python3 -c "
+from mini_bdx_runtime.raw_imu import Imu
+import time
+imu = Imu(sampling_freq=50)
+time.sleep(1)
+for _ in range(20):
+    print(imu.get_data()['accelero'])
+    time.sleep(0.25)
+"
+   ```
+
+   Run it with the bridge **stopped** — the I2C bus, like the serial bus, has one owner.

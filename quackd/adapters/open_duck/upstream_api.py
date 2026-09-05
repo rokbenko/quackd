@@ -193,6 +193,26 @@ CAM = UpstreamRef(
     src(f"{_PKG}/camera.py"),
     "picamzero, 512 by 512, returned base64. Too slow to run inside a 20 ms control tick",
 )
+WALK_LOOP_OPENS_NO_CAMERA = UpstreamRef(
+    "v2_rl_walk_mujoco.py references no camera",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop imports and constructs nothing camera-related, so the "
+    "process the bridge runs never opens the device. camd refusing to start whenever "
+    "expression_features.camera is true was therefore avoiding a contention that this "
+    "process cannot cause. It warns instead - some other upstream script might still open "
+    "it, and two owners of one camera is a real failure, just not this one",
+)
+IMU_CLASS = UpstreamRef(
+    "raw_imu.Imu.get_data() -> {gyro, accelero}",
+    "VERIFIED",
+    src(f"{_PKG}/raw_imu.py"),
+    "read 2026-09-05: the walk loop imports Imu from raw_imu (NOT imu, whose own get_data "
+    "returns a quaternion), and its get_data returns a dict of two 3-vectors: gyro in rad/s "
+    "and accelero in m/s^2, from a BNO055. It remaps axes Y->X, X->Y, Z->Z and flips signs "
+    "depending on duck_config.imu_upside_down, and subtracts a tare offset from accelero[0]. "
+    "There is no fall or tilt detection anywhere in it",
+)
 ANTENNAS = UpstreamRef(
     "Antennas.set_position_left(position), .set_position_right(position)",
     "VERIFIED",
@@ -281,21 +301,29 @@ COMMAND_TTL = UpstreamRef(
     "the consumer, so a dead server thread still stops the duck. It reports the window at "
     "connect and the manifest claims a deadman only when a bridge says it has one",
 )
-HEAD_WITHOUT_THE_MODE_BUTTON = UpstreamRef(
-    "HEAD_WITHOUT_THE_MODE_BUTTON",
-    "UNVERIFIED",
-    src(_PAD),
-    "whether writing the four head slots has any effect without upstream's head-control "
-    "mode button is unknown, and quackd will not press that button. Head control is off "
-    "unless the bridge is started with it enabled, and is clamped inside the runtime ranges",
+HEAD_APPLIED_UNCONDITIONALLY = UpstreamRef(
+    "self.motor_targets[5:9] = self.last_commands[3:] + self.motor_targets[5:9]",
+    "VERIFIED",
+    src(_WALK),
+    "read 2026-09-05: the walk loop writes the four head slots on every tick with no "
+    "conditional, no mode flag and no toggle, and it never reads button Y at all. The "
+    "head-control mode button lives inside XBoxController, which the bridge replaces, so "
+    "writing the head slots takes effect without pressing anything. quackd still keeps head "
+    "control off unless asked, and clamped, because upstream's README warns it can break the "
+    "head - but the reason is the hardware, not an unknown",
 )
 FALL_SIGNAL = UpstreamRef(
     "FALL_SIGNAL",
     "UNVERIFIED",
     src("scripts/imu_server.py"),
-    "upstream has no fall flag. A bridge that can see the IMU infers a fall from gravity "
-    "and latches it; one that cannot reports posture unknown and quackd says so rather "
-    "than guessing. Either way there is no recovery to attempt",
+    "upstream has no fall flag, and IMU_CLASS confirms there is no tilt detection to borrow. "
+    "The accelerometer would give it away - gravity moves off the upright axis - but which "
+    "axis is upright depends on the axis remap, on duck_config.imu_upside_down and on a tare "
+    "offset, so it cannot be known without a duck to hold still. quackd therefore does NOT "
+    "guess: it reports posture unknown, says fall-blind in every observation, and asks the "
+    "operator once whether they are watching. A fall detector that is wrong is worse than "
+    "none, because the failure mode is a confident 'not fallen'. Closing this needs someone "
+    "to record accelero with the duck upright and on its side",
 )
 SOUND_FILE_NAMES = UpstreamRef(
     "SOUND_FILE_NAMES",
@@ -311,9 +339,10 @@ ANTENNA_GESTURES = UpstreamRef(
     src(f"{_PKG}/antennas.py"),
     "upstream exposes servo positions, not named gestures, so perk, droop and wiggle are "
     "quackd's own vocabulary, turned into positions by the bridge. Antennas.set_position "
-    "accepts -1..1 with 0 as rest (read 2026-09-05), but a physical trigger axis only "
-    "produces 0..1 — so quackd's droop sends a negative value upstream's own pad never "
-    "could. Whether the runtime passes it through unclamped is the part nobody has checked",
+    "accepts -1..1 with 0 as rest, and the walk loop passes the trigger value straight "
+    "through with no clamping (both read 2026-09-05) - so quackd's negative droop does reach "
+    "the servo, even though a physical trigger axis only produces 0..1 and upstream's own "
+    "pad could never ask for it. What no one has watched is what the two 9 g servos do there",
 )
 LOOP_HEADROOM = UpstreamRef(
     "LOOP_HEADROOM",

@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import logging
 import sys
 import threading
 import time
@@ -147,11 +148,27 @@ def test_nothing_in_this_server_can_move_the_robot(camd: ModuleType) -> None:
 # ── two processes cannot own one camera ─────────────────────────────────────────────────
 
 
-def test_it_refuses_to_fight_the_runtime_for_the_camera(camd: ModuleType, tmp_path) -> None:
+def test_the_camera_flag_warns_rather_than_refusing(camd: ModuleType, tmp_path, caplog) -> None:
+    """It used to `return 2` on `expression_features.camera`, to avoid fighting the robot's
+    own runtime for the device. Reading upstream at the pin on 2026-09-05 settled it: the
+    walk loop the bridge runs references no camera at all, so the process quackd starts
+    cannot be the other owner. Refusing was avoiding a collision that could not happen — and
+    it was the flag the docs tell owners to leave true if they want the runtime's own eyes.
+
+    It still warns, because another upstream script could open the device, and it still fails
+    when there is genuinely no camera. What it must not do is fail *because of the flag*."""
     config = tmp_path / "duck_config.json"
     config.write_text('{"expression_features": {"camera": true}}')
     assert camd.runtime_owns_the_camera(str(config)) is True
-    assert camd.main(["--duck-config", str(config), "--seconds", "0.1"]) == 2
+
+    with caplog.at_level(logging.WARNING, logger="quackd-duck-camd"):
+        code = camd.main(["--duck-config", str(config), "--seconds", "0.1"])
+    warned = " ".join(r.message for r in caplog.records)
+    assert "walk loop opens the camera" in warned or "no camera" in warned.lower()
+    if code == 2:
+        # this machine has no picamzero, so it fails on the camera itself; the point is that
+        # the reason is the hardware and not the configuration flag
+        assert "no camera" in warned.lower(), warned
 
     config.write_text('{"expression_features": {"camera": false}}')
     assert camd.runtime_owns_the_camera(str(config)) is False

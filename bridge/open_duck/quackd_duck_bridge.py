@@ -795,6 +795,34 @@ def read_duck_config(path: str) -> dict[str, Any]:
         return {}
 
 
+def runtime_commit(script: str) -> str | None:
+    """The commit of the Open_Duck_Mini_Runtime checkout this bridge is about to run.
+
+    Every name the bridge borrows was read at one pinned commit, and nothing pins the
+    *owner's* checkout to it. The hello has advertised a `runtime.commit` field since the
+    protocol existed and nobody ever filled it in, so quackd could not tell an audited
+    runtime from one six months ahead of it — which matters most for the class rebind the
+    whole bridge stands on. Read here rather than asked for, because an operator should not
+    have to know it.
+
+    Best effort: no git, no checkout, or a tarball install all yield None, and None means
+    unknown rather than matching."""
+    import subprocess
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(os.path.expanduser(script))))
+    try:
+        out = subprocess.run(
+            ["git", "-C", root, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    commit = out.stdout.strip()
+    return commit or None
+
+
 def read_token(path: str | None) -> str | None:
     """The bridge's token, or None if it genuinely has none.
 
@@ -1020,7 +1048,11 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         deadman_s=args.deadman_ms / 1000.0,
         token=token,
         camera_url=args.camera_url,
-        runtime={"script": args.script, "start_paused": bool(config.get("start_paused"))},
+        runtime={
+            "script": args.script,
+            "start_paused": bool(config.get("start_paused")),
+            "commit": runtime_commit(args.script) if args.script else None,
+        },
     )
     core.paused = bool(config.get("start_paused"))
     return core
