@@ -637,24 +637,36 @@ def run_fake_loop(
 def build_core(args: argparse.Namespace) -> BridgeCore:
     config = read_duck_config(args.duck_config)
     caps = capabilities_from(config)
+    # `expression_features.camera` says who owns the *device*, not whether quackd can see.
+    # When it is true the robot's own runtime constructs a Cam and owns it, so
+    # quackd_duck_camd.py refuses to start rather than fight for it — which is why an owner
+    # who wants frames sets it false. Reading the capability from that same flag therefore
+    # meant a correctly configured duck reported no camera and lost `observe`, `go_to`,
+    # `search_scan` and `approach_and` at connect, with no configuration that produced both
+    # frames and the verbs that use them.
+    runtime_owns_camera = bool(caps.get("camera"))
     if args.fake:
-        caps = {
-            "camera": bool(args.camera_url),
-            "speaker": True,
-            "antennas": True,
-            "microphone": False,
-        }
+        caps = {"camera": False, "speaker": True, "antennas": True, "microphone": False}
     # quackd reads frames from an HTTP snapshot, never through this socket: encoding a
-    # 512 by 512 JPEG inside a 20 ms control tick is not affordable on a Pi Zero 2 W. So a
-    # camera with nowhere to fetch it from is not a camera, and saying otherwise would
-    # promise `observe`, `go_to`, `search_scan` and `approach_and` that then fail at runtime.
-    if caps.get("camera") and not args.camera_url:
+    # 512 by 512 JPEG inside a 20 ms control tick is not affordable on a Pi Zero 2 W. So the
+    # snapshot URL is what decides this, on the real path exactly as under --fake: a camera
+    # with nowhere to fetch it from is not a camera, and saying otherwise would promise four
+    # verbs that then fail at runtime.
+    caps["camera"] = bool(args.camera_url)
+    if runtime_owns_camera and not args.camera_url:
         log.warning(
             "duck_config.json says this duck has a camera, but no --camera-url was given, "
             "so quackd has nowhere to fetch a frame from. Advertising no camera: the verbs "
             "that need one will not exist rather than fail. See docs/adapters/open_duck.md."
         )
-        caps["camera"] = False
+    elif runtime_owns_camera and args.camera_url:
+        log.warning(
+            "duck_config.json says expression_features.camera is true, so the robot's own "
+            "runtime owns the camera and quackd_duck_camd.py will refuse to start — nothing "
+            "will be serving %s. Set that flag false and let camd have the device. See "
+            "docs/adapters/open_duck.md.",
+            args.camera_url,
+        )
     limits = Limits(
         vx=(-abs(args.max_vx), abs(args.max_vx)),
         vy=(-abs(args.max_vy), abs(args.max_vy)),
@@ -678,11 +690,73 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
     return core
 
 
+#: What upstream's walk loop opens by relative path, read at the pin on 2026-09-03:
+#: `PolyReferenceMotion("./polynomial_coefficients.pkl")` and
+#: `Sounds(sound_directory="../mini_bdx_runtime/assets/")`. Both resolve only from the
+#: script's own `scripts/` directory, and the first is opened inside `RLWalk.__init__`
+#: *after* the servo bus has been powered — so a wrong working directory is a traceback over
+#: fourteen energised joints. The bridge checks before it binds a socket instead.
+SCRIPT_RELATIVE_FILES = ("polynomial_coefficients.pkl",)
+SCRIPT_RELATIVE_DIRS = (os.path.join("..", "mini_bdx_runtime", "assets"),)
+
+
+def script_workdir(args: argparse.Namespace) -> str:
+    """The directory upstream's loop must run from: its own, unless told otherwise."""
+    if args.workdir:
+        return os.path.abspath(os.path.expanduser(args.workdir))
+    return os.path.dirname(os.path.abspath(os.path.expanduser(args.script)))
+
+
+def preflight(args: argparse.Namespace) -> str | None:
+    """Everything that must hold before a socket is bound or a servo is energised.
+
+    Returns a message to fail with, or None. This runs early on purpose: upstream powers the
+    Feetech bus in its constructor and only then reads its motion data, so checking after the
+    fact means the failure lands on a duck that is already stiff and listening."""
+    script = os.path.abspath(os.path.expanduser(args.script))
+    if not os.path.isfile(script):
+        return f"--script {script} does not exist"
+    workdir = script_workdir(args)
+    if not os.path.isdir(workdir):
+        return f"the working directory {workdir} does not exist; set --workdir"
+    for name in SCRIPT_RELATIVE_FILES:
+        if not os.path.isfile(os.path.join(workdir, name)):
+            return (
+                f"{name} is not in {workdir}. Upstream's walk loop opens it by a path "
+                "relative to its working directory, while the servo bus is already powered. "
+                "Point --script at the copy inside your Open_Duck_Mini_Runtime/scripts, or "
+                "set --workdir to the directory that holds it."
+            )
+    for name in SCRIPT_RELATIVE_DIRS:
+        if not os.path.isdir(os.path.join(workdir, name)):
+            log.warning(
+                "%s is not under %s, so upstream may not find its sounds. This is a warning, "
+                "not a refusal: a duck with no speaker does not need them.",
+                name,
+                workdir,
+            )
+    return None
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="quackd-duck-bridge", description=__doc__)
     p.add_argument("command", choices=["serve", "check"], nargs="?", default="serve")
     p.add_argument("--script", default="", help="upstream's v2_rl_walk_mujoco.py")
-    p.add_argument("--script-arg", action="append", default=[], help="passed through verbatim")
+    p.add_argument(
+        "--script-arg",
+        action="append",
+        default=[],
+        help="passed through verbatim. Use the = form for a value that starts with a dash "
+        "(--script-arg=--onnx_model_path), and absolute paths: the loop runs from the "
+        "script's own directory, not from yours",
+    )
+    p.add_argument(
+        "--workdir",
+        default=None,
+        help="run upstream's loop from here instead of the script's own directory. It opens "
+        "its motion data by relative path, so this has to be the directory holding "
+        "polynomial_coefficients.pkl",
+    )
     p.add_argument(
         "--bind",
         default="127.0.0.1",
@@ -718,6 +792,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         sys.stdout.write(json.dumps(core.hello(), indent=2) + "\n")
         return 0
+    # Before the socket, before the servos: a serve that cannot possibly work must fail while
+    # the duck is still inert and nothing can connect to it.
+    if not args.fake:
+        if not args.script:
+            log.error("serve needs --script pointing at upstream's v2_rl_walk_mujoco.py")
+            return 2
+        if (problem := preflight(args)) is not None:
+            log.error("%s", problem)
+            return 2
     if args.bind not in ("127.0.0.1", "localhost") and core.token is None:
         log.warning(
             "binding %s with no token: anything on this network can walk your duck. Write a "
@@ -739,15 +822,19 @@ def main(argv: list[str] | None = None) -> int:
             controller = NetworkController(core)
             run_fake_loop(core, controller, 50.0, args.seconds or 3600.0)
             return 0
-        if not args.script:
-            log.error("serve needs --script pointing at upstream's v2_rl_walk_mujoco.py")
-            return 2
         import runpy
 
+        script = os.path.abspath(os.path.expanduser(args.script))
+        workdir = script_workdir(args)
         install_shim(core)
         watchdog(core)
-        sys.argv = [args.script, *args.script_arg]
-        runpy.run_path(args.script, run_name="__main__")
+        # Upstream opens its motion data and its sounds by relative path, so the loop has to
+        # run from the script's own directory. Doing it here as well as in the unit means a
+        # hand-edited or hand-run invocation cannot get it wrong.
+        os.chdir(workdir)
+        log.info("running %s from %s", script, workdir)
+        sys.argv = [script, *args.script_arg]
+        runpy.run_path(script, run_name="__main__")
         return 0
     except KeyboardInterrupt:
         return 0

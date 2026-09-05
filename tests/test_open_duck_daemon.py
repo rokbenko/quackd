@@ -407,3 +407,115 @@ def test_a_camera_with_no_snapshot_url_is_not_advertised(daemon: ModuleType, tmp
     core = daemon.build_core(args)
     assert core.capabilities["camera"] is True
     assert core.hello()["camera"]["url"].endswith("/snapshot.jpg")
+
+
+def test_the_documented_camera_setup_actually_has_a_camera(daemon: ModuleType, tmp_path) -> None:
+    """`expression_features.camera` says who owns the *device*, not whether quackd can see.
+
+    quackd_duck_camd.py refuses to start while that flag is true, so install.sh and
+    docs/adapters/open_duck.md both tell the owner to set it false and let camd serve frames.
+    Reading the capability from the same flag meant that a duck configured exactly as
+    documented reported no camera, dropped observe, go_to, search_scan and approach_and at
+    connect, and refused both starter tasks — with no configuration anywhere that produced
+    frames and the verbs that use them at the same time. The snapshot URL decides."""
+    config = tmp_path / "duck_config.json"
+    config.write_text('{"expression_features": {"camera": false, "speaker": true}}')
+    args = daemon.parser().parse_args(
+        [
+            "serve",
+            "--duck-config",
+            str(config),
+            "--token-file",
+            str(tmp_path / "none"),
+            "--camera-url",
+            "http://127.0.0.1:9872/snapshot.jpg",
+        ]
+    )
+    core = daemon.build_core(args)
+    assert core.capabilities["camera"] is True
+    assert core.hello()["camera"]["url"].endswith("/snapshot.jpg")
+
+    # and with the device free but nothing serving it, there is still no camera
+    args = daemon.parser().parse_args(
+        ["serve", "--duck-config", str(config), "--token-file", str(tmp_path / "none")]
+    )
+    assert daemon.build_core(args).capabilities["camera"] is False
+
+
+# ── the units, which are the first thing a human runs ───────────────────────────────────
+
+
+def exec_start(path: Path) -> list[str]:
+    """systemd joins backslash continuations; so does this."""
+    import shlex
+
+    out: list[str] = []
+    collecting = False
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw
+        if line.startswith("ExecStart="):
+            collecting, line = True, line[len("ExecStart=") :]
+        elif not collecting:
+            continue
+        more = line.rstrip().endswith("\\")
+        out.append(line.rstrip().rstrip("\\"))
+        if not more:
+            break
+    return shlex.split(" ".join(out))
+
+
+def test_the_shipped_unit_is_a_command_the_daemon_accepts(daemon: ModuleType) -> None:
+    """The unit is the only `serve --script` invocation shipped anywhere, so it is the one
+    an owner copies. Written as `--script-arg --onnx_model_path`, argparse refuses a value
+    beginning with a dash and `systemctl start` exits 2 before the bridge binds a socket,
+    with Restart=no leaving it failed.
+
+    This also pins the flags that a `nargs=REMAINDER` fix would have silently eaten: --bind
+    and --deadman-ms would revert to defaults and nothing would say so."""
+    unit = REPO / "bridge" / "open_duck" / "quackd-duck-bridge.service"
+    argv = exec_start(unit)
+    assert argv[1].endswith("quackd_duck_bridge.py")
+    args = daemon.parser().parse_args(argv[2:])
+    assert args.command == "serve"
+    assert args.script_arg == ["--onnx_model_path", "/home/pi/BEST_WALK_ONNX_2.onnx"]
+    assert args.bind == "127.0.0.1"
+    assert args.deadman_ms == 300
+    assert args.script.endswith("v2_rl_walk_mujoco.py")
+
+
+def test_the_unit_runs_upstream_from_the_directory_its_data_is_in() -> None:
+    """Upstream opens "./polynomial_coefficients.pkl" and "../mini_bdx_runtime/assets/"
+    relative to the working directory, and the pkl is read inside RLWalk.__init__ *after*
+    the servo bus is powered. A WorkingDirectory one level up is a traceback over fourteen
+    energised joints, so the unit and `script_workdir()` have to agree on scripts/."""
+    path = REPO / "bridge" / "open_duck" / "quackd-duck-bridge.service"
+    workdir = next(
+        line.split("=", 1)[1].strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("WorkingDirectory=")
+    )
+    assert workdir.endswith("/scripts"), workdir
+    script = next(a for a in exec_start(path) if a.endswith("v2_rl_walk_mujoco.py"))
+    assert script.rsplit("/", 1)[0] == workdir, "the unit must run the script from its own dir"
+
+
+def test_serve_refuses_before_it_binds_when_upstreams_data_is_not_there(
+    daemon: ModuleType, tmp_path
+) -> None:
+    """The refusal has to happen before the socket and before the servos, so preflight() is
+    what main() calls first."""
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    script = scripts / "v2_rl_walk_mujoco.py"
+    script.write_text("pass\n")
+    args = daemon.parser().parse_args(["serve", "--script", str(script)])
+
+    problem = daemon.preflight(args)
+    assert problem is not None and "polynomial_coefficients.pkl" in problem
+
+    (scripts / "polynomial_coefficients.pkl").write_bytes(b"")
+    assert daemon.preflight(args) is None
+    assert daemon.script_workdir(args) == str(scripts)
+
+    missing = daemon.parser().parse_args(["serve", "--script", str(tmp_path / "nope.py")])
+    assert "does not exist" in (daemon.preflight(missing) or "")
