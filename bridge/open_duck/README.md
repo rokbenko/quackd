@@ -108,7 +108,7 @@ python quackd_duck_camd.py [flags]
 | `--fps` | `1.0` | it captures on a timer, so a slow client cannot stall the capture |
 | `--size` | `512` | square, matching upstream's own camera code |
 | `--rotate` | `90` | upstream rotates 90 degrees clockwise, so the module is mounted on its side |
-| `--no-swap-rb` | off | skip upstream's red and blue swap, if your frames come out wrong |
+| `--no-swap-rb` | off | **almost certainly not what you want.** The default is correct: picamzero hands back RGB-ordered data and the swap turns it into what the JPEG encoder expects, matching upstream's own camera code. Setting this inverts the image, which lands an orange ball inside the *person* hue range and roughly triples its reported distance. Channel order is a property of picamera2's configuration, not of your module or how it is mounted, so point wrong-looking colours at white balance and `--rotate` |
 | `--duck-config` | `~/duck_config.json` | used only to refuse when the runtime owns the camera |
 | `--fake` | off | a synthetic duck's eye view with a ball on the floor |
 | `--seconds` | forever | |

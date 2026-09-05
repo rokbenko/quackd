@@ -13,6 +13,7 @@ The bodies of `move`, `go_to`, `search_scan` and `approach_and` are the 0.3 `wal
 
 from __future__ import annotations
 
+import asyncio
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -28,6 +29,9 @@ if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
 
 MOVE_RESEND_S = 0.1
+#: How long a closed loop may hold its last twist while waiting for the next frame. One
+#: deadman window: past that the steering loop is stalled, and a duck that stops is right.
+HOLD_TTL_S = 0.3
 MAX_VX = 0.3
 MAX_VY = 0.2
 MAX_WZ = 1.5
@@ -146,6 +150,48 @@ async def _turn(ctx: VerbContext, radians: float) -> None:
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
 
 
+async def _no_frame(ctx: VerbContext, verb: str) -> VerbResult:
+    """A frame that did not arrive is not the same as a robot with no camera, and neither
+    is a reason to keep walking. The `img is None` branch used to return without stopping."""
+    await ctx.transport.stop()
+    why = getattr(ctx.transport, "camera_error", None)
+    return VerbResult.fail(f"{verb}: {why}" if why else f"{verb} needs a camera and got no frame")
+
+
+async def _see_holding(
+    ctx: VerbContext,
+    label: str,
+    caption: str,
+    twist: tuple[float, float, float] | None,
+) -> tuple[Image.Image | None, list[Detection]]:
+    """Fetch a frame while keeping the twist the last frame justified alive.
+
+    `_see` is a network round trip to a camera server, and `go_to` used to await it and only
+    then send its next command — so the gap between two commands was `TICK_S + fetch +
+    decode + detect`. The daemon's deadman is 300 ms and its comment sizes it on "quackd
+    re-sends at 10 Hz", which is true of `move` and `_turn` and false of the one verb that
+    walks while looking. Over the ssh tunnel the checklist mandates, a single latency spike
+    past ~200 ms zeroed the velocity mid-stride with nothing in the log to say why.
+
+    A free-running pump inside the transport would be worse: it would keep the duck walking
+    blind for the whole fetch timeout, turning the deadman's meaning from "the steering loop
+    is alive" into "the socket is up". This holds only the last justified twist, and only
+    for one deadman window — after that the steering loop really is stalled, and a duck that
+    stops is the right outcome."""
+    task = asyncio.ensure_future(_see(ctx, label, caption))
+    deadline = ctx.transport.now() + HOLD_TTL_S
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=MOVE_RESEND_S)
+            if done:
+                return task.result()
+            if twist is not None and ctx.transport.now() < deadline:
+                await ctx.transport.send_intent(Intent.move(*twist))
+    finally:
+        if not task.done():  # pragma: no cover - only on cancellation
+            task.cancel()
+
+
 async def observe(ctx: VerbContext, _: NoParams) -> VerbResult:
     img = await ctx.transport.get_frame()
     if img is None:
@@ -247,7 +293,7 @@ async def _gaze_sweep(ctx: VerbContext, p: SearchScanParams, limit_deg: float) -
         await ctx.transport.sleep(TICK_S)  # let the head settle; the sim clock advances
         img, hits = await _see(ctx, p.target, f"search_scan gaze {yaw:+.0f}")
         if img is None:
-            return VerbResult.fail("this transport has no camera")
+            return await _no_frame(ctx, "search_scan")
         if hits:
             best = hits[0]
             return VerbResult.success(
@@ -277,7 +323,7 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
     for i in range(p.max_steps + 1):
         img, hits = await _see(ctx, p.target, f"search_scan {i}")
         if img is None:
-            return VerbResult.fail("this transport has no camera")
+            return await _no_frame(ctx, "search_scan")
         if hits:
             best = hits[0]
             return VerbResult.success(
@@ -302,11 +348,12 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     lost = 0
     last_bearing = 0.0
     tick = 0
+    held: tuple[float, float, float] | None = None
     while ctx.transport.now() - t0 < p.timeout_s:
         tick += 1
-        img, hits = await _see(ctx, p.target, f"go_to {p.target}")
+        img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held)
         if img is None:
-            return VerbResult.fail("this transport has no camera")
+            return await _no_frame(ctx, "go_to")
         if not hits:
             lost += 1
             if lost > 30:
@@ -314,7 +361,8 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
                 return VerbResult.fail(f"lost the {p.target}; try search_scan")
             # turn toward where it was last seen
             wz = 0.8 if last_bearing >= 0 else -0.8
-            await ctx.transport.send_intent(Intent.move(*_clamped(ctx, 0.0, 0.0, wz)))
+            held = _clamped(ctx, 0.0, 0.0, wz)
+            await ctx.transport.send_intent(Intent.move(*held))
             await ctx.transport.sleep(TICK_S)
             continue
         lost = 0
@@ -323,6 +371,7 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         dist = d.est_distance_m
         last_bearing = bearing
         if dist is not None and dist <= p.stop_distance:
+            held = None
             await ctx.transport.stop()
             await ctx.transport.sleep(TICK_S)
             return VerbResult.success(
@@ -335,7 +384,8 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         vx = 0.2 if abs(bearing) < 25 else 0.05
         if dist is not None and dist < p.stop_distance + 0.15:
             vx = min(vx, 0.1)  # creep in
-        await ctx.transport.send_intent(Intent.move(*_clamped(ctx, vx, 0.0, wz)))
+        held = _clamped(ctx, vx, 0.0, wz)
+        await ctx.transport.send_intent(Intent.move(*held))
         await ctx.transport.sleep(TICK_S)
     await ctx.transport.stop()
     return VerbResult.fail(

@@ -84,10 +84,41 @@ ping -c 100 your-pi
 sudo iw dev wlan0 set power_save off      # on the Pi, if it was on
 ```
 
-The deadman zeroes the duck after 300 ms of silence.
+The deadman zeroes the duck after 300 ms of silence — and what has to fit inside that
+window is not a ping, it is a **camera snapshot**: `go_to` steers on frames, and a fetch of a
+30–60 KB JPEG costs at least two round trips. So measure the thing the loop actually waits on:
 
-> Abort if p99 latency is above about 100 ms. Use Ethernet or a USB gadget link instead, or
-> the duck will stutter and stop in the middle of steps.
+```bash
+for i in $(seq 20); do
+    curl -o /dev/null -s -w "%{time_total}\n" http://127.0.0.1:9872/snapshot.jpg
+done | sort -n | tail -3
+```
+
+> Abort if p99 ping is above about 100 ms, **or** if a snapshot fetch is regularly above
+> about 150 ms. Use Ethernet or a USB gadget link instead, or the duck will stutter and stop
+> in the middle of steps. quackd holds its last command for one deadman window while a frame
+> is in flight, so a slow camera degrades the steering rate before it breaks the gait — but
+> only for that long.
+
+## 5b. Prove the camera agrees with the detector
+
+Put a known orange object on the floor at a tape-measured 1.00 m, in front of the duck, and
+ask it what it sees:
+
+```bash
+quackd run --goal "look once and report what you can see, then stop" \
+    --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+    --camera-url http://127.0.0.1:9872/snapshot.jpg --max-steps 3 --provider anthropic
+```
+
+This one step catches three different faults at once: a wrong `--rotate`, an inverted colour
+order, and a field of view that is not yours. Detections say `(uncalibrated: distance is a
+rough guess)` until you pass `--fov-deg`; a Pi Camera Module 2 is about 62.
+
+> Abort on any label but `ball`, or a distance more than about 30 percent from the tape.
+> The detector's default geometry is the *simulator's* 90 degree lens, which reads roughly
+> half the true distance — enough for `go_to` to announce it has arrived from half a metre
+> away, and for `open-duck-scout` to report success on a run its own criterion failed.
 
 ## 6. Dry run, feet still off the ground
 

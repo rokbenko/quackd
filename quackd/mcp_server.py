@@ -500,7 +500,12 @@ def build_fleet_server(
             # claims. `build_fleet_server` can only see a bare transport's backend.
             live = getattr(session.transport, "manifest", None)
             if live is not None:
-                session.detector = detector_for(live.sensors, session.detector)
+                session.detector = detector_for(
+                    live.sensors,
+                    session.detector,
+                    fov_deg=live.limits.get("camera_fov_deg"),
+                    backend=live.backend,
+                )
                 session.executor.detector = session.detector
             log.info(
                 "quackd MCP server up: robot=%s transport=%s dry_run=%s",

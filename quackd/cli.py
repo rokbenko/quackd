@@ -276,6 +276,7 @@ def _run_impl(
     address: str | None,
     camera_url: str | None,
     token: str | None,
+    fov_deg: float | None,
     gif: bool,
     gif_size: int,
     verbose: bool,
@@ -376,7 +377,11 @@ def _run_impl(
     # simulator. This is the static manifest, so it is only a head start: the loop asks
     # again with the live one at connect, where a robot may report a camera this does not
     # know about (a rosbridge base) or lack one this promises (a duck built without a head).
-    detector = detector_for(manifests[0].sensors)
+    detector = detector_for(
+        manifests[0].sensors,
+        fov_deg=fov_deg or manifests[0].limits.get("camera_fov_deg"),
+        backend=spec.backend,
+    )
     # the recorder is sim2d only: it draws the world, and only the simulator has one
     if spec.backend == "sim2d" and gif:
         from quackd.sim2d.recorder import FrameRecorder
@@ -405,6 +410,7 @@ def _run_impl(
         log=log,
         on_frame=recorder.capture if recorder is not None else None,
         memory=robot_memory,
+        fov_deg=fov_deg,
         acknowledge=None if yes else _acknowledge_prompt,
     )
     console.print(
@@ -689,6 +695,13 @@ _CAMERA_URL = typer.Option(
     "Microduck, which is the only camera upstream offers and needs quackd[microduck-camera]. "
     "Needed when you reach the robot through a tunnel and its own URL is not routable.",
 )
+_FOV = typer.Option(
+    None,
+    "--fov-deg",
+    help="Horizontal field of view of the camera actually on your robot, in degrees. The "
+    "default is the simulator's 90; a Pi Camera Module 2 is about 62. Getting it wrong "
+    "scales every bearing and distance, so detections say so until you set it.",
+)
 _VERBOSE = typer.Option(False, "--verbose", "-v", help="Log every intent to stderr.")
 
 
@@ -709,6 +722,7 @@ def run(
     address: str | None = _ADDR,
     camera_url: str | None = _CAMERA_URL,
     token: str | None = _TOKEN,
+    fov_deg: float | None = _FOV,
     gif: bool = typer.Option(True, "--gif/--no-gif", help="sim2d: write run.gif into the run dir."),
     gif_size: int = _GIFSIZE,
     verbose: bool = _VERBOSE,
@@ -734,6 +748,7 @@ def run(
         address,
         camera_url,
         token,
+        fov_deg,
         gif,
         gif_size,
         verbose,
@@ -779,6 +794,7 @@ def record(
         address=None,
         camera_url=None,
         token=None,
+        fov_deg=None,
         gif=True,
         gif_size=gif_size,
         verbose=verbose,

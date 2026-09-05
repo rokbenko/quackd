@@ -13,7 +13,7 @@ User=pi
 SupplementaryGroups=video
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/pi/.virtualenvs/open-duck-mini-runtime/bin/python \
-    /opt/quackd/quackd_duck_camd.py --bind 127.0.0.1 --port 9872 --fps 1
+    /opt/quackd/quackd_duck_camd.py --bind 127.0.0.1 --port 9872 --fps 5 --size 256
 
 # This process is the one the kernel should take if memory runs short on a 512 MB board.
 # The walk loop sets OOMScoreAdjust=-500 for the opposite reason: losing the camera costs

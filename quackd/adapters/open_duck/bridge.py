@@ -25,6 +25,7 @@ import json
 import math
 import os
 import time
+import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
 from typing import Any
@@ -70,6 +71,13 @@ ANTENNAS = "duck.antennas"
 #: Below this the walk loop is starving and the gait is degrading silently, so the
 #: heartbeat fails and the run aborts rather than letting the duck stumble (up.LOOP_HEADROOM).
 MIN_LOOP_HZ = 35.0
+#: How long a frame fetch may take. Well under the 3 s it used to allow: `go_to` sends its
+#: next command after this returns, and the daemon's deadman is 300 ms, so a long stall here
+#: is a duck walking blind rather than a slow picture.
+CAMERA_TIMEOUT_S = 1.0
+#: A frame older than this is not steering material. camd expires its own frames sooner; this
+#: is the client's backstop for a camera server that does not stamp them at all.
+CAMERA_STALE_AFTER_S = 2.0
 
 
 def parse_address(address: str) -> tuple[str, int]:
@@ -142,6 +150,11 @@ class OpenDuckBridge:
         #: Set when the read pump sees EOF. Without it every later request waited out the
         #: full timeout on a socket nobody was reading.
         self._closed = False
+        #: Frame bookkeeping, so `doctor` can prove the camera works before anything walks.
+        self.camera_stale_after_s = CAMERA_STALE_AFTER_S
+        self.frame_age_s: float | None = None
+        self.camera_error: str | None = None
+        self.frames = 0
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -272,21 +285,64 @@ class OpenDuckBridge:
     # ── protocol ────────────────────────────────────────────────────────────────────
 
     async def get_frame(self) -> Image.Image | None:
-        """The camera lives in its own process on the Pi: encoding a 512 by 512 JPEG inside
-        a 20 ms control tick is not affordable (up.CAM), so the bridge advertises a URL."""
+        """The camera lives in its own process on the Pi: encoding a JPEG inside a 20 ms
+        control tick is not affordable (up.CAM), so the bridge advertises a URL.
+
+        Returns None rather than raising when there is no usable frame. `jsonrpc`'s own
+        docstring records that raising here ended a session once, over a single dropped
+        HTTP response, and the callers all have a clean `img is None` branch."""
         if not self.camera_url:
             return None
         url = self.camera_url
 
-        def fetch() -> bytes:
-            with urllib.request.urlopen(url, timeout=3) as resp:
-                return bytes(resp.read())
+        def fetch() -> tuple[bytes, float | None]:
+            try:
+                with urllib.request.urlopen(url, timeout=CAMERA_TIMEOUT_S) as resp:
+                    # camd stamps every frame with how old it is. Without this the client
+                    # cannot tell a live camera from one that stopped capturing an hour ago
+                    # and is serving its last good JPEG — which is what a ribbon working
+                    # loose on a walking duck looks like from here.
+                    header = resp.headers.get("X-Frame-Age")
+                    return bytes(resp.read()), (float(header) if header is not None else None)
+            except urllib.error.HTTPError as e:
+                # camd explains itself in the body ("the last frame is 30.1s old..."), and
+                # that sentence is far more use to whoever is standing next to the duck than
+                # "HTTP Error 503". Read it first, raise after: raising inside a suppress()
+                # block hands the new exception straight back to the suppressor.
+                reason: str | None = None
+                with contextlib.suppress(Exception):
+                    reason = json.loads(e.read()).get("reason")
+                if reason:
+                    raise TransportError(str(reason)) from e
+                raise
 
         try:
-            data = await asyncio.to_thread(fetch)
-            return Image.open(io.BytesIO(data)).convert("RGB")
+            data, age = await asyncio.to_thread(fetch)
+            frame = Image.open(io.BytesIO(data)).convert("RGB")
         except Exception as e:
-            raise TransportError(f"camera snapshot failed: {e}") from e
+            self.camera_error = str(e)
+            self.frame_age_s = None
+            return None
+        self.camera_error = None
+        self.frame_age_s = age
+        if age is not None and age > self.camera_stale_after_s:
+            self.camera_error = f"the newest frame is {age:.1f}s old; the camera has stopped"
+            return None
+        self.frames += 1
+        return frame
+
+    def camera_health(self) -> dict[str, Any]:
+        """What `doctor` probes for. It existed only on the Microduck transport, so
+        `--camera-url` was accepted here, never checked, and a typo'd or unreachable snapshot
+        server passed the checklist's go/no-go gate and failed at the first `observe` — with
+        the duck already on the floor."""
+        return {
+            "url": self.camera_url,
+            "frames": self.frames,
+            "age_s": self.frame_age_s,
+            "stale_after_s": self.camera_stale_after_s,
+            "error": self.camera_error,
+        }
 
     async def get_state(self) -> DuckState:
         state = self._last_state

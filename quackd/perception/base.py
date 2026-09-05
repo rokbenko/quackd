@@ -24,6 +24,11 @@ class Detection(BaseModel):
         description="Positive = left of the duck's heading (upstream's +yaw convention).",
     )
     est_distance_m: float | None = None
+    calibrated: bool = Field(
+        default=True,
+        description="False when the camera model is a guess, so bearing and distance are "
+        "the right shape but the wrong size.",
+    )
 
     def summary(self) -> str:
         parts = [self.label]
@@ -33,6 +38,12 @@ class Detection(BaseModel):
             parts.append("dead ahead" if mag < 3 else f"at bearing {mag:.0f}° {side}")
         if self.est_distance_m is not None:
             parts.append(f"~{self.est_distance_m:.2f} m")
+        # Geometry is only as good as the lens it assumes. On a real camera at the default
+        # field of view the distance is out by tens of percent, which is the difference
+        # between `go_to` arriving and announcing it from half a metre away — so the pilot
+        # is told, rather than being handed a number that looks measured.
+        if not self.calibrated:
+            parts.append("(uncalibrated: distance is a rough guess)")
         return " ".join(parts)
 
 

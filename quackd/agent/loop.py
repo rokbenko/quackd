@@ -85,6 +85,9 @@ class RunConfig:
     memory: RobotMemory | None = None
     """What this robot remembers between runs. None = off: no `remember` tool, no
     episode written at the end, the prompt says nothing about earlier runs."""
+    fov_deg: float | None = None
+    """The horizontal field of view of the camera actually in front of you. None falls back
+    to the robot's manifest, then to the simulator's, which is flagged as uncalibrated."""
     acknowledge: Callable[[str], bool] | None = None
     """Asked once, before the first leg moves, when the robot cannot see a fall and cannot
     recover from one — so the only guard is the person in the room. None means nobody is
@@ -249,7 +252,12 @@ class AgentLoop:
                 self.executor.registry = self.registry
             self.executor.manifest = manifest
             # the CLI guessed from the description; this is what the robot actually has
-            cfg.detector = detector_for(manifest.sensors, cfg.detector)
+            cfg.detector = detector_for(
+                manifest.sensors,
+                cfg.detector,
+                fov_deg=cfg.fov_deg or manifest.limits.get("camera_fov_deg"),
+                backend=backend_name(cfg.transport),
+            )
             self.executor.detector = cfg.detector
         registry = self.registry
         allow = self.fm.verbs.allow
