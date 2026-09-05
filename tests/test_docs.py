@@ -96,9 +96,7 @@ def test_readme_punctuation_style() -> None:
     so is the leading dash of a blockquote attribution (see ATTRIBUTION_PREFIX)."""
     prose = re.sub(r"```.*?```", "", README, flags=re.S)
     for i, line in enumerate(prose.splitlines(), 1):
-        checked = (
-            line[len(ATTRIBUTION_PREFIX) :] if line.startswith(ATTRIBUTION_PREFIX) else line
-        )
+        checked = line[len(ATTRIBUTION_PREFIX) :] if line.startswith(ATTRIBUTION_PREFIX) else line
         assert ";" not in checked, f"README:{i}: semicolon"
         for dash in ("—", "–", " - "):  # noqa: RUF001  (em dash, en dash, spaced hyphen)
             assert dash not in checked, f"README:{i}: dash punctuation {dash!r}"

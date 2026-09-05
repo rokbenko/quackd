@@ -182,8 +182,14 @@ def _probe(
         # token at all is the difference between the documented setup and an open port, so
         # both belong in front of the operator at the checklist's go/no-go gate.
         t.add_row("safety", "[dim]as this bridge reported it[/dim]")
-        for key in ("deadman_ms", "auth", "fall_detection", "getup_policy", "estop",
-                    "runtime_commit"):
+        for key in (
+            "deadman_ms",
+            "auth",
+            "fall_detection",
+            "getup_policy",
+            "estop",
+            "runtime_commit",
+        ):
             if key in told:
                 reported = told[key]
                 worrying = (key == "auth" and reported == "none") or (
