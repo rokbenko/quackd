@@ -737,9 +737,7 @@ async def test_a_stop_that_cannot_be_delivered_fails_the_verb(daemon: ModuleType
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(
-            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
-        )
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
         assert (await ex.run_verb("stop")).ok
         assert adapter.stop_error is None
 
@@ -772,9 +770,7 @@ async def test_a_second_move_right_after_a_stop_still_drives(daemon: ModuleType)
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(
-            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
-        )
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
         assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.2})).ok
         await asyncio.sleep(0.05)
         assert controller.get_last_command()[0][0] == 0.0, "a move ends stopped"
@@ -885,17 +881,17 @@ def test_the_hello_says_whether_there_is_any_authentication(daemon: ModuleType) 
 
 # ── the monkeypatch the entire bridge rests on ──────────────────────────────────────────
 
-FAKE_PAD = '''class XBoxController:
+FAKE_PAD = """class XBoxController:
     def __init__(self, command_freq=20, only_head_control=False):
         raise AssertionError("the real pad was constructed; the shim did not take")
-'''
+"""
 
-FAKE_BUTTONS = '''class Buttons:
+FAKE_BUTTONS = """class Buttons:
     def __init__(self):
         raise AssertionError("Buttons.__init__ has side effects we have not read")
-'''
+"""
 
-FAKE_LOOP = '''import json
+FAKE_LOOP = """import json
 import os
 import time
 
@@ -914,7 +910,7 @@ while True:
     with open(os.environ["TICKS"], "w") as fh:
         json.dump(seen[-40:], fh)
     time.sleep(0.02)
-'''
+"""
 
 
 def _fake_runtime(root: Path, *, boot_delay: float = 0.0) -> Path:
@@ -999,9 +995,7 @@ async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) 
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(
-            registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter
-        )
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
         ages: list[int] = []
 
         async def sample() -> None:

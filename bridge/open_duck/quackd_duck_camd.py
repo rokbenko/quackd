@@ -300,9 +300,7 @@ def make_handler(store: FrameStore, fps: float = DEFAULT_FPS) -> type[BaseHTTPRe
     return Handler
 
 
-def serve(
-    store: FrameStore, host: str, port: int, fps: float = DEFAULT_FPS
-) -> ThreadingHTTPServer:
+def serve(store: FrameStore, host: str, port: int, fps: float = DEFAULT_FPS) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), make_handler(store, fps))
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, name="quackd-duck-camd", daemon=True).start()

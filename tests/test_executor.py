@@ -212,6 +212,7 @@ async def test_an_abort_cancels_the_running_verb_and_stops(
     kill switch, a Ctrl-C or a failed heartbeat left the legs moving until the verb finished
     on its own — up to a `go_to`'s whole timeout — and the verb's own 10 Hz resend kept
     feeding the daemon's deadman the entire time, so nothing else stopped it either."""
+
     # MockTransport.sleep advances a virtual clock and returns, so a normal `move` finishes
     # before anything could interrupt it. A verb that takes real wall-clock time is the
     # honest model of the closed loop this is about.
