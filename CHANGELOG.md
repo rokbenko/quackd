@@ -851,6 +851,13 @@ that were not true no longer are.
   HTTP snapshot alternative that needs none. Nobody who is not pointing quackd at a real
   Microduck needs it, and the H.264 and the ICE inside it have never met a duck.
 
+### Local model evidence
+
+- Two transcripts of `find-and-kick` piloted by **Qwen 2.5 Coder 14B on LM Studio**, seeds
+  5 and 6, land in `docs/assets/transcripts/` with a table reading them in
+  `docs/local-llms.md`, from the contributor whose memory feature they were recorded for.
+  The README and `local-llms.md` no longer say "no transcript in this repository".
+
 ## [0.6.0] — 2026-09-04
 
 A run stops starting from nothing. Every release so far built a pilot with no past: the

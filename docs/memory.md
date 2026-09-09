@@ -65,7 +65,7 @@ shows every fact it saved.
 
 Telling the model about `remember` in the prompt is not enough for a small local model: in
 the runs this feature's contributor did, Qwen 2.5 Coder 14B read the memory block and never
-wrote to it. What works is
+wrote to it (both cases are in [`assets/transcripts/`](assets/transcripts/)). What works is
 putting the call **inside the numbered strategy** of the `.duck` body, right before the
 declaration (`5. When the ball has moved ≥ 0.3 m, \`remember\` where you found the ball,
 \`quack\` once and declare success.`), plus a short *Memory* section saying what is worth

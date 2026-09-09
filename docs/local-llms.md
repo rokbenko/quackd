@@ -120,15 +120,24 @@ it. What the page has and has not been run against is in [web/README.md](../web/
 
 ## Honest notes
 
-- Which local model pilots the duck well is an open question we have not measured. The
+- Which local model pilots the duck well is an open question we have barely measured. The
   loop was designed so that a weak planner degrades the task, never the robot's balance.
-  There is exactly one data point, and it is not ours: the contributor who built memory
-  between runs ran `find-and-kick` against **Qwen 2.5 Coder 14B on LM Studio**, seeds 5 and
-  6, both successes with memory read and written, and reported that the model ignored a
-  memory hint sitting in the system prompt but followed the same instruction once it was a
-  numbered step in the `.duck` body. That is one model, one machine, two seeds, and no
-  transcript in this repository. If you run one, please share the transcript in a
-  Discussion: it is the cheapest way to make this section shorter.
+  There are exactly two data points, and they are not ours: the contributor who built
+  memory between runs ran `find-and-kick` against **Qwen 2.5 Coder 14B on LM Studio**
+  (Apple M2 Pro, 2026-09-03) and the transcripts are in [`assets/transcripts/`](assets/transcripts/):
+
+  | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
+  |---|---|---|---|---|---|---|---|
+  | [`…seed6-memory-read.jsonl`](assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed6-memory-read.jsonl) | 6 | success | 8 | 9 | 29,403 + 244 | 0 | the system prompt carries the previous run's episode under *What you remember*; the model never calls `remember`; two kicks fall short before the third connects |
+  | [`…seed5-remember.jsonl`](assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.duck` body now says `remember` in strategy step 5; after the kick the model returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
+
+  Every turn was a native tool call, none needed the JSON text fallback. The simulator
+  clock (`elapsed_s` in `run_end`, which is what the budget counts on `sim2d`) says 14 s and
+  11 s; the transcript timestamps say 33 s and 29 s of wall clock, three to nine seconds per
+  LLM call. What they cannot show: anything about another model, another machine, or a
+  harder task than the starter duck. If you run one, please
+  share the transcript in a Discussion or a PR into that folder: it is the cheapest way
+  to make this section shorter.
 - The cloud providers keep their stricter settings (`tool_choice="required"`,
   `parallel_tool_calls=False`). Only the local presets use the relaxed ones.
 - Ollama, vLLM, llama.cpp and LM Studio evolve quickly. If a flag above is stale, open an
