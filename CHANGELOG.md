@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gemini 3 as the pilot.** Three things stood between the provider and a current Gemini
+  model, found by pointing a duck at `gemini-3.5-flash`. The schema cleaner did not strip
+  `exclusiveMinimum` / `exclusiveMaximum` — pydantic writes `gt=0` that way, so every verb
+  with a `timeout_s` or a `duration_s` carried one — and google-genai 2.x validates the
+  declaration and refuses the keyword; the executor still enforces the bound on the way in.
+  The default model, `gemini-2.5-pro`, now answers *"no longer available to new users"*; the
+  default is the `gemini-pro-latest` alias, on purpose, because a default that 404s is worse
+  than one that moves. And Gemini 3 signs each function call with a `thought_signature` the
+  next turn must hand back on that same call, or it is refused with a 400; `ToolCall` carries
+  it as base64 text (`signature`, empty for every other provider) and `render_contents` puts
+  the bytes back on the part. Verified with a two-step run to success on `gemini-3.5-flash`
+  with thought summaries on.
+
 ## [0.8.0] — 2026-09-09
 
 Two things, mainly. A run narrates itself now: the system prompt once, then per turn the

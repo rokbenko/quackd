@@ -19,6 +19,10 @@ class ToolCall(BaseModel):
     id: str = ""
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    signature: str = ""
+    """Opaque and provider-owned, base64 text. Gemini 3 signs every function call it makes
+    and refuses the next turn unless the signature is handed back on that same call; other
+    providers leave it empty and nothing reads it."""
 
 
 class Usage(BaseModel):

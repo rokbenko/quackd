@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from collections.abc import Callable
 from types import SimpleNamespace as NS
@@ -397,7 +398,7 @@ async def test_gemini_request_and_response_mapping() -> None:
     client = FakeGemini(response)
     turn = await GeminiProvider(client=client).step("SYS", history(), TOOLS)
     kw = client.kwargs
-    assert kw["model"] == "gemini-2.5-pro"
+    assert kw["model"] == "gemini-pro-latest"
     assert kw["config"]["system_instruction"] == "SYS"
     assert kw["config"]["tool_config"] == {"function_calling_config": {"mode": "ANY"}}
     decl = kw["config"]["tools"][0]["function_declarations"][0]
@@ -426,6 +427,62 @@ def test_gemini_clean_schema_is_recursive() -> None:
 def test_gemini_first_turn_has_no_function_response() -> None:
     contents = render_contents([Exchange(observation=Observation(text="hi", tool_call_id="x"))])
     assert contents[0]["parts"][0] == {"text": "hi"}
+
+
+def test_gemini_drops_the_bounds_google_genai_refuses() -> None:
+    """pydantic writes `gt=0` as exclusiveMinimum; google-genai >= 2 validates the schema and
+    raises on the keyword. Every verb with a timeout_s or a duration_s carries one."""
+    schema = {
+        "type": "object",
+        "properties": {
+            "timeout_s": {"type": "number", "exclusiveMinimum": 0, "description": "seconds"},
+            "n": {"type": "integer", "exclusiveMaximum": 10, "minimum": 1},
+        },
+    }
+    cleaned = clean_schema(schema)
+    assert cleaned["properties"]["timeout_s"] == {"type": "number", "description": "seconds"}
+    assert cleaned["properties"]["n"] == {"type": "integer", "minimum": 1}
+
+
+async def test_gemini_hands_the_thought_signature_back() -> None:
+    """Gemini 3 signs each function call and refuses the next turn without the signature on
+    that same call. It arrives as bytes on the part; it goes into the transcript as text and
+    comes back out as bytes."""
+    part = NS(
+        function_call=NS(name="walk", args={"vx": 0.25}), text=None, thought_signature=b"\x01sig"
+    )
+    response = NS(
+        candidates=[NS(content=NS(parts=[part]), finish_reason="STOP")],
+        usage_metadata=NS(prompt_token_count=1, candidates_token_count=1),
+    )
+    turn = await GeminiProvider(client=FakeGemini(response)).step("SYS", history(), TOOLS)
+    (tc,) = turn.tool_calls
+    assert tc.signature == base64.b64encode(b"\x01sig").decode()
+
+    replay = render_contents(
+        [
+            Exchange(
+                observation=Observation(text="go"),
+                decision=Decision(tool_call=tc, text=None),
+            ),
+            Exchange(observation=Observation(text="walked", tool_call_id=tc.id)),
+        ]
+    )
+    call = replay[1]["parts"][-1]
+    assert call["function_call"] == {"name": "walk", "args": {"vx": 0.25}}
+    assert call["thought_signature"] == b"\x01sig"
+
+
+def test_gemini_an_unsigned_call_is_replayed_without_a_signature() -> None:
+    """Gemini 2.x signs nothing, and a part with no signature must not grow an empty one."""
+    tc = ToolCall(id="gemini-0", name="walk", arguments={})
+    replay = render_contents(
+        [
+            Exchange(observation=Observation(text="go"), decision=Decision(tool_call=tc)),
+            Exchange(observation=Observation(text="ok", tool_call_id=tc.id)),
+        ]
+    )
+    assert "thought_signature" not in replay[1]["parts"][-1]
 
 
 # ── factory ─────────────────────────────────────────────────────────────────────────────
