@@ -36,21 +36,21 @@ dependencies = [
   "pillow>=10.3",
   "opencv-python-headless>=4.9",
   "python-dotenv>=1.0",
-  "mcp>=2.0,<3",
+  "mcp>=2.2.0,<3",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=1.0,<2"]
-openai = ["openai>=1.50"]
+openai = ["openai>=3.11.0"]
 gemini = ["google-genai>=1.0"]
-grok = ["openai>=1.50"]
-all = ["anthropic>=1.0,<2", "openai>=1.50", "google-genai>=1.0"]
+grok = ["openai>=3.11.0"]
+all = ["anthropic>=1.0,<2", "openai>=3.11.0", "google-genai>=1.0"]
 yolo = ["ultralytics>=8.2"]
 live = ["pygame>=2.5"]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
 # onnxruntime is what runs the robot's own walking policy; the Microduck's meshes and that
 # policy are fetched at run time and never shipped here (docs/licenses.md).
-mujoco = ["mujoco>=3.12,<4", "onnxruntime>=1.20"]
+mujoco = ["mujoco>=3.13.0,<4", "onnxruntime>=1.29.0"]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
