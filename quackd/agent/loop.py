@@ -66,7 +66,7 @@ from quackd.verbs.registry import (
     default_registry,
     registry_from_manifest,
 )
-from quackd.verdict import Verdict, solo_hint
+from quackd.verdict import Verdict, missing_needs, solo_hint
 
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
 
@@ -287,6 +287,23 @@ class AgentLoop:
                 # confirm gate reads it
                 answer = False
             verdict.human = "go" if answer else "no_go"
+        if verdict.verdict == "feasible" and self.executor.manifest is not None:
+            # The coordinator already holds another robot's bid to its datasheet with this
+            # exact function. Nothing held a pilot's verdict about its OWN body to its own
+            # sheet, so a `needs` naming an unpublished figure passed straight through and
+            # the body moved. Measured on Qwen3-32B: a 45 minute patrol came back feasible
+            # six times out of six, twice with `needs: {"endurance_min": 45}` recorded beside
+            # it, on a body whose endurance nobody published.
+            lacking = missing_needs(verdict.needs, self.executor.manifest)
+            if lacking:
+                # Refused rather than warned, the same way a verdict carrying `human` is
+                # refused: the pilot is told which need its own sheet does not meet and can
+                # assess again. A warning in the trace stops nothing.
+                return VerbResult.fail(
+                    "this body does not meet what you said the task needs: "
+                    + "; ".join(lacking)
+                    + ". Assess again, or call assess_task with infeasible"
+                ), None
         self.executor.verdict = verdict
         if verdict.verdict == "infeasible":
             hint = solo_hint(verdict.needs, self.executor.manifest)

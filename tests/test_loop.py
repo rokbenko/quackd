@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from quackd.adapters.microduck import MicroduckAdapter
 from quackd.agent.loop import AgentLoop, RunConfig, run_duck
 from quackd.agent.providers.base import Exchange, ProviderError, ProviderTurn, ToolCall, Usage
 from quackd.agent.providers.fake import FakeProvider
@@ -985,6 +986,72 @@ async def test_a_later_verdict_can_still_end_the_run(hello_duck: DuckFile, tmp_p
     assert result.outcome == "infeasible"
     assert result.steps == 1, "the quack ran before the pilot changed its mind"
     assert "full crate" in result.reason
+
+
+async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A pilot may not move its body on a need its own sheet does not meet.
+
+    `missing_needs` already held another robot's bid to its datasheet at the coordinator,
+    and nothing held a pilot's verdict about its own body to its own sheet, so a `needs`
+    naming a figure nobody published passed straight through. The Microduck's endurance is
+    not published, and a run that says the task needs 45 minutes of it is saying, in its own
+    two fields, both that it depends on that number and that the body is fine. The pilot is
+    told which need is unmet and can assess again, the same way a verdict carrying `human`
+    is refused rather than quietly stripped.
+    """
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    _verdict_call("feasible", "it can patrol", needs={"endurance_min": 45}),
+                    _verdict_call("infeasible", "endurance is not published"),
+                ]
+            ),
+            transport=MicroduckAdapter(MockTransport()),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "infeasible", result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assessed = [e for e in events if e["kind"] == "assess"]
+    assert assessed[0]["ok"] is False
+    assert "endurance_min >= 45 (not published)" in assessed[0]["summary"]
+    # the second one ends the run, which assess records the way infeasible always does
+    assert assessed[1]["verdict"] == "infeasible"
+    assert "endurance is not published" in assessed[1]["summary"]
+
+
+async def test_a_need_this_body_meets_still_passes(hello_duck: DuckFile, tmp_path: Path) -> None:
+    """The check refuses what the sheet does not cover, and nothing else.
+
+    Without this, a check that refused every `needs` would pass the test above and break
+    every run that fills the field in honestly. The Microduck is legged and rated for a flat
+    indoor floor, so a verdict asking for exactly that is the sheet agreeing with itself.
+    """
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    _verdict_call(
+                        "feasible",
+                        "it can walk there",
+                        needs={"mobility": "legged", "terrain": "indoor_flat"},
+                    ),
+                    ToolCall(name="declare_success", arguments={"reason": "done"}),
+                ]
+            ),
+            transport=MicroduckAdapter(MockTransport()),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assessed = [e for e in events if e["kind"] == "assess"]
+    assert assessed[0]["ok"] is True
 
 
 async def test_an_invalid_verdict_is_refused_and_the_run_goes_on(

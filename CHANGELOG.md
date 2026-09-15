@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pilot is held to its own datasheet, the way a bid already is.** `missing_needs`
+  compared a `needs` against a sheet at the coordinator, where it judges another robot's
+  bid, and nothing called it when a pilot judged its own body, so a `feasible` whose
+  `needs` named a figure nobody published passed through and the body moved. `_assess` now
+  runs the same function against the pilot's own manifest and refuses such a verdict the
+  way it refuses one carrying `human`, naming the unmet need so the pilot can assess again.
+  `uncertain` is left alone, because it asks a person and a reachable person knows things a
+  sheet does not, and `infeasible` ends the run anyway. Measured on Qwen3-32B-AWQ over 54
+  runs: a 45 minute patrol on a body whose endurance is not published came back `feasible`
+  six times out of six and walked until the step budget, twice with
+  `needs: {"endurance_min": 45}` recorded in the same row. On the patched build the check
+  fired three times, all on that task, none on the other eight, and the body moved once
+  instead of six times. What it does not do: the pilot came back `uncertain` rather than
+  `infeasible` each time, and one run declared no endurance at all and so had nothing to be
+  checked against. The check reads what a pilot declares, so it rewards honesty and cannot
+  catch silence. Thanks to [@Vallhalen](https://github.com/Vallhalen), who measured it.
+
+
 ## [0.9.0] — 2026-09-15
 
 A robot has a name now. `quackd robot add scout open_duck:bridge --address ... --token ...`
