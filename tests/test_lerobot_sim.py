@@ -121,7 +121,7 @@ from quackd_lerobot.verbs import (
     shortfall,
 )
 from tests.gl import REQUIRE_ENV
-from tests.test_lerobot_adapter import Scripted, _executor
+from tests.test_lerobot_adapter import Scripted, _executor, _until
 from tests.test_robot_twin import PORTS, guard_ports
 
 mujoco = pytest.importorskip("mujoco")
@@ -2154,7 +2154,14 @@ async def test_a_pick_on_the_simulator_ends_on_its_time_or_on_a_stop_from_anothe
         half = (transport.sim_dt or TICK_S) / 2
         assert max_s - half < transport.now() - start < max_s + 2 * TICK_S
 
+        # The stop is for a running segment, so it counts its ticks from the policy's first goal.
+        # Counted from the `do`, it raced the segment's start on a slow runner: the clock runs
+        # for the one sleeper, a start awaits the arm and the runner on the wall's time, and ten
+        # ticks could pass before it was over, which refuses the `do` rather than stopping it.
+        asked = policy.n
+
         async def stops_later() -> Any:
+            await _until(lambda: policy.n > asked)
             await transport.sleep(10 * TICK_S)
             return await executor.run_verb("stop")
 

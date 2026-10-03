@@ -40,6 +40,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   release's description there never changes, so on the PyPI pages of 0.16.1 and every release
   before it a link to a moved page now returns 404, and so does each adapter's `Documentation`
   link. The project pages are right again from the next release.
+- **A test of the arm's simulator raced its own pick.**
+  `test_a_pick_on_the_simulator_ends_on_its_time_or_on_a_stop_from_another_task` sends a stop
+  from a second task ten ticks of the simulator's clock into a `pick`, to show that a stop ends
+  a running segment. It counted those ticks from the `do`. The clock runs for the one sleeper
+  while a segment's start awaits the arm and the runner on the wall's time, so on the physics
+  job's runner for Dependabot's #33 the ten ticks passed before the start was over. The stop
+  landed in the start, which refuses the `do`, as it should, and the assertion that the pick
+  was stopped failed. The stop now counts from the policy's first goal, which only a running
+  segment asks for. Holding the policy loop's start back half a second of the wall's
+  reproduces the failure without the change, and with it the test passes five times of five.
+  Nothing quackd does changed.
 
 ## [0.16.1] — 2026-09-29
 
