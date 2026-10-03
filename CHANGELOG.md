@@ -51,6 +51,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   segment asks for. Holding the policy loop's start back half a second of the wall's
   reproduces the failure without the change, and with it the test passes five times of five.
   Nothing quackd does changed.
+- **A System One answer names its kind, which the page for writing a server left out.**
+  `docs/guides/decision-llms/local.md` sets out the response a server has to send, and gave a
+  choice as `{choice, confidence}` and a noul as `{noul}`. typesafe_sdk tells the kinds of answer
+  apart by a `type` field, so a server written from that row fails the SDK's validation on every
+  turn, and quackd hands each of those turns to the model. Writing a server from the row, to
+  check #33, found it. The row now gives `type` in each shape and says it is required.
 
 ## [0.16.1] — 2026-09-29
 
