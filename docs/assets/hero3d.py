@@ -29,7 +29,7 @@ part of the simulation.
 Needs `quackd[mujoco]`. The first run downloads upstream's model and policies into
 `~/.quackd/cache` (about 10 MB) and prints their licence. Nothing of theirs is written here
 except the frames of this recording, which render a CC BY-NC-SA model and are labelled in
-`docs/assets/README.md` and `docs/licenses.md`.
+`docs/assets/README.md` and `docs/reference/licenses.md`.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # ADR-0042: The log is the whole screen
 
-**Status:** accepted, amended · **Date:** 2026-09-21 · Renames what [ADR-0029](0029-tracing.md) called the trace and widens it to what the terminal showed · Extends [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the record carries the run's clocks and its money) · Retires the old spellings over one release the way [ADR-0017](0017-robot-adapters-and-manifest.md) retired `--transport` · Implemented in `quackd/log.py` (was `quackd/trace.py`), `quackd/ui.py`, `quackd/command.py`, `quackd/safety.py` and `quackd/cli.py` ([architecture.md](../architecture.md#log))
+**Status:** accepted, amended · **Date:** 2026-09-21 · Renames what [ADR-0029](0029-tracing.md) called the trace and widens it to what the terminal showed · Extends [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the record carries the run's clocks and its money) · Retires the old spellings over one release the way [ADR-0017](0017-robot-adapters-and-manifest.md) retired `--transport` · Implemented in `quackd/log.py` (was `quackd/trace.py`), `quackd/ui.py`, `quackd/command.py`, `quackd/safety.py` and `quackd/cli.py` ([architecture.md](../concepts/architecture.md#log))
 
 **Amended 2026-09-22:** the promise below was kept. 0.12 removes `quackd trace`, both
 `--trace` flag pairs and the three `QUACKD_TRACE*` variables, along with the `sys.argv` scan in
@@ -272,7 +272,7 @@ ADR-0041, by writing the thing down once at the top.
 **An MCP client that reads `result["trace"]` now reads nothing.** There is one key, `log`, and
 this is the only spelling in the rename with no transition. A client that indexes the key raises;
 one that uses `.get` silently shows an empty log, which is the worse of the two, so it is said
-here and in [mcp.md](../mcp.md) rather than left to be noticed.
+here and in [mcp.md](../guides/mcp.md) rather than left to be noticed.
 
 **Old run directories replay unchanged, and new ones replay on an old quackd with the new parts
 missing.** `log_dropped` is what gets written now, `trace_dropped` is still read, and the replay

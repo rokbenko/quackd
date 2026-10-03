@@ -3,7 +3,7 @@
 `duck-ipc-proto` has no camera method at all, `robotctl` and `duckctl` have no camera
 subcommand, and `mediad`'s HTTP port serves exactly one route: the console page. The camera
 reaches clients as an H.264 track over WebRTC and nowhere else, so getting a picture into quackd
-means being a WebRTC peer. `docs/adapter-status.md` carries the reference for that.
+means being a WebRTC peer. `docs/adapters/microduck/README.md` carries the reference for that.
 
 This runs **on your machine**, not on the robot. That is the point: a Microduck at somebody
 else's desk is not a robot you install daemons on or stop services on, and the alternative — a

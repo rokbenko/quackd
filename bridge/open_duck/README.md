@@ -14,8 +14,9 @@ Two processes, because they have very different jobs and very different budgets:
 | `quackd_duck_camd.py` | one JPEG over HTTP, captured on a timer | 9872 |
 
 For what this robot is to quackd, its verbs and what it cannot do, see
-[`docs/adapters/open_duck.md`](../../docs/adapters/open_duck.md). For the order to bring one
-up in, see [`docs/open-duck-hardware-checklist.md`](../../docs/open-duck-hardware-checklist.md).
+[`docs/adapters/open_duck/README.md`](../../docs/adapters/open_duck/README.md). For the order to
+bring one up in, see
+[`docs/adapters/open_duck/hardware-checklist.md`](../../docs/adapters/open_duck/hardware-checklist.md).
 This page is the reference for the two daemons themselves.
 
 ## Why the bridge exists
@@ -161,6 +162,6 @@ to see the difference between the description and your duck.
 
 Never run on a physical duck by us. The protocol is exercised end to end in quackd's test
 suite, against this daemon, over loopback. That makes "the protocol works" a fact and keeps
-"the duck walked" a claim nobody has earned yet. If you run it on yours, please open an
-issue: [`docs/open-duck-hardware-checklist.md`](../../docs/open-duck-hardware-checklist.md)
+"the duck walked" a claim nobody has earned yet. If you run it on yours, please open an issue:
+[`docs/adapters/open_duck/hardware-checklist.md`](../../docs/adapters/open_duck/hardware-checklist.md)
 says what to send.

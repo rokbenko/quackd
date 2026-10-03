@@ -141,7 +141,9 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     surfaces = {
         "assess_task": str(ASSESS_TASK["description"]),
         "the rule line": rule,
-        "docs/safety.md": (repo / "docs" / "safety.md").read_text(encoding="utf-8"),
+        "docs/concepts/safety.md": (repo / "docs" / "concepts" / "safety.md").read_text(
+            encoding="utf-8"
+        ),
     }
     for where, text in surfaces.items():
         assert "not by itself" in text, f"{where} states the rule absolutely"

@@ -268,7 +268,7 @@ def test_no_meta_tool_is_ever_a_choice() -> None:
 
 
 def test_the_arm_splits_the_way_the_docs_say_it_does() -> None:
-    """The LeRobot claim `docs/decision-llms.md` is built on, as an assertion.
+    """The LeRobot claim `docs/guides/decision-llms/README.md` is built on, as an assertion.
 
     Six concrete calls the stepper may author, and every angle still the model's."""
     verbs = _verbs("lerobot")
@@ -695,7 +695,8 @@ async def test_an_answer_off_the_wire_is_read_exactly_like_an_sdk_object() -> No
 
 
 async def test_shadow_records_what_the_stepper_would_have_done_beside_what_the_model_did() -> None:
-    """The record that turns the arithmetic in docs/decision-llms.md into a measurement."""
+    """The record that turns the arithmetic in docs/guides/decision-llms/README.md into a
+    measurement."""
     from quackd.agent.providers.base import ToolCall
 
     advice, stepper, _f = await _advise(
@@ -945,7 +946,8 @@ async def test_a_stepper_that_never_repeats_still_has_to_hand_the_run_back() -> 
 
 
 async def test_a_wave_like_goal_never_gets_a_pose_out_of_the_stepper(tmp_path: Any) -> None:
-    """The LeRobot claim `docs/decision-llms.md` is built on, end to end and on the arm.
+    """The LeRobot claim `docs/guides/decision-llms/README.md` is built on, end to end and on the
+    arm.
 
     The stub answers every question at 0.99, so anything the stepper is allowed to author it
     will. `move_joints` is never among the labels, so it can never be chosen, and every pose
@@ -1130,7 +1132,9 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
         )
 
     assert "has not been measured" in run("on")
-    assert "docs/decision-llms.md" in run("on"), "the notice does not say where the estimates are"
+    assert "docs/guides/decision-llms/README.md" in run("on"), (
+        "the notice does not say where the estimates are"
+    )
     assert "has not been measured" not in run("shadow"), "shadow is how it gets measured"
 
 
@@ -1140,9 +1144,9 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
 def test_agreement_is_about_the_call_and_not_the_word() -> None:
     """`gripper(open=true)` and `gripper(open=false)` are opposite instructions that share a
     name, and shadow mode's whole purpose is the agreement rate. Comparing verb names scored
-    them as agreement, which corrupted the one measurement `docs/decision-llms.md` says earns
-    the right to move a floor, and did it worst on `arm-grip-check`, the benchmark that page
-    names."""
+    them as agreement, which corrupted the one measurement `docs/guides/decision-llms/README.md`
+    says earns the right to move a floor, and did it worst on `arm-grip-check`, the benchmark that
+    page names."""
     from quackd.agent.decision.stepper import Advice, Stepper
     from quackd.agent.providers.base import ToolCall
 
@@ -1260,8 +1264,8 @@ async def test_a_turn_the_api_counted_is_billed_at_what_it_said_it_spent() -> No
     The rate is theirs and published: $0.042 per million input tokens, output not charged. It
     is the only published rate in the whole preset table -- every other row is a server you run
     -- and this multiplies it out here rather than trusting the number elsewhere, because the
-    case for the stepper in `docs/decision-llms.md` is a ratio, and a rate that quietly moved
-    would move that ratio with it."""
+    case for the stepper in `docs/guides/decision-llms/README.md` is a ratio, and a rate that
+    quietly moved would move that ratio with it."""
     advice, stepper, _f = await _advise(
         _fake(
             answers=fake_systemone.turn("report_state", 0.91),
@@ -1283,8 +1287,8 @@ async def test_a_turn_the_api_did_not_count_is_estimated_from_the_whole_request(
 
     The four questions carry every label, every verb's one-line description and every
     criterion, which on this mock arm is over a thousand characters against 388 of state; the
-    worked example in `docs/decision-llms.md` counted 1,721 against that same 388. The record
-    keeps `state_tokens_est` for the trim, and the estimate has to be strictly bigger than
+    worked example in `docs/guides/decision-llms/README.md` counted 1,721 against that same 388. The
+    record keeps `state_tokens_est` for the trim, and the estimate has to be strictly bigger than
     it."""
     from quackd.agent.decision.stepper import _question_chars
 
@@ -1409,9 +1413,9 @@ async def test_the_summary_block_carries_the_bill_and_says_when_it_was_guessed()
 
 async def test_the_shadow_record_puts_the_two_bills_for_one_turn_side_by_side() -> None:
     """The number `--decision-mode shadow` exists to produce, and the one
-    `docs/decision-llms.md` could only reach by arithmetic: what the model charged for a turn,
-    beside what the stepper charged for the same reading. Either half can be None, and None is
-    not zero: the model's is missing when nobody publishes a rate for it, the stepper's when
+    `docs/guides/decision-llms/README.md` could only reach by arithmetic: what the model charged for
+    a turn, beside what the stepper charged for the same reading. Either half can be None, and None
+    is not zero: the model's is missing when nobody publishes a rate for it, the stepper's when
     the turn never reached the network."""
     from quackd.agent.providers.base import ToolCall
 

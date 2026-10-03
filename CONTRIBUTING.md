@@ -117,7 +117,7 @@ other. `tests/test_jetson_host_contract.py` runs the real daemon against the rea
 the real `quackd doctor`, which is what catches the two drifting apart, and the rest of the
 suite talks to `tests/fake_jetson_hostd.py`. The board in all of them is files written by
 `tests/jetson_fixtures.py`, and `tests/test_docs.py` holds the JetPack table in
-[docs/jetson.md](docs/jetson.md) against `_JETPACK_FOR_L4T` in `quackd/doctor.py`, so
+[docs/guides/jetson.md](docs/guides/jetson.md) against `_JETPACK_FOR_L4T` in `quackd/doctor.py`, so
 editing one of those two and not the other fails locally. Nothing here has been run on a
 Jetson by this project, so what you change is checked against the contract and a board made
 of files, and never against the board it is named after
@@ -158,12 +158,12 @@ open it, say what you saw in the PR. See [web/README.md](web/README.md).
 Touching `quackd/lan/` or `quackd/flock/mqtt_bus.py`? Neither imports its library at module
 level and neither is in the default install, so the tests run them on fakes: a fake zeroconf
 registrar and a synchronous fake MQTT broker, no sockets. Keep it that way, and see
-[docs/lan.md](docs/lan.md).
+[docs/guides/lan.md](docs/guides/lan.md).
 
 ## Submit a `.duck`
 
 1. Copy a starter from [`ducks/`](ducks/) and edit the frontmatter + body.
-   Spec: [docs/duck-spec.md](docs/duck-spec.md).
+   Spec: [docs/reference/duck-spec.md](docs/reference/duck-spec.md).
 2. `uv run quackd validate ducks/your-duck.duck` — it must pass.
 3. Run it at least once: `uv run quackd run ducks/your-duck.duck --llm fake`
    (the scripted pilot only knows the starters, so for a new duck use a real provider if
@@ -188,7 +188,7 @@ Put the call in the strategy rather than only in a Memory section: a 14B local m
 prompt-level hint and never wrote to memory, and followed the same instruction on its first
 run once it was step 5. `remember` is offered automatically when memory is on and needs
 nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` does
-([docs/memory.md](docs/memory.md)).
+([docs/guides/memory.md](docs/guides/memory.md)).
 
 ## Add a verb
 
@@ -197,8 +197,8 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
    `Requirement` to `REQUIREMENTS`. **Extension** = one robot's own behaviour, in that
    adapter's `verbs.py` (Microduck: `adapters/microduck/src/quackd_microduck/verbs.py`; it
    needs a VERIFIED upstream method in that package's `upstream_api.py`). **Learned** = v2, see
-   [docs/learned-verbs.md](docs/learned-verbs.md). If the thing you are adding never
-   touches the body, it is probably not a verb at all: `remember` sits next to
+   [docs/concepts/learned-verbs.md](docs/concepts/learned-verbs.md). If the thing you are adding
+   never touches the body, it is probably not a verb at all: `remember` sits next to
    `declare_success` as a *meta tool* precisely so that the rule "the vocabulary comes from
    the manifest" keeps meaning something ([ADR-0025](docs/adr/0025-memory-between-runs.md)).
 2. Write a pydantic params model (`extra="forbid"`, ranges on every number) and an
@@ -220,14 +220,13 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
    is for a body quackd does not ship, and a second test there says so.
 4. Add a test: on `MockTransport` for intent sequences, on `Sim2DTransport` for behaviour, and on `MujocoTransport(body="puppet")` if the verb makes a claim about the body, because the cartoon cannot tell you whether one is true.
 5. If the verb needs an upstream method we have not verified, add it to the adapter's
-   `upstream_api.py` as `UNVERIFIED` with a note and a row in that adapter's page under
-   `docs/adapters/` (the Microduck's table is in `docs/adapter-status.md`). Never invent
-   one.
-6. Mention it in `docs/architecture.md`, the README verb table (a test checks every
+   `upstream_api.py` as `UNVERIFIED` with a note and a row in that adapter's page,
+   `docs/adapters/<name>/README.md`. Never invent one.
+6. Mention it in `docs/concepts/architecture.md`, the README verb table (a test checks every
    registry name is backticked there) and `CHANGELOG.md`, under `Added` in `[Unreleased]`.
 7. Nothing extra is needed for the log: every intent your verb sends is already an event,
    and `ctx.log(...)` is already a `note`. If you emit a new event *kind*, add a row for it
-   to the table in `docs/architecture.md`, because a test reads the kinds out of the code
+   to the table in `docs/concepts/architecture.md`, because a test reads the kinds out of the code
    and fails when the docs do not name one. Then decide whether it draws a line in
    `render_events` (`quackd/log.py`), which three kinds deliberately do not: a kind nothing
    draws is in `transcript.jsonl` and on no screen, so it is in no `terminal.txt` either.
@@ -274,10 +273,10 @@ Four things the log depends on, none of them optional:
 
 **A stepper is not a provider, and must not be added as one.** `quackd/agent/decision/` holds
 the optional models that answer typed questions about a state and generate no text at all
-([docs/decision-llms.md](docs/decision-llms.md)). None of them can pilot a robot, so they are
-deliberately absent from `CATALOGUE`, from `PROVIDER_NAMES` and from `--llm`, they have their
-own section in `quackd doctor` rather than rows in the providers table, and their extras,
-`quackd[decision]` and `quackd[laya]`, are not part of `quackd[all]`. If you are adding
+([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). None of them can pilot
+a robot, so they are deliberately absent from `CATALOGUE`, from `PROVIDER_NAMES` and from `--llm`,
+they have their own section in `quackd doctor` rather than rows in the providers table, and their
+extras, `quackd[decision]` and `quackd[laya]`, are not part of `quackd[all]`. If you are adding
 something that answers a question rather than writing an answer, none of the six entries above
 apply to it.
 
@@ -285,19 +284,20 @@ apply to it.
 `POST /v1/systemone`, rather than a vendor, so one that speaks it is one `DecisionSpec` in
 `quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default model
 id, key variable if it wants one, price if anybody publishes one), one page under
-`docs/decision-llms/`, and one row in the table in [docs/decision-llms.md](docs/decision-llms.md).
-No new file under `quackd/`, no new client, no new flag: `systemone.py` already talks to it and
-`--decision-url` already moves it off the port its row expects. The two shapes that are not a
-row: one with a Python API of its own rather than a server, which is a plugin announcing itself
-under the `quackd.decision_llms` entry point group and carrying its own
-`make(spec, *, url, model)`, the way a third party's robot adapter announces itself; and a
-change to what the stepper *asks*, which is `stepper.py` and belongs to none of them.
+`docs/guides/decision-llms/`, and one row in the table in
+[docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md). No new file under
+`quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
+already moves it off the port its row expects. The two shapes that are not a row: one with a Python
+API of its own rather than a server, which is a plugin announcing itself under the
+`quackd.decision_llms` entry point group and carrying its own `make(spec, *, url, model)`, the way a
+third party's robot adapter announces itself; and a change to what the stepper *asks*, which is
+`stepper.py` and belongs to none of them.
 
 Four things a row needs, and a test reads the first three:
 
 1. **The row itself**, in `PRESETS`, in the position `quackd doctor` should print it.
-2. **`docs/decision-llms/<name>.md`**, copied in shape from an existing page
-   ([`local.md`](docs/decision-llms/local.md) is the smallest): a `## The row`
+2. **`docs/guides/decision-llms/<name>.md`**, copied in shape from an existing page
+   ([`local.md`](docs/guides/decision-llms/local.md) is the smallest): a `## The row`
    table quoting every
    field verbatim, a `## VERIFIED` section naming what you read and on what date, a
    `## UNVERIFIED, and what quackd does about each` table, and the line **Nothing here has
@@ -322,12 +322,12 @@ controllers execute, and announces itself to the core through the `quackd.adapte
 point group. That group is the whole of the contract, so an adapter for a robot nobody here
 owns can be published to PyPI without a pull request against this repository. The recipe,
 the rules the manifest enforces and the checklist are in
-[docs/adapters.md](docs/adapters.md); the honesty rules are
+[docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md); the honesty rules are
 [ADR-0022](docs/adr/0022-per-adapter-upstream-refs.md). In short: write `mock` first; put
 every SDK name in the package's `upstream_api.py` with a pinned link and a row in
 `tests/test_upstream_api.py`; import the SDK inside `connect()` behind that package's `[sdk]`
-extra; never send the SDK's "go limp" call; write `docs/adapters/<name>.md` listing every ref;
-and arrive 🧪 in the status tables until someone runs it against the real thing.
+extra; never send the SDK's "go limp" call; write `docs/adapters/<name>/README.md` listing
+every ref; and arrive 🧪 in the status tables until someone runs it against the real thing.
 
 ## Working agreements
 

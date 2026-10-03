@@ -1,5 +1,5 @@
 # What quackd preflight lays out for first-grasp.duck on the arm's simulator, and what a run of
-# it has to leave behind. The format is in docs/adapters/lerobot.md, under The sidecar.
+# it has to leave behind. The format is in docs/adapters/lerobot/README.md, under The sidecar.
 #
 # The task starts with the jaws open around a foam cube on the table, so the cube is laid there,
 # between the fingers as the arm starts. It names no size, so the cube is the size of the

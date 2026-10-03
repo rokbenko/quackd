@@ -1,6 +1,6 @@
 # ADR-0036: The arm adapter stops taking the arm's word for it
 
-**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0022](0022-per-adapter-upstream-refs.md) (every SDK name is a verified ref) and [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is a manifest) · Implemented in `quackd/adapters/lerobot/` ([page](../adapters/lerobot.md), [checklist](../lerobot-hardware-checklist.md))
+**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0022](0022-per-adapter-upstream-refs.md) (every SDK name is a verified ref) and [ADR-0017](0017-robot-adapters-and-manifest.md) (a robot is a manifest) · Implemented in `quackd/adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 **Amended 2026-09-18 by [ADR-0039](0039-an-arm-placed-by-hand.md):** the decision below that
 opens "Nothing here changes what quackd never does" loses one clause of one sentence. quackd now
@@ -214,7 +214,7 @@ that is not published, not an estimate.
   verbs that move the body joints, and two verbs that can now fail with where the arm stopped
   instead of reporting the move they were asked for.
 - An operator has an order to try it in
-  ([lerobot-hardware-checklist.md](../lerobot-hardware-checklist.md)), a calibration id that
+  ([lerobot-hardware-checklist.md](../adapters/lerobot/hardware-checklist.md)), a calibration id that
   must match quackd's robot id, and one environment variable for the step. What only a real arm
   can settle is that checklist's *What to report*, and this ADR does not repeat it.
 - A camera is one USB webcam named by `--camera-url opencv://N`, and quackd builds it

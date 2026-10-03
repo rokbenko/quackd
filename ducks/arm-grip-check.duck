@@ -1,6 +1,7 @@
 # The arm task where every turn is a choice among things the arm can already do, which is what
-# makes it the worked example in docs/decision-llms.md. Nothing here authors an angle: the gripper
-# opens or it shuts, and where it stops is the only thing quackd knows about holding.
+# makes it the worked example in docs/guides/decision-llms/README.md. Nothing here authors an
+# angle: the gripper opens or it shuts, and where it stops is the only thing quackd knows about
+# holding.
 #
 # It is also worth running on its own account. README.md says nobody has yet measured whether
 # the band that infers `holding` from a gripper stopping short of shut is right, and this is

@@ -445,7 +445,12 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_open_duck import upstream_api
 
     return (
-        ("open_duck", upstream_api, "docs/adapters/open_duck.md", "a duck (the bridge backend)"),
+        (
+            "open_duck",
+            upstream_api,
+            "docs/adapters/open_duck/README.md",
+            "a duck (the bridge backend)",
+        ),
     )
 
 

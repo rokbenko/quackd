@@ -24,6 +24,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `websockets.asyncio.client.connect`, is the API 16 keeps. Every CI job passed on it, and a
   round trip through that call and an import of google-genai's live client both ran on 16.1.1.
   No requirement a user installs against moved.
+- **docs/ is sorted by what a reader came to do.** Twenty six pages sat side by side in it, a
+  guide beside a spec beside one robot's hardware checklist. All but the FAQ now sit in
+  `guides/`, `reference/`, `concepts/` and `adapters/`, where each robot has a folder of its own:
+  its page, its hardware checklist where it has one, and for the SO-101 its first run.
+  `docs/README.md` maps them, and a test fails while a page in any of those four folders is
+  missing from the map. The Microduck's tables leave `adapter-status.md` for a page of their
+  own, the last body to get one, so the status page, now `docs/adapters/status.md`, holds status
+  alone. The short copy of the arm simulator's upstream table it carried is gone: the arm's page
+  has a row for every name in it, under a stricter test, and now also says the four things only
+  the copy said. Every link and path in the docs, the code, the tests, the starter task files,
+  the adapters' `Documentation` URLs and the issue templates names the new places, and so do the
+  links in earlier release notes, PLAN.md, the ADRs and the design notes, whose words are left as
+  they were. One kind of link cannot follow. The README on PyPI links `docs/` on `main`, and a
+  release's description there never changes, so on the PyPI pages of 0.16.1 and every release
+  before it a link to a moved page now returns 404, and so does each adapter's `Documentation`
+  link. The project pages are right again from the next release.
 
 ## [0.16.1] — 2026-09-29
 
@@ -135,7 +151,7 @@ what a version promises and how one ships.
 - **A bench step for each of the six changes 0.15.0 made in `lerobot:real` without one.**
   0.15.0's Known limitations named them and wrote a step for one other, the follower keeping
   torque through an exit that skips the close. The other six are now in
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md), each in the step
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md), each in the step
   that meets the same moment and each saying what to do at the arm, what to watch for and what
   to report. A connect quackd refuses letting go of the arm is step 6, on a second name that
   nothing was calibrated as, taken before the fold. The deadline a call spends only while the
@@ -217,7 +233,7 @@ the arm one short segment at a time, from a server of its own.
 
 `manipulate(instruction)` is one segment of the arm's learned policy, and `pick` now runs its
 policy the same way ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md),
-[docs/policies.md](docs/policies.md)). The segment's loop is quackd's: paced on the arm's clock
+[docs/policies.md](docs/guides/policies.md)). The segment's loop is quackd's: paced on the arm's clock
 at the policy's own rate, capped at the verbs' own speed, and judged tick by tick before each
 goal goes out. The policy is not quackd's. A checkpoint is code, so it runs in
 `quackd policy serve`, a server of its own that the arm reaches over HTTP, and no quackd
@@ -510,7 +526,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   count, a median, a 99th percentile and the longest for every bus call, the wait for the bus
   included, and for every tick of a policy segment, measured on `perf_counter`. A pick's
   result carries it too. Nothing acts on it: it is for a bench session to measure.
-- **[docs/policies.md](docs/policies.md): a policy on the laptop or on a rented GPU.** How to
+- **[docs/policies.md](docs/guides/policies.md): a policy on the laptop or on a rented GPU.** How to
   check a checkpoint and serve it in a second terminal, how to reach a server on a rented GPU
   through `ssh -L` and hand the laptop its token, which policies there are and what each needs,
   SmolVLA's pinned backbone and Pi0.5's gated tokenizer among them, their licences in one
@@ -623,13 +639,13 @@ placement and field of view. Known limitations, below, lists what only the hardw
   written for it and put back, the loop's own reads, the check at connect that a policy fits,
   the waits for a call a stop cut short and the wall clock on `perf_counter` among it, has run
   only there. Step 18 of
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md) is the order to find
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md) is the order to find
   out in on an arm.
 - **SmolVLA did not run on the laptop's CPU.** On an Intel Core i5-10210U,
   `lerobot/smolvla_base` took 169 to 188 s a chunk, 474 of its 500 parameter tensors being
   bfloat16, which that CPU has no native arithmetic for, and about 18 s cast to float32, past the
   10 s the client waits for a step, so it never answered one through the client. It wants a GPU
-  ([docs/policies.md](docs/policies.md#smolvla-and-act)).
+  ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)).
 - **FLUX 3 Action has not run anywhere.** The server refuses its policy type. What would change
   that is a spike on a rented Linux GPU, which has not happened, showing that `quackd policy
   check --bench` holds the checkpoint's rate through the tunnel, that its actions stay anchored
@@ -657,7 +673,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   the arm's backend from before this release, and nothing in quackd calls it, so no command
   reaches it. A caller of its own would load a LeRobot checkpoint beside the serial bus, with
   none of the reading the server does before it builds, as the `LOAD_POLICY` row on
-  [the arm's page](docs/adapters/lerobot.md#the-policies-upstream-lerobot-061) says. Whether to
+  [the arm's page](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-061) says. Whether to
   remove it is not decided, and PLAN.md carries it as an open item.
 - **The lab arm's twin cannot start a segment where it starts.** A segment starts only with
   every joint inside its travel, and a twin starts where its rest pose puts it, settled clear of
@@ -665,7 +681,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   its twin starts with that joint settled just off the stop, and its first `manipulate` is
   refused until the joint is moved in. `--controller vla` only calls `manipulate`, so it cannot
   recover. The lasting fix is to calibrate the arm again folded
-  ([docs/policies.md](docs/policies.md#on-the-laptop-alone)).
+  ([docs/policies.md](docs/guides/policies.md#on-the-laptop-alone)).
 - **A policy takes a second terminal.** The server is a process you start, on the laptop or on a
   rented GPU, and `quackd run` never spawns one. It gives torch one thread fewer than it would
   take and does not lower its own priority, and the run's record does not keep the thread count
@@ -685,7 +701,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   bus, above. Until they are taken, the twin the trained ACT drove is a model nobody has checked
   against an arm. What those releases changed in `lerobot:real` has run only in the test suite
   and on the simulator. Step 18 of
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md), which hands the arm
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md), which hands the arm
   to a policy, comes only after every step above it. PLAN.md carries them.
 
 ## [0.15.0] — 2026-09-29
@@ -759,7 +775,7 @@ below, lists what only the hardware can settle.
   is `quackd robot edit NAME --host-token`. A `--host-token` typed where nothing names a board
   refuses `run` and `serve-mcp` and fails `doctor`'s host section, and `QUACKD_HOST_TOKEN` with
   no board to go to is left unread. `validate` and `list-verbs` ask no board, and say so for a
-  body described without a camera when a board is named for it ([docs/jetson.md](docs/jetson.md)).
+  body described without a camera when a board is named for it ([docs/jetson.md](docs/guides/jetson.md)).
 - **A registered robot can keep its board.** `robots.json` gains `host` and `host_token`, set
   with `quackd robot add` and `robot edit`, and `quackd robot edit NAME --clear host` forgets
   both. A host token needs a host. `robot show` and its `--json` print the host and only whether
@@ -767,7 +783,7 @@ below, lists what only the hardware can settle.
   one. Both fields are left out of the file while they are empty, so a registry that never named
   a board stays readable by 0.12 to 0.14, which refuse unknown keys. One robot stored with a host
   makes the whole file unreadable to them, every robot in it included, until this release runs
-  `quackd robot edit NAME --clear host` on it ([docs/registry.md](docs/registry.md)).
+  `quackd robot edit NAME --clear host` on it ([docs/registry.md](docs/guides/registry.md)).
 - **The host daemon, `bridge/jetson/quackd_jetson_hostd.py`, is what answers on the board.** It
   serves HTTP on port 9874, binds loopback by default, warns when it is bound anywhere else with
   no token, and checks an optional token in the `X-Quackd-Token` header, in constant time, on
@@ -870,7 +886,7 @@ below, lists what only the hardware can settle.
   and it and `quackd robot release` say it is the simulator rather than asking anybody to hold an
   arm. Its ✅ rests on a seeded grasp sweep on the maker's model, judged by the world's truth,
   and it never raises `lerobot:real`'s
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#the-simulator-lerobotmujoco)).
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-simulator-lerobotmujoco)).
 - **`quackd robot twin SOURCE [NAME]` registers a simulator of a registered arm.** NAME is
   `SOURCE-sim` unless given, its address is the calibration file SOURCE's runs read, and it
   copies SOURCE's rest pose, pilot and each camera the simulator renders, naming any it leaves
@@ -878,7 +894,7 @@ below, lists what only the hardware can settle.
   registered LeRobot arm, a missing calibration file, a serial port where the file goes, and
   `--force` over anything but a `lerobot:mujoco` robot, so no arm is ever overwritten by its own
   simulator. `--robot arm-01:mujoco` does not parse, and this is the command instead
-  ([docs/registry.md](docs/registry.md#a-simulator-of-an-arm)).
+  ([docs/registry.md](docs/guides/registry.md#a-simulator-of-an-arm)).
 - **`quackd preflight FILES --robot NAME --llm VENDOR[:MODEL]` rehearses task files on a
   simulator.** A robot that is not a simulator is refused before it is built, with a pointer to
   `robot twin`, and so is a pilot nobody named: the scripted one runs only when typed as
@@ -901,7 +917,7 @@ below, lists what only the hardware can settle.
   checks read the transcript. Object checks read the simulator's truth, latched on the way into
   the teardown's stop or at its peak before then, which is kept off the state's extras, so the
   pilot and an MCP client never see it. It is never the frontmatter, which an MCP pilot is
-  handed whole ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#the-sidecar)).
+  handed whole ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-sidecar)).
 - **`quackd[lerobot-sim]` installs the simulator.** It is `quackd-lerobot[sim]`, the arm's
   package with MuJoCo and without LeRobot, so it needs no torch and installs on Python 3.11.
   `quackd doctor` gains a `lerobot-sim (mujoco)` row, and a row in its transports table saying
@@ -941,7 +957,7 @@ below, lists what only the hardware can settle.
   two URL variables on purpose: it is the board you usually use, and a `.env` line naming a
   model server's exact address must win over it. No vendor and no decision LLM is moved, and
   `--decision-url` already reaches a server on the board
-  ([docs/local-llms.md](docs/local-llms.md)).
+  ([docs/local-llms.md](docs/guides/local-llms.md)).
 - **Breaking. `quackd doctor --json` carries the board under `host`.** The `host` key holds the
   hello, the health, the presets asked at the host as `host.servers` and the parsed board as
   `host.jetson`. The top-level `jetson` key 0.13.0 added is gone, and so is its
@@ -972,7 +988,7 @@ below, lists what only the hardware can settle.
   seconds, an arm's retries among them, came out of the minutes the client was given. It starts
   again once the body has connected, as a `quackd run`'s does. On `lerobot:mujoco`, whose clock
   is the wall's until it connects and its world's from then on, that is what lets the minutes
-  reach `max_minutes` at all ([docs/mcp.md](docs/mcp.md)).
+  reach `max_minutes` at all ([docs/mcp.md](docs/guides/mcp.md)).
 
 ### Fixed
 
@@ -1067,7 +1083,7 @@ below, lists what only the hardware can settle.
   fall, and the daemon's lower priority, memory ceiling and OOM score are a precaution rather
   than a measurement. And whether a real board's files and `tegrastats` line look like the
   fixtures, which were written from NVIDIA's documentation. What to send back from a board that
-  can is listed at the end of [docs/jetson.md](docs/jetson.md#status).
+  can is listed at the end of [docs/jetson.md](docs/guides/jetson.md#status).
 - **A fleet has no board.** `--host`, or a host stored with any member, is refused for
   `--robots`, `--flock`, a task file with a `flock:` block and several robots alike, because one
   host is one camera, one detector and one board's health. `QUACKD_HOST` is not refused, and for
@@ -1128,7 +1144,7 @@ below, lists what only the hardware can settle.
   the deadline each call to the arm spends only while the bus is busy, and the close's warning
   that says a stalled shortfall once. One bench step would settle the first, taken with
   0.14.0's: in step 14 of
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md), a second Ctrl-C
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md), a second Ctrl-C
   during the fold back to the rest pose, with a hand under the arm. The arm should still hold
   where it stood once quackd has exited, until you hold it and run
   `quackd robot release arm-01` or cut its power. Nobody has written a bench step for the
@@ -1199,8 +1215,8 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   line that says what the release did, a release that did not take included. With no terminal
   and no `--yes` it refuses, and a body that is never handed to a person refuses by name. It is
   not a verb, not an MCP tool and not on the `RobotAdapter` protocol, so no pilot can reach it
-  ([docs/registry.md](docs/registry.md),
-  [docs/adapters/lerobot.md](docs/adapters/lerobot.md#releasing-it-where-it-stands),
+  ([docs/registry.md](docs/guides/registry.md),
+  [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#releasing-it-where-it-stands),
   [ADR-0039](docs/adr/0039-an-arm-placed-by-hand.md), amended).
 - **A run whose last rest move missed offers to release the arm into your hands.** At a
   terminal, on a run that is not a dry one, and only over an arm that answered its last read,
@@ -1216,10 +1232,10 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   `prompt` row and a new `release` event whose `stage` and `reason` say how it ended. Never on
   a dry run, an MCP session or a flock member, and never over an arm whose rest move left a
   call that never came back, a goal write or the hold a stalled move ends with, since that arm
-  has not answered ([docs/architecture.md](docs/architecture.md)).
+  has not answered ([docs/architecture.md](docs/concepts/architecture.md)).
 - **`mobility` and `manipulator` take `none`, which asks for nothing.** `any` means some kind,
   which an arm bolted to a table fails, so a task that goes nowhere had no word to say so
-  ([docs/duck-spec.md](docs/duck-spec.md),
+  ([docs/duck-spec.md](docs/reference/duck-spec.md),
   [ADR-0032](docs/adr/0032-datasheets-and-the-verdict.md), amended).
 - **The hardware report and the checklist ask what the bench has not answered yet:** whether a
   move given several seconds looked like one motion and arrived when the time was up, and
@@ -1248,7 +1264,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   when something was clipped, `report_state` explains a reading past the travel in the arm's own
   numbers, and the prompt's travel line says a joint can read past its travel when it was folded
   or placed there with torque off
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#a-pose-past-the-travel),
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#a-pose-past-the-travel),
   [ADR-0045](docs/adr/0045-a-rest-pose-the-calibration-cannot-reach.md)).
 - **`stop` writes no goal for a joint that reads past its travel, and says which joints it left
   out.** Every `stop` and every teardown wrote each body joint's present position as its goal,
@@ -1259,7 +1275,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   data. If every body joint reads past its travel, nothing is sent and the stop is still a stop.
   What the skip cannot do is halt a joint a move has already started lifting out of a fold,
   because every goal written past the travel reaches the servo as the limit: the power switch is
-  the only stop for that stretch ([docs/safety.md](docs/safety.md)).
+  the only stop for that stretch ([docs/safety.md](docs/concepts/safety.md)).
 - **`--by-hand` will not take hold of an arm with a joint placed past its travel.** Its
   take-hold wrote that joint's reading as its goal, which the servo clamps to the limit, so
   torque hauled the joint there under the person's hand. Leaving the joint out instead would
@@ -1275,7 +1291,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   edge the reason says it is past, and its `hand_off` event names each such joint in a new
   `outside` field. A refusal whose reason names no reading, an arm that moved as torque came on,
   keeps the list that says where it is holding
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#placing-it-by-hand),
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#placing-it-by-hand),
   [ADR-0045](docs/adr/0045-a-rest-pose-the-calibration-cannot-reach.md), amended).
 - **After a refused take-hold, nothing touches the arm, and the person is told which arm they
   are holding.** The teardown's stop took hold again on its own after any refused take-hold that
@@ -1313,7 +1329,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   where the hand has it and folds the arm, as it always did, and where that stop's take-hold is
   refused, over a joint placed past its travel or a fold nobody lifted, the person is told so
   once, naming the joint, and it is recorded
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#placing-it-by-hand),
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#placing-it-by-hand),
   [ADR-0039](docs/adr/0039-an-arm-placed-by-hand.md), amended).
 - **`move_joints` takes the time it is asked for.** `duration_s` was how long a move could take
   before it gave up, and every move ran at the step cap whatever it said. A move is now walked
@@ -1329,7 +1345,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   round it onto that travel, in which case as it was given: in whole degrees it could name a
   refused goal inside the range it gave, `85 is outside -85..85`, and so would a tenth for a
   goal a few hundredths past an edge. A gripper named in `move_joints` is walked like any
-  joint, and the `gripper` verb is not ([docs/adapters/lerobot.md](docs/adapters/lerobot.md),
+  joint, and the `gripper` verb is not ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md),
   [ADR-0036](docs/adr/0036-what-the-arm-does-not-say.md), amended).
 - **The line an arm left holding itself up ends on names the ways out, and puts holding it
   first:** `the arm is not at its rest pose (...), so torque was left on and it will not fall
@@ -1351,7 +1367,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   reach of 0.4 m, an estimate from the link lengths in the maker's URDF, and a payload line
   with objects to judge by. Every field of the `needs` schema says what it means, and the
   `robot_assess_task` description spells out the words
-  ([docs/safety.md](docs/safety.md#when-a-feasible-verdict-contradicts-itself),
+  ([docs/safety.md](docs/concepts/safety.md#when-a-feasible-verdict-contradicts-itself),
   [ADR-0032](docs/adr/0032-datasheets-and-the-verdict.md), amended).
 - **After a go, the pilot is told who cleared its doubt.** A pilot whose `uncertain` a person
   answered with go hears that a person read it and said go, and not to assess again on the same
@@ -1437,7 +1453,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 
 - **None of the code this release changes has run on an arm.** These are the bench steps that
   would settle it, in order, with a hand near the power switch, and what to report from each
-  ([docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md)):
+  ([docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md)):
   1. `quackd doctor --robot arm-01`: whether the `rest pose` row reads `at it already` for an
      arm left folded, or `returned to it` for one that had to move, with the clip note naming
      `shoulder_lift` listed under the table as advice, and whether the shoulder, released at
@@ -1482,7 +1498,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   torque on, which is the safe reading.
 - **On Windows a standard input redirected from `NUL` counts as a terminal**, so
   `quackd robot release` fed from `NUL` asks its question and aborts rather than refusing for
-  want of one. Nothing connects either way ([docs/registry.md](docs/registry.md)).
+  want of one. Nothing connects either way ([docs/registry.md](docs/guides/registry.md)).
 - **Six of the seven bodies have still never run on hardware, and the one that has last ran
   0.12.0, before any of this.**
 
@@ -1491,7 +1507,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 quackd has a path onto an NVIDIA Jetson now, and a Jetson is a host rather than a robot. The
 model that decides what a robot should do next and the process that turns that decision into a
 verb both fit on one small computer, so a goal in plain language never has to leave the room.
-Nothing here has been run on a Jetson by this project, and [docs/jetson.md](docs/jetson.md)
+Nothing here has been run on a Jetson by this project, and [docs/jetson.md](docs/guides/jetson.md)
 says so in its second paragraph, before any of its sections, and again in bold where its Status
 section begins.
 
@@ -1519,7 +1535,7 @@ it counts.
   `restart: "no"`, because `quackd run` is a command that declares a verdict and exits rather
   than a service to keep alive. The arrangement the page is really about is a ToddlerBot's own
   Jetson holding its control daemon, a model and quackd between them, three processes on one
-  board talking over loopback ([docs/jetson.md](docs/jetson.md),
+  board talking over loopback ([docs/jetson.md](docs/guides/jetson.md),
   [ADR-0044](docs/adr/0044-a-jetson-is-a-host-not-a-body.md)).
 - **`quackd doctor` reads the board it is running on, when that board is a Tegra.** The
   model, the L4T release and which JetPack it is, the memory the CPU and the GPU are
@@ -1673,7 +1689,7 @@ it counts.
   GPU and is not a Tegra, so what it proves is that the image builds and that quackd runs on
   aarch64 Linux. Ollama on an Orin's GPU, the NVIDIA container runtime, `nvpmodel`, how much
   memory a model takes beside quackd, and what the doctor section reads off a real board's
-  files are all unproven. [docs/jetson.md](docs/jetson.md) says what to send back from a board
+  files are all unproven. [docs/jetson.md](docs/guides/jetson.md) says what to send back from a board
   that can: the `jetson` block of `quackd doctor --json`, a run's `terminal.txt` and
   `transcript.jsonl`, and one `tegrastats` line taken while the model was answering.
 
@@ -1700,7 +1716,7 @@ it counts.
   the process dies where it is. Inside one, where quackd is PID 1 with no handler, the signal
   is ignored until Docker's SIGKILL arrives. That is why `deploy/jetson/compose.yml` sets
   `stop_signal: SIGINT`, and anything else you wrap `quackd run` in should send SIGINT too.
-  Until this release [docs/safety.md](docs/safety.md) said the `finally` always sends the
+  Until this release [docs/safety.md](docs/concepts/safety.md) said the `finally` always sends the
   `stop`, and it now says which ways of stopping quackd skip it.
 
 - **No provider fix in this release has reached a live model.** There is no Anthropic or
@@ -2075,7 +2091,7 @@ the reading of it is.
   number nobody published is a number nobody has calibrated either.
 
 - **A stepper is not on the critical path, and the arithmetic that says it pays is arithmetic.**
-  The break-even in [docs/decision-llms.md](docs/decision-llms.md) is a stepper answering in
+  The break-even in [docs/decision-llms.md](docs/guides/decision-llms/README.md) is a stepper answering in
   1.40 seconds; under that it pays for itself and over it is a net loss. That figure comes from a worked example and
   not from a run, and the one-second bound this release put in force is the ceiling rather
   than the observation.
@@ -2345,7 +2361,7 @@ so a run started from a home directory puts your account name in the file.
   learned from the result after the run was over.
 
 - **The arm from a chat is a second half of the first-run page rather than an appendix to it.**
-  [docs/lerobot-first-run.md](docs/lerobot-first-run.md) walked the terminal path in fifteen
+  [docs/lerobot-first-run.md](docs/adapters/lerobot/first-run.md) walked the terminal path in fifteen
   steps and then closed with a twenty-eight-line appendix for MCP, which is a pointer rather
   than a path somebody can follow. It is two parts now that share the steps which set the arm
   up, and Part 2 is fifteen of its own, M00 to M14, one for each of Part 1's: both clients
@@ -2357,7 +2373,7 @@ so a run started from a home directory puts your account name in the file.
   adversarial pass over the draft corrected six things about what the arm does, three of them
   blocking, and the worst of those told a reader that `stop` brakes a moving arm. It does not:
   the verb never sets the executor's abort, so a `move_joints` already running is not cancelled
-  and keeps re-sending its own goal until it finishes. [docs/safety.md](docs/safety.md)
+  and keeps re-sending its own goal until it finishes. [docs/safety.md](docs/concepts/safety.md)
   grew *Who the record says was asked*, for the `prompt` event below.
 
 - **[ADR-0041](docs/adr/0041-the-record-says-when-it-ran-and-what-it-cost.md)**, on why a run
@@ -2735,8 +2751,8 @@ reports that it did.
   to start if it cannot get there. One body is parked today and the other six refuse a pose rather
   than accepting one and ignoring it, and say which kind of refusal it is: a Microduck has no
   joints to record at all, and an XLeRobot has joints quackd does not drive to a pose yet
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md), [docs/registry.md](docs/registry.md),
-  [docs/safety.md](docs/safety.md)).
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md), [docs/registry.md](docs/guides/registry.md),
+  [docs/safety.md](docs/concepts/safety.md)).
 
 - **Several cameras on the LeRobot arm: repeat `--camera-url`.** One arm, one webcam was the shape
   of the camera 0.9 added, and the first real run is what showed the limit: the one camera framed
@@ -2775,7 +2791,7 @@ reports that it did.
   string for one camera and a list for several, so a file written by 0.9 loads unchanged, and a
   body that reads one camera refuses a second by name rather than taking it and using the first:
   `microduck:mock takes one camera url; only lerobot:real takes several`
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md)).
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
 
 - **An arm served over MCP now gets the rest pose it was registered with.** `quackd serve-mcp
   --robot arm-01` built the arm without it, so every guard that stops the arm falling read
@@ -2791,7 +2807,7 @@ reports that it did.
   layout that works and carries the warning the lab earned, which is that the variable name is case
   sensitive on macOS and Linux: the file at the bench said `OPENAI_API_Key`, which happens to work
   on Windows and would have worked nowhere else
-  ([docs/lerobot-first-run.md](docs/lerobot-first-run.md)).
+  ([docs/lerobot-first-run.md](docs/adapters/lerobot/first-run.md)).
 
 - **A picture can come with the task: `quackd run --goal "draw what is in the picture" --image
   sketch.png`.** The only images a model could see were camera frames, fetched fresh each step and
@@ -2837,7 +2853,7 @@ reports that it did.
   comes back on, so quackd never relies on it: the present position is written before the switch
   and again after, and the arm is read back to see whether it actually stayed
   ([ADR-0039](docs/adr/0039-an-arm-placed-by-hand.md),
-  [docs/adapters/lerobot.md](docs/adapters/lerobot.md)).
+  [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
 
 ### Changed
 
@@ -3201,7 +3217,7 @@ reports that it did.
   This is a real change to what a real ToddlerBot would do, on a body no ToddlerBot has ever
   run, and it is the difference between `stand` standing the robot up and `stand` leaning on
   it. It is exercised against upstream's own physics and against the fake body, and on no
-  hardware, which is what [docs/adapter-status.md](docs/adapter-status.md) has always said
+  hardware, which is what [docs/adapter-status.md](docs/adapters/status.md) has always said
   about this row.
 
 - **The contract job's deadman test asked a socket it had just closed on purpose.** It kills the
@@ -3409,7 +3425,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   `adapter-backend` memory slug, because each of those already means something else on a
   command line. The honest part: the token is stored in plain text in a file in your home
   directory, quackd masks it in everything it prints, and `SECURITY.md` says so
-  ([docs/registry.md](docs/registry.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/registry.md](docs/guides/registry.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **A flock is a list of names you keep: `quackd flock create|list|show|edit|delete`.**
   Members are robots registered with `quackd robot add`, so a flock is a composition rather
@@ -3423,7 +3439,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   file can be in is a flock naming a robot nobody registered: `quackd robot remove` refuses
   while a flock lists it and names the flocks, `--force` drops it from them, and a flock that a
   hand edit left dangling is marked in every listing and refuses to run rather than quietly
-  running smaller ([docs/registry.md](docs/registry.md),
+  running smaller ([docs/registry.md](docs/guides/registry.md),
   [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **A flock can be N pilots talking, not only a coordinator refereeing: `quackd run <duck> --flock <name>`.**
@@ -3448,7 +3464,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   simulated members are N separate worlds with no shared arena and nothing to check a claimed
   success against, a seed does not make it reproducible, it costs one budget and one model call
   per member per turn, and nothing here has run on hardware
-  ([docs/flock.md](docs/flock.md#the-pilot-flock), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/flock.md](docs/guides/flock.md#the-pilot-flock), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **Pilots talk to each other: a `tell` tool and a `TALK` message on the flock bus.**
   `tell(to, text)` sits beside `assess_task`, `declare_success` and `remember`: it moves
@@ -3473,7 +3489,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   `flock.roles` stays a coordinator feature and is refused on a pilots file, which splits the
   work by talking instead. An older quackd refuses the value rather than ignoring it, which is
   the correct failure for a file asking for behaviour it does not have
-  ([docs/duck-spec.md](docs/duck-spec.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/duck-spec.md](docs/reference/duck-spec.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **`quackd serve-mcp --flock <name>` fronts a stored flock as the MCP fleet, and adds no tools.**
   `--robots name=<adapter>:<backend>,...` already served several robots from one process, with
@@ -3484,7 +3500,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   flock's own first member the default robot rather than whichever Microduck came first.
   `--flock` refuses `--robot`, `--robots` and the three endpoint flags, because the registry
   already answers all five. The nine `robot_*` tools are untouched, and a flock **task file**
-  is still refused over MCP, whichever kind it is ([docs/mcp.md](docs/mcp.md),
+  is still refused over MCP, whichever kind it is ([docs/mcp.md](docs/guides/mcp.md),
   [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **Every robot carries a datasheet, and the pilot is told to check the task against it before anything moves.**
@@ -3550,7 +3566,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   never delete: a task file can add something a body cannot do, and can never remove one. A
   correction the body contradicts, a payload on a robot with nothing to hold with, is refused by
   `quackd validate` before anything connects. `duck: 2` also unlocks `flock.roles.<role>.needs`
-  ([docs/duck-spec.md](docs/duck-spec.md)).
+  ([docs/duck-spec.md](docs/reference/duck-spec.md)).
 
 - **quackd carries a list of the models it will let you pick, and `--model` picks from it.**
   `--model` used to take any string and hand it to the vendor, so a typo, an id retired last spring
@@ -3610,16 +3626,16 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
 
 - **A bring-up checklist and a lookout task for the LeRobot arm, which had neither.**
   Every other body quackd ships a lookout for had both, and this file has said the arm did not
-  since 0.7. [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md)
+  since 0.7. [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md)
   is the order to try an SO-101 in, with nothing moving until step 10 and a hand on the power
   switch from there, because this arm has no e-stop. `ducks/lerobot-lookout.duck` is the task
   to point at a real arm first: it moves no joint, and it asks for `report_state` rather than
   `observe`, because a `.duck` is checked against the static manifest, which cannot know
   whether a webcam is plugged in
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md)).
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
   One body still has neither, and it is the one that names a transport rather than a robot: a
   `rosbridge:ws` base gets no lookout task and no checklist in this release either, so it goes
-  on blocks and a person reads [docs/adapters/rosbridge.md](docs/adapters/rosbridge.md) instead.
+  on blocks and a person reads [docs/adapters/rosbridge.md](docs/adapters/rosbridge/README.md) instead.
 
 - **A camera on the LeRobot arm: `--camera-url opencv://N`.** No SO-101 has a camera in it,
   whatever a kit's listing says: the arm is six servos and a serial board, and every camera on
@@ -3643,13 +3659,13 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   transport reports camera health, which is the Microduck over robotd and the Open Duck's bridge
   and not the four that report none, and `?fov=` travels with the camera into `limits.camera_fov_deg` so bearings are
   calibrated over MCP too, where there is no `--fov-deg`
-  ([docs/adapters/lerobot.md](docs/adapters/lerobot.md#camera), step 8 of
-  [the checklist](docs/lerobot-hardware-checklist.md)).
+  ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#camera), step 8 of
+  [the checklist](docs/adapters/lerobot/hardware-checklist.md)).
 
 - **The LeRobot pages rewritten for someone who owns the arm rather than someone who wrote
   the adapter, and five things they said that were not true.** An SO-101 owner is the likeliest
   first external user of quackd, and the two pages assumed a reader who already knew what
-  quackd was for. [docs/adapters/lerobot.md](docs/adapters/lerobot.md) now opens with what
+  quackd was for. [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md) now opens with what
   LeRobot already does for you and what quackd deliberately does not touch (teleoperation,
   recording, training), the three properties of this body that shape every guard, and a
   starting path that begins with the mock and no arm at all. It gained the install trap in
@@ -3709,7 +3725,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   you run the server yourself, vLLM's own `--default-chat-template-kwargs` does the same thing
   once at serve time, and the docs now name both. Thanks to
   [@Vallhalen](https://github.com/Vallhalen) (#12), who measured it and proposed the
-  passthrough ([docs/local-llms.md](docs/local-llms.md#knobs)).
+  passthrough ([docs/local-llms.md](docs/guides/local-llms.md#knobs)).
 
 - **Two transcripts of `find-and-kick` piloted by Qwen 2.5 Coder 14B on LM Studio**, seeds
   5 and 6, land in `docs/assets/transcripts/` with a table reading them in
@@ -3810,11 +3826,11 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   release on, and in its keywords, where `reachy-mini` gave way to nine vendor names and to
   `multi-robot` and `robot-fleet`, the one place the retired word stays on
   purpose, in the `quackd --help` banner, in `quackd/__init__.py`'s docstring and in `LAUNCH.md`.
-  The demo's title and meta tags, [docs/architecture.md](docs/architecture.md) and
-  [docs/mcp.md](docs/mcp.md) did not take the sentence itself: they lost the retired tagline and
+  The demo's title and meta tags, [docs/architecture.md](docs/concepts/architecture.md) and
+  [docs/mcp.md](docs/guides/mcp.md) did not take the sentence itself: they lost the retired tagline and
   had the new positioning written into their own words. "Fleet" is retired
   from prose and from help text in favour of "flock", while the code identifiers keep it, because
-  renaming `build_fleet_server` would be churn no reader sees. [docs/flock.md](docs/flock.md) now
+  renaming `build_fleet_server` would be churn no reader sees. [docs/flock.md](docs/guides/flock.md) now
   reads pilots-first. Nothing new ships here: the features this describes landed in this same
   release, every body is still simulated or mocked, and flock mode is still EXPERIMENTAL
   ([ADR-0035](docs/adr/0035-one-cli-for-all-your-robots.md)).
@@ -3827,7 +3843,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   did. A registered name may not collide with an `adapter-backend` slug, so a run can never be
   ambiguous about which file it is writing. Amends
   [ADR-0025](docs/adr/0025-memory-between-runs.md)
-  ([docs/memory.md](docs/memory.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/memory.md](docs/guides/memory.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
 
 - **Breaking. `--model` and `QUACKD_MODEL` now take a catalogue id, and three of the four defaults moved.**
   [ADR-0010](docs/adr/0010-providers.md) shipped four defaults with the first release and marked
@@ -3984,7 +4000,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
 
 - **The trained gait's 10 of 10 is not reproducible, and four documents stated it as a
   property.** 0.8 shipped that number in this file, in the README three times, in
-  [docs/adapter-status.md](docs/adapter-status.md) and in
+  [docs/adapter-status.md](docs/adapters/status.md) and in
   [ADR-0030](docs/adr/0030-mujoco-physics-backend.md). What the evidence supports is narrower.
   The nightly job that runs the sweep had 10 of 10 on each of its first five runs, 2026-09-09
   to 09-13, and 9 of 10 on 09-14, seed 4 aborting. Run by hand on the machine that cut this
@@ -4225,7 +4241,7 @@ Known limitations, below, says what each of those leaves open.
   `QUACKD_REQUIRE_GL`, `QUACKD_LIVE_LLM` and `QUACKD_LIVE_LLM_MODEL`. The transcript is unaffected either
   way: it is the record, and it now carries `llm_request`, `verb_start`, `gate`, `intent`,
   `verb_end` and `note` alongside the kinds it always had ([ADR-0029](docs/adr/0029-tracing.md),
-  [docs/architecture.md](docs/architecture.md#trace)).
+  [docs/architecture.md](docs/concepts/architecture.md#trace)).
 - **A flock narrates itself too, one robot per column.** `docs/flock.md` promised a per robot
   transcript and the file held nothing but frames: a member built its executor with no tracer,
   so `--trace` on a flock did nothing at all. Each member now records into its own
@@ -4234,7 +4250,7 @@ Known limitations, below, says what each of those leaves open.
   readable columns rather than one interleaving. The coordinator's decisions and the planner's
   one model call print under `flock`, in the same words the GIF captions use. `flock.jsonl` is
   unchanged, and so is `--verbose` ([ADR-0029](docs/adr/0029-tracing.md) amended,
-  [docs/flock.md](docs/flock.md)).
+  [docs/flock.md](docs/guides/flock.md)).
 - **`quackd trace` replays a finished run.** The transcript held every line the console
   printed and there was no way to read it back except with `jq`. With no argument it replays
   the newest run under `runs/`, and it takes a run name, a timestamp prefix, a duck name or a
@@ -4775,7 +4791,7 @@ that were not true no longer are.
   ships a ZeroMQ host, so quackd speaks that wire and its extra is `pyzmq` and nothing else.
   That keeps the 3.11 floor and works on Windows, unlike `quackd[lerobot]`. Design:
   `docs/adr/0026-xlerobot.md`, with the page at
-  [docs/adapters/xlerobot.md](docs/adapters/xlerobot.md).
+  [docs/adapters/xlerobot.md](docs/adapters/xlerobot/README.md).
 - **The whole wire format is exercised against a fake host over loopback**, on every CI
   platform. Upstream ships no test, no CI and no simulator that runs — its ManiSkill host
   imports `xlerobot_single`, which is defined nowhere in the repository — so the other end of
@@ -4797,7 +4813,7 @@ that were not true no longer are.
   the camera list the host sends and its robot-model default disagrees with the host's, with
   nothing cross-checking either. quackd reads both off the wire, so neither can be silently
   wrong. Design: `docs/adr/0027-alohamini.md`, with the page at
-  [docs/adapters/alohamini.md](docs/adapters/alohamini.md).
+  [docs/adapters/alohamini.md](docs/adapters/alohamini/README.md).
 - **A host wrapper for the robot, because upstream's own host leaves the arms limp.**
   `configure()` disables arm torque and both of its `enable_torque()` calls are commented out;
   nothing else in the driver turns it on. So `bridge/alohamini/` holds a wrapper that runs
@@ -4828,7 +4844,7 @@ that were not true no longer are.
   times out and nothing re-arms, and a humanoid frozen mid-stride while a model thinks is a
   humanoid on the floor. The daemon runs the fifty hertz loop and quackd's intents steer what
   it is already doing. Design: `docs/adr/0028-toddlerbot.md`, with the page at
-  [docs/adapters/toddlerbot.md](docs/adapters/toddlerbot.md).
+  [docs/adapters/toddlerbot.md](docs/adapters/toddlerbot/README.md).
 - **Seven things upstream does not do, because reading it at the pin said so.** It clamps
   nothing and never reads the joint limits that exist, on motors in multi-turn mode where the
   firmware limits are off too. A dropped packet returns an all-zeros reading indistinguishable
@@ -4851,7 +4867,7 @@ that were not true no longer are.
   reset does, and holds.
 - **`toddlerbot-lookout`**, the task to point at a real humanoid first, on its safety stand:
   nothing in its allowlist moves a leg, an arm or the waist.
-- **[docs/toddlerbot-hardware-checklist.md](docs/toddlerbot-hardware-checklist.md), the order
+- **[docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md), the order
   to try a real ToddlerBot in.** Fourteen steps on the safety stand upstream ships, feet off
   the ground until step 13. Step 2 is `calibrate_zero`, because the daemon refuses to actuate
   without a `motors.yml`. It runs the daemon with `--fake --once` and `quackd doctor` against
@@ -4879,21 +4895,21 @@ that were not true no longer are.
   writes nothing to the robot — the alternative needs `mediad` stopped, because its `v4l2src`
   holds `/dev/video0`. Signalling is read off `mediad`'s own web client at the pin and tested
   through a fake socket; the H.264 and the ICE are not tested and have never met a duck.
-- [docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md), an issue
+- [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), an issue
   template, and `microduck-lookout` — a bring-up task whose allowlist moves no legs, which
   copes with having no camera and stops to say so when posture reads `unknown`. The checklist
   assumes the duck is borrowed: nothing in it installs anything or needs `sudo`.
 - CI runs on Windows. `robotd` speaks over a unix socket, Windows cannot open one, and the test
   covering quackd's `ssh -L` answer only runs there — so it had never run anywhere.
 - **Bring-up checklists for the XLeRobot and the AlohaMini**
-  ([docs/xlerobot-hardware-checklist.md](docs/xlerobot-hardware-checklist.md),
-  [docs/alohamini-hardware-checklist.md](docs/alohamini-hardware-checklist.md)). The two
+  ([docs/xlerobot-hardware-checklist.md](docs/adapters/xlerobot/hardware-checklist.md),
+  [docs/alohamini-hardware-checklist.md](docs/adapters/alohamini/hardware-checklist.md)). The two
   bodies here you can buy today were the two without one. They are not copies of each other:
   the cart's hazard is that its watchdog stops the wheels and leaves fourteen arm servos
   holding, so it stays on blocks until step 9; the AlohaMini's is the opposite, that its arms
   are limp until quackd's own host turns torque on, which makes upstream's stock host the
   safest place to learn the base and the lift first.
-- **[docs/reading-robots.md](docs/reading-robots.md), the traps by pattern rather than by
+- **[docs/reading-robots.md](docs/adapters/reading-robots.md), the traps by pattern rather than by
   robot.** quackd drives eight bodies and has run on none, so everything it does came from
   reading upstream closely enough to be safe without executing it, and the same shapes kept
   recurring: a number that looks like a different number, a default pose that is not neutral,
@@ -4942,7 +4958,7 @@ that were not true no longer are.
   pilot sees `fall-blind=nothing-detects-falls` in `report_state` and every observation,
   `quackd doctor` prints the warning, and that is all it gets. This is the guard that stands in
   for the ones "It claimed guards it did not have" above says were never there
-  ([docs/open-duck-hardware-checklist.md](docs/open-duck-hardware-checklist.md)).
+  ([docs/open-duck-hardware-checklist.md](docs/adapters/open_duck/hardware-checklist.md)).
 - **`quackd serve-mcp` with no `.duck` loaded now runs on a default budget of 40 verb steps and
   five minutes, counted from when the server started.** In 0.6.0 that session had no `Budget`
   at all, so `quackd serve-mcp --robot open_duck:bridge` would have handed an MCP client
@@ -4952,7 +4968,7 @@ that were not true no longer are.
   passed every verb answers `budget exhausted` until `robot_load_duckfile` starts the
   contract's own budget. The clock is wall time on `open_duck:bridge` and `microduck:jsonrpc`
   and the simulator's own clock on `sim2d`, and there is no flag to turn the budget off
-  ([docs/mcp.md](docs/mcp.md)).
+  ([docs/mcp.md](docs/guides/mcp.md)).
 - **One Ctrl-C stops the robot, and a second one quits.** The first Ctrl-C, or `q`, cancels the
   verb that is running and sends `stop`, the fix described under "The operator's stop did not
   stop the duck" above. New here is the second: the kill switch hands `SIGINT` back before it
@@ -5162,7 +5178,7 @@ that were not true no longer are.
   assumed the simulator's 90 degree field of view where a Pi Camera Module 2 is about 62, so on
   hardware distances came out about 40 percent short, and [docs/faq.md](docs/faq.md) told you
   to set `fov_deg=62` in code. `quackd run` now takes `--fov-deg`, a manifest can carry
-  `camera_fov_deg` under `limits` ([docs/manifest-spec.md](docs/manifest-spec.md)), and the
+  `camera_fov_deg` under `limits` ([docs/manifest-spec.md](docs/reference/manifest-spec.md)), and the
   flag wins over the key. Until one of them is set, every detection on a real backend ends in
   `(uncalibrated: distance is a rough guess)` and a warning names the flag, while `sim2d` and
   `mock` stay calibrated because their camera is the one the geometry assumes.
@@ -5212,7 +5228,7 @@ that were not true no longer are.
 - **`quackd doctor` and `quackd validate` crashed on a Windows pipe.** Python uses the ANSI
   codepage when stdout is not a console there, and quackd prints ✓, 🦆 and the status emoji in
   `doctor`, so on cp1252 the first two commands
-  [docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md) puts in front of
+  [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md) puts in front of
   a Windows user died with `UnicodeEncodeError`, and so did the last step of CI's own Windows
   job. Both streams now replace what the codepage cannot carry, because a lost glyph costs a
   character and the raise cost the command.
@@ -5227,9 +5243,9 @@ that were not true no longer are.
   nightly job, and `microduck:websocket` is still a stub. If you have a body, the first thing
   to point at it is the task that moves nothing: `open-duck-lookout` with the feet off the
   ground until step 10 of
-  [docs/open-duck-hardware-checklist.md](docs/open-duck-hardware-checklist.md),
+  [docs/open-duck-hardware-checklist.md](docs/adapters/open_duck/hardware-checklist.md),
   `microduck-lookout` on a duck you are probably borrowing with someone holding the gamepad
-  ([docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md), feet off until
+  ([docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), feet off until
   step 9), `xlerobot-lookout` with the wheels on blocks until step 9, `alohamini-lookout` on
   upstream's stock host with the arms limp, before quackd's wrapper ever turns torque on, and
   `toddlerbot-lookout` on the safety stand with the feet off until step 13. The Reachy Mini,
@@ -5284,7 +5300,7 @@ and no cloud model has ever written a note.
 
 ### Added
 
-- **Memory between runs** (`quackd/memory.py`, [docs/memory.md](docs/memory.md)). Every
+- **Memory between runs** (`quackd/memory.py`, [docs/memory.md](docs/guides/memory.md)). Every
   run used to start from nothing. Now each robot, keyed `adapter:backend`, has a JSONL
   file under `~/.quackd/memory/` that holds the notes the pilot saved with the new
   `remember` tool and an episode line quackd writes at the end of every non-dry run

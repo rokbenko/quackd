@@ -328,7 +328,7 @@ def test_doctor_reads_the_real_daemon_into_a_jetson_report(
     for needle in (
         f"Jetson at {board.address} (the board the daemon runs on)",
         "36.4.3 (JetPack 6.2)",
-        "all zram: it compresses RAM rather than adding any (docs/jetson.md)",
+        "all zram: it compresses RAM rather than adding any (docs/guides/jetson.md)",
         "GPU busy 42% (GR3D_FREQ in tegrastats)",
         f"field of view {FOV_DEG:g} degrees",
         "detector yolov8n.pt on cuda",

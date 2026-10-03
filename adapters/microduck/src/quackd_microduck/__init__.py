@@ -298,7 +298,12 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_microduck.sim3d import upstream_api as rl
 
     return (
-        ("microduck", robotd, "docs/adapter-status.md", "a robotd (the jsonrpc backend)"),
+        (
+            "microduck",
+            robotd,
+            "docs/adapters/microduck/README.md",
+            "a robotd (the jsonrpc backend)",
+        ),
         (
             "microduck_rl",
             rl,

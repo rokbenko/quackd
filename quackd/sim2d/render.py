@@ -29,7 +29,7 @@ TEXT = (40, 40, 40)
 
 # The four Microduck colorways, HSV-separable from ball/person/pet and from each other
 # (OpenCV hues: cream 24, sky 93, lavender 138, graphite 161). A literal grey has no hue,
-# so "graphite" is a saturated dark plum stand-in — documented in docs/flock.md.
+# so "graphite" is a saturated dark plum stand-in — documented in docs/guides/flock.md.
 COLORWAY_RGB: dict[str, tuple[int, int, int]] = {
     "cream": DUCK,
     "sky": (70, 210, 225),

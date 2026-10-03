@@ -11,4 +11,4 @@ uv pip install "quackd[mujoco]"               # and the physics simulator
 
 No Microduck has run quackd. Every name the `jsonrpc` backend relies on is read from upstream
 source at a pinned commit and listed in `upstream_api.py`. What it does and what it refuses:
-[docs/adapter-status.md](https://github.com/rokbenko/quackd/blob/main/docs/adapter-status.md).
+[docs/adapters/microduck/README.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/microduck/README.md).

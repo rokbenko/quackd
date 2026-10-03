@@ -1,6 +1,6 @@
 # ADR-0046: The Jetson is reached, not run on
 
-**Status:** accepted · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the model's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../jetson.md))
+**Status:** accepted · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the model's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
 
 ## Context
 

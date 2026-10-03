@@ -1,6 +1,6 @@
 # ADR-0027: AlohaMini: quackd speaks the wire again, and ships the host that switches the arms on
 
-**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0026 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/alohamini.md))
+**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0026 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/alohamini/README.md))
 
 ## Context
 

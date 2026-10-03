@@ -8,7 +8,7 @@ robot and one hardcoded map. A verb's route to a body is now the adapter's busin
 its manifest, and the skills a robot answers to are read from it rather than assumed. The
 signatures here are also the 0.3 spellings: `get_frame`, `walk_to` and `walk` are aliases of
 `observe`, `go_to` and `move` today. The live per-method table, VERIFIED against upstream, is
-[adapter-status.md](../adapter-status.md).
+[adapter-status.md](../adapters/microduck/README.md).
 
 ## Context
 

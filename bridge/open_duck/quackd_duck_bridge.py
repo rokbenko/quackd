@@ -1006,14 +1006,14 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         log.warning(
             "duck_config.json says this duck has a camera, but no --camera-url was given, "
             "so quackd has nowhere to fetch a frame from. Advertising no camera: the verbs "
-            "that need one will not exist rather than fail. See docs/adapters/open_duck.md."
+            "that need one will not exist rather than fail. See docs/adapters/open_duck/README.md."
         )
     elif runtime_owns_camera and args.camera_url:
         log.warning(
             "duck_config.json says expression_features.camera is true, so the robot's own "
             "runtime claims the camera; quackd_duck_camd.py warns but starts — check nothing "
             "will be serving %s. Set that flag false and let camd have the device. See "
-            "docs/adapters/open_duck.md.",
+            "docs/adapters/open_duck/README.md.",
             args.camera_url,
         )
     # Narrowing these is the obvious first-power-on precaution; widening them past what

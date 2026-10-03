@@ -36,7 +36,7 @@
     },
     "DatasheetOverride": {
       "additionalProperties": false,
-      "description": "v2: what a `.duck` says about the body it was written for (`docs/duck-spec.md`).\n\nMerged field-wise into the robot's own datasheet by `apply_datasheet_override`: a figure\ngiven here replaces the adapter's and is rendered as coming from the task file; `cannot`,\n`notes` and `not_rated` extend the adapter's; whatever is omitted is left alone. A task\nfile can add a `cannot`; it can never delete one.",
+      "description": "v2: what a `.duck` says about the body it was written for (`docs/reference/duck-spec.md`).\n\nMerged field-wise into the robot's own datasheet by `apply_datasheet_override`: a figure\ngiven here replaces the adapter's and is rendered as coming from the task file; `cannot`,\n`notes` and `not_rated` extend the adapter's; whatever is omitted is left alone. A task\nfile can add a `cannot`; it can never delete one.",
       "properties": {
         "mass_kg": {
           "anyOf": [
@@ -435,7 +435,7 @@
     },
     "LearnedVerbRef": {
       "additionalProperties": false,
-      "description": "Reserved for v2. The shape a `.duck` will use to pull in a learned (ONNX) verb.\n\nSee `docs/learned-verbs.md`. Parsed and validated today; nothing executes it.",
+      "description": "Reserved for v2. The shape a `.duck` will use to pull in a learned (ONNX) verb.\n\nSee `docs/concepts/learned-verbs.md`. Parsed and validated today; nothing executes it.",
       "properties": {
         "name": {
           "description": "Verb name it registers as.",

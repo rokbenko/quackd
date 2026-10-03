@@ -491,7 +491,7 @@
         }
       ],
       "default": null,
-      "description": "Physical facts with a confidence and a source each (docs/manifest-spec.md). None: the adapter published none, and the prompt says so."
+      "description": "Physical facts with a confidence and a source each (docs/reference/manifest-spec.md). None: the adapter published none, and the prompt says so."
     },
     "extras": {
       "additionalProperties": true,

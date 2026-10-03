@@ -2,7 +2,7 @@
 
 Every constant is tagged VERIFIED (read from upstream source or an upstream file, link
 given) or UNVERIFIED (measured here, or an assumption of ours, with what quackd does about
-it). `docs/adapter-status.md` is the human-readable version; `tests/test_upstream_api.py`
+it). `docs/adapters/microduck/README.md` is the human-readable version; `tests/test_upstream_api.py`
 proves UNVERIFIED names are only reachable from the `mujoco` backend.
 
 Two upstreams meet here. The robot's MuJoCo model and its meshes come from

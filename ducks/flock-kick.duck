@@ -1,6 +1,6 @@
 # EXPERIMENTAL: flock mode is simulator only in v0.3. The coordinator, not an LLM,
 # drives each duck. The planner (one LLM call at most, none with --llm fake) may
-# tune the task parameters. See docs/flock.md.
+# tune the task parameters. See docs/guides/flock.md.
 ---
 duck: 0
 name: flock-kick

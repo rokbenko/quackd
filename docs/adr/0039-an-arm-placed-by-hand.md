@@ -1,6 +1,6 @@
 # ADR-0039: The one place quackd lets go of a robot
 
-**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (which said quackd never disables torque) and [ADR-0012](0012-safety-executor.md) (the kill switch, and what a second Ctrl-C means) · Implemented in `quackd/agent/loop.py`, `quackd/safety.py` and `adapters/lerobot/` ([page](../adapters/lerobot.md), [checklist](../lerobot-hardware-checklist.md))
+**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (which said quackd never disables torque) and [ADR-0012](0012-safety-executor.md) (the kill switch, and what a second Ctrl-C means) · Implemented in `quackd/agent/loop.py`, `quackd/safety.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 **Amended 2026-09-23 by [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md):** "the
 recorded rest pose" in the first decision below now means that pose as far as this arm's

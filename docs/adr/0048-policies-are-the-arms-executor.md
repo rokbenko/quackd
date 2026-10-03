@@ -1,6 +1,6 @@
 # ADR-0048: Policies are the arm's executor, and quackd owns the bus
 
-**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../policies.md), [the arm's page](../adapters/lerobot.md#manipulate-and-the-loop-a-policy-runs-in))
+**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
 
 ## Context
 
@@ -175,7 +175,7 @@ file on stdin, answers for them. Without a policy server a goal is what it was.
 **`--yes`, or a pipe on stdin, takes the person out of a policy run.** `quackd run --yes` builds
 the executor with `allow_all` as its confirm, as it always has. Without `--yes` the confirm is a
 y/N question read from stdin, so `yes | quackd run` and `quackd run < answers.txt` answer it
-too, as they always have ([safety.md](../safety.md#who-the-record-says-was-asked)). Either way
+too, as they always have ([safety.md](../concepts/safety.md#who-the-record-says-was-asked)). Either way
 nobody is asked before a `pick` or a `manipulate` the pilot calls, a goal run's included, and
 the pilot's word and a yes nobody said are all that start a learned policy driving the arm. The
 record says so: the gate's reason is `the confirm gate was allowed`, and no `prompt` event names
@@ -309,7 +309,7 @@ follow when somebody needs it.
 **`register_learned_verb`.** It registers a verb with no parameters, so a policy could never be
 told a subtask. It is shaped for an ONNX policy the Microduck runs, and it registers into a
 registry that the connect rebuilds from the manifest, so the verb is gone by the time a run
-starts. It stays the reserved extension point [learned-verbs.md](../learned-verbs.md) describes,
+starts. It stays the reserved extension point [learned-verbs.md](../concepts/learned-verbs.md) describes,
 for skills trained from rewards. A policy the arm already runs is an arm's verb, as `pick`
 always was.
 
@@ -349,7 +349,7 @@ always was.
   none. FLUX 3 Action's is the FLUX Kommunity License, which grants robot control, a Robotics
   Use in its words, for non-commercial purposes, and whose commercial carve-out for Qualifying
   Users covers the model's Outputs on conditions and does not say it reaches a Robotics Use.
-  pi05's base card says Gemma where LeRobot's page says Apache 2.0 ([policies.md](../policies.md)).
+  pi05's base card says Gemma where LeRobot's page says Apache 2.0 ([policies.md](../guides/policies.md)).
 - **A second terminal is part of running a policy.** Starting the server is the user's step,
   and a run without one is refused before anything connects, with a sentence saying so.
 - **`load_policy()` is a known gap.** It is a Python helper in `real.py` from before this
@@ -357,7 +357,7 @@ always was.
   bus, with none of the server's reading before it builds and no check at connect that the
   policy fits the arm. Nothing in quackd calls it and no command reaches it, so only somebody's
   own Python can, and the `LOAD_POLICY` row on
-  [the arm's page](../adapters/lerobot.md#the-policies-upstream-lerobot-061) says so. Whether it
+  [the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061) says so. Whether it
   goes, with its test and its row, is not decided, and PLAN.md carries it as an open item.
 - [ADR-0003](0003-three-loops.md), [ADR-0004](0004-verb-registry.md),
   [ADR-0017](0017-robot-adapters-and-manifest.md), [ADR-0018](0018-core-verbs-extensions-aliases.md),

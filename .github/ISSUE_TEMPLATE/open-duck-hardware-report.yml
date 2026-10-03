@@ -9,7 +9,7 @@ body:
         real evidence either way, and a report that says "it did not work" is worth as much
         as one that says it did.
 
-        Please follow [docs/open-duck-hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/open-duck-hardware-checklist.md)
+        Please follow [docs/adapters/open_duck/hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_duck/hardware-checklist.md)
         first. It is ordered so the duck's feet stay off the ground until step 10, and this
         robot cannot get back up if it falls.
   - type: input

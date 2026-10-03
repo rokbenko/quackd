@@ -34,8 +34,9 @@ checked against a recorded sha256, into `~/.quackd/cache`. `QUACKD_LEROBOT_SIM_A
 at a checkout of your own instead. It needs no LeRobot and no torch, so it installs on Python
 3.11. What it cannot tell you is how the arm moves: the dynamics are the model's, which way each
 joint turns and where its zero sits are assumed until a bench checks them, and nothing measured
-on it is a rate. [adapters/lerobot.md](adapters/lerobot.md#the-simulator-lerobotmujoco) has
-the rest, and [ADR-0047](adr/0047-the-arms-simulator-runs-the-real-backend.md) the reasoning.
+on it is a rate.
+[adapters/lerobot/README.md](adapters/lerobot/README.md#the-simulator-lerobotmujoco) has the rest,
+and [ADR-0047](adr/0047-the-arms-simulator-runs-the-real-backend.md) the reasoning.
 
 **How do I run the physics simulator, and what does it download?**
 `uvx --from "quackd[mujoco]" quackd run find-and-kick --robot microduck:mujoco --llm fake`.
@@ -44,10 +45,11 @@ at a pinned commit, and `alpha_walking.onnx`, `alpha_stand.onnx` and their manif
 Hugging Face Hub at a pinned revision, into `~/.quackd/cache`. About 10 MB over the wire and 23
 on disk. Every file is checked against a sha256 recorded when it was read, a run that gets a
 different file fails rather than continues, and the licence notice is written beside them,
-because the model files are CC BY-NC-SA and quackd ships none of them ([licenses.md](licenses.md)).
-`QUACKD_MICRODUCK_ASSETS` points at a `microduck_rl` checkout of your own instead,
-`QUACKD_CACHE_DIR` moves the cache, and `QUACKD_MUJOCO_BODY=puppet` runs a kinematic stand-in
-that downloads nothing and is the body the tests build directly.
+because the model files are CC BY-NC-SA and quackd ships none of them
+([reference/licenses.md](reference/licenses.md)). `QUACKD_MICRODUCK_ASSETS` points at a
+`microduck_rl` checkout of your own instead, `QUACKD_CACHE_DIR` moves the cache, and
+`QUACKD_MUJOCO_BODY=puppet` runs a kinematic stand-in that downloads nothing and is the body the
+tests build directly.
 
 **How do I run the browser demo, and is it live anywhere?** `python web/serve.py`, then open
 <http://localhost:8000/simulator/>. Nothing to build, and no quackd to install: that server is
@@ -105,7 +107,7 @@ already has, a read, the brake, a gripper, a gaze. It is off unless you name one
 own extra and, for the hosted one, its own key, it authors no number and no sentence, and it
 cannot end a run or record a feasibility verdict. It is also not a provider and `--llm` does not take one.
 
-**And it is not a second LLM.** That distinction is the whole reason it is allowed near a robot. A language model generates tokens, so asking it for a verb means asking it to write one, and it could just as easily write a joint angle. A decision LLM generates nothing: it scores the options you hand it against a state and returns which one, with a probability for each. There is no text in the answer, so there is nowhere for an invented verb or an improvised angle to come from. TypeSafe, whose Jev was the first of them and gave the wire format its name, put it as *"LLMs produce words for people. Jev produces typed decisions"*, and the same holds for every other one quackd names, the open servers you run yourself, the checkpoint that loads into this process, and anything else you point `--decision-url` at. [decision-llms.md](decision-llms.md) says what they do, what they deliberately cannot, and roughly what they save.
+**And it is not a second LLM.** That distinction is the whole reason it is allowed near a robot. A language model generates tokens, so asking it for a verb means asking it to write one, and it could just as easily write a joint angle. A decision LLM generates nothing: it scores the options you hand it against a state and returns which one, with a probability for each. There is no text in the answer, so there is nowhere for an invented verb or an improvised angle to come from. TypeSafe, whose Jev was the first of them and gave the wire format its name, put it as *"LLMs produce words for people. Jev produces typed decisions"*, and the same holds for every other one quackd names, the open servers you run yourself, the checkpoint that loads into this process, and anything else you point `--decision-url` at. [guides/decision-llms/README.md](guides/decision-llms/README.md) says what they do, what they deliberately cannot, and roughly what they save.
 
 **Does `uvx quackd run … --llm anthropic` work with no extras?** No, and it now takes
 two of them rather than one: the default install is light on purpose, so a bare `uvx quackd`
@@ -180,7 +182,7 @@ OpenAI's Chat Completions API, so `--llm ollama`, `vllm`, `llamacpp`, `lmstudio`
 on the server (`llama-server --jinja`, `vllm serve --enable-auto-tool-choice
 --tool-call-parser …`), vision is off unless you pass `--vision`, and a small model that
 writes its tool call as plain JSON is still understood. A field the server wants in the
-body goes in with `--extra-body`, which is how Qwen3 is told not to think on vLLM. Details: [local-llms.md](local-llms.md).
+body goes in with `--extra-body`, which is how Qwen3 is told not to think on vLLM. Details: [guides/local-llms.md](guides/local-llms.md).
 
 ## Seeing what happened
 
@@ -205,7 +207,7 @@ name that quietly stopped being read would switch the log back on for whoever ha
 off. The MCP result key is the one that changed outright, because a model learns the name from
 the tool description on every call and carrying both would cost every call a second copy of the
 same thirty lines. Details and the event list:
-[architecture.md](architecture.md#log), [ADR-0029](adr/0029-tracing.md).
+[concepts/architecture.md](concepts/architecture.md#log), [ADR-0029](adr/0029-tracing.md).
 
 **Can I read a run after it finished?** Yes. `quackd log` replays the newest run under
 `runs/` as the same lines it printed while it ran, and it takes a directory name, a timestamp
@@ -281,16 +283,16 @@ to keep up, because nothing model-shaped *has to* run on the robot's own board.
 When the robot's computer is an NVIDIA Jetson, as a ToddlerBot's is, quackd still stays on the
 laptop and uses the board from there: `--host` reaches the model server on its GPU, a camera on
 it, YOLO detections computed on that GPU, and the board's health in `quackd doctor`, all
-through one small daemon quackd ships for the board ([jetson.md](jetson.md)).
+through one small daemon quackd ships for the board ([guides/jetson.md](guides/jetson.md)).
 
 **Does quackd use TOF or another depth sensor for obstacle avoidance?** Not yet. The only
 sensing input today is a single colour camera: an HSV threshold (or optionally YOLO) gives
 a bearing and an apparent-size distance to one named target, and `go_to` steers toward it —
 there's no depth data, no occupancy grid and no general obstacle avoidance. The manifest
 schema has a generic `tof` sensor slot for future adapters
-([manifest-spec.md](manifest-spec.md)), and the Microduck's own `tofd` depth stream isn't
-read yet either ([adapter-status.md](adapter-status.md)); the Open Duck Mini's official
-build has no depth sensor at all.
+([reference/manifest-spec.md](reference/manifest-spec.md)), and the Microduck's own `tofd` depth
+stream isn't read yet either ([adapters/microduck/README.md](adapters/microduck/README.md)); the
+Open Duck Mini's official build has no depth sensor at all.
 
 **How do I tune the detector for a real orange ball?** `ColorBlobDetector` takes
 `targets=(Target("ball", HSVRange(h_lo, h_hi, s_lo, v_lo), size_m=radius, round=True), …)`
@@ -309,7 +311,8 @@ and five episodes go into the next run's system prompt. It is deliberately not a
 *system*: no embeddings, no search, newest wins, nothing shared between bodies, and the
 executor never reads it, so a note can never widen an allowlist or lift a budget. The
 scripted pilot has no `remember` in its script, so `--llm fake` accumulates run
-outcomes and never a note. [memory.md](memory.md), [ADR-0025](adr/0025-memory-between-runs.md)
+outcomes and never a note. [guides/memory.md](guides/memory.md),
+[ADR-0025](adr/0025-memory-between-runs.md)
 
 **Who decides the run succeeded?** The LLM, via `declare_success(reason)` — that is the
 honest state of the art. In the duck's two simulators the run summary also records ground truth
@@ -326,8 +329,8 @@ An infeasible run is remembered like any other, so the next run on that robot is
 already found not to fit it. If the number the verdict turned on is simply wrong for the build
 in front of you, a printed gripper that holds more than the vendor's, say, a `duck: 2` task file
 can correct it with a `datasheet:` block, and the prompt labels those figures as coming from the
-task file rather than from the maker ([duck-spec.md](duck-spec.md), [memory.md](memory.md),
-[safety.md](safety.md)).
+task file rather than from the maker ([reference/duck-spec.md](reference/duck-spec.md),
+[guides/memory.md](guides/memory.md), [concepts/safety.md](concepts/safety.md)).
 
 **Why can't the duck say words?** Upstream has seven duck sounds and no TTS. `quack(text)`
 maps your text to the closest tone (`greet`, `inquire`, `alarm`, `wheee`, …) and logs the
@@ -365,7 +368,7 @@ is POSIX-only; forward it with `ssh -L 9870:/run/robotd.sock <robot>` and use
 
 **Can I run it on my Microduck today?** `--robot microduck:jsonrpc` speaks the verified
 `duck-ipc-proto` v23 vocabulary but has never touched hardware. Start with `--dry-run`,
-read [adapter-status.md](adapter-status.md), and tell us what happened.
+read [adapters/microduck/README.md](adapters/microduck/README.md), and tell us what happened.
 
 ## Driving it from somewhere else
 
@@ -375,7 +378,7 @@ and talk to it over pipes. The mobile app reaches tools as remote connectors ins
 servers that run persistently at a network address with their own auth. quackd would need
 an HTTP or SSE transport, a long-lived process, a reachable address and authentication
 before a phone could talk to it. Roadmap, not shipped. The details are in
-[mcp.md](mcp.md#why-not-from-my-phone-yet).
+[guides/mcp.md](guides/mcp.md#why-not-from-my-phone-yet).
 
 **Is control text-only?** Yes, from you — a `--goal` string, a `.duck` file, or a chat
 message over MCP; there's no voice or GUI input. The loop isn't text-only end to end,
@@ -398,7 +401,7 @@ model, a coordinator flock needs a referee this process does not run, and a pilo
 one model per robot rather than one for all of them. Nothing arbitrates two sessions driving the
 same robot at once. Every real-hardware transport but one is experimental and unverified end to
 end, and the one that has run, `lerobot:real`, ran for two afternoons on one arm, 2026-09-15 and
-2026-09-23 ([adapter-status.md](adapter-status.md)); the CLI and MCP server are both thin
+2026-09-23 ([adapters/status.md](adapters/status.md)); the CLI and MCP server are both thin
 callers of the same executor and verb registry, so a real client like a phone app would mean
 adding a network-reachable server and auth on top, not rewriting the core.
 
@@ -408,8 +411,8 @@ adds no login or accounts, so access is mostly whatever your OS and network enfo
 `robotd`'s socket can't be reached off the robot's own computer unless something bridges
 it, so the real gate there is SSH's authentication (and your Wi-Fi's), not quackd's;
 `quackd announce`/`discover` do broadcast a robot's identity, unauthenticated, to anyone on
-the LAN ([lan.md](lan.md)), though that's identity only, not a way to drive it. The two
-exceptions are the daemons quackd itself ships, for the Open Duck Mini and the ToddlerBot:
+the LAN ([guides/lan.md](guides/lan.md)), though that's identity only, not a way to drive it. The
+two exceptions are the daemons quackd itself ships, for the Open Duck Mini and the ToddlerBot:
 each binds loopback, and if a token is configured it checks one with `hmac.compare_digest`
 before accepting a
 handshake (`--token`, or `QUACKD_DUCK_TOKEN` for the duck and `QUACKD_TODDLERBOT_TOKEN` for the
@@ -419,7 +422,7 @@ loopback too, and with a token set (`--token`, `--token-file` or `QUACKD_HOST_TO
 it on every request the same way, because what it serves is a camera and a GPU. On a
 Microduck the physical gamepad preempts remote commands; on an Open Duck it does not, because
 quackd's daemon *replaces* the gamepad the walk loop reads, which makes the power switch the
-only thing that always wins ([safety.md](safety.md)).
+only thing that always wins ([concepts/safety.md](concepts/safety.md)).
 
 **What stops the model itself from doing something dangerous?** The executor, not the
 model's judgment: every verb call is checked against the loaded `.duck`'s allowlist,
@@ -428,7 +431,7 @@ and preconditions (not fallen, not sitting) run right after — a refusal is enf
 not a request the model can talk its way around. That's still only the software layer, and
 what the body adds under it varies: the Microduck's `robotd` has fall detection, thermal
 clamps and a deadman, while an Open Duck Mini v2 declares `none` and the watching human is
-its fall detector — see [safety.md](safety.md).
+its fall detector — see [concepts/safety.md](concepts/safety.md).
 
 **Does my data ever leave my machine?** Only if you choose a cloud provider. All eleven of
 them (Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM and Meta) send
@@ -443,8 +446,8 @@ over its own local HTTP endpoint, not literally air-gapped. Since 0.6 one thing 
 behind on your machine: `~/.quackd/memory/<robot>.jsonl`, a plain text file of sentences
 about where things are, which is then part of the prompt on the next run and so part of what
 a cloud provider sees. `quackd memory show` prints it, `quackd memory clear` deletes it, and
-`--no-memory` never writes it. See [memory.md](memory.md) and
-[local-llms.md](local-llms.md).
+`--no-memory` never writes it. See [guides/memory.md](guides/memory.md) and
+[guides/local-llms.md](guides/local-llms.md).
 
 ## What it can and cannot drive
 
@@ -485,7 +488,7 @@ know during the run it says with `tell`. `quackd run flock-hello --llm fake` doe
 thing with no registry at all. The honest part: this has run on `mock` and `sim2d` bodies and on
 no hardware, N simulated members are N separate worlds with nothing checking a claimed success,
 and `tell` has been exercised by the scripted pilot and by no real model
-([flock.md](flock.md#the-pilot-flock)).
+([guides/flock.md](guides/flock.md#the-pilot-flock)).
 
 The other kind of flock, the deterministic coordinator, still knows only the Microduck on
 `sim2d`. `flock.roles` there declares capability-differentiated roles (a spotter that observes
@@ -501,7 +504,8 @@ and `quackd validate your.duck --robot lerobot:mock` tells you, field by field, 
 your task fits that body. The rule never bends: a verb that is not in the manifest does
 not exist on that robot. Those seven are each their own package, and an adapter somebody else
 publishes is found exactly the same way, through the `quackd.adapters` entry point group, with
-no pull request to this repository. Writing one: [adapters.md](adapters.md).
+no pull request to this repository. Writing one:
+[adapters/writing-an-adapter.md](adapters/writing-an-adapter.md).
 
 **Is a Jetson one of the seven?** No, and it is not an eighth. A Jetson is a computer, not a
 body: it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
@@ -509,7 +513,7 @@ body: it has no manifest and no verbs, `quackd list-adapters` will never show it
 ([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). quackd does not run on it either. It
 names the board with `--host` from the laptop, and uses the model server on its GPU, its camera,
 its detector and its health from there, which is the arrangement *Does the robot need a
-powerful onboard computer?* above describes ([jetson.md](jetson.md),
+powerful onboard computer?* above describes ([guides/jetson.md](guides/jetson.md),
 [ADR-0046](adr/0046-the-jetson-is-reached-not-run-on.md)).
 
 **Why does `validate` say "requires kick, but arm-01 (lerobot-so101) does not provide

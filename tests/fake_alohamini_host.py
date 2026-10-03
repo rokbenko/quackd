@@ -16,7 +16,7 @@ are the point:
 
 What it cannot prove: serial timing, calibration, real camera behaviour, or whether the arms
 physically move. It proves quackd's client is correct against our reading of the host, which
-is what `docs/adapter-status.md` claims and no more.
+is what `docs/adapters/status.md` claims and no more.
 """
 
 from __future__ import annotations

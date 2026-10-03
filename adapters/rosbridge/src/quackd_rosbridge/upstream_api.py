@@ -1,7 +1,7 @@
 """The only file in quackd allowed to spell a roslibpy or rosbridge name (ADR-0022).
 
 Every constant is tagged VERIFIED (read from upstream source, link given) or UNVERIFIED
-(an assumption of ours, with what quackd does about it). `docs/adapters/rosbridge.md` is
+(an assumption of ours, with what quackd does about it). `docs/adapters/rosbridge/README.md` is
 the human-readable version; `tests/test_upstream_api.py` proves UNVERIFIED names are only
 reachable from the experimental `ws` backend.
 

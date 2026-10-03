@@ -952,12 +952,12 @@ def test_only_the_simulator_takes_a_scene() -> None:
 def test_the_sidecar_the_arms_page_shows_lays_out_on_a_bare_lerobot_mujoco(
     mjcf: str, tmp_path: Path
 ) -> None:
-    """The one sidecar docs/adapters/lerobot.md shows is the one a reader copies, and the same
-    page starts that reader on a bare `--robot lerobot:mujoco`. So its table has to lay out on
+    """The one sidecar docs/adapters/lerobot/README.md shows is the one a reader copies, and the
+    same page starts that reader on a bare `--robot lerobot:mujoco`. So its table has to lay out on
     the generic arm, as `quackd preflight` would build it. An object it put between the jaws
     could not: the generic arm starts at the model's zero, its hand nowhere near the table, and
     every connect of every rehearsal refused it."""
-    page = Path(__file__).resolve().parents[1] / "docs" / "adapters" / "lerobot.md"
+    page = Path(__file__).resolve().parents[1] / "docs" / "adapters" / "lerobot" / "README.md"
     section = page.read_text(encoding="utf-8").split("\n### The sidecar\n", 1)[1]
     sidecar_yaml = section.split("```yaml\n", 1)[1].split("```", 1)[0]
     (tmp_path / "task.sim.yaml").write_text(sidecar_yaml, encoding="utf-8")

@@ -89,11 +89,11 @@ def test_cap_drops_old_episodes_before_notes(
 
 
 def test_the_cap_is_the_one_the_docs_promise() -> None:
-    assert MAX_ENTRIES == 400  # docs/memory.md and ADR-0025 both say 400
+    assert MAX_ENTRIES == 400  # docs/guides/memory.md and ADR-0025 both say 400
 
 
 def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
-    """docs/memory.md promises a note saved from Claude Desktop is read by the next
+    """docs/guides/memory.md promises a note saved from Claude Desktop is read by the next
     `quackd run` on the same robot. That is only true while these two expressions agree,
     and they are written in two files that know nothing about each other."""
     from quackd.adapters.base import adapter_name, backend_name

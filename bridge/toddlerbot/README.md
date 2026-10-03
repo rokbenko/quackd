@@ -99,8 +99,8 @@ this daemon keeps 9873 ([`bridge/jetson/`](../jetson/README.md)). Start it with 
 because this daemon owns the robot's cameras and two processes cannot own one camera. It runs
 on the board's system `python3`, outside upstream's conda environment, needs Python 3.10 or
 newer (JetPack 6 ships 3.10), and imports nothing from quackd. A model server can sit beside
-both ([docs/jetson.md](../../docs/jetson.md)). What to watch is contention, because a model
-server or a detector saturating the board is what can starve the loop this file exists to
+both ([docs/guides/jetson.md](../../docs/guides/jetson.md)). What to watch is contention, because a
+model server or a detector saturating the board is what can starve the loop this file exists to
 protect, and nobody has measured it.
 
 ## Rules this file lives by
@@ -114,8 +114,8 @@ protect, and nobody has measured it.
 
 ## Safety
 
-Read `docs/toddlerbot-hardware-checklist.md` before the first bring-up and follow its order.
-It keeps the feet off the ground until step 13, and the two steps that matter most are 11 and
+Read `docs/adapters/toddlerbot/hardware-checklist.md` before the first bring-up and follow its
+order. It keeps the feet off the ground until step 13, and the two steps that matter most are 11 and
 12, both taken on the stand: pull the network cable mid-move and confirm the deadman slews
 rather than drops, then send `SIGTERM` and confirm the same.
 

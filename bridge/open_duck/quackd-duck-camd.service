@@ -1,6 +1,6 @@
 [Unit]
 Description=quackd camera server for the Open Duck Mini v2 (one JPEG over HTTP)
-Documentation=https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_duck.md
+Documentation=https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_duck/README.md
 After=network-online.target
 Wants=network-online.target
 

@@ -215,9 +215,9 @@ def test_the_bounds_are_held_together_with_the_stepper_and_the_arms_own_timeout(
 def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
     tmp_path: Path,
 ) -> None:
-    """docs/duck-spec.md shows a whole v3 file and the `quackd validate` it passes, so the file
-    it shows has to pass it. The page quotes the plain command, with no robot named, which checks
-    the file against every body installed here with what each offers a policy server: that is
+    """docs/reference/duck-spec.md shows a whole v3 file and the `quackd validate` it passes, so the
+    file it shows has to pass it. The page quotes the plain command, with no robot named, which
+    checks the file against every body installed here with what each offers a policy server: that is
     where an arm's `manipulate` is, and the Microduck's list, which the command used to check
     against, refused it. Named, the mock arm keeps it as it is registered.
 
@@ -233,7 +233,9 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
     from quackd.adapters.base import PolicyChoice
     from quackd.cli import app
 
-    page = (Path(__file__).parents[1] / "docs" / "duck-spec.md").read_text(encoding="utf-8")
+    page = (Path(__file__).parents[1] / "docs" / "reference" / "duck-spec.md").read_text(
+        encoding="utf-8"
+    )
     # to the end of the page: the file it shows has a `## Strategy` heading of its own
     section = page.split("\n### `policy` (v3)", 1)[1]
     found = re.search(r"```yaml\n(---\n.*?)```", section, flags=re.DOTALL)
@@ -246,7 +248,7 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
         f"number > 0, at most {POLICY_TOTAL_MAX_S:g}, and at least `segment_s` | "
         f"{DEFAULT_POLICY_TOTAL_S:g} |",
     ):
-        assert said in table, f"docs/duck-spec.md's policy table no longer says {said!r}"
+        assert said in table, f"docs/reference/duck-spec.md's policy table no longer says {said!r}"
     duck = tmp_path / "stack-blocks.duck"
     duck.write_text(found.group(1), encoding="utf-8")
     fm = parse_duck_text(found.group(1)).frontmatter

@@ -62,8 +62,8 @@ kimi = ["openai>=1.66,<4"]
 glm = ["openai>=1.66,<4"]
 meta = ["openai>=1.66,<4"]
 # The System One protocol client: the optional discrete stepper in front of the model
-# (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/decision-llms.md). Every
-# decision LLM quackd knows that is a server speaks the same wire format and is reached by
+# (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
+# Every decision LLM quackd knows that is a server speaks the same wire format and is reached by
 # repointing its base URL, so this one wheel covers Jev, Kev, Von, OpenJev, OpenDecision and
 # whatever else answers at `--decision-url`. That is why the extra is named for the protocol
 # and not for a vendor.
@@ -83,7 +83,7 @@ yolo = ["ultralytics>=8.2"]
 live = ["pygame>=2.5"]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
 # onnxruntime is what runs the robot's own walking policy; the Microduck's meshes and that
-# policy are fetched at run time and never shipped here (docs/licenses.md).
+# policy are fetched at run time and never shipped here (docs/reference/licenses.md).
 mujoco = ["quackd-microduck[mujoco]>=0.16.1,<0.17"]
 microduck = ["quackd-microduck>=0.16.1,<0.17"]
 # Every robot quackd publishes, each with the SDK its real backend needs. The honest "all":
@@ -97,7 +97,7 @@ robots = [
   "quackd-alohamini>=0.16.1,<0.17",
   "quackd-toddlerbot>=0.16.1,<0.17",
 ]
-# LAN: zeroconf discovery and the MQTT flock bus (docs/lan.md). Never imported by default.
+# LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
 # `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
@@ -106,7 +106,7 @@ lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 lerobot = ["quackd-lerobot[sdk]>=0.16.1,<0.17"]
 # The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
 # of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
-# fetched at run time and never shipped (docs/licenses.md).
+# fetched at run time and never shipped (docs/reference/licenses.md).
 lerobot-sim = ["quackd-lerobot[sim]>=0.16.1,<0.17"]
 # The arm's policy server (`quackd policy serve`), which loads LeRobot checkpoints in a process
 # of its own: LeRobot, torch and transformers on Python 3.12, and nothing the arm's own process
@@ -115,7 +115,7 @@ lerobot-vla = ["quackd-lerobot[vla]>=0.16.1,<0.17"]
 rosbridge = ["quackd-rosbridge[sdk]>=0.16.1,<0.17"]
 # XLeRobot is not an installable package: its own install is copying files into a lerobot
 # tree. So quackd speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
-# the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot.md).
+# the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot/README.md).
 xlerobot = ["quackd-xlerobot>=0.16.1,<0.17"]
 # AlohaMini is a fork of LeRobot that calls itself lerobot and is not published, so it
 # cannot be a dependency at all. quackd speaks its ZeroMQ host protocol instead.
@@ -148,7 +148,8 @@ dev = [
   # The one robot SDK dev carries, because it is the only way the xlerobot wire protocol is
   # exercised for real: tests/test_xlerobot_host.py runs quackd's client against a fake host
   # over loopback sockets. It is a small pure wheel on every platform CI runs, unlike torch
-  # or onnxruntime, and adapter-status.md claims that test, so CI has to be able to run it.
+  # or onnxruntime, and docs/adapters/status.md claims that test, so CI has to be able to
+  # run it.
   "pyzmq>=26",
 ]
 

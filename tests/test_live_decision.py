@@ -11,8 +11,8 @@ scripted, which proves the classification, the router and the loop hook and prov
 all about the model. These tests are the other half, and there is one number they exist to
 produce.
 
-`docs/decision-llms.md` estimates what a decision LLM saves from TypeSafe's published 0.114 s
-a call. Nobody has checked that against the shape of request quackd actually builds, from an
+`docs/guides/decision-llms/README.md` estimates what a decision LLM saves from TypeSafe's published
+0.114 s a call. Nobody has checked that against the shape of request quackd actually builds, from an
 ordinary developer's network, so every speed figure in this repository is arithmetic rather
 than a measurement. The first test here is what turns it into one, and it prints what it
 measured so the number can be read off the terminal and put in an issue.
@@ -110,8 +110,8 @@ async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_too
     and that it arrived inside the timeout the loop gives it. Which verb it picks on a folded
     mock arm is the model's business and not a thing to pin.
 
-    What matters is printed. `docs/decision-llms.md` quotes TypeSafe's 0.114 s, and this is the
-    same number measured on the request quackd actually sends, from wherever you are.
+    What matters is printed. `docs/guides/decision-llms/README.md` quotes TypeSafe's 0.114 s, and
+    this is the same number measured on the request quackd actually sends, from wherever you are.
     """
     _live_or_skip()
     advice, stepper = await _arm_turn("Say whether you are holding anything, then let it go")
@@ -129,15 +129,16 @@ async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_too
     print(f"  done={advice.record.get('done')} need_human={advice.record.get('need_human')}")
     print(f"  feasible: {advice.record.get('feasible')}")
     print(
-        "  TypeSafe publish 0.114 s a call. docs/decision-llms.md estimates from that figure "
-        "for every preset, so if this one differs, that section is what needs correcting."
+        "  TypeSafe publish 0.114 s a call. docs/guides/decision-llms/README.md estimates from "
+        "that figure for every preset, so if this one differs, that section is what needs "
+        "correcting."
     )
 
     from quackd.agent.decision.systemone import TIMEOUT_S
 
     assert 0.0 < latency < TIMEOUT_S * 2, (
         f"{latency:.3f} s is outside what the router is built for: the retry policy gives it "
-        f"{TIMEOUT_S} s and one retry, and docs/decision-llms.md assumes far less"
+        f"{TIMEOUT_S} s and one retry, and docs/guides/decision-llms/README.md assumes far less"
     )
 
 

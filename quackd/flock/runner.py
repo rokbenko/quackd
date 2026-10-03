@@ -166,7 +166,9 @@ async def run_flock(
     specs = member_specs(members, robots, duck.frontmatter.robots)
     for name, spec in specs.items():
         if spec.backend != "sim2d":
-            raise ValueError(f"flock mode is simulator only (docs/flock.md): {name} is {spec.key}")
+            raise ValueError(
+                f"flock mode is simulator only (docs/guides/flock.md): {name} is {spec.key}"
+            )
     manifests = {name: describe(spec) for name, spec in specs.items()}
     mobile = [name for name in members if manifests[name].mobility != "none"]
     policy = AuctionPolicy.from_flock(flock)

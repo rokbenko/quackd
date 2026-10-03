@@ -18,7 +18,7 @@ xlerobot = "quackd_xlerobot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/xlerobot.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/xlerobot/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_xlerobot/__init__.py"

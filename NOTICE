@@ -66,7 +66,7 @@ This project builds on, interoperates with, and is grateful to:
     Kommunity License, which grants robot control, a Robotics Use in its
     words, for non-commercial purposes; its carve-out for Qualifying Users
     covers commercial use of the model's Outputs, on conditions, and does not
-    say it reaches a Robotics Use. docs/policies.md links where each licence
+    say it reaches a Robotics Use. docs/guides/policies.md links where each licence
     was read.
     https://huggingface.co/lerobot
     https://huggingface.co/black-forest-labs/flux-3-action-so101

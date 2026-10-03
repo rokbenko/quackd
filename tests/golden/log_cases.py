@@ -1,6 +1,6 @@
 """Every line the plain log renderer can draw, as named cases.
 
-The MCP tool result is made of these exact strings (`docs/mcp.md`) and a model reads them on
+The MCP tool result is made of these exact strings (`docs/guides/mcp.md`) and a model reads them on
 every call, so the terminal view may be redrawn but `render_lines` may not move under it.
 One case per branch, named, so a failing diff says which branch drifted rather than dumping
 two hundred lines side by side.

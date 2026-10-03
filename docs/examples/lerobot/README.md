@@ -12,7 +12,8 @@ it was, `runs/20260923-081500-e001-circle/`, and a `--run-name` on the line tell
 runs of one file.
 
 Run them from the root of this checkout against the arm registered as `arm-01` with a rest pose
-recorded, which is sections 06 and 07 of [lerobot-first-run.md](../../lerobot-first-run.md):
+recorded, which is sections 06 and 07 of
+[adapters/lerobot/first-run.md](../../adapters/lerobot/first-run.md):
 
 ```bash
 quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 16 --no-memory
@@ -22,7 +23,8 @@ With `--by-hand`, lift the arm so that every joint reads inside its travel befor
 Enter, above all a joint the run named as recorded past its travel. With one still past it,
 quackd does not take hold, torque stays off and the run ends. On `arm-01` on 23 September that
 joint was `shoulder_lift`, and the cure is to calibrate with the arm folded and record the rest
-pose again, which is sections 05 and 07 of [lerobot-first-run.md](../../lerobot-first-run.md).
+pose again, which is sections 05 and 07 of
+[adapters/lerobot/first-run.md](../../adapters/lerobot/first-run.md).
 
 A run whose rest move missed ends with the arm holding itself up. At a terminal it offers first
 to take torque off where the arm stands: hold the arm and press Enter, or leave it for 60
@@ -41,7 +43,7 @@ quackd validate "docs/examples/lerobot/*/*.duck" --robot lerobot:real
 And rehearse them at home first, on the arm's simulator, which runs a file through the code that
 drives the arm without the arm: `quackd robot twin arm-01` registers `arm-01-sim` on the arm's
 own calibration, and `quackd preflight` runs each file on it once per seed
-([lerobot-first-run.md](../../lerobot-first-run.md#16-between-visits-rehearse-on-the-simulator)).
+([adapters/lerobot/first-run.md](../../adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator)).
 With a real pilot every seed costs what a run costs. Only `e162` and `e165` have a
 `<task>.sim.yaml` beside them, so every other run is judged on whether nothing escaped it and its
 close reached the rest pose.
@@ -85,4 +87,4 @@ on `arm-01`, on quackd 0.12.0: `e001/circle`, `e003/small-then-tall`, `e004/roya
 before the pilot's first call, at connect or on the rest move. The other 213 files have not run
 on an arm, and nothing quackd changed after that afternoon has run on one either. The budgets
 are estimates, sized so that a run which goes well finishes well inside them, and the task files
-are plain text: [duck-spec.md](../../duck-spec.md) is what every field means.
+are plain text: [reference/duck-spec.md](../../reference/duck-spec.md) is what every field means.
