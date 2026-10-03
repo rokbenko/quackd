@@ -270,7 +270,8 @@ class MicroduckBody:
         command[0:3] = twist
         # [3] neck pitch, [4] head pitch, [5] head yaw, [6] head roll — deltas from home.
         # The sign is `up.HEAD_PITCH_SIGN`: measured here rather than read anywhere, and
-        # tagged UNVERIFIED for that reason, so `quackd doctor` and adapter-status.md say so.
+        # tagged UNVERIFIED for that reason, so `quackd doctor` and the Microduck's page,
+        # docs/adapters/microduck/README.md, say so.
         # [3] and [6] stay zero because quackd's gaze has one pitch and no roll.
         command[4] = -head[1]
         command[5] = head[0]

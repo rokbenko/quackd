@@ -306,8 +306,9 @@ class RobotManifest(BaseModel):
     blurb: str = Field(default="", description="Prompt intro: 'a small biped duck robot ...'.")
     datasheet: Datasheet | None = Field(
         default=None,
-        description="Physical facts with a confidence and a source each (docs/manifest-spec.md). "
-        "None: the adapter published none, and the prompt says so.",
+        description="Physical facts with a confidence and a source each "
+        "(docs/reference/manifest-spec.md). None: the adapter published none, "
+        "and the prompt says so.",
     )
     extras: dict[str, Any] = Field(default_factory=dict)
 

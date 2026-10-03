@@ -8,7 +8,8 @@ power mode, one `tegrastats` line). The fourth thing, the language model on the 
 your own model server (Ollama or another), and quackd reaches it through the same `--host`.
 
 For the whole arrangement, which JetPack you have and which model fits which board, see
-[`docs/jetson.md`](../../docs/jetson.md). This page is the reference for the daemon itself.
+[`docs/guides/jetson.md`](../../docs/guides/jetson.md). This page is the reference for the daemon
+itself.
 
 Three rules it lives by, the same as the other daemons under `bridge/`:
 
@@ -135,7 +136,7 @@ Jetson at 127.0.0.1:61332 (the board the daemon runs on) ───────�
 · board       NVIDIA Jetson Orin Nano Developer Kit
 · L4T         36.4.3 (JetPack 6.2)
 · memory      7.3 GiB, 4.9 GiB available, shared with the GPU
-⚠ swap        1.0 GiB, all zram: it compresses RAM rather than adding any (docs/jetson.md)
+⚠ swap        1.0 GiB, all zram: it compresses RAM rather than adding any (docs/guides/jetson.md)
 · GPU device  /dev/nvgpu/igpu0
 · power mode  15W (nvpmodel -q)
 · GPU busy    0% (GR3D_FREQ in tegrastats)
@@ -299,5 +300,5 @@ Python 3.10's grammar and checked for names 3.10 lacks, but it has not been exec
 quackd's own floor is 3.11.
 
 If you run it on a board, please open an issue with what the Status section of
-[docs/jetson.md](../../docs/jetson.md#status) asks for, which is one list for the daemon and
-quackd together and includes the raw `/board` this daemon serves.
+[docs/guides/jetson.md](../../docs/guides/jetson.md#status) asks for, which is one list for the
+daemon and quackd together and includes the raw `/board` this daemon serves.

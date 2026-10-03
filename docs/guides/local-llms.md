@@ -36,15 +36,16 @@ they serve. An Ollama that answers is also asked where it put each loaded model
 (`GET /api/ps`): all on the GPU, a share of it, or on the CPU.
 
 **The server can live on another machine, and `--host` moves a preset there.** An NVIDIA Jetson
-is the case this project has written up ([jetson.md](jetson.md)): the model runs on the board's
-GPU and quackd stays on your laptop. `--host jetson.local` replaces a preset's `localhost` with
-that machine and keeps the preset's own port and path, so `--llm ollama` then asks
+is the case this project has written up ([guides/jetson.md](jetson.md)): the model runs on the
+board's GPU and quackd stays on your laptop. `--host jetson.local` replaces a preset's `localhost`
+with that machine and keeps the preset's own port and path, so `--llm ollama` then asks
 `http://jetson.local:11434/v1`. That address answers only once Ollama on the board listens
 beyond its own loopback, which it does not by default, and quackd's daemon is the same, so the
-usual way in is an ssh tunnel and `--host 127.0.0.1` ([jetson.md](jetson.md#from-the-laptop)).
-The port in `--host` is the one quackd's daemon on the board listens on, 9874 unless you changed
-it, and never the model server's. A cloud vendor's address is never moved. Where a local server
-is, the first rung that is set wins, and nothing is probed:
+usual way in is an ssh tunnel and `--host 127.0.0.1`
+([guides/jetson.md](jetson.md#from-the-laptop)). The port in `--host` is the one quackd's daemon on
+the board listens on, 9874 unless you changed it, and never the model server's. A cloud vendor's
+address is never moved. Where a local server is, the first rung that is set wins, and nothing is
+probed:
 
 1. `--base-url`: a URL given for this run is used exactly as given.
 2. `--host`, or the host a registered robot was stored with: the preset's address moved to that
@@ -89,13 +90,13 @@ Each preset kept its own port, and the 19874 went to the daemon alone.
 > so it cannot pilot a robot: `--llm` does not take one, and naming one there, `--llm kev`
 > say, is refused as an unknown provider. Several of them are servers you run on your own
 > machine, exactly like the four presets above, and each one has a page of its own under
-> [the hub's table](decision-llms.md#the-ones-quackd-names). They are still not the same kind
+> [the hub's table](decision-llms/README.md#the-ones-quackd-names). They are still not the same kind
 > of thing: a System One server speaks `POST /v1/systemone` rather than
 > OpenAI's Chat Completions, so `--base-url` is not how you reach one. `--decision-url` is, and
 > `--decision-llm` names which one. `--host` does not move one either, so one running on a
 > Jetson is reached with `--decision-url` too. It sits in front of whichever provider you did
 > pick, for the turns whose answer is a choice rather than a number, and it is off unless you
-> name one: [decision-llms.md](decision-llms.md).
+> name one: [guides/decision-llms/README.md](decision-llms/README.md).
 
 ## Server setup
 
@@ -210,7 +211,7 @@ parts, and a text only model is still a text only model with it on.
 |---|---|---|
 | `--llm PRESET:MODEL` / `QUACKD_LLM` | any id the server serves after the colon, checked against no catalogue | first entry of `/v1/models` |
 | `--base-url` / `QUACKD_BASE_URL` | `http://host:port/v1` | the preset's address |
-| `--host` / `QUACKD_HOST` | `HOST` or `HOST:PORT`, the machine quackd's daemon runs on ([jetson.md](jetson.md)). Moves a preset's `localhost` there, port kept, at the rung shown above | no host, the preset's own `localhost` |
+| `--host` / `QUACKD_HOST` | `HOST` or `HOST:PORT`, the machine quackd's daemon runs on ([guides/jetson.md](jetson.md)). Moves a preset's `localhost` there, port kept, at the rung shown above | no host, the preset's own `localhost` |
 | `--host-token` / `QUACKD_HOST_TOKEN` | the token that daemon was started with, sent to the daemon and never to the model server | no token |
 | `--api-key` / `LOCAL_API_KEY` | any string | `not-needed` (servers ignore it) |
 | `QUACKD_TOOL_CHOICE` | `auto`, `required`, `none` | `auto` (`none` omits the field for servers that reject it) |
@@ -240,11 +241,11 @@ uvx --from "quackd[openai,mujoco]" quackd run find-and-kick --llm ollama:qwen3:8
 
 The duck then walks on upstream's own trained policy instead of sliding around a cartoon. It
 also undershoots what it is asked for, which is a harder task for a small model and which the
-run states in `report_state` ([ADR-0030](adr/0030-mujoco-physics-backend.md)).
+run states in `report_state` ([ADR-0030](../adr/0030-mujoco-physics-backend.md)).
 
 ## The same duck in a browser, with no quackd installed
 
-[`web/`](../web/README.md) is a static page that runs the physics simulator through MuJoCo's
+[`web/`](../../web/README.md) is a static page that runs the physics simulator through MuJoCo's
 WebAssembly build and drives it from any OpenAI compatible server, so a local model can pilot
 the duck with no key and no `pip install`. It is live at <https://www.quackd.org/simulator>, and
 that copy asks nothing of you first: same page, same Local option, same base-URL box, no checkout.
@@ -255,7 +256,7 @@ that live copy is served over https and your server is not. Browsers disagree ab
 plaintext server on your own machine and others refuse it as mixed content or want a permission
 first. A copy you serve yourself is plain http at both ends, so there is no such argument to have,
 and it is also what you run when you are changing the page. `web/serve.py` is the server it
-needs, stdlib only, so it is Python but not quackd ([web/README.md](../web/README.md) says
+needs, stdlib only, so it is Python but not quackd ([web/README.md](../../web/README.md) says
 why a plain `http.server` will not do):
 
 ```bash
@@ -270,7 +271,7 @@ to be told to accept the page (`OLLAMA_ORIGINS=* ollama serve`), and llama.cpp, 
 Studio need the same CORS permission, whichever copy you opened. The keyboard beside the sentence
 box is live at the same time as the model, so you can take the duck off a stalled local model
 mid-run with `W` and the transcript records the handover.
-What the page has and has not been run against is in [web/README.md](../web/README.md).
+What the page has and has not been run against is in [web/README.md](../../web/README.md).
 
 ## Honest notes
 
@@ -278,19 +279,19 @@ What the page has and has not been run against is in [web/README.md](../web/READ
   loop was designed so that a weak planner degrades the task, never the robot's balance.
   Four transcripts are published here and not one of them is ours: two contributors, two
   servers, two machines nothing in this project has ever run on. They are in
-  [`assets/transcripts/`](assets/transcripts/), and they are two pairs that answer different
+  [`assets/transcripts/`](../assets/transcripts/), and they are two pairs that answer different
   questions.
 
   **Qwen 2.5 Coder 14B on LM Studio**, Apple M2 Pro, 2026-09-03, from the contributor who
   built memory between runs. They are two runs out of more than two:
-  [docs/design/memory.md](design/memory.md) records the same model reading the memory block
+  [docs/design/memory.md](../design/memory.md) records the same model reading the memory block
   and never writing to it *across four runs* before `remember` was moved into the numbered
   strategy. These two were kept, so read them as a selection rather than as the sample:
 
   | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
   |---|---|---|---|---|---|---|---|
-  | [`…seed6-memory-read.jsonl`](assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed6-memory-read.jsonl) | 6 | success | 8 | 9 | 29,403 + 244 | 0 | the system prompt carries an earlier run's episode under *What you remember*; the model never calls `remember`; two kicks fall short before the third connects |
-  | [`…seed5-remember.jsonl`](assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.duck` body now says `remember` in strategy step 5; after the kick the model returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
+  | [`…seed6-memory-read.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed6-memory-read.jsonl) | 6 | success | 8 | 9 | 29,403 + 244 | 0 | the system prompt carries an earlier run's episode under *What you remember*; the model never calls `remember`; two kicks fall short before the third connects |
+  | [`…seed5-remember.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.duck` body now says `remember` in strategy step 5; after the kick the model returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
 
   These two are not a chain, and nothing here should be read as one: they ran against
   different memory directories (`memory-qwen3` and `memory-qwen2`), seed 5 started from an
@@ -316,8 +317,8 @@ What the page has and has not been run against is in [web/README.md](../web/READ
 
   | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
   |---|---|---|---|---|---|---|---|
-  | [`…seed1-thinking-on.jsonl`](assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-on.jsonl) | 1 | success | 4 | 8 | 35,416 + 2,049 | 0 | Qwen3 with its factory default: all eight calls deliberate in the open, 599 to 1,446 characters of it in each row's `thinking` field, 165 to 402 output tokens each. One of the eight bought nothing: it asked for `search_scan` before recording a verdict and the gate refused it. It calls `remember`, and the note it saves is what the other run reads |
-  | [`…seed1-thinking-off.jsonl`](assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-off.jsonl) | 1 | success | 3 | 5 | 21,802 + 263 | 0 | the same run with `--extra-body '{"chat_template_kwargs": {"enable_thinking": false}}'`: not one `thinking` field in the file, 19 to 130 output tokens a call. Its prompt carries the note and the episode the other run wrote. It skips the `quack` the persona asks for |
+  | [`…seed1-thinking-on.jsonl`](../assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-on.jsonl) | 1 | success | 4 | 8 | 35,416 + 2,049 | 0 | Qwen3 with its factory default: all eight calls deliberate in the open, 599 to 1,446 characters of it in each row's `thinking` field, 165 to 402 output tokens each. One of the eight bought nothing: it asked for `search_scan` before recording a verdict and the gate refused it. It calls `remember`, and the note it saves is what the other run reads |
+  | [`…seed1-thinking-off.jsonl`](../assets/transcripts/qwen3-32b-awq-vllm-find-and-kick-seed1-thinking-off.jsonl) | 1 | success | 3 | 5 | 21,802 + 263 | 0 | the same run with `--extra-body '{"chat_template_kwargs": {"enable_thinking": false}}'`: not one `thinking` field in the file, 19 to 130 output tokens a call. Its prompt carries the note and the episode the other run wrote. It skips the `quack` the persona asks for |
 
   **The drop is real and it is smaller than 2,049 → 263.** The two runs did not take the
   same path, so the totals are not comparable. Five decisions are common to both, and those

@@ -1,7 +1,7 @@
 """Fetching the SO-101's model: the pins, the hashes, the licence notice, the failures.
 
-`quackd_lerobot/sim/assets.py` is what keeps `docs/licenses.md`'s "never shipped" true for the
-arm's simulator: the model and its meshes reach a user cache at run time, one file at a time,
+`quackd_lerobot/sim/assets.py` is what keeps `docs/reference/licenses.md`'s "never shipped" true for
+the arm's simulator: the model and its meshes reach a user cache at run time, one file at a time,
 each checked against the sha256 it was read at. Nothing here touches the network or needs the
 physics extra. `fetch` is stubbed and the pins are moved onto files built in memory, so it runs
 on every CI runner. The one test of `fetch` itself talks to a server on loopback.

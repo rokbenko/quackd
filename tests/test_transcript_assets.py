@@ -1,14 +1,14 @@
 """Every number published from a transcript is checked against the transcript.
 
 `docs/assets/transcripts/` is evidence. The runs in it happened on machines this project has
-never had, and the tables in `docs/local-llms.md` quote their steps, their LLM calls and their
-token counts. Two contributor PRs in a row shipped one of those tables (#7, #23) and both times
-the numbers were checked by a person reading the files. A person reading is how a wrong number
+never had, and the tables in `docs/guides/local-llms.md` quote their steps, their LLM calls and
+their token counts. Two contributor PRs in a row shipped one of those tables (#7, #23) and both
+times the numbers were checked by a person reading the files. A person reading is how a wrong number
 gets in, so this is that reading, written down.
 
 For every `.jsonl` in that folder: every line parses, the run is whole, it carries nothing from
 the machine it ran on, `docs/assets/README.md` says how it was made, and the row in
-`docs/local-llms.md` that links it says what the run's own `run_end` says. The last test is
+`docs/guides/local-llms.md` that links it says what the run's own `run_end` says. The last test is
 narrower. It holds the one thing the two Qwen3 files prove between them, that a note written by
 one run is read by the next, so the claim on that page cannot outlive the evidence for it.
 
@@ -41,8 +41,8 @@ def _assets_table() -> str:
 
 @cache
 def _local_llms() -> str:
-    """docs/local-llms.md, the page whose tables quote these files."""
-    return (REPO / "docs" / "local-llms.md").read_text(encoding="utf-8")
+    """docs/guides/local-llms.md, the page whose tables quote these files."""
+    return (REPO / "docs" / "guides" / "local-llms.md").read_text(encoding="utf-8")
 
 
 #: The two files of the Qwen3 pair, by name, because the memory claim on the page is about
@@ -192,13 +192,13 @@ def test_every_transcript_has_a_row_in_the_assets_table(path: Path) -> None:
     assert row in _assets_table(), f"docs/assets/README.md has no row for transcripts/{path.name}"
 
 
-#: A row of either transcript table in `docs/local-llms.md`, which reads
-#: `| [`…seed1-thinking-on.jsonl`](assets/transcripts/<file>) | 1 | success | 4 | 8 |
+#: A row of either transcript table in `docs/guides/local-llms.md`, which reads
+#: `| [`…seed1-thinking-on.jsonl`](../assets/transcripts/<file>) | 1 | success | 4 | 8 |
 #: 35,416 + 2,049 | 0 | what it shows |`. The label is abbreviated with a Unicode ellipsis,
 #: written as an escape here so no editor and no encoding can eat it, and the counts are
 #: written for a reader, with thousands separators.
 ELLIPSIS = "\u2026"
-_ROW = re.compile(r"\|\s*\[`(?P<label>[^`]+)`\]\(assets/transcripts/(?P<file>[^)]+)\)\s*\|")
+_ROW = re.compile(r"\|\s*\[`(?P<label>[^`]+)`\]\(\.\./assets/transcripts/(?P<file>[^)]+)\)\s*\|")
 _TOKENS = re.compile(r"^(?P<input>[\d,]+)\s*\+\s*(?P<output>[\d,]+)$")
 
 
@@ -211,9 +211,11 @@ def _published_row(name: str) -> list[str]:
         label = found.group("label").lstrip(ELLIPSIS)
         # the shortened label has to be the end of the file it links, or the row is describing
         # one run and pointing at another
-        assert name.endswith(label), f"docs/local-llms.md labels {name} as {found.group('label')!r}"
+        assert name.endswith(label), (
+            f"docs/guides/local-llms.md labels {name} as {found.group('label')!r}"
+        )
         return [cell.strip() for cell in line.strip().strip("|").split("|")]
-    pytest.fail(f"docs/local-llms.md has no table row linking {name}")
+    pytest.fail(f"docs/guides/local-llms.md has no table row linking {name}")
 
 
 @pytest.mark.parametrize("path", TRANSCRIPTS, ids=lambda p: p.stem)
@@ -254,7 +256,7 @@ def test_the_published_row_agrees_with_the_run_it_links(path: Path) -> None:
 
 
 def test_the_note_one_qwen3_run_saved_is_read_by_the_other() -> None:
-    """`docs/local-llms.md` calls this pair the first published chain: a note written by one
+    """`docs/guides/local-llms.md` calls this pair the first published chain: a note written by one
     run and read by the next, both ends in this repository. Nothing else here can show that,
     and the page says so, so the sentence has to stay derivable from the two files.
 
@@ -275,7 +277,7 @@ def test_the_note_one_qwen3_run_saved_is_read_by_the_other() -> None:
         f"{THINKING_OFF} does not carry the note {THINKING_ON} saved: {note!r}"
     )
     # and the page quotes it, so a rewrite that drops the evidence drops the claim with it
-    assert note in _local_llms(), f"docs/local-llms.md no longer quotes the note: {note!r}"
+    assert note in _local_llms(), f"docs/guides/local-llms.md no longer quotes the note: {note!r}"
 
     before, after = on[0]["memory"], off[0]["memory"]
     assert after["notes"] == before["notes"] + 1, (

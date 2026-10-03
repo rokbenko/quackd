@@ -5,7 +5,7 @@ Kev, self-hosted: Qwen3.5 with a decision head, on your own GPU. It is
 no tag, no release, and a `pyproject.toml` declaring `version = "0.1.0"` for something never
 published, so a branch is the only pin there is. A decision LLM has no `upstream_api.py` the way
 an adapter does, so every name quackd spells for it lives in its row in
-[`catalogue.py`](../../quackd/agent/decision/catalogue.py).
+[`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
 **Nothing here has ever answered a real robot.**
 
@@ -72,7 +72,7 @@ one-second budget before any HTTP is added. Apache-2.0.
   is not public, that this is an approximation, and that "Neither field is a measured accuracy
   rate." quackd's floors are two of TypeSafe's numbers with two of its own between them, all
   four shaped around Jev and none of them around this ([how a turn is
-  decided](../decision-llms.md#how-a-turn-is-decided)).
+  decided](README.md#how-a-turn-is-decided)).
 
 > [!WARNING]
 > Kev has **no authentication of any kind** -- no middleware, no header check, and an
@@ -124,10 +124,10 @@ this row as missing `quackd[decision]`, no key needed, `kev-latest`, `http://127
 ## How to help
 
 Run it in shadow mode on your own bench ([measuring it
-yourself](../decision-llms.md#measuring-it-yourself)) and report the agreement rate, the latency
+yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 against a real robot's state rather than a 270-token benchmark one, and the answers that surprised
 you, which is the only one of the three a table cannot produce. Say which checkpoint `--run`
 loaded and which interface and port you served it on, since 8008 and 8009 both exist here and a
 reverse proxy changes what the warning above is worth. A confidence floor moves on a calibration
-plot and nothing else ([how a turn is decided](../decision-llms.md#how-a-turn-is-decided)), and
-[CONTRIBUTING.md](../../CONTRIBUTING.md) says where such a change goes.
+plot and nothing else ([how a turn is decided](README.md#how-a-turn-is-decided)), and
+[CONTRIBUTING.md](../../../CONTRIBUTING.md) says where such a change goes.

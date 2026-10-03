@@ -7,7 +7,7 @@
 > beside it: a robot registered with `quackd robot add` keys by the name you gave it, so two
 > real ducks on one desk no longer share a file, which is the case this table's reasoning did
 > not separate ([ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md),
-> [registry.md](../registry.md)).
+> [registry.md](../guides/registry.md)).
 
 ## Why
 

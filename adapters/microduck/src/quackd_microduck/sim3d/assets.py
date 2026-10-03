@@ -1,8 +1,8 @@
 """The Microduck's model and policies, fetched at run time and never shipped.
 
 The meshes are CC BY-NC-SA and quackd is Apache-2.0, so they cannot travel in the wheel,
-the repository or a test fixture (`docs/licenses.md`). What can travel is a commit hash and
-a sha256 per file: the first `--robot microduck:mujoco` downloads upstream's tarball at the
+the repository or a test fixture (`docs/reference/licenses.md`). What can travel is a commit hash
+and a sha256 per file: the first `--robot microduck:mujoco` downloads upstream's tarball at the
 pinned commit, keeps the one directory it needs under `~/.quackd/cache`, checks every file
 against the hash it was read at, writes the licence notice next to them and logs it once.
 The policies are Apache-2.0 on the Hugging Face Hub and come the same way, by revision.

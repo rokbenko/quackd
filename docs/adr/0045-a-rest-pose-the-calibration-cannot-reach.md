@@ -1,6 +1,6 @@
 # ADR-0045: A rest pose the calibration cannot reach
 
-**Status:** accepted, amended · **Date:** 2026-09-23 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (the range refusal, and `stop` as a hold of the five body joints) and [ADR-0039](0039-an-arm-placed-by-hand.md) (the one place quackd lets go, on the condition `close()` trusts) · Implemented in `adapters/lerobot/` (`verbs.py`, `real.py`, `mock.py`), `quackd/adapters/base.py`, `quackd/agent/loop.py` and `quackd/doctor.py` ([page](../adapters/lerobot.md#a-pose-past-the-travel), [first run](../lerobot-first-run.md#07-record-the-rest-pose))
+**Status:** accepted, amended · **Date:** 2026-09-23 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (the range refusal, and `stop` as a hold of the five body joints) and [ADR-0039](0039-an-arm-placed-by-hand.md) (the one place quackd lets go, on the condition `close()` trusts) · Implemented in `adapters/lerobot/` (`verbs.py`, `real.py`, `mock.py`), `quackd/adapters/base.py`, `quackd/agent/loop.py` and `quackd/doctor.py` ([page](../adapters/lerobot/README.md#a-pose-past-the-travel), [first run](../adapters/lerobot/first-run.md#07-record-the-rest-pose))
 
 **Amended 2026-09-23, by `quackd robot release`:** the reachable rest pose is no longer the only
 place quackd releases an arm. A person at the arm can ask for its torque by name, wherever it

@@ -24,7 +24,7 @@ sim = ["mujoco>=3.12,<4"]
 # The policy server's, `quackd policy serve --policy REPO@REVISION`, in a process of its own and
 # never the arm's: LeRobot with torch and the transformers SmolVLA and pi05 load their
 # tokenizers with. No `[feetech]`, since the server never opens a serial port. Pi0.5 also wants
-# `lerobot[pi]` and a Hub token for its gated tokenizer (docs/adapters/lerobot.md).
+# `lerobot[pi]` and a Hub token for its gated tokenizer (docs/adapters/lerobot/README.md).
 vla = ["lerobot[smolvla]>=0.6,<0.7; python_version >= '3.12'"]
 
 [project.entry-points."quackd.adapters"]
@@ -32,7 +32,7 @@ lerobot = "quackd_lerobot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_lerobot/__init__.py"

@@ -9,7 +9,7 @@ parameters of their own, a target and an instruction. `register_learned_verb` st
 reserved extension point it is below: a verb with no parameters, shaped for an ONNX policy the
 Microduck runs, and registered into a registry the connect rebuilds from the manifest, so it
 could never have told a policy a subtask. The fourth list the Context names, learned ONNX
-policies, is still that point and nothing more ([learned-verbs.md](../learned-verbs.md)).
+policies, is still that point and nothing more ([learned-verbs.md](../concepts/learned-verbs.md)).
 
 ## Context
 

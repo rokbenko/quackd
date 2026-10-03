@@ -225,7 +225,7 @@ class RunConfig:
     one, and on that path no `Stepper` is built and no vendor SDK is imported. `shadow` asks it
     every turn, records the answer beside the model's, and changes nothing. `on` lets it take
     the turns it is confident about; every pose and every sentence is still the model's
-    (`docs/decision-llms.md`).
+    (`docs/guides/decision-llms/README.md`).
 
     *Which* decision LLM answers is a separate field, `decision_llm` below, chosen with
     `--decision-llm`: this one is only how much authority whichever one it is gets. The two are

@@ -2,10 +2,10 @@
 
 Both ship in 0.4 behind one extra and are imported lazily, so the default install never
 loads them and the test suite runs on fakes with no network and no broker
-([ADR-0021](adr/0021-lan-discovery-and-mqtt-bus.md)).
+([ADR-0021](../adr/0021-lan-discovery-and-mqtt-bus.md)).
 
-The MQTT bus is the flock bus of [flock.md](flock.md) across machines, a robot that
-answers discovery is registered by hand with `quackd robot add` ([registry.md](registry.md)),
+The MQTT bus is the flock bus of [guides/flock.md](flock.md) across machines, a robot that
+answers discovery is registered by hand with `quackd robot add` ([guides/registry.md](registry.md)),
 and discovery feeds no flock by itself.
 
 ```bash

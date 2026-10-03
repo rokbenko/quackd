@@ -2896,7 +2896,7 @@ async def test_an_exit_that_skips_the_close_leaves_the_arm_holding(monkeypatch: 
     crash never reaches it, so `close()` never runs and nothing of quackd's decides what the
     arm does. LeRobot still disconnects the follower as it is collected, by the flag its
     config holds, and the follower used to be built with upstream's True: the arm could fall
-    wherever the move had got to, while `docs/safety.md` said it was left holding."""
+    wherever the move had got to, while `docs/concepts/safety.md` said it was left holding."""
     arm = built_arm(monkeypatch, FakeArm(step=40.0, stuck=("shoulder_lift",)))
     adapter = LeRobotAdapter(LeRobotReal("COM5", rest_pose=dict(FOLDED)))
     await adapter.connect()

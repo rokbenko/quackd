@@ -1,8 +1,8 @@
 # Registered robots and flocks
 
 A name for a robot, kept between runs. Not the *verb* registry
-([architecture.md](architecture.md)), which is a robot's vocabulary: this is the other half of
-the word, a name for a body plus how to reach it.
+([concepts/architecture.md](../concepts/architecture.md)), which is a robot's vocabulary: this is
+the other half of the word, a name for a body plus how to reach it.
 
 ## Why
 
@@ -141,9 +141,9 @@ x error: microduck:mock takes one camera url; only lerobot:real and lerobot:mujo
 ```
 
 The rules the urls themselves keep, a `?name=` on each, unique names and no index used twice,
-are the arm's and are in [adapters/lerobot.md](adapters/lerobot.md): the registry stores what
-you gave it and the arm refuses at connect. A second camera also costs what a second camera
-costs: the last two exchanges keep their images, so a two-camera run carries four pictures in
+are the arm's and are in [adapters/lerobot/README.md](../adapters/lerobot/README.md): the registry
+stores what you gave it and the arm refuses at connect. A second camera also costs what a second
+camera costs: the last two exchanges keep their images, so a two-camera run carries four pictures in
 every request where a one-camera run carries two. On Claude Opus 5.5 and Fable 5.1, whose old
 frames are trimmed every eight exchanges rather than on every one, that is up to eighteen where
 one camera is nine.
@@ -152,7 +152,7 @@ one camera is nine.
 
 `--host` and `--host-token` keep the board this robot's runs reach: a machine quackd uses and
 never runs on, such as an NVIDIA Jetson running quackd's host daemon, for the model server,
-the camera and the detector on it ([jetson.md](jetson.md)).
+the camera and the detector on it ([guides/jetson.md](jetson.md)).
 
 ```
 $ quackd robot add bench lerobot:real --address COM5 --host jetson.local --host-token 3b9a...
@@ -248,12 +248,12 @@ x error: cart (xlerobot:mock) has joints, and quackd does not drive it to a rest
 LeRobot arm does today
 ```
 
-What a recorded pose then changes is [safety.md](safety.md): a run drives the arm to it before
-the pilot gets control and back to it on every exit path there is, an MCP session does the same
-at both ends and refuses to start if it cannot get there, and `quackd doctor` returns the arm
-it probed. The arm's own side of it, including what happens to a pose recorded past the travel
-the arm's calibration recorded, is
-[adapters/lerobot.md](adapters/lerobot.md#a-pose-past-the-travel).
+What a recorded pose then changes is [concepts/safety.md](../concepts/safety.md): a run drives the
+arm to it before the pilot gets control and back to it on every exit path there is, an MCP session
+does the same at both ends and refuses to start if it cannot get there, and `quackd doctor` returns
+the arm it probed. The arm's own side of it, including what happens to a pose recorded past the
+travel the arm's calibration recorded, is
+[adapters/lerobot/README.md](../adapters/lerobot/README.md#a-pose-past-the-travel).
 
 A pose is kept exactly as it was read, and it is only as good as the calibration it was read
 under. A new calibration moves the zero of any joint whose travel it records differently, so
@@ -265,10 +265,10 @@ is calibrated again.
 > fell at the end of every run on 2026-09-15, which is the reason this exists, ran again on
 > 2026-09-23 with a pose recorded, and that pose lay past the travel the arm's calibration
 > recorded, where its servos will not be driven
-> ([ADR-0045](adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Calibrate with every
+> ([ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Calibrate with every
 > joint taken all the way into the fold before you record one
-> ([lerobot-first-run.md](lerobot-first-run.md#07-record-the-rest-pose)). Every joint value on
-> this page is a mock's.
+> ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#07-record-the-rest-pose)). Every
+> joint value on this page is a mock's.
 
 ### Releasing the arm where it stands
 
@@ -328,7 +328,7 @@ It uses the registered rest pose and no camera, and it exits 1 unless every moto
 off afterwards. Those joints are the mock arm's, and its connect takes nothing off, so on the
 mock the warning is only printed. What each other ending means, and the same offer a run makes
 at its own terminal when its rest move missed, is
-[adapters/lerobot.md](adapters/lerobot.md#releasing-it-where-it-stands).
+[adapters/lerobot/README.md](../adapters/lerobot/README.md#releasing-it-where-it-stands).
 
 ## A simulator of an arm
 
@@ -398,9 +398,9 @@ always answers, which is what the rows above are.
 A probe reads and lets go: it never drives an arm to its rest pose. So an arm that is not at
 that pose ends a probe holding itself up rather than sagging, and the same row says so: `+ ok,
 torque left on: not at its rest pose`. `quackd doctor` is the other way round and parks the arm
-it probed ([safety.md](safety.md)). A probe's connect still takes torque off every motor for a
-moment, like any connect, and it prints no warning first, so hold an arm that is holding itself
-up before you probe it.
+it probed ([concepts/safety.md](../concepts/safety.md)). A probe's connect still takes torque off
+every motor for a moment, like any connect, and it prints no warning first, so hold an arm that is
+holding itself up before you probe it.
 
 Two rarer endings read differently. `torque unknown: the arm did not answer the close` is an arm
 that stopped answering before the close could read it, which is also how an arm whose power was
@@ -410,10 +410,10 @@ powered, so check whether it is still where you left it.
 
 No registered robot has been probed on hardware. The one real robot quackd has driven, the
 SO-101 arm, was reached on 2026-09-15 as `--robot lerobot:real --address COM3` on the command
-line, before it had a name here at all ([lerobot-first-run.md](lerobot-first-run.md)). On
-2026-09-23 the same arm ran 26 runs registered as `arm-01`, with a rest pose recorded under that
-name, so a name and a rest pose have met hardware. A probe and a stored camera are still
-mock-only.
+line, before it had a name here at all
+([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md)). On 2026-09-23 the same arm ran
+26 runs registered as `arm-01`, with a rest pose recorded under that name, so a name and a rest pose
+have met hardware. A probe and a stored camera are still mock-only.
 
 ## Names
 
@@ -503,8 +503,8 @@ both in everything it prints, including `--json`, which says only whether each i
 
 **Memory is keyed by it.** An unregistered run keys its notes by `adapter:backend`, so two
 Microducks on one desk shared one file. A registered robot keys by its name, so `duck-a` and
-`duck-b` keep separate notes ([memory.md](memory.md),
-[ADR-0034](adr/0034-registered-robots-and-pilot-flocks.md)).
+`duck-b` keep separate notes ([guides/memory.md](memory.md),
+[ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)).
 
 **The manifest id is it.** `quackd validate hello-world --robot duck-a` reports the robot as
 `duck-a`, which is what `--robots name=spec` has always done for a flock.
@@ -616,9 +616,9 @@ there on purpose going missing is not a detail.
 
 ## See also
 
-- [flock.md](flock.md) for what happens when a flock runs
-- [memory.md](memory.md) for what each robot remembers between runs
-- [mcp.md](mcp.md) for `quackd serve-mcp --robot NAME`
-- [safety.md](safety.md) for what a recorded rest pose does at the end of a run, and what
-  happens when the arm cannot reach it
-- [ADR-0034](adr/0034-registered-robots-and-pilot-flocks.md) for why any of this exists
+- [guides/flock.md](flock.md) for what happens when a flock runs
+- [guides/memory.md](memory.md) for what each robot remembers between runs
+- [guides/mcp.md](mcp.md) for `quackd serve-mcp --robot NAME`
+- [concepts/safety.md](../concepts/safety.md) for what a recorded rest pose does at the end of a
+  run, and what happens when the arm cannot reach it
+- [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md) for why any of this exists

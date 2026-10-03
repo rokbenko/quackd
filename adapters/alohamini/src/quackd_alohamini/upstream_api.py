@@ -1,7 +1,7 @@
 """The only file in quackd allowed to spell an AlohaMini name (ADR-0027).
 
 Every constant is tagged VERIFIED (read from upstream source, link given) or UNVERIFIED (an
-assumption of ours, with what quackd does about it). `docs/adapters/alohamini.md` is the
+assumption of ours, with what quackd does about it). `docs/adapters/alohamini/README.md` is the
 human-readable version; `tests/test_upstream_api.py` proves UNVERIFIED names are only
 reachable from the experimental `zmq` backend.
 

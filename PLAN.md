@@ -10,13 +10,13 @@ Legend: 🔨 in progress · ⬜ todo · ⏸ blocked (with reason)
 Six bring-ups still need hardware quackd has never touched, one per body that has not met
 any: the other six of the seven. The seventh happened, an SO-101 arm running
 `lerobot:real` on 2026-09-15, which flipped its row in
-[`docs/adapter-status.md`](docs/adapter-status.md), and the same arm ran again on 2026-09-23,
+[`docs/adapter-status.md`](docs/adapters/status.md), and the same arm ran again on 2026-09-23,
 registered as `arm-01`. Each of the six ends the same way: flip that backend's row, and not
 before.
 
 - ⏸ **An Open Duck Mini v2**, the most reachable of the six because you can build it. Run
   `open_duck:bridge` against a duck you built, work through
-  [docs/open-duck-hardware-checklist.md](docs/open-duck-hardware-checklist.md), and confirm
+  [docs/open-duck-hardware-checklist.md](docs/adapters/open_duck/hardware-checklist.md), and confirm
   the deadman by pulling Wi-Fi mid-walk. Then the five numbers at the end of that checklist:
   boot time against the watchdog budget, camd's peak memory against its cap, the observed
   loop-rate floor, the camera's field of view against a tape measure, and the accelerometer
@@ -24,14 +24,14 @@ before.
   quackd deliberately does not guess it, because a wrong fall detector fails as a confident
   "not fallen".
 - ⏸ **A Microduck.** Run `--robot microduck:jsonrpc` against a real `robotd` and work through
-  [docs/microduck-hardware-checklist.md](docs/microduck-hardware-checklist.md), whose step 0
+  [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), whose step 0
   now rehearses the whole pilot in the physics simulator first. The path is built and audited:
   pinned at a commit and bumped to API v23 (it was v16 against a moving link, so the handshake
   would have refused), state actually subscribed to, and video over `webrtc://` because
   upstream serves no frames on the socket. Pre-orders opened 2026-08-27, earliest arrivals
   estimated around Christmas 2026 and later orders four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
-  through [docs/toddlerbot-hardware-checklist.md](docs/toddlerbot-hardware-checklist.md). What
+  through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really
   means fallen, whether the neck axes are what the motor names imply, and whether a calibrated
   zero survives a restart.
@@ -69,7 +69,7 @@ before.
   0.14.0, and the one for 0.15.0's follower, a second Ctrl-C during the fold back to the rest
   pose, is under 0.15.0's. The six other changes that release made in `lerobot:real` have bench
   steps now, and none has run: a connect quackd refuses letting go of the arm (step 6 of
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md)), the deadline a call
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md)), the deadline a call
   spends only while the bus is busy (steps 9 and 13), a connect that fails once the arm is
   energised keeping its torque (step 13), the close reading its flag back and saying a stalled
   shortfall once (step 14), and the heartbeat's reads kept out of the trace a grasp is judged by
@@ -106,8 +106,8 @@ before.
   policy through quackd. Besides the tiny random ACT CI builds, one trained ACT from the Hub has
   been served, on the laptop's CPU on 2026-09-28, and drove the arm's twin on the simulator.
   SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05 has not run
-  ([docs/policies.md](docs/policies.md#smolvla-and-act)). Step 18 of
-  [docs/lerobot-hardware-checklist.md](docs/lerobot-hardware-checklist.md) is the order: a run
+  ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
+  [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md) is the order: a run
   with `scripted:hold`, then `scripted:sweep`, then a checkpoint checked with
   `quackd policy check --bench`, each rehearsed on the arm's twin first, with a hand on the
   switch. Then the number nothing else can give: how fast the policy loop runs on the real bus
@@ -131,13 +131,13 @@ before.
   six unmeasured, which is a guess wearing a number's clothes until somebody checks it.
   `--decision-mode shadow` is built to produce all three without changing a run, on
   `lerobot:mock` or on a real arm, and it is how this line stops being true. Until somebody runs
-  it, the break-even in [docs/decision-llms.md](docs/decision-llms.md) is arithmetic rather than
+  it, the break-even in [docs/decision-llms.md](docs/guides/decision-llms/README.md) is arithmetic rather than
   a result: the break-even there is a stepper answering in under 1.40 seconds, and below that
   it is a net loss.
 
 - ⬜ **Nobody has run the host daemon on a Jetson.** quackd no longer runs on the board. It
   reaches one from the laptop with `--host`, through `bridge/jetson/quackd_jetson_hostd.py`
-  ([docs/jetson.md](docs/jetson.md)). The daemon, the client, `quackd doctor --host`, the
+  ([docs/jetson.md](docs/guides/jetson.md)). The daemon, the client, `quackd doctor --host`, the
   board's camera and its detector were all exercised in-process against fakes: a board made of
   files, a fake ultralytics and torch, and a fake of the protocol on loopback. That proves
   quackd reads the protocol as written, and says nothing about a board. Unmeasured is everything
@@ -149,7 +149,7 @@ before.
   fifty hertz control loop alone, which on a humanoid is a fall if they do not. A ToddlerBot
   carries the only Jetson any of the seven bodies has, so that is where the last one gets
   answered. What to send back from a board is listed at the end of
-  [docs/jetson.md](docs/jetson.md#status).
+  [docs/jetson.md](docs/guides/jetson.md#status).
 
 - ⏸ **FLUX 3 Action has not run anywhere, and quackd does not serve it.** It needs a rented
   Linux machine with an NVIDIA GPU, about 32 GB of it in BF16 by Black Forest Labs' own report,
@@ -161,7 +161,7 @@ before.
   at a pinned revision drives the simulator end to end, on the generic arm or with the frame
   check accepted. Whatever it shows, passed or not, gets written down, and only a pass gives it
   refs of its own and a place in the server's list of policy types. Until then its page says
-  what running it takes and that nobody has ([docs/policies.md](docs/policies.md#flux-3-action)).
+  what running it takes and that nobody has ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
 - ⬜ **The stepper only shadows `manipulate`.** A `duck: 3` task file's instructions make it a
   choice, and the stepper is offered it and never takes it, in `--decision-mode on` as in
   shadow, because under `--yes` nobody is asked at its confirm gate
@@ -193,7 +193,7 @@ before.
   driving `microduck:sim2d`, answered this gate 54 times before the check in #24 and 54 times
   after. Before: 14 `infeasible`, 26 `uncertain`, 14 `feasible`, with a noise floor around 2 per
   six run cell ([@Vallhalen](https://github.com/Vallhalen), #24, written up in
-  [docs/local-llms.md](docs/local-llms.md#honest-notes)). It refuses a categorical `cannot`
+  [docs/local-llms.md](docs/guides/local-llms.md#honest-notes)). It refuses a categorical `cannot`
   reliably, it hedged on one, and the figure nobody published was the hole the check now covers:
   on the eight tasks the check never fired on, the verdicts moved by 1 to 2 either way, which is
   that floor rather than a result. That is one model, one quantisation, one simulated body and
@@ -266,7 +266,7 @@ before.
   runs are a chain, the note the first one saved is in the second one's `system_prompt`
   verbatim, and the memory counters move by exactly one note and one episode, so nothing ran
   between them. Both ends are in `docs/assets/transcripts/`, read in
-  [docs/local-llms.md](docs/local-llms.md). What is still open is Ollama, llama.cpp, a run on
+  [docs/local-llms.md](docs/guides/local-llms.md). What is still open is Ollama, llama.cpp, a run on
   this machine, and any task harder than the starter duck.
 - ✅ **Both nightly jobs are green, and 0.10.0 is what made them so.** Neither had ever
   passed a scheduled run: `microduck assets` red since 2026-09-09, `toddlerbot contract` since

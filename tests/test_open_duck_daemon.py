@@ -481,7 +481,7 @@ def test_the_documented_camera_setup_actually_has_a_camera(daemon: ModuleType, t
     """`expression_features.camera` says who owns the *device*, not whether quackd can see.
 
     quackd_duck_camd.py refuses to start while that flag is true, so install.sh and
-    docs/adapters/open_duck.md both tell the owner to set it false and let camd serve frames.
+    docs/adapters/open_duck/README.md both tell the owner to set it false and let camd serve frames.
     Reading the capability from the same flag meant that a duck configured exactly as
     documented reported no camera, dropped observe, go_to, search_scan and approach_and at
     connect, and refused both starter tasks — with no configuration anywhere that produced

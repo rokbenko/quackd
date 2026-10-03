@@ -1,5 +1,5 @@
 # EXPERIMENTAL: a pilot flock. One LLM pilot per body, any backend, wall-clock time, and
-# the members divide the work by talking to each other over the bus. See docs/flock.md.
+# the members divide the work by talking to each other over the bus. See docs/guides/flock.md.
 ---
 duck: 1
 name: flock-hello

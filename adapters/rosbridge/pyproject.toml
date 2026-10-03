@@ -20,7 +20,7 @@ rosbridge = "quackd_rosbridge"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/rosbridge.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/rosbridge/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_rosbridge/__init__.py"

@@ -7,15 +7,15 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 | Layer | Owner | What it guarantees |
 |---|---|---|
 | Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives joint and thermal clamps, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is quackd's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `quackd doctor` prints what the robot itself reported (see "On other bodies"). |
-| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the model has said, against the robot's datasheet, whether the task fits the body at all. It is the model's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([flock.md](flock.md)). |
+| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the model has said, against the robot's datasheet, whether the task fits the body at all. It is the model's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). |
 | Conversation | quackd `Executor` | The LLM and MCP clients can only do what the `.duck` allows, as often as the budget allows, with a human in the loop where the contract says so. |
 | Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a flock one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. |
 
 > [!NOTE]
 > **The optional discrete stepper changes none of this.** With `--decision-mode on`
-> ([decision-llms.md](decision-llms.md)) some turns are answered by a decision LLM instead of
-> the model, whichever one `--decision-llm` named and wherever it runs, and every
-> one of those calls goes through the same `Executor.run_verb` as every other, so the
+> ([guides/decision-llms/README.md](../guides/decision-llms/README.md)) some turns are answered by a
+> decision LLM instead of the model, whichever one `--decision-llm` named and wherever it runs, and
+> every one of those calls goes through the same `Executor.run_verb` as every other, so the
 > allowlist, the budgets, the confirm gates, the preconditions and the body's own safety
 > authority bind it exactly as they bind the model. Two things about it are structural rather
 > than enforced, which is stronger: it can never author a number, because a verb with a free
@@ -111,9 +111,9 @@ backend's own health call elsewhere, a liveness check in sim). One failure → `
 ## A detector on another machine
 
 With `--host`, the detections can come from YOLO on a Jetson rather than from this process
-([jetson.md](jetson.md)), and a board can stop answering in the middle of a run. That is never
-a reason to change detector. A call that fails gives that frame no detections, and the run
-keeps the detector it started with. The colour detector does not label the same things on a
+([guides/jetson.md](../guides/jetson.md)), and a board can stop answering in the middle of a run.
+That is never a reason to change detector. A call that fails gives that frame no detections, and the
+run keeps the detector it started with. The colour detector does not label the same things on a
 real camera, so a quiet switch would change what `go_to` steers at with nothing in the record
 saying so, and the header would name a detector the run had stopped using.
 
@@ -194,12 +194,12 @@ the doubt, because nobody did: it hears that the run was started to go ahead wit
 anybody, and, as after a person's go, that the verbs that move the body now run and it should
 not assess the same doubt again.
 Over MCP there is no terminal and nothing clears it, so the verdict stays pending and the
-model is told to ask the person it is chatting with ([mcp.md](mcp.md)).
+model is told to ask the person it is chatting with ([guides/mcp.md](../guides/mcp.md)).
 
 ## A pilot that cannot judge: `--controller vla`
 
 `quackd run --controller vla` flies a LeRobot arm with a scripted pilot that hands its learned
-policy one instruction at a time ([adapters/lerobot.md](adapters/lerobot.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+policy one instruction at a time ([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 Neither the script nor the policy can tell whether the task was done, so a person is its whole
 verdict, twice. Its answer to `assess_task` is always `uncertain`, so the question above is put
 before anything moves. After the last segment it asks whether the arm did it, and the run is a
@@ -270,7 +270,7 @@ declared: a pilot that never mentions the figure its plan hinges on passes exact
 before. And **it asks more of a pilot that answers fully**, which is the same fact from the
 other side. A duck asked to nudge a 60 g ball has no published payload to compare against, so
 a pilot that honestly writes `payload_kg: 0.06` is refused where one that writes nothing is
-not. That is refuse by default doing what [ADR-0032](adr/0032-datasheets-and-the-verdict.md)
+not. That is refuse by default doing what [ADR-0032](../adr/0032-datasheets-and-the-verdict.md)
 says it should, and the way to answer it once rather than every run is a `duck: 2`
 `datasheet:` block in the task file: a figure given there replaces the adapter's and is
 rendered as coming from you, so the pilot is comparing against a number somebody stands
@@ -309,7 +309,7 @@ port, `COM5` or `/dev/ttyACM0`, is refused on its shape before anything looks at
 Windows a port answers to its name in any directory. `quackd preflight`, which drives a robot
 through task file after task file and seed after seed with nobody watching, refuses any robot
 that is not a simulator before building it, so a typo cannot send a rehearsal to the arm
-([adapters/lerobot.md](adapters/lerobot.md#rehearsing-a-task-file-quackd-preflight)).
+([adapters/lerobot/README.md](../adapters/lerobot/README.md#rehearsing-a-task-file-quackd-preflight)).
 `quackd doctor` and `quackd robot release` say it is the simulator rather than asking you to
 support or hold an arm that is not there.
 
@@ -329,10 +329,10 @@ end of every one of those runs**, because LeRobot's `disconnect()` drops torque,
 whole reason the rest pose below exists. On 2026-09-23 the same arm ran 26 runs on quackd
 0.12.0, under a registered name with a rest pose recorded, and that afternoon is where the
 parking, release and verdict changes on this page come from. None of those changes has run on an
-arm yet. [lerobot-first-run.md](lerobot-first-run.md) is the account, including what the first
-day did not measure, and most of what this page would want to know is on that list: whether the
-holding band is right, what a joint reads after ten minutes of work, and whether a stall is
-caught on purpose rather than by luck. The other six bodies have not been on hardware at all.
+arm yet. [adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md) is the account, including
+what the first day did not measure, and most of what this page would want to know is on that list:
+whether the holding band is right, what a joint reads after ten minutes of work, and whether a stall
+is caught on purpose rather than by luck. The other six bodies have not been on hardware at all.
 
 If the body is a Microduck, run the contract in the physics simulator first
 (`--robot microduck:mujoco`): it is the only place quackd can show you a body that undershoots,
@@ -367,7 +367,7 @@ unless `--yes` says you are already holding the arm, and refuses with neither, a
 never made on a dry run, over MCP or in a flock. And never a verb or a tool. On 2026-09-23 the
 power switch was the only other way to put down an arm a run had left energised, and every run
 that got to its end that afternoon finished there
-([adapters/lerobot.md](adapters/lerobot.md#the-torque-rule)).
+([adapters/lerobot/README.md](../adapters/lerobot/README.md#the-torque-rule)).
 
 **If a run ends while the arm is still limp in your hands and no take-hold has been refused,
 quackd picks it up before it folds it.** That state takes a Ctrl-C during the placement wait or
@@ -417,7 +417,8 @@ write says nothing about what that write did.
   session ends as a heartbeat failure rather than an error.
 - Blocks under the wheels until you have checked the turn direction: quackd converts rad/s to
   the deg/s the wire wants, and a wrong conversion is a 57x error.
-- Work through [xlerobot-hardware-checklist.md](xlerobot-hardware-checklist.md).
+- Work through
+  [adapters/xlerobot/hardware-checklist.md](../adapters/xlerobot/hardware-checklist.md).
 
 **An AlohaMini (two arms on a 600 mm motorised lift):**
 
@@ -431,15 +432,17 @@ write says nothing about what that write did.
   connecting for exactly this reason.
 - Clear the lift's whole travel before powering it. How fast it moves in mm/s is not stated
   anywhere upstream, so quackd's duration estimate for `lift` is an assumption.
-- Work through [alohamini-hardware-checklist.md](alohamini-hardware-checklist.md).
+- Work through
+  [adapters/alohamini/hardware-checklist.md](../adapters/alohamini/hardware-checklist.md).
 
 **A ToddlerBot (a 56 cm, 3 kg humanoid):**
 
 - **It cannot get up.** There is no get-up policy for this body at the pinned commit, so
   a fall ends the run and needs a human. Every moving verb refuses once it is down.
-- **Work through [toddlerbot-hardware-checklist.md](toddlerbot-hardware-checklist.md) in
-  order.** It keeps the feet off the ground until step 13, and steps 11 and 12 (pull the
-  network cable mid-move, then send `SIGTERM`) are the two that matter most.
+- **Work through
+  [adapters/toddlerbot/hardware-checklist.md](../adapters/toddlerbot/hardware-checklist.md) in
+  order.** It keeps the feet off the ground until step 13, and steps 11 and 12 (pull the network
+  cable mid-move, then send `SIGTERM`) are the two that matter most.
 - **The deadman is a slew, not a stop.** There is no velocity at this hardware boundary:
   the command is an absolute pose. On silence the daemon quackd ships slews to the safe
   pose at upstream's own rate, waist first, and holds. It never goes limp, because on
@@ -448,8 +451,8 @@ write says nothing about what that write did.
   `step()` is a no-op, so nothing times out and nothing re-arms without the daemon.
 - **A model server or a detector on the same board competes with that loop.** This robot
   carries a Jetson, and quackd stays on your laptop, but the board can hold a model server and
-  quackd's host daemon beside quackd's ToddlerBot daemon ([jetson.md](jetson.md)). A model
-  server or a YOLO detector saturating the CPU and the memory bus is the load that starves a
+  quackd's host daemon beside quackd's ToddlerBot daemon ([guides/jetson.md](../guides/jetson.md)).
+  A model server or a YOLO detector saturating the CPU and the memory bus is the load that starves a
   fifty hertz loop, and here a starved loop is a fall. Nobody has measured that contention on
   any board: keep the robot on a stand the first time, watch `tegrastats` while a model answers
   and the detector runs, and consider pinning the model server off the cores the loop runs on.
@@ -486,7 +489,7 @@ write says nothing about what that write did.
   than the step cap, 50 degrees a second, whatever the time asked for; a joint that reads past
   its travel first rises to the edge of it at the servo's own speed, before any pacing starts.
   Keep the hand near the switch for the whole of a slow move, not only its start
-  ([adapters/lerobot.md](adapters/lerobot.md#the-manifest)).
+  ([adapters/lerobot/README.md](../adapters/lerobot/README.md#the-manifest)).
 - **`pick` and `manipulate` hand the whole arm to a learned policy** for one segment, `pick`
   for up to a minute and `manipulate` for 10 s unless a task file says otherwise, up to 60. Both
   are confirm-gated for that reason, a `--goal` run's `manipulate` included, so a person at a
@@ -518,12 +521,12 @@ write says nothing about what that write did.
   name code to import. `load_policy()` in the arm's backend, an older Python helper that nothing
   in quackd calls, still would, with none of the server's checks and no check at connect that
   what it built fits the arm (the `LOAD_POLICY` row in
-  [adapters/lerobot.md](adapters/lerobot.md#the-policies-upstream-lerobot-061)). The server's
-  answers move the arm, so it wants a token on every request and binds loopback unless a TLS
-  proxy stands in front of it, and the arm checks at connect, before any torque, that the policy
-  fits this arm's motors, cameras and calibrated travel, and that the latency its server
-  declares is one its chunks can carry ([policies.md](policies.md),
-  [SECURITY.md](../SECURITY.md)). A server that stops answering ends the segment with the arm
+  [adapters/lerobot/README.md](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+  The server's answers move the arm, so it wants a token on every request and binds loopback unless
+  a TLS proxy stands in front of it, and the arm checks at connect, before any torque, that the
+  policy fits this arm's motors, cameras and calibrated travel, and that the latency its server
+  declares is one its chunks can carry ([guides/policies.md](../guides/policies.md),
+  [SECURITY.md](../../SECURITY.md)). A server that stops answering ends the segment with the arm
   held, starved on the arm and on the client's own deadline on the simulator. What no bench has
   measured yet is how fast its loop runs on the real bus while the same laptop infers.
 - **`--accept-other-frame` changes what drives the arm, never where it may go.** Given beside
@@ -556,7 +559,7 @@ write says nothing about what that write did.
   old behaviour stands and the arm sags where it stopped, which is also what
   `quackd robot rest-pose <name> --clear` returns you to. An MCP session does the same at both
   ends and refuses to open at all if it cannot get there, because a client is about to drive a
-  body nobody has established the pose of ([mcp.md](mcp.md)).
+  body nobody has established the pose of ([guides/mcp.md](../guides/mcp.md)).
 - **A rest pose past the calibrated travel is parked at the edge of it.** A servo on this arm is
   never driven outside the travel its calibration recorded: LeRobot writes that travel into it
   as two limits, and it clamps every goal to them. A folded arm can still sit past them, because
@@ -569,8 +572,8 @@ write says nothing about what that write did.
   settle the rest of the way. Calibrate with every joint taken all the way into the fold, then
   record the pose, and the fold is inside the travel to begin with. A new calibration moves the
   zero of any joint whose travel it records differently, so record the pose again after one
-  ([adapters/lerobot.md](adapters/lerobot.md#a-pose-past-the-travel),
-  [ADR-0045](adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Whether a joint let go at
+  ([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-pose-past-the-travel),
+  [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Whether a joint let go at
   the edge settles onto its fold gently has not been watched on an arm yet, so watch the first
   one with a hand near it.
 - **An arm that did not reach that pose keeps torque instead of letting go.** quackd turns
@@ -614,7 +617,7 @@ write says nothing about what that write did.
   `quackd robot release <name>`, or cut its power.
 - A good first contract is the shipped `lerobot-lookout`, which moves no joint. The order to
   bring one up in, nothing moving until step 10:
-  [lerobot-hardware-checklist.md](lerobot-hardware-checklist.md).
+  [adapters/lerobot/hardware-checklist.md](../adapters/lerobot/hardware-checklist.md).
 
 **A wheeled base over rosbridge:**
 
@@ -655,7 +658,8 @@ write says nothing about what that write did.
 - A good first contract is the shipped `open-duck-lookout`: it looks and speaks, and moves no
   leg.
 - The order to bring one up in, feet off the ground until step 10, with an abort condition
-  at every step: [open-duck-hardware-checklist.md](open-duck-hardware-checklist.md).
+  at every step:
+  [adapters/open_duck/hardware-checklist.md](../adapters/open_duck/hardware-checklist.md).
 
 ## On other bodies
 
@@ -677,11 +681,11 @@ The verbs a body lacks are not gated, they do not exist: an arm cannot `move`, a
 cannot `say`, and `validate --robot` says so before a run starts.
 
 What each body can carry, reach and survive is its **datasheet**
-([manifest-spec.md](manifest-spec.md)): every number with how sure quackd is of it and who
-says so, and a figure the maker never published listed as not published rather than guessed
-at. The pilot is shown it and told to judge the task against it before anything moves, which
+([reference/manifest-spec.md](../reference/manifest-spec.md)): every number with how sure quackd is
+of it and who says so, and a figure the maker never published listed as not published rather than
+guessed at. The pilot is shown it and told to judge the task against it before anything moves, which
 is what `assess_task` is for, and a `.duck` file can correct it for the build in front of
-you ([ADR-0032](adr/0032-datasheets-and-the-verdict.md)).
+you ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
 
 ## What quackd does not protect against
 
@@ -696,8 +700,8 @@ and not a replacement for any. A wrong `infeasible` costs one run. A robot that 
 URDF that does not match the robot is believed, and that assumption is recorded as one.
 
 There is one more thing to know about. A robot's memory
-([memory.md](memory.md)) is text a model wrote, kept on disk, and handed to the *next*
-model as part of its system prompt. The executor never reads it, so a note cannot widen an
+([guides/memory.md](../guides/memory.md)) is text a model wrote, kept on disk, and handed to the
+*next* model as part of its system prompt. The executor never reads it, so a note cannot widen an
 allowlist, lift a budget or open a confirm gate: none of the guarantees above depend on it
 being true. What a note can do is persuade a later run, including a later run of a different
 task on the same body. A model that concludes something wrong ("the sofa is safe to walk
@@ -718,4 +722,4 @@ what somebody with a checkout usually wants. The state says which you got
 (`extras.model_pinned`), so the transcript records it. Nothing in this path reaches a robot: the
 physics backend has no address and drives nothing outside the process.
 
-Report anything that lets a model bypass the executor — see [`SECURITY.md`](../SECURITY.md).
+Report anything that lets a model bypass the executor — see [`SECURITY.md`](../../SECURITY.md).

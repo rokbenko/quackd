@@ -63,7 +63,7 @@ Read three things: that the handshake passed, what `robot.health` said, and the 
 
 > **Abort on an API version mismatch.** quackd refuses rather than guessing, and it prints
 > both numbers. quackd is written against the version in
-> [`docs/adapter-status.md`](adapter-status.md); a prototype can be ahead of public `main` as
+> [`docs/adapters/microduck/README.md`](README.md); a prototype can be ahead of public `main` as
 > easily as behind it. If they differ, read the robot's own `duck-ipc-proto` before going on —
 > the field shapes matter more than the number.
 
@@ -176,7 +176,7 @@ out of your simulator's.
 
 ## 10. Tell everyone
 
-`microduck:jsonrpc` is 🧪 in [`docs/adapter-status.md`](adapter-status.md) because nobody has
+`microduck:jsonrpc` is 🧪 in [`docs/adapters/status.md`](../status.md) because nobody has
 done this. What flips it is a `quackd doctor` output and `runs/<timestamp>-<name>/terminal.txt`,
 in an issue: that file is the whole session as plain text, opening with the command that
 started it and the version that ran it, so it is usually the one that answers what happened.
@@ -186,7 +186,7 @@ tried, not evidence.
 
 Read that first line before you paste it. The values of `--api-key` and `--token` are replaced
 there, and so is a password or a credential-named query parameter in `--base-url`, `--address`
-and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../SECURITY.md)).
+and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURITY.md)).
 
 What is most worth writing down, because it is what nobody can check without a duck:
 

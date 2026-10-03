@@ -9,7 +9,7 @@ Read on **2026-09-04**, pinned at
 [`3d14695`](https://github.com/Vector-Wangel/XLeRobot/tree/3d14695e40c9c68229c0aacffca6053c75cd3eb6)
 (`main`, 2026-07-22). The repository has **zero git tags and zero releases**, so a commit hash
 is the only honest pin there is. Every name quackd spells lives in
-[`adapters/xlerobot/src/quackd_xlerobot/upstream_api.py`](../../adapters/xlerobot/src/quackd_xlerobot/upstream_api.py).
+[`adapters/xlerobot/src/quackd_xlerobot/upstream_api.py`](../../../adapters/xlerobot/src/quackd_xlerobot/upstream_api.py).
 
 **Nothing here has ever run on a cart.** The `zmq` backend is exercised against a fake host
 over loopback sockets and against nothing else.
@@ -62,7 +62,7 @@ API needs; this one has one.
 - **Cartesian reach, `pick`, `place`.** There is no inverse kinematics on the robot class and no
   policy ships with it.
 
-Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([manifest-spec.md](../manifest-spec.md)):
+Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
 | | |
 |---|---|
@@ -81,7 +81,7 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
 - move fast, catch, or manipulate a thing in one hand: no dynamic motion and no in-hand dexterity, in the maintainer's words
 - go up or down a step: it is a 12 kg cart on three omniwheels
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([duck-spec.md](../duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
 ## The manifest
 
@@ -115,8 +115,9 @@ not a `robotd_deadman`, so `native` stays `none` and `extras.deadman_scope` says
   converts in both directions. A pass-through would be a 57× error on a 12 kg cart.
 - **Arm positions are normalised, not degrees.** `use_degrees` defaults to `False`, so a body
   joint is −100..100 and a gripper is 0..100. This is a *different contract* from the SO-101
-  arm in [lerobot.md](lerobot.md), which sets degrees: the same number means a different angle,
-  so `move_joints` here validates against `joint_norm` and never against `joint_deg`.
+  arm in [adapters/lerobot/README.md](../lerobot/README.md), which sets degrees: the same number
+  means a different angle, so `move_joints` here validates against `joint_norm` and never against
+  `joint_deg`.
 - `x.vel` and `y.vel` are m/s and pass through unchanged. `+x` is forward, `+y` is left.
 
 ## Cameras
@@ -233,7 +234,7 @@ port can drive the robot. Bind it to loopback and reach it through an ssh tunnel
 ## How to help
 
 If you have built an XLeRobot, the useful thing is a first run. Work through
-[xlerobot-hardware-checklist.md](../xlerobot-hardware-checklist.md) in order: it keeps the
+[adapters/xlerobot/hardware-checklist.md](hardware-checklist.md) in order: it keeps the
 wheels on blocks until step 9, and the first thing it asks for is `quackd doctor --address`,
 which connects, rather than `list-verbs`, which does not.
 

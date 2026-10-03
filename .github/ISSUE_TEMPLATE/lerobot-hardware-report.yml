@@ -13,7 +13,7 @@ body:
         most of its runs never moved the arm. What quackd changed after it has not met an arm
         yet, so on a policy, a rest pose that parks and a release, yours is still the first.
 
-        Please follow [docs/lerobot-hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/lerobot-hardware-checklist.md)
+        Please follow [docs/adapters/lerobot/hardware-checklist.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot/hardware-checklist.md)
         first. It is ordered so that nothing moves until step 10, because this arm has no
         e-stop and LeRobot caps the torque of the gripper and of no other joint.
   - type: input

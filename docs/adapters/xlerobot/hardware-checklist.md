@@ -5,7 +5,7 @@ each step can only fail in a way you can recover from. **Wheels on blocks until 
 
 This is a 12 kg cart with two arms and no brakes. The power station's switch is the only
 e-stop, and nothing reports a battery, so no run will ever abort on a flat one. Read
-[adapters/xlerobot.md](adapters/xlerobot.md) first.
+[adapters/xlerobot/README.md](README.md) first.
 
 ## Before you power anything
 
@@ -69,7 +69,7 @@ script that ignores it.
     `xlerobot-lookout` refuses before a verb runs. To change that you must edit the config,
     and the shipped one points `right_wrist` and `head` at the same `/dev/video2`.
 12. Enabling a camera makes the whole robot depend on it — see
-    [adapters/xlerobot.md](adapters/xlerobot.md#enabling-a-camera-makes-the-whole-robot-depend-on-it),
+    [adapters/xlerobot/README.md](README.md#enabling-a-camera-makes-the-whole-robot-depend-on-it),
     which is the failure that looks exactly like a dead host. If red and blue come out
     swapped, add `?swap_colour=0` to the address.
 
@@ -90,4 +90,4 @@ Read that first line before you paste it. The values of `--api-key` and `--token
 there, and so is a password or a credential-named query parameter in `--base-url`, `--address`
 and `--camera-url`. A query parameter named for something else survives, so the
 `?swap_colour=0` from step 12 comes back as you typed it. Nothing else on the screen is
-([SECURITY.md](../SECURITY.md)).
+([SECURITY.md](../../../SECURITY.md)).

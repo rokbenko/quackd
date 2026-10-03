@@ -1,6 +1,6 @@
 # ADR-0026: XLeRobot: quackd speaks the wire, because there is no package to import
 
-**Status:** accepted · **Date:** 2026-09-04 · Extends ADR-0017, ADR-0022 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/xlerobot.md))
+**Status:** accepted · **Date:** 2026-09-04 · Extends ADR-0017, ADR-0022 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/xlerobot/README.md))
 
 ## Context
 

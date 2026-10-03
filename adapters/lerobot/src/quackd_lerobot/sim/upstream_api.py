@@ -1,9 +1,9 @@
 """The only file in quackd allowed to spell an SO-ARM100 name (ADR-0022).
 
 Every constant is tagged VERIFIED (read from an upstream file at the pin, link given) or
-UNVERIFIED (an assumption of ours, with what quackd does about it). `docs/adapters/lerobot.md`
-is the human-readable version; `tests/test_upstream_api.py` proves UNVERIFIED names are only
-reachable from the simulator's own files.
+UNVERIFIED (an assumption of ours, with what quackd does about it).
+`docs/adapters/lerobot/README.md` is the human-readable version; `tests/test_upstream_api.py` proves
+UNVERIFIED names are only reachable from the simulator's own files.
 
 The upstream is https://github.com/TheRobotStudio/SO-ARM100, the SO-101's maker's own
 repository, at commit 5f6d2b876a53a4872e405b991dd925556c9e38a4 (`main`, 2026-09-23; read

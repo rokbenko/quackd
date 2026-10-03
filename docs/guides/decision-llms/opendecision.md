@@ -4,7 +4,7 @@ OpenDecision, self-hosted: a zero-shot encoder that runs without a GPU. It is
 [deepanwadhwa/OpenDecision](https://github.com/deepanwadhwa/OpenDecision), Apache-2.0, read at
 `main` on 2026-09-22 against the `0.1.1` release uploaded to PyPI on 2026-09-20, which its own
 README calls a developer preview. Every name quackd spells for it lives in its row in
-[`catalogue.py`](../../quackd/agent/decision/catalogue.py): a decision LLM has no
+[`catalogue.py`](../../../quackd/agent/decision/catalogue.py): a decision LLM has no
 `upstream_api.py`, because there is nothing here to import, only a port to post to.
 
 **Nothing here has ever answered a real robot.**
@@ -30,7 +30,7 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm opendecision --dec
 | `extra` | `decision`, installed as `quackd[decision]` |
 | `sdk` | `typesafe_sdk`, the import whose presence says whether that extra is here |
 
-That is `PRESETS["opendecision"]` in [`catalogue.py`](../../quackd/agent/decision/catalogue.py),
+That is `PRESETS["opendecision"]` in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py),
 and a test reads the address, the model id, the key, the install line and the extra back off
 this page. `--decision-url` overrides the address;
 `--decision-llm opendecision:<id>` the model id.
@@ -50,7 +50,7 @@ own. Nobody publishes a latency for it, its README included.
 - **Its confidence is its own function.** `_distribution_confidence()` is `1 - (entropy /
   max_entropy)` over the distribution it returns, and its source says the definition is
   OpenDecision's rather than TypeSafe's, while quackd's floors are two of TypeSafe's numbers
-  for Jev ([How a turn is decided](../decision-llms.md#how-a-turn-is-decided)).
+  for Jev ([How a turn is decided](README.md#how-a-turn-is-decided)).
 - **A choice is not one forward pass**: two compiler passes plus an adjudicator when they
   disagree, and questions answered serially, so quackd's four-question turn is 6 to 8 passes
   against a 1.0 s timeout.
@@ -100,8 +100,8 @@ row as `missing (quackd[decision])`, `none needed` for the key, `opendecision` f
 ## How to help
 
 Run it in shadow mode on your own bench ([Measuring it
-yourself](../decision-llms.md#measuring-it-yourself)) and report the agreement rate, the latency
+yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 and the answers that surprised you, and say which interface and port you served it on: loopback
 and `0.0.0.0` are two different claims. A floor moves on a calibration curve ([How a turn is
-decided](../decision-llms.md#how-a-turn-is-decided)), and [CONTRIBUTING.md](../../CONTRIBUTING.md)
+decided](README.md#how-a-turn-is-decided)), and [CONTRIBUTING.md](../../../CONTRIBUTING.md)
 says where.

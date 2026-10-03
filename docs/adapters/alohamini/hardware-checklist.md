@@ -8,7 +8,7 @@ ships it, the arms are limp.** `configure()` disables torque on both arm buses a
 `enable_torque()` calls are commented out. So a stock host is the safest thing to bring up
 first, because the arms cannot hold, drop or pinch anything. quackd's own host wrapper is
 what switches torque on, and that is when the arms become a thing to think about. Read
-[adapters/alohamini.md](adapters/alohamini.md) first.
+[adapters/alohamini/README.md](README.md) first.
 
 ## Before you power anything
 
@@ -78,4 +78,4 @@ record is the chat itself.
 
 Read that first line before you paste it. The values of `--api-key` and `--token` are replaced
 there, and so is a password or a credential-named query parameter in `--base-url`, `--address`
-and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../SECURITY.md)).
+and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURITY.md)).

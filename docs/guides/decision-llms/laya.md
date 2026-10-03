@@ -5,7 +5,7 @@ Laya, in this process: an encoder off Hugging Face, no server and no key. Made b
 2026-09-22 against 0.3.5 on PyPI (fifteen releases, 0.1.0 through 0.3.5). It is the row that is
 not a server, and the proof that this seam is a protocol and not an HTTP call: the same four
 questions reach it unchanged and there is nowhere to send them. Every name quackd spells for it
-lives in its row in [`catalogue.py`](../../quackd/agent/decision/catalogue.py), a decision LLM
+lives in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py), a decision LLM
 having no `upstream_api.py`.
 
 **Nothing here has ever answered a real robot.**
@@ -30,7 +30,7 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm laya --decision-mo
 | `extra` | `laya`, so `quackd[laya]` |
 | `sdk` | `laya`, the import name that says whether the extra is here |
 
-That is `PRESETS["laya"]` in [`catalogue.py`](../../quackd/agent/decision/catalogue.py), and a
+That is `PRESETS["laya"]` in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py), and a
 test reads the url, the model, the key, the install line and the extra back off this page.
 `--decision-url` overrides the address, which here overrides nothing because there is none to
 move, while `--decision-llm laya:multilingual` overrides the model id.
@@ -75,7 +75,7 @@ and up.
   confidence at all. quackd's floors are two of TypeSafe's numbers with two of its own between
   them, all four shaped around Jev, while this one computes confidence by its own formula, so
   anybody tuning one from these numbers needs to know the two are not comparable: [how a turn
-  is decided](../decision-llms.md#how-a-turn-is-decided).
+  is decided](README.md#how-a-turn-is-decided).
 - **A wide allowlist can raise rather than answer.** `head_max_len` is 192 tokens and each option
   is truncated to 48, the state getting what is left; options that do not fit make `system_one`
   raise `ValueError("question %r options exceed head_max_len=%d")`, which quackd records as `gate:
@@ -128,10 +128,10 @@ the key, `typed-decisions` for the model and `in this process` where every other
 ## How to help
 
 Run it in shadow mode on your own bench and report what came back: [measuring it
-yourself](../decision-llms.md#measuring-it-yourself) has the commands. The numbers worth sending
+yourself](README.md#measuring-it-yourself) has the commands. The numbers worth sending
 are the agreement rate against what the model chose, the latency per turn on the hardware you ran
 it on, and the answers that surprised you. Say which checkpoint you asked for, whether it ran on
 `cuda`, `mps` or `cpu`, and whether a turn came back as `gate: error` with the `head_max_len`
 message, which is a function of how many calls your body put on offer. If a floor looks wrong,
-[how a turn is decided](../decision-llms.md#how-a-turn-is-decided) has them, and a shadow record
+[how a turn is decided](README.md#how-a-turn-is-decided) has them, and a shadow record
 moves one.

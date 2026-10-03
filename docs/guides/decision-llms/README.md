@@ -2,20 +2,19 @@
 
 quackd asks one question a turn -- *which single tool call now* -- and pays a frontier model's
 full latency for it whether the answer is `report_state` or a six-joint pose. On the SO-101 run at
-the top of [README.md](../README.md) that is **62.1 seconds of a 78.8 second run** spent waiting
-on the model, against 12.2 seconds of the arm actually moving.
+the top of [README.md](../../../README.md) that is **62.1 seconds of a 78.8 second run** spent
+waiting on the model, against 12.2 seconds of the arm actually moving.
 
 Some of those turns are not writing. They are choosing.
 
 A **decision LLM** is what answers those. You send it a named state and typed questions, and it
 answers with a value and a probability distribution. No text generation, no parsing, nothing to
 coerce into JSON. [TypeSafe's **Jev**](https://docs.typesafe.ai/introduction) was the first and
-gave the wire format its name -- *System One* -- and there are several now:
-**[Kev](decision-llms/kev.md)**, **[Von](decision-llms/von.md)**,
-**[OpenJev](decision-llms/openjev.md)** and **[OpenDecision](decision-llms/opendecision.md)** are
-servers you run yourself, **[Laya](decision-llms/laya.md)** loads into this process, and anything
+gave the wire format its name -- *System One* -- and there are several now: **[Kev](kev.md)**,
+**[Von](von.md)**, **[OpenJev](openjev.md)** and **[OpenDecision](opendecision.md)** are
+servers you run yourself, **[Laya](laya.md)** loads into this process, and anything
 else that speaks the same `POST /v1/systemone` is reached with `--decision-url`
-([local](decision-llms/local.md)). quackd treats them as one seam with a row of data in front of
+([local](local.md)). quackd treats them as one seam with a row of data in front of
 it, so most of this page is about the half that does not change with the vendor.
 
 **A decision LLM is not another LLM, and it is not a smaller one.** That is the whole point of it,
@@ -54,16 +53,14 @@ decision LLM, needs no key for one, and never switches this on because it found 
 > **Nobody has run any of this against a real robot.** Every decision LLM on this page has been
 > exercised against the mock arm, the simulators and the test suite with a fake standing in for
 > the server, and not one of them has driven hardware. That is the same standing as the rest pose
-> and `--by-hand` ([README](../README.md#which-robots-work)).
+> and `--by-hand` ([README](../../../README.md#which-robots-work)).
 
 **Contents**
 
 - [What it is, and what it is not](#what-it-is-and-what-it-is-not)
 - [The ones quackd names](#the-ones-quackd-names)
-  * A page each: [jev](decision-llms/jev.md) · [kev](decision-llms/kev.md) ·
-    [von](decision-llms/von.md) · [openjev](decision-llms/openjev.md) ·
-    [opendecision](decision-llms/opendecision.md) · [local](decision-llms/local.md) ·
-    [laya](decision-llms/laya.md)
+  * A page each: [jev](jev.md) · [kev](kev.md) · [von](von.md) · [openjev](openjev.md) ·
+    [opendecision](opendecision.md) · [local](local.md) · [laya](laya.md)
 - [What is not covered, and why](#what-is-not-covered-and-why)
 - [Install and switch on](#install-and-switch-on)
 - [The SO-101 arm, in four parts](#the-so-101-arm-in-four-parts)
@@ -104,20 +101,20 @@ other, and a run that names no decision LLM is quackd exactly as it has always b
 ## The ones quackd names
 
 Every row below is data in
-[`quackd/agent/decision/catalogue.py`](../quackd/agent/decision/catalogue.py) and nothing else --
-a name, a summary, an install line, an address, a model id, a key variable and a rate. Adding a
+[`quackd/agent/decision/catalogue.py`](../../../quackd/agent/decision/catalogue.py) and nothing else
+-- a name, a summary, an install line, an address, a model id, a key variable and a rate. Adding a
 wire-compatible server is one row, one page and no code, which is why the escape hatch near the
 bottom of the table exists for the ones quackd has never heard of.
 
 | Name | Who makes it | Where it runs | How you get it running | Key | Default URL | Default model | Page |
 |---|---|---|---|---|---|---|---|
-| `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.13.0` | [jev](decision-llms/jev.md) |
-| `kev` | [jaredpalmer/kev](https://github.com/jaredpalmer/kev) | your own GPU | `git clone https://github.com/jaredpalmer/kev && cd kev && uv sync --extra serve && KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009` | none needed | `http://127.0.0.1:8009` | `kev-latest` | [kev](decision-llms/kev.md) |
-| `von` | `von-sdk` on PyPI | your own machine, CPU included | `pip install von-sdk && von serve --host 127.0.0.1 --port 8000` | none needed | `http://127.0.0.1:8000` | `von-latest` | [von](decision-llms/von.md) |
-| `openjev` | `razorback16/openjev` | your own GPU, or MLX on Apple silicon | `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.3.0`, or `OPENJEV_BACKEND=mlx python -m openjev` on Apple silicon | none needed | `http://127.0.0.1:8080` | `openjev-latest` | [openjev](decision-llms/openjev.md) |
-| `opendecision` | `OpenDecision` on PyPI | your own machine, no GPU needed | `pip install OpenDecision && opendecision serve` | none needed | `http://127.0.0.1:8000` | `opendecision` | [opendecision](decision-llms/opendecision.md) |
-| `local` | whoever wrote your server | wherever you put it | `--decision-url http://host:port (or QUACKD_DECISION_URL)` | none needed | you have to say | the server names its own | [local](decision-llms/local.md) |
-| `laya` | an encoder off Hugging Face | **in this process**, no server at all | `uv pip install "quackd[laya]"`, which pulls torch. Its weights download on first use | none needed | none at all | `typed-decisions` | [laya](decision-llms/laya.md) |
+| `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.13.0` | [jev](jev.md) |
+| `kev` | [jaredpalmer/kev](https://github.com/jaredpalmer/kev) | your own GPU | `git clone https://github.com/jaredpalmer/kev && cd kev && uv sync --extra serve && KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009` | none needed | `http://127.0.0.1:8009` | `kev-latest` | [kev](kev.md) |
+| `von` | `von-sdk` on PyPI | your own machine, CPU included | `pip install von-sdk && von serve --host 127.0.0.1 --port 8000` | none needed | `http://127.0.0.1:8000` | `von-latest` | [von](von.md) |
+| `openjev` | `razorback16/openjev` | your own GPU, or MLX on Apple silicon | `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.3.0`, or `OPENJEV_BACKEND=mlx python -m openjev` on Apple silicon | none needed | `http://127.0.0.1:8080` | `openjev-latest` | [openjev](openjev.md) |
+| `opendecision` | `OpenDecision` on PyPI | your own machine, no GPU needed | `pip install OpenDecision && opendecision serve` | none needed | `http://127.0.0.1:8000` | `opendecision` | [opendecision](opendecision.md) |
+| `local` | whoever wrote your server | wherever you put it | `--decision-url http://host:port (or QUACKD_DECISION_URL)` | none needed | you have to say | the server names its own | [local](local.md) |
+| `laya` | an encoder off Hugging Face | **in this process**, no server at all | `uv pip install "quackd[laya]"`, which pulls torch. Its weights download on first use | none needed | none at all | `typed-decisions` | [laya](laya.md) |
 
 **How you get it running** is a command you can paste on five of the seven rows, and the catalogue
 row holds exactly that command with nothing else inside it: where a cell here adds a clause, as
@@ -131,7 +128,7 @@ Two more columns are worth reading twice. **Key** is `none needed` on every row 
 one, and that is structural rather than a convenience: a server you run yourself is sent the
 literal word `local` in the key field, so a `TYPESAFE_API_KEY` sitting in the same `.env` is never
 posted to a port on your own machine. **Default model** is per row rather than shared, and
-[openjev](decision-llms/openjev.md) is what happens to anyone who assumes otherwise: its accepted
+[openjev](openjev.md) is what happens to anyone who assumes otherwise: its accepted
 ids are a closed set, and a pinned Jev version is refused with a 400 on every request.
 
 Six of the seven rows speak the same wire format over the same client, which is why a server
@@ -173,18 +170,18 @@ discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name 
 |              | (quackd[laya])     |                    |                    |                   |
 +-------------------------------------------------------------------------------------------------+
 One of these answers the turns that are a choice among calls this body can make. Every pose, every
-sentence and every verdict is still the model's (docs/decision-llms.md).
+sentence and every verdict is still the model's (docs/guides/decision-llms/README.md).
 ```
 
 > [!NOTE]
-> **None of the install or serve commands on the pages under `docs/decision-llms/` has been run
-> here.** They are transcribed from each project's own README and source, read on 2026-09-22, and
-> each page marks the lines it could not run. No output is pasted for any of them, because
+> **None of the install or serve commands on the pages under `docs/guides/decision-llms/` has been
+> run here.** They are transcribed from each project's own README and source, read on 2026-09-22,
+> and each page marks the lines it could not run. No output is pasted for any of them, because
 > inventing a line a server printed would be the one kind of mistake these pages cannot afford.
 > The `quackd` commands on this page were run, and say so where it matters.
 
-Each row has a page under [`docs/decision-llms/`](decision-llms/), in the shape of the robot pages
-under [`docs/adapters/`](adapters/): the row it has to agree with, what was read from that
+Each row has a page under [`docs/guides/decision-llms/`](./), in the shape of the robot pages
+under [`docs/adapters/`](../../adapters/): the row it has to agree with, what was read from that
 project's README and source and on what date, what quackd assumes about it and what it does about
 each assumption, and the word *never* until one of them has answered a real robot. The **Page**
 column is the way in, and a test reads every row back off its page.
@@ -209,7 +206,7 @@ into. A row for it would be a second transport, not a second address.
 **Ollama** runs chat models. None of the architectures above runs in it, and its OpenAI-compatible
 endpoint drops logprobs, so even the closest thing you could build -- a small chat model scored by
 token probability -- has nothing to read the probability off. Ollama is excellent at the other
-seam: `--llm ollama:llama3.2` is a pilot, and that is [local-llms.md](local-llms.md).
+seam: `--llm ollama:llama3.2` is a pilot, and that is [guides/local-llms.md](../local-llms.md).
 
 **A plain LLM behind a System One adapter** is the one people ask about most, and the one with the
 sharpest objection. You can absolutely prompt a model for a label and a number between 0 and 1,
@@ -305,15 +302,15 @@ to be explained and where it has to be right.
 | **A segment** | `manipulate`, when a task file lists its instructions² | one per instruction | **always the model**, with the stepper's answer recorded beside it |
 
 ¹ `observe` is in the manifest only when a camera is configured, which is why
-[`lerobot-lookout`](../ducks/lerobot-lookout.duck) leaves it out.
+[`lerobot-lookout`](../../../ducks/lerobot-lookout.duck) leaves it out.
 
 ² With no list its instruction is a free string, a sentence, and it is not offered at all. A v3
-task file's `policy.instructions` ([duck-spec.md](duck-spec.md#policy-v3)) make it a closed set,
-one call per instruction, and which subtask to hand the policy next is then exactly the choice a
-decision LLM might one day make between segments. It is offered and never taken, under
-`--decision-mode on` too: it answers to the confirm floor, and under `--yes` nobody is asked at
-the confirm gate, so a stepper that cleared the floor would start a learned policy driving the
-arm with no person and no model involved. An answer that clears every gate a taken one clears is
+task file's `policy.instructions` ([reference/duck-spec.md](../../reference/duck-spec.md#policy-v3))
+make it a closed set, one call per instruction, and which subtask to hand the policy next is then
+exactly the choice a decision LLM might one day make between segments. It is offered and never
+taken, under `--decision-mode on` too: it answers to the confirm floor, and under `--yes` nobody is
+asked at the confirm gate, so a stepper that cleared the floor would start a learned policy driving
+the arm with no person and no model involved. An answer that clears every gate a taken one clears is
 recorded with `gate: shadow_only`, the model takes the turn, and the two answers are recorded
 side by side (`decision_shadow`), which is the agreement rate a decision to promote it would need.
 
@@ -352,7 +349,7 @@ and how much cheaper](#how-much-faster-and-how-much-cheaper).
 
 ### 3. Where the arm does hand over: the grip check
 
-[`ducks/arm-grip-check.duck`](../ducks/arm-grip-check.duck) is the same arm and the opposite
+[`ducks/arm-grip-check.duck`](../../../ducks/arm-grip-check.duck) is the same arm and the opposite
 shape: read the state, shut the gripper, read it again, release, stop. Every turn is a choice, and
 nothing in it authors an angle, because `move_joints` is deliberately not in its allowlist.
 
@@ -367,7 +364,7 @@ its calibrated travel. On an arm whose rest pose was recorded folded past that t
 `arm-01`'s `shoulder_lift` was on 2026-09-23, lift the arm clear of the fold before you press
 Enter, not only the gripper. Press it over the fold and the take-hold is refused: torque stays
 off, nothing moves the arm, and the run ends naming the joint to lift inside its travel
-([adapters/lerobot.md](adapters/lerobot.md#placing-it-by-hand)).
+([adapters/lerobot/README.md](../../adapters/lerobot/README.md#placing-it-by-hand)).
 
 Here is a run of it on the mock arm, with a fake standing in for the server, trimmed to the lines
 that matter. (Replayed from a recorded transcript and relabelled to what today's code prints. Not
@@ -414,7 +411,7 @@ Five things in that are worth reading twice.
 ### 4. The other six bodies
 
 The same loop and the same rule, with no per-body code anywhere.
-[`microduck-lookout`](../ducks/microduck-lookout.duck) is the most discrete task quackd ships:
+[`microduck-lookout`](../../../ducks/microduck-lookout.duck) is the most discrete task quackd ships:
 `gaze` in five directions, `observe`, `report_state`, `quack` and `stop` are all choices, and only
 `say` is not, because it needs a sentence. `open-duck-lookout` is the identical allowlist on an
 Open Duck Mini.
@@ -438,23 +435,23 @@ broken, and the log says `not_offered` for it without a request being made at al
 ### The inputs, and where each one comes from
 
 Two of these are TypeSafe's own figures for Jev, and what they do and do not support is on [its
-page](decision-llms/jev.md). The short version is that their headline pair disagrees with their
+page](jev.md). The short version is that their headline pair disagrees with their
 own worked example, so what is used here is the underlying numbers rather than the multiple.
 Nothing in this repository repeats a vendor's multiple as a quackd measurement, and no other row
 on that table publishes a latency or a rate at all.
 
 | Figure | Source |
 |---|---|
-| **0.114 s** per call | [typesafe.ai](https://typesafe.ai/), their worked example ([jev](decision-llms/jev.md)) |
-| **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](decision-llms/jev.md)) |
+| **0.114 s** per call | [typesafe.ai](https://typesafe.ai/), their worked example ([jev](jev.md)) |
+| **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](jev.md)) |
 | **238x lower input price** than a frontier model | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
-| **$0** per question on every other row | a server you run bills you in electricity ([pricing](../quackd/agent/providers/pricing.py)) |
+| **$0** per question on every other row | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
 
 And what quackd brings to it, all measured:
 
 | Figure | Source |
 |---|---|
-| **6.21 s** mean model call | the wave run: 62.1 s over 10 calls ([README](../README.md#what-happened-in-that-run)) |
+| **6.21 s** mean model call | the wave run: 62.1 s over 10 calls ([README](../../../README.md#what-happened-in-that-run)) |
 | **49,096** input tokens over those 10 calls | the same run |
 | **527 tokens** per decision request on this arm | measured by hand before the estimator existed: 388 characters of state plus 1,721 of questions, on `lerobot:mock`. The shipped estimator counts the questions at 1,299 characters on that arm before the verdict clears and 1,454 after, because the criteria are one line per verb on offer, so it prints 421 and 460 where this row says 527 |
 
@@ -620,8 +617,8 @@ says which is which because a number nobody published is a number nobody has cal
 **Why `assess_task` stays the model's.** `feasible|infeasible|uncertain` is a textbook Choice, and
 the stepper is asked it on every turn -- but its answer is only recorded, never acted on. The
 verdict tool needs a written `reason`, which no decision LLM writes, and it needs `needs`, which
-[`own_sheet_objection`](../quackd/verdict.py) reads to refuse a `feasible` verdict that names a
-figure the datasheet does not publish. A verdict with an empty `needs` would pass that guard
+[`own_sheet_objection`](../../../quackd/verdict.py) reads to refuse a `feasible` verdict that names
+a figure the datasheet does not publish. A verdict with an empty `needs` would pass that guard
 trivially and silently disable it. And when a pilot answers `uncertain`, quackd puts its reason to
 the person in the room; an empty question is not a question. Recording the Choice beside the
 model's real verdict is the cheapest way to find out whether a future version should check the
@@ -655,7 +652,7 @@ all of them cost that turn and none of them costs the run.
 ## What the record says
 
 Two kinds in `transcript.jsonl`, both described in
-[architecture.md](architecture.md#transcript-format).
+[concepts/architecture.md](../../concepts/architecture.md#transcript-format).
 
 `decision`, one per turn the stepper was asked, **identical in both modes** so the rows can be
 read against each other: the labels it was offered, the one it chose, the whole probability
@@ -841,8 +838,8 @@ Then `--decision-llm mydecider` reaches it, `--decision-llm mydecider:some-id` n
 and `--decision-url` overrides your `URL`. A built-in name always wins over a plugin that took it,
 so a package called `jev` cannot quietly become the thing `--decision-llm jev` reaches.
 
-The protocol is in [`quackd/agent/decision/base.py`](../quackd/agent/decision/base.py) and it is
-three attributes and one method:
+The protocol is in [`quackd/agent/decision/base.py`](../../../quackd/agent/decision/base.py) and it
+is three attributes and one method:
 
 | | |
 |---|---|
@@ -860,9 +857,9 @@ run an estimate rather than an error.
 Raising is allowed and is not fatal. `Stepper.advise` catches everything, records the turn as
 `gate: error`, and hands it to the model. A plugin may never end a run.
 
-[`tests/stub_decision_llm.py`](../tests/stub_decision_llm.py) is the whole contract as a working
-module, and it is short on purpose. It is what the entry-point test loads, and it is the shortest
-honest answer to "what do I have to write".
+[`tests/stub_decision_llm.py`](../../../tests/stub_decision_llm.py) is the whole contract as a
+working module, and it is short on purpose. It is what the entry-point test loads, and it is the
+shortest honest answer to "what do I have to write".
 
 ## Configuration
 
@@ -915,7 +912,7 @@ in front of.
   one would be worth measuring before trusting.
 - **Not the fast loops.** The steering loop runs at 10 Hz and the robot's own controllers faster
   than that. This sits in the slow loop, beside the model, and nothing about it changes what stops
-  a body ([safety.md](safety.md)).
+  a body ([concepts/safety.md](../../concepts/safety.md)).
 - **Confidence is calibrated over groups, not promised per answer.** A 0.93 is not a promise about
   that one answer; it is a statement about how a population of 0.93s behaves -- and it is a
   statement about the population *that backend* produces, which is why the floors are a starting
@@ -938,11 +935,10 @@ fan-out](https://docs.typesafe.ai/patterns/fan-out) · [confidence-gated
 routing](https://docs.typesafe.ai/patterns/confidence-routing) · [the smart-home
 demo](https://docs.typesafe.ai/demos/smart-home)
 
-The open ones, each with a page here: [kev](decision-llms/kev.md) · [von](decision-llms/von.md) ·
-[openjev](decision-llms/openjev.md) · [opendecision](decision-llms/opendecision.md) ·
-[laya](decision-llms/laya.md), and [TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf) (and why
-it is not a row, above)
+The open ones, each with a page here: [kev](kev.md) · [von](von.md) · [openjev](openjev.md) ·
+[opendecision](opendecision.md) · [laya](laya.md), and
+[TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf) (and why it is not a row, above)
 
-quackd: [architecture](architecture.md) · [safety](safety.md) · [local LLMs](local-llms.md) · [the
-LeRobot arm](adapters/lerobot.md) ·
-[ADR-0040](adr/0040-a-discrete-stepper-in-front-of-the-model.md)
+quackd: [architecture](../../concepts/architecture.md) · [safety](../../concepts/safety.md) ·
+[local LLMs](../local-llms.md) · [the LeRobot arm](../../adapters/lerobot/README.md) ·
+[ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-model.md)

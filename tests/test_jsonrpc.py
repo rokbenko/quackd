@@ -449,8 +449,8 @@ async def test_quackd_never_sends_the_two_methods_that_move_or_drop_every_joint(
 ) -> None:
     """`robot.init` moves every joint and `robot.relax` collapses the robot.
 
-    docs/adapter-status.md promises neither is ever sent. Nothing asserted it, and both names
-    are one typo away from `robot.enable` in the same match statement.
+    docs/adapters/microduck/README.md promises neither is ever sent. Nothing asserted it, and both
+    names are one typo away from `robot.enable` in the same match statement.
     """
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()

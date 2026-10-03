@@ -11,8 +11,8 @@ The model is core and the robots are not. Each adapter is its own package under 
 imported as `quackd_<name>` and installed by its own extra, and it reaches this file the way
 anyone would: `from quackd.adapters.manifest import RobotManifest`. No module in the core
 imports an adapter by name, which is why an adapter quackd does not publish declares its
-manifest on exactly the same terms ([architecture.md](architecture.md),
-[adapters.md](adapters.md)).
+manifest on exactly the same terms ([concepts/architecture.md](../concepts/architecture.md),
+[adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md)).
 
 ## Fields
 
@@ -64,7 +64,7 @@ that has it), `description` (LLM-facing; empty means the implementation's defaul
 ## The datasheet
 
 The body as numbers, so a pilot can refuse a task before anything moves
-([ADR-0032](adr/0032-datasheets-and-the-verdict.md)). Each number is a `Figure`: a `value`,
+([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)). Each number is a `Figure`: a `value`,
 a `confidence` and a `source`, plus an optional `note` read with it.
 
 | Field | Meaning |
@@ -100,7 +100,7 @@ with nothing to hold with.
 The same datasheet describes a body on every backend, which is also what keeps its `digest()`
 equal across `sim2d`, `mock` and the real thing. `rosbridge` is the one exception, because it
 names a transport rather than a body: its sheet is whatever the bridge answered when asked
-([adapters/rosbridge.md](adapters/rosbridge.md)).
+([adapters/rosbridge/README.md](../adapters/rosbridge/README.md)).
 
 The seven sheets quackd publishes, with each figure's confidence:
 
@@ -119,8 +119,8 @@ One body carries the eighth figure: the XLeRobot publishes a working height of 0
 nowhere else.
 
 A `.duck` file can correct any of it for the build in front of it
-([duck-spec.md](duck-spec.md)), and the prompt labels those numbers as coming from the task
-file.
+([reference/duck-spec.md](duck-spec.md)), and the prompt labels those numbers as coming from the
+task file.
 
 ## Intents on the wire
 
@@ -157,4 +157,4 @@ with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
 What each body lacks is as important as what it has: the arm cannot `move`, neither the
 base nor the cart can `say`, and a `.duck` that `requires` one of those fails
 validation against that robot with a field-level message
-([duck-spec.md](duck-spec.md)).
+([reference/duck-spec.md](duck-spec.md)).

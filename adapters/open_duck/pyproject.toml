@@ -18,7 +18,7 @@ open_duck = "quackd_open_duck"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_duck.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/open_duck/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_open_duck/__init__.py"

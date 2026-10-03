@@ -1,8 +1,8 @@
 """Fetching upstream's model: the hashes, the allowlist, the licence notice, the failures.
 
 `quackd/sim3d/assets.py` is the only code in quackd that downloads anything, it is what makes
-`docs/licenses.md`'s "never vendored" true, and `SECURITY.md` makes a claim about the tarball
-it extracts. It had no tests: the physics tests use the puppet, which needs none of this.
+`docs/reference/licenses.md`'s "never vendored" true, and `SECURITY.md` makes a claim about the
+tarball it extracts. It had no tests: the physics tests use the puppet, which needs none of this.
 
 Nothing here touches the network or needs the physics extra. The tarball is built in memory,
 `fetch` is stubbed, and the pins are moved to match, so it runs on every CI runner.

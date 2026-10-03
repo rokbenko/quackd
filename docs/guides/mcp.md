@@ -25,7 +25,7 @@ claude mcp add quackd -- uvx --from "quackd[mujoco]" quackd serve-mcp --robot mi
 That is upstream's own MuJoCo model on upstream's own walking policy, fetched at a pinned commit
 into `~/.quackd/cache` on the first connect and checked against a recorded sha256. The frames
 `robot_observe` returns come from the head of a robot that is walking, and the gait undershoots
-what it is asked, which `report_state` says ([ADR-0030](adr/0030-mujoco-physics-backend.md)). The
+what it is asked, which `report_state` says ([ADR-0030](../adr/0030-mujoco-physics-backend.md)). The
 first connect downloads the extra and about 10 MB of model with nothing on screen, so `sim2d`
 stays the fast way in and is what the configs below use.
 
@@ -40,20 +40,21 @@ first member, else the first Microduck, else the first declared.
 |---|---|
 | `robot_list` | Every robot this server fronts: name, adapter, backend, vendor, model, embodiment, mobility, manifest id and digest, its `datasheet` as data and as one paragraph of `datasheet_text`, loaded contract, health, and which one is the default. Call this first. |
 | `robot_list_verbs(robot?)` | That robot's verbs from its own manifest: params, safety class, `canonical` name and `aliases`, whether it is `core`, whether it is `before_verdict` (it looks, speaks or brakes, so it runs before the pilot has judged the task), and whether its current contract allows it. |
-| `robot_assess_task(robot?, verdict, reason, limits_consulted?, estimates?, needs?)` | Your verdict on whether that body can do the task, judged against the datasheet in its `robot_list` row: `feasible`, `infeasible` or `uncertain`. Required before the first verb that moves the body, and `robot_run_verb` refuses anything that does until you answer (the `verdict` gate). An `infeasible` answer names, in `could`, the robots here whose datasheets meet what the task needs, so it can be handed over. `uncertain` stays pending: there is no terminal to ask on, so ask the person you are chatting with and answer again. Answering again replaces the earlier verdict, which is how an `uncertain` is cleared once you have asked, and is also why an `infeasible` here is not the end of the session the way it is the end of a `quackd run`. A `feasible` whose `needs` that robot's own datasheet does not meet, or does not publish, is refused before it is recorded and names the need, which is the check a bid is already held to at the coordinator. The exceptions are the four [safety.md](safety.md#when-a-feasible-verdict-contradicts-itself) lists: a zero and a `none` ask for nothing, and a body that publishes no terrain, or does not move, meets `indoor_flat`. A `work_height_m` is not held against a robot's own verdict when its sheet publishes no working height band, though such a robot is still left out of `could` for a task that names one. When a need is refused: answer `infeasible` if that need decides the task, `uncertain` if a person could know the figure, or correct a need you asked more of than the task turns on. Moves nothing and costs no step. |
+| `robot_assess_task(robot?, verdict, reason, limits_consulted?, estimates?, needs?)` | Your verdict on whether that body can do the task, judged against the datasheet in its `robot_list` row: `feasible`, `infeasible` or `uncertain`. Required before the first verb that moves the body, and `robot_run_verb` refuses anything that does until you answer (the `verdict` gate). An `infeasible` answer names, in `could`, the robots here whose datasheets meet what the task needs, so it can be handed over. `uncertain` stays pending: there is no terminal to ask on, so ask the person you are chatting with and answer again. Answering again replaces the earlier verdict, which is how an `uncertain` is cleared once you have asked, and is also why an `infeasible` here is not the end of the session the way it is the end of a `quackd run`. A `feasible` whose `needs` that robot's own datasheet does not meet, or does not publish, is refused before it is recorded and names the need, which is the check a bid is already held to at the coordinator. The exceptions are the four [concepts/safety.md](../concepts/safety.md#when-a-feasible-verdict-contradicts-itself) lists: a zero and a `none` ask for nothing, and a body that publishes no terrain, or does not move, meets `indoor_flat`. A `work_height_m` is not held against a robot's own verdict when its sheet publishes no working height band, though such a robot is still left out of `could` for a task that names one. When a need is refused: answer `infeasible` if that need decides the task, `uncertain` if a person could know the figure, or correct a need you asked more of than the task turns on. Moves nothing and costs no step. |
 | `robot_run_verb(robot?, verb, params?)` | Run any verb through that robot's executor (`search_scan`, `go_to` or its alias `walk_to`, `kick`, `gaze`, `express`, …). Refusals come back as `ok: false`, and a verb the manifest does not list is a refusal too. The result carries a `log` list of what happened behind it (see below). |
 | `robot_observe(robot?)` | The `observe` verb through the executor (it counts against the budget), returning the camera frame as a PNG image, a one-line detection summary, and the log as a final text block. A robot with several cameras returns one image per camera, each preceded by a `camera <name>:` line, and the detection summary is the primary camera's alone, because a bearing measured through one lens means nothing through another. A camera that gave nothing this step costs its own picture and nothing else. |
 | `robot_say(robot?, text)` | The `say` verb, with a `log` like `robot_run_verb`. No robot here has text to speech, so it degrades: one of seven tones on a Microduck, one of the duck's own sounds on an Open Duck. A robot without a `sound` intent refuses with `ok: false`. |
 | `robot_load_duckfile(robot?, path)` | Adopt a `.duck` contract on one robot: its `requires` (or, for `duck: 0`, its allowlist) is checked against that robot's manifest first, then allowlist and budgets are enforced for that robot only; the body is returned as instructions. Flock ducks are refused. |
-| `robot_recall(robot?)` | What that robot remembers from earlier sessions and runs: the notes a pilot saved and how its recent runs ended ([memory.md](memory.md)). Costs no step; the server's instructions ask the model to call it early. |
+| `robot_recall(robot?)` | What that robot remembers from earlier sessions and runs: the notes a pilot saved and how its recent runs ended ([guides/memory.md](memory.md)). Costs no step; the server's instructions ask the model to call it early. |
 | `robot_remember(robot?, text, tags?)` | Keep one short fact for future sessions on that robot. Moves nothing, costs no step; the same sentence twice updates the old note. Off with `--no-memory`. |
 
 Without a loaded `.duck`, every verb that is not `dangerous` is allowed and the session runs
 on a default budget of 40 verb steps and five minutes, counted from when its robot connected.
 An arm's `manipulate` runs segments of 10 s each, 120 s of them in all, the defaults a task
-file's `policy` section would otherwise set ([duck-spec.md](duck-spec.md#policy-v3)). Load one
-to get the guard rails and the task's own budget. Contracts, budgets and abort
-flags are per robot: loading a contract on `duck` changes nothing for `arm`.
+file's `policy` section would otherwise set
+([reference/duck-spec.md](../reference/duck-spec.md#policy-v3)). Load one to get the guard rails and
+the task's own budget. Contracts, budgets and abort flags are per robot: loading a contract on
+`duck` changes nothing for `arm`.
 
 A flock can also come from the registry, which is the same thing by another door:
 
@@ -63,14 +64,14 @@ quackd serve-mcp --flock kitchen
 
 Every member comes from the registry with its own address, token and camera, rather than one
 value applied to all of them, and each keeps its memory under its registered name
-([registry.md](registry.md)). `--flock` refuses `--robot`, `--robots`, `--address`, `--token`
+([guides/registry.md](registry.md)). `--flock` refuses `--robot`, `--robots`, `--address`, `--token`
 and `--camera-url`, because the registry already answers all five.
 
 Simulated robots in one flock each get their own world; a shared arena over MCP is future
 work. A flock **task file** is still refused here, whichever kind it is: the coordinator needs
 a referee this process does not run, and a pilot flock needs one model per robot rather than
 the one model driving this session. Run either with `quackd run` instead
-([flock.md](flock.md)).
+([guides/flock.md](flock.md)).
 
 ## What the log shows
 
@@ -106,9 +107,9 @@ done    ok in 4.8 s sim, 0.2 s wall budget: step 2/40, llm calls 0/40, 0.2/5 min
 A `gate` line appears whenever a rule fires, and says which one: `gate allowlist: refused
 verb 'kick' is not in this duck's allowlist (quack, walk, stop)`. That is the difference
 between a refusal you can act on and an `ok: false` you cannot. The executor's gates are
-listed in [architecture.md](architecture.md), `verdict` among them: it refuses every verb
-that moves the body until `robot_assess_task` has recorded a feasible answer, and loading a
-`.duck` starts a new task and shuts it again. Two more belong to the server itself:
+listed in [concepts/architecture.md](../concepts/architecture.md), `verdict` among them: it refuses
+every verb that moves the body until `robot_assess_task` has recorded a feasible answer, and loading
+a `.duck` starts a new task and shuts it again. Two more belong to the server itself:
 `session_aborted` when that robot's session has already aborted, either its heartbeat gave
 up or a contract's `abort_when` fired, and every further call except `stop` is refused,
 and `no_sound_intent` when `robot_say` reaches a body with nothing to say it with.
@@ -224,7 +225,7 @@ long as that process does.
 
 A Jetson does not change where the server runs. quackd never runs on the board: the client
 spawns `serve-mcp` on your laptop as always, and `--host` names the board, the way it does for
-`quackd run` ([jetson.md](jetson.md)). `serve-mcp` takes `--host`, `--host-token` and
+`quackd run` ([guides/jetson.md](jetson.md)). `serve-mcp` takes `--host`, `--host-token` and
 `--detector` as `run` does, so the board's camera joins the robot and the board's detector can
 read its frames, and `robot_list` and the server's startup log name the detector in use. A
 board whose daemon does not answer refuses the server before it starts. `--host` and
@@ -264,15 +265,15 @@ quackd serve-mcp --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 --yes
 ```
 
 `--policy-url` names the policy server one LeRobot arm hands its `pick` and `manipulate`
-segments to (`quackd policy serve`, [policies.md](policies.md),
-[the arm's page](adapters/lerobot.md#a-policy-in-a-process-of-its-own-quackd-policy-serve)),
+segments to (`quackd policy serve`, [guides/policies.md](policies.md),
+[the arm's page](../adapters/lerobot/README.md#a-policy-in-a-process-of-its-own-quackd-policy-serve)),
 with `--policy-token`, or else `QUACKD_POLICY_TOKEN`, or else the token file the server wrote.
 It is asked what it serves as the server starts, and one that does not answer refuses it. So
 does a policy the arm's connect finds does not fit it, before any torque, and `serve-mcp` then
 says the connect's sentence and exits 1, as `quackd run` does, rather than printing a traceback
 that leaves the client only a closed connection. `--accept-other-frame` lets a policy learned on
 an arm calibrated another way connect, with every goal it answers still clipped to this arm's
-travel, as on `quackd run` ([the arm's page](adapters/lerobot.md#whether-the-policy-fits-the-arm)). Both
+travel, as on `quackd run` ([the arm's page](../adapters/lerobot/README.md#whether-the-policy-fits-the-arm)). Both
 verbs are confirm gated, so a client can call them only on a server started with `--yes`, and
 both are refused with `--robots` or `--flock`, since one policy server drives one arm. A task
 file loaded with `robot_load_duckfile` holds `manipulate` to its own `policy` section: its listed
@@ -283,7 +284,7 @@ before the first file was loaded among them. One segment runs at a time: a `pick
 the client cancels mid-segment is charged the seconds its segment ran. `--controller` is
 refused: over MCP the client is the pilot, and `quackd run --controller vla` needs a person at
 a terminal to say whether the arm did the task
-([the arm's page](adapters/lerobot.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 
 A session's budget counts its minutes from the robot's connect, on the clock the robot keeps,
 which on `lerobot:mujoco` is the simulator's own: the `done` lines and every result's budget
@@ -294,14 +295,14 @@ read them against `max_minutes`, and the session's verbs are refused once they p
 > quackd has no think path to put a stepper in front of: it hands out tools and enforces the
 > contract, and the deciding happens in Claude. That flag and its two companions,
 > `--decision-url` and `--decision-mode`, belong to `quackd run`, where quackd owns the loop
-> ([decision-llms.md](decision-llms.md)).
+> ([guides/decision-llms/README.md](decision-llms/README.md)).
 
 ## Driving a real LeRobot SO-101 arm from Claude
 
 That one has a page of its own, because an arm wants a calibration, a rest pose and a Python
 3.12 environment in place before a client is pointed at it, and because a session moves the arm
 at both ends on its own:
-[Part 2 of the first run](lerobot-first-run.md#part-2-from-claude-over-mcp).
+[Part 2 of the first run](../adapters/lerobot/first-run.md#part-2-from-claude-over-mcp).
 
 ## Driving a real Open Duck Mini from Claude
 
@@ -326,8 +327,8 @@ exposing them (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 your-pi`), the
 
 The verbs Claude is offered come from what that duck reports at connect, not from the
 description, so a duck with no camera or no head simply has fewer. Nothing has been run
-against a real duck: [adapters/open_duck.md](adapters/open_duck.md) and its
-[bring-up checklist](open-duck-hardware-checklist.md).
+against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README.md) and its
+[bring-up checklist](../adapters/open_duck/hardware-checklist.md).
 
 ## The two-minute script
 
@@ -352,13 +353,14 @@ against a real duck: [adapters/open_duck.md](adapters/open_duck.md) and its
   by the rule above the server stops. A pose recorded past the travel the arm's calibration
   recorded is parked at the edge of that travel, which counts as getting there, and the server
   logs once which joint is free to settle the rest of the way
-  ([adapters/lerobot.md](adapters/lerobot.md#a-pose-past-the-travel)). The same move runs again
-  when the session closes, between the `stop` and the disconnect, which is the only window where
-  putting the arm down changes whether it falls once torque is released. Where the arm is not at
-  that pose, torque is left on and it holds itself up instead of dropping, and
-  [safety.md](safety.md) has the line it prints and what to do about it. A session started with
-  `--dry-run` moves nothing at either end, and a robot with no pose recorded ends the way it
-  always did. Recording one is `quackd robot rest-pose NAME` ([registry.md](registry.md)).
+  ([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-pose-past-the-travel)). The same
+  move runs again when the session closes, between the `stop` and the disconnect, which is the only
+  window where putting the arm down changes whether it falls once torque is released. Where the arm
+  is not at that pose, torque is left on and it holds itself up instead of dropping, and
+  [concepts/safety.md](../concepts/safety.md) has the line it prints and what to do about it. A
+  session started with `--dry-run` moves nothing at either end, and a robot with no pose recorded
+  ends the way it always did. Recording one is `quackd robot rest-pose NAME`
+  ([guides/registry.md](registry.md)).
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
   there is no terminal to ask on. The refusal text tells the model why.
-- What stops the body when quackd goes quiet is the body's job, not the server's, and it differs per robot. Read [safety.md](safety.md) before an MCP session drives hardware.
+- What stops the body when quackd goes quiet is the body's job, not the server's, and it differs per robot. Read [concepts/safety.md](../concepts/safety.md) before an MCP session drives hardware.

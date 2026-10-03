@@ -7,10 +7,10 @@ you on a webcam and waving, driven by whichever model you choose to bring.
 Three documents cover this arm and they do different jobs:
 
 - **This one** is the narrative. It assumes nothing and it moves slowly.
-- [lerobot-hardware-checklist.md](lerobot-hardware-checklist.md) is the risk ladder, eighteen
+- [adapters/lerobot/hardware-checklist.md](hardware-checklist.md) is the risk ladder, eighteen
   steps in the order that can only fail safely. Once anything is about to move, that file is
   the authority and this one hands over to it.
-- [adapters/lerobot.md](adapters/lerobot.md) is the reference: the manifest, every verb, the
+- [adapters/lerobot/README.md](README.md) is the reference: the manifest, every verb, the
   camera query keys, and the full table of what quackd refuses and why.
 
 > [!NOTE]
@@ -170,7 +170,7 @@ would use, and `quackd list-models` prints every model id quackd knows for every
 #### A cloud vendor
 
 Put the key in the environment or in a `.env` file, then name the provider. The key variable
-per vendor is in [`.env.example`](../.env.example) and in `quackd doctor`.
+per vendor is in [`.env.example`](../../../.env.example) and in `quackd doctor`.
 
 ```bash
 quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm openai
@@ -231,7 +231,7 @@ and last two characters, which is the quickest way to see whether your file was 
 > The variable name is case sensitive everywhere except Windows. The file at the lab read
 > `OPENAI_API_Key`, which Windows happily resolves and macOS and Linux do not, so that same
 > file would have found no key at all on either. Copy the name out of
-> [`.env.example`](../.env.example) rather than typing it.
+> [`.env.example`](../../../.env.example) rather than typing it.
 
 #### A local model, no key
 
@@ -246,8 +246,8 @@ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm ollama:qwen
 The other presets are `vllm`, `llamacpp`, `lmstudio`, and `local` for anything else, which
 takes `--base-url http://host:port/v1`. Servers need their own tool-calling switches turned
 on: vLLM wants `--enable-auto-tool-choice --tool-call-parser <family>`, and llama-server
-wants `--jinja`. [local-llms.md](local-llms.md) has the per-server detail, including the
-JSON text fallback quackd uses when a server is weak at native tool calls.
+wants `--jinja`. [guides/local-llms.md](../../guides/local-llms.md) has the per-server detail,
+including the JSON text fallback quackd uses when a server is weak at native tool calls.
 
 > [!WARNING]
 > If an `OPENAI_API_KEY` is in your environment, a local run sends it to your local server as
@@ -294,12 +294,13 @@ few keywords in a goal.
 > There is a third thing you can put in the loop and it is not a pilot. `--decision-llm` adds an
 > optional non-generative stepper in front of whichever model you picked, for the turns whose
 > answer is a choice among calls this arm already has. It is off unless you name one, it needs
-> `quackd[decision]` (or `quackd[laya]`) and, for the hosted [`jev`](decision-llms/jev.md), a
-> key of its own, and it never authors a joint angle. Leave it off until the arm has waved: the
-> first run is about proving the arm, the port and the camera, and one more moving part between
-> you and the arm is the opposite of what a first run wants.
-> [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) is how to add one
-> afterwards, and [decision-llms.md](decision-llms.md) is where they live, one page each.
+> `quackd[decision]` (or `quackd[laya]`) and, for the hosted
+> [`jev`](../../guides/decision-llms/jev.md), a key of its own, and it never authors a joint angle.
+> Leave it off until the arm has waved: the first run is about proving the arm, the port and the
+> camera, and one more moving part between you and the arm is the opposite of what a first run
+> wants. [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) is how to add one
+> afterwards, and [guides/decision-llms/README.md](../../guides/decision-llms/README.md) is where
+> they live, one page each.
 
 <br>
 
@@ -599,7 +600,7 @@ unless every motor read torque off, and names the ones that did not.
 the arm now is and lets go at the pose if it gets there. Hold the arm for that one too, because
 it connects as well, and it says so before it does. The power switch is for when neither of them
 can reach the arm. What each outcome means is in
-[adapters/lerobot.md](adapters/lerobot.md#releasing-it-where-it-stands).
+[adapters/lerobot/README.md](README.md#releasing-it-where-it-stands).
 
 Two details worth knowing before they surprise you:
 
@@ -1029,7 +1030,7 @@ connects, so typing both out of habit costs you the message and nothing else.
 
 ### 11. Prove the safety net
 
-From here the [hardware checklist](lerobot-hardware-checklist.md) is the authority on order
+From here the [hardware checklist](hardware-checklist.md) is the authority on order
 and on what a hand stays near. What follows is the same five checks expressed as commands.
 
 Drop `--dry-run`, keep `--max-steps` small, and watch the arm rather than the terminal. The
@@ -1115,7 +1116,7 @@ close is skipped and the arm holds where it stopped. LeRobot may still disconnec
 process lets go of it, and that disconnect keeps torque, because quackd builds the arm asking it
 to. In 0.14 and before it was built asking for the release, so the arm could fall there instead.
 That is the safe direction and it is still a surprise, so expect it rather than pressing twice
-out of habit ([safety.md](safety.md)).
+out of habit ([concepts/safety.md](../../concepts/safety.md)).
 
 A [hand-placed run](#or-start-from-a-pose-you-set-by-hand) opens two more Ctrl-C windows, and
 neither behaves like the one above. **During the placement wait**, with the arm limp in your
@@ -1235,7 +1236,7 @@ YOLO in quackd's own process on the laptop, which reads a person as `person` wha
 wearing. Without the extra the run is refused before anything connects, with
 `YoloDetector needs ultralytics: uv pip install 'quackd[yolo]'`. Give it `--fov-deg` for your
 webcam, or its distances are a guess and the run says so once. Tuning the colour ranges to
-your own shirt has no flag: [the FAQ](faq.md) covers it as a Python constructor.
+your own shirt has no flag: [the FAQ](../../faq.md) covers it as a Python constructor.
 
 #### Give it a picture
 
@@ -1379,7 +1380,7 @@ And once it is running:
 | `torque still reads on for <joints>: cut the power` | `quackd robot release` sent the release and those motors kept their torque | hold the arm and cut its power. The motors not named are limp, and the line after it says what the close did: kept torque, or took it off at the rest pose |
 | `... is recorded at ... in the rest pose and this calibration lets its servo be driven to ... and no further` | the fold you recorded lies past the travel your calibration recorded. The arm parks at the edge of the travel and is let go of there, and the run carries on | nothing needs doing today. To make the fold itself reachable, calibrate again, typing `c` at the tool's first prompt, with every joint taken all the way into it, then record the pose again |
 
-[adapters/lerobot.md](adapters/lerobot.md) has the full table, including the failures SO-101
+[adapters/lerobot/README.md](README.md) has the full table, including the failures SO-101
 owners report that nobody here has reproduced.
 
 <br>
@@ -1468,7 +1469,7 @@ and later `opencv://2` at 640x480, and it needed no `?backend=` key on Windows. 
 if yours needed one, because that is the interesting case now.
 
 If your arm does something this one did not, change the row in
-[adapter-status.md](adapter-status.md) and say in the same commit what it did. One SO-101 is
+[adapters/status.md](../status.md) and say in the same commit what it did. One SO-101 is
 one SO-101: six of quackd's seven bodies have still never been near hardware of any kind, so
 most of that page is a description rather than a record.
 
@@ -1488,7 +1489,8 @@ typed question, and it hands back which option and how confident it is. So it ca
 verb now* on the turns where the answer is one of the calls this arm already has, and it can
 never author a joint angle, because there is nowhere in its answer for a number to come from.
 Every pose, every sentence and the feasibility verdict stay with the model you chose in section
-03. The full argument is on [decision-llms.md](decision-llms.md); this section is the arm.
+03. The full argument is on [guides/decision-llms/README.md](../../guides/decision-llms/README.md);
+    this section is the arm.
 
 #### Install one
 
@@ -1580,22 +1582,23 @@ choice. One with a number, a free string, an object or an array in it is not, an
 one. On this arm that means `report_state`, `stop`, `place`, `gripper(open=true|false)` and,
 where a camera is configured, `observe`. `move_joints` is not, because its `positions` is a
 free-form map of joint names to degrees, and neither is `pick`, which takes a number too.
-[Which of this arm's verbs are a choice](adapters/lerobot.md#which-of-this-arms-verbs-are-a-choice)
+[Which of this arm's verbs are a choice](README.md#which-of-this-arms-verbs-are-a-choice)
 is the per-verb table.
 
 #### Which one to point it at
 
-Seven are named, and [the table](decision-llms.md#the-ones-quackd-names) links a page each with
-its install line, its address, what was read from its source and what quackd assumes about it.
-For a first look from this page:
+Seven are named, and [the table](../../guides/decision-llms/README.md#the-ones-quackd-names) links a
+page each with its install line, its address, what was read from its source and what quackd assumes
+about it. For a first look from this page:
 
-- [`jev`](decision-llms/jev.md) is hosted, wants `TYPESAFE_API_KEY`, and is the only one with a
-  published rate, so it is the one that costs a fraction of a cent rather than a GPU.
-- [`laya`](decision-llms/laya.md) needs no server and no key at all, so it is the one to try if
-  you would rather nothing left the machine. It downloads its weights on first use.
-- [`kev`](decision-llms/kev.md), [`von`](decision-llms/von.md),
-  [`openjev`](decision-llms/openjev.md) and [`opendecision`](decision-llms/opendecision.md) are
-  servers you start yourself, and `--decision-url` points quackd at one on any address.
+- [`jev`](../../guides/decision-llms/jev.md) is hosted, wants `TYPESAFE_API_KEY`, and is the only
+  one with a published rate, so it is the one that costs a fraction of a cent rather than a GPU.
+- [`laya`](../../guides/decision-llms/laya.md) needs no server and no key at all, so it is the one
+  to try if you would rather nothing left the machine. It downloads its weights on first use.
+- [`kev`](../../guides/decision-llms/kev.md), [`von`](../../guides/decision-llms/von.md),
+  [`openjev`](../../guides/decision-llms/openjev.md) and
+  [`opendecision`](../../guides/decision-llms/opendecision.md) are servers you start yourself, and
+  `--decision-url` points quackd at one on any address.
 
 If the extra or the key is missing the run says so once, before it connects to the arm, and
 carries on without a stepper. The arm is driven either way, because the model is the pilot
@@ -1617,11 +1620,11 @@ off your calibration, the rest move, the refusals and the close, running over a 
 of the SO-101 in MuJoCo instead of over LeRobot. A task file rehearsed on it goes through the
 lines that will drive your arm.
 
-![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](assets/lerobot-sim.gif)
+![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
 
 *The README hero's goal, `Wave to the camera with an extended arm`, on the simulator's generic
 arm, piloted by OpenAI's `gpt-6-sol`, with the front camera the model was sent on the right
-([how it was made](assets/README.md)).*
+([how it was made](../../assets/README.md)).*
 
 **Install it** into the same environment, or into a 3.11 one, since it needs neither LeRobot nor
 torch:
@@ -1650,7 +1653,7 @@ name one.
 
 Take the warning seriously if an older quackd shares `~/.quackd` with this one: it cannot read
 the registry at all while the twin is in it, every robot included, and
-[registry.md](registry.md#a-simulator-of-an-arm) says how to keep the two apart.
+[guides/registry.md](../../guides/registry.md#a-simulator-of-an-arm) says how to keep the two apart.
 
 **Run anything you would run on the arm, on the twin.** The same task files, the same flags and
 the same camera urls, which the simulator renders from its scene instead of opening a webcam:
@@ -1708,7 +1711,7 @@ with that model, `--llm openai` and so on, because what the model reaches for is
 rehearsal is for, and each seed then costs what a run costs. A `<task>.sim.yaml` beside the file
 lays out the table and says what has to be so when a run ends, such as a block lifted or a joint
 moved, judged by where things really went rather than by what the pilot said:
-[adapters/lerobot.md](adapters/lerobot.md#the-sidecar) has the format. `--faults` puts a bus
+[adapters/lerobot/README.md](README.md#the-sidecar) has the format. `--faults` puts a bus
 that drops packets under the connects, so the failed connects the lab met on 2026-09-23, and the
 retries quackd now answers them with, happen at home first.
 
@@ -1769,7 +1772,7 @@ under the model rather than in its place: the model hands it one short subtask a
 
 The policy runs in a server of its own, and no quackd command loads a checkpoint in the process
 that holds the serial bus, because a checkpoint is code
-([policies.md](policies.md#a-checkpoint-is-code)). So this takes two terminals.
+([guides/policies.md](../../guides/policies.md#a-checkpoint-is-code)). So this takes two terminals.
 **Install the server's extra** into a Python 3.12 environment, the arm's own or another:
 
 ```bash
@@ -1812,7 +1815,7 @@ a terminal. `--yes`, or a pipe or file on stdin, answers in your place, and nobo
 
 **On the twin, the first segment is refused until `shoulder_lift` is moved in.** A segment starts
 only with every joint inside its calibrated travel, and the twin starts where the arm's rest pose
-puts it, settled clear of its table ([the arm's page](adapters/lerobot.md#running-it)). The lab
+puts it, settled clear of its table ([the arm's page](README.md#running-it)). The lab
 arm's was recorded folded, past what its calibration lets `shoulder_lift` be driven to
 ([section 07](#07-record-the-rest-pose)) and past its model's stop too, so the twin starts with
 that joint settled just off the stop, outside its travel, and `manipulate` refuses with
@@ -1823,8 +1826,8 @@ settled to there, and let it go. After a larger move the rest move can set the g
 the table short of that pose, and the close keeps torque on. `--controller vla`, below, only ever
 calls `manipulate`, so a vla run on this twin ends in failure, in the verb's own words, before
 any segment runs. The lasting fix is to calibrate the arm again folded, the bench item in
-[PLAN.md](../PLAN.md) that reads the calibrated value at each of the arm's stops, and record the
-rest pose again after it.
+[PLAN.md](../../../PLAN.md) that reads the calibrated value at each of the arm's stops, and record
+the rest pose again after it.
 
 **Or take the model out altogether.** `--controller vla` is a scripted pilot that hands the
 policy each instruction a `duck: 3` task file lists, or the goal as the only one, and then asks
@@ -1841,14 +1844,15 @@ answers every question without asking anybody
 **Then a real policy.** `quackd policy check --policy OWNER/NAME@REVISION --bench` says what a
 checkpoint wants and how fast it answers on this laptop before you serve it. Bench it twice, the
 second time with the `--latency-s` the first suggests, and serve it with the one a bench says
-covers what it timed ([policies.md](policies.md#on-the-laptop-alone)). On this project's laptop
-an ACT kept up and SmolVLA did not ([policies.md](policies.md#smolvla-and-act)).
-[policies.md](policies.md) is the rest: serving one on the laptop or on a rented GPU through an
-ssh tunnel, which policies there are and under what licences, and recording the 50 to 200
-episodes a policy for your own task learns from with LeRobot's own tools.
+covers what it timed ([guides/policies.md](../../guides/policies.md#on-the-laptop-alone)). On this
+project's laptop an ACT kept up and SmolVLA did not
+([guides/policies.md](../../guides/policies.md#smolvla-and-act)).
+[guides/policies.md](../../guides/policies.md) is the rest: serving one on the laptop or on a rented
+GPU through an ssh tunnel, which policies there are and under what licences, and recording the 50 to
+200 episodes a policy for your own task learns from with LeRobot's own tools.
 
 **On the arm**, the same commands with `--robot arm-01`, and step 18 of
-[the hardware checklist](lerobot-hardware-checklist.md) in that order: a policy that holds the
+[the hardware checklist](hardware-checklist.md) in that order: a policy that holds the
 arm still, then the sweep, then a checkpoint. A policy moves no joint faster than a verb may,
 and a goal past the travel is clipped rather than sent, but a joint that reads past its travel,
 once a move has begun lifting it, rises to the end of it at the servo's own speed whatever anybody
@@ -1875,7 +1879,8 @@ quackd chooses no model here and reads no key of yours.
 > here, and that is structural rather than an omission. `--decision-llm` puts a stepper in front
 > of the model inside quackd's own loop, and over MCP there is no such loop: the model is the
 > client, so the deciding happens in Claude and quackd hands out tools and enforces the
-> contract. The flag and its two companions belong to `quackd run` ([mcp.md](mcp.md)).
+> contract. The flag and its two companions belong to `quackd run`
+> ([guides/mcp.md](../../guides/mcp.md)).
 >
 > [Section 16](#16-between-visits-rehearse-on-the-simulator) has no mirror either, because it
 > works the same from here. `quackd robot twin arm-01` registers the twin, and
@@ -1888,7 +1893,7 @@ quackd chooses no model here and reads no key of yours.
 > http://127.0.0.1:9875 --yes` hands Claude a `manipulate` the policy runs. `--yes` is not
 > optional, since both verbs a policy runs are confirm gated. `--controller vla` is refused over
 > MCP, because Claude is the pilot here and a vla run needs a person at a terminal to say
-> whether the arm did the task ([mcp.md](mcp.md)).
+> whether the arm did the task ([guides/mcp.md](../../guides/mcp.md)).
 
 The steps below are numbered `M00` to `M14` and they mirror Part 1's `00` to `14`, so if you
 have just walked the terminal path you will recognise every one of them. Where a step is the
@@ -2012,7 +2017,7 @@ definition not its rest pose, so take its weight first and keep your fingers out
 **Nothing run-shaped is written to disk.** No `runs/` directory, no `transcript.jsonl`, no
 `frames/`, no `terminal.txt`. The record of an MCP session is the chat itself, the server's own log on stderr, and
 whatever the model chose to keep with `robot_remember`, which appends one line per note to
-`~/.quackd/memory/<name>.jsonl` ([memory.md](memory.md)).
+`~/.quackd/memory/<name>.jsonl` ([guides/memory.md](../../guides/memory.md)).
 
 **The budget clock starts when the server has connected the arm.** Without a loaded `.duck` a
 session allows every verb that is not `dangerous`, on a default of 40 verb steps and five
@@ -2126,8 +2131,8 @@ on Windows especially, often with none of your shell's PATH.
 > `doctor` has nothing else to complain about. It is the same reason Part 2 points the client at
 > this venv's `quackd` rather than at `uvx`: `uvx` builds a second environment on whichever
 > interpreter uv picks, and on a 3.11 machine that one has no LeRobot in it. The `uvx` configs in
-> [mcp.md](mcp.md) and [adapters/lerobot.md](adapters/lerobot.md) follow the same rule, so they
-> need a 3.12 or newer interpreter for the LeRobot half of that extra to resolve.
+> [guides/mcp.md](../../guides/mcp.md) and [adapters/lerobot/README.md](README.md) follow the same
+> rule, so they need a 3.12 or newer interpreter for the LeRobot half of that extra to resolve.
 
 <br>
 
@@ -2143,8 +2148,8 @@ talks to it over stdin and stdout. Nothing is listening on a port, there is no a
 visit, and there is no server to start by hand before you open the client. It lives exactly as
 long as the session that spawned it: the client starts it when the session starts, and stops
 it when the session ends. The only `--address` this server takes is the arm's serial port, and
-by now the registry is carrying that for you. [mcp.md](mcp.md) lists the four things that would
-have to land before your phone could reach this, and none of them are built.
+by now the registry is carrying that for you. [guides/mcp.md](../../guides/mcp.md) lists the four
+things that would have to land before your phone could reach this, and none of them are built.
 
 > [!WARNING]
 > Starting that server moves the arm. Before the client's model can call a single tool, the
@@ -2181,8 +2186,9 @@ either of those.
 > server as failed rather than connected, and the stderr log names `lerobot` and the
 > `quackd[lerobot]` extra that would buy it. And where uv does pick 3.12, it downloads torch
 > all over again. The venv you already built has the right interpreter and the SDK in it, so
-> point the client straight at it. [mcp.md](mcp.md) uses `uvx` for the simulated bodies, where
-> no SDK with a version floor is involved, and that form does not carry over to the arm.
+> point the client straight at it. [guides/mcp.md](../../guides/mcp.md) uses `uvx` for the simulated
+> bodies, where no SDK with a version floor is involved, and that form does not carry over to the
+> arm.
 
 **Claude Code, the one command.** Everything after the bare `--` is the command and its
 arguments, which is what stops `--robot` being read as a flag of `claude mcp add` itself:
@@ -3022,7 +3028,7 @@ held against it.
 > This is where the arm starts moving, so from here **a hand stays on the power switch**. There is
 > no e-stop, and cutting the servo supply is the only thing that stops this arm in every case. Keep
 > the sweep clear and your hands out of it for everything below. The [hardware
-> checklist](lerobot-hardware-checklist.md) is the authority on the order these happen in and on
+> checklist](hardware-checklist.md) is the authority on the order these happen in and on
 > where a hand stays. What follows is the same five checks, asked of Claude rather than typed.
 
 Take `--dry-run` off the server command and restart it, because a running server keeps the flags it
@@ -3498,6 +3504,6 @@ which end of the gripper's range is open. [Section 14](#14-what-to-report) write
 and an answer from an MCP session counts the same as an answer from a run.
 
 **If your arm did something this one did not**, change the `lerobot:real` row in
-[adapter-status.md](adapter-status.md) in the same commit, and say that an MCP session did it.
+[adapters/status.md](../status.md) in the same commit, and say that an MCP session did it.
 That row describes two afternoons at a terminal, so whichever way yours went, it is the first
 of its kind on that page.

@@ -18,7 +18,7 @@ toddlerbot = "quackd_toddlerbot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/toddlerbot.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/toddlerbot/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_toddlerbot/__init__.py"

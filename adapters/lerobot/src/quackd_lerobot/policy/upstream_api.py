@@ -1,9 +1,9 @@
 """The only file in quackd allowed to spell a LeRobot policy name (ADR-0022).
 
 Every constant is tagged VERIFIED (read from upstream source at the pin, link given) or
-UNVERIFIED (an assumption of ours, with what quackd does about it). `docs/adapters/lerobot.md`
-is the human-readable version; `tests/test_upstream_api.py` proves UNVERIFIED names are only
-reachable from the files that live with them.
+UNVERIFIED (an assumption of ours, with what quackd does about it).
+`docs/adapters/lerobot/README.md` is the human-readable version; `tests/test_upstream_api.py` proves
+UNVERIFIED names are only reachable from the files that live with them.
 
 These are read against lerobot 0.6.1, the version the laptop that drives the lab arm runs, at
 the commit its `v0.6.1` tag names (7e241bd630a3719a56157a497ce5d08f244784f1), and not at the

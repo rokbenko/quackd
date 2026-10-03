@@ -1,6 +1,6 @@
 """quackd's XLeRobot client against a fake host, over real loopback sockets.
 
-This is what the `zmq` backend's 🧪 in `docs/adapter-status.md` rests on. It proves the client
+This is what the `zmq` backend's 🧪 in `docs/adapters/status.md` rests on. It proves the client
 is correct against our reading of `xlerobot_host.py` at the pin: the ports, the JSON, the
 conflation, the watchdog, the base-write-on-every-action rule, and the deg/s wire unit. It
 proves nothing about serial timing, calibration, or a real camera, and the status row says so.

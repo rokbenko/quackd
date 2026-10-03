@@ -1,6 +1,6 @@
 # ADR-0025: Memory between runs: one JSONL file per robot, notes the model chooses and episodes quackd writes
 
-**Status:** accepted, amended · **Date:** 2026-09-03 · Extends ADR-0017 (the manifest is the vocabulary; memory is not a verb) · Documented in [docs/memory.md](../memory.md)
+**Status:** accepted, amended · **Date:** 2026-09-03 · Extends ADR-0017 (the manifest is the vocabulary; memory is not a verb) · Documented in [docs/memory.md](../guides/memory.md)
 
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-flocks.md):** the key
 is `adapter:backend` for a robot quackd knows only as a spec, and the **registered name** for
@@ -66,6 +66,6 @@ would relive a run instead of remembering its lesson).
   and `run_start` records how much memory the prompt was given.
 - Tests must isolate `QUACKD_MEMORY_DIR` (the conftest does, for every test), because the
   CLI's default is the developer's home directory.
-- Learned verbs ([learned-verbs.md](../learned-verbs.md), unshipped) are unaffected:
+- Learned verbs ([learned-verbs.md](../concepts/learned-verbs.md), unshipped) are unaffected:
   memory changes what the
   pilot knows, not what the body can do.

@@ -41,7 +41,7 @@ python /opt/quackd/quackd_duck_bridge.py check
 
 Read the `capabilities` block against what you actually soldered, and the `limits` block
 against upstream's numbers. Then read the seven element command layout in
-[`docs/adapters/open_duck.md`](adapters/open_duck.md) and satisfy yourself it matches what
+[`docs/adapters/open_duck/README.md`](README.md) and satisfy yourself it matches what
 upstream's teleop sends.
 
 > Abort if the capabilities are wrong. They come from your `duck_config.json`, except
@@ -232,7 +232,7 @@ Open an issue with the Open Duck hardware report template, and attach:
 Read the first line of `terminal.txt` before you paste it. The values of `--api-key` and
 `--token` are replaced there, and so is a password or a credential-named query parameter in
 `--base-url`, `--address` and `--camera-url`. Nothing else on the screen is
-([SECURITY.md](../SECURITY.md)). The bridge token is safest in `QUACKD_DUCK_TOKEN` rather than
+([SECURITY.md](../../../SECURITY.md)). The bridge token is safest in `QUACKD_DUCK_TOKEN` rather than
 `--token`, because an environment variable reaches no part of the record.
 
 A report earns a row on this adapter's page and our thanks. Only a run on the maintainer's

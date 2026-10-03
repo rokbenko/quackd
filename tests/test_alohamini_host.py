@@ -1,6 +1,6 @@
 """quackd's AlohaMini client against a fake host, over real loopback sockets.
 
-This is what the `zmq` backend's 🧪 in `docs/adapter-status.md` rests on. The tests that matter
+This is what the `zmq` backend's 🧪 in `docs/adapters/status.md` rests on. The tests that matter
 most are the ones about stopping, because this robot's own stop is incomplete: its watchdog
 covers two subsystems of three, its lift latches when you say nothing, its arms are limp, and
 its fail-safe is a Python process that may have exited.

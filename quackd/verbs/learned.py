@@ -4,7 +4,7 @@ A *learned verb* is an ONNX policy plus metadata that registers as one more verb
 same way `kick` or `walk_to` do — so an LLM-written reward (DrEureka-style) can, one day,
 grow the vocabulary without touching the loop. This module defines the shape, a registration
 helper, and a way to plug in a runner. It ships no policy, no training, and no ONNX runtime.
-See `docs/learned-verbs.md`.
+See `docs/concepts/learned-verbs.md`.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ upstream feature that does not exist yet (`robotd.toml [policy]` paths are stati
 async def _no_runner(spec: LearnedVerbSpec, ctx: VerbContext) -> VerbResult:
     return VerbResult.fail(
         f"learned verb {spec.name!r} has no runner: executing ONNX policies is a v2 feature "
-        "(docs/learned-verbs.md)"
+        "(docs/concepts/learned-verbs.md)"
     )
 
 

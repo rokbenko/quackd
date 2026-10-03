@@ -84,6 +84,6 @@ than describing the intent.
 ## Only a human can do these
 
 Run `open_duck:bridge` against a duck they built, working through
-[the checklist](../open-duck-hardware-checklist.md), and confirm the deadman by pulling the
+[the checklist](../adapters/open_duck/hardware-checklist.md), and confirm the deadman by pulling the
 laptop's Wi-Fi mid-walk. Until then the `bridge` row stays 🧪, which is the same rule every
 other adapter lives under.

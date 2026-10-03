@@ -1,5 +1,5 @@
 # What quackd preflight lays out for place.duck on the arm's simulator, and what a run of it has
-# to leave behind. The format is in docs/adapters/lerobot.md, under The sidecar.
+# to leave behind. The format is in docs/adapters/lerobot/README.md, under The sidecar.
 #
 # The task starts with a cube between the open jaws, so the cube is laid on the table there,
 # between the fingers as the arm starts. It names no size and no weight, so the cube is the size

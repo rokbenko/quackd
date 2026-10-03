@@ -195,7 +195,7 @@ def _figure_shorthand(value: Any) -> Any:
 
 
 class DatasheetOverride(BaseModel):
-    """v2: what a `.duck` says about the body it was written for (`docs/duck-spec.md`).
+    """v2: what a `.duck` says about the body it was written for (`docs/reference/duck-spec.md`).
 
     Merged field-wise into the robot's own datasheet by `apply_datasheet_override`: a figure
     given here replaces the adapter's and is rendered as coming from the task file; `cannot`,
@@ -296,7 +296,7 @@ class PolicySection(BaseModel):
 class LearnedVerbRef(BaseModel):
     """Reserved for v2. The shape a `.duck` will use to pull in a learned (ONNX) verb.
 
-    See `docs/learned-verbs.md`. Parsed and validated today; nothing executes it.
+    See `docs/concepts/learned-verbs.md`. Parsed and validated today; nothing executes it.
     """
 
     model_config = ConfigDict(extra="forbid")

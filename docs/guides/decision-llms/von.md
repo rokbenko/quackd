@@ -4,7 +4,7 @@ Von, self-hosted: a 395M encoder, about 18 ms on a GPU, runs on CPU too. It is
 [wfzyx/von](https://github.com/wfzyx/von), Apache-2.0, on PyPI as `von-sdk`, read at `HEAD` on
 2026-09-22 on its `master` branch, because the repository carries no tag and no release to
 pin to. The names quackd spells
-for it live in its row in [`catalogue.py`](../../quackd/agent/decision/catalogue.py): a decision
+for it live in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py): a decision
 LLM has no `upstream_api.py`, because there is nothing to import and the wire is `POST
 /v1/systemone` like every server here.
 
@@ -30,7 +30,7 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm von --decision-mod
 | `extra` | `decision`, installed as `quackd[decision]` |
 | `sdk` | `typesafe_sdk`, the import that says whether that extra is present |
 
-That is `PRESETS["von"]` in [catalogue.py](../../quackd/agent/decision/catalogue.py), and a test
+That is `PRESETS["von"]` in [catalogue.py](../../../quackd/agent/decision/catalogue.py), and a test
 reads the url, the model id, the key, the install line and the extra back off this page to compare
 them with the row. `--decision-url` overrides the address and `--decision-llm von:<id>` overrides
 the model id, though on this server an id picks nothing and is not even handed back: the answer
@@ -62,7 +62,7 @@ one-shots that need no server; quackd uses neither, which matters.
   option scores, on `choice` and `score` only, with a noul carrying none at all. quackd's floors
   (brake 0.50, read 0.60, motion 0.85, confirm 0.90) are two numbers TypeSafe publish with two
   of quackd's own between them, all four shaped around Jev, and this row inherits every one of
-  them unmeasured; see [how a turn is decided](../decision-llms.md#how-a-turn-is-decided).
+  them unmeasured; see [how a turn is decided](README.md#how-a-turn-is-decided).
 - **Port 8000 is contested.** The `opendecision` row defaults to it, and quackd's own vLLM *pilot*
   preset defaults to `http://localhost:8000/v1`; two of them at once needs one moved with
   `--decision-url`.
@@ -109,9 +109,9 @@ every turn, records what it would have chosen, and lets nothing it says reach a 
 ## How to help
 
 Run it in shadow mode on your own bench ([measuring it
-yourself](../decision-llms.md#measuring-it-yourself)) and report the agreement rate, the latency
+yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 you actually saw on your own hardware, and the answers that surprised you. Say which interface and
 which port you served it on, because `0.0.0.0` and 8000 are both defaults worth knowing you kept.
 A confidence floor moves on a calibration curve rather than on a feeling ([how a turn is
-decided](../decision-llms.md#how-a-turn-is-decided)), and [CONTRIBUTING.md](../../CONTRIBUTING.md)
+decided](README.md#how-a-turn-is-decided)), and [CONTRIBUTING.md](../../../CONTRIBUTING.md)
 says where to put one.

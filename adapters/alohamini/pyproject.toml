@@ -18,7 +18,7 @@ alohamini = "quackd_alohamini"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
-Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/alohamini.md"
+Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/alohamini/README.md"
 
 [tool.hatch.version]
 path = "src/quackd_alohamini/__init__.py"

@@ -22,7 +22,7 @@ files on it. Nothing has compared it against an arm. Every name it reads from th
 `quackd policy serve` runs a learned policy for the arm, an ACT, a SmolVLA or a pi05 checkpoint,
 in a process of its own and never beside the serial bus, and `--policy-url` hands it the arm's
 `pick` and `manipulate`. No policy has driven an arm through it yet:
-[docs/policies.md](https://github.com/rokbenko/quackd/blob/main/docs/policies.md).
+[docs/guides/policies.md](https://github.com/rokbenko/quackd/blob/main/docs/guides/policies.md).
 
 What it does, what it refuses and why:
-[docs/adapters/lerobot.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot.md).
+[docs/adapters/lerobot/README.md](https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot/README.md).

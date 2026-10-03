@@ -6,7 +6,7 @@ what quackd installs is not the model but its client,
 [`typesafe-sdk`](https://pypi.org/project/typesafe-sdk/): MIT-licensed, read here at **0.7.1**
 (published to PyPI 2026-09-21, read 2026-09-22), against the pinned model id `jev-1.13.0`. A
 decision LLM has no `upstream_api.py` the way a robot adapter does: every name quackd spells for
-it lives in its row in [`catalogue.py`](../../quackd/agent/decision/catalogue.py).
+it lives in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
 **Nothing here has ever answered a real robot.**
 
@@ -70,7 +70,7 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
   for a moving one.
 - **This is the model the floors were shaped around, which is not the same as the model they were
   measured on.** Of the four on [How a turn is
-  decided](../decision-llms.md#how-a-turn-is-decided), two are numbers TypeSafe publish: 0.50,
+  decided](README.md#how-a-turn-is-decided), two are numbers TypeSafe publish: 0.50,
   which they call genuinely unsure, and 0.90, their "high stakes, proceed with confirmation". The
   read floor at 0.60 and the motion floor at 0.85 are quackd's own, set between those two. So this
   row inherits nobody else's calibration, and still no measured one: they publish no formula
@@ -120,12 +120,12 @@ changes.
 ## How to help
 
 Run it in shadow mode on your own bench and report what came back. The commands and the rows to
-read are in [Measuring it yourself](../decision-llms.md#measuring-it-yourself), and what is worth
+read are in [Measuring it yourself](README.md#measuring-it-yourself), and what is worth
 an issue is the agreement rate, the real latency against a robot's state rather than TypeSafe's
 0.114 s on TypeSafe's own task, and the answers that surprised you. Say which base URL you pointed
 the client at and which model id answered, because `TYPESAFE_BASE_URL`, `--decision-url` and
 `TYPESAFE_DEFAULT_MODEL` all move those and a number without them is not reproducible. A floor
 moves on calibration rather than opinion, confidence bucketed against agreement per verb class, as
-[How a turn is decided](../decision-llms.md#how-a-turn-is-decided) sets out. Two of the four are
+[How a turn is decided](README.md#how-a-turn-is-decided) sets out. Two of the four are
 numbers TypeSafe publish and the brake and the confirm gate sit exactly on them, so evidence
 that they are wrong *here* is the most load-bearing thing anybody can send.

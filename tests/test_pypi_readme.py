@@ -90,7 +90,7 @@ def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
     """The one rule keeping a non-Apache asset out of a published package.
 
     `docs/assets/quackd-on-off.gif` renders upstream's model and carries its CC BY-NC-SA
-    terms, and `docs/licenses.md` promises that neither the wheel nor the repository's
+    terms, and `docs/reference/licenses.md` promises that neither the wheel nor the repository's
     published artefacts carry a byte of it. The README serves every image from
     raw.githubusercontent, so no artefact needed any of them anyway. Nothing checked this.
     """
@@ -109,7 +109,8 @@ def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
         assert any(fnmatch.fnmatch(relative, pattern) for pattern in patterns), (
             f"{relative} would ship in the sdist. The README serves images from "
             f"raw.githubusercontent and the simulator figure renders a CC BY-NC-SA model "
-            f"(docs/licenses.md), so add its suffix to the sdist exclude in pyproject.toml."
+            f"(docs/reference/licenses.md), so add its suffix to the sdist exclude in "
+            f"pyproject.toml."
         )
 
 

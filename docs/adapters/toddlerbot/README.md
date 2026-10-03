@@ -41,7 +41,7 @@ the adapter was part of the core wheel, which is why there was no extra to name.
 
 There is nothing to talk to. No socket, no daemon, no IPC: upstream is a Python library whose
 control loop opens serial ports in-process. That is the Open Duck Mini situation rather than
-the Microduck one, so [`bridge/toddlerbot/`](../../bridge/toddlerbot/) holds a daemon and this
+the Microduck one, so [`bridge/toddlerbot/`](../../../bridge/toddlerbot/) holds a daemon and this
 adapter is its client.
 
 But there is a second reason, and it is the one that matters. **A verb is episodic and this
@@ -94,7 +94,7 @@ file, so none of it was ever machine-verified by anyone.
 - **Report a position.** The observation carries motor positions and an orientation. There is
   no odometry, so `go_to` closes the loop on the camera alone.
 
-Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([manifest-spec.md](../manifest-spec.md)):
+Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
 | | |
 |---|---|
@@ -111,7 +111,7 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
 - carry more than about 1.5 kg with both arms together, or an unknown weight in one
 - keep going for more than about twenty minutes: past that the servos heat up and balance suffers
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([duck-spec.md](../duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
 ## The verbs this robot brings
 
@@ -150,7 +150,7 @@ shorter list is better than a verb that refuses on a robot.
 ## Running the daemon
 
 The install, the flags and the safety notes live with the daemon, in
-[`bridge/toddlerbot/README.md`](../../bridge/toddlerbot/README.md), because that is the file
+[`bridge/toddlerbot/README.md`](../../../bridge/toddlerbot/README.md), because that is the file
 an operator has open on the robot. What matters from quackd's side is the shape of the
 answer:
 
@@ -168,13 +168,13 @@ envelope with nothing left on any axis is treated as no locomotion at all.
 **The board it runs on can lend quackd its GPU, and quackd stays on the laptop.** This robot
 carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold a model
 server and quackd's host daemon, and `--host` reaches both from the laptop
-([jetson.md](../jetson.md)). The host daemon runs with `--camera none`, because this daemon
-owns the robot's cameras. A ToddlerBot is a real body, so when the host daemon can detect, the
-run uses the board's YOLO by itself: the frames this daemon's camera sends reach the laptop and
-go back to the board as JPEGs to be detected, a round trip nobody has timed. `--detector color`
-keeps the colour detector on the laptop instead. Nobody has measured what a model server or a
-detector saturating that board does to the fifty hertz loop beside it either, and on this body
-a starved loop is a fall.
+([guides/jetson.md](../../guides/jetson.md)). The host daemon runs with `--camera none`, because
+this daemon owns the robot's cameras. A ToddlerBot is a real body, so when the host daemon can
+detect, the run uses the board's YOLO by itself: the frames this daemon's camera sends reach the
+laptop and go back to the board as JPEGs to be detected, a round trip nobody has timed.
+`--detector color` keeps the colour detector on the laptop instead. Nobody has measured what a model
+server or a detector saturating that board does to the fifty hertz loop beside it either, and on
+this body a starved loop is a fall.
 
 ## The contract job, and what a green one means
 
@@ -268,7 +268,7 @@ which is strictly more than the fake body proves and strictly less than a robot.
 ## How to help
 
 If you have built a ToddlerBot, **put it on its safety stand first**, and work through
-[toddlerbot-hardware-checklist.md](../toddlerbot-hardware-checklist.md) in order: it is
+[adapters/toddlerbot/hardware-checklist.md](hardware-checklist.md) in order: it is
 written so that each step can only fail in a way you can recover from, and it keeps the
 feet off the ground until step 13. Then run quackd's daemon,
 point `toddlerbot-lookout` at it, and say what happened: that task's allowlist moves no leg, no

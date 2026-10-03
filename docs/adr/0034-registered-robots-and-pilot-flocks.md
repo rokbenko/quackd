@@ -1,6 +1,6 @@
 # ADR-0034: A robot has a name, and a flock can be N pilots talking
 
-**Status:** accepted · **Date:** 2026-09-13 · Extends [ADR-0020](0020-heterogeneous-flocks.md) (bodies in a flock) and [ADR-0021](0021-lan-discovery-and-mqtt-bus.md) (the bus carries one more kind) · Amends [ADR-0015](0015-flock-deterministic-coordinator.md) (per-duck LLM pilots were out of scope), [ADR-0016](0016-flock-lockstep-clock.md) (the lockstep clock is the auction's, not every flock's) and [ADR-0025](0025-memory-between-runs.md) (memory is keyed by a registered name where there is one) · Documented in [registry.md](../registry.md) and [flock.md](../flock.md)
+**Status:** accepted · **Date:** 2026-09-13 · Extends [ADR-0020](0020-heterogeneous-flocks.md) (bodies in a flock) and [ADR-0021](0021-lan-discovery-and-mqtt-bus.md) (the bus carries one more kind) · Amends [ADR-0015](0015-flock-deterministic-coordinator.md) (per-duck LLM pilots were out of scope), [ADR-0016](0016-flock-lockstep-clock.md) (the lockstep clock is the auction's, not every flock's) and [ADR-0025](0025-memory-between-runs.md) (memory is keyed by a registered name where there is one) · Documented in [registry.md](../guides/registry.md) and [flock.md](../guides/flock.md)
 
 ## Context
 

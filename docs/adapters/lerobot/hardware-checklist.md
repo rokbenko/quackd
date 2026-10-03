@@ -1,7 +1,7 @@
 # A LeRobot SO-101 arm: the order to try it in
 
 quackd has run on an SO-101 on two afternoons, 2026-09-15 and 2026-09-23, both times on the
-same arm, and [adapter-status.md](adapter-status.md) lists exactly what it did and what fell
+same arm, and [adapters/status.md](../status.md) lists exactly what it did and what fell
 over. That makes this a robot quackd has worked on, not a robot quackd is tested on. Four of
 the questions at the foot of this page came back from the first afternoon still unanswered,
 the second added more, and what quackd changed after the second has not run on an arm yet.
@@ -14,8 +14,8 @@ This robot is unusual in a quiet way, and the quiet thing is what makes the orde
 body joints run with whatever their firmware defaults to, so the elbow has no cap to save
 your finger or its own gears. An arm also sweeps a volume rather than occupying a spot, and
 a gripper is a pinch hazard at any torque. Read
-[adapters/lerobot.md](adapters/lerobot.md) first, or
-[lerobot-first-run.md](lerobot-first-run.md) if you have never run quackd or LeRobot at all:
+[adapters/lerobot/README.md](README.md) first, or
+[adapters/lerobot/first-run.md](first-run.md) if you have never run quackd or LeRobot at all:
 it is the same ground at walking pace, and it hands back to this file the moment anything is
 about to move.
 
@@ -186,7 +186,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    fold. quackd now drives each joint clipped into its travel, counts the edge of the travel as
    reaching a joint recorded past it, lets go there, says once per run which joint is free to
    settle the rest of the way, and never writes a goal for a joint that reads past its travel
-   ([adapters/lerobot.md](adapters/lerobot.md#a-pose-past-the-travel)). The fix is still to
+   ([adapters/lerobot/README.md](README.md#a-pose-past-the-travel)). The fix is still to
    calibrate again folded and record the pose again. Calibrating again at any point moves the
    zero of any joint whose travel it records differently, so the pose you record here is stale
    after it: record it again.
@@ -303,7 +303,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    Then `robot_observe` from the client. What comes back is the frame and a line of
    detections, and on a real desk that line is usually nothing: the detector's colour ranges
-   are the simulator's, which [the adapter page](adapters/lerobot.md#camera) explains.
+   are the simulator's, which [the adapter page](README.md#camera) explains.
 
    Aim it at what you want watched, and check what it crops. On the bench it framed the
    gripper and cut off the raised arm, so the model ended up verifying its own waves from the
@@ -411,7 +411,7 @@ Both of those drive the arm to its rest pose before you get a turn, and back to 
 let go. An MCP session refuses to start at all if it cannot get there, which is the same rule
 as the run's, moved to the moment the daemon comes up.
 
-[Part 2 of the first run](lerobot-first-run.md#part-2-from-claude-over-mcp) is that MCP session
+[Part 2 of the first run](first-run.md#part-2-from-claude-over-mcp) is that MCP session
 at walking pace: which client to configure and how, what each tool answers, what every refusal
 means, and which moments move the arm without anybody asking for it.
 
@@ -645,11 +645,12 @@ recorded
     `manipulate` reach this arm through a policy server, a process of its own that no
     checkpoint ever leaves: `quackd policy serve` in a second terminal, with
     `quackd[lerobot-vla]` in a Python 3.12 environment, and `--policy-url
-    http://127.0.0.1:9875` on the run ([policies.md](policies.md)). Rehearse each command on
-    the arm's twin first ([section 17 of the first run](lerobot-first-run.md#17-optional-hand-the-arm-to-a-learned-policy)),
-    then run it on the arm. Start with a scripted policy that needs no torch and moves nothing,
-    `quackd policy serve --policy scripted:hold`, which holds the arm where it reads, and a
-    pilot that asks no model:
+    http://127.0.0.1:9875` on the run ([guides/policies.md](../../guides/policies.md)). Rehearse
+    each command on the arm's twin first
+    ([section 17 of the first run](first-run.md#17-optional-hand-the-arm-to-a-learned-policy)), then
+    run it on the arm. Start with a scripted policy that needs no torch and moves nothing,
+    `quackd policy serve --policy scripted:hold`, which holds the arm where it reads, and a pilot
+    that asks no model:
 
     ```bash
     quackd run --goal "hold the arm where it is" --robot arm-01 --policy-url http://127.0.0.1:9875 --controller vla
@@ -688,7 +689,7 @@ text, opening with the command that started it and the version that ran it, so i
 the one that answers what happened. Send `transcript.jsonl` beside it when the question is
 about one record rather than the session, such as what `report_state` read back off the joint
 that moved. The steps you drove from an MCP client have neither, because a session writes
-nothing run shaped, and [M14 of the first run](lerobot-first-run.md#m14-what-to-report) lists
+nothing run shaped, and [M14 of the first run](first-run.md#m14-what-to-report) lists
 the four things that stand in for it there. A report that says it did not work is worth as much
 as one that says it did.
 
@@ -696,7 +697,7 @@ The command line at the top of that file has the values of `--api-key`, `--token
 `--host-token` and `--policy-token` replaced, and a password or a credential-named query
 parameter taken out of `--base-url`, `--address`, `--camera-url`, `--decision-url` and
 `--policy-url`. Nothing else on the screen is, so read it before you paste it
-([SECURITY.md](../SECURITY.md)).
+([SECURITY.md](../../../SECURITY.md)).
 
 **Four things one afternoon on one bench did not answer**, and which still need a real arm:
 
@@ -724,12 +725,12 @@ every step of this checklist: a first run is about proving the arm, and one more
 between you and it is the opposite of what that wants. Afterwards,
 `--decision-llm jev --decision-mode shadow` changes nothing about a run and records what the
 decision LLM would have chosen on each turn beside what the model actually chose.
-Two numbers come out of it that exist nowhere yet, for [`jev`](decision-llms/jev.md) and for
-every other decision LLM quackd names alike: how long one takes to answer a real arm's state,
-and how often it agrees with the model on one. Each one's page asks for exactly those two
+Two numbers come out of it that exist nowhere yet, for [`jev`](../../guides/decision-llms/jev.md)
+and for every other decision LLM quackd names alike: how long one takes to answer a real arm's
+state, and how often it agrees with the model on one. Each one's page asks for exactly those two
 under *How to help*. The task
 built for it is `arm-grip-check`, which also happens to be the one that asks the holding-band
-question above ([decision-llms.md](decision-llms.md)).
+question above ([guides/decision-llms/README.md](../../guides/decision-llms/README.md)).
 
 **And two the hand placed start brought with it**, which nobody has any answer to: `--by-hand`
 postdates that afternoon and has been exercised against `lerobot:mock` and in the test suite,
@@ -792,6 +793,6 @@ either of them from an anecdote into a fact:
   needed `?backend=msmf`. That laptop's webcam was `opencv://1`, then `opencv://2` after a
   replug, at 640x480, and it needed no `?backend=` key. Nobody can guess yours.
 
-The `real` row in [adapter-status.md](adapter-status.md) was flipped on 2026-09-15, and it says
+The `real` row in [adapters/status.md](../status.md) was flipped on 2026-09-15, and it says
 what that arm did and what fell over afterwards. The next report either widens that row or
 contradicts it, and the one that contradicts it is worth more.

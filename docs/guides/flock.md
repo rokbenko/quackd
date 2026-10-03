@@ -33,7 +33,7 @@ Which one runs is the task file's to say, through `flock.allocation.method`:
 - `auction` is the default, and everything in a `flock:` block belongs to it.
 - `pilots` needs `duck: 1`, and only `flock.members` is read.
 - **`--flock N`**, a number, is always the coordinator: N simulated ducks.
-- **`--flock NAME`**, a stored flock ([registry.md](registry.md)), supplies the members from
+- **`--flock NAME`**, a stored flock ([guides/registry.md](registry.md)), supplies the members from
   the registry. A task file with no `flock:` block, run that way, is a pilot flock.
 
 One half of this page each. The pilots come first, because that is the kind a flock of your
@@ -45,7 +45,7 @@ own robots runs. The coordinator follows, and everything written about it is sti
 
 One LLM pilot per robot, all at once, on wall-clock time, on any backend. Nobody referees.
 The members divide the task between them by saying what they are going to do
-([ADR-0034](adr/0034-registered-robots-and-pilot-flocks.md)).
+([ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)).
 
 ```bash
 uvx --from "quackd[microduck,lerobot]" quackd run flock-hello --llm fake
@@ -56,7 +56,7 @@ That is the bundled demo: a simulated duck and a mock arm, no registry, no API k
 ## Its own robots
 
 For anything beyond the demo, register the bodies and name the group
-([registry.md](registry.md)):
+([guides/registry.md](registry.md)):
 
 ```bash
 quackd robot add duck microduck:mock
@@ -224,7 +224,7 @@ record intact: the flag says what you watch, and every member writes its own log
   other, there is no ground truth to check a claimed success against, and there is no one GIF
   of the run. A shared arena stays a coordinator feature.
 - **A pilot flock costs N budgets and N times the tokens.** That is what the coordinator was
-  built to avoid ([ADR-0015](adr/0015-flock-deterministic-coordinator.md)), and it is why the
+  built to avoid ([ADR-0015](../adr/0015-flock-deterministic-coordinator.md)), and it is why the
   kick demo still runs the coordinator.
 - **No flock has run on hardware.** The mixed-body case is exercised on `mock` backends,
   and `tell` has been exercised by the scripted pilot and by no real model.
@@ -245,7 +245,7 @@ rules, per robot transcript. Ducks come in the four colorways (Cream, Sky, Laven
 Graphite). A deterministic **coordinator** referees. Add a `flock:` block to a `.duck` file
 or pass `--flock N` to any duck; name the members' robots with `robots:` in the file or
 `--robots name=<adapter>:<backend>,...`. Every member acts only through the verbs its own
-manifest provides ([ADR-0020](adr/0020-heterogeneous-flocks.md)).
+manifest provides ([ADR-0020](../adr/0020-heterogeneous-flocks.md)).
 
 ## The bus
 
@@ -313,8 +313,8 @@ robots:
 A `duck: 2` role may also say what the body has to **be**, not only what it has to know. The
 words are the datasheet's own (`payload_kg`, `reach_m`, `manipulator`, `terrain` and the rest),
 and each one is checked its own way: the rule per key is one table in
-[duck-spec.md](duck-spec.md#needs--the-datasheet-vocabulary-v2), and what the words mean is
-[manifest-spec.md](manifest-spec.md).
+[reference/duck-spec.md](../reference/duck-spec.md#needs--the-datasheet-vocabulary-v2), and what the
+words mean is [reference/manifest-spec.md](../reference/manifest-spec.md).
 
 ```yaml
 flock:
@@ -337,7 +337,7 @@ uses: `payload_kg >= 1 (has 0.5)`, `manipulator = gripper (has beak)`.
 
 Those three checks are also the *only* feasibility judgement in a coordinator flock. Its
 member is a state machine with no pilot to ask, so it is never sent through the `assess_task`
-gate a solo run opens with ([safety.md](safety.md), [ADR-0032](adr/0032-datasheets-and-the-verdict.md)).
+gate a solo run opens with ([concepts/safety.md](../concepts/safety.md), [ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
 A [pilot flock](#the-pilot-flock) member is a whole pilot and is asked exactly as a solo run
 is, about its own part of the task.
 
@@ -350,7 +350,7 @@ is, about its own part of the task.
   previous kicker keeps its claim under the same hysteresis rule. The **spotter is held
   for the run** (its reference frame must not change between kicks); the kicker is
   re auctioned every cycle. A duck can spot too, so two ducks make a valid spotter and
-  kicker pair, which is the only pairing quackd ships an adapter for today ([ADR-0020](adr/0020-heterogeneous-flocks.md)'s amendment).
+  kicker pair, which is the only pairing quackd ships an adapter for today ([ADR-0020](../adr/0020-heterogeneous-flocks.md)'s amendment).
 - **SPOT**: gaze at the sighting, take a fresh frame, keep the target in view. The
   spotter's first sighting is its reference point.
 - **KICK, with roles**: `go_to`, `kick`, step aside, and report `kick_done`. The actor
@@ -367,7 +367,7 @@ The spotter judges, the world vetoes: `summary.json` only says `success` when th
 spotter's verdict and the simulator's `ball_displacement_m` agree. No bundled starter
 exercises this path today: it shipped alongside a stationary-head adapter that no longer
 exists, so the mechanism above is real and tested at the unit level
-([tests/test_flock_roles.py](../tests/test_flock_roles.py)) but currently undemonstrated
+([tests/test_flock_roles.py](../../tests/test_flock_roles.py)) but currently undemonstrated
 end to end. Nor can you simply write one: a `.duck` like the one above **validates** (`quackd
 validate` reports a flock of 2) and then **fails at startup** with `no live robot can take the
 spotter role`, because the coordinator checks who can fill each role before any member has
@@ -407,7 +407,7 @@ Per robot LLM pilots do cost N times the tokens and the latency, which is why th
 what the kick demo runs. They are no longer out of scope: they are the
 [other kind of flock](#the-pilot-flock), and they exist because a pilot that can read a
 datasheet has something to say to another pilot, which was not true when
-[ADR-0015](adr/0015-flock-deterministic-coordinator.md) ruled them out.
+[ADR-0015](../adr/0015-flock-deterministic-coordinator.md) ruled them out.
 
 ## Ground truth
 
@@ -511,7 +511,7 @@ scripted pilots and ground truth checks. The acoustic channel stays theatrical (
 the sighting; Wi Fi would carry the real data).
 
 **Both**: nothing multi robot has run on hardware. An MQTT bus implementing the same `Bus`
-protocol exists ([lan.md](lan.md)), library only and tested on a fake broker, and carries
+protocol exists ([guides/lan.md](lan.md)), library only and tested on a fake broker, and carries
 `TALK` like every other kind. A coordinator flock across machines also needs a clock across
 machines, which is future work; a pilot flock needs no such clock and has simply never been
-tried across two. See [adapter-status.md](adapter-status.md) for the wider honesty table.
+tried across two. See [adapters/status.md](../adapters/status.md) for the wider honesty table.

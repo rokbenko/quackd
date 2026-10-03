@@ -311,7 +311,14 @@ __all__ = [
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_rosbridge import upstream_api
 
-    return (("rosbridge", upstream_api, "docs/adapters/rosbridge.md", "a bridge (the ws backend)"),)
+    return (
+        (
+            "rosbridge",
+            upstream_api,
+            "docs/adapters/rosbridge/README.md",
+            "a bridge (the ws backend)",
+        ),
+    )
 
 
 UPSTREAMS = _upstream_rows()

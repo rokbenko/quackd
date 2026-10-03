@@ -14,7 +14,7 @@ Run it with:
     QUACKD_TODDLERBOT_CONTRACT=1 TODDLERBOT_ROOT=~/toddlerbot uv run pytest \
         tests/test_toddlerbot_contract.py
 
-It still proves nothing about 3 kg of servos, and `docs/adapter-status.md` says so.
+It still proves nothing about 3 kg of servos, and `docs/adapters/status.md` says so.
 """
 
 from __future__ import annotations

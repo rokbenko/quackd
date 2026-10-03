@@ -69,14 +69,14 @@ reader who is not told that opens a CLI full of ducks for no reason.
 - The sentence changes in every place [ADR-0002](0002-name.md) put it: the README, the
   `description` in `pyproject.toml`, the `quackd --help` banner, `quackd/__init__.py`'s
   docstring, the browser demo's `<title>` and meta tags, and `LAUNCH.md`'s per-channel copy. The
-  opening lines of [architecture.md](../architecture.md) and [mcp.md](../mcp.md) change with
+  opening lines of [architecture.md](../concepts/architecture.md) and [mcp.md](../guides/mcp.md) change with
   them, because both opened by restating the old framing. The docs test that asserts the README
   carries the tagline asserts the new one.
 - GitHub's About text, the landing page at <https://www.quackd.org/> and the uploaded social
   preview all live outside this repository, so they are manual follow-ups that nothing in CI can
   catch, and [PLAN.md](../../PLAN.md) carries them. PyPI keeps showing the old description until
   the next release uploads a new one.
-- [flock.md](../flock.md) now reads pilots-first. The auction is still the default and still what
+- [flock.md](../guides/flock.md) now reads pilots-first. The auction is still the default and still what
   the kick demo runs, but a reader arriving from the tagline is looking for robots working
   together, and the pilot flock is the part that answers that.
 - What deliberately does not change: the CHANGELOG and the earlier ADRs and design notes, which

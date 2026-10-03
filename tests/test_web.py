@@ -881,7 +881,7 @@ console.log(JSON.stringify(Object.fromEntries(
 
 
 def test_the_browser_pins_the_same_upstream_commits_python_does() -> None:
-    """`docs/architecture.md` calls keeping this copy in step "the standing cost of it
+    """`docs/concepts/architecture.md` calls keeping this copy in step "the standing cost of it
     existing". This is that cost, paid once."""
     js = _js("microduck.js")
     for label, pin in (("microduck_rl", up.PIN), ("microduck-policies", up.POLICIES_PIN)):

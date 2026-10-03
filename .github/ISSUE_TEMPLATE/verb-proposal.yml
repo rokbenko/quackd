@@ -17,7 +17,7 @@ body:
       options:
         - "core (any robot whose manifest meets its requirements, in quackd/verbs/core.py)"
         - "extension (one body's own behaviour, in that adapter's verbs.py)"
-        - "learned (ONNX policy — v2 track, see docs/learned-verbs.md)"
+        - "learned (ONNX policy — v2 track, see docs/concepts/learned-verbs.md)"
     validations:
       required: true
   - type: input
@@ -63,4 +63,4 @@ body:
         The intent it sends and the upstream call behind it, with a link if you have read it in
         upstream source: duck-ipc-proto for a Microduck, LeRobot, or a ROS message type.
         Unverified names ship UNVERIFIED in that adapter's upstream_api.py, never
-        guessed. See docs/adapters.md.
+        guessed. See docs/adapters/writing-an-adapter.md.

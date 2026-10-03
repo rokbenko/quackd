@@ -7,7 +7,7 @@ mechanisms quackd added because of that, and the protocol is driven end to end a
 real daemon over a real loopback socket, exactly as `test_open_duck_daemon.py` does.
 
 What it cannot prove: that any of it is right on 3 kg of servos. Nothing here has run on a
-robot, and `docs/adapter-status.md` says so.
+robot, and `docs/adapters/status.md` says so.
 """
 
 from __future__ import annotations

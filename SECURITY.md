@@ -11,7 +11,7 @@ within 72 hours.
 
 quackd sends *intents* to a robot. How much of the stopping the robot itself does depends
 on the body, and each adapter declares it in its manifest's `safety_authority`
-(see `docs/safety.md`). On a Microduck, `robotd` is the safety authority: it clamps
+(see `docs/concepts/safety.md`). On a Microduck, `robotd` is the safety authority: it clamps
 velocities, detects falls, and zeroes motion when commands stall. On an Open Duck Mini the
 deadman is quackd's own daemon, running on the robot and zeroing the velocity inside the
 50 Hz loop, so it is code we ship and therefore code we are answerable for. On the other
@@ -39,8 +39,8 @@ Also in scope:
 
 - API keys leaking into transcripts, GIFs, logs, run directories, or a robot's memory file.
   `TYPESAFE_API_KEY`, which the optional discrete stepper reads for the `jev` preset
-  ([docs/decision-llms/jev.md](docs/decision-llms/jev.md)), is one of these. It is the only
-  decision LLM quackd names that wants a key at all: every other one is a server you run
+  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), is one of these. It is the
+  only decision LLM quackd names that wants a key at all: every other one is a server you run
   yourself or a checkpoint in this process, and quackd hands those a placeholder
   in the key field rather than whatever hosted key happens to be sitting in the same `.env`.
 - **The command line, which the run record now holds.** A solo run writes down what it was
@@ -69,27 +69,28 @@ Also in scope:
   URL flag, a credential-named key surviving `extra_body`, or a new flag that takes a secret and
   is in neither `SECRET_FLAGS` nor `URL_FLAGS` (`quackd/command.py`).
 - **What the discrete stepper is sent** (`quackd run --decision-llm`, off unless you name one,
-  [docs/decision-llms.md](docs/decision-llms.md)). Whichever one answers is sent the same
-  thing, once a turn: the task's goal, the robot's own description of itself and its last few
-  results. Where that goes is the part that differs, and it is worth knowing which of the three
-  you chose. `jev` is a third party's hosted API, so a run that names it sends that state over
-  the network to TypeSafe ([docs/decision-llms/jev.md](docs/decision-llms/jev.md)). Every
-  other server row, `local` included, is a server you run, so it goes wherever
-  `--decision-url` points, which is a port on your own machine unless you moved it. What each
-  one binds and whether anything authenticates it is on its own page, and the two are not the
-  same answer: [kev](docs/decision-llms/kev.md) binds `127.0.0.1` and authenticates nothing,
-  while [von](docs/decision-llms/von.md) binds every interface unless you pass `--host`, which
-  is why the catalogue's own command passes it. `laya` runs inside this process, so nothing
-  leaves it at all ([docs/decision-llms/laya.md](docs/decision-llms/laya.md)). None of them is
-  ever sent a camera frame, a system prompt or an API key. How much was sent is on the
-  record, as `state_chars` and `state_tokens_est` on each `decision` event, and which fields
-  were dropped to fit is there as `trimmed`; the text itself is not, so a reader auditing what
-  left the machine is reading a size and a shape rather than the words. The address is on the record too, in `run_start.decision_llm`, with a password in it
-  or a credential-named query parameter already replaced by `***`, because that url can arrive
-  through `QUACKD_DECISION_URL` where argv redaction would never see it. What would be a
-  security issue: a picture or a credential reaching any of them, a credential surviving that
-  recorded url, a hosted key being sent to a server you run, or a stepper-authored call
-  bypassing the executor.
+  [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). Whichever one answers
+  is sent the same thing, once a turn: the task's goal, the robot's own description of itself and
+  its last few results. Where that goes is the part that differs, and it is worth knowing which of
+  the three you chose. `jev` is a third party's hosted API, so a run that names it sends that state
+  over the network to TypeSafe
+  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)). Every other server row,
+  `local` included, is a server you run, so it goes wherever `--decision-url` points, which is a
+  port on your own machine unless you moved it. What each one binds and whether anything
+  authenticates it is on its own page, and the two are not the same answer:
+  [kev](docs/guides/decision-llms/kev.md) binds `127.0.0.1` and authenticates nothing, while
+  [von](docs/guides/decision-llms/von.md) binds every interface unless you pass `--host`, which is
+  why the catalogue's own command passes it. `laya` runs inside this process, so nothing leaves it
+  at all ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is
+  ever sent a camera frame, a system prompt or an API key. How much was sent is on the record, as
+  `state_chars` and `state_tokens_est` on each `decision` event, and which fields were dropped to
+  fit is there as `trimmed`; the text itself is not, so a reader auditing what left the machine is
+  reading a size and a shape rather than the words. The address is on the record too, in
+  `run_start.decision_llm`, with a password in it or a credential-named query parameter already
+  replaced by `***`, because that url can arrive through `QUACKD_DECISION_URL` where argv redaction
+  would never see it. What would be a security issue: a picture or a credential reaching any of
+  them, a credential surviving that recorded url, a hosted key being sent to a server you run, or a
+  stepper-authored call bypassing the executor.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
   sentences a model wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never
@@ -185,8 +186,8 @@ Also in scope:
   with no authentication of its own. Both are off by default and neither has a threat model
   yet, so treat them as trusted-network only.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
-  [docs/jetson.md](docs/jetson.md)), an HTTP server on port 9874 on a board that quackd
-  reaches with `--host` and never runs on. It serves a live view from a camera on the board,
+  [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
+  quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,
   runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
   `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default and warns when it is
   bound wider with no token. A token, once one is configured, is required on every path, read
@@ -215,9 +216,9 @@ Also in scope:
   it has been run on a Jetson by this project, so treat the arrangement as reviewed rather
   than proven.
 - **The policy server** (`quackd policy serve`, `adapters/lerobot/src/quackd_lerobot/policy/`,
-  [docs/policies.md](docs/policies.md)), an HTTP server on port 9875 whose answers move an
-  arm: it serves the goals a learned policy chooses, and the arm's process sends them. It runs
-  as a process of its own, never the one that owns the arm's serial bus, because a LeRobot
+  [docs/guides/policies.md](docs/guides/policies.md)), an HTTP server on port 9875 whose answers
+  move an arm: it serves the goals a learned policy chooses, and the arm's process sends them. It
+  runs as a process of its own, never the one that owns the arm's serial bus, because a LeRobot
   checkpoint's processors can name code to import. It binds `127.0.0.1` or `::1`, and refuses
   any other address, the rest of 127/8 included, unless `--behind-tls` says a TLS proxy stands
   in front of it. A token is always required: with no `--token-file` it writes one to
@@ -255,8 +256,8 @@ Also in scope:
   names loading at a revision nobody pinned, or a policy the arm's connect did not check
   starting a segment. No quackd command loads a checkpoint in the arm's own process.
   `load_policy()` in the arm's backend, an older Python helper that nothing in quackd calls,
-  still would, with none of the checks above and no check at connect, as the `LOAD_POLICY` row
-  in [docs/adapters/lerobot.md](docs/adapters/lerobot.md#the-policies-upstream-lerobot-061)
+  still would, with none of the checks above and no check at connect, as the `LOAD_POLICY` row in
+  [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-061)
   says. Whether to remove it is an open item in PLAN.md.
 - **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with

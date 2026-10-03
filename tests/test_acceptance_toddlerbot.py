@@ -1,6 +1,6 @@
 """Acceptance for the ToddlerBot simulator: `toddlerbot-lookout`, seeds 0..9.
 
-This is what earns `toddlerbot:sim2d` its row in `docs/adapter-status.md`.
+This is what earns `toddlerbot:sim2d` its row in `docs/adapters/status.md`.
 
 The ground truth here is stricter than any other body's, because this one cannot get up. The
 task must succeed, the robot must not have taken a step, and nothing that moves a leg, an arm

@@ -8,7 +8,7 @@ offline; the `bridge` backend talks to a daemon quackd ships for the duck's Pi, 
 
 Everything else, including every LLM call, runs off this Pi entirely: on your laptop or in
 the cloud, talking to the two daemons below over the network (see the
-[hardware checklist](../open-duck-hardware-checklist.md) for the exact steps).
+[hardware checklist](hardware-checklist.md) for the exact steps).
 
 Upstream: [apirrone/Open_Duck_Mini](https://github.com/apirrone/Open_Duck_Mini) (the design,
 Apache-2.0) and
@@ -28,8 +28,9 @@ That extra dates from 0.10.0, and it installs exactly one package: `quackd-open-
 quackd's own Apache-2.0 adapter, whose only dependency is quackd itself. It still pulls nothing
 from upstream, and that is deliberate. The Open Duck Mini Runtime has no license file, so quackd
 never vendors it and never depends on it; the daemon below is copied onto the duck's own Pi
-and lives beside upstream's code there, not in any wheel ([licenses.md](../licenses.md)).
-Before 0.10.0 the adapter was part of the core wheel, which is why there was no extra to name.
+and lives beside upstream's code there, not in any wheel
+([reference/licenses.md](../../reference/licenses.md)). Before 0.10.0 the adapter was part of the
+core wheel, which is why there was no extra to name.
 
 ## Backends
 
@@ -60,7 +61,7 @@ When the duck is down, `move` and `gaze` refuse with a message that names no ver
 human must stand it up, because nothing quackd can call will recover it. A task pointed at
 this robot should say so in its body, and `open-duck-scout` does.
 
-Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([manifest-spec.md](../manifest-spec.md)):
+Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
 | | |
 |---|---|
@@ -73,7 +74,7 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
 - pick up, push or carry anything: there is no arm, no gripper and no beak
 - get back on its feet after a fall: there is no recovery policy, so a fall ends the run and needs a human
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([duck-spec.md](../duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
 ## The manifest
 
@@ -100,7 +101,7 @@ leaves `search_scan` out for exactly this reason.
 
 `say` has no voice behind it. There is no text to speech anywhere in the runtime, so the
 text is logged verbatim and voiced as the closest of the duck's own sounds
-([ADR-0024](../adr/0024-open-duck-mini.md)).
+([ADR-0024](../../adr/0024-open-duck-mini.md)).
 
 ## The bridge daemon
 
@@ -138,8 +139,8 @@ Safety, in the order it matters:
 - The only e-stop is the power switch.
 
 Every flag, the token, the ports, `--fake`, and how to get these files onto a Pi at all:
-[`bridge/open_duck/README.md`](../../bridge/open_duck/README.md). The order to bring a real
-duck up in: [open-duck-hardware-checklist.md](../open-duck-hardware-checklist.md).
+[`bridge/open_duck/README.md`](../../../bridge/open_duck/README.md). The order to bring a real
+duck up in: [adapters/open_duck/hardware-checklist.md](hardware-checklist.md).
 
 ### The camera is a second process
 
@@ -228,6 +229,6 @@ less than its name suggests, and they are worth knowing before you write a task.
 ## How to help
 
 Built one? `open_duck:bridge` is the row most likely to flip to ✅ this year, and it needs a
-person with a duck. [`docs/open-duck-hardware-checklist.md`](../open-duck-hardware-checklist.md)
+person with a duck. [`docs/adapters/open_duck/hardware-checklist.md`](hardware-checklist.md)
 says what to run and in what order, and what to attach to an issue. Start with
 `open-duck-lookout`, whose allowlist moves no legs at all.

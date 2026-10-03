@@ -481,7 +481,14 @@ __all__ = [
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_toddlerbot import upstream_api
 
-    return (("toddlerbot", upstream_api, "docs/adapters/toddlerbot.md", "a humanoid (the bridge)"),)
+    return (
+        (
+            "toddlerbot",
+            upstream_api,
+            "docs/adapters/toddlerbot/README.md",
+            "a humanoid (the bridge)",
+        ),
+    )
 
 
 UPSTREAMS = _upstream_rows()

@@ -1,6 +1,6 @@
 """Acceptance for the AlohaMini simulator: `alohamini-lookout`, seeds 0..9.
 
-This is what earns `alohamini:sim2d` its row in `docs/adapter-status.md`. The row above it
+This is what earns `alohamini:sim2d` its row in `docs/adapters/status.md`. The row above it
 says what a simulator has to do to claim one: run the shipped task on ten seeds, not merely
 import cleanly.
 

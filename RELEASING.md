@@ -24,7 +24,7 @@ program relies on without reading quackd's source.
 - **The MCP server:** its tools and their parameters.
 - **The adapter interface a third party implements:** `make()`, `describe()`, the manifest, the
   verbs and the factory's calls, which is how a robot quackd does not publish joins it
-  ([docs/adapters.md](docs/adapters.md)).
+  ([docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md)).
 - **Run records:** `summary.json`, the event kinds in `transcript.jsonl`, and the fields
   `run_counters` reads back from them, which `quackd log` and people's own scripts read.
 - **The wire protocols that carry a version of their own:** the policy server's
@@ -123,9 +123,9 @@ minor is the one trade these rules will not make.
      `quackd/duckfile/schema.json` to the parser, and `test_manifest_schema_on_disk_is_current`
      in `tests/test_manifest.py`, which holds the manifest's schema to its model;
    - the MCP tool list in `tests/test_docs.py`, which fails when a tool the server registers is
-     missing from [docs/mcp.md](docs/mcp.md) or a page counts them wrong, and beside it the
-     event kinds a run's transcript holds and the keys of a run's `policy` block, which fail
-     when docs/architecture.md leaves one out;
+     missing from [docs/guides/mcp.md](docs/guides/mcp.md) or a page counts them wrong, and beside
+     it the event kinds a run's transcript holds and the keys of a run's `policy` block, which fail
+     when docs/concepts/architecture.md leaves one out;
    - `tests/test_workspace.py`, which fails when the eight versions or the windows between them
      disagree.
 
@@ -159,8 +159,8 @@ exception still holds.
   its adapter's the same way. `scripts/set_version.py X.Y.Z` writes both from the whole version,
   beside the eight `__version__` lines, so a patch raises every floor in the eight
   `pyproject.toml` files to itself, and a minor or a major moves the whole window. The window
-  quoted in prose, in CONTRIBUTING.md, docs/adapters.md and ADR-0037, is edited by hand at every
-  release.
+  quoted in prose, in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037, is edited
+  by hand at every release.
 - **So an adapter from a patch never installs beside a core from before it.** `quackd-lerobot`
   0.16.1 needs `quackd` 0.16.1 or a later 0.16, and `quackd[lerobot]` 0.16.1 installs
   `quackd-lerobot` 0.16.1 or a later 0.16, so an adapter's fix may need what the core gained in
@@ -218,11 +218,11 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
 
    It changes the eight `__version__` lines and every window in the eight `pyproject.toml`
    files: a patch raises each floor to itself, and a minor moves the whole window. Then the
-   copies of the window in CONTRIBUTING.md, docs/adapters.md and ADR-0037 are edited by hand,
-   and so is the version in the `policy` line of the two `quackd policy check` outputs quoted in
-   docs/adapters/lerobot.md, which a check run on the release has to print. A minor also moves
-   the `Version X.Y` line under the README's Status, and LAUNCH.md's first paragraph gains a
-   sentence if the story changed.
+   copies of the window in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037 are
+   edited by hand, and so is the version in the `policy` line of the two `quackd policy check`
+   outputs quoted in docs/adapters/lerobot/README.md, which a check run on the release has to print.
+   A minor also moves the `Version X.Y` line under the README's Status, and LAUNCH.md's first
+   paragraph gains a sentence if the story changed.
 4. **The changelog.** `## [Unreleased]` becomes `## [X.Y.Z] — YYYY-MM-DD`, dated the day it
    ships, so a release that is held is dated again. At the foot, `[Unreleased]:` compares
    `vX.Y.Z...HEAD`, and a new `[X.Y.Z]:` line compares the last tag with `vX.Y.Z` the way every

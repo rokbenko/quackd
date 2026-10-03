@@ -19,58 +19,50 @@ REPO = Path(__file__).resolve().parents[1]
 README = (REPO / "README.md").read_text(encoding="utf-8")
 
 
-def test_adapter_status_lists_every_microduck_upstream_ref() -> None:
-    """The Microduck has two upstreams and adapter-status.md carries both: `robotd`'s API,
-    and `microduck_rl`'s model and policies, which the physics backend fetches and runs.
+def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
+    """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
+    `microduck_rl`'s model and policies, which the physics backend fetches and runs.
 
-    Every other upstream in the project has a doc-completeness guard, the six adapter pages
-    through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one. Without
-    the second loop the newest table is the only one that can go stale in silence.
+    Every other upstream in the project has a doc-completeness guard, the six other adapter
+    pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
+    Without the second loop the newest table is the only one that can go stale in silence.
     """
     from quackd_microduck.sim3d import upstream_api as microduck_rl
 
-    doc = (REPO / "docs" / "adapter-status.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     missing = [ref.name for ref in up.all_refs() if ref.name not in doc]
-    assert not missing, f"docs/adapter-status.md is missing: {missing}"
+    assert not missing, f"docs/adapters/microduck/README.md is missing: {missing}"
     unverified = [
         ref.name for ref in microduck_rl.refs_by_status("UNVERIFIED") if ref.name not in doc
     ]
-    assert not unverified, f"adapter-status.md is missing microduck_rl assumptions: {unverified}"
+    assert not unverified, f"the Microduck's page is missing microduck_rl assumptions: {unverified}"
+
+
+def test_adapter_status_lists_every_backend() -> None:
     from quackd.adapters.factory import BACKENDS
 
+    doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
     for adapter, backends in BACKENDS.items():
         for backend in backends:
-            assert f"`{adapter}:{backend}`" in doc, f"adapter-status.md lacks {adapter}:{backend}"
-
-
-def test_adapter_status_names_every_assumption_the_arm_simulator_makes() -> None:
-    """The arm's simulator has an upstream table on this page, in the shape of the Microduck's
-    physics table above it, and every assumption it makes about its model is named in it, as
-    well as on the arm's own page, whose guard is below. Without this the shorter table could
-    lose a row the day a new assumption is written and nobody would see it."""
-    from quackd_lerobot.sim import upstream_api as so_arm100
-
-    doc = (REPO / "docs" / "adapter-status.md").read_text(encoding="utf-8")
-    section = doc.split("\n### The arm simulator's upstream\n", 1)[1].split("\n## ", 1)[0]
-    missing = [
-        ref.name for ref in so_arm100.refs_by_status("UNVERIFIED") if f"`{ref.name}`" not in section
-    ]
-    assert not missing, f"adapter-status.md's SO-ARM100 table is missing: {missing}"
-    assert so_arm100.PIN[:7] in section and so_arm100.READ_ON in section
+            assert f"`{adapter}:{backend}`" in doc, (
+                f"docs/adapters/status.md lacks {adapter}:{backend}"
+            )
 
 
 def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
     from quackd.adapters.factory import ADAPTER_NAMES
     from quackd.verbs.core import REQUIREMENTS
 
-    guide = (REPO / "docs" / "adapters.md").read_text(encoding="utf-8")
+    guide = (REPO / "docs" / "adapters" / "writing-an-adapter.md").read_text(encoding="utf-8")
     for name in ADAPTER_NAMES:
-        assert f"`{name}`" in guide, f"docs/adapters.md does not mention {name}"
+        assert f"`{name}`" in guide, f"docs/adapters/writing-an-adapter.md does not mention {name}"
     for fn in ("describe", "implementations", "conditions", "make"):
         assert f"def {fn}(" in guide
-    spec = (REPO / "docs" / "manifest-spec.md").read_text(encoding="utf-8")
+    spec = (REPO / "docs" / "reference" / "manifest-spec.md").read_text(encoding="utf-8")
     for verb in REQUIREMENTS:
-        assert f"`{verb}`" in spec, f"docs/manifest-spec.md does not list core verb {verb}"
+        assert f"`{verb}`" in spec, (
+            f"docs/reference/manifest-spec.md does not list core verb {verb}"
+        )
     assert "manifest.schema.json" in spec and "digest()" in spec
 
 
@@ -80,9 +72,9 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 )
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
-    doc = (REPO / "docs" / "adapters" / f"{adapter}.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "adapters" / adapter / "README.md").read_text(encoding="utf-8")
     missing = [ref.name for ref in api.all_refs() if ref.name not in doc]
-    assert not missing, f"docs/adapters/{adapter}.md is missing: {missing}"
+    assert not missing, f"docs/adapters/{adapter}/README.md is missing: {missing}"
     assert api.PIN[:7] in doc and "never" in doc.lower()  # the honesty label
 
 
@@ -96,7 +88,7 @@ def test_adapter_doc_lists_every_simulator_upstream_ref() -> None:
     VERIFIED row, so either row could go and a looser check would stay green."""
     from quackd_lerobot.sim import upstream_api as so_arm100
 
-    doc = (REPO / "docs" / "adapters" / "lerobot.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     section = doc.split("\n## The simulator's upstream: SO-ARM100\n", 1)[1].split("\n## ", 1)[0]
     verified, unverified = section.split("\n### UNVERIFIED (", 1)
     tables = {"VERIFIED": verified.split("\n### VERIFIED (", 1)[1], "UNVERIFIED": unverified}
@@ -105,7 +97,9 @@ def test_adapter_doc_lists_every_simulator_upstream_ref() -> None:
         for ref in so_arm100.all_refs()
         if f"\n| `{ref.name}` |" not in tables[ref.status]
     ]
-    assert not missing, f"docs/adapters/lerobot.md has no row for these SO-ARM100 refs: {missing}"
+    assert not missing, (
+        f"docs/adapters/lerobot/README.md has no row for these SO-ARM100 refs: {missing}"
+    )
     assert so_arm100.PIN[:7] in section and so_arm100.READ_ON in section
     assert "fetched at run time and never shipped" in section  # the honesty label
     assert "QUACKD_LEROBOT_SIM_ASSETS" in section
@@ -120,7 +114,7 @@ def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     green."""
     from quackd_lerobot.policy import upstream_api as policies
 
-    doc = (REPO / "docs" / "adapters" / "lerobot.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     heading = f"\n## The policies' upstream: LeRobot {policies.VERSION}\n"
     section = doc.split(heading, 1)[1].split("\n## ", 1)[0]
     verified, unverified = section.split("\n### UNVERIFIED (", 1)
@@ -130,7 +124,9 @@ def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
         for ref in policies.all_refs()
         if f"\n| `{ref.name}` |" not in tables[ref.status]
     ]
-    assert not missing, f"docs/adapters/lerobot.md has no row for these policy refs: {missing}"
+    assert not missing, (
+        f"docs/adapters/lerobot/README.md has no row for these policy refs: {missing}"
+    )
     assert policies.PIN[:7] in section and policies.READ_ON in section
     # The honesty label. It went on saying no trained checkpoint had ever been loaded after the
     # laptop's server had loaded trained ones, so it says where none has been loaded instead.
@@ -156,11 +152,11 @@ def test_readme_promises() -> None:
         "Non goals for now",
         "--llm ollama",
         "quackd list-models",
-        "docs/local-llms.md",
+        "docs/guides/local-llms.md",
         "| Local models (",
         "--flock",
         "flock-kick",
-        "docs/flock.md",
+        "docs/guides/flock.md",
         "--no-log",
         "QUACKD_LOG",
     ):
@@ -201,9 +197,9 @@ def test_the_catalogue_is_documented_where_it_is_configured() -> None:
         ("README.md", ("quackd list-models", "catalogue")),
         ("docs/faq.md", ("quackd list-models", "catalogue")),
         (".env.example", ("QUACKD_LLM", "list-models")),
-        ("docs/local-llms.md", ("catalogue",)),
+        ("docs/guides/local-llms.md", ("catalogue",)),
         # the one place the answer is that there is no answer, which is worth saying out loud
-        ("docs/mcp.md", ("selects no model", "QUACKD_LLM")),
+        ("docs/guides/mcp.md", ("selects no model", "QUACKD_LLM")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -282,21 +278,22 @@ def test_the_docs_describe_every_log_event_the_code_emits() -> None:
     """architecture.md is the one place that enumerates the transcript, so it is the one
     place this can go stale."""
     # the three modules that write a *run* transcript. The flock keeps its own `flock.jsonl`
-    # (docs/flock.md) and the MCP server's two envelope kinds are documented in docs/mcp.md.
+    # (docs/guides/flock.md) and the MCP server's two envelope kinds are documented in
+    # docs/guides/mcp.md.
     emitted = _emitted_kinds("agent/loop.py", "safety.py", "log.py")
-    doc = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     missing = [kind for kind in sorted(emitted) if f"`{kind}`" not in doc]
-    assert not missing, f"docs/architecture.md does not describe: {missing}"
+    assert not missing, f"docs/concepts/architecture.md does not describe: {missing}"
 
 
 def test_the_mcp_doc_describes_the_envelope_the_server_puts_round_a_call() -> None:
     """A model reading a tool result sees the server's own kinds first and last. They belong
     in the page the model's operator reads, not only in the one about the run loop."""
     emitted = _emitted_kinds("mcp_server.py")
-    doc = (REPO / "docs" / "mcp.md").read_text(encoding="utf-8")
-    architecture = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "guides" / "mcp.md").read_text(encoding="utf-8")
+    architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     missing = [k for k in sorted(emitted) if f"`{k}`" not in doc and f"`{k}`" not in architecture]
-    assert not missing, f"neither docs/mcp.md nor architecture.md describes: {missing}"
+    assert not missing, f"neither docs/guides/mcp.md nor architecture.md describes: {missing}"
 
 
 def test_the_docs_name_every_gate_the_code_can_fire() -> None:
@@ -320,7 +317,8 @@ def test_the_docs_name_every_gate_the_code_can_fire() -> None:
                     gates.add(str(kw.value.value))
     assert gates, "no gate names found: the reader stopped seeing what the code emits"
     docs = "".join(
-        (REPO / "docs" / name).read_text(encoding="utf-8") for name in ("architecture.md", "mcp.md")
+        (REPO / "docs" / name).read_text(encoding="utf-8")
+        for name in ("concepts/architecture.md", "guides/mcp.md")
     )
     missing = sorted(g for g in gates if f"`{g}`" not in docs)
     assert not missing, f"architecture.md and mcp.md name no gate called: {missing}"
@@ -333,7 +331,7 @@ def test_extra_body_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         ("README.md", ("--extra-body", "QUACKD_EXTRA_BODY")),
         (
-            "docs/local-llms.md",
+            "docs/guides/local-llms.md",
             (
                 "--extra-body",
                 "QUACKD_EXTRA_BODY",
@@ -355,7 +353,7 @@ def test_extra_body_is_documented_where_it_is_configured() -> None:
 def test_the_log_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         (
-            "docs/architecture.md",
+            "docs/concepts/architecture.md",
             (
                 "## Log",
                 "--no-log",
@@ -364,10 +362,10 @@ def test_the_log_is_documented_where_it_is_configured() -> None:
                 "QUACKD_LOG_THINKING",
             ),
         ),
-        ("docs/mcp.md", ("log", "--no-log", "QUACKD_LOG")),
-        ("docs/safety.md", ("--dry-run", "dry_run")),
+        ("docs/guides/mcp.md", ("log", "--no-log", "QUACKD_LOG")),
+        ("docs/concepts/safety.md", ("--dry-run", "dry_run")),
         (".env.example", ("QUACKD_LOG", "QUACKD_LOG_THINKING", "QUACKD_LOG_PROMPT")),
-        ("docs/flock.md", ("log", "--no-log")),
+        ("docs/guides/flock.md", ("log", "--no-log")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -381,7 +379,7 @@ def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
     A rate is the one knob here somebody only goes looking for after a bill, so it has to be
     findable from the page they are already on: the README's usage table for the flag, the
     architecture page for the order the three sources are tried in, `.env.example` for the
-    variable, and decision-llms.md for the stepper's own rate, which is a separate variable
+    variable, and the decision LLM hub for the stepper's own rate, which is a separate variable
     because it prices a separate vendor's tokens.
 
     The `.env.example` needles carry their `=` on purpose. `QUACKD_PRICE` is also spelled in
@@ -389,8 +387,8 @@ def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
     bare substring check would still pass with the line that actually sets it deleted."""
     for path, needles in (
         ("README.md", ("--price", "--run-name")),
-        ("docs/architecture.md", ("QUACKD_PRICE", "--price", "--run-name")),
-        ("docs/decision-llms.md", ("QUACKD_DECISION_PRICE",)),
+        ("docs/concepts/architecture.md", ("QUACKD_PRICE", "--price", "--run-name")),
+        ("docs/guides/decision-llms/README.md", ("QUACKD_DECISION_PRICE",)),
         (".env.example", ("QUACKD_PRICE=", "QUACKD_DECISION_PRICE=")),
         # where somebody lands who has already been surprised by a figure, or by its absence
         ("docs/faq.md", ("--price", "--run-name", "unpriced")),
@@ -415,7 +413,7 @@ def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         ("README.md", ("--decision-llm", "--decision-mode")),
         (
-            "docs/decision-llms.md",
+            "docs/guides/decision-llms/README.md",
             ("--decision-url", "quackd[decision]", "quackd[laya]", "quackd.decision_llms"),
         ),
         (
@@ -439,11 +437,11 @@ def test_task_pictures_are_documented_where_they_are_configured() -> None:
     where an arm owner starts, so it is named there as well as in the reference pages."""
     for path, needles in (
         ("README.md", ("--image", "--vision")),
-        ("docs/lerobot-first-run.md", ("--image", "--vision")),
-        ("docs/local-llms.md", ("--image", "--vision")),
-        ("docs/adapters/lerobot.md", ("--image",)),
+        ("docs/adapters/lerobot/first-run.md", ("--image", "--vision")),
+        ("docs/guides/local-llms.md", ("--image", "--vision")),
+        ("docs/adapters/lerobot/README.md", ("--image",)),
         # the pictures land in the run directory, so the page that draws that directory says so
-        ("docs/architecture.md", ("images/",)),
+        ("docs/concepts/architecture.md", ("images/",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -478,12 +476,15 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     frame = "--accept-other-frame"
     for path, needles in (
         ("README.md", ("| Policy |", "--policy-token", "QUACKD_POLICY_TOKEN", frame)),
-        ("docs/mcp.md", ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", "--yes", frame)),
         (
-            "docs/adapters/lerobot.md",
+            "docs/guides/mcp.md",
+            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", "--yes", frame),
+        ),
+        (
+            "docs/adapters/lerobot/README.md",
             ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", frame),
         ),
-        ("docs/safety.md", (frame, "clipped")),
+        ("docs/concepts/safety.md", (frame, "clipped")),
         ("docs/adr/0048-policies-are-the-arms-executor.md", (frame,)),
         (".env.example", ("QUACKD_POLICY_TOKEN=",)),
     ):
@@ -515,10 +516,10 @@ def test_the_controller_is_documented_where_it_is_configured() -> None:
     policy_row = next(line for line in README.splitlines() if line.startswith("| Policy |"))
     assert "--controller vla" in policy_row
     for path, needles in (
-        ("docs/adapters/lerobot.md", ("--controller vla", "Did the arm do it?", "`judge`")),
-        ("docs/safety.md", ("--controller vla", "`judge`")),
-        ("docs/architecture.md", ("`judge`", "providers/vla.py")),
-        ("docs/mcp.md", ("--controller",)),
+        ("docs/adapters/lerobot/README.md", ("--controller vla", "Did the arm do it?", "`judge`")),
+        ("docs/concepts/safety.md", ("--controller vla", "`judge`")),
+        ("docs/concepts/architecture.md", ("`judge`", "providers/vla.py")),
+        ("docs/guides/mcp.md", ("--controller",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -537,18 +538,22 @@ def test_every_question_the_record_keeps_is_named_where_the_record_is_explained(
         re.findall(r'"prompt",\s*what="(\w+)"', gate)
     )
     assert {"confirm", "decide", "release", "judge"} <= kinds, kinds
-    safety = (REPO / "docs" / "safety.md").read_text(encoding="utf-8")
+    safety = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
     listed = safety.split("## Who the record says was asked\n\n", 1)[1].split("\n\n", 1)[0]
     counted = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}[len(kinds)]
     assert f"Those {counted} are" in " ".join(listed.split()), "safety.md counts them wrong"
     row = next(
         line
-        for line in (REPO / "docs" / "architecture.md").read_text(encoding="utf-8").splitlines()
+        for line in (REPO / "docs" / "concepts" / "architecture.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.startswith("| `prompt` |")
     )
     for kind in sorted(kinds):
-        assert f"`{kind}`" in listed, f"docs/safety.md's list of prompts leaves out {kind!r}"
-        assert f"`{kind}`" in row, f"docs/architecture.md's prompt row leaves out {kind!r}"
+        assert f"`{kind}`" in listed, (
+            f"docs/concepts/safety.md's list of prompts leaves out {kind!r}"
+        )
+        assert f"`{kind}`" in row, f"docs/concepts/architecture.md's prompt row leaves out {kind!r}"
 
 
 def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explained() -> None:
@@ -566,12 +571,16 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
     runner.info = info  # as the connect heard it, with nothing asked
     row = next(
         line
-        for line in (REPO / "docs" / "architecture.md").read_text(encoding="utf-8").splitlines()
+        for line in (REPO / "docs" / "concepts" / "architecture.md")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.startswith("| `run_start` |")
     )
     said = row.split("A run with `--policy-url` adds `policy`:", 1)[1]
     for key in sorted(runner.record()):
-        assert f"`{key}`" in said, f"docs/architecture.md's run_start row leaves out {key!r}"
+        assert f"`{key}`" in said, (
+            f"docs/concepts/architecture.md's run_start row leaves out {key!r}"
+        )
 
 
 def test_the_hand_placed_start_is_documented_where_it_is_configured() -> None:
@@ -580,10 +589,10 @@ def test_the_hand_placed_start_is_documented_where_it_is_configured() -> None:
     the safety page has to carry it whether or not they ever open the arm's own."""
     for path, needles in (
         ("README.md", ("--by-hand",)),
-        ("docs/lerobot-first-run.md", ("--by-hand",)),
-        ("docs/adapters/lerobot.md", ("--by-hand",)),
-        ("docs/lerobot-hardware-checklist.md", ("--by-hand",)),
-        ("docs/safety.md", ("--by-hand", "torque")),
+        ("docs/adapters/lerobot/first-run.md", ("--by-hand",)),
+        ("docs/adapters/lerobot/README.md", ("--by-hand",)),
+        ("docs/adapters/lerobot/hardware-checklist.md", ("--by-hand",)),
+        ("docs/concepts/safety.md", ("--by-hand", "torque")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -598,7 +607,7 @@ def test_both_ways_a_run_can_start_are_offered_together() -> None:
     Checked as proximity rather than as wording, because the wording is prose and will be
     rewritten: what must survive a rewrite is that `--by-hand` is explained on the same page as
     the rest pose it departs from, and near it."""
-    for path in ("README.md", "docs/lerobot-first-run.md"):
+    for path in ("README.md", "docs/adapters/lerobot/first-run.md"):
         lines = (REPO / path).read_text(encoding="utf-8").splitlines()
         rest = [i for i, line in enumerate(lines) if "rest-pose" in line or "rest pose" in line]
         hand = [i for i, line in enumerate(lines) if "--by-hand" in line]
@@ -613,9 +622,9 @@ def test_both_ways_a_run_can_start_are_offered_together() -> None:
 def test_mcp_doc_lists_every_tool() -> None:
     from quackd.mcp_server import TOOL_NAMES
 
-    doc = (REPO / "docs" / "mcp.md").read_text(encoding="utf-8")
+    doc = (REPO / "docs" / "guides" / "mcp.md").read_text(encoding="utf-8")
     missing = [name for name in TOOL_NAMES if f"`{name}" not in doc]
-    assert not missing, f"docs/mcp.md is missing: {missing}"
+    assert not missing, f"docs/guides/mcp.md is missing: {missing}"
     assert "--robots" in doc and "--robots" in README
 
 
@@ -632,7 +641,8 @@ def test_mcp_json_is_a_stdio_server() -> None:
     assert backend in BACKENDS.get(adapter, ()), f".mcp.json names {adapter}:{backend}"
     # This is the repo's own config, so it runs the code you are editing, not the release.
     # `uv run` alone re-syncs on launch and loses to the running server's hold on
-    # Scripts/quackd.exe on Windows, so the repo pins --no-sync. Users get `uvx` (docs/mcp.md).
+    # Scripts/quackd.exe on Windows, so the repo pins --no-sync. Users get `uvx`
+    # (docs/guides/mcp.md).
     if server["command"] == "uv" and args[0] == "run":
         assert "--no-sync" in args, "uv run re-syncs and fights the server it is launching"
 
@@ -670,7 +680,9 @@ def _living_docs() -> list[Path]:
     ]
 
 
-@pytest.mark.parametrize("name", ["README.md", "docs/adapters.md", "docs/faq.md", "LAUNCH.md"])
+@pytest.mark.parametrize(
+    "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md", "LAUNCH.md"]
+)
 def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
     """Half of the 0.5 documentation audit was stale counts that no test could see.
 
@@ -781,7 +793,7 @@ _KEPT_PROMISES = (
     "removed in 0.12",
     "stop working in 0.12",
     "stop being read in 0.12",
-    # docs/jetson.md said the doctor section "ships in quackd 0.13.0" and told readers to
+    # docs/guides/jetson.md said the doctor section "ships in quackd 0.13.0" and told readers to
     # install from `main` until then. Nothing here could see that go stale on the day it
     # shipped, which is the day this list exists for.
     "ships in quackd 0.13",
@@ -905,11 +917,11 @@ def test_no_living_document_still_says_no_robot_has_ever_run_quackd() -> None:
         for retired in _RETIRED_HARDWARE_CLAIMS:
             assert retired.lower() not in text, (
                 f"{path.relative_to(REPO)} still says {retired!r}; an SO-101 ran quackd on "
-                "2026-09-15 (docs/adapter-status.md)"
+                "2026-09-15 (docs/adapters/status.md)"
             )
     # and the other half: the six that have not run must not be quietly promoted with it
-    status = (REPO / "docs" / "adapter-status.md").read_text(encoding="utf-8")
-    assert "2026-09-15" in status, "adapter-status.md does not date the one real run"
+    status = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
+    assert "2026-09-15" in status, "docs/adapters/status.md does not date the one real run"
 
 
 def test_the_readme_hero_is_the_real_arm_and_its_caption_says_when_and_who() -> None:
@@ -1202,12 +1214,9 @@ def test_every_body_carries_its_own_numbers_on_its_own_page() -> None:
     from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 
     pages = {
-        "microduck": REPO / "docs" / "adapter-status.md",
-        **{
-            name: REPO / "docs" / "adapters" / f"{name}.md"
-            for name in ADAPTER_NAMES
-            if name not in ("microduck", "rosbridge")
-        },
+        name: REPO / "docs" / "adapters" / name / "README.md"
+        for name in ADAPTER_NAMES
+        if name != "rosbridge"
     }
     for adapter, path in pages.items():
         page = path.read_text(encoding="utf-8")
@@ -1233,11 +1242,12 @@ def test_the_jetpack_table_matches_the_one_doctor_reads() -> None:
     other pages that have to agree with the code."""
     from quackd import doctor
 
-    page = (REPO / "docs" / "jetson.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "guides" / "jetson.md").read_text(encoding="utf-8")
     rows = dict(re.findall(r"^\| `r(\d[\w.]*)` \| ([\w.]+) \|", page, flags=re.M))
-    assert rows, "no L4T table found in docs/jetson.md, or its shape changed"
+    assert rows, "no L4T table found in docs/guides/jetson.md, or its shape changed"
     assert rows == doctor._JETPACK_FOR_L4T, (
-        "docs/jetson.md and quackd/doctor.py disagree about which JetPack an L4T release is:\n"
+        "docs/guides/jetson.md and quackd/doctor.py disagree about which JetPack an L4T "
+        "release is:\n"
         f"  page:   {sorted(rows.items())}\n"
         f"  doctor: {sorted(doctor._JETPACK_FOR_L4T.items())}"
     )
@@ -1255,15 +1265,17 @@ def test_the_page_says_no_jetson_has_run_this() -> None:
     second sentence sits under the doctor block the page pastes: that block came from
     `tests/fake_jetson_hostd.py`, and without the sentence beside it an Orin Nano's L4T, memory
     and `tegrastats` line read as a board's own output, which is the opposite of what happened."""
-    page = (REPO / "docs" / "jetson.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "guides" / "jetson.md").read_text(encoding="utf-8")
     # whole sentences, because the negation is in the first words: the substring
     # "run on a Jetson by this project" is just as true of a page claiming the opposite
     nothing = "Nothing on this page has been run on a Jetson by this project"
     for sentence in (nothing, "That block came from a fake board, not a Jetson"):
-        assert sentence in page, f"docs/jetson.md no longer says: {sentence}"
+        assert sentence in page, f"docs/guides/jetson.md no longer says: {sentence}"
     status = page.split("\n## Status\n", 1)
-    assert len(status) == 2, "docs/jetson.md has no Status section"
-    assert nothing in status[1], f"the Status section of docs/jetson.md no longer says: {nothing}"
+    assert len(status) == 2, "docs/guides/jetson.md has no Status section"
+    assert nothing in status[1], (
+        f"the Status section of docs/guides/jetson.md no longer says: {nothing}"
+    )
 
 
 #: What 0.13.0 shipped to put quackd on a Jetson, and what the release after it removed: the
@@ -1310,12 +1322,12 @@ def test_the_registry_is_documented_where_it_is_configured() -> None:
             ("quackd robot", "quackd flock", "QUACKD_REGISTRY_DIR", "--registry-dir", "rest-pose"),
         ),
         (
-            "docs/registry.md",
+            "docs/guides/registry.md",
             ("robots.json", "flocks.json", "--probe", "plain text", "rest-pose", "rest_pose"),
         ),
         (".env.example", ("QUACKD_REGISTRY_DIR",)),
-        ("docs/mcp.md", ("--flock",)),
-        ("docs/memory.md", ("registered",)),
+        ("docs/guides/mcp.md", ("--flock",)),
+        ("docs/guides/memory.md", ("registered",)),
         ("SECURITY.md", ("robots.json",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
@@ -1348,13 +1360,13 @@ def test_the_host_is_documented_where_it_is_configured() -> None:
     flags = ("--host", "--host-token", "QUACKD_HOST", "QUACKD_HOST_TOKEN")
     for path, needles in (
         ("README.md", (*flags, "--detector", "--host 127.0.0.1", "--bind")),
-        ("docs/jetson.md", (*flags, "--detector")),
-        ("docs/local-llms.md", (*flags, "loopback", "tunnel")),
-        ("docs/registry.md", flags),
+        ("docs/guides/jetson.md", (*flags, "--detector")),
+        ("docs/guides/local-llms.md", (*flags, "loopback", "tunnel")),
+        ("docs/guides/registry.md", flags),
         (".env.example", ("QUACKD_HOST=", "QUACKD_HOST_TOKEN=")),
         ("SECURITY.md", ("9874", "X-Quackd-Token")),
         ("CONTRIBUTING.md", ("bridge/jetson",)),
-        ("docs/architecture.md", ("bridge/jetson",)),
+        ("docs/concepts/architecture.md", ("bridge/jetson",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -1414,13 +1426,16 @@ def test_what_to_send_back_from_a_board_is_one_list() -> None:
     the CHANGELOG links left out `/board`, the only thing that returns the board's own files: a
     doctor `--json` carries what doctor parsed from them, so a parser wrong about a real board
     could not be seen in it. The list lives on the Jetson page, and the README points there."""
-    page = (REPO / "docs" / "jetson.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "guides" / "jetson.md").read_text(encoding="utf-8")
     status = page.split("\n## Status\n", 1)[1]
     for needle in ("--json", "/hello", "/board", "tegrastats", "transcript.jsonl"):
-        assert needle in status, f"the Status section of docs/jetson.md no longer asks for {needle}"
+        assert needle in status, (
+            f"the Status section of docs/guides/jetson.md no longer asks for {needle}"
+        )
     readme = (REPO / "bridge" / "jetson" / "README.md").read_text(encoding="utf-8")
-    assert "(../../docs/jetson.md#status)" in readme.split("\n## Status\n", 1)[1], (
-        "bridge/jetson/README.md should send a board owner to docs/jetson.md#status for the list"
+    assert "(../../docs/guides/jetson.md#status)" in readme.split("\n## Status\n", 1)[1], (
+        "bridge/jetson/README.md should send a board owner to docs/guides/jetson.md#status for "
+        "the list"
     )
 
 
@@ -1438,13 +1453,13 @@ def test_every_command_is_named_in_the_readme_table_and_the_module_map() -> None
     }
     names |= {g.name or "" for g in app.registered_groups}
     names = {n.replace("_", "-") for n in names if n}
-    architecture = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     # the table row, not the prose: `quackd flock` is mentioned in three paragraphs and was
     # still missing from the one table somebody reads to find out that it exists
     rows = "".join(line for line in README.splitlines(keepends=True) if line.startswith("| `"))
     for name in sorted(names):
         assert f"| `quackd {name}" in rows, f"the README usage table has no row for {name}"
-        assert name in architecture, f"docs/architecture.md never names {name}"
+        assert name in architecture, f"docs/concepts/architecture.md never names {name}"
 
 
 def _github_slug(heading: str) -> str:
@@ -1507,6 +1522,29 @@ def test_every_relative_link_and_anchor_in_the_markdown_resolves() -> None:
     assert not broken, "links that go nowhere:\n" + "\n".join(broken)
 
 
+def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> None:
+    """docs/README.md is the map, and a page it leaves out is one a reader finds only by luck.
+
+    Twenty six pages once sat side by side in docs/, a guide beside a spec beside one robot's
+    checklist. The map is how they stay found now that each kind has a folder of its own, and
+    the map says this test holds it to every page in those four folders. The ADRs and the
+    design notes are reached through their folders, which the map links."""
+    index = REPO / "docs" / "README.md"
+    linked = {
+        (index.parent / target.partition("#")[0]).resolve()
+        for target in re.findall(r"\]\(([^)\s]+)\)", _prose(index.read_text(encoding="utf-8")))
+        if not re.match(r"^[a-z][a-z0-9+.-]*:", target)
+    }
+    pages = [
+        page
+        for folder in ("guides", "adapters", "reference", "concepts")
+        for page in sorted((REPO / "docs" / folder).rglob("*.md"))
+    ]
+    assert len(pages) > 20, "the folders under docs/ moved, so this test is checking nothing"
+    missing = [page.relative_to(REPO).as_posix() for page in pages if page.resolve() not in linked]
+    assert not missing, f"docs/README.md does not link: {missing}"
+
+
 # ── a page per decision LLM, and the row it has to agree with ───────────────────────────
 
 
@@ -1520,13 +1558,13 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
     ran bare `python` outside the synced environment. So every value a page quotes is read
     back off the page and compared with the row it came from.
 
-    The three literals at the end are the honesty rule `docs/adapters.md` puts on an adapter
-    page, applied to a server: say what you read and when, say what you are assuming, and
+    The three literals at the end are the honesty rule `docs/adapters/writing-an-adapter.md` puts on
+    an adapter page, applied to a server: say what you read and when, say what you are assuming, and
     keep the word never until somebody has actually run it.
     """
     spec = PRESETS[name]
-    path = REPO / "docs" / "decision-llms" / f"{name}.md"
-    assert path.exists(), f"every preset has a page: docs/decision-llms/{name}.md is missing"
+    path = REPO / "docs" / "guides" / "decision-llms" / f"{name}.md"
+    assert path.exists(), f"every preset has a page: docs/guides/decision-llms/{name}.md is missing"
     page = path.read_text(encoding="utf-8")
     for field in ("url", "model", "key_env", "install"):
         value = getattr(spec, field)
@@ -1557,17 +1595,17 @@ def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     It also carries each install line verbatim, which is the cell that drifted before: a
     table nobody reads against the code is a table that describes an older release.
     """
-    hub = (REPO / "docs" / "decision-llms.md").read_text(encoding="utf-8")
+    hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
     lines = hub.splitlines()
     rows: dict[str, int] = {}
     for name in PRESET_NAMES:
         row = next((i for i, line in enumerate(lines) if line.startswith(f"| `{name}` |")), None)
         assert row is not None, f"the hub's table has no row for {name}"
         rows[name] = row
-        assert f"](decision-llms/{name}.md)" in lines[row], f"{name}'s row does not link its page"
+        assert f"]({name}.md)" in lines[row], f"{name}'s row does not link its page"
         assert PRESETS[name].install in lines[row], f"{name}'s row does not quote its install line"
     assert list(rows) == sorted(rows, key=lambda n: rows[n]), "the table is not in doctor's order"
-    linked = set(re.findall(r"\]\(decision-llms/([a-z_]+)\.md\)", hub))
+    linked = set(re.findall(r"\]\(([a-z_]+)\.md\)", hub))
     assert linked == set(PRESET_NAMES), f"the hub links {sorted(linked)}"
 
 
@@ -1869,11 +1907,13 @@ def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step()
     assert step in _one_line(release), "CHANGELOG.md's 0.15.0 section no longer names the step"
     plan = _one_line((REPO / "PLAN.md").read_text(encoding="utf-8"))
     assert step in plan, "PLAN.md's item for the SO-101 no longer names 0.15.0's bench step"
-    checklist = (REPO / "docs" / "lerobot-hardware-checklist.md").read_text(encoding="utf-8")
+    checklist = (REPO / "docs" / "adapters" / "lerobot" / "hardware-checklist.md").read_text(
+        encoding="utf-8"
+    )
     step_14 = checklist.split("\n14. ", 1)[1].split("\n## ", 1)[0]
     assert step in _one_line(step_14), (
-        "step 14 of docs/lerobot-hardware-checklist.md no longer asks for 0.15.0's bench step, "
-        "and the release note and PLAN.md both send the reader there for it"
+        "step 14 of docs/adapters/lerobot/hardware-checklist.md no longer asks for 0.15.0's bench "
+        "step, and the release note and PLAN.md both send the reader there for it"
     )
 
 
@@ -1969,7 +2009,7 @@ _MCP_CLOCK_STARTS_AT_THE_SPAWN = (
 
 def test_no_page_says_an_mcp_sessions_minutes_start_at_the_spawn() -> None:
     """0.15.0 starts an MCP session's clock once its robot has connected, as a `quackd run`'s
-    is, so an arm's connect retries no longer come out of the minutes. docs/mcp.md was
+    is, so an arm's connect retries no longer come out of the minutes. docs/guides/mcp.md was
     corrected with the code, and the arm's first-run guide still said, in five paragraphs, that
     the five minutes begin when the client spawns the server."""
     for path in _living_docs():
@@ -2155,15 +2195,15 @@ def test_every_step_of_the_arms_first_run_has_a_mirror_or_a_reason() -> None:
     Part 1 section with no mirror is linked from the note that opens Part 2, with the reason.
     Section 16, the rehearsal on the simulator, was added with neither, which left a reader on
     the Claude path told nothing about a twin, or that an MCP session on one is not seeded."""
-    page = (REPO / "docs" / "lerobot-first-run.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "adapters" / "lerobot" / "first-run.md").read_text(encoding="utf-8")
     part_1, part_2 = page.split("\n## Part 2", 1)
     opening = part_2.split("\n### ", 1)[0]
     mirrored = set(re.findall(r"^### M(\d\d)\. ", part_2, flags=re.MULTILINE))
     for number in re.findall(r"^### (\d\d)\. ", part_1, flags=re.MULTILINE):
         if number not in mirrored:
             assert f"](#{number}-" in opening, (
-                f"docs/lerobot-first-run.md: Part 1's section {number} has no M{number} in "
-                "Part 2, and the note that opens Part 2 does not say why"
+                f"docs/adapters/lerobot/first-run.md: Part 1's section {number} has no M{number} "
+                "in Part 2, and the note that opens Part 2 does not say why"
             )
 
 
@@ -2174,7 +2214,7 @@ def test_the_arms_page_gives_a_policy_segment_s_limits_as_the_code_keeps_them() 
     from quackd_lerobot import real, verbs
     from quackd_lerobot.policy import loop
 
-    page = (REPO / "docs" / "adapters" / "lerobot.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     section = _one_line(page.split("\n### What `pick` needs", 1)[1].split("\n## ", 1)[0])
     fast = 3 / verbs.TICK_S
     said = [
@@ -2194,7 +2234,9 @@ def test_the_arms_page_gives_a_policy_segment_s_limits_as_the_code_keeps_them() 
         f"waiting up to {loop.RESET_S:g} s",
     ]
     for words in said:
-        assert words in section, f"docs/adapters/lerobot.md's pick section no longer says {words!r}"
+        assert words in section, (
+            f"docs/adapters/lerobot/README.md's pick section no longer says {words!r}"
+        )
 
 
 def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
@@ -2207,7 +2249,7 @@ def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
     from quackd_lerobot.policy import client
     from quackd_lerobot.verbs import JOINTS
 
-    page = _one_line((REPO / "docs" / "policies.md").read_text(encoding="utf-8"))
+    page = _one_line((REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8"))
     for error in (TimeoutError, ConnectionRefusedError):
         runner = client.RemoteRunner("http://127.0.0.1:9875", token="t" * 32, motors=JOINTS)
 
@@ -2218,7 +2260,9 @@ def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
         with pytest.raises(client.PolicyServerError) as said:
             runner.policy()
         sentence = _one_line(str(said.value))
-        assert sentence in page, f"docs/policies.md does not quote what {error.__name__} says"
+        assert sentence in page, (
+            f"docs/guides/policies.md does not quote what {error.__name__} says"
+        )
 
 
 def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_model_that_flew_one() -> None:
@@ -2261,13 +2305,13 @@ def test_every_licence_quackd_credits_says_where_it_was_read() -> None:
     entries = re.split(r"\n  \* ", notice.split("\n  * ", 1)[1])
     bare = [entry.split("\n", 1)[0] for entry in entries if "https://" not in entry]
     assert not bare, f"NOTICE credits these with no address: {bare}"
-    page = (REPO / "docs" / "policies.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8")
     table = page.split("\n## Licences\n", 1)[1].split("\n## ", 1)[0]
     rows = [line for line in table.splitlines() if line.startswith("| ") and "/" in line]
     named = [row for row in rows if re.search(r"`[\w.-]+/[\w.-]+`", row)]
-    assert named, "docs/policies.md's licence table names no checkpoint"
+    assert named, "docs/guides/policies.md's licence table names no checkpoint"
     unlinked = [row[:60] for row in named if "](https://" not in row]
-    assert not unlinked, f"docs/policies.md's licence rows cite no page: {unlinked}"
+    assert not unlinked, f"docs/guides/policies.md's licence rows cite no page: {unlinked}"
 
 
 # ── what a version says, which RELEASING.md reads off the changelog's headings ─────────────

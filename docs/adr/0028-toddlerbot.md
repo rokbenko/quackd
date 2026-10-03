@@ -1,6 +1,6 @@
 # ADR-0028: ToddlerBot: quackd ships the loop, and everything upstream forgot to protect
 
-**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0024 · Implemented in 0.7 ([page](../adapters/toddlerbot.md))
+**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0024 · Implemented in 0.7 ([page](../adapters/toddlerbot/README.md))
 
 ## Context
 

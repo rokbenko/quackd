@@ -1490,7 +1490,7 @@ def _run_impl(
             "--controller vla tells the arm's policy the instructions a task file lists, and "
             f"{duck.name} lists none",
             hint="list them under policy.instructions in a duck: 3 task file "
-            "(docs/duck-spec.md), or give --goal",
+            "(docs/reference/duck-spec.md), or give --goal",
         )
         return
     # Before the dispatch below, because a flock takes neither of the two flags and dropping
@@ -1796,7 +1796,7 @@ def _run_impl(
             wrong = [n for n, e in roster.items() if e.robot_spec.key != "microduck:sim2d"]
             if wrong:
                 _fail(
-                    f"a coordinator flock is sim2d Microducks only (docs/flock.md): "
+                    f"a coordinator flock is sim2d Microducks only (docs/guides/flock.md): "
                     f"{wrong[0]} is {roster[wrong[0]].robot_spec.key}",
                     hint="set flock.allocation.method: pilots to run other bodies",
                 )
@@ -1973,8 +1973,8 @@ def _run_impl(
             decision_price = resolve_decision_price(chosen)
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
-        # `docs/decision-llms.md` is arithmetic from published numbers rather than a result.
-        # Two of the four confidence floors are the 0.5 and 0.9 TypeSafe publish and two are
+        # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
+        # result. Two of the four confidence floors are the 0.5 and 0.9 TypeSafe publish and two are
         # quackd's own, and all four were shaped around Jev and are inherited unmeasured by
         # every other row.
         # Refusing the flag over that would be the wrong shape of gate, because the executor
@@ -1983,11 +1983,11 @@ def _run_impl(
         ui.console.print(
             _warn_line(
                 "--decision-mode on has not been measured against a real robot: no latency, no "
-                "agreement rate, and the figures in docs/decision-llms.md are estimates for "
-                "Jev and nothing at all for anything else. Two of the four confidence floors "
-                "are published by TypeSafe and two are quackd's own, all four shaped around "
-                "Jev. --decision-mode shadow records both and changes nothing "
-                "about the run."
+                "agreement rate, and the figures in docs/guides/decision-llms/README.md are "
+                "estimates for Jev and nothing at all for anything else. Two of the four "
+                "confidence floors are published by TypeSafe and two are quackd's own, all "
+                "four shaped around Jev. --decision-mode shadow records both and changes "
+                "nothing about the run."
             ),
             soft_wrap=True,
         )
@@ -2478,7 +2478,7 @@ def _run_flock_impl(
 
     if any(spec.backend != "sim2d" for spec in specs):
         _fail(
-            "flock mode is simulator only (docs/flock.md); "
+            "flock mode is simulator only (docs/guides/flock.md); "
             "every member must be an <adapter>:sim2d robot"
         )
         return

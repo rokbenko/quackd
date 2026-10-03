@@ -122,7 +122,7 @@ TOOL_NAMES = (
     "robot_recall",
     "robot_remember",
 )
-"""Every tool the server registers, in this order; `docs/mcp.md` must list each one."""
+"""Every tool the server registers, in this order; `docs/guides/mcp.md` must list each one."""
 
 INSTRUCTIONS = """You are piloting one robot through quackd: {names}, which is {blurb}.
 This body: {datasheet}

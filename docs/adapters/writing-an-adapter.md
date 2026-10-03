@@ -4,9 +4,9 @@ An adapter is how a robot joins quackd. It answers one question, "what is this b
 what can it do", as a `RobotManifest`, and it moves the body through intents the robot's
 own controllers execute. Everything else (the loop, the executor, the `.duck` contract,
 the MCP server) is shared. quackd ships seven: `microduck`,
-`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini` and `toddlerbot`. This page is the recipe; [ADR-0017](adr/0017-robot-adapters-and-manifest.md),
-[ADR-0018](adr/0018-core-verbs-extensions-aliases.md) and
-[ADR-0022](adr/0022-per-adapter-upstream-refs.md) are the reasons.
+`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini` and `toddlerbot`. This page is the recipe; [ADR-0017](../adr/0017-robot-adapters-and-manifest.md),
+[ADR-0018](../adr/0018-core-verbs-extensions-aliases.md) and
+[ADR-0022](../adr/0022-per-adapter-upstream-refs.md) are the reasons.
 
 An adapter is its own distribution. `uv pip install quackd` installs the loop and no robot,
 and each body arrives as a package of its own: `quackd-microduck`, `quackd-lerobot`,
@@ -35,7 +35,7 @@ adapters/<name>/
     mock.py         # a backend that runs offline and does what the test says
     <real>.py       # the SDK backend, EXPERIMENTAL until run against the target
     upstream_api.py # every SDK name you spell, VERIFIED or UNVERIFIED, with a pinned link
-docs/adapters/<name>.md
+docs/adapters/<name>/README.md
 tests/test_<name>_adapter.py
 ```
 
@@ -46,7 +46,7 @@ that package holds only what every adapter shares, which is `base.py`, `manifest
 
 ### The packaging, from a real one
 
-[`adapters/lerobot/pyproject.toml`](../adapters/lerobot/pyproject.toml) is the shortest
+[`adapters/lerobot/pyproject.toml`](../../adapters/lerobot/pyproject.toml) is the shortest
 complete example, and every line of it is load-bearing:
 
 ```toml
@@ -77,7 +77,7 @@ quackd = { workspace = true }
 
 | Line | Why it is that way |
 |---|---|
-| `dependencies = ["quackd>=0.16.1,<0.17"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own seven start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../RELEASING.md)) |
+| `dependencies = ["quackd>=0.16.1,<0.17"]` | the core is the dependency, never the other way round. The window is narrow because the manifest model and the intent vocabulary are the interface, and they move with the core, only ever in a minor, so an adapter published from somewhere else allows the whole minor, `quackd>=X.Y,<X.Y+1`, and takes every patch of it. quackd's own seven start the window at the release they ship in instead, `quackd>=X.Y.Z,<X.Y+1`, so one from a patch never installs beside a core from before it ([RELEASING.md](../../RELEASING.md)) |
 | `[project.optional-dependencies] sdk` | the library the real backend imports, and only that backend. A machine without it still gets `lerobot:mock`, still validates a `.duck` against the arm and still prints it in `list-adapters`. `quackd[lerobot]` in the core pins `quackd-lerobot[sdk]`, so the extra a reader types buys both halves. An adapter whose robot side you ship yourself declares no `sdk` at all: `quackd-open-duck` and `quackd-toddlerbot` have none |
 | the environment marker | LeRobot needs Python 3.12 and pulls torch. The marker is what keeps the lock solvable on 3.11, where this package still installs and the mock still runs |
 | `[project.entry-points."quackd.adapters"]` | `lerobot = "quackd_lerobot"` is the robot's name mapped to the module carrying `describe`, `make`, `implementations` and `conditions`. This is how quackd finds it, and the only way it finds a third party's |
@@ -156,7 +156,7 @@ simply contributes no rows.
 Doctor walks every installed adapter, collects the rows, and prints each upstream's pin, the
 date it was read, how many refs are VERIFIED and how many are not, and the never-run label
 verbatim. It lives in the adapter rather than in a table in the core because the list belongs
-to whoever wrote the adapter ([ADR-0022](adr/0022-per-adapter-upstream-refs.md)), and the core
+to whoever wrote the adapter ([ADR-0022](../adr/0022-per-adapter-upstream-refs.md)), and the core
 cannot carry a row for a package it has never heard of. The import is deferred inside a
 function so that naming the upstream costs nothing until doctor asks. The arm's, whole:
 
@@ -164,7 +164,9 @@ function so that naming the upstream costs nothing until doctor asks. The arm's,
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_lerobot import upstream_api
 
-    return (("lerobot", upstream_api, "docs/adapters/lerobot.md", "an arm (the real backend)"),)
+    return (
+        ("lerobot", upstream_api, "docs/adapters/lerobot/README.md", "an arm (the real backend)"),
+    )
 
 
 UPSTREAMS = _upstream_rows()
@@ -188,7 +190,8 @@ a diagnostics command to be describable.
 
 A verb that is not in the manifest does not exist: not in the registry, not in the MCP
 tool list, not in `.duck` validation, not in the prompt. So the manifest is where honesty
-lives. The rules, enforced by the model itself ([manifest-spec.md](manifest-spec.md)):
+lives. The rules, enforced by the model itself
+([reference/manifest-spec.md](../reference/manifest-spec.md)):
 
 - **Core verbs need what they need.** `observe` needs a camera; `move` and `go_to` need
   the `twist` intent and mobility; `search_scan` needs a camera and either `twist` or
@@ -222,9 +225,9 @@ lives. The rules, enforced by the model itself ([manifest-spec.md](manifest-spec
   what it cannot do whatever the task says. Every figure carries a confidence and a source,
   and a figure the maker never published is left out rather than guessed at, because the
   prompt renders an absent one as "not published" and tells the pilot to answer `uncertain`
-  where a task turns on it ([manifest-spec.md](manifest-spec.md#the-datasheet)). The same
-  sheet describes the body on every backend, which is part of why `digest()` matches across
-  them.
+  where a task turns on it
+  ([reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)). The same sheet
+  describes the body on every backend, which is part of why `digest()` matches across them.
 - **`digest()`** is the capability fingerprint discovery advertises; it ignores `id` and
   `backend`, so the same robot over `sim2d` and `mock` hashes the same.
 
@@ -300,7 +303,7 @@ The one exception is a body that has been put somewhere it can be let go of. A L
 with a recorded rest pose is driven there first, or to the edge of its calibrated travel where
 the pose lies past it, and only then is upstream's own torque-off allowed to happen; an arm
 that did not reach the pose has that flag turned off and is left with whatever torque it has,
-with one line saying so ([safety.md](safety.md)). That is the shape any
+with one line saying so ([concepts/safety.md](../concepts/safety.md)). That is the shape any
 other body would have to take to earn a `go_to_rest()`: a pose the body holds with the power
 off, checked before anything is released, and a refusal to release when it is not there.
 
@@ -308,7 +311,7 @@ The other exception is a person holding the arm who asks. `quackd run --by-hand`
 LeRobot arm at its rest pose so the person can set the start, and `quackd robot release`, or
 Enter at the offer a run makes when its last rest move missed, releases it wherever it stands.
 None of them is a verb, an MCP tool or a method on the `RobotAdapter` protocol, so no pilot can
-reach them ([adapters/lerobot.md](adapters/lerobot.md#the-torque-rule)).
+reach them ([adapters/lerobot/README.md](lerobot/README.md#the-torque-rule)).
 
 ### If you speak a wire
 
@@ -359,7 +362,7 @@ implementations, a kinematic puppet and the Microduck on its own trained policy.
 package inside `quackd-lerobot` is the arm's, `lerobot:mujoco`, and it is built the other way
 round: not a world a body is dropped into, but the arm's real backend with a simulated follower
 under it, so a task rehearsed there runs through the code that drives the arm
-([ADR-0047](adr/0047-the-arms-simulator-runs-the-real-backend.md)). Both fetch their model from
+([ADR-0047](../adr/0047-the-arms-simulator-runs-the-real-backend.md)). Both fetch their model from
 upstream at a pinned commit and hash every file, and CI runs each on a stand-in that needs
 nothing fetched. A physics body for a new robot means its MJCF, its own controller and a reason
 the cartoon cannot serve, usually that you need to know whether a gait works, or that its real
@@ -374,7 +377,7 @@ body's port. A module that declares none has none.
 ## `upstream_api.py`: never guess a name
 
 The traps that recur across bodies, and what each one cost, are collected in
-[reading-robots.md](reading-robots.md). Read it before the first adapter you write against
+[adapters/reading-robots.md](reading-robots.md). Read it before the first adapter you write against
 an upstream you did not choose.
 
 Every SDK name you spell lives in one file as an `UpstreamRef(name, status, source, note)`
@@ -382,22 +385,22 @@ with a permalink to a pinned commit and line. `VERIFIED` means you read it there
 `UNVERIFIED` means it is your assumption, and the note says what quackd does about it.
 `tests/test_upstream_api.py` takes one row per adapter: the module, the files allowed to
 touch its UNVERIFIED identifiers (its own `upstream_api.py` and the backend), and the source prefixes
-every link must start with. `docs/adapters/<name>.md` must list every ref's name (a test
-checks) and carry the pin and the word "never" until someone has run it for real.
+every link must start with. `docs/adapters/<name>/README.md` must list every ref's name (a
+test checks) and carry the pin and the word "never" until someone has run it for real.
 
 ## Status is a promise
 
-The README's status table and [adapter-status.md](adapter-status.md) get ✅ only for what
+The README's status table and [adapters/status.md](status.md) get ✅ only for what
 was exercised against its real target by us. A new adapter arrives 🧪 for its SDK backend
 and stays 🧪 until a human runs it on hardware and the transcript says so. Nothing in
 this repository claims a robot moved unless one did.
 
 One backend has been through that. `lerobot:real` drove an SO-101 on 2026-09-15: the lookout
-duck, free-form waves, the gripper and a USB webcam ([lerobot-first-run.md](lerobot-first-run.md)),
-and the same arm ran again on 2026-09-23 under a registered name with a rest pose recorded
-([adapter-status.md](adapter-status.md)). It is the only body here any of this has been tested
-against. Every other adapter is still
-🧪 on the backend that reaches its robot, which is the state this page is mostly written for.
+duck, free-form waves, the gripper and a USB webcam
+([adapters/lerobot/first-run.md](lerobot/first-run.md)), and the same arm ran again on 2026-09-23
+under a registered name with a rest pose recorded ([adapters/status.md](status.md)). It is the only
+body here any of this has been tested against. Every other adapter is still 🧪 on the backend
+that reaches its robot, which is the state this page is mostly written for.
 
 ## The checklist
 
@@ -435,11 +438,11 @@ Then, for one quackd publishes:
    `[sdk]` if there is one), the package listed in the `dev` extra and in
    `[tool.uv.sources]` as a workspace member, and `uv lock`. The module gets a row in
    `doctor.py`'s `EXTRAS` if it has an SDK worth probing.
-8. `docs/adapters/<name>.md` (every ref name, the pin, "never"), a row in the README status
-   table and in `adapter-status.md`, a CHANGELOG entry, a `docs/architecture.md` mention. For
-   a backend that reaches hardware, a `<name>-lookout` duck that moves nothing and a
-   `docs/<name>-hardware-checklist.md`: the first thing an owner will point at the robot, and
-   the order to do it in.
+8. `docs/adapters/<name>/README.md` (every ref name, the pin, "never"), a row in the README
+   status table, in `docs/adapters/status.md` and in `docs/README.md`, a CHANGELOG entry, a
+   `docs/concepts/architecture.md` mention. For a backend that reaches hardware, a
+   `<name>-lookout` duck that moves nothing and a `docs/adapters/<name>/hardware-checklist.md`:
+   the first thing an owner will point at the robot, and the order to do it in.
 9. The gate: `uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest && uv run quackd validate ducks/*.duck`.
 
 ### Publishing one yourself

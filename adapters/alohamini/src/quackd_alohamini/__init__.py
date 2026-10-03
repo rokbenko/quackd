@@ -419,7 +419,14 @@ __all__ = [
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_alohamini import upstream_api
 
-    return (("alohamini", upstream_api, "docs/adapters/alohamini.md", "a robot (the zmq backend)"),)
+    return (
+        (
+            "alohamini",
+            upstream_api,
+            "docs/adapters/alohamini/README.md",
+            "a robot (the zmq backend)",
+        ),
+    )
 
 
 UPSTREAMS = _upstream_rows()

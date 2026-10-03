@@ -10,7 +10,7 @@
 > about a new MCP tool needing its docs in the same commit still holds and has been extended:
 > a new CLI command needs its README table row and its `docs/architecture.md` row in the same
 > commit, and a test now says so. See [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)
-> and [flock.md](../flock.md).
+> and [flock.md](../guides/flock.md).
 
 ## Why
 

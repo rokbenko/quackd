@@ -1393,7 +1393,8 @@ async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_ve
 async def test_yes_clears_the_doubt_a_refused_feasible_became(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:
-    """What the check costs and does not cost under `--yes`, because docs/safety.md says so.
+    """What the check costs and does not cost under `--yes`, because docs/concepts/safety.md says
+    so.
 
     A refused `feasible` leaves the pilot three answers, and `uncertain` is one of them. At a
     terminal `--yes` answers that with go, on purpose and documented, so the same unmet need

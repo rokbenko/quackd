@@ -35,7 +35,7 @@ TOOLS = {
     "robot_observe",
     "robot_say",
     "robot_load_duckfile",
-    # memory between sessions (docs/memory.md)
+    # memory between sessions (docs/guides/memory.md)
     "robot_recall",
     "robot_remember",
 }

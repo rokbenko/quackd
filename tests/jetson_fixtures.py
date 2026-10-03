@@ -6,7 +6,7 @@ means the two cannot drift into agreeing with two different boards.
 
 The thing tested is always the reading and never the hardware. The one fact no fixture can
 supply is whether a real Orin's files look like these; nobody on this project has one, and
-`docs/jetson.md` says what to send back.
+`docs/guides/jetson.md` says what to send back.
 """
 
 from __future__ import annotations

@@ -434,7 +434,9 @@ __all__ = [
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_xlerobot import upstream_api
 
-    return (("xlerobot", upstream_api, "docs/adapters/xlerobot.md", "a cart (the zmq backend)"),)
+    return (
+        ("xlerobot", upstream_api, "docs/adapters/xlerobot/README.md", "a cart (the zmq backend)"),
+    )
 
 
 UPSTREAMS = _upstream_rows()

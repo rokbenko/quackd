@@ -180,7 +180,7 @@ def _arm_torque(state: DuckState) -> str | None:
     return (
         "the arms have no torque, so a joint command would move nothing and a stop could not "
         "hold them. This robot's stock host never enables arm torque; run quackd's own host "
-        "wrapper on the robot instead (see docs/adapters/alohamini.md)"
+        "wrapper on the robot instead (see docs/adapters/alohamini/README.md)"
     )
 
 

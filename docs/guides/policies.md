@@ -8,8 +8,8 @@ server of its own, `quackd policy serve`, which you start, and a run reaches it 
 `--policy-url`. This page is how to set that up, on the laptop beside the arm or on a rented
 GPU, which policies it serves and under what licences, and where the data a policy learns from
 comes from. What the verbs do and what refuses them is on
-[the arm's page](adapters/lerobot.md#manipulate-and-the-loop-a-policy-runs-in), and why it is
-shaped this way is [ADR-0048](adr/0048-policies-are-the-arms-executor.md).
+[the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in), and why it
+is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 
 > [!WARNING]
 > **Nothing on this page has driven the arm.** Every segment so far has run against the test
@@ -21,7 +21,7 @@ shaped this way is [ADR-0048](adr/0048-policies-are-the-arms-executor.md).
 > ([below](#smolvla-and-act)), pi05 has not run, and FLUX 3 Action is not served at all.
 > Rehearse on the simulator first, keep a hand on the arm's power switch the first time a policy
 > drives it, and send back what happened
-> ([lerobot-first-run.md](lerobot-first-run.md#14-what-to-report)).
+> ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#14-what-to-report)).
 
 ## Two processes, two terminals
 
@@ -46,8 +46,8 @@ the segment says the policy raised `PolicyServerError`.
 ## On the laptop alone
 
 Everything on one machine, the laptop the arm is plugged into, with the policy on its CPU.
-Start on [the arm's simulator](adapters/lerobot.md#the-simulator-lerobotmujoco) rather than the
-arm, since a twin of your arm reaches a server exactly as the arm does.
+Start on [the arm's simulator](../adapters/lerobot/README.md#the-simulator-lerobotmujoco) rather
+than the arm, since a twin of your arm reaches a server exactly as the arm does.
 
 **1. A Python 3.12 environment with the server's extra.** The arm's own 3.12 environment can
 hold it too:
@@ -63,7 +63,7 @@ looks for an arm's calibration under `$HF_HOME/lerobot/calibration` unless
 `HF_LEROBOT_CALIBRATION` or `HF_LEROBOT_HOME` says otherwise, so an `HF_HOME` set where the arm's
 process runs moves where its calibration is looked for as well, and `quackd robot twin` could not
 find the lab arm's file under one
-([the calibration id](adapters/lerobot.md#the-name-you-give-the-arm-is-its-calibration-id)).
+([the calibration id](../adapters/lerobot/README.md#the-name-you-give-the-arm-is-its-calibration-id)).
 
 **2. Check the checkpoint before you serve it, and bench it twice.** `quackd policy check
 --policy` serves it for the length of the check, and `--bench` times one warm step, then streams
@@ -208,10 +208,10 @@ is asked for anything, and the refusal ends `Move shoulder_lift inside its trave
 the joint: a joint out there is left out of every goal a policy sends, so the policy could never
 move it. A twin of the lab's arm starts that way. Its rest pose was recorded folded, past what
 its calibration lets `shoulder_lift` be driven to
-([ADR-0045](adr/0045-a-rest-pose-the-calibration-cannot-reach.md)) and past the model's stop as
+([ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)) and past the model's stop as
 well, so the twin starts with that joint settled just off the stop, clear of its table
-([the arm's page](adapters/lerobot.md#running-it)), and its first `manipulate` is refused. Over
-MCP on 2026-09-28, with `scripted:sweep` served:
+([the arm's page](../adapters/lerobot/README.md#running-it)), and its first `manipulate` is refused.
+Over MCP on 2026-09-28, with `scripted:sweep` served:
 
 ```
 do refused: shoulder_lift reads -99.4, outside its calibrated travel of -84.2..84.2, so the policy was not started. A joint outside its travel is left out of every goal a policy sends, because the one goal its servo takes there is the end of its travel, and the policy could never move it. Move shoulder_lift inside its travel first
@@ -223,19 +223,19 @@ and its two segments then ran. The same run made in-process ended with the rest 
 joint at the edge of its travel, in the pose the twin settled to there, and the close letting it
 go. A move that takes the arm further from its fold can still end with the rest move setting the
 gripper down on the table short of that pose, and the close then keeps torque on
-([the arm's page](adapters/lerobot.md#running-it)). `--controller vla` only ever calls
+([the arm's page](../adapters/lerobot/README.md#running-it)). `--controller vla` only ever calls
 `manipulate`, so it cannot move the joint in, and its run ends in failure, in the verb's own
 words. The lasting fix is to calibrate the arm again folded, so the fold lies inside
-its travel, which is the bench item in [PLAN.md](../PLAN.md) that reads the calibrated value at
+its travel, which is the bench item in [PLAN.md](../../PLAN.md) that reads the calibrated value at
 each of the arm's stops.
 
 A task file that means to use the policy allows `manipulate`, and a `duck: 3` file can list the
 subtasks it may be told, how long each segment runs and how long they run in all
-([duck-spec.md](duck-spec.md#policy-v3)). A `--goal` run given `--policy-url` allows
-`manipulate` too, and asks you before each segment when it runs at a terminal. `--yes`, or a
+([reference/duck-spec.md](../reference/duck-spec.md#policy-v3)). A `--goal` run given `--policy-url`
+allows `manipulate` too, and asks you before each segment when it runs at a terminal. `--yes`, or a
 pipe or file on stdin, answers in your place, and nobody is asked. With `--controller vla` no
 model is involved at all: a scripted pilot hands the policy each listed instruction in turn
-and then asks you whether the arm did it ([the arm's page](adapters/lerobot.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+and then asks you whether the arm did it ([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 
 **What only the arm can tell you** is how fast the policy loop runs on the real bus while the
 same laptop's CPU is inferring. Nothing timed on the simulator is a rate, because its clock is
@@ -287,7 +287,7 @@ quackd run task.duck --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm
 
 A tunnel that drops mid-segment ends the segment with the arm held, and `manipulate` fails,
 saying why. The server's port is 9875 unless `--port` says otherwise, the one after the Jetson
-daemon's 9874, and [SECURITY.md](../SECURITY.md) lists it with the rest.
+daemon's 9874, and [SECURITY.md](../../SECURITY.md) lists it with the rest.
 
 ## The policies
 
@@ -329,7 +329,7 @@ granted `google/paligemma-3b-pt-224`, the gated tokenizer it uses: accept its li
 then `hf auth login` on the machine that serves it. It is a GPU policy. A pi05 that learned
 relative actions is served a whole chunk at a time, made absolute against the state it was
 predicted from, where LeRobot's own loop makes each action absolute against the state of the
-tick it is played at (`VLA_PIPELINE` in [the policies' table](adapters/lerobot.md#the-policies-upstream-lerobot-061)).
+tick it is played at (`VLA_PIPELINE` in [the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
 Its licence is unclear: see [the table](#licences).
 
 ### FLUX 3 Action
@@ -427,16 +427,16 @@ server reads before it builds:
 
 None of that makes a checkpoint safe to serve because somebody sent it to you. Serve a
 checkpoint at a revision you have read, from a Hub cache you control, on a machine that holds
-nothing you would mind it reading. [SECURITY.md](../SECURITY.md) lists what would be a security
+nothing you would mind it reading. [SECURITY.md](../../SECURITY.md) lists what would be a security
 issue in the server itself.
 
 One path in quackd skips all of it. `load_policy()` in the arm's backend is an older Python
 helper that builds a LeRobot policy in the arm's own process, beside the serial bus, with none
 of the reading above. Nothing in quackd calls it and no command reaches it, so it runs only if
 your own Python calls it. The `LOAD_POLICY` row on
-[the arm's page](adapters/lerobot.md#the-policies-upstream-lerobot-061) describes it, and
+[the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061) describes it, and
 whether it goes is an open item
-([ADR-0048](adr/0048-policies-are-the-arms-executor.md#consequences)).
+([ADR-0048](../adr/0048-policies-are-the-arms-executor.md#consequences)).
 
 ## What a segment says
 

@@ -7,12 +7,12 @@ is never trusted to self-police.**
 `.duck` is the format name the way `Dockerfile` is: a task for a LeRobot arm is a `.duck`
 too. `duck: 1` (quackd 0.4) adds what a multi-robot task needs, and `duck: 2` adds what a
 task says about the *body*: a correction to the robot's own datasheet, and what a flock role
-physically needs ([ADR-0019](adr/0019-duck-spec-v1.md),
-[ADR-0032](adr/0032-datasheets-and-the-verdict.md)). `duck: 3` adds what a task lets the
+physically needs ([ADR-0019](../adr/0019-duck-spec-v1.md),
+[ADR-0032](../adr/0032-datasheets-and-the-verdict.md)). `duck: 3` adds what a task lets the
 body's learned policy be told, and for how long ([`policy`](#policy-v3)). `duck: 0` files parse
 and run unchanged.
 
-Machine-readable schema: [`../quackd/duckfile/schema.json`](../quackd/duckfile/schema.json)
+Machine-readable schema: [`../quackd/duckfile/schema.json`](../../quackd/duckfile/schema.json)
 (generated from `quackd/duckfile/schema.py`; a test keeps them in sync).
 
 ## File shape
@@ -36,7 +36,7 @@ Encoding UTF-8. The first non-blank, non-comment line must be `---`.
 | `description` | string | yes | — | One human-facing line. Shown in the system prompt. |
 | `author` | string | no | — | Credit. |
 | `verbs.allow` | list of verb names, ≥ 1, unique | yes | **executor** | The only verbs the LLM may call. `stop` is always allowed. Unknown names fail `quackd validate`. |
-| `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [safety.md](safety.md#who-the-record-says-was-asked)). |
+| `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [concepts/safety.md](../concepts/safety.md#who-the-record-says-was-asked)). |
 | `budgets.max_steps` | int 1–1000 (default 40) | no | **executor** | Maximum verb executions. |
 | `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (sim time on every simulator, `sim2d` and both bodies' `mujoco`, wall-clock on hardware). Checked before each model call and again the moment the model answers, so a provider that replies late cannot spend the overrun. A verb already running is not interrupted, so a run can overshoot by that verb's own timeout. |
 | `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). |
@@ -44,7 +44,7 @@ Encoding UTF-8. The first non-blank, non-comment line must be `---`.
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |
 | `providers` | list of strings | no | — | Tested-with, **not** a restriction. |
-| `learned_verbs` | list of `{name, policy, description?, metadata?}` | no | `validate` rejects non-empty | Reserved for v2 ([learned-verbs.md](learned-verbs.md)). |
+| `learned_verbs` | list of `{name, policy, description?, metadata?}` | no | `validate` rejects non-empty | Reserved for v2 ([concepts/learned-verbs.md](../concepts/learned-verbs.md)). |
 | `flock` | mapping, see below | no | **coordinator** or **pilots** | Cooperating robots. Absent means a single robot, unless the run names a stored flock (`--flock NAME`), which makes it a pilot flock. |
 | `requires` | list of verb names ⊆ `allow` (v1) | no (default `[]`) | `validate --robot` | The verbs the task *needs*. Checked against each robot's manifest. For a v0 file every allowed verb is required. |
 | `datasheet` (v2) | mapping, see below | no | loop and MCP session | Corrections and additions to the robot's own datasheet, for the build in front of you. Rendered in the prompt as coming from the task file. |
@@ -73,12 +73,12 @@ duck with a non-empty `verbs.confirm` fails `quackd validate`, because an auctio
 no pilot and no terminal to prompt on. **`pilots`** (`duck: 1`, 0.9) is the other kind: 2 to 8
 bodies on any backend, one LLM pilot each, on wall-clock time, splitting the work by talking.
 A pilot flock reads only `members`, takes `verbs.confirm` with `--yes`, and names no roles.
-Full semantics: [flock.md](flock.md).
+Full semantics: [guides/flock.md](../guides/flock.md).
 
 | Field | Type | Default | Enforced by | Meaning |
 |---|---|---|---|---|
 | `flock.members` | int, or a list of unique slugs. 2–4 for an auction, 2–8 for pilots | 3 | coordinator or pilots | Member count (named `duck-0`…) or explicit names. `--flock N` overrides the count for an auction; `--flock NAME` supplies the members from the registry. |
-| `flock.allocation.method` | `auction` · `pilots` (v1) | `auction` | parser | Which kind of flock. `auction`: Contract Net, one referee, sim2d Microducks. `pilots`: one LLM per body, any backend, and every other `allocation`, `safety`, `search` and `roles` key below is ignored ([ADR-0034](adr/0034-registered-robots-and-pilot-flocks.md)). |
+| `flock.allocation.method` | `auction` · `pilots` (v1) | `auction` | parser | Which kind of flock. `auction`: Contract Net, one referee, sim2d Microducks. `pilots`: one LLM per body, any backend, and every other `allocation`, `safety`, `search` and `roles` key below is ignored ([ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)). |
 | `flock.allocation.bid` | `ball_distance` | `ball_distance` | coordinator | Lower camera-estimated distance wins. |
 | `flock.allocation.tie_break` | `duck_id` | `duck_id` | coordinator | Lexicographic member name. |
 | `flock.allocation.hysteresis_pct` | 0–100 | 20 | coordinator | A challenger must bid this much lower to unseat the current claimant. |
@@ -89,8 +89,8 @@ Full semantics: [flock.md](flock.md).
 | `flock.search.partition` | `heading` | `heading` | coordinator | Each duck owns a heading sector. |
 | `flock.search.restart_s` | > 0 ≤ 120 | 8 | member | Re-scan the sector when nothing was found for this long. |
 | `flock.roles` (v1) | mapping `{spotter: {requires: [...]}, kicker: {requires: [...]}}` | absent | coordinator | Heterogeneous roles, **auction only**. A robot bids only for a role whose `requires` its manifest satisfies. quackd knows exactly these two roles (both must be given), one robot each; `members` must then be a named list. Each role's `requires` ⊆ `allow`. |
-| `flock.roles.<role>.needs` (v2) | mapping in the datasheet vocabulary | `{}` | coordinator | What the body must be able to do, not only what it must know. See the rules below. Checked by `validate --robots`, by the member before it bids, and by the coordinator from what the bid carried ([flock.md](flock.md)). |
-| `flock.frame_hints` (v1) | `auto` · `on` · `off` | `auto` | runner | Share arena-frame target hints between robots. `auto` is on only when every member runs in `sim2d`; there is no shared frame on hardware ([flock.md](flock.md)). |
+| `flock.roles.<role>.needs` (v2) | mapping in the datasheet vocabulary | `{}` | coordinator | What the body must be able to do, not only what it must know. See the rules below. Checked by `validate --robots`, by the member before it bids, and by the coordinator from what the bid carried ([guides/flock.md](../guides/flock.md)). |
+| `flock.frame_hints` (v1) | `auto` · `on` · `off` | `auto` | runner | Share arena-frame target hints between robots. `auto` is on only when every member runs in `sim2d`; there is no shared frame on hardware ([guides/flock.md](../guides/flock.md)). |
 
 Unknown keys anywhere are errors (`extra="forbid"`).
 
@@ -98,7 +98,7 @@ Unknown keys anywhere are errors (`extra="forbid"`).
 
 A role's `needs` is checked against a robot's datasheet, and each key is checked its own way.
 The same vocabulary is what a pilot names in `assess_task`, so a refusal and a role are
-worded alike ([manifest-spec.md](manifest-spec.md#the-datasheet)).
+worded alike ([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
 
 | Key | How it is checked |
 |---|---|
@@ -123,7 +123,7 @@ move stands on. The words are `manipulator: none · beak · gripper · arms · a
 those, `terrain` is the one to be careful with: five shipped bodies are rated `indoor_flat`,
 the SO-101 does not move, and the rosbridge body publishes nothing, so a role asking for
 `indoor` or `outdoor` can be filled by no robot quackd ships today
-([manifest-spec.md](manifest-spec.md#the-datasheet)).
+([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
 
 A role is read strictly on one point where a pilot's own verdict is not. A pilot judging its
 own body is not refused for a `work_height_m` its sheet publishes no band for, because its
@@ -139,7 +139,7 @@ Two phrasings are recognised (case-insensitive) and enforced by the executor:
   `battery_percent < N`, the run aborts. A body whose manifest has no `battery` sensor
   reports `None` and this rule can never fire on it, so it is silently unenforceable
   there rather than an error. An AlohaMini is the shipped example
-  ([adapters/alohamini.md](adapters/alohamini.md)).
+  ([adapters/alohamini/README.md](../adapters/alohamini/README.md)).
 - `Same verb fails N times in a row` — N consecutive failed results of one verb abort the run.
 
 Every other entry is handed to the LLM under *"Abort conditions you must respect yourself"*.
@@ -153,7 +153,7 @@ robot that meets their requirements, a robot's own extensions (Microduck: `sit s
 stand_up kick grab gaze quack`), plus any registered learned verb. The 0.3 names
 `get_frame`, `walk_to` and `walk` are permanent aliases of `observe`, `go_to` and `move`;
 a file may use either spelling but not both. `stop` may never appear in `confirm`. Params
-and ranges come from the registry, not the `.duck` file ([ADR-0018](adr/0018-core-verbs-extensions-aliases.md)).
+and ranges come from the registry, not the `.duck` file ([ADR-0018](../adr/0018-core-verbs-extensions-aliases.md)).
 
 ## Body
 
@@ -199,11 +199,11 @@ a task is coherent when something here can keep it.
 
 ## Versioning
 
-`duck: 0` is the 0.1 to 0.3 contract ([ADR-0005](adr/0005-duck-spec-v0.md)); `duck: 1`
+`duck: 0` is the 0.1 to 0.3 contract ([ADR-0005](../adr/0005-duck-spec-v0.md)); `duck: 1`
 adds `requires`, `robots`, `flock.roles`, `flock.frame_hints` and, since 0.9,
-`flock.allocation.method: pilots` ([ADR-0019](adr/0019-duck-spec-v1.md),
-[ADR-0034](adr/0034-registered-robots-and-pilot-flocks.md)); `duck: 2` adds `datasheet` and
-`flock.roles.<role>.needs` ([ADR-0032](adr/0032-datasheets-and-the-verdict.md)); `duck: 3`
+`flock.allocation.method: pilots` ([ADR-0019](../adr/0019-duck-spec-v1.md),
+[ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)); `duck: 2` adds `datasheet` and
+`flock.roles.<role>.needs` ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)); `duck: 3`
 (0.16) adds `policy`. Older files keep parsing because the version is explicit and the parser
 is strict; the only new rejections a v0 file can hit are two contradictions no shipped file
 contains (a verb listed next to its alias, `stop` in `confirm`). Older quackd versions refuse
@@ -212,7 +212,7 @@ newer files, which is the correct failure.
 ### `datasheet` (v2)
 
 Every robot publishes what it weighs, can carry and can reach, each number with how sure
-quackd is of it and who says so ([manifest-spec.md](manifest-spec.md)). A task file can
+quackd is of it and who says so ([reference/manifest-spec.md](manifest-spec.md)). A task file can
 correct that for the build in front of it: a printed gripper that holds 300 g rather than
 the 500 g a vendor lists, a reach somebody measured with a tape.
 
@@ -238,8 +238,8 @@ duck cannot carry one, because it describes one body.
 ### `policy` (v3)
 
 `manipulate` hands an arm to its learned policy for one segment, told one short subtask in
-the words the policy was trained on ([adapters/lerobot.md](adapters/lerobot.md)). A v3 task
-file says which words those may be and how long the policy may drive:
+the words the policy was trained on ([adapters/lerobot/README.md](../adapters/lerobot/README.md)). A
+v3 task file says which words those may be and how long the policy may drive:
 
 | Field | Type | Default | Enforced by | Meaning |
 |---|---|---|---|---|
@@ -255,7 +255,8 @@ held to its own section, narrowed from the arm's own verb rather than from the f
 list, and the seconds of segments the session has run still count, those it ran before any
 task file was loaded among them. A decision LLM is offered each listed
 instruction and never takes one, whatever `--decision-mode` says: its answer is recorded beside
-the pilot's, and the pilot starts every segment ([decision-llms.md](decision-llms.md)).
+the pilot's, and the pilot starts every segment
+([guides/decision-llms/README.md](../guides/decision-llms/README.md)).
 
 ```yaml
 ---
@@ -318,4 +319,4 @@ quackd validate
 
 `quackd run stack-blocks.duck --controller vla --policy-url ...` hands the policy these three
 instructions in order and then asks you whether the arm stacked the block
-([adapters/lerobot.md](adapters/lerobot.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).

@@ -15,7 +15,7 @@ This reproduces the host's semantics, including the ones that are easy to get wr
 
 What it cannot prove: anything about serial timing, calibration, or a real camera. It proves
 quackd's client is correct against *our reading* of the host, which is why the adapter's row
-in `docs/adapter-status.md` says exactly that and no more.
+in `docs/adapters/status.md` says exactly that and no more.
 """
 
 from __future__ import annotations

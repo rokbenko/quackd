@@ -174,7 +174,7 @@ please correct it" framing.
 - Stars are vanity.
 - `.duck` PRs from strangers are the real KPI. Second: **a new adapter from someone who owns a
   robot we don't support** — that is the thesis proving itself. Third: issues that correct
-  an UNVERIFIED row (that means a maintainer read `adapter-status.md`), and MCP-session
-  screenshots.
+  an UNVERIFIED row (that means a maintainer read an adapter's page under `docs/adapters/`),
+  and MCP-session screenshots.
 - Track: PRs to `ducks/` per week, adapters contributed, unique authors, time-to-first-response
   (< 24 h).

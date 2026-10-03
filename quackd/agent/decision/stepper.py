@@ -726,9 +726,9 @@ class Stepper:
         TypeSafe's SDK types both token counts `int | None`, "when the API did not report it";
         several of the self-hosted rows report a character heuristic rather than a count; and a
         call that raised reports nothing. Those fall back to the arithmetic
-        `docs/decision-llms.md` does by hand -- the state plus the questions, four characters
-        to the token -- and say which they are, because an estimate a reader cannot tell from a
-        measurement is worse than no number at all. Laya is the one backend whose count is a
+        `docs/guides/decision-llms/README.md` does by hand -- the state plus the questions, four
+        characters to the token -- and say which they are, because an estimate a reader cannot tell
+        from a measurement is worse than no number at all. Laya is the one backend whose count is a
         real tokeniser figure, so its turns go through measured.
 
         Output is counted and, at every rate quackd ships, costs nothing: TypeSafe charge per
@@ -997,7 +997,7 @@ class Stepper:
         """What the stepper would have done, beside what the model did, on the same reading.
 
         The only record shadow mode leaves, and what turns the arithmetic in
-        `docs/decision-llms.md` into a measurement."""
+        `docs/guides/decision-llms/README.md` into a measurement."""
         chosen = advice.record.get("choice")
         return {
             "decision_choice": chosen,
@@ -1016,8 +1016,8 @@ class Stepper:
             "llm_latency_s": (llm or {}).get("latency_s"),
             "llm_usage": (llm or {}).get("usage"),
             # The two bills for the same turn, which is the number this whole mode exists to
-            # produce and the one `docs/decision-llms.md` could only reach by arithmetic.
-            # Either can be None: the model's when nobody publishes a rate for it, the
+            # produce and the one `docs/guides/decision-llms/README.md` could only reach by
+            # arithmetic. Either can be None: the model's when nobody publishes a rate for it, the
             # stepper's when the turn never got as far as asking.
             "llm_cost_usd": (llm or {}).get("cost_usd"),
             "decision_cost_usd": advice.record.get("cost_usd"),

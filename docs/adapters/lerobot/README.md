@@ -5,16 +5,19 @@ A six-joint desktop arm with a parallel gripper, driven through
 manifest lists none of that: `move`, `go_to`, `search_scan`, `say` and `gaze` do not exist
 on this robot. What it has is joints, a gripper, `place`, and, when a run names a policy
 server, or on the mock, which scripts its own, `pick` and `manipulate`, each one skill intent
-that the arm's own learned policy executes ([policies.md](../policies.md)). The thesis holds:
-the LLM picks the verb, LeRobot moves the arm, quackd enforces the contract. (With the optional `--decision-llm`, some of the verbs that are a choice rather than a number can be picked by a decision LLM instead; every angle is still the model's, and it is off unless you name one: [decision-llms.md](../decision-llms.md).)
+that the arm's own learned policy executes ([guides/policies.md](../../guides/policies.md)). The
+thesis holds: the LLM picks the verb, LeRobot moves the arm, quackd enforces the contract. (With the
+optional `--decision-llm`, some of the verbs that are a choice rather than a number can be picked by
+a decision LLM instead; every angle is still the model's, and it is off unless you name one:
+[guides/decision-llms/README.md](../../guides/decision-llms/README.md).)
 
 Upstream pinned at
 [`fbb811f`](https://github.com/huggingface/lerobot/tree/fbb811fca92504439792b97d216f0d00c2268382)
 (`main`, 2026-09-01), first read 2026-09-02 and read again on 2026-09-13. Every name quackd
 spells lives in
-[`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
+[`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
 and why the adapter is shaped the way it is is
-[ADR-0036](../adr/0036-what-the-arm-does-not-say.md).
+[ADR-0036](../../adr/0036-what-the-arm-does-not-say.md).
 
 > [!NOTE]
 > **The `real` backend has run on an arm.** On 2026-09-15 an SO-101 follower, calibrated as
@@ -26,7 +29,7 @@ and why the adapter is shaped the way it is is
 > where the servo will not be driven: [The rest pose](#the-rest-pose) says what that did and
 > what quackd does about it now. What ran, what went wrong and what that first afternoon did not
 > measure is in [Status](#status); the account from the other end, an empty laptop to a waving
-> arm, is [lerobot-first-run.md](../lerobot-first-run.md).
+> arm, is [adapters/lerobot/first-run.md](first-run.md).
 
 ```bash
 # offline, the default
@@ -55,13 +58,13 @@ model cannot exceed.
 |---|---|
 | drive the follower from a leader arm, record a dataset, train a policy | LeRobot's own tools. quackd never calls them and never writes to your datasets |
 | have a model choose the next verb, inside limits you wrote down, with every refusal recorded | quackd |
-| hand the arm to a policy you trained, one short subtask at a time, under the model and inside those limits | quackd's policy server, `quackd policy serve`, which loads a LeRobot checkpoint in a process of its own ([policies.md](../policies.md)) |
+| hand the arm to a policy you trained, one short subtask at a time, under the model and inside those limits | quackd's policy server, `quackd policy serve`, which loads a LeRobot checkpoint in a process of its own ([guides/policies.md](../../guides/policies.md)) |
 | run one verb by hand, right now | quackd over MCP (`robot_run_verb`), or LeRobot's own Python API |
 
 The contract is a `.duck` file: the verbs the model may use, the budget in steps and minutes,
-and what counts as success ([duck-spec.md](../duck-spec.md)). The model never emits a motor
-command. It picks a verb, and quackd checks the allowlist, the preconditions, this arm's
-calibrated range and the step cap before anything reaches the bus.
+and what counts as success ([reference/duck-spec.md](../../reference/duck-spec.md)). The model never
+emits a motor command. It picks a verb, and quackd checks the allowlist, the preconditions, this
+arm's calibrated range and the step cap before anything reaches the bus.
 
 Three things are true of this body, and on a desk rather than in a simulator they are what can
 hurt somebody. They shape everything below:
@@ -78,7 +81,7 @@ hurt somebody. They shape everything below:
 ## Start here
 
 If you have never run quackd or LeRobot before, start at
-[lerobot-first-run.md](../lerobot-first-run.md) instead: it is this arm from an empty laptop,
+[adapters/lerobot/first-run.md](first-run.md) instead: it is this arm from an empty laptop,
 including which model to bring and what it can actually see. This page assumes you already
 drive the arm.
 
@@ -102,7 +105,7 @@ drive the arm.
    physics model of the arm, which is where a task file is rehearsed before it meets one.
 
 2. **Bring the real arm up in the order that can only fail safely.**
-   [lerobot-hardware-checklist.md](../lerobot-hardware-checklist.md) is eighteen steps, and
+   [adapters/lerobot/hardware-checklist.md](hardware-checklist.md) is eighteen steps, and
    nothing moves until step 10 as long as the arm stays where step 6 records its rest pose:
    move it by hand after that, and the next run or `doctor` drives it back there. Do not skip
    the calibration step: quackd refuses an arm that has not been calibrated, because the
@@ -116,7 +119,7 @@ drive the arm.
 |---|---|---|
 | `lerobot:mock` | ✅ | an arm in memory: goals land instantly, the gripper stops on the object, a scripted policy answers `pick` and `manipulate`, and it refuses an out-of-range goal in the same words the real one does |
 | `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm on two afternoons, 2026-09-15 on quackd 0.9.0 and 2026-09-23 on quackd 0.12.0, with lerobot 0.6.1 and no policy. What changed after 2026-09-23 has not run on an arm yet |
-| `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapter-status.md](../adapter-status.md)) |
+| `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
 
 `--address` is the arm's serial port (`/dev/ttyACM0`, `COM5`), and quackd checks that it
 looks like one before LeRobot opens anything. The `real` backend calls
@@ -129,7 +132,7 @@ lerobot real: the arm is not calibrated; run LeRobot's calibration first
 
 Calibration is upstream's own interactive step, under the id quackd will use, and it writes
 the file every joint's range is read from: step 5 of
-[lerobot-hardware-checklist.md](../lerobot-hardware-checklist.md).
+[adapters/lerobot/hardware-checklist.md](hardware-checklist.md).
 
 ## Installing it
 
@@ -227,7 +230,7 @@ and are connecting as `arm-01`.
 
 Registering the arm is worth it beyond the id: `quackd robot add` stores the address, every
 camera url and the token, so `--robot lab-arm` carries all of them and you stop retyping a COM
-port ([registry.md](../registry.md)). It is also the only place a
+port ([guides/registry.md](../../guides/registry.md)). It is also the only place a
 [rest pose](#the-rest-pose) can live, which is what stops the arm falling when a run ends.
 
 ## The manifest
@@ -336,7 +339,7 @@ gives the move the time asked for, or the time the cap needs if that is longer, 
 seconds to settle, and never more than 18: the executor's own timeout for `move_joints` is 20,
 and the verb ends first so that the reason names the joint that fell short.
 
-Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([manifest-spec.md](../manifest-spec.md)):
+Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
 | | |
 |---|---|
@@ -357,7 +360,7 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
   stopping short of shut, which an empty hand that binds also does
 - know its own mass: vendor listings disagree by a factor of three
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([duck-spec.md](../duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
 **Where the reach comes from.** Nobody publishes a reach for the SO-101, and up to 0.13.0 the sheet said so, which told the pilot to decline whatever turned on reaching: every task an arm has. The maker's URDF gives every link, so the figure is quackd's arithmetic on the maker's file. From the `shoulder_lift` joint outwards the joint origins are 0.116 m to `elbow_flex`, 0.135 m to `wrist_flex`, 0.064 m to `wrist_roll` and 0.098 m to the gripper frame, 0.413 m in all, which is an upper bound because links only add up in full when they are in a line. A grid sweep of the elbow and both wrist joints through their URDF limits puts the farthest the gripper frame gets from the shoulder axis at about 0.41 m. The sheet says 0.4, as an estimate, and the adapter's source (`REACH` in `quackd_lerobot/__init__.py`) keeps the four vectors so anyone can check them. It is measured from the shoulder joint rather than the base, and to the gripper frame rather than the fingertips.
 
@@ -421,7 +424,7 @@ What that means at the bench:
   blue one, and reports nothing when nothing does, so the label is a colour range's name rather
   than recognition. Distances assume the size of the duck simulators' ball, and without
   `?fov=` the bearing is uncalibrated and says so. Tuning the ranges to your own ball is in
-  [the FAQ](../faq.md). What is honest whatever the detector makes of it is the frame itself,
+  [the FAQ](../../faq.md). What is honest whatever the detector makes of it is the frame itself,
   which a cloud model is shown every step unless you pass `--no-vision`.
 
 ### Several cameras
@@ -584,9 +587,9 @@ one verb and stop:
 Nine `robot_*` tools appear. `robot_list_verbs` first, then `robot_assess_task` with a
 verdict, which `robot_run_verb` requires before anything that moves the body, then
 `robot_run_verb(verb="move_joints", params={...})`. Both clients, the full tool list and a
-two-minute script: [mcp.md](../mcp.md). The same path at walking pace, from an empty laptop to
-a waving arm in fifteen steps, is
-[Part 2 of the first run](../lerobot-first-run.md#part-2-from-claude-over-mcp).
+two-minute script: [guides/mcp.md](../../guides/mcp.md). The same path at walking pace, from an
+empty laptop to a waving arm in fifteen steps, is
+[Part 2 of the first run](first-run.md#part-2-from-claude-over-mcp).
 
 A session started with a registered name that has a rest pose parks the arm at both ends, the
 same as a run does, and **refuses to start** if it cannot reach that pose. The spec form above
@@ -679,7 +682,7 @@ policy object is handed to the backend in Python. A checkpoint loads in
 reaches it through `RemoteRunner`, the server's client. `real.py` still has `load_policy(path)`,
 which would load one in the arm's own process and which nothing calls or has run: it is the
 `LOAD_POLICY` row in [the policies' table](#the-policies-upstream-lerobot-061) below. Setting a
-server up, on the laptop or on a rented GPU, is [policies.md](../policies.md).
+server up, on the laptop or on a rented GPU, is [guides/policies.md](../../guides/policies.md).
 
 `pick` runs its policy as a segment, a loop of its own on the arm's clock that reads the arm,
 judges the reading, takes the policy's goal and sends it, and the verb waits for that loop to
@@ -692,9 +695,10 @@ it:
   so a second pick does not play out the first one's queued actions.
 - **A goal past the travel is clipped and counted, not refused.** A verb's goal there is
   refused, and a policy's is clipped to the edge and counted in `extras.range_clips`, because
-  one a tick over should not abort a grasp ([ADR-0036](../adr/0036-what-the-arm-does-not-say.md)).
-  Its actions are capped at the verbs' own speed ([below](#manipulate-and-the-loop-a-policy-runs-in)).
-  A joint reading outside its travel is left out of every action, as a stop leaves it out.
+  one a tick over should not abort a grasp
+  ([ADR-0036](../../adr/0036-what-the-arm-does-not-say.md)). Its actions are capped at the verbs'
+  own speed ([below](#manipulate-and-the-loop-a-policy-runs-in)). A joint reading outside its travel
+  is left out of every action, as a stop leaves it out.
 - **It stops the policy and holds the arm** on a hot joint, torque off, a camera that gave no
   frame, a goal that is not a finite number or names no motor of this arm, a goal held past the
   travel for 1 s, 3 sends in a row that did not reach the arm, or a read the arm did not
@@ -726,12 +730,12 @@ runs its time on the mock's clock, and a stop, a release, a rest move or the nex
 it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
 
 - **A task file can hold it to its own words and its own time.** A v3 file's `policy` section
-  ([duck-spec.md](../duck-spec.md#policy-v3)) lists the instructions `manipulate` may give, and
-  the verb then takes those and no others. It sets `segment_s`, which the run tells the backend
-  before the first segment (`set_segment_s`), and the executor's timeout for the verb becomes
-  that plus 10 s. On the simulator it adds the wall time the clock stands still while the
-  policy thinks, which it bounds from the latency the policy declares and one frame from each
-  camera, timed at connect, and holds to ten minutes (`FROZEN_INFERENCE_MAX_S`). A policy whose
+  ([reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)) lists the instructions
+  `manipulate` may give, and the verb then takes those and no others. It sets `segment_s`, which the
+  run tells the backend before the first segment (`set_segment_s`), and the executor's timeout for
+  the verb becomes that plus 10 s. On the simulator it adds the wall time the clock stands still
+  while the policy thinks, which it bounds from the latency the policy declares and one frame from
+  each camera, timed at connect, and holds to ten minutes (`FROZEN_INFERENCE_MAX_S`). A policy whose
   rate the loop would refuse, or whose latency starves every segment before its first chunk,
   adds nothing, since its segments end at their start. And it sets `total_s`, the seconds of segments the run may spend,
   `pick`'s among them, after which the next `pick` or `manipulate` is refused. A file that
@@ -795,12 +799,12 @@ it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
 A checkpoint's processors are code: loading one imports whatever class its JSON names
 (`PROCESSOR_CLASS_IMPORT` in [the policies' table](#the-policies-upstream-lerobot-061)). So no
 quackd command loads a checkpoint in the process that owns the arm's serial bus
-([ADR-0048](../adr/0048-policies-are-the-arms-executor.md)), and [policies.md](../policies.md)
-is how to set one up, with the licences of the ones there are. The one thing in quackd that
-would is `load_policy()`, an older Python helper that nothing in quackd calls (`LOAD_POLICY`,
-in the same table). The policy runs in a server you start, in a terminal of its own, on the
-laptop or on a rented GPU you reach through `ssh -L`, and the arm's side reaches it over HTTP on
-port 9875, with a client that needs no torch and no LeRobot.
+([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)), and
+[guides/policies.md](../../guides/policies.md) is how to set one up, with the licences of the ones
+there are. The one thing in quackd that would is `load_policy()`, an older Python helper that
+nothing in quackd calls (`LOAD_POLICY`, in the same table). The policy runs in a server you start,
+in a terminal of its own, on the laptop or on a rented GPU you reach through `ssh -L`, and the arm's
+side reaches it over HTTP on port 9875, with a client that needs no torch and no LeRobot.
 It serves a LeRobot checkpoint named as `REPO@REVISION`
 ([below](#serving-a-checkpoint)), and two scripted policies that need no torch either:
 `scripted:hold` holds the arm where it reads, so a `manipulate` of it ends on a stall, and
@@ -853,12 +857,12 @@ apart to serve with either. A tick the pacer skipped sent nothing, as a starved 
 not counted as starved: with no `--latency-s` declared, a segment waits for each chunk in the
 tick that asked for it, and the ticks that pass meanwhile are skipped, so bench again served
 with the latency the first bench suggests
-([policies.md](../policies.md#on-the-laptop-alone) has both benches of a trained ACT, and what a
-good second one looks like). A policy whose steps take longer than a segment waits for its first
-chunk, or longer than half a chunk's actions, rounded down, take to play (`latency_too_long`),
-is given no latency, since `serve` would refuse any that covered them: the bench says it answers
-too slowly to drive an arm from that machine, and to serve it on a GPU. `--bench` is one of the
-two places a rate is measured, the other being the bench with the arm.
+([guides/policies.md](../../guides/policies.md#on-the-laptop-alone) has both benches of a trained
+ACT, and what a good second one looks like). A policy whose steps take longer than a segment waits
+for its first chunk, or longer than half a chunk's actions, rounded down, take to play
+(`latency_too_long`), is given no latency, since `serve` would refuse any that covered them: the
+bench says it answers too slowly to drive an arm from that machine, and to serve it on a GPU.
+`--bench` is one of the two places a rate is measured, the other being the bench with the arm.
 `quackd policy check --policy NAME` serves the policy in its own process for the length of the
 check, with a token that lives only that long.
 
@@ -940,9 +944,9 @@ serves it offline through the real server to the real client and an arm behind i
 trained ACT from the Hub, `natsuki0000/act-so101-bluecap` at commit
 `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was served on a laptop's CPU and drove a twin of the
 lab's arm on the simulator, and `lerobot/smolvla_base` loaded there and took minutes a chunk, so
-it never answered a step through the client ([policies.md](../policies.md#smolvla-and-act)).
-pi05 has not run (`VLA_PIPELINE`). Pi0.5 also wants LeRobot's `[pi]` extra and a Hub token that
-has been granted its gated tokenizer.
+it never answered a step through the client
+([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05 has not run (`VLA_PIPELINE`).
+Pi0.5 also wants LeRobot's `[pi]` extra and a Hub token that has been granted its gated tokenizer.
 
 Loading one reads before it builds, and refuses rather than guesses:
 
@@ -1070,8 +1074,8 @@ connect's note says the percentiles were accepted, and the `policy` block of the
 `summary.json` and `run_start` carry `accept_other_frame`. On the lab arm's calibration, 55 of
 the 68 servable SO-100 and SO-101 ACT checkpoints on the Hub were refused on `shoulder_lift`,
 whose recorded travel there does not reach the arm's own fold
-([ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)) while theirs did. A frame of
-another size can be accepted from Python alone, with `RemoteRunner`'s `accept_frame_size=True`,
+([ADR-0045](../../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)) while theirs did. A frame
+of another size can be accepted from Python alone, with `RemoteRunner`'s `accept_frame_size=True`,
 and the record says when it was.
 
 The check is made again as every segment starts, on what the server says then. The arm's
@@ -1107,8 +1111,8 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
   confirm, so a person at a terminal is asked before each segment, and without one a goal is
   what it was. Under `--yes`, or with a pipe or file on stdin, a segment starts without
   anybody being asked, as any other gated verb does
-  ([safety.md](../safety.md#who-the-record-says-was-asked)), and `--controller vla` refuses
-  both.
+  ([concepts/safety.md](../../concepts/safety.md#who-the-record-says-was-asked)), and
+  `--controller vla` refuses both.
 - **The pilot is told what executes.** A run whose verbs include `manipulate` has a
   `Your executor` section in its prompt: hand the policy one short subtask per call, look again
   after each, and never read the verb's ok as the subtask done. With a camera and a pilot that
@@ -1132,8 +1136,8 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
 `--controller llm`, the default, is the model `--llm` names deciding each subtask. With
 `--controller vla` there is no model at all. A scripted pilot hands the policy each instruction
 the task file lists under `policy.instructions` (a `duck: 3` file,
-[duck-spec.md](../duck-spec.md#policy-v3)), in order, one `manipulate` segment each, or the
-`--goal` text as the only one:
+[reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)), in order, one `manipulate`
+segment each, or the `--goal` text as the only one:
 
 ```bash
 quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 --controller vla
@@ -1144,9 +1148,9 @@ quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.
   `Did the arm do it?`, with the instructions it ran and the task file's `success` lines in
   front of you. Only your yes makes the run a success. The question and your answer are a
   `judge` prompt in the record
-  ([safety.md](../safety.md#a-pilot-that-cannot-judge---controller-vla)). The time you take to
-  look is not charged to `max_minutes`, and a prompt that ends without an answer is not a no:
-  the run fails saying what the prompt raised, and no `judge` row is written.
+  ([concepts/safety.md](../../concepts/safety.md#a-pilot-that-cannot-judge---controller-vla)). The
+  time you take to look is not charged to `max_minutes`, and a prompt that ends without an answer is
+  not a no: the run fails saying what the prompt raised, and no `judge` row is written.
 - **A segment that does not end ok ends the list.** A confirm you decline, a guard, a starved
   policy: the pilot starts no other segment and fails the run in the verb's own words, without
   asking whether the task was done.
@@ -1173,14 +1177,14 @@ LeRobot, the scene's cameras instead of webcams, and the world's clock instead o
 So a task file rehearsed here goes through the lines that will drive the arm in the lab, and
 what it meets on the way, a travel it cannot reach, a bus that drops a packet, a pilot that
 reaches for a verb nobody allowed, it meets at home.
-[ADR-0047](../adr/0047-the-arms-simulator-runs-the-real-backend.md) is the reasoning.
+[ADR-0047](../../adr/0047-the-arms-simulator-runs-the-real-backend.md) is the reasoning.
 
-![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../assets/lerobot-sim.gif)
+![Two views of a simulated SO-101 arm in MuJoCo, side by side, under a strip naming the verb being run. Left, the arm on a grey table seen from in front and to one side, with a red cube and a dark pen lying in front of it: it starts with the upper arm upright and the forearm level, raises the whole arm on a diagonal, brings the forearm back down level with the upper arm nearly upright, then swings the arm from side to side at the shoulder three times and stops. Right, the scene's front camera, the view the model was sent: the raised arm runs off the top of the frame, then the arm held out level swings across it from one side to the other, pointing straight at the camera as it passes the middle.](../../assets/lerobot-sim.gif)
 
 *The sentence the real arm at the top of the README was given, `Wave to the camera with an
 extended arm`, on a bare `--robot lerobot:mujoco` with the `front` camera, piloted by OpenAI's
-`gpt-6-sol` and recorded by [`lerobot_sim.py`](../assets/lerobot_sim.py)
-([how it was made](../assets/README.md)).*
+`gpt-6-sol` and recorded by [`lerobot_sim.py`](../../assets/lerobot_sim.py)
+([how it was made](../../assets/README.md)).*
 
 ### Running it
 
@@ -1232,12 +1236,12 @@ $ quackd robot twin arm-01
 ```
 
 `--robot arm-01-sim` is then the same travel starting from the same fold, and its memory is its
-own. The warning is the one cost, and [registry.md](../registry.md#a-simulator-of-an-arm) has
-what `twin` copies and what it refuses. The simulated arm starts at the rest pose as recorded,
-limited by the model's own stops and settled clear of its table and of itself where the pose
-puts it into either (below), so the first rest move finds it already there. A joint recorded
-past one of those stops starts at the stop, with a note, because nobody has read a real arm's
-stops against the model's yet.
+own. The warning is the one cost, and
+[guides/registry.md](../../guides/registry.md#a-simulator-of-an-arm) has what `twin` copies and what
+it refuses. The simulated arm starts at the rest pose as recorded, limited by the model's own stops
+and settled clear of its table and of itself where the pose puts it into either (below), so the
+first rest move finds it already there. A joint recorded past one of those stops starts at the stop,
+with a note, because nobody has read a real arm's stops against the model's yet.
 
 A fold can also put the model into its own table, or one of its links into the next, by more
 than a millimetre. Started there, the first step of physics would throw the arm out of the
@@ -1264,7 +1268,7 @@ the lab arm's twin, arm-01-sim:
 
 The lab arm rests in that fold on its own bench, so the model differs from the arm somewhere: in
 where its joints are zero or which way they turn, or in where the table meets its base. Only the
-bench can say which, and [PLAN.md](../../PLAN.md) has it beside the joint zeros and signs.
+bench can say which, and [PLAN.md](../../../PLAN.md) has it beside the joint zeros and signs.
 
 A fold the settle cannot clear is refused at connect instead, naming what the pose put where
 and what a second of settling left: a part held in against a stop, or pinned by a joint that
@@ -1466,7 +1470,7 @@ is evidence about the model (`SERVO_DYNAMICS`, below). Which way each joint turn
 zero sits are assumed to match the model until a bench checks them (`JOINT_SIGN`, `JOINT_ZERO`).
 The cameras' placement is quackd's, the servos never warm, and no rate measured here is the real
 bus's. So `lerobot:mujoco`'s status never raises `lerobot:real`'s, and what only the bench can
-settle is listed in [PLAN.md](../../PLAN.md).
+settle is listed in [PLAN.md](../../../PLAN.md).
 
 ### When the simulator will not start
 
@@ -1484,9 +1488,9 @@ settle is listed in [PLAN.md](../../PLAN.md).
 
 ## Which of this arm's verbs are a choice
 
-Only relevant with the optional `--decision-llm` ([decision-llms.md](../decision-llms.md)), and
-off unless you name one.
-The stepper decides what it may answer from each tool's own JSON schema, and on this arm the
+Only relevant with the optional `--decision-llm`
+([guides/decision-llms/README.md](../../guides/decision-llms/README.md)), and off unless you name
+one. The stepper decides what it may answer from each tool's own JSON schema, and on this arm the
 split falls like this:
 
 | | Tools | The calls it can author |
@@ -1508,18 +1512,18 @@ instruction. The stepper is then shown each of them and never takes one, in eith
 `--yes` nobody is asked at a confirm gate, so a stepper that cleared its floor would start the
 arm's policy with no person and no model involved. Its answer is recorded beside the model's
 (`gate: shadow_only`), which is the agreement rate promoting it would need
-([ADR-0048](../adr/0048-policies-are-the-arms-executor.md)). The step cap, the range refusal and
+([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)). The step cap, the range refusal and
 the hot-servo precondition apply to a stepper-authored call exactly as they apply to a model's,
 because both go through the same executor.
 
-[`ducks/arm-grip-check.duck`](../../ducks/arm-grip-check.duck) is the task built out of the
+[`ducks/arm-grip-check.duck`](../../../ducks/arm-grip-check.duck) is the task built out of the
 first row alone, and it is the worked example on that page.
 
 ## Safety
 
 Each of these exists because upstream could not answer a question quackd has to ask; the
-reasoning is in [ADR-0036](../adr/0036-what-the-arm-does-not-say.md). What stops each body in
-quackd, side by side, is [safety.md](../safety.md).
+reasoning is in [ADR-0036](../../adr/0036-what-the-arm-does-not-say.md). What stops each body in
+quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
 
 - **The heartbeat reads the arm.** `is_connected` is the serial port's open flag and stays
   `True` with the cable pulled, so the heartbeat is a round trip to the motors, and a dead arm
@@ -1662,7 +1666,7 @@ quackd, side by side, is [safety.md](../safety.md).
   on stdin, the gate asks nobody, so a segment the pilot calls goes ahead without anybody
   being asked, and over MCP both verbs need `--yes`. The policy itself runs in a server of its
   own, and no quackd command loads a checkpoint in the process that holds the bus
-  ([policies.md](../policies.md)).
+  ([guides/policies.md](../../guides/policies.md)).
 
 ## The rest pose
 
@@ -1684,10 +1688,10 @@ it there at both ends of every run.
 > call, every run that got to its end kept torque on and finished at the power switch, and the
 > `stop` at the end of a run hauled a folded shoulder up out of its fold. What quackd does with
 > a pose past the travel now is [A pose past the travel](#a-pose-past-the-travel), below, and
-> the whole account is [ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md).
+> the whole account is [ADR-0045](../../adr/0045-a-rest-pose-the-calibration-cannot-reach.md).
 > That answer has run against a fake arm that clamps the way the servo does and against
 > `lerobot:mock`, and not yet on the arm, so read
-> [section 07 of the first run](../lerobot-first-run.md#07-record-the-rest-pose) with a hand
+> [section 07 of the first run](first-run.md#07-record-the-rest-pose) with a hand
 > near the power switch and say what happened.
 
 ### Recording it
@@ -1796,7 +1800,7 @@ arm's own calibration gives it at connect:
   all: any goal quackd writes to a joint while it reads past its travel is the limit to the
   servo, so a joint a move had already begun lifting out of its fold keeps rising to that limit
   whatever a stop writes or leaves out. Only the power switch stops that stretch
-  ([safety.md](../safety.md)).
+  ([concepts/safety.md](../../concepts/safety.md)).
 - **A move out of the fold starts at the edge.** `move_joints` on a joint that reads past its
   travel paces its ramp from the edge of the travel, not from the reading: any goal between the
   two is, to the servo, the edge, so the joint rises to it at the servo's own speed first,
@@ -2406,15 +2410,15 @@ says quackd cannot tell whether torque is on, to keep holding the arm, and to cu
 
 The offer and what came of it are said to you directly whether or not the log is on, and the
 record keeps them as a `release` event and a `prompt` row
-([architecture.md](../architecture.md)).
+([concepts/architecture.md](../../concepts/architecture.md)).
 
 **Why a command and a prompt, and not a verb.** Every guard on this arm is there because a model
 is three seconds away from it and nobody's hands are on it. Releasing torque away from the rest
 pose is the one thing that drops the arm, so it goes through the only two doors a model cannot
 reach: a command a person types, and a question put to a person at the run's own terminal. It is
 not a verb and is in no `allow` list, it is not an MCP tool, and `let_go` is still not on the
-`RobotAdapter` protocol ([ADR-0039](../adr/0039-an-arm-placed-by-hand.md),
-[ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Both say "hold it" before
+`RobotAdapter` protocol ([ADR-0039](../../adr/0039-an-arm-placed-by-hand.md),
+[ADR-0045](../../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)). Both say "hold it" before
 anything happens, which is the whole difference from `--by-hand`, where the release comes first
 and the person's hands second.
 
@@ -2586,7 +2590,7 @@ up is an index moving, from the other direction than the bullet describes: a sin
   `?backend=v4l2` is worth trying before you conclude the webcam cannot do the mode.
 
 If you hit one of these, or fail to, that is exactly what the
-[checklist](../lerobot-hardware-checklist.md)'s *What to report* is asking for.
+[checklist](hardware-checklist.md)'s *What to report* is asking for.
 
 ## Upstream API
 
@@ -2706,9 +2710,9 @@ server runs.
 
 [The simulator](#the-simulator-lerobotmujoco), `lerobot:mujoco`, is the `real` backend's own
 code over a physics model of the SO-101, and this is where that model comes from. The model is
-set in a scene of quackd's own, a table, lights, the cameras and the objects on it, and CI runs
-the same code over a primitives-only stand-in arm (`sim/standin.py`), because nothing a pull
-request waits on fetches the model. The nightly `lerobot-sim-assets` job fetches it the way a
+set in a scene of quackd's own, a table, lights, the cameras and the objects on it, and CI's
+`physics` job runs the same code over a primitives-only stand-in arm (`sim/standin.py`) on every
+push, because nothing a pull request waits on fetches the model. The nightly `lerobot-sim-assets` job fetches it the way a
 first run does and runs the sweeps on it.
 
 The follower carries exactly what the `real` backend reads and writes on a LeRobot follower,
@@ -2724,12 +2728,12 @@ The model is the maker's own, [TheRobotStudio/SO-ARM100](https://github.com/TheR
 pinned at
 [`5f6d2b8`](https://github.com/TheRobotStudio/SO-ARM100/tree/5f6d2b876a53a4872e405b991dd925556c9e38a4)
 (`main`, 2026-09-23) and read on 2026-09-26. Every name quackd spells from it lives in
-[`adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py).
+[`adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py).
 
 **The model and its meshes are fetched at run time and never shipped.** Neither the wheel, the
 repository nor a test fixture carries a byte of them, although their Apache-2.0 licence would
 allow it, because no upstream asset is ever committed here.
-[`sim/assets.py`](../../adapters/lerobot/src/quackd_lerobot/sim/assets.py) fetches
+[`sim/assets.py`](../../../adapters/lerobot/src/quackd_lerobot/sim/assets.py) fetches
 `so101_new_calib_camera.xml` and the meshes it names one file at a time from
 raw.githubusercontent.com at the pin, rather than the whole repository, and checks each one
 against the sha256 recorded for it. Only once every file matches does it install the set in
@@ -2744,8 +2748,8 @@ Line endings in the model do not count, because Git for Windows checks it out wi
 | Name | Why quackd relies on it |
 |---|---|
 | `the repository's LICENSE is the Apache License 2.0` | no other licence file sits beside the simulation files and neither README names one, so the model and its meshes are under it. quackd fetches them rather than shipping them all the same |
-| `so101_new_calib_camera.xml` | the model quackd loads: new_calib, the default calibration, plus upstream's wrist camera mount. It includes no other file, so it needs nothing of upstream's but its meshes |
-| `no <option>, <camera>, <light> or table in the model` | the arm and nothing around it, so the physics settings, the table, the lights and every camera the simulator renders from are quackd's and not upstream's. Upstream's `scene.xml` wraps the variant without the camera mount, and quackd does not use it |
+| `so101_new_calib_camera.xml` | the model quackd loads: new_calib, the default calibration and the one LeRobot recommends, plus upstream's wrist camera mount. It includes no other file, so it needs nothing of upstream's but its meshes |
+| `no <option>, <camera>, <light> or table in the model` | the arm and nothing around it, so the physics settings, the table, the lights and every camera the simulator renders from are quackd's and not upstream's, and a seeded grasp sweep is what proves the settings. Upstream's `scene.xml` wraps the variant without the camera mount, and quackd does not use it |
 | `<compiler angle="radian" meshdir="assets" autolimits="true"/>` | every range in the file is in radians, and quackd reads each one from the loaded model rather than copying a number out of the file |
 | `15 STL meshes under Simulation/SO101/assets` | every mesh the model names and nothing else from that directory, each fetched on its own and checked against its hash |
 | `wrist_camera_mount and wrist_camera` | two bodies under the gripper, meshes only, with no camera element in either: where a wrist view is rendered from is quackd's |
@@ -2761,8 +2765,8 @@ Line endings in the model do not count, because Git for Windows checks it out wi
 | Name | What quackd does |
 |---|---|
 | `SERVO_DYNAMICS` | the gains, damping and friction are a calculation and another robot's properties, not a measurement of an SO-101. quackd treats the simulated dynamics as the model's and never as the arm's: a settle time, a push or a grasp that holds in the simulator is evidence about the model, and only the bench can say it about an arm |
-| `JOINT_ZERO` | whether a real arm's calibrated middle of travel is the model's zero, on the five arm joints. A calibration records the travel one person swept on one arm, and nothing says that matches the CAD. quackd assumes an offset of zero on each of them until the bench measures one, as LeRobot's own kinematics helper does (`RobotKinematics sets a URDF joint to np.deg2rad(degrees)`, in the LeRobot table above). The gripper is `GRIPPER_MAP`'s |
-| `JOINT_SIGN` | whether a positive degree turns the model's joint the positive way. That depends on how each servo was mounted and calibrated, which the model cannot know. quackd assumes it does on the five arm joints, as LeRobot's kinematics helper does. Which end of the gripper is closed is `GRIPPER_MAP`'s, found from the model |
+| `JOINT_ZERO` | whether a real arm's calibrated middle of travel is the model's zero, on the five arm joints. A calibration records the travel one person swept on one arm, and nothing says that matches the CAD. quackd assumes an offset of zero on each of them until the bench measures one, as LeRobot's own kinematics helper does (`RobotKinematics sets a URDF joint to np.deg2rad(degrees)`, in the LeRobot table above). A bench measures it by nudging each joint and reading each stop against the model's. The gripper is `GRIPPER_MAP`'s |
+| `JOINT_SIGN` | whether a positive degree turns the model's joint the positive way. That depends on how each servo was mounted and calibrated, which the model cannot know. quackd assumes it does on the five arm joints, as LeRobot's kinematics helper does, until the same bench checks it. Which end of the gripper is closed is `GRIPPER_MAP`'s, found from the model |
 | `GRIPPER_MAP` | LeRobot's 0..100 is mapped linearly over the model's gripper hinge, with the closed end found from the loaded model rather than assumed, and a reading is clipped to 0..100 |
 | `WRIST_CAMERA_POSE` | whether upstream's printed mount sits where your wrist camera sits. quackd renders the wrist view from the mount as the model places it and never claims it is your camera's view |
 
@@ -2778,14 +2782,14 @@ tag names,
 (`v0.6.1`), and were read on 2026-09-27, rather than at the `main` commit
 [the arm's own table](#upstream-api) is pinned to. The installed 0.6.1 wheel and the tag were
 compared file by file that day, and every file these rows cite was the same. Every name lives in
-[`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
+[`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
 
 **No trained checkpoint has been loaded by quackd in CI or on a GPU.** CI's `policy` job loads a
 tiny random ACT through the real server, on the CPU and offline, which is what `POLICY_PIPELINE`
 below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
 the Hub drove a twin of the lab's arm on the simulator and `lerobot/smolvla_base` never answered
-a step in time ([policies.md](../policies.md#smolvla-and-act)). pi05 and tick mode have not run
-at all.
+a step in time ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05 and tick mode
+have not run at all.
 
 ### VERIFIED (read from source at the v0.6.1 tag)
 
@@ -2848,7 +2852,7 @@ The 2026-09-23 afternoon ran quackd 0.12.0, so what quackd does about that after
 on an arm yet: parking a rest pose at the edge of its travel, `stop` leaving out a joint that
 reads past its travel, `quackd robot release` and the offer at the end of a run, the connect's
 retries, a `move_joints` paced over its `duration_s`, and the take-hold refusing a joint past
-its travel. The [checklist](../lerobot-hardware-checklist.md) is the order to find out in.
+its travel. The [checklist](hardware-checklist.md) is the order to find out in.
 
 `lerobot:mujoco` runs that same code over [the simulator](#the-simulator-lerobotmujoco): in CI
 on a primitives-only stand-in arm, and on the maker's model in sweeps run by hand on 2026-09-27,
@@ -2916,7 +2920,7 @@ server postdate both, and none of them has driven an arm.
 ## How to help
 
 If you have an SO-101 on a desk, work through
-[lerobot-hardware-checklist.md](../lerobot-hardware-checklist.md) in order: nothing moves
+[adapters/lerobot/hardware-checklist.md](hardware-checklist.md) in order: nothing moves
 until step 10. `lerobot-lookout` is the first task to point at it; it asks for `report_state`
 rather than `observe`, because a `.duck` is checked against the static manifest, which
 cannot know whether you brought a webcam. What most needs a real arm is that checklist's

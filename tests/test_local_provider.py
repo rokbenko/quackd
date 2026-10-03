@@ -320,7 +320,7 @@ async def test_every_camera_reaches_a_local_server_in_one_message() -> None:
     two pictures by somebody with a webcam on each side of an arm.
 
     It is also where the cost lands. Two cameras is two image parts in a single message, and
-    `docs/local-llms.md` warns that a server or a model may accept only one. This says what
+    `docs/guides/local-llms.md` warns that a server or a model may accept only one. This says what
     quackd sends; whether a given server takes it is that server's business."""
     client = FakeClient(reply(text="{}"))
     p = LocalProvider("m", preset="ollama", client=client, vision=True)

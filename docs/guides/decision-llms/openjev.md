@@ -4,7 +4,7 @@ OpenJev, self-hosted: DiffusionGemma behind vLLM, or MLX on Apple silicon. It is
 [razorback16/openjev](https://github.com/razorback16/openjev), Apache-2.0, read at `main` on
 2026-09-22 (its README, `openjev/{config,api,engine,chat,__main__}.py`, `tests/test_api.py`) and
 pinned to the docker image `razorback16/openjev:0.3.0`. A decision LLM has no `upstream_api.py`,
-so every name quackd spells lives in [`catalogue.py`](../../quackd/agent/decision/catalogue.py).
+so every name quackd spells lives in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
 **Nothing here has ever answered a real robot.**
 
@@ -30,9 +30,9 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm openjev --decision
 | `extra` | `decision`, installed as `quackd[decision]` |
 | `sdk` | `typesafe_sdk`, the import that says whether that extra is here |
 
-That is `PRESETS["openjev"]` in [`catalogue.py`](../../quackd/agent/decision/catalogue.py); a test
-reads the url, the model id, the key variable, the install line and the extra back off this page;
-`--decision-url` overrides the address and `--decision-llm openjev:openjev-0.1` the model id.
+That is `PRESETS["openjev"]` in [`catalogue.py`](../../../quackd/agent/decision/catalogue.py); a
+test reads the url, the model id, the key variable, the install line and the extra back off this
+page; `--decision-url` overrides the address and `--decision-llm openjev:openjev-0.1` the model id.
 
 ## What it is
 
@@ -55,8 +55,7 @@ budget. Apache-2.0, weights included (NVIDIA / Google); its interpreter floor is
 - **This server computes confidence by its own formula**, `1 - H(p)/ln K`, while quackd's floors
   -- brake 0.50, read 0.60, motion 0.85, confirm 0.90 -- are two numbers TypeSafe publish with
   two of quackd's own between them, all four shaped around Jev and never measured against this
-  one. See [How a turn is
-  decided](../decision-llms.md#how-a-turn-is-decided).
+  one. See [How a turn is decided](README.md#how-a-turn-is-decided).
 
 > [!WARNING]
 > Both defaults are loopback (`OPENJEV_HOST` is `127.0.0.1`; the image binds `0.0.0.0` inside the
@@ -100,8 +99,8 @@ the extra, `quackd doctor` prints this row as `missing (quackd[decision])`, `non
 ## How to help
 
 Run it in shadow mode on your own bench ([Measuring it
-yourself](../decision-llms.md#measuring-it-yourself)) and report the agreement rate, the latency
+yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 mean and max, the answers that surprised you, and which interface and port you served on, vLLM or
 MLX. A confidence floor moves on a calibration curve of your own and nothing else: [How a turn is
-decided](../decision-llms.md#how-a-turn-is-decided) says what to plot, and
-[CONTRIBUTING.md](../../CONTRIBUTING.md) says where to send it.
+decided](README.md#how-a-turn-is-decided) says what to plot, and
+[CONTRIBUTING.md](../../../CONTRIBUTING.md) says where to send it.

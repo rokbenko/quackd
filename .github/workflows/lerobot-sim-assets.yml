@@ -7,15 +7,15 @@ name: lerobot-sim assets
 # Separate from `ci` for the reasons microduck-assets.yml gives. It reaches the network, so
 # putting it on the required path would let an upstream outage block a merge. And it downloads
 # upstream's model: SO-ARM100's files are Apache-2.0, which would allow a copy, but no upstream
-# asset is committed here (CONTRIBUTING.md) and `docs/licenses.md` says neither the wheel, the
-# repository nor a CI fixture carries a byte of them. So this job takes them into a runner that
-# is then destroyed and caches nothing: an `actions/cache` entry keyed on the pin would be
-# restorable by any run, including a fork's, which is a CI fixture by any other name.
+# asset is committed here (CONTRIBUTING.md) and `docs/reference/licenses.md` says neither the
+# wheel, the repository nor a CI fixture carries a byte of them. So this job takes them into a
+# runner that is then destroyed and caches nothing: an `actions/cache` entry keyed on the pin
+# would be restorable by any run, including a fork's, which is a CI fixture by any other name.
 #
 # It is also the only watchdog on the pin. `ensure_so101` verifies every file against a recorded
 # sha256, so a file that stops arriving from the pinned commit, or arrives changed, fails here
 # the same night, by name, instead of on somebody's first rehearsal. And it is what
-# `lerobot:mujoco`'s status rests on: the sweeps below are the ones docs/adapter-status.md
+# `lerobot:mujoco`'s status rests on: the sweeps below are the ones docs/adapters/status.md
 # names, and CI's own physics job runs only the stand-in.
 
 on:

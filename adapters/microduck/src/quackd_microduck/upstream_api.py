@@ -1,7 +1,7 @@
 """The only file in quackd allowed to spell an upstream Microduck method name.
 
 Every constant is tagged VERIFIED (read from upstream source, link given) or UNVERIFIED
-(designed upstream but not shipped, or an assumption of ours). `docs/adapter-status.md`
+(designed upstream but not shipped, or an assumption of ours). `docs/adapters/microduck/README.md`
 is the human-readable version of this file; `tests/test_upstream_api.py` proves that
 UNVERIFIED names are only reachable from the experimental and stub transports.
 

@@ -11,8 +11,8 @@ Running one no longer wants a duck.
 > of its own. Both are the arm's own verbs, declared in its manifest with parameters of their
 > own, a target and an instruction, and neither goes through `register_learned_verb`, which
 > registers a verb with no parameters into a registry the connect rebuilds from the manifest.
-> [policies.md](policies.md) is how to run one, and
-> [ADR-0048](adr/0048-policies-are-the-arms-executor.md) is why they are shaped this way. This
+> [guides/policies.md](../guides/policies.md) is how to run one, and
+> [ADR-0048](../adr/0048-policies-are-the-arms-executor.md) is why they are shaped this way. This
 > page is about something else: skills trained from rewards an LLM wrote, registered as one
 > more verb.
 
@@ -50,11 +50,12 @@ that is not in a robot's manifest does not exist for that robot, so registering 
 verb into a registry is only half the story. For it to be offered to the model, allowed by a
 `.duck`, or listed by MCP on a given body, that body's manifest has to declare it. When
 learned verbs ship for real, the spec becomes a `VerbSpec` in the owning adapter's manifest
-([adapters.md](adapters.md), [manifest-spec.md](manifest-spec.md)); until then treat the call
-above as a registry-level sketch, not a supported path on an arbitrary robot. The nearest
-thing that ships is a different shape on purpose: `pick` and `manipulate` on the LeRobot arm
-are each one skill intent the arm's own learned policy executes, declared by the arm's adapter
-rather than registered here ([adapters/lerobot.md](adapters/lerobot.md#manipulate-and-the-loop-a-policy-runs-in)).
+([adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md),
+[reference/manifest-spec.md](../reference/manifest-spec.md)); until then treat the call above as a
+registry-level sketch, not a supported path on an arbitrary robot. The nearest thing that ships is a
+different shape on purpose: `pick` and `manipulate` on the LeRobot arm are each one skill intent the
+arm's own learned policy executes, declared by the arm's adapter rather than registered here
+([adapters/lerobot/README.md](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in)).
 
 - `safety_class` is always `confirm`: an unproven policy asks a human first.
 - `runner` is `async (spec, ctx) -> VerbResult`. Without one the verb explains that it is a
@@ -67,7 +68,7 @@ rather than registered here ([adapters/lerobot.md](adapters/lerobot.md#manipulat
 Every shipped policy is `obs[1,61] → actions[1,14]` at 50 Hz: 48 proprioception values +
 a 13-value command `[vel(3), head(4), body(6)]`; the observation normaliser is baked into
 the ONNX at export. The whole contract is cited at a pin in
-[`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py) (`OBSERVATION`, `COMMAND`,
+[`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py) (`OBSERVATION`, `COMMAND`,
 `CONTROL`, `POLICY_METADATA`), which is what the MuJoCo backend reads. Upstream's
 `manifest.json` lists every policy with its kind (perpetual, scripted or episodic) and its
 command encoding. `robotd` checks the shape at load and points at policies by role in
@@ -82,7 +83,7 @@ sit↔stand, ground pick, kick left/right, roller, roller crouch, roulade.
    (slow, but real). Track upstream; do not guess.
 2. **A sim runner.** This is the part that changed. `microduck:mujoco` runs upstream's
    walking and standing policies on upstream's model at 50 Hz on a laptop
-   ([ADR-0030](adr/0030-mujoco-physics-backend.md)), so the machinery a learned verb needs
+   ([ADR-0030](../adr/0030-mujoco-physics-backend.md)), so the machinery a learned verb needs
    already exists in `adapters/microduck/src/quackd_microduck/sim3d/microduck.py`: an onnxruntime session, the 61-value
    observation built from the model's own state, and `ctrl = default_pose + action *
    action_scale` written every tick. What is missing is a way in. `MicroduckBody` loads
@@ -97,7 +98,7 @@ sit↔stand, ground pick, kick left/right, roller, roller crouch, roulade.
    `alpha_ground_pick`, `alpha_sitstand`) did nothing from a standing pose when quackd tried
    them, which is why `kick`, `grab` and `sit` on `microduck:mujoco` are stand-ins rather
    than policies (`KICK_STANDIN` in
-   [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py)). The entry pose, the
+   [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py)). The entry pose, the
    start condition and the stop condition are not in the 61-value observation, and nobody
    has worked out where they belong. Until that is answered, the cheapest first learned verb
    to attempt in sim is a perpetual one with the same contract: a different gait rather than

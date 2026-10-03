@@ -5,13 +5,13 @@ each step can only fail in a way you can recover from. **Feet off the ground unt
 
 This robot is not a duck. It weighs about 3 kg, it cannot get up if it falls, and upstream's
 own shutdown path disables torque with no lowering and no ramp. Read
-[adapters/toddlerbot.md](adapters/toddlerbot.md) before you start.
+[adapters/toddlerbot/README.md](README.md) before you start.
 
 quackd runs on your laptop and never on the robot. The Jetson on the robot's back holds
 quackd's ToddlerBot daemon, and it can also hold a model server and quackd's host daemon, which
-`--host` reaches from the laptop ([jetson.md](jetson.md)). The host daemon runs there with
-`--camera none`, because the ToddlerBot daemon owns the robot's cameras. A model server or a
-detector saturating that board is exactly the load that can starve the fifty hertz loop, so
+`--host` reaches from the laptop ([guides/jetson.md](../../guides/jetson.md)). The host daemon runs
+there with `--camera none`, because the ToddlerBot daemon owns the robot's cameras. A model server
+or a detector saturating that board is exactly the load that can starve the fifty hertz loop, so
 bring the robot up with nothing else running on it, and add the others once these steps have
 passed.
 
@@ -88,7 +88,7 @@ and there the record is the chat itself.
 
 Read that first line before you paste it. The values of `--api-key` and `--token` are replaced
 there, and so is a password or a credential-named query parameter in `--base-url`, `--address`
-and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../SECURITY.md)).
+and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURITY.md)).
 
 The four things that most need a real robot:
 
@@ -99,5 +99,5 @@ The four things that most need a real robot:
 - **Does a calibrated zero survive a restart?** Reading upstream did not settle whether
   `initialize` re-latches it.
 
-Only flip the `bridge` row in [adapter-status.md](adapter-status.md) once a real robot has
+Only flip the `bridge` row in [adapters/status.md](../status.md) once a real robot has
 done it, and say in the same commit what it did.

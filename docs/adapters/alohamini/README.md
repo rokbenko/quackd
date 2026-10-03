@@ -11,7 +11,7 @@ Apache-2.0, pinned at
 the only pin there is. The hardware repository
 [liyiteng/AlohaMini](https://github.com/liyiteng/AlohaMini) (`17c6a98d`) holds the CAD and the
 BOM and no software quackd uses. Every name quackd spells lives in
-[`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../adapters/alohamini/src/quackd_alohamini/upstream_api.py).
+[`adapters/alohamini/src/quackd_alohamini/upstream_api.py`](../../../adapters/alohamini/src/quackd_alohamini/upstream_api.py).
 
 **Nothing here has ever run on a robot.**
 
@@ -61,7 +61,7 @@ port can drive the robot. Bind it to loopback and reach it through an ssh tunnel
 - **A position.** The observation carries `x.vel`, `y.vel` and `theta.vel` and no pose at all,
   so `go_to` closes the loop on the camera alone and a lost target has no fallback.
 
-Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([manifest-spec.md](../manifest-spec.md)):
+Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
 | | |
 |---|---|
@@ -76,7 +76,7 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
 - reach further than about half a metre from an arm's base
 - see depth: five colour cameras, no depth sensor and no lidar
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([duck-spec.md](../duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
 ## The arms are limp, and that is upstream's own state
 
@@ -86,7 +86,7 @@ write in the whole package is a zero inside `lift_axis.home()`, and neither `con
 nor `write_calibration` touches it. So on a stock host a joint command moves nothing and a stop
 could not hold an arm even if it wanted to.
 
-quackd ships [`bridge/alohamini/quackd_alohamini_host.py`](../../bridge/alohamini/quackd_alohamini_host.py),
+quackd ships [`bridge/alohamini/quackd_alohamini_host.py`](../../../bridge/alohamini/quackd_alohamini_host.py),
 a small wrapper that runs upstream's own host loop with torque enabled, the lift stopped, and
 three `quackd_` fields added to every observation. Run it **instead of** upstream's host:
 
@@ -217,7 +217,7 @@ so quackd validates every goal against the manifest before it is sent.
 ## How to help
 
 If you have built an AlohaMini, the useful thing is a first run. Work through
-[alohamini-hardware-checklist.md](../alohamini-hardware-checklist.md) in order. It starts on
+[adapters/alohamini/hardware-checklist.md](hardware-checklist.md) in order. It starts on
 upstream's **stock** host rather than quackd's, because with the arms limp the base and the
 lift can be exercised with no arm risk at all, and only then switches to the wrapper that
 turns torque on. What most needs a real robot: whether `+x` is physically forward, the

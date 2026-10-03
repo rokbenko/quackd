@@ -774,19 +774,19 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
         (
             "lerobot",
             upstream_api,
-            "docs/adapters/lerobot.md",
+            "docs/adapters/lerobot/README.md",
             "run on an SO-101 on 2026-09-15; the pick policy was not exercised",
         ),
         (
             "SO-ARM100",
             so_arm100,
-            "docs/adapters/lerobot.md",
+            "docs/adapters/lerobot/README.md",
             "anything against an arm: lerobot:mujoco loads it, and nobody has compared the two",
         ),
         (
             "LeRobot policies",
             policies,
-            "docs/adapters/lerobot.md",
+            "docs/adapters/lerobot/README.md",
             f"a trained checkpoint: read at lerobot {policies.VERSION}, and CI's policy job serves "
             "a tiny random ACT alone, so SmolVLA, pi05 and tick mode have never run",
         ),

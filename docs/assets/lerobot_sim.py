@@ -33,7 +33,7 @@ Needs `quackd[lerobot-sim]`. The first run downloads the SO-101's model, the mak
 TheRobotStudio's SO-ARM100 at a pinned commit (about 16 MB), into `~/.quackd/cache`, checks
 each file against its sha256 and prints its licence, which is Apache-2.0. Nothing of theirs is
 written here except the frames of this recording, which render that model and are labelled in
-`docs/assets/README.md` and `docs/licenses.md`.
+`docs/assets/README.md` and `docs/reference/licenses.md`.
 """
 
 from __future__ import annotations

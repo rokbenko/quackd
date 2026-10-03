@@ -1,7 +1,7 @@
 """The only file in quackd allowed to spell an Open Duck Mini name (ADR-0022, ADR-0024).
 
 Every constant is tagged VERIFIED (read from upstream source, link given) or UNVERIFIED (an
-assumption of ours, with what quackd does about it). `docs/adapters/open_duck.md` is the
+assumption of ours, with what quackd does about it). `docs/adapters/open_duck/README.md` is the
 human-readable version; `tests/test_upstream_api.py` proves UNVERIFIED names are only
 reachable from the experimental `bridge` backend.
 
@@ -15,7 +15,7 @@ the walk policy, which quackd links to and never redistributes.
 The bridge's own wire protocol is deliberately NOT in this file. quackd defines both ends of
 it, so it has no upstream to be verified against; citing it here with a link to a repo that
 does not define it would be a false citation. It lives in `bridge.py` and is specified in
-`docs/adapters/open_duck.md`.
+`docs/adapters/open_duck/README.md`.
 
 Nothing here has been run against a physical duck.
 """

@@ -647,8 +647,8 @@ TORQUE_UNKNOWN_AT_CLOSE = (
 
 `TORQUE_LEFT_ON` says the arm will not fall, which is a thing only an arm that answered can be
 said to be doing. An arm that stopped answering is, as often as not, one whose servo supply was
-cut at the switch, which is the stop `docs/safety.md` names, and that arm is limp; one whose
-cable came out is still holding. The close cannot tell them apart, so it keeps what torque
+cut at the switch, which is the stop `docs/concepts/safety.md` names, and that arm is limp; one
+whose cable came out is still holding. The close cannot tell them apart, so it keeps what torque
 there may be, which costs nothing on a limp arm, and says it does not know."""
 
 

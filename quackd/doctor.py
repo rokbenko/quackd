@@ -121,7 +121,7 @@ _ADAPTER_HINT = "quackd list-adapters shows the seven that ship and their backen
 
 FLOCK_NOTE = (
     "flock mode (--flock, flock.roles): sim2d only, in-process bus by default. The MQTT bus "
-    "(quackd[lan]) is library-only (docs/lan.md)."
+    "(quackd[lan]) is library-only (docs/guides/lan.md)."
 )
 
 
@@ -1050,7 +1050,7 @@ _JETPACK_FOR_L4T = {
 }
 """Exact releases only, read off NVIDIA's JetPack archive on 2026-09-22.
 
-`docs/jetson.md` prints this same table and `tests/test_docs.py` holds the two to each other,
+`docs/guides/jetson.md` prints this same table and `tests/test_docs.py` holds the two to each other,
 so a board whose JetPack shipped after this was written cannot read as one version in the
 documentation and another on the screen."""
 
@@ -1595,7 +1595,7 @@ def _jetson_rows(jetson: JetsonReport, row: _Row, g: ui.Glyphs) -> None:
             row(
                 "swap",
                 f"{_gib(jetson.swap_total_bytes)}, all zram: it compresses RAM rather than "
-                "adding any (docs/jetson.md)",
+                "adding any (docs/guides/jetson.md)",
                 "warn",
                 g.warn,
             )
@@ -1744,7 +1744,7 @@ def _placement_grid(server: ServerRow, *, tegra: bool) -> Any:
                 row(
                     name,
                     "on the CPU: the generic arm64 build of Ollama has no Tegra CUDA, and the "
-                    "official installer picks the JetPack build (docs/jetson.md)",
+                    "official installer picks the JetPack build (docs/guides/jetson.md)",
                     "warn",
                     g.warn,
                 )
@@ -2052,7 +2052,7 @@ def render(console: Console, report: DoctorReport) -> None:
         ui.plain(
             "One of these answers the turns that are a choice among calls this body can make. "
             "Every pose, every sentence and every verdict is still the model's "
-            "(docs/decision-llms.md).",
+            "(docs/guides/decision-llms/README.md).",
             style=ui.STYLES["muted"],
         )
     )

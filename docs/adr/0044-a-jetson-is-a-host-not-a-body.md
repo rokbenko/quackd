@@ -1,6 +1,6 @@
 # ADR-0044: A Jetson is a host, not a body
 
-**Status:** superseded by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) · **Date:** 2026-09-22 · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and that address may be loopback on the robot's own board) · Follows from [ADR-0003](0003-three-loops.md) (the loop that calls the model runs two orders of magnitude below the body's, so where it runs is a deployment choice and not an architectural one) · Declines to extend [ADR-0017](0017-robot-adapters-and-manifest.md), which is the whole decision · Implemented in `deploy/jetson/` and the Jetson section of `quackd/doctor.py` ([page](../jetson.md))
+**Status:** superseded by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) · **Date:** 2026-09-22 · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and that address may be loopback on the robot's own board) · Follows from [ADR-0003](0003-three-loops.md) (the loop that calls the model runs two orders of magnitude below the body's, so where it runs is a deployment choice and not an architectural one) · Declines to extend [ADR-0017](0017-robot-adapters-and-manifest.md), which is the whole decision · Implemented in `deploy/jetson/` and the Jetson section of `quackd/doctor.py` ([page](../guides/jetson.md))
 
 **Superseded 2026-09-25 by [ADR-0046](0046-the-jetson-is-reached-not-run-on.md):** quackd no
 longer runs on the Jetson. It runs on the laptop and reaches the board with `--host`, through a
@@ -102,7 +102,7 @@ deliberate bump for every security update on a file nobody would remember to rev
 **A hardware report issue template.** Three of the seven bodies have one today, and all seven
 have a row in `docs/adapter-status.md` that a hardware run would flip. A Jetson flips no row: it
 is not a robot and it changes nothing about which upstream API quackd speaks. The page asks for
-a Discussion and a transcript instead, the way [local-llms.md](../local-llms.md) does.
+a Discussion and a transcript instead, the way [local-llms.md](../guides/local-llms.md) does.
 
 ## Consequences
 

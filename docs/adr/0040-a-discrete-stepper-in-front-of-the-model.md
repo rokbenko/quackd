@@ -1,6 +1,6 @@
 # ADR-0040: A discrete stepper in front of the model
 
-**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0010](0010-providers.md) (what a provider is, and what quackd asks of one) and [ADR-0032](0032-datasheets-and-the-verdict.md) (the feasibility verdict and why it is prose) · Implemented in `quackd/agent/decision/` and one hook in `quackd/agent/loop.py` ([page](../decision-llms.md))
+**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0010](0010-providers.md) (what a provider is, and what quackd asks of one) and [ADR-0032](0032-datasheets-and-the-verdict.md) (the feasibility verdict and why it is prose) · Implemented in `quackd/agent/decision/` and one hook in `quackd/agent/loop.py` ([page](../guides/decision-llms/README.md))
 
 **Amended 2026-09-22 by [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md):** Jev turned out to be the first of many, so everything below
 that names the vendor now names the format. `--jev off|shadow|on` is `--decision-llm NAME`,

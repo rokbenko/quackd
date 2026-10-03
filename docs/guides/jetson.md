@@ -5,7 +5,7 @@ robot's computer. quackd never runs on it. quackd stays on your laptop, and `--h
 board, which gives the quackd there four things: the model on the board's GPU, the board's
 health, frames from a camera on the board, and detections computed on its GPU. The first is
 your own model server, installed on the board. The other three come from one small daemon quackd
-ships for the board, [`bridge/jetson/`](../bridge/jetson/README.md), the way it ships a camera
+ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md), the way it ships a camera
 daemon for the Open Duck Mini's Pi.
 
 Nothing on this page has been run on a Jetson by this project. It is written from NVIDIA's own
@@ -17,8 +17,8 @@ what that does and does not prove, and what to send back if you run it on yours.
 > A Jetson is not a robot. It never appears in `quackd list-adapters` and there is no
 > `--robot jetson:...`. An adapter is a body with a manifest and intents. A Jetson is a
 > computer, and `--host` names it beside the body `--robot` names
-> ([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md) decided the first half,
-> [ADR-0046](adr/0046-the-jetson-is-reached-not-run-on.md) the second).
+> ([ADR-0044](../adr/0044-a-jetson-is-a-host-not-a-body.md) decided the first half,
+> [ADR-0046](../adr/0046-the-jetson-is-reached-not-run-on.md) the second).
 
 ## Reached, not run on
 
@@ -26,7 +26,7 @@ The arrangement is two machines. The laptop runs quackd: the loop, the executor,
 the record. The board runs what needs the board: the model server on its GPU (Ollama, or
 `llama-server` or vLLM), quackd's host daemon, and, when the board is a robot's own computer,
 that robot's daemon. quackd reaches the model server through the local presets that already
-exist ([local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port 9874.
+exist ([guides/local-llms.md](local-llms.md)), and the host daemon over plain HTTP on port 9874.
 
 `--host HOST[:PORT]` names the board on `quackd run`, `serve-mcp`, `doctor`, `robot add` and
 `robot edit`, and `--host-token` goes with it. The port is the daemon's, 9874 unless you changed
@@ -78,9 +78,9 @@ for `quackd doctor --host`.
 
 **One of quackd's seven bodies already carries a Jetson.** A ToddlerBot has one on its back,
 and `bridge/toddlerbot/` is the daemon that runs there
-([adapters/toddlerbot.md](adapters/toddlerbot.md)). That is the case where the host daemon,
-and perhaps a model server, share a board with a robot's control loop, and it has a section of
-its own below. The Microduck's onboard computer is a Radxa and the Open Duck Mini's is a
+([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)). That is the case where the host
+daemon, and perhaps a model server, share a board with a robot's control loop, and it has a section
+of its own below. The Microduck's onboard computer is a Radxa and the Open Duck Mini's is a
 Raspberry Pi Zero 2 W, and neither is this. For those, a Jetson is a second machine on the
 bench, lending its model and its detector to a robot that has neither.
 
@@ -177,13 +177,13 @@ network.
 The daemon is one file, `bridge/jetson/quackd_jetson_hostd.py`, run by systemd under the
 board's own `/usr/bin/python3`. It is not in quackd's wheel, so clone the repository on the
 board or copy the file and its unit across. Its install is written out, with the reason for
-each step, in [bridge/jetson/README.md](../bridge/jetson/README.md#install), and this page does
+each step, in [bridge/jetson/README.md](../../bridge/jetson/README.md#install), and this page does
 not repeat it: it installs the file, writes a random token readable by the service's group,
 and enables the unit. The unit starts the daemon on `127.0.0.1:9874` with the CSI camera
 and that token. A USB camera is `--camera 0` in its place, and a board whose robot daemon owns
-the cameras is `--camera none` ([the camera notes](../bridge/jetson/README.md#the-camera)).
+the cameras is `--camera none` ([the camera notes](../../bridge/jetson/README.md#the-camera)).
 Detections need ultralytics installed for that same `python3`
-([detection on the GPU](../bridge/jetson/README.md#detection-on-the-gpu)), and a daemon
+([detection on the GPU](../../bridge/jetson/README.md#detection-on-the-gpu)), and a daemon
 without it serves everything else and says why in `/hello`. Installing it also installs pip's
 `opencv-python`, which that `python3` then loads ahead of JetPack's, and the CSI camera stops
 opening until it is removed. That section has the order to install in and the lines that
@@ -222,12 +222,12 @@ So `QUACKD_HOST=127.0.0.1` in `.env` saves typing the flag, unless `QUACKD_BASE_
 preset stays at that URL while the host daemon is still reached on the board. `--host`
 outranks both, on purpose: a board typed for this run, or registered with this robot, is a
 decision about this run, and a `.env` line naming the board you usually use must not beat one
-naming a model server's exact address ([local-llms.md](local-llms.md) has the same ladder).
+naming a model server's exact address ([guides/local-llms.md](local-llms.md) has the same ladder).
 
 Binding the daemon wide instead (`--bind 0.0.0.0`, with the token kept) lets
 `--host jetson.local` reach it with no tunnel. That is for a network you trust: the daemon is
 plain HTTP, so the token and every frame cross that network in the clear, and anybody who can
-reach `POST /detect` can keep the board's GPU busy ([SECURITY.md](../SECURITY.md)).
+reach `POST /detect` can keep the board's GPU busy ([SECURITY.md](../../SECURITY.md)).
 
 ## Which model fits which board
 
@@ -248,7 +248,7 @@ different prompt on a different quantisation would be a guess wearing a number's
 
 The model has to support tool calling, because that is how quackd offers the robot's verbs. If
 yours does not, quackd falls back to asking for JSON in the text and retries once, which works
-and is worse ([local-llms.md](local-llms.md)). Qwen3 thinks by default, which costs tokens on
+and is worse ([guides/local-llms.md](local-llms.md)). Qwen3 thinks by default, which costs tokens on
 every turn; `--extra-body` turns that off and that page shows how.
 
 ## Run it from your laptop
@@ -268,7 +268,7 @@ Jetson at 127.0.0.1:9874 (the board the daemon runs on) ────────
 · board       NVIDIA Jetson Orin Nano Developer Kit
 · L4T         36.4.3 (JetPack 6.2)
 · memory      7.3 GiB, 4.9 GiB available, shared with the GPU
-⚠ swap        1.0 GiB, all zram: it compresses RAM rather than adding any (docs/jetson.md)
+⚠ swap        1.0 GiB, all zram: it compresses RAM rather than adding any (docs/guides/jetson.md)
 · GPU device  /dev/nvgpu/igpu0
 · power mode  15W (nvpmodel -q)
 · GPU busy    0% (GR3D_FREQ in tegrastats)
@@ -320,7 +320,8 @@ extra view named `host`, and the run directory keeps its frames beside the simul
 
 Then a real body. The Open Duck Mini makes a good first one, because it brings a camera and
 the board brings the model and a detector. With the duck's own tunnel up, as its
-[hardware checklist](open-duck-hardware-checklist.md) describes, and the board's beside it:
+[hardware checklist](../adapters/open_duck/hardware-checklist.md) describes, and the board's beside
+it:
 
 ```bash
 quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
@@ -365,10 +366,11 @@ last twist for 0.3 s and then sends a zero one, so a body with no deadman of its
 rosbridge base, does not drive on in the meantime. The run header and the log's `run_start`
 event both name the detector, and each `observation` and `verb_end` record that sent the board
 a frame has a `detect` block: how many frames went, how long the laptop waited for each, and the
-time the board says it spent in the model ([architecture.md](architecture.md#transcript-format)).
+time the board says it spent in the model
+([concepts/architecture.md](../concepts/architecture.md#transcript-format)).
 
 `quackd serve-mcp` takes `--host`, `--host-token` and `--detector` the same way, so a chat
-client drives the body with the board's camera and detector ([mcp.md](mcp.md)).
+client drives the body with the board's camera and detector ([guides/mcp.md](mcp.md)).
 
 A body described without a camera of its own, such as a ToddlerBot on its bridge, gains a
 board's camera, and `observe` with it, before a run judges the task file. `quackd validate`
@@ -388,8 +390,8 @@ If all you want from the board is its model, none of this is needed:
 
 0.12.0 put an optional discrete stepper in front of the pilot, and several of the decision
 LLMs it can name run on a machine of your own rather than on somebody else's
-([decision-llms.md](decision-llms.md)). On a board where one pool of memory serves
-everything, that is another tenant rather than a free lunch, so it belongs in the same
+([guides/decision-llms/README.md](decision-llms/README.md)). On a board where one pool of memory
+serves everything, that is another tenant rather than a free lunch, so it belongs in the same
 budget as the table above.
 
 `--host` does not move a decision LLM. `--decision-url` does, and it already reaches a server
@@ -410,7 +412,7 @@ looks, `http://127.0.0.1:8000`. Bound wide on a network you trust, it is
 to do with the board.
 
 Neither has been run on a Jetson, and the gap is wider than this page: nobody has run the
-stepper against a real decision LLM on any machine, which [PLAN.md](../PLAN.md) records as
+stepper against a real decision LLM on any machine, which [PLAN.md](../../PLAN.md) records as
 an open item of its own.
 
 ## Prepare the board
@@ -546,7 +548,7 @@ LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ───�
 └──────────┴───────────────────────────────────┴─────────────┘
   where ollama put its models (GET /api/ps)
 ⚠ qwen3:4b  on the CPU: the generic arm64 build of Ollama has no Tegra CUDA, and the
-            official installer picks the JetPack build (docs/jetson.md)
+            official installer picks the JetPack build (docs/guides/jetson.md)
 ```
 
 A model all on the GPU reads `all on the GPU` with its size, and a split one says what share
@@ -622,4 +624,4 @@ If you run it, please open a Discussion or an issue with:
 - which board, which JetPack, and which camera
 
 A transcript is the most useful thing of all, and
-[`docs/assets/transcripts/`](assets/transcripts/) is where the contributor ones live.
+[`docs/assets/transcripts/`](../assets/transcripts/) is where the contributor ones live.

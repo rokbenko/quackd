@@ -194,7 +194,7 @@ def test_render_says_everything_the_report_holds() -> None:
         "microduck (biped",
         # eight table titles used to carry these paths; losing them was losing where to read
         "read more:",
-        "docs/adapters/lerobot.md",
+        "docs/adapters/lerobot/README.md",
         "docs/adr/0030-mujoco-physics-backend.md",
     ):
         assert needle in out, needle
@@ -284,7 +284,7 @@ def test_the_progress_callback_names_the_slow_questions() -> None:
 # dumps here are built from `tests/jetson_fixtures.py`, the one fake board every test reads,
 # with the NULs removed where the daemon removes them, and the daemon is
 # `tests/fake_jetson_hostd.py` on loopback. What none of it can say is whether a real Orin's
-# files look like these; `docs/jetson.md` says so and says what to send back.
+# files look like these; `docs/guides/jetson.md` says so and says what to send back.
 
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 """Shaped like `openssl rand -hex 32`, the token bridge/jetson/README.md tells people to make."""
@@ -566,7 +566,7 @@ def test_the_host_section_reads_the_board_over_the_network(hostd: FakeHostd) -> 
         ORIN_NANO,
         "36.4.3 (JetPack 6.2)",
         "shared with the GPU",
-        "1.0 GiB, all zram: it compresses RAM rather than adding any (docs/jetson.md)",
+        "1.0 GiB, all zram: it compresses RAM rather than adding any (docs/guides/jetson.md)",
         "GPU device /dev/nvgpu/igpu0",
         "power mode 15W (nvpmodel -q)",
         "GPU busy 0% (GR3D_FREQ in tegrastats)",
@@ -1048,7 +1048,7 @@ def test_ollama_on_the_jetson_says_where_each_model_sits(
         "qwen3:8b all on the GPU, 5.0 GiB",
         "llama3.3:70b 37% on the GPU, the rest on the CPU",
         "tinyllama on the CPU: the generic arm64 build of Ollama has no Tegra CUDA, and the "
-        "official installer picks the JetPack build (docs/jetson.md)",
+        "official installer picks the JetPack build (docs/guides/jetson.md)",
     ):
         assert needle in out, needle
     assert report.ok is True, "a model on the CPU is slow, not broken"
