@@ -57,6 +57,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   apart by a `type` field, so a server written from that row fails the SDK's validation on every
   turn, and quackd hands each of those turns to the model. Writing a server from the row, to
   check #33, found it. The row now gives `type` in each shape and says it is required.
+- **uv.lock takes five updates from Dependabot's #33:** anthropic 1.9.0, openai 3.22.1,
+  typesafe-sdk 0.7.2, laya 0.3.22 and zeroconf 0.151.5. CI installs none of the five, so its
+  green run says the lock resolves and no more, and each was run here on the lock instead. A real
+  `quackd run` drove anthropic against a stand-in for the Messages API on 127.0.0.1, which got
+  the beta endpoint, both of quackd's betas, `fallbacks` and `block_binding`, and whose tool call
+  came back as the run's success. A live `hello-world` on `gpt-6-sol`, held to three steps, made
+  four calls on openai and read every tool call back, for $0.0157. typesafe-sdk 0.7.2's code is
+  0.7.1's byte for byte, adding only an optional `http2` extra, and a shadow run against a System
+  One server on 127.0.0.1 recorded a decision on every turn. laya's `Router` and `predict` take
+  quackd's arguments as before and everything new in them is optional; its weights were not
+  loaded. `quackd announce` and `quackd discover` found each other on zeroconf 0.151.5. The
+  pull request's first CI run failed in the physics job, on the test race above, which none of
+  the five reaches. No requirement a user installs against moved.
 
 ## [0.16.1] — 2026-09-29
 
