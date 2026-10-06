@@ -4685,6 +4685,61 @@ async def test_a_call_that_failed_after_it_was_billed_is_in_the_total(
     assert summary["usage"]["input_tokens"] == 140, "the failed call's tokens count too"
 
 
+async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run_unpriced(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The other side of a billed failure: tokens reported and no bill, on a model with no rate.
+    That call cannot be priced, so the total is unknown from then on, as it is for a turn, and
+    the record does not say `billed` about a cost nobody billed."""
+    raised = ProviderError("openrouter: the provider failed partway through the answer")
+    raised.usage = Usage(input_tokens=40, output_tokens=3)
+    provider = FailsBilled(raised)
+    provider.model = "qwen/qwen3.8-flash"  # no catalogue rate, and the list gave none
+    summary, events = await _run_that_fails(hello_duck, tmp_path, provider)
+    (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
+    assert failed["cost_usd"] is None and failed["cost_usd_total"] is None
+    assert "billed" not in failed, "only a call costed at the vendor's own bill says billed"
+    assert summary["cost_usd"] is None
+    assert summary["billed_calls"] == 1, "the first call's bill is still counted"
+
+
+async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The real `OpenRouterProvider`, not a double: an id whose list entry gives no usable rate
+    still totals what each call was billed, because the provider says it bills per call."""
+    from quackd.agent.providers.openrouter import Listed, OpenRouterProvider
+
+    def answer(name: str, arguments: str, cost: float) -> Any:
+        call = NS(id=f"call-{name}", function=NS(name=name, arguments=arguments))
+        message = NS(content=None, tool_calls=[call], refusal=None)
+        usage = NS(prompt_tokens=10, completion_tokens=2, cost=cost)
+        return NS(choices=[NS(message=message, finish_reason="tool_calls")], usage=usage)
+
+    answers = iter(
+        [
+            answer("quack", '{"text": "hi"}', 0.001),
+            answer("declare_success", '{"reason": "q"}', 0.002),
+        ]
+    )
+
+    async def create(**kwargs: Any) -> Any:
+        return next(answers)
+
+    unpriced = Listed("quackd-stub/variable", vision=False, tool_choice=True, price=None)
+    provider = OpenRouterProvider(
+        model="quackd-stub/variable",
+        listed=unpriced,
+        client=NS(chat=NS(completions=NS(create=create))),
+    )
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert result.summary["price"] is None
+    assert result.summary["cost_usd"] == 0.003 and result.summary["billed_calls"] == 2
+
+
 async def test_a_failed_call_with_no_bill_is_recorded_exactly_as_it_was(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:

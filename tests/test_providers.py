@@ -2485,3 +2485,54 @@ def test_a_base_url_with_no_scheme_is_refused_not_a_traceback(
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError, match="could not read the model list"):
         OpenRouterProvider(model="qwen/qwen3.8-flash", base_url="example.invalid/api/v1")
+
+
+def test_a_model_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_taken(
+    or_list: Listing,
+) -> None:
+    """The line itself, on a day the test names: OpenRouter's expiry date is the first day a
+    model is gone, so a run on that day is refused, and a run the day before it is not."""
+    import datetime as dt
+
+    from quackd.agent.providers.openrouter import admit
+
+    today = dt.date(2026, 10, 6)
+    or_list[:] = [
+        or_entry("quackd-stub/today", expiration_date="2026-10-06"),
+        or_entry("quackd-stub/tomorrow", expiration_date="2026-10-07"),
+    ]
+    with pytest.raises(ProviderError, match="expired on OpenRouter on 2026-10-06"):
+        admit("quackd-stub/today", today=today)
+    assert admit("quackd-stub/tomorrow", today=today).id == "quackd-stub/tomorrow"
+
+
+def test_a_list_that_could_not_be_read_is_asked_for_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed fetch is not kept. Kept, it would turn "the host was down" into "your model does
+    not exist" for every later provider in the process: a preflight sweep, a flock's members."""
+    from quackd.agent.providers import openrouter
+
+    asked: list[str] = []
+
+    def fetch(base_url: str, **kwargs: Any) -> list[dict[str, Any]]:
+        asked.append(base_url)
+        if len(asked) == 1:
+            raise ProviderError("openrouter: could not reach openrouter.ai (down for a moment)")
+        return [or_entry()]
+
+    monkeypatch.setattr(openrouter, "fetch_models", fetch)
+    with pytest.raises(ProviderError, match="could not reach"):
+        OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    again = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    assert again.listed is not None and len(asked) == 2
+
+
+def test_the_factory_tells_the_list_check_where_the_id_came_from(
+    or_list: Listing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through `make_provider`, the way a run builds it: an id pinned in `QUACKD_LLM` that the
+    list lacks is refused as coming from there, not from a flag nobody typed."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError, match="from QUACKD_LLM is not on OpenRouter's model list"):
+        make_provider("openrouter", model="qwen/qwen3.8-flsh", source="QUACKD_LLM")
