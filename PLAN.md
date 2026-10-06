@@ -186,7 +186,18 @@ before.
   recently on 2026-09-23, and a rate read by hand is wrong from the day the vendor edits the
   page until somebody reads it again. What would close this is one run on a metered account,
   reconciled against that account's own billing page, on any vendor. Until then `--price` is the
-  answer to a disagreement and the catalogue is a table rather than a bill.
+  answer to a disagreement and the catalogue is a table rather than a bill. On OpenRouter a
+  turn is costed at the `usage.cost` it reports instead, which nobody has yet set beside what
+  OpenRouter's activity page charged for the same run.
+
+- ⬜ **No OpenRouter model has answered a real quackd request.** `--llm openrouter` was written
+  from OpenRouter's documentation and run against a stand-in on 127.0.0.1 through the real
+  `openai` SDK; only its model list check has met OpenRouter itself, with no key. What would
+  close this, on a key with credits: a bare `--llm openrouter`, because the default row's
+  function tools through Chat Completions are the assumption that rests on the most; a Claude
+  row past eight exchanges with frames; a Gemini row; an id quackd does not carry, `:free`
+  and not; a bring-your-own-key turn; and each run's `cost_usd` beside the charge OpenRouter's
+  activity page shows ([docs/guides/openrouter.md](docs/guides/openrouter.md)).
 
 - ⬜ **One local model has refused tasks on feasibility grounds, one frontier pilot has refused
   one on a real arm, and nobody has watched an `uncertain` over MCP.** Qwen3-32B-AWQ on vLLM,

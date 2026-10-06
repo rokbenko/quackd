@@ -39,6 +39,7 @@ from quackd.agent.providers.grok import GrokProvider
 from quackd.agent.providers.openai import OpenAIProvider, parse_extra_body
 from quackd.agent.providers.openai import render_input as o_input
 from quackd.agent.providers.openai import render_messages as o_messages
+from quackd.agent.providers.openrouter import OpenRouterProvider
 from quackd.verbs.registry import default_registry
 
 PNG = b"\x89PNG\r\n\x1a\nfake"
@@ -635,7 +636,7 @@ def test_extra_body_must_be_a_json_object(bad: str, monkeypatch: pytest.MonkeyPa
         make_provider("vllm", model="m", base_url="http://gpu:8000/v1", extra_body=bad)
 
 
-@pytest.mark.parametrize("provider", ["openai", "grok", "vllm"])
+@pytest.mark.parametrize("provider", ["openai", "grok", "vllm", "openrouter"])
 def test_extra_body_reaches_every_provider_that_speaks_openais_api(
     provider: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1504,6 +1505,15 @@ def test_gemini_thoughts_can_be_turned_off(monkeypatch: pytest.MonkeyPatch) -> N
             ),
             id="gemini",
         ),
+        pytest.param(
+            lambda: OpenRouterProvider(client=FakeOpenAI(NS(choices=[], usage=None))),
+            id="openrouter",
+        ),
+        pytest.param(
+            # a 200 whose body is not a completion at all: no `choices` attribute, no `error`
+            lambda: OpenRouterProvider(client=FakeOpenAI(NS(usage=None))),
+            id="openrouter-no-choices-field",
+        ),
     ],
 )
 async def test_a_malformed_response_is_a_provider_error_not_a_traceback(
@@ -1862,3 +1872,616 @@ async def test_a_task_picture_reaches_the_wire_through_a_provider_step() -> None
     assert content[1]["source"]["data"] == b64(PNG_SKETCH)
     assert content[2]["text"] == "camera front:"
     assert content[3]["source"]["data"] == b64(PNG)
+
+
+# ── openrouter: a router over OpenAI's API (ADR-0050) ──────────────────────────────────
+
+
+def openrouter_response(
+    name: str | None = "walk",
+    *,
+    details: Any = None,
+    reasoning: str | None = None,
+    refusal: str | None = None,
+    finish: str = "tool_calls",
+    **usage: Any,
+) -> Any:
+    """A completion shaped the way OpenRouter answers: OpenAI's fields, and its own beside them."""
+    calls = [NS(id="call_or", function=NS(name=name, arguments="{}"))] if name else []
+    message = NS(content=None, tool_calls=calls, refusal=refusal)
+    if details is not None:
+        message.reasoning_details = details
+    if reasoning is not None:
+        message.reasoning = reasoning
+    return NS(
+        choices=[NS(message=message, finish_reason=finish)],
+        usage=NS(prompt_tokens=50, completion_tokens=9, **usage),
+    )
+
+
+def or_entry(model_id: str = "qwen/qwen3.8-flash", **over: Any) -> dict[str, Any]:
+    """One entry of OpenRouter's model list, for an id the catalogue does not carry."""
+    entry: dict[str, Any] = {
+        "id": model_id,
+        "architecture": {"input_modalities": ["text", "image"]},
+        "pricing": {"prompt": "0.0000001", "completion": "0.00000047", "input_cache_read": "1e-8"},
+        "supported_parameters": ["tools", "tool_choice", "max_tokens"],
+        "expiration_date": None,
+    }
+    entry.update(over)
+    return entry
+
+
+class Listing(list[dict[str, Any]]):
+    """OpenRouter's model list as a test hands it in, which remembers every address that asked.
+
+    Change it before the first provider is built: the list is read once per process."""
+
+    def __init__(self, *entries: dict[str, Any]) -> None:
+        super().__init__(entries)
+        self.fetched: list[str] = []
+
+
+@pytest.fixture
+def or_list(monkeypatch: pytest.MonkeyPatch) -> Listing:
+    from quackd.agent.providers import openrouter
+
+    entries = Listing(or_entry())
+
+    def fetch(base_url: str, **kwargs: Any) -> list[dict[str, Any]]:
+        entries.fetched.append(base_url)
+        return list(entries)
+
+    monkeypatch.setattr(openrouter, "fetch_models", fetch)
+    return entries
+
+
+def test_openrouter_builds_its_client_with_quackds_attribution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two headers OpenRouter credits an app by, on the client itself so every request
+    carries them. The SDK is not installed here, so a stand-in module records what it is built
+    with, and Grok built the same way must get nothing: the hook is inert for every other vendor.
+    """
+    import sys
+    import types
+
+    from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
+
+    built: list[dict[str, Any]] = []
+
+    class AsyncOpenAI:
+        def __init__(self, **kwargs: Any) -> None:
+            built.append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(AsyncOpenAI=AsyncOpenAI))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    OpenRouterProvider()
+    GrokProvider()
+    assert built[0]["default_headers"] == ATTRIBUTION
+    assert built[0]["base_url"] == BASE_URL == "https://openrouter.ai/api/v1"
+    assert ATTRIBUTION == {
+        "HTTP-Referer": "https://github.com/rokbenko/quackd",
+        "X-OpenRouter-Title": "quackd",
+    }
+    assert "default_headers" not in built[1], "Grok was built with headers it never had"
+
+
+@pytest.mark.parametrize("spec", models_for("openrouter"), ids=lambda m: m.id)
+def test_a_curated_openrouter_row_never_asks_the_network(spec: Any) -> None:
+    """The six rows the catalogue carries are priced and described already. The conftest guard
+    fails a fetch from openrouter.ai, so building one here proves it reached for nothing."""
+    p = OpenRouterProvider(model=spec.id, client=FakeOpenAI(None))
+    assert p.listed is None and p.listed_price is None
+    assert p.supports_vision is spec.vision
+
+
+def test_an_unlisted_id_takes_its_images_and_its_price_from_the_list(or_list: Listing) -> None:
+    or_list.append(or_entry("quackd-stub/text-only", architecture={"input_modalities": ["text"]}))
+    p = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    assert p.supports_vision is True
+    price = p.listed_price
+    assert price is not None and price.source == "openrouter"
+    # Decimal, not float: float("0.0000001") * 1e6 is 0.09999999999999999
+    assert (price.input, price.output, price.cache_read) == (0.1, 0.47, 0.01)
+    assert price.cache_write is None, "the list names no cache write, so neither does the price"
+    assert price.checked is not None and len(price.checked) == 10, "today's date, ISO"
+    assert or_list.fetched == ["https://openrouter.ai/api/v1"]
+
+    blind = OpenRouterProvider(model="quackd-stub/text-only", client=FakeOpenAI(None))
+    assert blind.supports_vision is False, "a text-only entry is sent no frames"
+    assert OpenRouterProvider(
+        model="quackd-stub/text-only", client=FakeOpenAI(None), vision=True
+    ).supports_vision, "--vision still wins over the list"
+
+
+def test_an_unlisted_id_the_list_lacks_is_refused_with_the_nearest_it_has(
+    or_list: Listing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before the key: a model that does not exist is the reader's to fix first."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError) as e:
+        OpenRouterProvider(model="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+    message = str(e.value)
+    assert "'qwen/qwen3.8-flsh' from QUACKD_LLM is not on OpenRouter's model list" in message
+    assert "Nearest on the list: qwen/qwen3.8-flash" in message
+    assert "OPENROUTER_API_KEY" not in message
+
+
+@pytest.mark.parametrize(
+    ("entry", "why"),
+    [
+        (or_entry(supported_parameters=["max_tokens"]), "without tool calling"),
+        (or_entry(expiration_date="2000-01-01"), "expired on OpenRouter on 2000-01-01"),
+    ],
+    ids=["no-tools", "expired"],
+)
+def test_an_unlisted_id_the_list_says_cannot_pilot_is_refused_before_the_key(
+    entry: dict[str, Any], why: str, or_list: Listing, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    or_list[:] = [entry]
+    with pytest.raises(ProviderError, match=why):
+        OpenRouterProvider(model="qwen/qwen3.8-flash")
+
+
+def test_an_expiry_still_ahead_is_taken(or_list: Listing) -> None:
+    """The model answers today and the run is today. The catalogue keeps such a model out of
+    its own rows; the list is not the catalogue."""
+    or_list[:] = [or_entry(expiration_date="2999-01-01")]
+    assert OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+
+
+def test_an_unreachable_list_names_the_host_before_any_key_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real fetch, at a port nothing listens on: refused, never read as "no such model"."""
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError) as e:
+        OpenRouterProvider(model="qwen/qwen3.8-flash", base_url=f"http://127.0.0.1:{port}/api/v1")
+    assert f"could not reach 127.0.0.1:{port}" in str(e.value)
+    assert "not on OpenRouter's model list" not in str(e.value)
+
+
+def test_the_list_is_read_once_per_process_and_per_address(or_list: Listing) -> None:
+    """Preflight builds a provider for every file and seed, and a flock one per member."""
+    for _ in range(3):
+        OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    OpenRouterProvider(
+        model="qwen/qwen3.8-flash", client=FakeOpenAI(None), base_url="http://elsewhere/api/v1/"
+    )
+    assert or_list.fetched == ["https://openrouter.ai/api/v1", "http://elsewhere/api/v1"]
+
+
+def test_the_list_is_asked_for_by_quackd_with_no_key() -> None:
+    """A real request to a stand-in. quackd's own User-Agent, because OpenRouter answers one that
+    looks like Anthropic's client with a list in Anthropic's shape; the attribution headers; and
+    no key, which has not been read yet and which the list does not need."""
+    from quackd import __version__
+    from quackd.agent.providers.openrouter import fetch_models
+    from tests.fake_openrouter import FakeOpenRouter
+
+    with FakeOpenRouter() as stand_in:
+        models = fetch_models(stand_in.base_url)
+    assert models[0]["id"] == "quackd-stub/tool-model"
+    (asked,) = stand_in.gets()
+    assert asked.path == "/api/v1/models"
+    assert asked.headers["user-agent"] == f"quackd/{__version__}"
+    assert asked.headers["http-referer"] == "https://github.com/rokbenko/quackd"
+    assert asked.headers["x-openrouter-title"] == "quackd"
+    assert "authorization" not in asked.headers and "anthropic-version" not in asked.headers
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (
+            # what OpenRouter served a client sending `anthropic-version`, 2026-10-06
+            {"data": [{"id": "anthropic/x-ai/grok-4.7", "type": "model"}], "has_more": False},
+            "no entry says which parameters it supports",
+        ),
+        ({"data": []}, "no models in it"),
+        ({"type": "list", "models": [{"id": "a/b"}]}, "no models in it"),
+        ([{"id": "a/b", "supported_parameters": ["tools"]}], "no models in it"),
+        ({"data": [{"name": "no id", "supported_parameters": []}]}, "an entry with no id"),
+    ],
+    ids=["anthropic-shaped", "empty", "no-data", "a-bare-list", "an-entry-with-no-id"],
+)
+def test_a_list_in_another_shape_is_refused_not_read_as_absent(body: Any, why: str) -> None:
+    """Read as OpenRouter's, any of these would turn "the list is wrong" into "your model does
+    not exist" or "your model has no tool calling", and send the reader to fix the wrong thing."""
+    from quackd.agent.providers.openrouter import fetch_models
+    from tests.fake_openrouter import FakeOpenRouter
+
+    with (
+        FakeOpenRouter(models_body=body) as stand_in,
+        pytest.raises(ProviderError, match=f"did not answer with OpenRouter's model list: {why}"),
+    ):
+        fetch_models(stand_in.base_url)
+
+
+def test_a_variable_price_on_the_list_is_unpriced_not_negative(or_list: Listing) -> None:
+    from quackd.agent.providers.openrouter import listed_price
+
+    assert listed_price({"prompt": "-1", "completion": "-1"}, checked="2026-10-06") is None
+    assert listed_price({"prompt": "0.000002"}, checked="2026-10-06") is None
+    assert listed_price({"prompt": "lots", "completion": "1"}, checked="2026-10-06") is None
+    free = listed_price({"prompt": "0", "completion": "0"}, checked="2026-10-06")
+    assert free is not None and (free.input, free.output) == (0.0, 0.0), "free is $0, not None"
+    or_list[:] = [or_entry(pricing={"prompt": "-1", "completion": "-1"})]
+    p = OpenRouterProvider(model="qwen/qwen3.8-flash", client=FakeOpenAI(None))
+    assert p.listed_price is None
+
+
+# ── what an OpenRouter request carries ──
+
+
+@pytest.mark.parametrize("spec", models_for("openrouter"), ids=lambda m: m.id)
+async def test_openrouter_insists_on_one_call_except_on_the_rows_that_refuse_one(
+    spec: Any,
+) -> None:
+    client = FakeOpenAI(openrouter_response())
+    await OpenRouterProvider(model=spec.id, client=client).step("S", history(), TOOLS)
+    assert client.kwargs["tool_choice"] == ("required" if spec.forced_tools else "auto")
+    assert "parallel_tool_calls" not in client.kwargs, "13 of 465 models listed it"
+    assert client.kwargs["extra_body"] == {"provider": {"require_parameters": True}}
+    assert client.kwargs["model"] == spec.id
+
+
+@pytest.mark.parametrize(
+    ("supported", "tool_choice"),
+    [(["tools", "tool_choice"], "auto"), (["tools"], None)],
+    ids=["asked", "no-field-at-all"],
+)
+async def test_an_unlisted_model_is_asked_rather_than_told(
+    supported: list[str], tool_choice: str | None, or_list: Listing
+) -> None:
+    """Nobody here has seen how each upstream words a refusal of a forced call, so an id quackd
+    does not carry is asked, the way a local model is. Where its entry lists no `tool_choice`,
+    the field is not sent: `require_parameters` would route a request carrying it nowhere."""
+    or_list[:] = [or_entry(supported_parameters=supported)]
+    client = FakeOpenAI(openrouter_response())
+    await OpenRouterProvider(model="qwen/qwen3.8-flash", client=client).step("S", history(), TOOLS)
+    assert client.kwargs.get("tool_choice") == tool_choice
+    assert ("tool_choice" in client.kwargs) is (tool_choice is not None)
+
+
+async def test_a_provider_preference_goes_beside_require_parameters_not_instead_of_it() -> None:
+    client = FakeOpenAI(openrouter_response())
+    body = {"provider": {"sort": "price", "data_collection": "deny"}, "top_p": 0.5}
+    await OpenRouterProvider(client=client, extra_body=body).step("S", history(), TOOLS)
+    assert client.kwargs["extra_body"] == {
+        "provider": {"require_parameters": True, "sort": "price", "data_collection": "deny"},
+        "top_p": 0.5,
+    }
+    assert body == {"provider": {"sort": "price", "data_collection": "deny"}, "top_p": 0.5}, (
+        "the caller's own dict was changed underneath it"
+    )
+    off = {"provider": {"require_parameters": False}}
+    await OpenRouterProvider(client=client, extra_body=off).step("S", history(), TOOLS)
+    assert client.kwargs["extra_body"] == off, "an explicit false is the caller's to set"
+    await OpenRouterProvider(client=client, extra_body={}).step("S", history(), TOOLS)
+    assert client.kwargs["extra_body"] == {"provider": {"require_parameters": True}}
+
+
+async def test_an_extra_body_can_still_replace_the_tool_choice() -> None:
+    """The escape hatch `--extra-body` exists to be: the SDK merges it last."""
+    client = FakeOpenAI(openrouter_response())
+    p = OpenRouterProvider(client=client, extra_body={"tool_choice": "auto"})
+    await p.step("S", history(), TOOLS)
+    assert client.kwargs["extra_body"]["tool_choice"] == "auto"
+
+
+def test_openrouter_refuses_a_model_fallback_list_from_either_door(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`models` would let OpenRouter answer with a model `run_start` does not name. Refused
+    before the key, and each door says which it was."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError, match=r"--extra-body: 'models' is refused on openrouter"):
+        make_provider("openrouter", extra_body='{"models": ["a/b"]}')
+    monkeypatch.setenv("QUACKD_EXTRA_BODY", '{"models": ["a/b"]}')
+    with pytest.raises(ProviderError, match=r"QUACKD_EXTRA_BODY: 'models' is refused"):
+        OpenRouterProvider()
+    # and nowhere else: every other OpenAI-shaped vendor still forwards it untouched
+    assert GrokProvider(client=FakeOpenAI(None)).extra_body == {"models": ["a/b"]}
+
+
+async def test_openrouter_stays_on_chat_completions_whatever_it_is_told(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenRouter relaying OpenAI's refusal of function tools does not move the run to the
+    Responses API: everything this provider adds is chat-shaped. It says why instead."""
+    from quackd.agent.providers.openrouter import RESPONSES_HINT
+
+    monkeypatch.setenv("QUACKD_OPENAI_API", "responses")
+    client = RefusesToolsOnChat(responses_result("walk", "{}"))
+    p = OpenRouterProvider(client=client)
+    assert p.api == "chat"
+    with pytest.raises(ProviderError) as e:
+        await p.step("S", history(), TOOLS)
+    assert RESPONSES_HINT in str(e.value) and RefusesToolsOnChat.MESSAGE in str(e.value)
+    assert client.responses_calls == [] and p.api == "chat"
+    assert len(client.chat_calls) == 1, "and no retry either"
+
+
+async def test_openrouter_ignores_the_openai_reasoning_effort_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stray parameter is worse here than anywhere: with `require_parameters` it can leave no
+    endpoint at all. The variable is OpenAI's; an argument still goes through."""
+    monkeypatch.setenv("QUACKD_OPENAI_REASONING_EFFORT", "high")
+    client = FakeOpenAI(openrouter_response())
+    await OpenRouterProvider(client=client).step("S", history(), TOOLS)
+    assert "reasoning_effort" not in client.kwargs
+    await OpenRouterProvider(client=client, reasoning_effort="low").step("S", history(), TOOLS)
+    assert client.kwargs["reasoning_effort"] == "low"
+
+
+# ── what an OpenRouter answer is read as ──
+
+DETAILS = [
+    {
+        "type": "reasoning.text",
+        "text": "walk",
+        "signature": "sig-1",
+        "format": "anthropic-claude-v1",
+    },
+    {"type": "reasoning.encrypted", "data": "enc-1", "id": "rd-1", "format": "google-gemini-v1"},
+]
+
+
+async def test_openrouter_keeps_reasoning_details_for_the_next_turn() -> None:
+    response = openrouter_response(details=[NS(**d) for d in DETAILS], reasoning="  walk now  ")
+    turn = await OpenRouterProvider(client=FakeOpenAI(response)).step("S", history(), TOOLS)
+    assert turn.raw == {"reasoning_details": DETAILS}, "kept as plain data, every field"
+    assert turn.thinking == "walk now", "the text OpenRouter shows still reaches the log"
+
+
+def test_reasoning_details_go_back_on_their_own_assistant_message_unchanged() -> None:
+    """On the message that made the call, in the order they came, and on no other: a base
+    OpenAI provider given the same history sends none."""
+    first = Exchange(
+        observation=Observation(text="obs 1"),
+        decision=Decision(
+            tool_call=ToolCall(id="call-1", name="walk"), raw={"reasoning_details": DETAILS}
+        ),
+    )
+    second = Exchange(
+        observation=Observation(text="obs 2", tool_call_id="call-1"),
+        decision=Decision(tool_call=ToolCall(id="call-2", name="walk")),
+    )
+    third = Exchange(observation=Observation(text="obs 3", tool_call_id="call-2"))
+    p = OpenRouterProvider(client=FakeOpenAI(None))
+    messages = p._params("S", [first, second, third], TOOLS)["messages"]
+    assistants = [m for m in messages if m["role"] == "assistant"]
+    assert assistants[0]["reasoning_details"] == DETAILS
+    assert assistants[0]["tool_calls"][0]["id"] == "call-1"
+    assert "reasoning_details" not in assistants[1], "a turn that brought none is sent none"
+    base = OpenAIProvider(model=UNHINTED, client=FakeOpenAI(None))
+    plain = base._params("S", [first, second, third], TOOLS)["messages"]
+    assert all("reasoning_details" not in m for m in plain)
+    assert plain == o_messages("S", [first, second, third]), "the hook changes nothing elsewhere"
+
+
+async def test_a_200_carrying_only_an_error_is_a_provider_error_in_openrouters_words() -> None:
+    """ "Check the body for an `error` field even on a `200`", OpenRouter's errors page says."""
+    error = {
+        "code": 502,
+        "message": "Provider returned error",
+        "metadata": {"provider_name": "Anthropic", "raw": '{"type":"overloaded_error"}'},
+    }
+    p = OpenRouterProvider(client=FakeOpenAI(NS(error=error, usage=None)))
+    with pytest.raises(ProviderError) as e:
+        await p.step("S", history(), TOOLS)
+    message = str(e.value)
+    assert "502: Provider returned error (from Anthropic)" in message
+    assert "overloaded_error" in message
+
+
+async def test_a_choice_that_finished_with_an_error_is_a_provider_error() -> None:
+    p = OpenRouterProvider(client=FakeOpenAI(openrouter_response(finish="error")))
+    with pytest.raises(ProviderError, match="failed partway through the answer"):
+        await p.step("S", history(), TOOLS)
+
+
+async def test_a_refusal_is_a_turn_with_no_call_that_says_so() -> None:
+    response = openrouter_response(None, refusal="I can't help with that.", finish="content_filter")
+    turn = await OpenRouterProvider(client=FakeOpenAI(response)).step("S", history(), TOOLS)
+    assert turn.tool_calls == [] and turn.text == "[refusal] I can't help with that."
+
+
+@pytest.mark.parametrize(
+    ("usage", "billed"),
+    [
+        ({"cost": 0.0123}, 0.0123),
+        (
+            {"cost": 0.0002, "is_byok": True, "cost_details": {"upstream_inference_cost": 0.003}},
+            0.0032,
+        ),
+        ({"cost": 0.0002, "is_byok": True}, None),
+        (
+            {"cost": 0.0002, "is_byok": True, "cost_details": {"upstream_inference_cost": None}},
+            None,
+        ),
+        ({"cost": 0.0013, "cost_details": {"upstream_inference_cost": 0.5}}, 0.0013),
+        ({"cost": 0}, 0.0),
+        ({}, None),
+        ({"cost": "0.01"}, None),
+        ({"cost": True}, None),
+        ({"cost": -0.01}, None),
+        ({"cost": float("nan")}, None),
+        ({"cost": float("inf")}, None),
+    ],
+    ids=[
+        "the-bill",
+        "byok-adds-the-upstream-charge",
+        "byok-without-it-is-not-billed-at-the-fee",
+        "byok-with-a-null-upstream-is-not-billed-either",
+        "an-upstream-figure-off-byok-is-not-added",
+        "a-free-call-is-billed-at-zero",
+        "no-cost-bills-nothing",
+        "text-is-not-a-number",
+        "nor-is-a-bool",
+        "nor-a-negative",
+        "nor-nan",
+        "nor-infinity",
+    ],
+)
+async def test_the_billed_cost_is_read_off_the_usage(usage: dict[str, Any], billed: Any) -> None:
+    turn = await OpenRouterProvider(client=FakeOpenAI(openrouter_response(**usage))).step(
+        "S", history(), TOOLS
+    )
+    assert turn.billed_usd == billed
+    if billed is not None:
+        assert isinstance(turn.billed_usd, float)
+
+
+async def test_no_other_vendor_reports_a_bill() -> None:
+    """`billed_usd` is OpenRouter's alone: the same usage read by the OpenAI provider is tokens."""
+    response = openrouter_response(cost=0.5)
+    turn = await OpenAIProvider(model=UNHINTED, client=FakeOpenAI(response)).step(
+        "S", history(), TOOLS
+    )
+    assert turn.billed_usd is None
+
+
+@pytest.mark.parametrize("as_dicts", [False, True], ids=["objects", "dicts"])
+@pytest.mark.parametrize(
+    "response",
+    [
+        lambda usage: NS(error={"code": 502, "message": "Provider returned error"}, usage=usage),
+        lambda usage: NS(
+            choices=[NS(message=NS(content=None, tool_calls=[]), finish_reason="error")],
+            usage=usage,
+        ),
+    ],
+    ids=["a-200-carrying-an-error", "a-choice-that-ended-in-one"],
+)
+async def test_an_error_that_came_with_a_bill_carries_the_bill_and_the_tokens(
+    response: Callable[[Any], Any], as_dicts: bool
+) -> None:
+    """A provider that gave out partway can still be billed for what it used, and the error is
+    where that bill has to travel, or the run's total leaves it out. The SDK keeps a usage block
+    it could not build its own model for as plain dicts, so both shapes are read."""
+    usage: Any = {
+        "prompt_tokens": 40,
+        "completion_tokens": 3,
+        "prompt_tokens_details": {"cached_tokens": 10},
+        "cost": 0.25,
+    }
+    if not as_dicts:
+        usage = NS(**{**usage, "prompt_tokens_details": NS(cached_tokens=10)})
+    p = OpenRouterProvider(client=FakeOpenAI(response(usage)))
+    with pytest.raises(ProviderError) as e:
+        await p.step("S", history(), TOOLS)
+    assert e.value.billed_usd == 0.25
+    assert e.value.usage is not None
+    assert (e.value.usage.input_tokens, e.value.usage.output_tokens) == (40, 3)
+    assert e.value.usage.cache_read_tokens == 10
+
+
+async def test_an_error_with_no_usage_carries_nothing() -> None:
+    p = OpenRouterProvider(client=FakeOpenAI(NS(error={"code": 400, "message": "no"})))
+    with pytest.raises(ProviderError) as e:
+        await p.step("S", history(), TOOLS)
+    assert e.value.billed_usd is None and e.value.usage is None
+
+
+class RawServer:
+    """A TCP server on 127.0.0.1 that answers every connection with `answer(conn, stop)`: the
+    replies no HTTP server would send, which is the point. `stop` is set when it shuts down."""
+
+    def __init__(self, answer: Callable[[Any, Any], None]) -> None:
+        import socket
+        import threading
+
+        self.stop = threading.Event()
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen()
+        self.sock.settimeout(0.2)
+        self.port = self.sock.getsockname()[1]
+
+        def serve() -> None:
+            while not self.stop.is_set():
+                try:
+                    conn, _ = self.sock.accept()
+                except OSError:
+                    continue
+                conn.recv(65536)
+                try:
+                    answer(conn, self.stop)
+                except OSError:
+                    pass
+                finally:
+                    conn.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+
+    def __enter__(self) -> RawServer:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.stop.set()
+        self.sock.close()
+
+
+def _not_http(conn: Any, stop: Any) -> None:
+    conn.sendall(b"<html>captive portal</html>\r\n\r\n")
+
+
+def _cut_short(conn: Any, stop: Any) -> None:
+    conn.sendall(
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 5000\r\n\r\n"
+    )
+    conn.sendall(b'{"data": [')
+
+
+def _drip(conn: Any, stop: Any) -> None:
+    conn.sendall(
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 5000\r\n\r\n"
+    )
+    while not stop.wait(0.3):
+        conn.sendall(b" ")
+
+
+@pytest.mark.parametrize("answer", [_not_http, _cut_short], ids=["not-http", "cut-short"])
+def test_a_list_reply_that_is_not_one_is_refused_not_a_traceback(
+    answer: Callable[[Any, Any], None],
+) -> None:
+    """A captive portal and a connection cut partway are what a list fetched over a hotel's
+    network looks like. Both stop the run in a sentence, before any key or robot."""
+    from quackd.agent.providers.openrouter import fetch_models
+
+    with RawServer(answer) as server, pytest.raises(ProviderError) as e:
+        fetch_models(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=5.0)
+    assert f"could not read the model list from 127.0.0.1:{server.port}" in str(e.value)
+
+
+def test_a_list_that_trickles_in_is_refused_when_its_time_is_up() -> None:
+    """The timeout bounds the whole fetch, not each read: one byte every 0.3 s never trips a
+    per-read socket timeout and would otherwise hold a run as long as the server liked."""
+    import time
+
+    from quackd.agent.providers.openrouter import fetch_models
+
+    started = time.monotonic()
+    with RawServer(_drip) as server, pytest.raises(ProviderError) as e:
+        fetch_models(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=1.0)
+    assert time.monotonic() - started < 3.0
+    assert "did not answer the model list within 1 s" in str(e.value)
+
+
+def test_a_base_url_with_no_scheme_is_refused_not_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError, match="could not read the model list"):
+        OpenRouterProvider(model="qwen/qwen3.8-flash", base_url="example.invalid/api/v1")

@@ -12,8 +12,9 @@ browser demo, and in `quackd list-models`. When a vendor ships a model it is add
 nowhere else. That is the cost of the promise. The list is only as current as its last edit, and
 `quackd list-models` is how anyone sees what this build knows.
 
-What earns a place, checked 2026-09-12 against each vendor's own documentation and again,
-all eleven of them, on 2026-09-23:
+What earns a place, checked 2026-09-12 against each vendor's own documentation and again, every
+vendor but OpenRouter, on 2026-09-23 (OpenRouter's rows were read off its own model list on
+2026-10-06):
 
 - callable that day on the vendor's public API by anyone holding a key,
 - a text model that can call function tools, because every verb quackd has is a function tool and
@@ -24,6 +25,12 @@ all eleven of them, on 2026-09-23:
 Image, audio, video, embedding and OCR models are not here. Open-weight models are, when the
 vendor serves them on its own API rather than only publishing the weights, and so are models a
 vendor hosts but did not train, because what matters is that the vendor answers for them.
+
+OpenRouter is the one vendor whose list here is not the whole of what it takes (`OPEN_ENDED`). It
+is a router: its ids name other vendors' models (`anthropic/claude-opus-5.5`), hundreds of them,
+and the list changes by the week. Its tuple below is a short selection that gives `--llm
+openrouter` a default, shell completion and the browser something to offer, and any other id is
+checked against OpenRouter's own public list when a run starts rather than refused here (ADR-0050).
 
 The local presets are deliberately absent. They serve whatever you pulled, so the model half of
 `--llm` stays free text there (`--llm ollama:llama3:8b`) and quackd asks the server what it has
@@ -51,6 +58,16 @@ STATUSES: tuple[Status, ...] = get_args(Status)
 #: how old the rate that produced it is.
 PRICES_CHECKED = "2026-09-23"
 
+#: When OpenRouter's rows below were read off OpenRouter's own model list. A date of its own,
+#: because stamping them with `PRICES_CHECKED` would date them to a day nobody had read them.
+OPENROUTER_PRICES_CHECKED = "2026-10-06"
+
+#: Vendors whose tuple is a selection rather than everything `--llm` takes after the colon. An id
+#: not listed here is neither refused nor waved through: `factory.resolve_model` checks its shape
+#: before a key is read, and the provider checks it against the vendor's own list before the first
+#: paid call (`openrouter.admit`).
+OPEN_ENDED: tuple[str, ...] = ("openrouter",)
+
 
 @dataclass(frozen=True, slots=True)
 class Price:
@@ -71,7 +88,12 @@ class Price:
     cache_write: float | None = None
     source: str = "catalogue"
     """Where this rate came from, for the record: `catalogue`, `fake`, `self-hosted`,
-    `published`, or the name of the flag or variable that overrode it."""
+    `published`, `openrouter` (read off OpenRouter's list when the run started), or the name of
+    the flag or variable that overrode it."""
+    checked: str | None = None
+    """The day this rate was read, where that is not `PRICES_CHECKED`: OpenRouter's rows were
+    read on a day of their own, and a rate taken from its list at run time on the day of the
+    run. None means the catalogue's own date applies, or no date does."""
 
     def record(self) -> dict[str, Any]:
         """The rate as `run_start` and `summary.json` carry it.
@@ -89,8 +111,9 @@ class Price:
             # handed it: they know where theirs came from, and stamping it with quackd's
             # check date would be quackd vouching for a number it has never seen. The
             # stepper's published rate is re-read whenever this table is, so it shares
-            # the date.
-            "checked": PRICES_CHECKED if self.source in ("catalogue", "published") else None,
+            # the date. A rate read on a day of its own says that day instead.
+            "checked": self.checked
+            or (PRICES_CHECKED if self.source in ("catalogue", "published") else None),
         }
 
 
@@ -122,7 +145,8 @@ class ModelSpec:
     and skips both problems. `None` means start on Chat Completions, as everything else does."""
 
     forced_tools: bool = True
-    """Anthropic only: does the model accept a forced tool call, `tool_choice` `any`?
+    """Anthropic, and OpenRouter's Claude rows: does the model accept a forced tool call,
+    `tool_choice` `any` (`required` on OpenRouter)?
 
     Claude Opus 5.5 and Claude Fable 5.1 answer one with a 400 (`tool_choice: type "tool" and
     "any" are not supported for this model.`), so a row marked `False` is asked with `auto`
@@ -130,7 +154,14 @@ class ModelSpec:
     a model this table does not mark, but it pays a failed call to learn it, the same bargain
     as `api` above. A turn that answers in prose rather than with a call is the loop's to
     handle: it re-prompts once and then ends the run, which `auto` makes reachable and a forced
-    call never did."""
+    call never did.
+
+    Through OpenRouter the same models refuse the same thing in a different place: its Opus 5.5
+    migration guide says a forced `tool_choice` "fails at routing with no compatible endpoint
+    rather than reaching the provider", and Anthropic lists Sonnet 5.5 beside Opus 5.5 and Fable
+    5.1 as refusing forced tool use. `openrouter.py` has no 400 reader for it, because nobody
+    here has seen that refusal's wording, so the row is the only thing that moves such a model
+    to `auto`."""
 
     effort: bool = True
     """Anthropic only: does the model take `output_config.effort`?
@@ -697,6 +728,58 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
             "Muse Spark 1.2 (contributor tier, Meta trains on your prompts)",
             "specialised",
             price=Price(0.1, 0.2, 0.002),
+        ),
+    ),
+    # OpenRouter is a router, not a lab, and this is not its whole list (`OPEN_ENDED`): any
+    # other id it lists with tool calling is taken when a run starts, checked and priced against
+    # that list (ADR-0050). What earns one of these six rows is narrower than the rule at the
+    # top: a model from a vendor quackd already drives natively, served by its own maker, whose
+    # entry in OpenRouter's `GET /api/v1/models` on 2026-10-06 named `tools` and `tool_choice`
+    # among its supported parameters, took `image` input and carried no `expiration_date`.
+    #
+    # Rates are OpenRouter's own per-token strings times a million, read off that list on
+    # `OPENROUTER_PRICES_CHECKED`. They are the base rates: the GPT-6 and Grok entries also
+    # carry `overrides` that charge more past a long-prompt threshold, the SHORT band rule
+    # above. Gemini 3.8 Flash's cache write is OpenRouter's `input_cache_write` of
+    # 0.0000000416666666666667 a token, where Google's own page lists none; it is copied as
+    # listed rather than rounded. A turn on OpenRouter is normally costed at what OpenRouter
+    # says it billed (`usage.cost`), and these rates are what it falls back to.
+    #
+    # The two Claude rows will not be forced to call a tool (see `forced_tools`), so they are
+    # asked with `auto`. None of them names an `api`: OpenRouter is only ever asked on Chat
+    # Completions, whatever OpenAI's own API wants for the same model.
+    "openrouter": (
+        ModelSpec(
+            "openai/gpt-6-sol",
+            "GPT-6 Sol (via OpenRouter)",
+            price=Price(2.0, 10.0, 0.2, 2.5, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        ModelSpec(
+            "openai/gpt-6-luna",
+            "GPT-6 Luna (via OpenRouter)",
+            price=Price(0.1, 0.5, 0.01, 0.125, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        ModelSpec(
+            "anthropic/claude-sonnet-5.5",
+            "Claude Sonnet 5.5 (via OpenRouter)",
+            forced_tools=False,
+            price=Price(2.0, 10.0, 0.2, 2.5, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        ModelSpec(
+            "anthropic/claude-opus-5.5",
+            "Claude Opus 5.5 (via OpenRouter)",
+            forced_tools=False,
+            price=Price(4.0, 20.0, 0.2, 5.0, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        ModelSpec(
+            "google/gemini-3.8-flash",
+            "Gemini 3.8 Flash (via OpenRouter)",
+            price=Price(0.75, 3.75, 0.075, 0.0416666666666667, checked=OPENROUTER_PRICES_CHECKED),
+        ),
+        ModelSpec(
+            "x-ai/grok-4.7",
+            "Grok 4.7 (via OpenRouter)",
+            price=Price(2.0, 6.0, 0.5, checked=OPENROUTER_PRICES_CHECKED),
         ),
     ),
 }

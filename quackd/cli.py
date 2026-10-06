@@ -32,6 +32,7 @@ from quackd.agent.providers.catalogue import (
     DEFAULT_LLM,
     LLM_ENV,
     LOCAL_NAMES,
+    OPEN_ENDED,
     PROVIDER_NAMES,
     default_model_for,
     models_for,
@@ -934,7 +935,7 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
         (f"{v}:", "then a model id") for v in PROVIDER_NAMES if v != "fake" and v.startswith(vendor)
     ]
     if head:
-        # Only once something is typed: a bare TAB should offer the sixteen vendors, not the
+        # Only once something is typed: a bare TAB should offer the seventeen vendors, not the
         # hundred-odd ids underneath them.
         found += [
             (m.id, f"{v}: {m.label}")
@@ -974,9 +975,16 @@ def list_models_cmd(
         head = llm.split(":", 1)[0].strip().lower()
         provider = head if head in PROVIDER_NAMES else vendor_of(head)
         if provider is None:
+            # A slash before the first colon is an OpenRouter id typed without its vendor, the
+            # same reading `--llm` itself gives it (`factory._unknown_llm`).
+            slashed = "/" in head and "openrouter" in OPEN_ENDED
             _fail(
                 f"unknown provider {head!r}",
-                hint=f"one of: {', '.join(PROVIDER_NAMES)}",
+                hint=(
+                    "an id with a slash reads as OpenRouter's: --llm openrouter"
+                    if slashed
+                    else f"one of: {', '.join(PROVIDER_NAMES)}"
+                ),
             )
             return
     vendors = [provider] if provider in CLOUD_NAMES else list(CLOUD_NAMES)
@@ -1038,6 +1046,14 @@ def list_models_cmd(
         )
     if provider is None or provider == "fake":
         notes.append("fake: scripted, and a model after the colon is ignored.")
+    for vendor in OPEN_ENDED:
+        if provider is None or provider == vendor:
+            # Nothing is fetched to print this: the list is read when a run starts, not here.
+            notes.append(
+                f"{vendor}: the rows above are a selection. Any other id with tool calling on "
+                f"the vendor's own model list works too, as --llm {vendor}:AUTHOR/MODEL (or "
+                "AUTHOR/MODEL:free), checked and priced against that list when a run starts."
+            )
     if pinned := os.environ.get(LLM_ENV):
         try:
             vendor, model_id = parse_llm(pinned, source=LLM_ENV)

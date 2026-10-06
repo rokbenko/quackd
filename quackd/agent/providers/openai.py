@@ -1,8 +1,8 @@
 """OpenAI as the duck's brain, via the `openai` SDK (optional extra).
 
 Also the base class for every vendor that speaks OpenAI's API rather than one of its own,
-which by now is most of them: Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta, and the
-local servers. They change the class knobs and nothing else.
+which by now is most of them: Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta, OpenRouter
+and the local servers. They change the class knobs, and OpenRouter the few hooks below as well.
 
 Chat Completions with function tools, `tool_choice="required"` and
 `parallel_tool_calls=False` for one call per turn. Tool results go back as `tool` messages;
@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from quackd.agent.providers.base import (
+    Decision,
     Exchange,
     Observation,
     ProviderError,
@@ -60,7 +62,17 @@ def _frame_lead(obs: Observation) -> str:
     return "Current camera frame:" if len(obs.images) == 1 else "Current camera frames:"
 
 
-def render_messages(system: str, history: list[Exchange]) -> list[dict[str, Any]]:
+def render_messages(
+    system: str,
+    history: list[Exchange],
+    *,
+    assistant_fields: Callable[[Decision], Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """The conversation as Chat Completions messages.
+
+    `assistant_fields` adds a vendor's own keys to each assistant message, from the decision
+    that message replays: OpenRouter hands back the `reasoning_details` that came with the call.
+    None, or a hook that answers `{}`, leaves every message as it always was."""
     messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
     for ex in history:
         obs = ex.observation
@@ -82,19 +94,20 @@ def render_messages(system: str, history: list[Exchange]) -> list[dict[str, Any]
             messages.append({"role": "user", "content": parts})
         if ex.decision is not None:
             tc = ex.decision.tool_call
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": ex.decision.text,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
-                        }
-                    ],
-                }
-            )
+            assistant: dict[str, Any] = {
+                "role": "assistant",
+                "content": ex.decision.text,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    }
+                ],
+            }
+            if assistant_fields is not None:
+                assistant.update(assistant_fields(ex.decision))
+            messages.append(assistant)
     return messages
 
 
@@ -294,30 +307,36 @@ def parse_response(response: Any) -> ProviderTurn:
         ),
         None,
     )
-    details = getattr(usage, "completion_tokens_details", None)
-    # `prompt_tokens` already CONTAINS both cached slices, because `prompt_tokens_details` is
-    # a breakdown of the prompt rather than an addition to it. So the total passes through as
-    # quackd's whole prompt and the two slices are named beside it. OpenAI's own guide puts it
-    # exactly the way `pricing.cost_usd` reads it: "input tokens use the uncached-input,
-    # cached-input, or cache-write rate", one rate per token and never two.
-    #
-    # From the second turn of a run most of the input is the cached slice, at a tenth of the
-    # rate, so a cost computed without this would be wrong by most of the bill. Cache writes
-    # are charged only on GPT-5.6 and later and are 0 on everything older.
-    prompt_details = getattr(usage, "prompt_tokens_details", None)
     return ProviderTurn(
         tool_calls=tool_calls,
         text=getattr(message, "content", None) or None,
-        usage=Usage(
-            input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
-            output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
-            reasoning_tokens=int(getattr(details, "reasoning_tokens", 0) or 0),
-            cache_read_tokens=int(getattr(prompt_details, "cached_tokens", 0) or 0),
-            cache_write_tokens=int(getattr(prompt_details, "cache_write_tokens", 0) or 0),
-        ),
+        usage=read_usage(usage),
         stop_reason=getattr(choice, "finish_reason", None),
         raw=None,
         thinking=reasoning.strip() if reasoning else None,
+    )
+
+
+def read_usage(usage: Any) -> Usage:
+    """A Chat Completions `usage` object as quackd's buckets.
+
+    `prompt_tokens` already CONTAINS both cached slices, because `prompt_tokens_details` is
+    a breakdown of the prompt rather than an addition to it. So the total passes through as
+    quackd's whole prompt and the two slices are named beside it. OpenAI's own guide puts it
+    exactly the way `pricing.cost_usd` reads it: "input tokens use the uncached-input,
+    cached-input, or cache-write rate", one rate per token and never two.
+
+    From the second turn of a run most of the input is the cached slice, at a tenth of the
+    rate, so a cost computed without this would be wrong by most of the bill. Cache writes
+    are charged only on GPT-5.6 and later and are 0 on everything older."""
+    details = getattr(usage, "completion_tokens_details", None)
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    return Usage(
+        input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+        output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+        reasoning_tokens=int(getattr(details, "reasoning_tokens", 0) or 0),
+        cache_read_tokens=int(getattr(prompt_details, "cached_tokens", 0) or 0),
+        cache_write_tokens=int(getattr(prompt_details, "cache_write_tokens", 0) or 0),
     )
 
 
@@ -385,6 +404,16 @@ class OpenAIProvider:
     """OpenAI accepts `parallel_tool_calls=False`. Some local servers 400 on unknown fields."""
     prompt_hint = ""
     """Extra system-prompt text a provider wants (the local one explains the JSON fallback)."""
+    default_headers: Mapping[str, str] = {}
+    """Headers sent with every request beside the SDK's own. Empty for every vendor but
+    OpenRouter, which credits an app on its public rankings by `HTTP-Referer` and
+    `X-OpenRouter-Title`. Empty builds the client exactly as it was always built."""
+    switches_api = True
+    """Whether the 400 that refuses function tools on Chat Completions moves this run to the
+    Responses API. True for OpenAI's own API; OpenRouter is asked on Chat Completions only."""
+    refused_body_keys: Mapping[str, str] = {}
+    """Keys this vendor refuses in `--extra-body` beside `REFUSED_EXTRA_BODY_KEYS`, each with
+    the reason its refusal gives. Checked before a key is read, like the shared ones."""
 
     def __init__(
         self,
@@ -422,6 +451,11 @@ class OpenAIProvider:
             if extra_body is not None
             else parse_extra_body(_os.environ.get("QUACKD_EXTRA_BODY"), source="QUACKD_EXTRA_BODY")
         )
+        for refused in sorted(self.refused_body_keys.keys() & (self.extra_body or {}).keys()):
+            door = "--extra-body" if extra_body is not None else "QUACKD_EXTRA_BODY"
+            raise ProviderError(
+                f"{door}: {refused!r} is refused on {self.name}: {self.refused_body_keys[refused]}"
+            )
         #: "chat" or "responses". A model the catalogue marks `responses` starts there, which
         #: saves the failed call `step` would otherwise pay to learn it, and is the only way in
         #: for a model that is Responses only: its refusal is worded differently and
@@ -453,7 +487,8 @@ class OpenAIProvider:
                 from openai import AsyncOpenAI
             except ImportError as e:
                 raise ProviderNotInstalled(self.name, self.extra) from e
-            client = AsyncOpenAI(api_key=key, base_url=self.base_url)
+            sent = {"default_headers": dict(self.default_headers)} if self.default_headers else {}
+            client = AsyncOpenAI(api_key=key, base_url=self.base_url, **sent)
         self.client = client
 
     def _fallback_key(self) -> str | None:
@@ -465,7 +500,7 @@ class OpenAIProvider:
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "model": self.model,
-            "messages": render_messages(system, history),
+            "messages": render_messages(system, history, assistant_fields=self._assistant_fields),
             "tools": render_tools(tools),
         }
         if self.tool_choice and self.tool_choice != "none":
@@ -505,7 +540,16 @@ class OpenAIProvider:
             )
             return self._normalise(parse_responses(response))
         response = await self.client.chat.completions.create(**self._params(system, history, tools))
-        return self._normalise(parse_response(response))
+        return self._normalise(self._parse_chat(response))
+
+    def _assistant_fields(self, decision: Decision) -> Mapping[str, Any]:
+        """Hook: a vendor's own keys on a replayed assistant message. Base: none."""
+        return {}
+
+    def _parse_chat(self, response: Any) -> ProviderTurn:
+        """Hook: read one Chat Completions response. Runs inside `step`'s try, so whatever a
+        subclass raises here still reaches the loop as a ProviderError. Base: `parse_response`."""
+        return parse_response(response)
 
     def _normalise(self, turn: ProviderTurn) -> ProviderTurn:
         """Hook: tidy a parsed turn before anything reads its text. Base: nothing."""
@@ -533,7 +577,7 @@ class OpenAIProvider:
             # API at its word, move to Responses, and stay there rather than paying a failed
             # call every turn. Only once, and only from chat, so a genuine Responses failure
             # still surfaces instead of looping.
-            if self.api != "responses" and _wants_the_responses_api(e):
+            if self.switches_api and self.api != "responses" and _wants_the_responses_api(e):
                 self.api = "responses"
                 try:
                     turn = await self._call(system, history, tools)

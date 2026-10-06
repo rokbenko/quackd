@@ -291,6 +291,82 @@ async def test_the_planners_one_call_is_logged_as_a_request_and_an_answer() -> N
     assert events == []
 
 
+class _BillingPlannerStub(_PlannerStub):
+    """A planner whose vendor says what the call was billed, the way OpenRouter does."""
+
+    name = "openrouter"
+    model = "openai/gpt-6-sol"
+    bills_per_call = True
+
+
+async def test_the_planner_records_a_billed_call_at_its_bill() -> None:
+    """The planner is one model call like any other, so it is costed like one: at what the
+    vendor billed where it says so, marked as such, and at a person's own rate over both."""
+    from quackd.agent.providers.catalogue import Price
+    from quackd.agent.providers.pricing import cost_usd
+
+    events: list[LogEvent] = []
+    turn = ProviderTurn(
+        tool_calls=[ToolCall(name="plan_flock_task", arguments={"stop_distance": 0.3})],
+        usage=Usage(input_tokens=10, output_tokens=5),
+        billed_usd=0.0042,
+    )
+    *_, spent = await plan_flock_task(
+        DUCK,
+        ["duck-0", "duck-1"],
+        _BillingPlannerStub(turn),
+        "t",
+        event_log=EventLog(record=events.append),
+    )
+    assert spent == 0.0042
+    assert events[1].data["cost_usd"] == 0.0042 and events[1].data["billed"] is True
+
+    events.clear()
+    *_, spent = await plan_flock_task(
+        DUCK,
+        ["duck-0", "duck-1"],
+        _BillingPlannerStub(turn),
+        "t",
+        event_log=EventLog(record=events.append),
+        price="in=3,out=15",
+    )
+    usage = {"input_tokens": 10, "output_tokens": 5}
+    assert spent == cost_usd(usage, Price(3.0, 15.0)) != 0.0042
+    assert "billed" not in events[1].data
+
+    events.clear()
+    unbilled = turn.model_copy(update={"billed_usd": None})
+    await plan_flock_task(
+        DUCK,
+        ["duck-0", "duck-1"],
+        _PlannerStub(unbilled),
+        "t",
+        event_log=EventLog(record=events.append),
+    )
+    assert "billed" not in events[1].data, "a vendor that bills nothing reads as it did"
+
+
+async def test_a_planner_call_that_failed_after_it_was_billed_is_costed() -> None:
+    """The planner falls back to defaults, as on any failure, and still owns up to the bill."""
+    from quackd.agent.providers.base import ProviderError
+
+    events: list[LogEvent] = []
+    raised = ProviderError("openrouter: the provider failed partway through the answer")
+    raised.billed_usd = 0.003
+    raised.usage = Usage(input_tokens=12, output_tokens=1)
+    _task, _wedges, usage, _calls, fallback, spent = await plan_flock_task(
+        DUCK,
+        ["duck-0", "duck-1"],
+        _BillingPlannerStub(raised),
+        "t",
+        event_log=EventLog(record=events.append),
+    )
+    assert fallback and spent == 0.003
+    error = events[1].data
+    assert error["cost_usd"] == 0.003 and error["billed"] is True and "error" in error
+    assert usage.input_tokens == 12, "the tokens the failed call spent are the flock's too"
+
+
 async def test_a_planner_that_fails_is_logged_as_an_error_and_a_fallback_note() -> None:
     events: list[LogEvent] = []
     logged: list[str] = []

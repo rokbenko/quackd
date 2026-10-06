@@ -14,15 +14,16 @@
  * guessed at. `toolChoice` below is that difference, per vendor, and it is copied from the
  * provider classes in `quackd/agent/providers/`: Mistral spells it `any`, Cohere documents
  * no such parameter at all and is therefore asked rather than told, and the rest take
- * `auto` or `required`.
+ * `auto` or `required`. A row can say more than its vendor does: a Claude row the catalogue
+ * marks `forced_tools: false` is asked with `auto`, through OpenRouter as through Anthropic.
  *
- * Eleven cloud vendors are in the catalogue and ten are offered here. Anthropic, OpenAI and
- * Gemini each have a client of their own; Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi and
- * Meta are all OpenAI-shaped, so they are the same client with a different base URL. GLM is
- * the one that is missing: Z.ai answers a CORS preflight with no `Access-Control-Allow-*`
- * headers, so a browser refuses the call before it is made. It stays on the CLI, it stays in
- * `catalogue.js`, and `web/README.md` says so. The model list itself is generated from
- * Python by `web/build_catalogue.py` and is never edited here.
+ * Twelve cloud vendors are in the catalogue and eleven are offered here. Anthropic, OpenAI and
+ * Gemini each have a client of their own; Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, Meta
+ * and OpenRouter are all OpenAI-shaped, so they are the same client with a different base URL.
+ * GLM is the one that is missing: Z.ai answers a CORS preflight with no
+ * `Access-Control-Allow-*` headers, so a browser refuses the call before it is made. It stays
+ * on the CLI, it stays in `catalogue.js`, and `web/README.md` says so. The model list itself is
+ * generated from Python by `web/build_catalogue.py` and is never edited here.
  *
  * OpenAI is the one vendor here with two APIs that can do that job. Chat Completions is
  * asked first, and a model that refuses function tools there is moved to Responses for the
@@ -143,6 +144,27 @@ export const PROVIDERS = {
       "one Meta's own examples export as MODEL_API_KEY. Two Muse Spark models are " +
       "contributor tier: cheaper, and Meta trains on what you send them.",
   },
+  openrouter: {
+    label: "OpenRouter",
+    keyPlaceholder: "sk-or-v1-...",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    baseUrl: "https://openrouter.ai/api/v1",
+    // `quackd/agent/providers/openrouter.py`, in JavaScript: one call insisted on except on the
+    // Claude rows that refuse a forced one, OpenRouter told to route only to an endpoint that
+    // honours every parameter sent, quackd named in the two headers OpenRouter credits an app
+    // by, no move to Responses, and a model's `reasoning_details` handed back on the turn that
+    // made the call. The dropdown holds the six rows the catalogue carries and no others.
+    toolChoice: "required",
+    extraBody: { provider: { require_parameters: true } },
+    headers: { "HTTP-Referer": "https://github.com/rokbenko/quackd", "X-OpenRouter-Title": "quackd" },
+    responses: false,
+    replaysReasoning: true,
+    relaysUpstreamErrors: true,
+    needsKey: true,
+    note:
+      "A router: what you send reaches OpenRouter and the provider it picks for the model. " +
+      "No OpenRouter model has answered a real quackd request, from this page or the CLI.",
+  },
   local: {
     label: "Local (Ollama or any OpenAI-compatible server)",
     keyPlaceholder: "not needed",
@@ -162,11 +184,16 @@ function oneCall(name, args) {
   return { name, arguments: args ?? {} };
 }
 
-async function readError(response) {
+async function readError(response, relaysUpstreamErrors = false) {
   let detail = "";
   try {
     const body = await response.json();
     detail = body?.error?.message ?? JSON.stringify(body).slice(0, 300);
+    // OpenRouter relays an upstream failure as "Provider returned error" and keeps the
+    // provider's own words beside it, which is usually where the reason is. Read only where a
+    // vendor is known to do that, so no other vendor's message changes.
+    const raw = relaysUpstreamErrors ? body?.error?.metadata?.raw : null;
+    if (raw) detail += `: ${String(raw).slice(0, 300)}`;
   } catch {
     detail = (await response.text().catch(() => "")).slice(0, 300);
   }
@@ -295,7 +322,11 @@ function anthropic({ key, model }) {
  * path: the run moves to Responses and stays. Staying is the point. Retrying chat each turn
  * would pay a failed call per step against the visitor's own key.
  */
-function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required", api: startApi, extraBody = null }) {
+function openaiCompatible({
+  key, model, baseUrl, label, toolChoice = "required", api: startApi, extraBody = null,
+  provider = null, headers: ownHeaders = null, responses = true, replaysReasoning = false,
+  relaysUpstreamErrors = false,
+}) {
   const root = baseUrl.replace(/\/$/, "");
   // "chat" or "responses". Held across steps, so a model that has refused chat once is never
   // asked again for the life of this provider, which is the life of the run. It starts at
@@ -303,13 +334,19 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
   // API a local server speaks and the one every other vendor here answers on.
   let api = startApi === "responses" ? "responses" : "chat";
 
+  // A catalogue row can refuse what its vendor's entry asks: the Claude rows marked
+  // `forced_tools: false` are asked with `auto`, through OpenRouter as through Anthropic.
+  const refusesForced =
+    CATALOGUE[provider]?.entries.find((entry) => entry.id === model)?.forced_tools === false;
+  const asked = refusesForced && toolChoice !== null ? "auto" : toolChoice;
+
   // `null` means the vendor documents no `tool_choice` at all, and an unknown field is a 400
   // on some gateways, so the key is left out of the body rather than sent as null.
   // A vendor's own extra fields go underneath what quackd sends, so none of them can replace
   // the model, the turns or the tools.
   const insist = (body) => {
     const merged = extraBody ? { ...extraBody, ...body } : body;
-    return toolChoice === null ? merged : { ...merged, tool_choice: toolChoice };
+    return asked === null ? merged : { ...merged, tool_choice: asked };
   };
 
   // A replayed call and its result have to quote the same handle. It is invented here rather
@@ -321,7 +358,7 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
     const messages = [{ role: "system", content: system }];
     history.forEach((turn, index) => {
       messages.push({ role: "user", content: turn.observation });
-      messages.push({
+      const assistant = {
         role: "assistant",
         content: null,
         tool_calls: [{
@@ -329,7 +366,11 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
           type: "function",
           function: { name: turn.call.name, arguments: JSON.stringify(turn.call.arguments ?? {}) },
         }],
-      });
+      };
+      // Back on the turn that made the call, exactly as it came: OpenRouter asks for a model's
+      // reasoning unmodified, and Gemini's thought signatures ride in it.
+      if (turn.call.replay) assistant.reasoning_details = turn.call.replay;
+      messages.push(assistant);
       messages.push({ role: "tool", tool_call_id: callId(index), content: "ok" });
     });
     messages.push({ role: "user", content: observation });
@@ -373,9 +414,19 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
   }
 
   function fromChat(body) {
-    const call = body.choices?.[0]?.message?.tool_calls?.[0];
+    // OpenRouter can answer 200 with an error and no choices at all, which is not a model that
+    // declined to call a tool, and must not read as one. Only where the vendor is known to.
+    if (relaysUpstreamErrors && body.error) {
+      const detail = body.error.metadata?.raw ? `: ${String(body.error.metadata.raw).slice(0, 300)}` : "";
+      throw new ProviderError(`${label} said ${body.error.code ?? "error"}: ${body.error.message ?? ""}${detail}`);
+    }
+    const message = body.choices?.[0]?.message;
+    const call = message?.tool_calls?.[0];
     if (!call) throw new ProviderError(`${label} answered without calling a tool`);
-    return oneCall(call.function.name, parseArguments(call.function.arguments));
+    const made = oneCall(call.function.name, parseArguments(call.function.arguments));
+    // Kept only where a vendor asks for it back, so every other vendor's call is what it was.
+    const details = message.reasoning_details;
+    return replaysReasoning && Array.isArray(details) && details.length ? { ...made, replay: details } : made;
   }
 
   function fromResponses(body) {
@@ -390,7 +441,7 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
     model,
     async step({ system, history, observation, tools, signal = null }) {
       const turn = { system, history, observation, tools };
-      const headers = { "content-type": "application/json" };
+      const headers = { "content-type": "application/json", ...(ownHeaders ?? {}) };
       if (key) headers.authorization = `Bearer ${key}`;
       // At most two passes: the only `continue` moves chat to responses, and the guard that
       // reaches it cannot fire from responses, so a genuine Responses failure is thrown
@@ -408,8 +459,8 @@ function openaiCompatible({ key, model, baseUrl, label, toolChoice = "required",
           return onResponses ? fromResponses(body) : fromChat(body);
         }
         // Read once. A Response body cannot be consumed twice, and both uses below need it.
-        const detail = await readError(response);
-        if (!onResponses && wantsTheResponsesApi(response.status, detail)) {
+        const detail = await readError(response, relaysUpstreamErrors);
+        if (responses && !onResponses && wantsTheResponsesApi(response.status, detail)) {
           api = "responses";
           continue;
         }
@@ -509,6 +560,11 @@ export function makeProvider({ provider, key, model, baseUrl, api }) {
       toolChoice: spec.toolChoice,
       api: startsOn,
       extraBody: spec.extraBody ?? null,
+      provider,
+      headers: spec.headers ?? null,
+      responses: spec.responses !== false,
+      replaysReasoning: spec.replaysReasoning === true,
+      relaysUpstreamErrors: spec.relaysUpstreamErrors === true,
     });
   }
   return openaiCompatible({

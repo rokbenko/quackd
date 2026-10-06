@@ -35,11 +35,13 @@ from quackd.agent.providers.pricing import (
     PRICE_ENV,
     SCRIPTED,
     SELF_HOSTED,
+    TurnCost,
     cost_usd,
     fmt_usd,
     parse_price,
     price_for,
     resolve_price,
+    turn_cost,
 )
 from tests.conftest import REPO
 
@@ -538,3 +540,59 @@ def test_pricing_costs_nothing_to_import() -> None:
     assert roots <= {"__future__", "collections", "math", "os", "quackd", "typing"}, (
         f"pricing.py has picked up {sorted(roots)}, and --help pays for every one of them"
     )
+
+
+# ── a vendor that says what it billed, and a rate read on a day of its own ─────────────
+
+
+def test_a_rate_that_carries_its_own_check_date_records_that_date() -> None:
+    """OpenRouter's rows were read on a day of their own, and a rate read off its list when a
+    run starts was read that day. Neither may be stamped with the day the rest were read."""
+    assert Price(2.0, 10.0, checked="2026-10-06").record()["checked"] == "2026-10-06"
+    listed = Price(0.1, 0.47, source="openrouter", checked="2026-10-07")
+    assert listed.record()["checked"] == "2026-10-07"
+    assert Price(0.1, 0.47, source="openrouter").record()["checked"] is None, (
+        "a rate from the list with no date is not vouched for by the catalogue's"
+    )
+
+
+def test_every_openrouter_row_was_read_off_openrouters_list_on_its_own_date() -> None:
+    for name in cat.CLOUD_NAMES:
+        for m in cat.models_for(name):
+            if m.price is None:
+                continue
+            if name == "openrouter":
+                assert m.price.checked == cat.OPENROUTER_PRICES_CHECKED, m.id
+            else:
+                assert m.price.checked is None, f"{m.id} carries a date of its own"
+    assert dt.date.fromisoformat(cat.OPENROUTER_PRICES_CHECKED) >= dt.date.fromisoformat(
+        PRICES_CHECKED
+    )
+
+
+def test_a_rate_the_person_gave_beats_the_bill_and_the_bill_beats_the_rate_card() -> None:
+    """`--price` and `QUACKD_PRICE` are a person saying what this costs them, a negotiated
+    rate or a key quackd cannot see; the bill is what the vendor charged; the rate card is
+    quackd's own arithmetic, and the last resort."""
+    usage = {"input_tokens": 1_000_000, "output_tokens": 0}
+    card = Price(2.0, 10.0)
+    assert turn_cost(usage, card, billed=0.25) == TurnCost(0.25, True)
+    assert turn_cost(usage, card) == TurnCost(2.0, False)
+    for source in ("--price", PRICE_ENV):
+        named = parse_price("in=3,out=15", source=source)
+        assert turn_cost(usage, named, billed=0.25) == TurnCost(3.0, False), source
+    assert turn_cost(usage, None, billed=0.25) == TurnCost(0.25, True), "a bill needs no rate"
+    assert turn_cost(usage, None) == TurnCost(None, False), "no rate and no bill is unpriced"
+    assert turn_cost(usage, card, billed=0.0) == TurnCost(0.0, True), "a free call is $0, billed"
+
+
+def test_a_listed_rate_is_used_only_where_the_catalogue_has_none() -> None:
+    """The rate OpenRouter's list gives an id the catalogue does not carry. It must not replace a
+    rate the catalogue holds, and a rate a person named beats it as it beats the catalogue."""
+    listed = Price(0.15, 0.47, source="openrouter", checked="2026-10-06")
+    carried = resolve_price("openrouter", "openai/gpt-6-sol", listed=listed)
+    assert carried is not None and carried.source == "catalogue" and carried.input == 2.0
+    assert resolve_price("openrouter", "qwen/qwen3.8-flash", listed=listed) is listed
+    named = resolve_price("openrouter", "qwen/qwen3.8-flash", override="in=1,out=2", listed=listed)
+    assert named is not None and named.source == "--price"
+    assert resolve_price("openrouter", "qwen/qwen3.8-flash") is None

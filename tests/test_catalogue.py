@@ -14,6 +14,7 @@ replaced that sentence.
 from __future__ import annotations
 
 import importlib
+import re
 import tomllib
 from types import SimpleNamespace as NS
 from typing import Any
@@ -37,6 +38,7 @@ from quackd.agent.providers.factory import (
     PROVIDER_NAMES,
     SDK_FOR,
     default_model_for,
+    find_model,
     make_provider,
     model_ids,
     models_for,
@@ -89,6 +91,9 @@ TOOL_CHOICE = {
     "kimi": "auto",
     "glm": "auto",
     "meta": "auto",
+    # OpenRouter's default; its Claude rows and the ids it lists that quackd does not carry are
+    # asked with `auto` instead (`openrouter.py`, and the tests for it in test_providers.py)
+    "openrouter": "required",
 }
 
 
@@ -161,17 +166,68 @@ def test_only_openai_names_an_api_and_only_ever_responses() -> None:
     )
 
 
-def test_only_anthropic_marks_a_model_that_refuses_a_forced_call() -> None:
+def test_only_anthropic_and_openrouter_mark_a_model_that_refuses_a_forced_call() -> None:
     """Every other vendor's `tool_choice` is decided per vendor (TOOL_CHOICE below, and the
-    provider classes), so the per-model flag is Anthropic's alone and a row elsewhere setting it
-    would be read by nothing."""
+    provider classes), so the per-model flag is read by `anthropic.py` and `openrouter.py` alone
+    and a row elsewhere setting it would be read by nothing. On OpenRouter only a Claude row may
+    carry it: the refusal is Anthropic's, and nobody has seen another upstream make it."""
     for name in CLOUD_NAMES:
         for m in models_for(name):
-            if name != "anthropic":
+            if name not in ("anthropic", "openrouter"):
                 assert m.forced_tools is True, f"{m.id} sets forced_tools and {name} never reads it"
-    assert any(not m.forced_tools for m in models_for("anthropic")), (
-        "no Claude row is marked, so the flag is dead code and the tests for it lie"
-    )
+            elif name == "openrouter" and not m.forced_tools:
+                assert m.id.startswith("anthropic/"), f"{m.id} is marked and is not a Claude model"
+    for name in ("anthropic", "openrouter"):
+        assert any(not m.forced_tools for m in models_for(name)), (
+            f"no {name} row is marked, so the flag is dead code there and the tests for it lie"
+        )
+
+
+#: The OpenRouter rows that are the same model as a row a native vendor carries, spelled the
+#: way each spells it. Sonnet 5.5 has no twin: the Anthropic tuple does not carry it yet.
+TWINS = {
+    "openai/gpt-6-sol": ("openai", "gpt-6-sol"),
+    "openai/gpt-6-luna": ("openai", "gpt-6-luna"),
+    "anthropic/claude-opus-5.5": ("anthropic", "claude-opus-5-5"),
+    "google/gemini-3.8-flash": ("gemini", "gemini-3.8-flash"),
+    "x-ai/grok-4.7": ("grok", "grok-4.7"),
+}
+
+
+def test_an_openrouter_row_refuses_a_forced_call_wherever_its_native_twin_does() -> None:
+    """The same model behind a router is the same model: a Claude row that takes `auto` from
+    Anthropic and `required` through OpenRouter would be asked to do what it already refused."""
+    for model_id, (vendor, native) in TWINS.items():
+        row, twin = find_model("openrouter", model_id), find_model(vendor, native)
+        assert row is not None and twin is not None, model_id
+        assert row.forced_tools is twin.forced_tools, model_id
+        assert row.vision is twin.vision, model_id
+    assert set(TWINS) | {"anthropic/claude-sonnet-5.5"} == set(model_ids("openrouter"))
+
+
+def test_openrouter_ids_name_their_author_and_no_native_id_has_a_slash() -> None:
+    """What lets a slash say "this is OpenRouter's" in a refusal, and a bare
+    `--llm anthropic/claude-opus-5.5` find its vendor."""
+    for name in CLOUD_NAMES:
+        for model_id in model_ids(name):
+            if name == "openrouter":
+                assert re.fullmatch(r"[a-z0-9-]+/[a-z0-9.-]+", model_id), model_id
+            else:
+                assert "/" not in model_id, f"{model_id} would read as an OpenRouter id"
+
+
+def test_the_open_ended_vendors_are_catalogue_vendors_with_a_list_of_their_own() -> None:
+    assert set(cat.OPEN_ENDED) <= set(CLOUD_NAMES)
+    for name in cat.OPEN_ENDED:
+        assert models_for(name), f"{name} would have no default"
+
+
+def test_an_openrouter_row_says_the_day_its_rate_was_read() -> None:
+    """Its rows were read on a day of their own, and the record must not date them to the day
+    every other vendor's were."""
+    for m in models_for("openrouter"):
+        assert m.price is not None and m.price.checked == cat.OPENROUTER_PRICES_CHECKED, m.id
+        assert m.price.record()["checked"] == cat.OPENROUTER_PRICES_CHECKED
 
 
 def test_only_anthropic_marks_a_model_by_how_it_takes_effort_or_thinking() -> None:
@@ -269,6 +325,9 @@ def test_an_unknown_provider_is_not_this_functions_business() -> None:
         ("openai:", ("openai", None)),
         ("fake", ("fake", None)),
         ("  OpenAI  ", ("openai", None)),
+        ("openrouter:google/gemma-4-31b-it:free", ("openrouter", "google/gemma-4-31b-it:free")),
+        ("anthropic/claude-opus-5.5", ("openrouter", "anthropic/claude-opus-5.5")),
+        ("openrouter:qwen/qwen3.8-flash", ("openrouter", "qwen/qwen3.8-flash")),
         (None, (DEFAULT_LLM, None)),
         ("", (DEFAULT_LLM, None)),
         ("   ", (DEFAULT_LLM, None)),
@@ -282,6 +341,9 @@ def test_an_unknown_provider_is_not_this_functions_business() -> None:
         "a-trailing-colon-is-the-default",
         "the-scripted-pilot",
         "a-vendor-is-folded-and-trimmed",
+        "an-openrouter-free-id-keeps-its-second-colon",
+        "a-bare-openrouter-row-infers-openrouter",
+        "an-id-openrouter-lists-and-quackd-does-not",
         "nothing-at-all",
         "an-empty-string",
         "blank-counts-as-absent",
@@ -325,6 +387,106 @@ def test_the_model_half_is_checked_against_the_vendor_that_was_named() -> None:
     with pytest.raises(ProviderError) as e:
         parse_llm("openai:grok-4.6")
     assert "is a grok model" in str(e.value)
+
+
+# ── OpenRouter: a list that is not the whole list ───────────────────────────────────────
+
+
+def test_openrouter_takes_a_well_formed_id_it_does_not_list_without_the_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its shape is all that can be known offline. The list is the provider's to read, when a
+    run starts, and nothing here may reach for it: `--help`, TAB and `robot add` all parse."""
+    from quackd.agent.providers import openrouter
+
+    def no_network(*a: Any, **kw: Any) -> Any:  # pragma: no cover - the failure it reports
+        raise AssertionError("resolve_model fetched OpenRouter's list")
+
+    monkeypatch.setattr(openrouter, "fetch_models", no_network)
+    for model_id in ("qwen/qwen3.8-flash", "google/gemma-4-31b-it:free", "Anthropic/Claude-X"):
+        assert resolve_model("openrouter", model_id) == model_id
+    assert resolve_model("openrouter", None) == "openai/gpt-6-sol"
+
+
+@pytest.mark.parametrize(
+    ("model_id", "why"),
+    [
+        ("~anthropic/claude-opus-latest", "newest model of its family"),
+        ("openrouter/auto", "routers choose the model per request"),
+        ("openrouter/free", "routers choose the model per request"),
+        ("OpenRouter/auto", "routers choose the model per request"),
+        ("openai/gpt-6-sol:batch", "Batch API"),
+        ("x-ai/grok-4.7:nitro", "priority rate"),
+        ("x-ai/grok-4.7:floor", "flex rate"),
+        ("x-ai/grok-4.7:exacto", "does not list"),
+        ("anthropic/claude-sonnet-5.5:thinking", "`reasoning` parameter"),
+        ("anthropic/claude-sonnet-5.5:extended", "no model currently offers it"),
+        ("anthropic/claude-sonnet-5.5:online", "web_search"),
+        ("google/gemma-4-31b-it:FREE", ":free is the only one"),
+        ("google/gemma-4-31b-it:free:nitro", ":free is the only one"),
+        ("google/gemma-4-31b-it:", "bare colon"),
+        ("gpt-6-sol", "AUTHOR/MODEL"),
+        ("openai/gpt 6", "AUTHOR/MODEL"),
+        ("a/b/c", "AUTHOR/MODEL"),
+    ],
+)
+def test_openrouter_refuses_what_no_list_can_vouch_for(
+    model_id: str, why: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Offline and before any key: each of these is refused on its spelling, with the reason
+    and with where it came from, so a reader with no key and no network still hears it."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    with pytest.raises(ProviderError) as e:
+        resolve_model("openrouter", model_id, source="robot duck-a (robots.json)")
+    message = str(e.value)
+    assert why in message and repr(model_id) in message
+    assert "robot duck-a (robots.json)" in message and "list-models --llm openrouter" in message
+    with pytest.raises(ProviderError, match="is refused"):
+        make_provider("openrouter", model=model_id)
+
+
+def test_every_refusal_reason_is_reachable() -> None:
+    """The table the guide quotes has no row the code cannot print."""
+    from quackd.agent.providers.factory import OPENROUTER_REFUSED, _open_ended_refusal
+
+    printed = {
+        _open_ended_refusal(model_id)
+        for model_id in (
+            "~a/b",
+            "openrouter/auto",
+            *(f"a/b{suffix}" for suffix in OPENROUTER_REFUSED if suffix.startswith(":")),
+        )
+    }
+    assert printed == set(OPENROUTER_REFUSED.values())
+
+
+def test_a_slash_in_the_vendor_half_points_at_openrouter() -> None:
+    """`--llm google/gemma-4-31b-it:free` splits at its first colon into a vendor that is not
+    one, so the refusal says what it reads as. A vendor typo with no slash says nothing of it."""
+    with pytest.raises(ProviderError) as e:
+        parse_llm("google/gemma-4-31b-it:free")
+    assert "--llm openrouter:google/gemma-4-31b-it:free" in str(e.value)
+
+    with pytest.raises(ProviderError) as e:
+        parse_llm("openrouter/anthropic/claude-opus-5.5")
+    assert "--llm openrouter:anthropic/claude-opus-5.5." in str(e.value), (
+        "a slash where the colon goes is pointed at the colon, not doubled"
+    )
+
+    with pytest.raises(ProviderError) as e:
+        parse_llm("hal:gpt-4o")
+    assert "openrouter" not in str(e.value).split("Vendors:")[0].lower()
+
+
+def test_an_openrouter_id_named_at_the_vendor_whose_model_it_is_says_whose_it_is() -> None:
+    """`--llm anthropic:anthropic/claude-opus-5.5` is the native vendor asked for a router's
+    spelling of its own model."""
+    listed = _refusal("anthropic", "anthropic/claude-opus-5.5")
+    assert "--llm openrouter:anthropic/claude-opus-5.5" in listed
+    unlisted = _refusal("anthropic", "anthropic/claude-mythos-9")
+    assert "--llm openrouter:anthropic/claude-mythos-9" in unlisted
+    # and the converse: a native id named at OpenRouter is refused for its shape
+    assert "AUTHOR/MODEL" in _refusal("openrouter", "claude-opus-5-5")
 
 
 def test_completion_can_ask_which_vendor_without_paying_for_the_lookup() -> None:

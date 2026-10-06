@@ -144,7 +144,10 @@ Also in scope:
   copy is the same static files, fetched into quackd-web's build at a pinned commit, so no
   quackd server sits between the input and the vendor there either. Anthropic's
   `anthropic-dangerous-direct-browser-access` header, which the page sends, is opting out of
-  the vendor's own guard against exactly this. Use a key with a spend cap, or pick Local and
+  the vendor's own guard against exactly this. OpenRouter is a router, so what a visitor
+  sends it also reaches the provider it picks for the model, and the page names quackd to it
+  in two headers (`HTTP-Referer` and `X-OpenRouter-Title`) and says nothing about the visitor.
+  Use a key with a spend cap, or pick Local and
   nothing leaves the machine. What the demo cannot do: it is a simulation with no transport to
   any robot, so nothing in it moves hardware.
 - **The model and the policies the physics backend fetches** (`adapters/microduck/src/quackd_microduck/sim3d/assets.py`).

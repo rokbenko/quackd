@@ -9,8 +9,62 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **OpenRouter, a twelfth cloud vendor: `--llm openrouter`.** OpenRouter is a router, one key and
+  one bill for models made by many vendors, and it speaks OpenAI's API, so it is one more
+  `OpenAIProvider` subclass, reading `OPENROUTER_API_KEY` and installed as `quackd[openrouter]`,
+  the same `openai` wheel as the nine other vendors that speak OpenAI's API. Its catalogue tuple
+  is six rows, the first the default: `openai/gpt-6-sol`, `openai/gpt-6-luna`,
+  `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`, `google/gemini-3.8-flash` and
+  `x-ai/grok-4.7`, priced off OpenRouter's own model list on 2026-10-06 and dated with that day
+  rather than the catalogue's, so `quackd list-models` prints 123 ids where it printed 117.
+  Unlike every other vendor's, that tuple is a selection. Any other id OpenRouter's public model
+  list carries with tool calling also works, checked against the list, which needs no key, once
+  per process before the first paid call, and priced and given the camera frame or not by its
+  entry there. An id whose model or price is not fixed before the call, or that Chat Completions
+  does not serve, is refused on its spelling before a key is read, even where OpenRouter lists
+  it: a `~` alias, one of OpenRouter's own routers, a `:batch` entry, a routing variant
+  (`:nitro`, `:floor`, `:exacto`) or a deprecated one, with `:free` the one suffix taken, and a
+  `:free` model is limited by OpenRouter to 20 requests a minute and 50 a day until 10 credits
+  have been bought, 1,000 a day after. Every request carries `provider: {"require_parameters":
+  true}`, so OpenRouter routes only to a provider that honours what was sent, carries no
+  `parallel_tool_calls`, and goes to Chat Completions only. The rows are told to call a tool,
+  except the two Claude rows, which refuse a forced call and are asked with `auto`, as is any id
+  quackd does not carry. A model's `reasoning_details` go back unmodified on the turn that made
+  the call. Requests also carry `HTTP-Referer` and `X-OpenRouter-Title` headers naming quackd,
+  which credit it on OpenRouter's public app rankings and say nothing about the person running
+  it. The browser demo offers the six rows. The honest part: no OpenRouter model has answered a
+  real quackd request. What ran was `openai` 3.22.1 through a real `quackd run` against a stand-in
+  on 127.0.0.1 (`tests/fake_openrouter.py`), the browser demo's client under Node against the same
+  stand-in, and the model list check against OpenRouter's real list, with no key. None of it
+  proves that OpenRouter answers a turn, that a provider behind it takes the replayed reasoning,
+  or that the default row takes function tools through Chat Completions.
+  [docs/guides/openrouter.md](docs/guides/openrouter.md) has what was read and what was assumed,
+  and [ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md) why.
+- **A call can be costed at what the vendor billed.** OpenRouter says in every response what the
+  call was billed, `usage.cost`, which already knows which provider served it, at which tier and
+  with what cache. That is now the turn's `cost_usd`, with the upstream charge added on a
+  bring-your-own-key call, and the `llm` record says `billed: true`, written only when it is.
+  `summary.json` counts such calls in `billed_calls`, written only when there are any. A rate
+  named with `--price` or `QUACKD_PRICE` still wins over the bill, a call that brings no bill is
+  costed at the rate as before, a call that ends in an error is costed the same way when OpenRouter
+  reports what it billed or used, and every other vendor's records are what they were. One thing
+  changes for a run with no rate at all: on a vendor that bills, its total starts at $0 and
+  turns null from the first call that brings neither a bill nor a rate, where an unpriced run
+  used to be null from its start.
+
 ### Documentation
 
+- **`docs/guides/local-llms.md` no longer says every cloud vendor is sent `required` and
+  `parallel_tool_calls=False`.** Mistral is asked with `any`, Qwen, Kimi, GLM and Meta with
+  `auto` and Cohere with no `tool_choice` at all, and only OpenAI, Grok, Mistral and Meta are sent
+  `parallel_tool_calls`. The line now says so, and how OpenRouter is asked.
+- **The architecture page dates the catalogue's rates as the code does.** It said they were
+  checked on 2026-09-21. `PRICES_CHECKED` has been 2026-09-23 since 0.13.0.
+- **The bug and duck-submission issue templates name every vendor.** Their provider lists
+  stopped at Grok, so Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and now OpenRouter could
+  not be picked.
 - **Dependabot ignores every hatchling version.** 0.16.1 ignored only hatchling 1.32.4 and
   said the next release would still come in the group. On 2026-09-29 Dependabot's uv job tried
   1.32.3 instead and stopped the same way, with No files have changed! before it ran uv, so the

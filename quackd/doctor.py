@@ -67,7 +67,7 @@ from quackd.host import (
 )
 
 # The optional extras table, which is about packages rather than providers: the providers table
-# builds its own rows from SDK_FOR and EXTRA_FOR. One wheel now serves nine vendors, so naming
+# builds its own rows from SDK_FOR and EXTRA_FOR. One wheel now serves ten vendors, so naming
 # them all here would be a list to keep in step for no gain; `quackd list-models` and the
 # providers table above already say which vendor wants which install.
 EXTRAS = {
@@ -1270,7 +1270,7 @@ def collect(
 
     say("checking the providers")
     # QUACKD_LLM names one vendor and, after the colon, at most one model of that vendor's, so
-    # it pins exactly one row of this table and says nothing about the other fifteen. Read once
+    # it pins exactly one row of this table and says nothing about the other sixteen. Read once
     # here rather than once per row: the variable it replaced was a bare model id with no
     # vendor on it, so every row had to guess whether it was the one being talked about.
     env_llm = os.environ.get("QUACKD_LLM", "").strip()

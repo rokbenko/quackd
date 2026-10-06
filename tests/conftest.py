@@ -151,6 +151,29 @@ def _no_host_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QUACKD_HOST_TOKEN", "")
 
 
+@pytest.fixture(autouse=True)
+def _no_openrouter_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--llm openrouter:` an id quackd does not carry reads OpenRouter's public model list, and
+    keeps it for the life of the process. No test may reach the real one: CI has no business on
+    the network, and a list that changes weekly would make an assertion true on one day only. So
+    every test starts with an empty cache, and a fetch from openrouter.ai fails the test that
+    made it. A list at any other address, a stand-in on 127.0.0.1, still goes through for real."""
+    from quackd.agent.providers import openrouter
+
+    real = openrouter.fetch_models
+
+    def guarded(base_url: str, **kwargs: object) -> list[dict[str, object]]:
+        if "openrouter.ai" in base_url:
+            raise AssertionError(
+                "a test reached for OpenRouter's real model list: hand it one with "
+                "`listed=`, a monkeypatched `fetch_models`, or a stand-in's base URL"
+            )
+        return real(base_url, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(openrouter, "_LISTINGS", {})
+    monkeypatch.setattr(openrouter, "fetch_models", guarded)
+
+
 @pytest.fixture
 def registry() -> VerbRegistry:
     return default_registry()

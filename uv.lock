@@ -3696,6 +3696,9 @@ open-duck = [
 openai = [
     { name = "openai" },
 ]
+openrouter = [
+    { name = "openai" },
+]
 qwen = [
     { name = "openai" },
 ]
@@ -3742,6 +3745,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'meta'", specifier = ">=1.66,<4" },
     { name = "openai", marker = "extra == 'mistral'", specifier = ">=1.66,<4" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=1.66,<4" },
     { name = "openai", marker = "extra == 'qwen'", specifier = ">=1.66,<4" },
     { name = "opencv-python-headless", specifier = ">=4.9" },
     { name = "paho-mqtt", marker = "extra == 'lan'", specifier = ">=2,<3" },
@@ -3787,7 +3791,7 @@ requires-dist = [
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.2" },
     { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
 ]
-provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "mujoco", "open-duck", "openai", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
+provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "mujoco", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
 
 [[package]]
 name = "quackd-alohamini"

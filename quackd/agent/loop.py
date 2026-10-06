@@ -58,7 +58,7 @@ from quackd.agent.providers.base import (
     Usage,
 )
 from quackd.agent.providers.catalogue import Price
-from quackd.agent.providers.pricing import cost_usd, resolve_price
+from quackd.agent.providers.pricing import resolve_price, turn_cost
 from quackd.agent.transcript import Transcript, new_run_dir, png_bytes, run_label
 from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
@@ -320,8 +320,10 @@ class AgentLoop:
             getattr(cfg.provider, "name", "") or "",
             getattr(cfg.provider, "model", "") or "",
             override=cfg.price,
+            listed=getattr(cfg.provider, "listed_price", None),
         )
-        """What this run is priced at: `--price`, `QUACKD_PRICE`, or the catalogue
+        """What this run is priced at: `--price`, `QUACKD_PRICE`, the catalogue, or the rate
+        an open-ended vendor read off its own list for a model the catalogue does not carry
         (`providers.pricing`). None where nobody publishes a rate for this model, which is not
         the same as free. Resolved here, before the run directory is made and before anything
         connects, because an unparsable price should cost you a sentence rather than a run."""
@@ -372,11 +374,17 @@ class AgentLoop:
         """Seconds this run spent waiting on the model, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
-        self.cost_usd: float | None = 0.0 if self.price is not None else None
+        bills = bool(getattr(cfg.provider, "bills_per_call", False))
+        self.cost_usd: float | None = 0.0 if self.price is not None or bills else None
         """What the model has cost so far, or None when there is no rate to cost it at.
 
         None is load-bearing: a model quackd has no rate for must not report `$0.00`, which
-        would read as a free run rather than an unpriced one."""
+        would read as a free run rather than an unpriced one. A provider that bills per call
+        (OpenRouter) starts at $0 even with no rate, because a bill can come with every turn,
+        and the total turns to None the first time a turn comes back with neither."""
+        self.billed_calls = 0
+        """How many calls were costed at what the vendor said it billed rather than at a rate.
+        Written into the summary only when there was one."""
         self._handed_over = False
         """Somebody answered the invitation to place this arm, so the gripper may be holding
         whatever they put in it.
@@ -1503,6 +1511,33 @@ class AgentLoop:
             return VerbResult.fail(str(e))
         return VerbResult.success(f"told {to or 'all'}: {' '.join(text.split())}")
 
+    def _cost_of_a_failed_call(self, error: BaseException) -> dict[str, Any]:
+        """What a call that ended in an error cost, as fields for its `llm` record, if anything.
+
+        Almost every failure costs nothing quackd can see and adds nothing to the record. The
+        exception is a vendor that bills a call it then reports as failed: OpenRouter answers a
+        provider that gave out partway with an error and the bill for what it had used, and a
+        total that left that out would be believed as the whole bill. Such a call is costed and
+        counted exactly as a successful one would be, `--price` and all."""
+        billed = getattr(error, "billed_usd", None)
+        used = getattr(error, "usage", None)
+        if billed is None and used is None:
+            return {}
+        usage = used if isinstance(used, Usage) else Usage()
+        self.usage = self.usage + usage
+        costed = turn_cost(usage.model_dump(), self.price, billed)
+        if costed.usd is None:
+            self.cost_usd = None
+        elif self.cost_usd is not None:
+            self.cost_usd = round(self.cost_usd + costed.usd, 6)
+        self.billed_calls += costed.billed
+        return {
+            "usage": usage.model_dump(),
+            "cost_usd": costed.usd,
+            "cost_usd_total": self.cost_usd,
+            **({"billed": True} if costed.billed else {}),
+        }
+
     def _history_for_provider(self) -> list[Exchange]:
         """Older pictures are dropped to keep context small; the last N exchanges keep theirs.
 
@@ -1952,6 +1987,7 @@ class AgentLoop:
                             model=cfg.provider.model,
                             error=f"{type(e).__name__}: {e}",
                             latency_s=latency_s,
+                            **self._cost_of_a_failed_call(e),
                         )
                         raise
                     # One reading of the clock and one costing, used by all three records
@@ -1962,13 +1998,20 @@ class AgentLoop:
                     self.llm_latency_s += latency_s
                     self.usage = self.usage + turn.usage
                     turn_usage = turn.usage.model_dump()
-                    turn_cost = cost_usd(turn_usage, self.price) if self.price is not None else None
-                    if turn_cost is not None and self.cost_usd is not None:
-                        self.cost_usd = round(self.cost_usd + turn_cost, 6)
+                    costed = turn_cost(turn_usage, self.price, turn.billed_usd)
+                    # One call nobody could price makes the whole run unpriced from then on:
+                    # a total that skipped it would be believed as the bill. Before any vendor
+                    # billed per call that could not happen mid-run, because a run either had a
+                    # rate for every turn or for none.
+                    if costed.usd is None:
+                        self.cost_usd = None
+                    elif self.cost_usd is not None:
+                        self.cost_usd = round(self.cost_usd + costed.usd, 6)
+                    self.billed_calls += costed.billed
                     last_llm = {
                         "latency_s": latency_s,
                         "usage": turn_usage,
-                        "cost_usd": turn_cost,
+                        "cost_usd": costed.usd,
                     }
                     self._emit(
                         "llm",
@@ -1983,11 +2026,13 @@ class AgentLoop:
                         latency_s=latency_s,
                         usage_total=self.usage.model_dump(),
                         llm_calls=self.budget.llm_calls,
-                        cost_usd=turn_cost,
+                        cost_usd=costed.usd,
                         cost_usd_total=self.cost_usd,
                         # only when a server-side fallback answered, so every turn the model
                         # asked for took, and every transcript from before this, reads as it did
                         **({"served_by": turn.served_by} if turn.served_by else {}),
+                        # and by the same rule, only when the cost is what the vendor billed
+                        **({"billed": True} if costed.billed else {}),
                     )
                     self.budget.check_time()
 
@@ -2268,6 +2313,9 @@ class AgentLoop:
                 # stepper bills separately and keeps its figure in its own block below.
                 "price": self.price.record() if self.price is not None else None,
                 "cost_usd": self.cost_usd,
+                # how many of the calls in `cost_usd` were the vendor's own bill rather than
+                # the rate above times their tokens, only where any were
+                **({"billed_calls": self.billed_calls} if self.billed_calls else {}),
                 "provider": cfg.provider.name,
                 "model": cfg.provider.model,
                 "transport": backend_name(cfg.transport),

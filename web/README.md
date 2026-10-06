@@ -119,6 +119,17 @@ to proxy it through. Every call is billed to you.
   switch are copied from the provider classes in `quackd/agent/providers/`. The page sends no
   `parallel_tool_calls`, which the CLI sends as false to OpenAI, Grok, Mistral and Meta, so a
   turn may come back with several calls, and the page takes the first.
+- **OpenRouter** is OpenAI-shaped too, and a router: what the page sends reaches OpenRouter and
+  the provider it picks for the model. The page asks it the way
+  `quackd/agent/providers/openrouter.py` does. Every row is told to call a tool except the two
+  Claude rows, which refuse a forced call and are asked with `auto`. Every request carries
+  `provider: {"require_parameters": true}`, so OpenRouter routes only to an endpoint that
+  honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name quackd
+  and say nothing about you. It is never moved to the Responses API, and a model's
+  `reasoning_details` go back on the turn that made the call. The dropdown holds the six rows
+  the catalogue carries. The CLI also takes any other id OpenRouter lists with tool calling,
+  `:free` ones included, and the page does not. No OpenRouter model has answered a real quackd
+  request, from this page or the CLI.
 - **GLM is not offered here, and is on the CLI.** See below.
 - **Some OpenAI reasoning models** refuse function tools on `/v1/chat/completions` and
   name `/v1/responses` in the 400. Every verb here is a function tool, so the page reads
@@ -164,7 +175,8 @@ vendor that refuses a cross-origin preflight cannot be offered here at all, howe
 works under `quackd run`. So it was measured rather than assumed, on **2026-09-12**, with an
 `OPTIONS` preflight to each vendor's `/chat/completions` from both origins this page is served
 from (`http://localhost:8000` and `https://www.quackd.org`), asking for `POST` with
-`authorization` and `content-type`:
+`authorization` and `content-type`. OpenRouter was measured the same way on **2026-10-06**,
+also asking for `http-referer` and `x-openrouter-title`, the two headers the page sends it:
 
 | Vendor | Preflight | Verdict |
 |---|---|---|
@@ -175,6 +187,7 @@ from (`http://localhost:8000` and `https://www.quackd.org`), asking for `POST` w
 | Qwen (`dashscope-intl.aliyuncs.com`) | `200`, `allow-origin` echoes the origin, `allow-headers: authorization,content-type` | offered |
 | Kimi (`api.moonshot.ai`) | `204`, `allow-origin` echoes the origin, `allow-headers: authorization,content-type` | offered |
 | Meta (`api.meta.ai`) | `200`, `allow-origin: *`, `allow-headers: *` | offered |
+| OpenRouter (`openrouter.ai`) | `204`, `allow-origin: *`, `allow-headers` naming `Authorization`, `Content-Type`, `HTTP-Referer`, `X-Openrouter-Title` and `X-Title` among others | offered |
 | **GLM (`api.z.ai`)** | `200`, and **no `Access-Control-Allow-*` header of any kind** | **not offered** |
 
 **GLM is the one that failed.** Z.ai answers the preflight `200 OK` with `Vary: Origin` and
@@ -189,7 +202,7 @@ and stays in `catalogue.js` so the two model lists remain identical. `tests/test
 if a vendor drops out of `PROVIDERS` without being named in this file, so this cannot happen
 quietly to the next vendor.
 
-This is one measurement from one machine on one day. A vendor can add the header, or remove
+These are measurements from one machine on two days. A vendor can add the header, or remove
 it. Re-run the preflight before trusting the table.
 
 ## Two hands on the same duck
@@ -280,8 +293,10 @@ is newer than both sessions and has never been opened in a browser: that it grou
 fits the band beside the provider select at both layout tiers, and hands its place to the
 free-text box on Local are all read rather than seen. Every vendor the page offers was exercised
 under Node against a stubbed `fetch` — right base URL, right default model, right `tool_choice`
-— which is not the same as a key and a real answer. Nobody has run this page against any vendor
-but the three that were here before. Two clean boots are not a browser test, and none of it was
+— which is not the same as a key and a real answer. OpenRouter's entry also sent its request
+under Node over a real socket to a stand-in on 127.0.0.1 (`tests/fake_openrouter.py`), which
+checks what the page sends and proves nothing about OpenRouter, and it has never been opened
+in a browser. Nobody has run this page against any vendor but the three that were here before. Two clean boots are not a browser test, and none of it was
 recorded, so the honest reading is that the page starts and the hand works, and everything
 downstream of a model answering is still only read.
 
@@ -331,6 +346,9 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 - **There is no scripted pilot.** Python's `--llm fake` walks the whole task with no
   model. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
+- **OpenRouter's six rows and no others.** The CLI takes any other id OpenRouter's public model
+  list carries with tool calling, checked against that list when a run starts. The page offers
+  the rows the catalogue carries in a dropdown, with no free text for any cloud vendor.
 
 ## Layout
 
