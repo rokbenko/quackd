@@ -33,7 +33,7 @@ models (--llm VENDOR:MODEL, QUACKD_LLM)
 │            │ google/gemini-3.8-flash     │ Gemini 3.8 Flash (via OpenRouter)  │ current │         │
 │            │ x-ai/grok-4.7               │ Grok 4.7 (via OpenRouter)          │ current │         │
 └────────────┴─────────────────────────────┴────────────────────────────────────┴─────────┴─────────┘
-openrouter: the rows above are a selection. Any other id with tool calling on the vendor's own model list works too, as --llm openrouter:AUTHOR/MODEL (or AUTHOR/MODEL:free), checked and priced against that list when a run starts.
+openrouter: the rows above are a selection. An id quackd does not carry can be named as --llm openrouter:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public model list when a run starts. That list has to carry the id with tool calling, and one quackd takes is priced from it.
 ```
 
 A row is a model from a vendor quackd already drives on its own API, served by its own maker,
@@ -60,7 +60,7 @@ more, then ends the run.
 
 ## Ids quackd does not carry
 
-Any other id OpenRouter's list carries with tool calling is taken, in two steps.
+An id quackd does not carry is checked in two steps, and taken only when it passes both.
 
 1. **Its spelling, offline and before a key is read.** An OpenRouter id is `AUTHOR/MODEL`, with
    `:free` the only suffix quackd takes, and a few shapes are refused on their spelling whatever
@@ -121,14 +121,14 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest model of its family, so the model that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7, and any other id with tool
-calling on the vendor's own model list works too. See `quackd list-models --llm openrouter`.
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
+openrouter`.
 ```
 
 ### Free models
 
 An id ending `:free` is its own entry on OpenRouter's list, with its own providers and its own
-limits, so it is taken like any other id quackd does not carry and has no row of its own.
+limits, so it is checked like any other id quackd does not carry and has no row of its own.
 OpenRouter's limits page, read 2026-10-06, allows 20 requests a minute on them, and 50 a day until
 10 credits have been bought, 1,000 a day after. A run that goes past either is refused by
 OpenRouter with a 429, which ends the run once the SDK's own retries are spent. Which providers

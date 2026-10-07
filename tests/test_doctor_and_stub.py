@@ -97,7 +97,7 @@ def test_doctor_pins_an_openrouter_id_it_does_not_carry_without_asking_openroute
     assert result.exit_code == 0, result.output
     assert "qwen/qwen3.8-flash" in " ".join(result.output.split())
 
-    # a shape no list can vouch for is refused by the parse, and doctor prints the refusal
+    # an alias is refused by the parse, on its spelling, and doctor prints the refusal
     # under the table in its own words rather than pinning a row to it
     monkeypatch.setenv("QUACKD_LLM", "openrouter:~anthropic/claude-opus-latest")
     refused = CliRunner().invoke(app, ["doctor"])

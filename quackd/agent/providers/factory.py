@@ -200,8 +200,7 @@ def _refused_open_ended(provider: str, model: str, source: str, why: str) -> str
     """Why an id an open-ended vendor does not list was refused on its shape alone."""
     listed = ", ".join(model_ids(provider))
     return (
-        f"{provider}: {model!r} from {source} is refused: {why}. quackd lists {listed}, and any "
-        "other id with tool calling on the vendor's own model list works too. "
+        f"{provider}: {model!r} from {source} is refused: {why}. quackd lists {listed}. "
         f"See `quackd list-models --llm {provider}`."
     )
 

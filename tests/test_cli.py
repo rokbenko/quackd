@@ -734,14 +734,24 @@ def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> Non
 
 def test_list_models_says_openrouter_takes_more_than_it_lists(_wide: None) -> None:
     """Its rows are a selection, and the table alone would read as all `--llm openrouter:`
-    takes. Nothing is fetched to say so: the conftest guard would fail this test if it were."""
+    takes. Nothing is fetched to say so: the conftest guard would fail this test if it were.
+    The note says how an id quackd does not carry is handled and promises none: 0.17.0's said any
+    other id with tool calling on the vendor's own model list works too, and OpenRouter's list
+    carries `~` aliases, routers and `:batch` ids that quackd refuses on their spelling."""
     result = runner.invoke(app, ["list-models", "--llm", "openrouter"])
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
     for model_id in model_ids("openrouter"):
         assert model_id in flat
     assert "openrouter: the rows above are a selection" in flat
-    assert "--llm openrouter:AUTHOR/MODEL" in flat
+    assert (
+        "openrouter: the rows above are a selection. An id quackd does not carry can be named as "
+        "--llm openrouter:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of id are refused on "
+        "their spelling alone. Any other is checked against OpenRouter's public model list when a "
+        "run starts. That list has to carry the id with tool calling, and one quackd takes is "
+        "priced from it."
+    ) in flat
+    assert "works too" not in flat and "any other id" not in flat.lower()
     assert "a selection" not in " ".join(
         runner.invoke(app, ["list-models", "--llm", "openai"]).output.split()
     )

@@ -961,7 +961,7 @@ def list_models_cmd(
     ),
     as_json: bool = _JSON,
 ) -> None:
-    """List the model ids each cloud vendor accepts after the colon in --llm VENDOR:MODEL."""
+    """List the model ids quackd carries for each cloud vendor, for --llm VENDOR:MODEL."""
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import parse_llm
 
@@ -1049,10 +1049,13 @@ def list_models_cmd(
     for vendor in OPEN_ENDED:
         if provider is None or provider == vendor:
             # Nothing is fetched to print this: the list is read when a run starts, not here.
+            name = {"openrouter": "OpenRouter"}.get(vendor, vendor)
             notes.append(
-                f"{vendor}: the rows above are a selection. Any other id with tool calling on "
-                f"the vendor's own model list works too, as --llm {vendor}:AUTHOR/MODEL (or "
-                "AUTHOR/MODEL:free), checked and priced against that list when a run starts."
+                f"{vendor}: the rows above are a selection. An id quackd does not carry can be "
+                f"named as --llm {vendor}:AUTHOR/MODEL (or AUTHOR/MODEL:free). A few shapes of "
+                f"id are refused on their spelling alone. Any other is checked against {name}'s "
+                "public model list when a run starts. That list has to carry the id with tool "
+                "calling, and one quackd takes is priced from it."
             )
     if pinned := os.environ.get(LLM_ENV):
         try:
@@ -2740,7 +2743,7 @@ _LLM = typer.Option(
     "`claude-opus-5-5` works. `ollama:qwen3:8b` is a local server (the split is at the first "
     "colon, so a tag keeps its own), `local` needs --base-url, and `fake` is a scripted pilot "
     "with no key and no network. Vendors: " + " · ".join(PROVIDER_NAMES) + ". `quackd "
-    f"list-models` prints every id. Default: the robot's own, then {LLM_ENV}, then "
+    f"list-models` prints every id quackd carries. Default: the robot's own, then {LLM_ENV}, then "
     f"{DEFAULT_LLM}.",
     autocompletion=_complete_llm,
     rich_help_panel="Model",

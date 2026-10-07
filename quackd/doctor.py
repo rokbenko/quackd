@@ -2038,7 +2038,7 @@ def render(console: Console, report: DoctorReport) -> None:
     console.print(_checks(report.core))
     console.print(Text(f"  {report.bundled_ducks} bundled ducks", style=ui.STYLES["muted"]))
 
-    _section(console, "providers (every model id: quackd list-models)")
+    _section(console, "providers (the model ids quackd carries: quackd list-models)")
     console.print(_providers_table(report))
     if report.llm_env_error:
         console.print(Text(report.llm_env_error, style=ui.STYLES["warn"]), soft_wrap=True)

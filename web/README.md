@@ -127,9 +127,10 @@ to proxy it through. Every call is billed to you.
   honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name quackd
   and say nothing about you. It is never moved to the Responses API, and a model's
   `reasoning_details` go back on the turn that made the call. The dropdown holds the six rows
-  the catalogue carries. The CLI also takes any other id OpenRouter lists with tool calling,
-  `:free` ones included, and the page does not. No OpenRouter model has answered a real quackd
-  request, from this page or the CLI.
+  the catalogue carries. The CLI can also name an id they leave out, a `:free` one included,
+  checked against OpenRouter's list when a run starts unless quackd refuses its spelling first,
+  and the page cannot. No OpenRouter model has answered a real quackd request, from this page or
+  the CLI.
 - **GLM is not offered here, and is on the CLI.** See below.
 - **Some OpenAI reasoning models** refuse function tools on `/v1/chat/completions` and
   name `/v1/responses` in the 400. Every verb here is a function tool, so the page reads
@@ -346,9 +347,10 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 - **There is no scripted pilot.** Python's `--llm fake` walks the whole task with no
   model. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
-- **OpenRouter's six rows and no others.** The CLI takes any other id OpenRouter's public model
-  list carries with tool calling, checked against that list when a run starts. The page offers
-  the rows the catalogue carries in a dropdown, with no free text for any cloud vendor.
+- **OpenRouter's six rows and no others.** The CLI can also name an id the rows leave out,
+  checked against OpenRouter's public model list when a run starts unless quackd refuses its
+  spelling first. The page offers the rows the catalogue carries in a dropdown, with no free text
+  for any cloud vendor.
 
 ## Layout
 
