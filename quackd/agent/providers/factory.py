@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from typing import Any
 
 from quackd.agent.providers.base import LLMProvider, ProviderError
@@ -27,6 +28,7 @@ from quackd.agent.providers.catalogue import CLOUD_NAMES as CLOUD_NAMES
 from quackd.agent.providers.catalogue import DEFAULT_LLM as DEFAULT_LLM
 from quackd.agent.providers.catalogue import LLM_ENV as LLM_ENV
 from quackd.agent.providers.catalogue import LOCAL_NAMES as LOCAL_NAMES
+from quackd.agent.providers.catalogue import OPEN_ENDED as OPEN_ENDED
 from quackd.agent.providers.catalogue import PROVIDER_NAMES as PROVIDER_NAMES
 from quackd.agent.providers.catalogue import default_model_for as default_model_for
 from quackd.agent.providers.catalogue import find_model as find_model
@@ -53,6 +55,7 @@ KEY_ENV = {
     "kimi": "MOONSHOT_API_KEY",
     "glm": "ZAI_API_KEY",
     "meta": "META_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
     **{name: "LOCAL_API_KEY" for name in LOCAL_NAMES},
 }
 
@@ -71,11 +74,12 @@ EXTRA_FOR = {
     "kimi": "kimi",
     "glm": "glm",
     "meta": "meta",
+    "openrouter": "openrouter",
     **{name: "openai" for name in LOCAL_NAMES},
 }
 
 # The module `doctor` imports to decide whether a provider could run here. Only three distinct
-# SDKs serve eleven vendors and five local presets.
+# SDKs serve twelve vendors and five local presets.
 SDK_FOR = {
     "anthropic": "anthropic",
     "gemini": "google.genai",
@@ -94,7 +98,77 @@ OPENAI_COMPATIBLE = {
     "kimi": "KimiProvider",
     "glm": "GLMProvider",
     "meta": "MetaProvider",
+    "openrouter": "OpenRouterProvider",
 }
+
+#: What `--llm openrouter:` will not take even where OpenRouter would, keyed by the part of the id
+#: that gives it away, with the reason the refusal prints. All of it is read off the id alone, so
+#: it is refused offline, before a key is read or the model list is fetched. The reasons quote
+#: OpenRouter's model-variants page as read on 2026-10-06, and the guide quotes this table.
+OPENROUTER_REFUSED: dict[str, str] = {
+    "~": (
+        "a `~` alias always resolves to the newest model of its family, so the model that "
+        "answers could change under a run that names it"
+    ),
+    "openrouter/": (
+        "OpenRouter's own routers choose the model per request, so neither the model that "
+        "answers nor its price is known before the call"
+    ),
+    ":batch": (
+        "the batch-priced entry is served by OpenRouter's Batch API, and a run asks Chat "
+        "Completions every turn"
+    ),
+    ":nitro": (
+        "a routing variant OpenRouter accepts on any id and does not list, and a request a "
+        "priority endpoint serves is billed at that endpoint's priority rate; sort providers "
+        """with --extra-body '{"provider": {"sort": "throughput"}}' instead"""
+    ),
+    ":floor": (
+        "a routing variant OpenRouter accepts on any id and does not list, and a request a flex "
+        "endpoint serves is billed at that endpoint's flex rate; sort providers with "
+        """--extra-body '{"provider": {"sort": "price"}}' instead"""
+    ),
+    ":exacto": (
+        "a routing variant OpenRouter accepts on any id and does not list, so there is no "
+        "entry to check it against or price it from"
+    ),
+    ":thinking": (
+        "OpenRouter says to use the `reasoning` parameter instead, which --extra-body carries"
+    ),
+    ":extended": "OpenRouter says no model currently offers it",
+    ":online": "OpenRouter says to use its `openrouter:web_search` server tool instead",
+}
+
+#: An OpenRouter id: `AUTHOR/MODEL`, optionally `~` in front and one `:variant` behind. Every
+#: id on its list on 2026-10-06 had exactly that shape, in lower case. Case is not checked here:
+#: a capital is a typo the model list answers with the nearest real id, which is kinder.
+_OPENROUTER_ID = re.compile(
+    r"(?P<alias>~)?(?P<author>[A-Za-z0-9][A-Za-z0-9._-]*)/(?P<model>[A-Za-z0-9][A-Za-z0-9._-]*)"
+    r"(?::(?P<variant>\S*))?"
+)
+
+
+def _open_ended_refusal(model: str) -> str | None:
+    """Why an id `--llm openrouter:` does not list cannot be taken, or None when its spelling
+    leaves it to OpenRouter's model list. Several refused shapes are on that list (the `~`
+    aliases, the `:batch` entries, the routers): they are refused for what they are. Only `:free`
+    is taken as a variant: OpenRouter lists free entries as models of their own, with their own
+    endpoints and limits."""
+    found = _OPENROUTER_ID.fullmatch(model)
+    if found is None:
+        return "an OpenRouter id is AUTHOR/MODEL, with :free as the only suffix quackd takes"
+    if found["alias"]:
+        return OPENROUTER_REFUSED["~"]
+    if found["author"].lower() == "openrouter":
+        return OPENROUTER_REFUSED["openrouter/"]
+    variant = found["variant"]
+    if variant is None or variant == "free":
+        return None
+    if not variant:
+        return "an OpenRouter id ends at its model or at :free, not at a bare colon"
+    return OPENROUTER_REFUSED.get(
+        f":{variant}", f"`:{variant}` is not a variant quackd takes: :free is the only one"
+    )
 
 
 def _unknown_model(provider: str, model: str, source: str) -> str:
@@ -108,14 +182,27 @@ def _unknown_model(provider: str, model: str, source: str) -> str:
     default = ids[0] if ids else ""
     listed = ", ".join(f"{i} (default)" if i == default else i for i in ids)
     elsewhere = vendor_of(model)
-    whose = (
-        f" ({model!r} is a {elsewhere} model: --llm {elsewhere}:{model})"
-        if elsewhere and elsewhere != provider
-        else ""
-    )
+    if elsewhere and elsewhere != provider:
+        whose = f" ({model!r} is a {elsewhere} model: --llm {elsewhere}:{model})"
+    elif "/" in model and "openrouter" in OPEN_ENDED:
+        # The commonest way to land here with a slash is an OpenRouter id named at the vendor
+        # whose model it is: `--llm anthropic:anthropic/claude-opus-5.5`.
+        whose = f" (an id with a slash reads as OpenRouter's: --llm openrouter:{model})"
+    else:
+        whose = ""
     return (
         f"{provider}: unknown model {model!r} from {source}{whose}. "
         f"Valid ids: {listed}. See `quackd list-models --llm {provider}`."
+    )
+
+
+def _refused_open_ended(provider: str, model: str, source: str, why: str) -> str:
+    """Why an id an open-ended vendor does not list was refused on its shape alone."""
+    listed = ", ".join(model_ids(provider))
+    return (
+        f"{provider}: {model!r} from {source} is refused: {why}. quackd lists {listed}, and any "
+        "other id with tool calling on the vendor's own model list works too. "
+        f"See `quackd list-models --llm {provider}`."
     )
 
 
@@ -126,6 +213,11 @@ def resolve_model(provider: str, model: str | None, *, source: str = "--llm") ->
     another vendor's id all stop here, before a key is read or a packet is sent. Everything
     without a catalogue passes straight through: the local presets serve whatever was pulled, and
     `None` there means "ask the server" rather than "use the default" (ADR-0014).
+
+    An open-ended vendor (OpenRouter) is the one in between. Its catalogue is a selection, so
+    an id it does not list is checked here for its shape only, which is what can be known
+    without the network, and the provider checks it against the vendor's own list before the
+    first paid call (ADR-0050).
     """
     if provider not in CATALOGUE:
         return model
@@ -133,6 +225,11 @@ def resolve_model(provider: str, model: str | None, *, source: str = "--llm") ->
         return default_model_for(provider)
     if find_model(provider, model) is not None:
         return model
+    if provider in OPEN_ENDED:
+        why = _open_ended_refusal(model)
+        if why is None:
+            return model
+        raise ProviderError(_refused_open_ended(provider, model, source, why))
     raise ProviderError(_unknown_model(provider, model, source))
 
 
@@ -149,8 +246,19 @@ def _unknown_llm(spec: str, head: str, source: str, *, bare: bool) -> str:
     where = f" in {spec!r}" if spec != head else ""
     searched = ", and no vendor here lists a model of that name" if bare else ""
     example = default_model_for("anthropic")
+    # A slash in the vendor half is an OpenRouter id typed without its vendor, and the colon of
+    # its `:free` is what made it look like a vendor and a model. `openrouter/anthropic/...` is
+    # the same id with a slash where the colon goes, so the suggestion drops that first part;
+    # `openrouter/auto` has one slash, is OpenRouter's own id as typed, and is suggested as it
+    # is, to be refused there for what it is rather than here for its spelling.
+    openrouter = ""
+    if "/" in head and "openrouter" in OPEN_ENDED:
+        typed = spec
+        if head.lower().startswith("openrouter/") and spec.count("/") > 1:
+            typed = spec.split("/", 1)[1]
+        openrouter = f" It reads as an OpenRouter id: --llm openrouter:{typed}."
     return (
-        f"unknown provider {head!r}{where} from {source}{searched}. "
+        f"unknown provider {head!r}{where} from {source}{searched}.{openrouter} "
         f"Pass a vendor, or a vendor and a model: --llm anthropic, --llm anthropic:{example}. "
         f"Vendors: {', '.join(PROVIDER_NAMES)}."
     )
@@ -292,12 +400,16 @@ def make_provider(
     if name in OPENAI_COMPATIBLE:
         module = importlib.import_module(f"quackd.agent.providers.{name}")
         vendor = getattr(module, OPENAI_COMPATIBLE[name])
+        # An open-ended vendor checks an id it does not list against its own list, and a
+        # refusal there has to name where the id came from, which only this function knows.
+        named = {"source": source} if name in OPEN_ENDED else {}
         provider: LLMProvider = vendor(
             model=model,
             api_key=api_key,
             base_url=base_url,
             vision=vision,
             extra_body=body,
+            **named,
         )
         return provider
     if name in LOCAL_NAMES:

@@ -18,6 +18,11 @@ The catalogue holds the rates (`catalogue.Price`, read off each vendor's own pag
 `catalogue.PRICES_CHECKED`); `--price` and `QUACKD_PRICE` override them for a negotiated rate,
 a model the catalogue has never heard of, or a paid endpoint behind a local preset.
 
+One vendor also says what each call was billed: OpenRouter's `usage.cost`. Where it does, that
+is the turn's cost rather than rate times tokens, because it already knows which endpoint served
+the call, at which tier, and what the cache saved (`turn_cost`). A rate a person named still
+wins over it: they asked to be obeyed, and they may know something quackd cannot see.
+
 Nothing here may import a vendor SDK or pydantic: `catalogue.py` is imported by `--help` and by
 every press of TAB, and this sits beside it.
 """
@@ -27,12 +32,16 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 from quackd.agent.providers.catalogue import LOCAL_NAMES, Price, find_model
 
 PRICE_ENV = "QUACKD_PRICE"
 """Override the model's rate for one run. `--price` beats it; both beat the catalogue."""
+
+OVERRIDES = frozenset({"--price", PRICE_ENV})
+"""The sources a person names a rate by, as `parse_price` stamps them. A run priced by one of
+them is costed at that rate even where the vendor says what it billed."""
 
 FAKE = Price(0.0, 0.0, 0.0, 0.0, source="fake")
 """The scripted pilot calls nothing, so it costs nothing. Not `None`: a run that genuinely cost
@@ -121,17 +130,51 @@ def price_for(provider: str, model: str) -> Price | None:
     return spec.price if spec is not None else None
 
 
-def resolve_price(provider: str, model: str, *, override: str | None = None) -> Price | None:
+def resolve_price(
+    provider: str,
+    model: str,
+    *,
+    override: str | None = None,
+    listed: Price | None = None,
+) -> Price | None:
     """The rate this run is priced at, in the order a person expects to be obeyed.
 
-    `--price`, then `QUACKD_PRICE`, then the provider and the catalogue. An override beats
-    `fake` as well as the catalogue, and that is deliberate rather than an oversight: pricing a
-    scripted run is how the whole cost path gets exercised end to end with no key and no bill.
+    `--price`, then `QUACKD_PRICE`, then the provider and the catalogue, then `listed`: the rate
+    the provider read off the vendor's own list for a model the catalogue does not carry
+    (`--llm openrouter:` an unlisted id). An override beats `fake` as well as the catalogue,
+    and that is deliberate rather than an oversight: pricing a scripted run is how the whole
+    cost path gets exercised end to end with no key and no bill.
     """
     text = override if override is not None else os.environ.get(PRICE_ENV)
     if text is not None and text.strip():
         return parse_price(text, source="--price" if override is not None else PRICE_ENV)
-    return price_for(provider, model)
+    priced = price_for(provider, model)
+    return priced if priced is not None else listed
+
+
+class TurnCost(NamedTuple):
+    """What one call cost, and whether that is the vendor's own bill or quackd's arithmetic."""
+
+    usd: float | None
+    billed: bool
+
+
+def turn_cost(
+    usage: Mapping[str, Any], price: Price | None, billed: float | None = None
+) -> TurnCost:
+    """One call's cost: a person's rate, else the vendor's bill, else rate times tokens.
+
+    `billed` is what the vendor says the call cost (`ProviderTurn.billed_usd`), None from every
+    vendor that only reports tokens. It wins over the catalogue's rate because it already
+    accounts for what a rate card cannot: which endpoint served the call, its tier, the cache.
+    It loses to `--price` and `QUACKD_PRICE`, which a person set on purpose. None in, None out:
+    no rate and no bill is an unpriced call, never a free one.
+    """
+    if price is not None and price.source in OVERRIDES:
+        return TurnCost(cost_usd(usage, price), False)
+    if billed is not None:
+        return TurnCost(round(billed, 9), True)
+    return TurnCost(cost_usd(usage, price) if price is not None else None, False)
 
 
 def cost_usd(usage: Mapping[str, Any], price: Price) -> float:

@@ -221,7 +221,7 @@ parts, and a text only model is still a text only model with it on.
 `parallel_tool_calls` is never sent to local servers, because some reject unknown fields, and
 nothing else is added unless `--extra-body` asks for it.
 
-`--extra-body` works on every provider that speaks OpenAI's API, which is nine of the eleven
+`--extra-body` works on every provider that speaks OpenAI's API, which is ten of the twelve
 cloud vendors and all five local presets, and on Chat Completions and Responses alike, so it
 keeps working when a run moves from one to the other. The flag beats the variable, and an empty
 object sends nothing, which is how a `.env` line is silenced for a single run. Six keys are
@@ -231,7 +231,9 @@ Responses API the way `messages` carries it on Chat Completions. Everything else
 quackd would have sent, `tool_choice` included, because overriding it is the point. That cuts
 both ways: `n` or `response_format` will reach the server too, and what the model answers with
 afterwards is yours to live with. In a flock the object goes to every member that speaks
-OpenAI's API, and there is no per robot value in the registry.
+OpenAI's API, and there is no per robot value in the registry. On OpenRouter a seventh key,
+`models`, is refused as well, and a `provider` object is merged beside the `require_parameters`
+quackd sends rather than replacing it ([openrouter.md](openrouter.md)).
 
 Add physics by asking for both extras and naming the backend:
 
@@ -422,7 +424,10 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   out of view" as a reason to be unsure, and the verdict is about the body against its
   datasheet. **Whether that moves those numbers is unmeasured.** Nobody here runs that model,
   and the six cells want running again on a build that has this in it.
-- The cloud providers keep their stricter settings (`tool_choice="required"`,
-  `parallel_tool_calls=False`). Only the local presets use the relaxed ones.
+- Each cloud vendor keeps the `tool_choice` its own documentation allows: `required` on OpenAI,
+  Grok and DeepSeek, `any` on Mistral, `auto` on Qwen, Kimi, GLM and Meta, none at all on
+  Cohere, and per row on OpenRouter. `parallel_tool_calls=False` goes to OpenAI, Grok, Mistral
+  and Meta, which document it. The local presets are asked with `auto` by design, for the
+  reasons above.
 - Ollama, vLLM, llama.cpp and LM Studio evolve quickly. If a flag above is stale, open an
   issue with the server version.

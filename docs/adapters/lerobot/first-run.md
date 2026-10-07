@@ -158,7 +158,7 @@ motor. `quackd[lerobot]` asks for `lerobot[feetech]` for exactly that reason.
 ### 03. Choose your pilot
 
 quackd never ships a model. You bring one, and the choice is one flag, `--llm VENDOR[:MODEL]`.
-Eleven cloud vendors have a name you can pass it, five local presets cover the common
+Twelve cloud vendors have a name you can pass it, five local presets cover the common
 self-hosted servers, and `fake` is a scripted pilot that needs no key and is not a model at
 all. The vendor on its own means that vendor's default model, `--llm openai:gpt-6-astra` names
 one, and a catalogue id unique to its vendor needs no vendor in front of it, so
@@ -166,6 +166,9 @@ one, and a catalogue id unique to its vendor needs no vendor in front of it, so
 
 `quackd doctor` prints a row per provider with the extra, the key it found and the model it
 would use, and `quackd list-models` prints every model id quackd knows for every vendor.
+OpenRouter also takes ids it does not print: any its own model list carries with tool calling
+([guides/openrouter.md](../../guides/openrouter.md)). No OpenRouter model has answered a real
+quackd request, on this arm or anywhere else.
 
 #### A cloud vendor
 
@@ -263,6 +266,7 @@ Whether the camera frame reaches the model at all is a per-provider default:
 |---|---|
 | A cloud vendor, default model | Yes, on every step, for most vendors |
 | A cloud model marked `no frames` | No. The text detections go instead, silently |
+| An OpenRouter id quackd does not carry | When OpenRouter's model list says it takes images |
 | Any local preset | **No by default.** `--vision` turns it on |
 | `--llm fake` | Never. It is a rule, not a model |
 

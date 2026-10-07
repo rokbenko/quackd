@@ -661,6 +661,16 @@ _NUMBER_WORDS = {
     10: "ten",
     11: "eleven",
     12: "twelve",
+    # beyond the count quackd has today, so the day it reaches one of these the guards below
+    # still have a word for it, and a stale "thirteen" can be seen before then
+    13: "thirteen",
+    14: "fourteen",
+    15: "fifteen",
+    16: "sixteen",
+    17: "seventeen",
+    18: "eighteen",
+    19: "nineteen",
+    20: "twenty",
 }
 
 
@@ -709,7 +719,7 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
     """The same failure the adapter count already has a guard for, one layer up.
 
     "The four cloud providers see the camera frame as an image" was written once and was true
-    for a year. Eleven is a number that will move again, and every document that spells it is a
+    for a year. Twelve is a number that will move again, and every document that spells it is a
     document nobody will re-read on the day it does."""
     right = _NUMBER_WORDS[len(CLOUD_NAMES)]
     shapes = ("{w} cloud providers", "{w} cloud vendors", "{w} vendors")
@@ -728,6 +738,69 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
                 assert claim not in prose, (
                     f"{path.name} says {claim!r}; quackd has {right} ({', '.join(CLOUD_NAMES)})"
                 )
+
+
+# ── OpenRouter's page, and the code it quotes ───────────────────────────────────────────
+
+OPENROUTER_PAGE = REPO / "docs" / "guides" / "openrouter.md"
+
+
+def _rate(value: float) -> str:
+    """A catalogue rate the way the page writes it: 2.0 as 2, every other digit kept."""
+    return str(value).removesuffix(".0")
+
+
+def test_the_openrouter_page_agrees_with_the_code() -> None:
+    """The guide quotes the code: the rows, how each is asked, its rates, the key, the extra,
+    the address, both headers and every refusal. Each is read back off the page here, so a row
+    or a reason that changes in one place and not the other fails the suite."""
+    from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, models_for
+    from quackd.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENROUTER_REFUSED
+    from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
+
+    page = OPENROUTER_PAGE.read_text(encoding="utf-8")
+    rows = models_for("openrouter")
+    for m in rows:
+        assert m.price is not None
+        asked = "required" if m.forced_tools else "auto"
+        rates = [_rate(r) for r in (m.price.input, m.price.output, m.price.cache_read or 0.0)]
+        write = "none listed" if m.price.cache_write is None else _rate(m.price.cache_write)
+        line = (
+            f'| `{m.id}` | `tool_choice: "{asked}"` | {"yes" if m.vision else "no"} '
+            f"| {' / '.join([*rates, write])} |"
+        )
+        assert line in page, f"the page's row for {m.id} is not\n{line}"
+    assert f"`--llm openrouter` runs `{rows[0].id}`" in page
+    assert f"`{KEY_ENV['openrouter']}`" in page and f"`quackd[{EXTRA_FOR['openrouter']}]`" in page
+    assert BASE_URL in page and OPENROUTER_PRICES_CHECKED in page
+    for name, value in ATTRIBUTION.items():
+        assert f"`{name}: {value}`" in page
+    for shape, why in OPENROUTER_REFUSED.items():
+        assert f"| {why} |" in page, f"the page does not give the reason for {shape}"
+    assert "\n## VERIFIED" in page and "\n## UNVERIFIED" in page
+    assert "**Nothing here has ever answered a real robot.**" in page
+    assert "**No OpenRouter model has answered a real quackd request.**" in page
+
+
+def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
+    """In the same words everywhere, until somebody runs one: a vendor tested only against a
+    stand-in reads exactly like one that has been flown, unless a page says otherwise."""
+    sentence = "no openrouter model has answered a real quackd request"
+    pages = [
+        REPO / "README.md",
+        REPO / "docs" / "faq.md",
+        OPENROUTER_PAGE,
+        REPO / "web" / "README.md",
+        REPO / "web" / "src" / "providers.js",
+        *sorted((REPO / "docs" / "adr").glob("0050-*.md")),
+    ]
+    assert len(pages) == 6, "ADR-0050 is missing"
+    for page in pages:
+        text = " ".join(page.read_text(encoding="utf-8").split()).lower()
+        assert sentence in text, f"{page.relative_to(REPO)} does not say so"
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+    assert sentence in " ".join(unreleased.split()).lower(), "the release note does not say so"
 
 
 def test_the_pypi_summary_names_every_robot() -> None:

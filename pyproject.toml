@@ -16,6 +16,7 @@ keywords = [
   "robotics", "embodied-ai", "physical-ai", "llm-agents", "multi-robot", "robot-fleet",
   "mcp", "model-context-protocol", "mujoco",
   "claude", "openai", "gemini", "grok", "mistral", "deepseek", "cohere", "qwen", "kimi", "glm", "meta",
+  "openrouter",
   "jev", "kev", "von", "openjev", "opendecision", "laya",
   "ollama", "vllm", "llama-cpp", "local-llm", "jetson",
 ]
@@ -50,7 +51,7 @@ anthropic = ["anthropic>=1.0,<2"]
 # could only fail at the first call on those models.
 openai = ["openai>=1.66,<4"]
 gemini = ["google-genai>=1.0,<3"]
-# Eight vendors, one wheel. Each speaks OpenAI's API at its own address, so the extra exists
+# Nine vendors, one wheel. Each speaks OpenAI's API at its own address, so the extra exists
 # to name the install a reader of `quackd doctor` or a ProviderNotInstalled actually wants,
 # not because there is a second package to fetch (see EXTRA_FOR in agent/providers/factory.py).
 grok = ["openai>=1.66,<4"]
@@ -61,6 +62,7 @@ qwen = ["openai>=1.66,<4"]
 kimi = ["openai>=1.66,<4"]
 glm = ["openai>=1.66,<4"]
 meta = ["openai>=1.66,<4"]
+openrouter = ["openai>=1.66,<4"]
 # The System One protocol client: the optional discrete stepper in front of the model
 # (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
 # Every decision LLM quackd knows that is a server speaks the same wire format and is reached by

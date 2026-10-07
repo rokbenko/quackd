@@ -238,10 +238,23 @@ class ProviderTurn(BaseModel):
         "`stop_reason` says. None when the model asked for took the turn, or when the vendor "
         "does not say.",
     )
+    billed_usd: float | None = Field(
+        default=None,
+        description="What the vendor says this call was billed, in dollars, where it says so: "
+        "OpenRouter's `usage.cost`, with the upstream charge added on a bring-your-own-key "
+        "turn. The loop records it as the turn's cost in place of rate times tokens, unless "
+        "`--price` or `QUACKD_PRICE` named a rate. None for every vendor that reports tokens "
+        "and leaves the arithmetic to the caller, which is all of them but one.",
+    )
 
 
 class ProviderError(RuntimeError):
-    pass
+    billed_usd: float | None = None
+    """What the vendor billed for the call that failed, where it said so: OpenRouter can answer
+    with an error and the bill for what the provider had already used. None almost always."""
+    usage: Usage | None = None
+    """The tokens that call spent, where the failed answer reported them. With `billed_usd`, the
+    loop costs and counts the call like any other, rather than leaving it out of the total."""
 
 
 class ProviderNotInstalled(ProviderError):

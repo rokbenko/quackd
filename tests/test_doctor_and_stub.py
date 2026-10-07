@@ -85,6 +85,28 @@ def test_doctor_lists_every_provider_and_its_key(monkeypatch: pytest.MonkeyPatch
         assert KEY_ENV[cloud] in flat, f"{cloud} does not say which key it wants"
 
 
+def test_doctor_pins_an_openrouter_id_it_does_not_carry_without_asking_openrouter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An id OpenRouter's catalogue tuple does not carry is checked against OpenRouter's list
+    when a run starts, never here: doctor is the command people run when the network is the
+    thing in doubt. Its shape is all doctor checks, and the conftest guard fails the test if
+    anything reached for the list."""
+    monkeypatch.setenv("QUACKD_LLM", "openrouter:qwen/qwen3.8-flash")
+    result = CliRunner().invoke(app, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "qwen/qwen3.8-flash" in " ".join(result.output.split())
+
+    # a shape no list can vouch for is refused by the parse, and doctor prints the refusal
+    # under the table in its own words rather than pinning a row to it
+    monkeypatch.setenv("QUACKD_LLM", "openrouter:~anthropic/claude-opus-latest")
+    refused = CliRunner().invoke(app, ["doctor"])
+    assert refused.exit_code == 0, refused.output
+    flat = " ".join(refused.output.split())
+    assert "'~anthropic/claude-opus-latest' from QUACKD_LLM is refused" in flat
+    assert "newest model of its family" in flat
+
+
 def test_doctor_shows_a_robot_manifest() -> None:
     result = CliRunner().invoke(app, ["doctor", "--robot", "microduck:mock"])
     assert result.exit_code == 0, result.output

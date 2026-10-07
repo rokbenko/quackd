@@ -4506,6 +4506,274 @@ async def test_the_scripted_pilot_is_free_rather_than_unpriced(
     assert result.summary["cost_usd"] is not None, "free is a number; unpriced is not"
 
 
+class BillingProvider(ThinkingProvider):
+    """A pilot whose vendor says what each call was billed, the way OpenRouter does: one bill
+    per call from `bills`, None where that call came back without one."""
+
+    name = "openrouter"
+    model = "openai/gpt-6-sol"
+    bills_per_call = True
+
+    def __init__(
+        self, *calls: ToolCall, bills: list[float | None], listed_price: Price | None = None
+    ) -> None:
+        super().__init__(*calls)
+        self.bills = bills
+        self.listed_price = listed_price
+
+    async def step(
+        self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
+    ) -> ProviderTurn:
+        turn = await super().step(system, history, tools)
+        return turn.model_copy(update={"billed_usd": self.bills[self.calls - 1]})
+
+
+def _billed(bills: list[float | None], **kw: Any) -> BillingProvider:
+    return BillingProvider(
+        ToolCall(name="quack", arguments={"text": "hi"}),
+        ToolCall(name="declare_success", arguments={"reason": "quacked"}),
+        bills=bills,
+        **kw,
+    )
+
+
+async def test_a_turn_the_vendor_billed_is_recorded_at_what_it_was_billed(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """Rather than at the catalogue's rate times its tokens: the bill already knows which
+    endpoint served the call and what the cache saved. The rate stays in the record beside it,
+    and every call it did not decide says so."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=_billed([0.0011, 0.0025]),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    rate = events[0]["price"]
+    assert rate["source"] == "catalogue" and rate["checked"] == "2026-10-06"
+    calls = [e for e in events if e["kind"] == "llm"]
+    assert [c["cost_usd"] for c in calls] == [0.0011, 0.0025]
+    assert all(c["billed"] is True for c in calls)
+    assert [c["cost_usd_total"] for c in calls] == [0.0011, 0.0036]
+    assert result.summary["cost_usd"] == 0.0036 and result.summary["billed_calls"] == 2
+    rated = pricing.cost_usd(calls[0]["usage"], Price(2.0, 10.0, 0.2, 2.5))
+    assert rated != 0.0011, "the fixture's bill must differ from the rate, or this proves nothing"
+
+
+async def test_a_price_on_the_run_beats_what_the_vendor_billed(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """`--price` is a person saying what this costs them, a negotiated rate or a key quackd
+    cannot see, and it is obeyed over the bill as it is over the catalogue."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=_billed([0.0011, 0.0025]),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+            price="in=3,out=15",
+        )
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    calls = [e for e in events if e["kind"] == "llm"]
+    rate = Price(input=3.0, output=15.0, source="--price")
+    assert [c["cost_usd"] for c in calls] == [pricing.cost_usd(c["usage"], rate) for c in calls]
+    assert all("billed" not in c for c in calls)
+    assert "billed_calls" not in result.summary
+
+
+async def test_a_listed_rate_prices_a_model_the_catalogue_does_not_carry(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """An OpenRouter id quackd does not carry is priced at the rate OpenRouter's list gave it,
+    and the record says so and when it was read."""
+    listed = Price(0.15, 0.47, source="openrouter", checked="2026-10-06")
+    provider = _billed([None, None], listed_price=listed)
+    provider.model = "qwen/qwen3.8-flash"
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    rate = events[0]["price"]
+    assert rate["source"] == "openrouter" and rate["checked"] == "2026-10-06"
+    assert (rate["input"], rate["output"]) == (0.15, 0.47)
+    calls = [e for e in events if e["kind"] == "llm"]
+    assert [c["cost_usd"] for c in calls] == [pricing.cost_usd(c["usage"], listed) for c in calls]
+    assert all("billed" not in c for c in calls) and "billed_calls" not in result.summary
+
+
+async def test_one_call_nobody_could_price_leaves_the_run_unpriced(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """With no rate, a run on a vendor that bills per call starts at $0, because a bill can come
+    with every turn. The first call that brings neither a bill nor a rate makes the total
+    unknown from then on: a total that skipped it would be believed as the whole bill."""
+    provider = _billed([0.001, None])
+    provider.model = "qwen/qwen3.8-flash"
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert events[0]["price"] is None
+    calls = [e for e in events if e["kind"] == "llm"]
+    assert [c["cost_usd"] for c in calls] == [0.001, None]
+    assert [c["cost_usd_total"] for c in calls] == [0.001, None]
+    assert result.summary["cost_usd"] is None and result.summary["billed_calls"] == 1
+
+
+class FailsBilled(BillingProvider):
+    """Answers once with a bill, then fails with one: a provider that gave out partway, which
+    OpenRouter can still charge for. `raised` is the error the second call raises."""
+
+    def __init__(self, raised: ProviderError) -> None:
+        super().__init__(
+            ToolCall(name="quack", arguments={"text": "hi"}),
+            ToolCall(name="declare_success", arguments={"reason": "quacked"}),
+            bills=[0.001, None],
+        )
+        self.raised = raised
+
+    async def step(
+        self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
+    ) -> ProviderTurn:
+        if self.calls:
+            self.calls += 1
+            raise self.raised
+        return await super().step(system, history, tools)
+
+
+async def _run_that_fails(
+    duck: DuckFile, tmp_path: Path, provider: Any
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """A run whose pilot raises, read back off what it wrote: the summary and the transcript."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    loop = AgentLoop(
+        RunConfig(
+            duck=duck,
+            provider=provider,
+            transport=MockTransport(),
+            run_dir=run_dir,
+            runs_dir=tmp_path,
+        )
+    )
+    with pytest.raises(ProviderError):
+        await loop.run()
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    return summary, Transcript.read(run_dir / "transcript.jsonl")
+
+
+async def test_a_call_that_failed_after_it_was_billed_is_in_the_total(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The bill came with the error, so it is the run's like any other call's. A total that
+    left it out would be believed as the whole bill, which is the wrong this guards against."""
+    raised = ProviderError("openrouter: the provider failed partway through the answer")
+    raised.billed_usd = 0.25
+    raised.usage = Usage(input_tokens=40, output_tokens=3)
+    summary, events = await _run_that_fails(hello_duck, tmp_path, FailsBilled(raised))
+    assert summary["outcome"] == "error"
+    (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
+    assert failed["cost_usd"] == 0.25 and failed["billed"] is True
+    assert failed["cost_usd_total"] == 0.251
+    assert failed["usage"]["input_tokens"] == 40
+    assert summary["cost_usd"] == 0.251 and summary["billed_calls"] == 2
+    assert summary["usage"]["input_tokens"] == 140, "the failed call's tokens count too"
+
+
+async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run_unpriced(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The other side of a billed failure: tokens reported and no bill, on a model with no rate.
+    That call cannot be priced, so the total is unknown from then on, as it is for a turn, and
+    the record does not say `billed` about a cost nobody billed."""
+    raised = ProviderError("openrouter: the provider failed partway through the answer")
+    raised.usage = Usage(input_tokens=40, output_tokens=3)
+    provider = FailsBilled(raised)
+    provider.model = "qwen/qwen3.8-flash"  # no catalogue rate, and the list gave none
+    summary, events = await _run_that_fails(hello_duck, tmp_path, provider)
+    (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
+    assert failed["cost_usd"] is None and failed["cost_usd_total"] is None
+    assert "billed" not in failed, "only a call costed at the vendor's own bill says billed"
+    assert summary["cost_usd"] is None
+    assert summary["billed_calls"] == 1, "the first call's bill is still counted"
+
+
+async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The real `OpenRouterProvider`, not a double: an id whose list entry gives no usable rate
+    still totals what each call was billed, because the provider says it bills per call."""
+    from quackd.agent.providers.openrouter import Listed, OpenRouterProvider
+
+    def answer(name: str, arguments: str, cost: float) -> Any:
+        call = NS(id=f"call-{name}", function=NS(name=name, arguments=arguments))
+        message = NS(content=None, tool_calls=[call], refusal=None)
+        usage = NS(prompt_tokens=10, completion_tokens=2, cost=cost)
+        return NS(choices=[NS(message=message, finish_reason="tool_calls")], usage=usage)
+
+    answers = iter(
+        [
+            answer("quack", '{"text": "hi"}', 0.001),
+            answer("declare_success", '{"reason": "q"}', 0.002),
+        ]
+    )
+
+    async def create(**kwargs: Any) -> Any:
+        return next(answers)
+
+    unpriced = Listed("quackd-stub/variable", vision=False, tool_choice=True, price=None)
+    provider = OpenRouterProvider(
+        model="quackd-stub/variable",
+        listed=unpriced,
+        client=NS(chat=NS(completions=NS(create=create))),
+    )
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert result.summary["price"] is None
+    assert result.summary["cost_usd"] == 0.003 and result.summary["billed_calls"] == 2
+
+
+async def test_a_failed_call_with_no_bill_is_recorded_exactly_as_it_was(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """Every failure but that one costs nothing quackd can see, and its record keeps the shape
+    it always had: an error, a latency, and no cost fields at all."""
+    summary, events = await _run_that_fails(
+        hello_duck, tmp_path, FailsBilled(ProviderError("rate limited"))
+    )
+    (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
+    assert set(failed) >= {"error", "latency_s"}
+    assert not {"cost_usd", "cost_usd_total", "billed", "usage"} & set(failed)
+    assert summary["cost_usd"] == 0.001
+
+
+async def test_a_run_nobody_billed_reads_exactly_as_it_did(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """Every vendor but one reports tokens and no bill, and its records must not grow a field."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=_quack_then_done(),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+            price="in=3,out=15",
+        )
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert all("billed" not in e for e in events if e["kind"] == "llm")
+    assert "billed_calls" not in result.summary
+    on_disk = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert "billed_calls" not in on_disk
+
+
 async def test_the_result_hands_back_the_summary_that_was_written_to_disk(
     hello_duck: DuckFile, tmp_path: Path
 ) -> None:

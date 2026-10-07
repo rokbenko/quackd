@@ -21,6 +21,7 @@ How to do one thing with quackd.
 |---|---|
 | [Pilot your robots from Claude](guides/mcp.md) | `quackd serve-mcp`: a robot, or a flock of them, as MCP tools that Claude Code or Claude Desktop pilots |
 | [Local and open-source LLMs](guides/local-llms.md) | Ollama, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible server as the pilot |
+| [OpenRouter](guides/openrouter.md) | one key for other vendors' models as the pilot: which ids quackd takes and refuses, where a prompt goes, and what a turn is billed |
 | [Decision LLMs](guides/decision-llms/README.md) | the optional discrete stepper in front of the model, with a page for each one quackd names: [Jev](guides/decision-llms/jev.md), [Kev](guides/decision-llms/kev.md), [Von](guides/decision-llms/von.md), [OpenJev](guides/decision-llms/openjev.md), [OpenDecision](guides/decision-llms/opendecision.md), [local](guides/decision-llms/local.md) and [Laya](guides/decision-llms/laya.md) |
 | [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `quackd policy serve` |
 | [Registered robots and flocks](guides/registry.md) | a name for a robot, and for a flock, kept between runs |

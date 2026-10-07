@@ -17,6 +17,15 @@ LLM answered": a server you run reports no bill and is costed at the self-hosted
 of quackd already uses for a local model, so the estimate and its `~` exist only where a
 non-zero rate does, which today is Jev alone.
 
+**Amended 2026-10-06 by [ADR-0050](0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md):** a call can be costed at what
+the vendor says it billed. On OpenRouter a turn's `cost_usd` is its `usage.cost`, with the
+upstream charge added on a bring-your-own-key call, unless `--price` or `QUACKD_PRICE` named a
+rate, and that `llm` record carries `billed: true`; the summary counts such calls in
+`billed_calls`. The `price` record is still the rate, which is what a call with no bill is
+costed at, and a rate read on a day of its own carries that day in `checked`. A run's total
+becomes null from the first call that has neither a bill nor a rate. Every other vendor's
+records are unchanged.
+
 ## Context
 
 The one hardware run this project has is at the top of `README.md`, and the sentence that

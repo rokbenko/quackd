@@ -848,7 +848,7 @@ console.log(JSON.stringify(ids.map((id) => startingApi("openai", id))));
 
 
 def test_the_browser_asks_each_vendor_for_a_tool_call_the_way_python_does() -> None:
-    """`tool_choice` is not one word shared by eleven vendors.
+    """`tool_choice` is not one word shared by twelve vendors.
 
     Mistral's guide documents `any`; Cohere's compatibility endpoint documents no such
     parameter at all and the field is omitted; Z.ai supports only `auto`. The
@@ -875,6 +875,163 @@ console.log(JSON.stringify(Object.fromEntries(
         assert in_browser == in_python, (
             f"the page asks {name} with tool_choice={in_browser!r} and the CLI with {in_python!r}"
         )
+
+
+def test_the_browser_asks_each_openrouter_row_what_the_cli_asks() -> None:
+    """Every row the dropdown offers, through the page's own client: the `tool_choice` the CLI
+    sends for that row, the `provider` object and the two attribution headers the CLI sends,
+    and no `parallel_tool_calls`, which `require_parameters` would route almost nowhere."""
+    from quackd.agent.providers.catalogue import model_ids
+    from quackd.agent.providers.openrouter import ATTRIBUTION, DEFAULT_BODY, OpenRouterProvider
+
+    sent = _drive_providers(
+        _FIXTURES
+        + """
+const { makeProvider } = await import(MODULE);
+const { CATALOGUE } = await import(MODULE.replace("providers.js", "catalogue.js"));
+const out = {};
+for (const { id } of CATALOGUE.openrouter.entries) {
+  globalThis.fetch = async (url, init) => {
+    out[id] = { url, headers: init.headers, body: JSON.parse(init.body) };
+    return new Response(JSON.stringify({ choices: [{ message: { tool_calls: [
+      { id: "c1", type: "function", function: { name: "walk", arguments: "{}" } },
+    ] } }] }), { status: 200 });
+  };
+  await makeProvider({ provider: "openrouter", key: "sk-or-v1-test", model: id })
+    .step({ system: "SYS", history, observation: "obs three", tools });
+}
+console.log(JSON.stringify(out));
+"""
+    )
+    assert sorted(sent) == sorted(model_ids("openrouter"))
+    for model_id, request in sent.items():
+        cli = OpenRouterProvider(model=model_id, client=object())
+        body = request["body"]
+        assert request["url"] == "https://openrouter.ai/api/v1/chat/completions"
+        assert body["tool_choice"] == cli.tool_choice, model_id
+        assert body["provider"] == DEFAULT_BODY["provider"]
+        assert "parallel_tool_calls" not in body
+        for name, value in ATTRIBUTION.items():
+            assert request["headers"][name] == value
+        assert request["headers"]["authorization"] == "Bearer sk-or-v1-test"
+
+
+def test_the_browser_hands_openrouters_reasoning_back_on_the_next_turn() -> None:
+    """What the CLI replays, the page replays: the `reasoning_details` that came with a call go
+    back on that call's assistant turn, unchanged, and a vendor that never asks for them back
+    keeps a call object that is exactly what it was."""
+    got = _drive_providers(
+        _FIXTURES
+        + """
+const { makeProvider } = await import(MODULE);
+const details = [{ type: "reasoning.encrypted", data: "enc-1", format: "google-gemini-v1" }];
+const bodies = [];
+globalThis.fetch = async (url, init) => {
+  bodies.push(JSON.parse(init.body));
+  return new Response(JSON.stringify({ choices: [{ message: {
+    tool_calls: [{ id: "c1", type: "function", function: { name: "walk", arguments: "{}" } }],
+    reasoning_details: details,
+  } }] }), { status: 200 });
+};
+const p = makeProvider({ provider: "openrouter", key: "k", model: "google/gemini-3.8-flash" });
+const call = await p.step({ system: "SYS", history: [], observation: "obs one", tools });
+const second = [{ observation: "obs one", call }];
+await p.step({ system: "SYS", history: second, observation: "obs two", tools });
+const q = makeProvider({ provider: "openai", key: "k", model: UNHINTED });
+const plain = await q.step({ system: "SYS", history: [], observation: "obs one", tools });
+console.log(JSON.stringify({ call, second: bodies[1], plain }));
+"""
+    )
+    assert got["call"]["replay"] == [
+        {"type": "reasoning.encrypted", "data": "enc-1", "format": "google-gemini-v1"}
+    ]
+    assistant = next(m for m in got["second"]["messages"] if m["role"] == "assistant")
+    assert assistant["reasoning_details"] == got["call"]["replay"]
+    assert got["plain"] == {"name": "walk", "arguments": {}}, "OpenAI's call grew a field"
+
+
+def test_only_openrouter_reads_an_error_out_of_a_200_or_its_upstream_detail() -> None:
+    """The page's OpenRouter reading is OpenRouter's alone. Every other vendor still takes the
+    call out of a 200 whatever else the body carries, and still reports a 4xx in the words it
+    did before, as Python's `parse_response` does for them."""
+    got = _drive_providers(
+        _FIXTURES
+        + """
+const { makeProvider } = await import(MODULE);
+const both = {
+  error: { code: 429, message: "slow down", metadata: { raw: "upstream detail" } },
+  choices: [{ message: { tool_calls: [
+    { id: "c1", type: "function", function: { name: "walk", arguments: "{}" } },
+  ] } }],
+};
+const out = {};
+for (const [name, model] of [["grok", "grok-4.7"], ["openrouter", "openai/gpt-6-sol"]]) {
+  for (const status of [200, 400]) {
+    globalThis.fetch = async () => new Response(JSON.stringify(both), { status });
+    const p = makeProvider({ provider: name, key: "k", model });
+    try {
+      const call = await p.step({ system: "SYS", history: [], observation: "obs", tools });
+      out[`${name} ${status}`] = { call };
+    } catch (e) {
+      out[`${name} ${status}`] = { error: e.message };
+    }
+  }
+}
+console.log(JSON.stringify(out));
+"""
+    )
+    assert got["grok 200"] == {"call": {"name": "walk", "arguments": {}}}
+    assert got["grok 400"] == {"error": "xAI (Grok) said 400: slow down"}
+    assert got["openrouter 200"] == {"error": "OpenRouter said 429: slow down: upstream detail"}
+    assert got["openrouter 400"] == {"error": "OpenRouter said 400: slow down: upstream detail"}
+
+
+def test_the_browser_reaches_a_stand_in_for_openrouter_over_http() -> None:
+    """The page's real request, over a real socket, to the same stand-in the CLI's wire test
+    uses: `fetch` is pointed at it and nothing else is changed. A 200 that carries only an
+    error is read as the error it is, not as a model that declined to call a tool."""
+    from tests.fake_openrouter import FakeOpenRouter
+
+    with FakeOpenRouter() as stand_in:
+        got = _drive_providers(
+            _FIXTURES
+            + f"""
+const STAND_IN = {json.dumps(stand_in.base_url)};
+const real = globalThis.fetch;
+globalThis.fetch = (url, init) => real(url.replace("https://openrouter.ai/api/v1", STAND_IN), init);
+const {{ makeProvider }} = await import(MODULE);
+const p = makeProvider({{
+  provider: "openrouter", key: "sk-or-v1-stub", model: "openai/gpt-6-sol",
+}});
+const call = await p.step({{ system: "SYS", history: [], observation: "obs one", tools }});
+console.log(JSON.stringify({{ call }}));
+"""
+        )
+        (post,) = stand_in.posts()
+    assert got["call"]["name"] == "assess_task" and got["call"]["replay"][0]["signature"] == "sig-1"
+    assert post.path == "/api/v1/chat/completions"
+    assert post.headers["x-openrouter-title"] == "quackd"
+    assert post.headers["http-referer"] == "https://github.com/rokbenko/quackd"
+    assert post.body["provider"] == {"require_parameters": True}
+    assert post.body["tool_choice"] == "required" and "parallel_tool_calls" not in post.body
+
+    error = {"error": {"code": 502, "message": "Provider returned error", "metadata": {"raw": "x"}}}
+    with FakeOpenRouter(chat=lambda n, body: (200, error)) as stand_in:
+        refused = _drive_providers(
+            _FIXTURES
+            + f"""
+const STAND_IN = {json.dumps(stand_in.base_url)};
+const real = globalThis.fetch;
+globalThis.fetch = (url, init) => real(url.replace("https://openrouter.ai/api/v1", STAND_IN), init);
+const {{ makeProvider }} = await import(MODULE);
+const p = makeProvider({{ provider: "openrouter", key: "k", model: "openai/gpt-6-sol" }});
+let message = null;
+try {{ await p.step({{ system: "SYS", history: [], observation: "obs", tools }}); }}
+catch (e) {{ message = e.message; }}
+console.log(JSON.stringify({{ message }}));
+"""
+        )
+    assert refused["message"] == "OpenRouter said 502: Provider returned error: x"
 
 
 # ── the two copies of upstream's contract stay in step ──────────────────────────────────

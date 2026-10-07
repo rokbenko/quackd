@@ -201,7 +201,9 @@ change for either.
 
 **OpenRouter's Decisions API** is a different path. It answers at `/api/alpha/decisions`, and the
 System One client's path is a fixed constant rather than something `--decision-url` can reach
-into. A row for it would be a second transport, not a second address.
+into. A row for it would be a second transport, not a second address. Nor is it
+`--llm openrouter`, which reaches OpenRouter's chat models as a pilot
+([../openrouter.md](../openrouter.md)).
 
 **Ollama** runs chat models. None of the architectures above runs in it, and its OpenAI-compatible
 endpoint drops logprobs, so even the closest thing you could build -- a small chat model scored by

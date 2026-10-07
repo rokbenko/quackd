@@ -20,7 +20,7 @@ import time
 from typing import Any
 
 from quackd.agent.providers.base import Exchange, LLMProvider, Observation, ProviderTurn, Usage
-from quackd.agent.providers.pricing import cost_usd, resolve_price
+from quackd.agent.providers.pricing import resolve_price, turn_cost
 from quackd.duckfile.schema import DuckFile
 from quackd.flock.messages import FlockTask, Wedge
 from quackd.log import EventLog
@@ -116,9 +116,16 @@ async def plan_flock_task(
     )
     fallback = False
     usage = Usage()
-    # the planner is one model call like any other, so it is priced like any other
-    rate = resolve_price(provider.name, provider.model, override=price)
-    spent: float | None = 0.0 if rate is not None else None
+    # the planner is one model call like any other, so it is priced like any other: a rate a
+    # person named, else what the vendor billed, else the rate times its tokens
+    rate = resolve_price(
+        provider.name,
+        provider.model,
+        override=price,
+        listed=getattr(provider, "listed_price", None),
+    )
+    bills = bool(getattr(provider, "bills_per_call", False))
+    spent: float | None = 0.0 if rate is not None or bills else None
     # `step=0`: the planner runs before the flock has taken a step, and a reader of the
     # transcript should be able to read it exactly as a solo run's first turn
     emit(
@@ -139,6 +146,7 @@ async def plan_flock_task(
             [Exchange(observation=Observation(text=prompt))],
             [PLAN_TOOL],
         )
+        costed = turn_cost(turn.usage.model_dump(), rate, turn.billed_usd)
         emit(
             "llm",
             step=0,
@@ -150,11 +158,12 @@ async def plan_flock_task(
             usage=turn.usage.model_dump(),
             stop_reason=turn.stop_reason,
             latency_s=round(time.perf_counter() - started, 3),
-            cost_usd=(cost_usd(turn.usage.model_dump(), rate) if rate is not None else None),
+            cost_usd=costed.usd,
+            # only when the cost is the vendor's own bill, as in a solo run's record
+            **({"billed": True} if costed.billed else {}),
         )
         usage = turn.usage
-        if rate is not None:
-            spent = cost_usd(turn.usage.model_dump(), rate)
+        spent = costed.usd
         call = next((c for c in turn.tool_calls if c.name == "plan_flock_task"), None)
         if call is None:
             raise ValueError("no plan_flock_task call in the reply")
@@ -177,7 +186,19 @@ async def plan_flock_task(
         fallback = True
         if turn is None:
             # only when the CALL failed. A reply that arrived and then disappointed us was
-            # already narrated above, and one `llm` per `llm_request` is what a reader counts on
+            # already narrated above, and one `llm` per `llm_request` is what a reader counts on.
+            # A call that failed after it was billed (OpenRouter can say so) is costed like any.
+            billed, used = getattr(e, "billed_usd", None), getattr(e, "usage", None)
+            cost: dict[str, Any] = {}
+            if billed is not None or used is not None:
+                usage = used if isinstance(used, Usage) else Usage()
+                costed = turn_cost(usage.model_dump(), rate, billed)
+                spent = costed.usd
+                cost = {
+                    "usage": usage.model_dump(),
+                    "cost_usd": costed.usd,
+                    **({"billed": True} if costed.billed else {}),
+                }
             emit(
                 "llm",
                 step=0,
@@ -185,6 +206,7 @@ async def plan_flock_task(
                 model=provider.model,
                 error=f"{type(e).__name__}: {e}",
                 latency_s=round(time.perf_counter() - started, 3),
+                **cost,
             )
         note(f"planner fallback: {type(e).__name__}: {e}")
         task = default_task(duck, task_id)

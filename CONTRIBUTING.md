@@ -247,6 +247,13 @@ missing row, and it opens `pyproject.toml` to check the extra exists and install
 that provider imports. Before it existed a missing row was a `KeyError` out of `quackd
 doctor`, which is the command people run when something is already wrong.
 
+A router is the one shape the six entries do not cover on their own. OpenRouter's ids name
+other vendors' models and its list changes by the week, so its tuple is a selection, marked
+by `OPEN_ENDED` in `catalogue.py`: an id it does not carry is checked for its shape in the
+factory and against the vendor's own public list in the provider, rather than refused
+([ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md)). A vendor
+that is a lab, which is every other one, gets no such mark.
+
 Then the browser, which has its own copy of the model list and its own reason to refuse one.
 Run `python web/build_catalogue.py` and commit `web/src/catalogue.js`, or the generator-drift
 test in `tests/test_web.py` fails. Then decide whether the page can call the vendor at all: it

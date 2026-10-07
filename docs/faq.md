@@ -119,7 +119,7 @@ command that fixes it: the provider one names `quackd[anthropic]`, the robot one
 extra for itself, but it does need a body to drive.
 
 **Which models can I pick?** Whatever the catalogue lists for the vendor you named. It is one
-hand-written table of 117 ids across eleven cloud vendors, and `quackd list-models` prints it,
+hand-written table of 123 ids across twelve cloud vendors, and `quackd list-models` prints it,
 `--llm mistral` (or any other name) narrowing it to one vendor. Every row carries a status
 — `current`, `legacy`, `preview`, `specialised` or `open` — and a notes column that marks three
 things worth knowing before you pass an id: `default`, `Responses API` for the OpenAI models
@@ -131,6 +131,13 @@ deliberately outside all of this:
 `ollama`, `vllm`, `llamacpp`, `lmstudio` and `local` take any id the server serves, or the first
 model it lists when you name none. Anthropic extras: `QUACKD_EFFORT` (default `medium`) and
 `QUACKD_ANTHROPIC_FALLBACKS=0` to disable server-side refusal fallbacks.
+
+OpenRouter sits between the two. Its rows are a selection rather than all it takes:
+`--llm openrouter:AUTHOR/MODEL` also takes any other id OpenRouter's public model list carries
+with tool calling, checked against that list when the run starts. An id with a suffix
+(`google/gemma-4-31b-it:free`) needs `openrouter:` in front of it, because `--llm` splits at the
+first colon. No OpenRouter model has answered a real quackd request: everything after its model
+list has only met a stand-in. See [guides/openrouter.md](guides/openrouter.md).
 
 **Why is my model rejected?** Because that vendor's catalogue does not list the id, and quackd
 checks before it reads a key or opens a connection, so nothing was sent anywhere:
@@ -156,6 +163,22 @@ why `--llm gpt-6-astra` can work out its own vendor. `QUACKD_LLM` goes through t
 and gets the same refusal, with `QUACKD_LLM` in place of `--llm` in the message, so a stale line
 in your `.env` cannot quietly start a run either. The one thing this never applies to is a local
 preset, whose model half is free text.
+
+OpenRouter is checked in two steps. An id quackd will not take even where OpenRouter lists it is
+refused on its spelling, offline and before a key is read:
+
+```
+$ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot microduck:mock
+✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
+resolves to the newest model of its family, so the model that answers could change under a run that
+names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7, and any other id with tool
+calling on the vendor's own model list works too. See `quackd list-models --llm openrouter`.
+```
+
+A well-formed id quackd does not carry is then looked up in OpenRouter's public model list when
+the run starts. That sends one request to `openrouter.ai`, with no key, and the run is refused if
+the list does not carry the id, carries it without tool calling, or says it has expired.
 
 **The id is in the catalogue, but the vendor refuses my key.** Check which endpoint your key
 belongs to. quackd calls each cloud vendor at one fixed base URL, and for two of them there
@@ -340,7 +363,7 @@ text.
 tokens (mostly the system prompt and one image) and a short tool call. quackd works the
 dollars out itself rather than leaving you to multiply a token count by a rate you looked up:
 the catalogue carries a price per model in USD per million tokens, read off that vendor's own
-pricing page and dated with the day it was read, and 113 of the 117 ids have one. So every
+pricing page and dated with the day it was read, and 119 of the 123 ids have one. So every
 `llm` record in `transcript.jsonl` carries `cost_usd` for that call and `cost_usd_total` for
 the run so far, `summary.json` carries the run's `cost_usd` beside its `usage` and the exact
 rate it was charged at, and the counters under the verdict print the total:
@@ -356,6 +379,9 @@ records `cost_usd: null` and prints `cost unpriced` instead of a zero, since a n
 could not be computed must never read as a number that came out to nothing, and the run says
 so once on stderr with the flag that fixes it. That is four ids today, all of them Cohere's,
 the Command A family and North Mini Code, for which Cohere publish no per-token rate at all.
+On OpenRouter a turn is costed at what OpenRouter says it billed, its `usage.cost`, which
+already knows which endpoint served the call and at what tier, and that call's `llm` record
+says `billed: true`. The fee OpenRouter charges when you buy credits is outside every run.
 Your own rate goes in with
 `--price in=3,out=15[,cache_read=0.3,cache_write=3.75]` for one run, or `QUACKD_PRICE` for a
 shell full of them: a negotiated rate, a paid endpoint behind a local preset, or an id the
@@ -433,13 +459,24 @@ what the body adds under it varies: the Microduck's `robotd` has fall detection,
 clamps and a deadman, while an Open Duck Mini v2 declares `none` and the watching human is
 its fall detector — see [concepts/safety.md](concepts/safety.md).
 
-**Does my data ever leave my machine?** Only if you choose a cloud provider. All eleven of
-them (Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM and Meta) send
+**Does my data ever leave my machine?** Only if you choose a cloud provider. All twelve of
+them (Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and
+OpenRouter) send
 the prompt to that vendor's API over the network, under its own terms, and the camera frame
 with it wherever the model takes an image — `quackd list-models` marks the ones that do not
 with `no frames`, and those get the text detections instead. One vendor is worth reading the
 labels for: two of Meta's Muse Spark models are a *contributor tier*, discounted in exchange
-for Meta training on your prompts, and `quackd list-models` says so on those rows. The `fake`
+for Meta training on your prompts, and `quackd list-models` says so on those rows. OpenRouter
+is the one that does not run the model itself: it is a router, so a run on it sends the prompt
+and the frame to OpenRouter and on to whichever provider it picks for that model, under both
+their terms. OpenRouter's FAQ said on 2026-10-06 that it logs no prompt or completion unless
+you opt in, and that it does not route to a provider that logs, or whose policy it could not
+confirm, unless you switch on the model training toggle in your OpenRouter privacy settings.
+`--extra-body` narrows the providers further per run, with `{"provider": {"data_collection":
+"deny"}}` or `{"provider": {"zdr": true}}` for zero data retention. Every request to it
+also carries `HTTP-Referer: https://github.com/rokbenko/quackd` and
+`X-OpenRouter-Title: quackd`, which credit quackd's traffic on OpenRouter's public app
+rankings and say nothing about you. The `fake`
 pilot and any local model (`ollama`, `vllm`,
 `llamacpp`, `lmstudio`) never do and need no API key, though a local model is still served
 over its own local HTTP endpoint, not literally air-gapped. Since 0.6 one thing also stays

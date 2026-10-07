@@ -685,7 +685,7 @@ def test_list_models_says_what_the_environment_pins(
 def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None:
     """One flag means completion has to answer two questions with the same keystroke.
 
-    Before the colon the answer is the sixteen vendor names, twice over: bare, so one TAB
+    Before the colon the answer is the seventeen vendor names, twice over: bare, so one TAB
     takes the default model, and with a trailing colon so a second TAB carries on into the
     list. The hundred-odd model ids must stay out of that first offer, because a bare TAB
     that prints a hundred lines is a TAB nobody presses twice.
@@ -714,6 +714,74 @@ def test_llm_completion_offers_vendors_first_and_then_that_vendors_ids() -> None
     bare = [i for i, _ in _complete_llm(ctx, "claude-op")]
     assert bare == [m for m in model_ids("anthropic") if m.startswith("claude-op")]
     assert bare, "a bare id is a legal spec, so it has to complete on its own"
+
+
+def test_llm_completion_offers_openrouters_own_rows_and_nothing_fetched() -> None:
+    """After the colon, the six rows the catalogue carries and no more: completion runs on
+    every TAB and reads nothing but the catalogue, so OpenRouter's list stays out of it."""
+    from quackd.cli import _complete_llm
+
+    ctx = SimpleNamespace(params={})
+    offered = [i for i, _ in _complete_llm(ctx, "openrouter:")]
+    assert offered == [f"openrouter:{m}" for m in model_ids("openrouter")]
+    claude = [i for i, _ in _complete_llm(ctx, "openrouter:anthropic/")]
+    assert claude == [f"openrouter:{m}" for m in model_ids("openrouter") if "anthropic/" in m]
+    # A bare id completes too, and its label names the vendor that will be called: typing
+    # `openai` offers OpenRouter's `openai/...` rows beside OpenAI's own, and says whose they are.
+    labels = dict(_complete_llm(ctx, "openai"))
+    assert labels["openai/gpt-6-sol"].startswith("openrouter: ")
+
+
+def test_list_models_says_openrouter_takes_more_than_it_lists(_wide: None) -> None:
+    """Its rows are a selection, and the table alone would read as all `--llm openrouter:`
+    takes. Nothing is fetched to say so: the conftest guard would fail this test if it were."""
+    result = runner.invoke(app, ["list-models", "--llm", "openrouter"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    for model_id in model_ids("openrouter"):
+        assert model_id in flat
+    assert "openrouter: the rows above are a selection" in flat
+    assert "--llm openrouter:AUTHOR/MODEL" in flat
+    assert "a selection" not in " ".join(
+        runner.invoke(app, ["list-models", "--llm", "openai"]).output.split()
+    )
+    # one of OpenRouter's own ids names its vendor here, as it does on `--llm`
+    named = runner.invoke(app, ["list-models", "--llm", "anthropic/claude-opus-5.5"])
+    assert "openrouter: the rows above are a selection" in " ".join(named.output.split())
+
+
+def test_list_models_points_a_slashed_id_with_no_vendor_at_openrouter(_wide: None) -> None:
+    bad = runner.invoke(app, ["list-models", "--llm", "google/gemma-4-31b-it:free"])
+    assert bad.exit_code == 1
+    assert "reads as OpenRouter's: --llm openrouter" in " ".join(bad.output.split())
+    nope = runner.invoke(app, ["list-models", "--llm", "nope"])
+    assert "OpenRouter" not in nope.output, "a typo with no slash says nothing of it"
+
+
+def test_run_refuses_an_openrouter_alias_before_any_key_or_robot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `~` alias is refused on its spelling: offline, with no key, nothing connected and no
+    run directory made. Empty rather than deleted, so a developer's `.env` cannot refill it."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "hello-world",
+            "--llm",
+            "openrouter:~anthropic/claude-opus-latest",
+            "--robot",
+            "microduck:mock",
+            "--runs-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1
+    flat = " ".join(result.output.split())
+    assert "newest model of its family" in flat and "OPENROUTER_API_KEY" not in flat
+    assert "Traceback" not in result.output
+    assert list(tmp_path.iterdir()) == [], "a refused run left a directory behind"
 
 
 def test_run_refuses_a_duck_the_robot_cannot_do(tmp_path: Path) -> None:

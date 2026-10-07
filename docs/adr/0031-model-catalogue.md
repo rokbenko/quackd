@@ -30,6 +30,13 @@ the blocks it invalidated, and the API is asked to drop the latest turn's, which
 out, rather than refuse the request. And a row with `effort=False` is sent no effort. The whole
 table was read again against all eleven vendors' pages on 2026-09-23.
 
+**Amended 2026-10-06 by [ADR-0050](0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md):** one vendor's tuple is a
+selection rather than everything `--llm` takes after the colon. OpenRouter carries six rows,
+and an id it does not carry is checked for its shape before a key is read and against
+OpenRouter's own public model list before the first paid call, instead of being refused.
+Its rows name other vendors' models, carry a price date of their own, and are read for
+`forced_tools` as Anthropic's are. For every other vendor nothing here changes.
+
 ## Context
 
 `--model` took any string and handed it to the vendor. A typo, an id retired last spring and an id

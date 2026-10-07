@@ -1006,5 +1006,58 @@ export const CATALOGUE = {
         "forced_tools": true
       }
     ]
+  },
+  "openrouter": {
+    "default": "openai/gpt-6-sol",
+    "entries": [
+      {
+        "id": "openai/gpt-6-sol",
+        "label": "GPT-6 Sol (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "openai/gpt-6-luna",
+        "label": "GPT-6 Luna (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "anthropic/claude-sonnet-5.5",
+        "label": "Claude Sonnet 5.5 (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": false
+      },
+      {
+        "id": "anthropic/claude-opus-5.5",
+        "label": "Claude Opus 5.5 (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": false
+      },
+      {
+        "id": "google/gemini-3.8-flash",
+        "label": "Gemini 3.8 Flash (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      },
+      {
+        "id": "x-ai/grok-4.7",
+        "label": "Grok 4.7 (via OpenRouter)",
+        "status": "current",
+        "vision": true,
+        "api": null,
+        "forced_tools": true
+      }
+    ]
   }
 };
