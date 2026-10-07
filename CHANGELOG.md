@@ -7,6 +7,39 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`quackd list-models` and the refusal of an OpenRouter id on its spelling no longer say every
+  listed id with tool calling works.** Both said any other id with tool calling on the vendor's own
+  model list works too. That was false: OpenRouter's list carries `~` aliases, its own routers and
+  `:batch` entries with tool calling, and quackd refuses each on its spelling, and the list check
+  refuses an entry whose expiry date has come. Nor had anything shown that the rest work, since no
+  OpenRouter model has answered a real quackd request. The note `quackd list-models` prints for
+  OpenRouter says an id quackd does not carry can be named, that a few shapes of id are refused on
+  their spelling alone, and that any other is checked when a run starts against OpenRouter's public
+  model list, which has to carry it with tool calling. The refusal still names the rows quackd
+  carries and points at `quackd list-models --llm openrouter`, and says nothing else about other
+  ids. The help for `quackd list-models` said the command lists the ids each cloud vendor accepts,
+  the help for `--llm` on `quackd run` and `quackd record` that `quackd list-models` prints every
+  id, and `quackd doctor` titled its providers table `providers (every model id: quackd
+  list-models)`. All three now speak of the ids quackd carries. What quackd takes and refuses is as
+  it was, and `tests/test_cli.py` and `tests/test_catalogue.py` hold the note and the end of the
+  refusal to their new words.
+
+### Documentation
+
+- **Six pages and `.env.example` no longer say quackd takes or checks OpenRouter ids it refuses.**
+  The README, the FAQ, the OpenRouter guide, the SO-101's first run, the web demo's README and
+  `.env.example` said quackd takes any other id OpenRouter's list carries with tool calling, in
+  those words or close to them. The architecture page said any other id OpenRouter lists is checked
+  against that list, and the FAQ that a well-formed id quackd does not carry is looked up in it. The
+  shapes quackd refuses on their spelling contradict all three. Each of those sentences is
+  corrected, and the README's Model row no longer says `quackd list-models` prints them all.
+  LAUNCH.md's 0.17 sentence makes the same claim and waits for 0.18, since a patch leaves the story
+  alone. The guide quotes the note and the refusal as they read now, and the FAQ the refusal.
+
 ## [0.17.0] — 2026-10-07
 
 This release adds OpenRouter, a router that puts models made by many vendors behind one key and one

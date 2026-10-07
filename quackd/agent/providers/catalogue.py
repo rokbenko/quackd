@@ -29,8 +29,9 @@ vendor hosts but did not train, because what matters is that the vendor answers 
 OpenRouter is the one vendor whose list here is not the whole of what it takes (`OPEN_ENDED`). It
 is a router: its ids name other vendors' models (`anthropic/claude-opus-5.5`), hundreds of them,
 and the list changes by the week. Its tuple below is a short selection that gives `--llm
-openrouter` a default, shell completion and the browser something to offer, and any other id is
-checked against OpenRouter's own public list when a run starts rather than refused here (ADR-0050).
+openrouter` a default, shell completion and the browser something to offer. An id it leaves out is
+checked against OpenRouter's own public list when a run starts rather than refused here, unless
+the factory refuses its spelling first (ADR-0050).
 
 The local presets are deliberately absent. They serve whatever you pulled, so the model half of
 `--llm` stays free text there (`--llm ollama:llama3:8b`) and quackd asks the server what it has
@@ -730,12 +731,13 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
             price=Price(0.1, 0.2, 0.002),
         ),
     ),
-    # OpenRouter is a router, not a lab, and this is not its whole list (`OPEN_ENDED`): any
-    # other id it lists with tool calling is taken when a run starts, checked and priced against
-    # that list (ADR-0050). What earns one of these six rows is narrower than the rule at the
-    # top: a model from a vendor quackd already drives natively, served by its own maker, whose
-    # entry in OpenRouter's `GET /api/v1/models` on 2026-10-06 named `tools` and `tool_choice`
-    # among its supported parameters, took `image` input and carried no `expiration_date`.
+    # OpenRouter is a router, not a lab, and this is not its whole list (`OPEN_ENDED`): an id
+    # this tuple leaves out is checked against that list when a run starts, unless its spelling
+    # is refused first, and priced from it when taken (ADR-0050). What earns one of these six rows
+    # is narrower than the rule at the top: a model from a vendor quackd already drives
+    # natively, served by its own maker, whose entry in OpenRouter's `GET /api/v1/models` on
+    # 2026-10-06 named `tools` and `tool_choice` among its supported parameters, took `image`
+    # input and carried no `expiration_date`.
     #
     # Rates are OpenRouter's own per-token strings times a million, read off that list on
     # `OPENROUTER_PRICES_CHECKED`. They are the base rates: the GPT-6 and Grok entries also

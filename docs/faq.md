@@ -133,11 +133,12 @@ model it lists when you name none. Anthropic extras: `QUACKD_EFFORT` (default `m
 `QUACKD_ANTHROPIC_FALLBACKS=0` to disable server-side refusal fallbacks.
 
 OpenRouter sits between the two. Its rows are a selection rather than all it takes:
-`--llm openrouter:AUTHOR/MODEL` also takes any other id OpenRouter's public model list carries
-with tool calling, checked against that list when the run starts. An id with a suffix
-(`google/gemma-4-31b-it:free`) needs `openrouter:` in front of it, because `--llm` splits at the
-first colon. No OpenRouter model has answered a real quackd request: everything after its model
-list has only met a stand-in. See [guides/openrouter.md](guides/openrouter.md).
+`--llm openrouter:AUTHOR/MODEL` can also name an id quackd does not carry. Unless quackd refuses
+its spelling first, that id is checked against OpenRouter's public model list when the run starts,
+and the list has to carry it with tool calling. An id with a suffix (`google/gemma-4-31b-it:free`)
+needs `openrouter:` in front of it, because `--llm` splits at the first colon. No OpenRouter model
+has answered a real quackd request: everything after its model list has only met a stand-in. See
+[guides/openrouter.md](guides/openrouter.md).
 
 **Why is my model rejected?** Because that vendor's catalogue does not list the id, and quackd
 checks before it reads a key or opens a connection, so nothing was sent anywhere:
@@ -172,13 +173,14 @@ $ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot 
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest model of its family, so the model that answers could change under a run that
 names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
-anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7, and any other id with tool
-calling on the vendor's own model list works too. See `quackd list-models --llm openrouter`.
+anthropic/claude-opus-5.5, google/gemini-3.8-flash, x-ai/grok-4.7. See `quackd list-models --llm
+openrouter`.
 ```
 
-A well-formed id quackd does not carry is then looked up in OpenRouter's public model list when
-the run starts. That sends one request to `openrouter.ai`, with no key, and the run is refused if
-the list does not carry the id, carries it without tool calling, or says it has expired.
+An id quackd does not carry that passes that spelling check is then looked up in OpenRouter's
+public model list when the run starts. That sends one request to `openrouter.ai`, with no key, and
+the run is refused if the list does not carry the id, carries it without tool calling, or says it
+has expired.
 
 **The id is in the catalogue, but the vendor refuses my key.** Check which endpoint your key
 belongs to. quackd calls each cloud vendor at one fixed base URL, and for two of them there

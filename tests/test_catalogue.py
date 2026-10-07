@@ -430,7 +430,7 @@ def test_openrouter_takes_a_well_formed_id_it_does_not_list_without_the_network(
         ("a/b/c", "AUTHOR/MODEL"),
     ],
 )
-def test_openrouter_refuses_what_no_list_can_vouch_for(
+def test_openrouter_refuses_these_shapes_on_their_spelling(
     model_id: str, why: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Offline and before any key: each of these is refused on its spelling, with the reason
@@ -441,6 +441,13 @@ def test_openrouter_refuses_what_no_list_can_vouch_for(
     message = str(e.value)
     assert why in message and repr(model_id) in message
     assert "robot duck-a (robots.json)" in message and "list-models --llm openrouter" in message
+    # It names the rows quackd carries and points at list-models, and says nothing of other ids.
+    # 0.17.0 said any other id with tool calling on the list works too, which the refused shape
+    # in this very message contradicts when OpenRouter lists it, as it lists `~` aliases, its
+    # routers and `:batch` ids.
+    rows = ", ".join(model_ids("openrouter"))
+    assert message.endswith(f". quackd lists {rows}. See `quackd list-models --llm openrouter`.")
+    assert "works too" not in message and "other id" not in message.lower()
     with pytest.raises(ProviderError, match="is refused"):
         make_provider("openrouter", model=model_id)
 

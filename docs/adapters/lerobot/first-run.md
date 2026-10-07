@@ -166,7 +166,8 @@ one, and a catalogue id unique to its vendor needs no vendor in front of it, so
 
 `quackd doctor` prints a row per provider with the extra, the key it found and the model it
 would use, and `quackd list-models` prints every model id quackd knows for every vendor.
-OpenRouter also takes ids it does not print: any its own model list carries with tool calling
+OpenRouter can also take an id `list-models` does not print, checked against OpenRouter's own
+model list when a run starts unless quackd refuses its spelling first
 ([guides/openrouter.md](../../guides/openrouter.md)). No OpenRouter model has answered a real
 quackd request, on this arm or anywhere else.
 
