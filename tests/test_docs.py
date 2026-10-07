@@ -798,9 +798,7 @@ def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
     for page in pages:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
-    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-    assert sentence in " ".join(unreleased.split()).lower(), "the release note does not say so"
+    assert sentence in _one_line(_release_note("0.17.0")), "0.17.0's release note does not say so"
 
 
 def test_the_pypi_summary_names_every_robot() -> None:

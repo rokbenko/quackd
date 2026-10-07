@@ -8,4 +8,4 @@ controllers move, quackd enforces the contract. Everything else in the repo serv
 sentence.
 """
 
-__version__ = "0.16.1"
+__version__ = "0.17.0"

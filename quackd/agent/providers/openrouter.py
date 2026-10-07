@@ -299,8 +299,9 @@ def admit(
     """Check an id the catalogue does not carry against OpenRouter's own list, before any key.
 
     Three refusals, each naming where the id came from: not on the list (with the nearest ids
-    that are), on it without tool calling, and past its `expiration_date`. A future expiry is
-    taken: the model answers today, and the run is today."""
+    that are, when any come close), on it without tool calling, and an `expiration_date` of
+    today or earlier. A future expiry is taken: the model answers today, and the run is
+    today."""
     models = listing(base_url)
     entry = next((m for m in models if m.get("id") == model), None)
     if entry is None:
