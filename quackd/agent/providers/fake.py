@@ -8,6 +8,7 @@ transcript run whether the pilot is a rule or a frontier model.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from collections.abc import Callable
 from typing import Any
@@ -440,8 +441,24 @@ def generic_strategy(obs: Observation, step: int, history: list[Exchange]) -> To
 
 
 WAIT_STEPS = 3
-"""How long `flock-hello`'s rule waits for a peer before giving up. A rule cannot tell a slow
-peer from an absent one, so it is bounded: a demo that hangs is not a demo."""
+"""How many times `flock-hello`'s rule checks for a peer before giving up. A rule cannot tell a
+slow peer from an absent one, so it is bounded: a demo that hangs is not a demo."""
+
+WAIT_PAUSES_S = (0.25, 1.0, 4.0)
+"""How long the rule waits on the wall clock before each of those checks. A check on a mock body
+takes a few milliseconds, so without a wait all three passed before a peer that connected or
+stepped more slowly had said anything, and CI's macOS runners failed two flock tests that way.
+Short first, so a flock whose peers have already spoken pays almost nothing, and a few seconds
+in all, so a run whose peer never comes still ends."""
+
+
+def flock_hello_pause(call: ToolCall, history: list[Exchange]) -> float:
+    """How long to wait before `call`: a check waits its turn in `WAIT_PAUSES_S`, and nothing
+    else waits at all."""
+    if call.name != "report_state":
+        return 0.0
+    done = _count_calls(history, "report_state")
+    return WAIT_PAUSES_S[min(done, len(WAIT_PAUSES_S) - 1)]
 
 
 def flock_hello_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
@@ -515,6 +532,12 @@ STRATEGIES: dict[str, Strategy] = {
     "toddlerbot-lookout": toddlerbot_lookout_strategy,
     "lerobot-lookout": lerobot_lookout_strategy,
 }
+
+PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {
+    flock_hello_strategy: flock_hello_pause,
+}
+"""Strategies that wait on the wall clock before some of their calls, and how long. A rule
+decides in no time, and a peer it is waiting on needs some."""
 
 
 def _seen_label(detection: dict[str, Any]) -> str:
@@ -664,6 +687,9 @@ class FakeProvider:
                 stop_reason="tool_use",
                 thinking=_scripted_thinking(obs, decisions, call),
             )
+        pause = PAUSES.get(self._strategy) if self._strategy is not None else None
+        if pause is not None and (seconds := pause(call, history)) > 0:
+            await asyncio.sleep(seconds)
         call = call.model_copy(update={"id": f"fake-{self.calls}"})
         usage = Usage(input_tokens=len(system) // 4 + len(obs.text) // 4, output_tokens=16)
         # No `text` and no `reasoning_tokens`: a rule has nothing to say to the human and
