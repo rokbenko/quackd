@@ -68,10 +68,10 @@ Any other id OpenRouter's list carries with tool calling is taken, in two steps.
 2. **OpenRouter's public model list, before the first paid call.** quackd reads
    `GET https://openrouter.ai/api/v1/models` once per process, with no key and with its own
    `User-Agent`, and refuses the run if the list does not carry the id (naming the nearest ids it
-   does carry), carries it without tool calling, or says it expired on or before today. A list
-   that cannot be read within ten seconds, or one that is not in OpenRouter's shape, stops the run
-   too, and says so, rather than reading as "no such model". `--base-url` moves the list along
-   with the requests.
+   does carry, when any come close), carries it without tool calling, or says it expired on or
+   before today. A list that cannot be read within ten seconds, or one that is not in OpenRouter's
+   shape, stops the run too, and says so, rather than reading as "no such model". `--base-url`
+   moves the list along with the requests.
 
 An id taken that way is asked with `tool_choice: "auto"`, or sent no `tool_choice` at all where
 its entry names none, which is the bargain quackd strikes with local models: nobody here has seen

@@ -7,7 +7,30 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.17.0] — 2026-10-07
+
+This release adds OpenRouter, a router that puts models made by many vendors behind one key and one
+bill, as quackd's twelfth cloud vendor. `--llm openrouter` asks `openai/gpt-6-sol`, one of six rows
+quackd carries for it. Other ids OpenRouter's public model list carries with tool calling are taken
+too, each checked against that list before the first paid call and priced off it. A turn OpenRouter
+bills is costed at that bill, and its `llm` record says so, though a rate named with `--price` still
+wins.
+
+No OpenRouter model has answered a real quackd request. The chat requests quackd sent went only to
+stand-ins, among them one on 127.0.0.1 that the real `openai` SDK reached in a real `quackd run` and
+the browser demo's client reached under Node. Only the model list check reached OpenRouter itself,
+with no key. Whether OpenRouter's Chat Completions gives the default row its function tools, and
+whether a provider behind it takes the reasoning quackd replays, is unproven.
+[docs/guides/openrouter.md](docs/guides/openrouter.md) lists what was read and what was assumed.
+
+The rest is documentation. `docs/` is sorted into guides, reference, concepts and adapters, so a
+link to a moved page from the PyPI pages of 0.16.1 and earlier returns 404. Pages that said how
+cloud vendors are asked to call a tool, when the catalogue's rates were checked and what a System
+One server answers are corrected, and the two issue templates that list vendors name every one. A
+test of the arm's simulator no longer races its own pick, Dependabot leaves hatchling alone, and
+`uv.lock` takes Dependabot's updates from #32 and #33, which move no requirement a user installs
+against. No code that drives a body changed, and the arm has not run quackd since 2026-09-23, so the
+bench steps 0.14.0 and 0.15.0 owe are still owed.
 
 ### Added
 
@@ -19,29 +42,32 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`, `google/gemini-3.8-flash` and
   `x-ai/grok-4.7`, priced off OpenRouter's own model list on 2026-10-06 and dated with that day
   rather than the catalogue's, so `quackd list-models` prints 123 ids where it printed 117.
-  Unlike every other vendor's, that tuple is a selection. Any other id OpenRouter's public model
-  list carries with tool calling also works, checked against the list, which needs no key, once
-  per process before the first paid call, and priced and given the camera frame or not by its
-  entry there. An id whose model or price is not fixed before the call, or that Chat Completions
-  does not serve, is refused on its spelling before a key is read, even where OpenRouter lists
-  it: a `~` alias, one of OpenRouter's own routers, a `:batch` entry, a routing variant
-  (`:nitro`, `:floor`, `:exacto`) or a deprecated one, with `:free` the one suffix taken, and a
-  `:free` model is limited by OpenRouter to 20 requests a minute and 50 a day until 10 credits
-  have been bought, 1,000 a day after. Every request carries `provider: {"require_parameters":
-  true}`, so OpenRouter routes only to a provider that honours what was sent, carries no
-  `parallel_tool_calls`, and goes to Chat Completions only. The rows are told to call a tool,
-  except the two Claude rows, which refuse a forced call and are asked with `auto`, as is any id
-  quackd does not carry. A model's `reasoning_details` go back unmodified on the turn that made
-  the call. Requests also carry `HTTP-Referer` and `X-OpenRouter-Title` headers naming quackd,
-  which credit it on OpenRouter's public app rankings and say nothing about the person running
-  it. The browser demo offers the six rows. The honest part: no OpenRouter model has answered a
-  real quackd request. What ran was `openai` 3.22.1 through a real `quackd run` against a stand-in
-  on 127.0.0.1 (`tests/fake_openrouter.py`), the browser demo's client under Node against the same
-  stand-in, and the model list check against OpenRouter's real list, with no key. None of it
-  proves that OpenRouter answers a turn, that a provider behind it takes the replayed reasoning,
-  or that the default row takes function tools through Chat Completions.
-  [docs/guides/openrouter.md](docs/guides/openrouter.md) has what was read and what was assumed,
-  and [ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md) why.
+  Unlike every other vendor's, that tuple is a selection. Other ids OpenRouter's public model list
+  carries with tool calling are taken too, each checked against the list, which needs no key, once
+  per process before the first paid call, and priced and given the camera frame or not by its entry
+  there. The check refuses an id the list lacks, one it lists without tool calling, and one it lists
+  as expiring on or before the day it is read. An id is refused on its spelling before a key is
+  read, even where OpenRouter lists it, when its model or price is not fixed before the call or Chat
+  Completions does not serve it: a `~` alias, one of OpenRouter's own routers, a `:batch` entry or a
+  routing variant (`:nitro`, `:floor`, `:exacto`). So are `:thinking` and `:online`, which
+  OpenRouter has replaced, and `:extended`, which it says no model offers. `:free` is the one suffix
+  taken, and a `:free` model is limited by OpenRouter to 20 requests a minute and 50 a day until 10
+  credits have been bought, 1,000 a day after. Every request carries `provider:
+  {"require_parameters": true}`, so OpenRouter routes only to a provider that honours what was sent,
+  carries no `parallel_tool_calls`, and goes to Chat Completions only. The rows are told to call a
+  tool, except the two Claude rows, which refuse a forced call and are asked with `auto`. Any id
+  quackd does not carry is asked with `auto` too, or sent no `tool_choice` at all where its entry on
+  the list names none. A model's `reasoning_details` go back unmodified on the turn that made the
+  call. Requests also carry `HTTP-Referer` and `X-OpenRouter-Title` headers naming quackd, which
+  credit it on OpenRouter's public app rankings and say nothing about the person running it. The
+  browser demo offers the six rows. The honest part: no OpenRouter model has answered a real quackd
+  request. What ran was `openai` 3.22.1 through a real `quackd run` against a stand-in on 127.0.0.1
+  (`tests/fake_openrouter.py`), the browser demo's client under Node against the same stand-in, and
+  the model list check against OpenRouter's real list, with no key. None of it proves that
+  OpenRouter answers a turn, that a provider behind it takes the replayed reasoning, or that the
+  default row takes function tools through Chat Completions.
+  [docs/guides/openrouter.md](docs/guides/openrouter.md) has what was read and what was assumed, and
+  [ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md) why.
 - **A call can be costed at what the vendor billed.** OpenRouter says in every response what the
   call was billed, `usage.cost`, which already knows which provider served it, at which tier and
   with what cache. That is now the turn's `cost_usd`, with the upstream charge added on a
@@ -93,7 +119,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   they were. One kind of link cannot follow. The README on PyPI links `docs/` on `main`, and a
   release's description there never changes, so on the PyPI pages of 0.16.1 and every release
   before it a link to a moved page now returns 404, and so does each adapter's `Documentation`
-  link. The project pages are right again from the next release.
+  link. The project pages are right again from 0.17.0.
 - **A test of the arm's simulator raced its own pick.**
   `test_a_pick_on_the_simulator_ends_on_its_time_or_on_a_stop_from_another_task` sends a stop
   from a second task ten ticks of the simulator's clock into a `pick`, to show that a stop ends
@@ -5888,7 +5914,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/rokbenko/quackd/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/rokbenko/quackd/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/rokbenko/quackd/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/rokbenko/quackd/compare/v0.14.0...v0.15.0

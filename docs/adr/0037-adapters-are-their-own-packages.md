@@ -46,7 +46,7 @@ becomes its own package under `adapters/<name>/`, with its own `pyproject.toml`,
 `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`,
 `quackd-toddlerbot`. `[tool.uv.workspace]` and `[tool.uv.sources]` make them members, so one
 checkout, one lock and one test suite still cover all eight. An adapter depends on the core with
-a narrow window (`quackd>=0.16.1,<0.17`), and the core never imports an adapter.
+a narrow window (`quackd>=0.17.0,<0.18`), and the core never imports an adapter.
 
 **The extras are still the front door, and they now buy the robot.** `quackd[microduck]`,
 `quackd[lerobot]`, `quackd[rosbridge]`, `quackd[open_duck]`, `quackd[xlerobot]`,

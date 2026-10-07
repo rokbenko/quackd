@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.16.1,<0.17"]
+dependencies = ["quackd>=0.17.0,<0.18"]
 
 # The arm's own SDK. LeRobot needs Python 3.12 and pulls torch, and the marker keeps the lock
 # solvable on 3.11, where this package still installs and still gives you `lerobot:mock`.

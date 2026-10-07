@@ -86,18 +86,18 @@ live = ["pygame>=2.5"]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
 # onnxruntime is what runs the robot's own walking policy; the Microduck's meshes and that
 # policy are fetched at run time and never shipped here (docs/reference/licenses.md).
-mujoco = ["quackd-microduck[mujoco]>=0.16.1,<0.17"]
-microduck = ["quackd-microduck>=0.16.1,<0.17"]
+mujoco = ["quackd-microduck[mujoco]>=0.17.0,<0.18"]
+microduck = ["quackd-microduck>=0.17.0,<0.18"]
 # Every robot quackd publishes, each with the SDK its real backend needs. The honest "all":
 # it pulls torch on Python 3.12 because the arm does.
 robots = [
-  "quackd-microduck>=0.16.1,<0.17",
-  "quackd-lerobot[sdk]>=0.16.1,<0.17",
-  "quackd-rosbridge[sdk]>=0.16.1,<0.17",
-  "quackd-open-duck>=0.16.1,<0.17",
-  "quackd-xlerobot>=0.16.1,<0.17",
-  "quackd-alohamini>=0.16.1,<0.17",
-  "quackd-toddlerbot>=0.16.1,<0.17",
+  "quackd-microduck>=0.17.0,<0.18",
+  "quackd-lerobot[sdk]>=0.17.0,<0.18",
+  "quackd-rosbridge[sdk]>=0.17.0,<0.18",
+  "quackd-open-duck>=0.17.0,<0.18",
+  "quackd-xlerobot>=0.17.0,<0.18",
+  "quackd-alohamini>=0.17.0,<0.18",
+  "quackd-toddlerbot>=0.17.0,<0.18",
 ]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
@@ -105,30 +105,30 @@ lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
 # `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
 # base dependency of lerobot). Without it `import lerobot` succeeds and opening the arm's port
 # fails, so it belongs in the extra rather than in a paragraph somebody has to read.
-lerobot = ["quackd-lerobot[sdk]>=0.16.1,<0.17"]
+lerobot = ["quackd-lerobot[sdk]>=0.17.0,<0.18"]
 # The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
 # of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
 # fetched at run time and never shipped (docs/reference/licenses.md).
-lerobot-sim = ["quackd-lerobot[sim]>=0.16.1,<0.17"]
+lerobot-sim = ["quackd-lerobot[sim]>=0.17.0,<0.18"]
 # The arm's policy server (`quackd policy serve`), which loads LeRobot checkpoints in a process
 # of its own: LeRobot, torch and transformers on Python 3.12, and nothing the arm's own process
 # imports. Install it where the policy runs, on the laptop beside the arm or on a rented GPU.
-lerobot-vla = ["quackd-lerobot[vla]>=0.16.1,<0.17"]
-rosbridge = ["quackd-rosbridge[sdk]>=0.16.1,<0.17"]
+lerobot-vla = ["quackd-lerobot[vla]>=0.17.0,<0.18"]
+rosbridge = ["quackd-rosbridge[sdk]>=0.17.0,<0.18"]
 # XLeRobot is not an installable package: its own install is copying files into a lerobot
 # tree. So quackd speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
 # the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot/README.md).
-xlerobot = ["quackd-xlerobot>=0.16.1,<0.17"]
+xlerobot = ["quackd-xlerobot>=0.17.0,<0.18"]
 # AlohaMini is a fork of LeRobot that calls itself lerobot and is not published, so it
 # cannot be a dependency at all. quackd speaks its ZeroMQ host protocol instead.
-alohamini = ["quackd-alohamini>=0.16.1,<0.17"]
-open_duck = ["quackd-open-duck>=0.16.1,<0.17"]
-toddlerbot = ["quackd-toddlerbot>=0.16.1,<0.17"]
+alohamini = ["quackd-alohamini>=0.17.0,<0.18"]
+open_duck = ["quackd-open-duck>=0.17.0,<0.18"]
+toddlerbot = ["quackd-toddlerbot>=0.17.0,<0.18"]
 # The Microduck's camera reaches clients only as an H.264 WebRTC track from mediad — there is
 # no camera method in duck-ipc-proto and no snapshot endpoint — so a picture means being a
 # WebRTC peer. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not
 # pointing quackd at a real Microduck, and never imported unless --camera-url says webrtc://.
-microduck-camera = ["quackd-microduck[camera]>=0.16.1,<0.17"]
+microduck-camera = ["quackd-microduck[camera]>=0.17.0,<0.18"]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py
   # can import the metadata hook that rewrites the README for PyPI.
