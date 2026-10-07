@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.17.0,<0.18"]
+dependencies = ["quackd>=0.17.1,<0.18"]
 
 [project.optional-dependencies]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
