@@ -7,7 +7,13 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.17.1] — 2026-10-07
+
+0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and
+the refusal of an OpenRouter id on its spelling said any other id with tool calling on OpenRouter's
+own model list works, which quackd's own refusals contradict, and its help said `quackd list-models`
+holds every id. Those are corrected, with six pages and `.env.example` that overstated what quackd
+takes, and nothing quackd takes or refuses changed.
 
 ### Fixed
 
@@ -5947,7 +5953,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/rokbenko/quackd/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/rokbenko/quackd/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/rokbenko/quackd/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/rokbenko/quackd/compare/v0.15.0...v0.16.0

@@ -49,7 +49,7 @@ OWN = rosbridge_verbs()
 """The one verb that is this adapter's own: everything else here is a core verb."""
 
 
-__version__ = "0.17.0"
+__version__ = "0.17.1"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""

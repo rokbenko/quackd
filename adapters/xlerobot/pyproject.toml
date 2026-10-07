@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.17.0,<0.18", "pyzmq>=26"]
+dependencies = ["quackd>=0.17.1,<0.18", "pyzmq>=26"]
 
 
 [project.entry-points."quackd.adapters"]
