@@ -7,6 +7,22 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
+  `flock-hello` tells the flock it is there and then checks three times for an answer. A check on a
+  mock body takes a few milliseconds, so a member whose peer connected or stepped more slowly could
+  spend all three before the peer had said anything, and end with nobody answered after 3 checks
+  while the peer was about to answer. CI's macOS runners failed two flock tests that way, on the
+  release tags of 0.17.0 and 0.17.1. Each check now waits on the wall clock first, a quarter of a
+  second, then a second, then four, so a flock whose peers have already spoken pays almost nothing
+  and one whose peer never comes still ends. `tests/test_pilots.py` holds an arm that connects a
+  tenth of a second after the duck's hello, which failed every time without the waits.
+  `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
+  2026-09-30 with no reason given, now prints its reason when it fails.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

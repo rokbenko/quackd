@@ -242,6 +242,58 @@ async def test_two_bodies_of_one_kind_are_a_flock_too(tmp_path: Path) -> None:
     assert list(result.per_member) == ["duck-a", "duck-b"]
 
 
+AFTER_HELLO_S = 0.1
+"""How long after the duck says hello the arm starts connecting. A scripted check on a mock
+body takes a few milliseconds, so with no wait between checks the duck spends all three of
+them inside this and gives up on an arm that is about to answer."""
+
+
+async def test_a_member_that_connects_late_is_still_heard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI's macOS runners failed two flock tests with "nobody answered after 3 checks": one
+    member had told the flock and spent all of the scripted pilot's checks before a slower peer
+    had said anything. An arm that connects AFTER_HELLO_S after the duck's hello does that on
+    any machine, and the scripted pilot's checks wait on the wall clock now, so the duck still
+    hears the arm."""
+    from quackd.adapters import factory
+    from quackd.flock.bus import InProcessBus
+
+    hello = asyncio.Event()
+
+    def bus_factory(tap: Any) -> InProcessBus:
+        bus = InProcessBus(tap=tap)
+        publish = bus.publish
+
+        def spied(msg: Any) -> None:
+            publish(msg)
+            if getattr(msg, "src", None) == "duck":
+                hello.set()
+
+        monkeypatch.setattr(bus, "publish", spied)
+        return bus
+
+    real = factory.make_adapter
+
+    def late(spec: Any, **kw: Any) -> Any:
+        adapter = real(spec, **kw)
+        if spec.name == "arm":
+            connect = adapter.connect
+
+            async def after_hello(*args: Any, **kwargs: Any) -> Any:
+                await asyncio.wait_for(hello.wait(), timeout=30)
+                await asyncio.sleep(AFTER_HELLO_S)
+                return await connect(*args, **kwargs)
+
+            monkeypatch.setattr(adapter, "connect", after_hello)
+        return adapter
+
+    monkeypatch.setattr("quackd.flock.pilots.make_adapter", late)
+    result = await _run(tmp_path, bus_factory=bus_factory)
+    assert result.outcome == "success", result.reason
+    assert result.per_member["duck"]["reason"].endswith("heard back from arm")
+
+
 async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
     result = await _run(tmp_path)
     kinds = [line["kind"] for line in _flock_lines(result)]
@@ -397,7 +449,7 @@ async def test_the_kill_switch_reaches_every_member(tmp_path: Path) -> None:
 async def test_dry_run_reaches_every_member(tmp_path: Path) -> None:
     result = await _run(tmp_path, dry_run=True)
     assert _summary(result)["dry_run"] is True
-    assert result.outcome == "success"
+    assert result.outcome == "success", result.reason
 
 
 async def test_max_steps_applies_to_each_member(tmp_path: Path) -> None:
