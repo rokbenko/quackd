@@ -68,6 +68,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   passes, [ADR-0051](docs/adr/0051-a-pilot-can-play-a-part.md) records why one named framing
   rather than an override file or a set of templates, and `docs/concepts/safety.md` says that a
   part unlocks nothing and that its rules are prose no gate reads.
+- **The shoot's task files that ask for a part now play it.** 120 of the 223 files in
+  `docs/examples/lerobot` are `duck: 4` files with `play: true`, and none of them counts saying why
+  the body cannot as a success any more. They share a success line that asks for the act and a
+  reason saying what the arm did, a persona, and the last two steps of their strategy, and eight
+  where a person or a held prop is at the arm keep their slower second step. Three say outright
+  that a thing is imaginary: the music of `e012`, the sock puppet of `e059` and the placard of
+  `e076`. The other 103 keep every line. A test in `tests/test_play.py` parses every file and
+  holds the examples README's counts to the files.
 
 ### Known limitations
 

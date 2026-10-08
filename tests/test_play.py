@@ -490,6 +490,7 @@ def test_a_coordinator_flock_refuses_play(tmp_path: Path) -> None:
             "--llm",
             "fake",
             "--play",
+            "--no-memory",
             "--runs-dir",
             str(runs),
         ],
@@ -501,7 +502,8 @@ def test_a_coordinator_flock_refuses_play(tmp_path: Path) -> None:
     played = re.sub(r"^duck: \d+$", "duck: 4", hello, count=1, flags=re.M)
     path.write_text(played.replace("persona:", "play: true\npersona:", 1), encoding="utf-8")
     filed = runner.invoke(
-        cli.app, ["run", str(path), "--flock", "2", "--llm", "fake", "--runs-dir", str(runs)]
+        cli.app,
+        ["run", str(path), "--flock", "2", "--llm", "fake", "--no-memory", "--runs-dir", str(runs)],
     )
     assert filed.exit_code == 1
     out = _flat(filed.output)
@@ -541,3 +543,24 @@ def test_the_spec_shows_a_whole_v4_file_and_the_validate_it_passes(tmp_path: Pat
     result = runner.invoke(cli.app, ["validate", str(duck)])
     assert result.exit_code == 0, result.output
     assert "1 file valid" in result.output and "1 file valid" in section
+
+
+def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
+    """CI validates only `ducks/*.duck`, and nothing else reads the shoot's task files, so a hand
+    edit could leave one unparseable, or playing at a version that cannot say so, without
+    anything noticing. Every file parses, `play: true` comes only with `duck: 4`, and the
+    examples README's counts are the numbers of files that play and that do not."""
+    folder = Path(__file__).parents[1] / "docs" / "examples" / "lerobot"
+    files = sorted(folder.glob("*/*.duck"))
+    assert files, "no example files"
+    played = []
+    for path in files:
+        fm = load_duck(str(path)).frontmatter
+        if fm.play:
+            assert fm.duck == 4, path
+            played.append(path)
+    readme = (folder / "README.md").read_text(encoding="utf-8")
+    said = re.search(r"^(\d+) of these files give the pilot a part to play", readme, flags=re.M)
+    assert said, "the examples README no longer says how many files play"
+    assert int(said.group(1)) == len(played), f"{len(played)} files play"
+    assert f"The other {len(files) - len(played)} keep every line" in readme

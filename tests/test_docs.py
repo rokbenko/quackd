@@ -527,6 +527,7 @@ def test_play_is_documented_where_it_is_configured() -> None:
         ("docs/guides/mcp.md", ("play: true", "guides/play.md")),
         ("docs/concepts/safety.md", ("guides/play.md", "a played run has exactly the verbs")),
         ("docs/adr/0051-a-pilot-can-play-a-part.md", ("--play", "--no-play", "duck: 4")),
+        ("docs/examples/lerobot/README.md", ("play: true", "--no-play", "guides/play.md")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:

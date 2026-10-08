@@ -72,6 +72,11 @@ one of them saying the robot is "capable of human or animal like capabilities".
   on Chat Completions were dropped, so a vendor's no looked like a model saying nothing. They now
   read `[refusal]` and the vendor's words, as Anthropic's and OpenRouter's already did, which is
   what tells a model's refusal from a vendor's on the next bench session.
+- **The examples opt in where the task is to show something.** 120 of the 223 files under
+  `docs/examples/lerobot` are `duck: 4` with `play: true`, and lose the success line, the persona
+  and the strategy step that made refusing a way to succeed. Eight of them, where a person or a
+  held prop is at the arm, keep the slower second step they had. The other 103, whose task is a
+  result on the table, a stillness test, a trap or a benchmark, keep every byte.
 
 ## Why not
 

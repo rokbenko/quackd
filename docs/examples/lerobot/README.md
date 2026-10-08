@@ -31,6 +31,20 @@ to take torque off where the arm stands: hold the arm and press Enter, or leave 
 seconds and torque stays on. After that, hold the arm and run `quackd robot release arm-01`,
 because connecting takes torque off every motor for a moment.
 
+120 of these files give the pilot a part to play, a feeling to show or a question to answer with
+its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,
+which adds one section to the pilot's prompt telling it to act the part out with the arm it has
+([guides/play.md](../../guides/play.md)), so they need a quackd that has it: an older one refuses
+their version. They share a success line, a persona that begins `Game for anything: commit to the
+bit` and the last two steps of their strategy, which ask for the act and a reason that says what
+the arm did, and none of them counts saying why the body cannot as a success any more. Eight of
+them, where a person or a held prop is at the arm, keep the older, slower second step. Run one
+with `--no-play` to see it without the section. The lines they had before are in this folder's
+git history. The other 103 keep every line they were written with, so a task with a result on
+the table, a stillness test, a trap or a benchmark reads what it always did. `e004/royalty`,
+`e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23 September,
+are among the 120 and no longer read what they read that day.
+
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
 any model. Each file opens with a comment carrying its first command. Check them all against the
