@@ -101,6 +101,23 @@ def microduck_manifest(
     sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
     if camera:
         sensors.insert(0, "camera")
+    # The 0.3 attachments, walk, kick and grab needing standing and sit, stand and gaze not
+    # being fallen, and the three verbs that walk on what the camera sees, which had no
+    # precondition at all until posture began failing closed. A precondition is read once, when
+    # the verb starts, and what stops a duck picked up halfway through one is the transport's
+    # hold on `robot.move`. The simulators never report `unknown`, so on them the one change is
+    # that a seated or fallen duck is refused the three, where it used to be steered while its
+    # legs ignored every twist.
+    preconditions: dict[str, list[str]] = {
+        "move": ["standing"],
+        "kick": ["standing"],
+        "grab": ["standing"],
+        "sit": ["not_fallen"],
+        "stand": ["not_fallen"],
+        "gaze": ["not_fallen"],
+    }
+    if camera:
+        preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
     return RobotManifest(
         id=robot_id,
         vendor="pollen-robotics",
@@ -110,15 +127,7 @@ def microduck_manifest(
         intents=["twist", "skill", "gaze", "sound", "pose"],
         sensors=sensors,
         verbs=core + extensions,
-        # exactly the 0.3 attachments: walk/kick/grab need standing, sit/stand/gaze not fallen
-        preconditions={
-            "move": ["standing"],
-            "kick": ["standing"],
-            "grab": ["standing"],
-            "sit": ["not_fallen"],
-            "stand": ["not_fallen"],
-            "gaze": ["not_fallen"],
-        },
+        preconditions=preconditions,
         safety_authority=SafetyAuthority(native="robotd_deadman", deadman=True, heartbeat_hz=2.0),
         frame=Frame(reference="body"),
         limits={"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5},

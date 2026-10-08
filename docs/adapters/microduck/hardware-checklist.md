@@ -79,9 +79,13 @@ quackd run microduck-lookout --robot microduck:jsonrpc --address tcp://127.0.0.1
 
 Then read `report_state` in the transcript. **`posture` must not be `unknown`.**
 
-`unknown` means no `robot.state` frames are arriving, and everything that decides whether the
-duck may walk is reading nothing: `fallen` is `false` because nobody is looking, not because
-the duck is upright. quackd refuses to walk in that state on purpose.
+`unknown` means quackd cannot vouch for the duck's posture, and `extras.posture_reason` says
+why. If it says no `robot.state` frame has arrived, that the newest one is old, or that it
+carries no safety block, everything that decides whether the duck may walk is reading nothing:
+`fallen` is `false` because nobody is looking, not because the duck is upright. Otherwise
+robotd is reporting a policy label other than `walk`, `stand` or `sit`, a limp duck, or a duck
+somebody is holding, and the reason names which. quackd refuses to walk in either case on
+purpose.
 
 > Abort if posture is `unknown`. Check that `robot.subscribe` was accepted — `report_state`
 > carries its answer in `extras.subscribed`, including the robot's real skill list.

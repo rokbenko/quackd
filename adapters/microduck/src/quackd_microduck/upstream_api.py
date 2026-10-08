@@ -217,17 +217,47 @@ FALLEN_IS_A_REPORT = UpstreamRef(
     "robot is quackd's own decision, so quackd must actually be reading the frame to make it.",
 )
 
+# ── what robot.state.policy can say ─────────────────────────────────────────────────────
+#
+# The wire label of whatever drove the tick, which names a network or a state of the robot and
+# never a posture. Read in `robotd/src/control.rs` (the `Step.label` doc and the label match in
+# `Controller::step`) and `robotd/src/main.rs` (the match that picks `policy_label` each tick),
+# at the pin above and again at daemon-v0.16.1 (d818af5, read 2026-10-08). Every label below
+# exists at both but `rest`, the end of a shutdown, which arrived after the pin.
+# POSTURE_FROM_POLICY, further down, is the assumption that turns three of them into a posture.
+
+#: The labels of the two networks that drive a duck on its feet: what quackd reads as standing.
+STANDING_LABELS = ("walk", "stand")
+#: The sit-stand network holding the seat: what quackd reads as sitting. Matched exactly.
+SITTING_LABELS = ("sit",)
+#: Every other label robotd itself names, and what the robot is doing while it says it. A
+#: configured skill reports its own name instead (the robot's list is SKILL_SOURCE), then that
+#: name with UNWIND_SUFFIX while it unwinds.
+NOT_STANDING_LABELS = {
+    "rise": "the sit-stand network is getting the duck up off its seat",
+    "ground_pick": "the ground pick is scooping at the floor",
+    "skill": "a skill whose definition robotd could not find is running",
+    "held": "no network is driving the legs: none is enabled, a pick-up paused it, or it failed",
+    "homing": "the joints are ramping to the home pose",
+    "rest": "the duck is easing into its rest pose to shut down",
+    "limp_fall": "the duck is riding a fall down at limp gain",
+    "limp_pose": "the duck is ramping to its pose after a fall",
+}
+UNWIND_SUFFIX = ":unwind"
+
 # ── assumptions and things upstream has designed but not shipped ────────────────────────
 
 POSTURE_FROM_POLICY = UpstreamRef(
     "robot.state.policy == 'sit' means sitting",
     "UNVERIFIED",
     ROBOTD_DOC,
-    "The state frame names the policy that drove the tick ('walk', 'stand', 'held'), and the "
-    "chain is 'roulade > kick > ground pick > sit/rise > stand > walk'. We assume a sitting "
-    "robot reports something containing 'sit'. Upstream also notes two releases with different "
-    "gaits 'both report walk', so the name is a policy, not a posture — which is why a policy "
-    "we cannot read must read as unknown rather than as standing.",
+    "The state frame names the policy that drove the tick, not where the duck is, and the "
+    "chain is 'roulade > kick > ground pick > sit/rise > stand > walk'. quackd reads the two "
+    "STANDING_LABELS as standing and 'sit', matched exactly, as sitting. Every other label, "
+    "NOT_STANDING_LABELS, a skill's name, or one quackd has never read, is unknown, so a label "
+    "a newer robot adds refuses a walk rather than allowing one. Upstream also notes two "
+    "releases with different gaits 'both report walk', so the name is a policy, not a "
+    "posture, which is why this stays an assumption.",
 )
 WEBSOCKET_GATEWAY = UpstreamRef(
     "WebSocket agent gateway",

@@ -11,12 +11,14 @@ import contextlib
 import json
 import sys
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 from PIL import Image
 
 from quackd.duckfile.parser import parse_duck_text
+from quackd.perception.base import Detection
 from quackd.safety import Executor
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import VerbRegistry
@@ -32,6 +34,13 @@ DUCK = parse_duck_text(
     "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
+#: Every verb that moves the duck, for the tests of what a duck that is not standing refuses.
+MOVERS = parse_duck_text(
+    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+    "  allow: [walk, go_to, kick, gaze, sit, stand, stand_up]\nsuccess: [x]\n---\n# Task\nx\n"
+)
+#: The skills a stock robot answers `robot.subscribe` with.
+STOCK_SKILLS = ["roulade", "kick_left", "kick_right"]
 
 
 CURRENT_API = int(up.API_VERSION.name)
@@ -44,12 +53,24 @@ class FakeRobotd:
         api_version: int = CURRENT_API,
         healthy: bool = True,
         fallen: bool = False,
-        policy: str = "walk",
+        policy: str | None = "walk",
+        limp: bool = False,
+        picked_up: bool | None = None,
+        skills: list[str] | None = None,
     ) -> None:
         self.api_version = api_version
         self.healthy = healthy
+        # The duck as the next state frame will describe it. Each frame is built from these when
+        # it is sent, so a test can pick the duck up, lay it down or start a skill mid-verb.
         self.fallen = fallen
         self.policy = policy
+        self.limp = limp
+        self.picked_up = picked_up
+        """None leaves `safety.picked_up` out, as a robotd from before the pick-up detector does."""
+        self.skills = skills
+        """What `robot.subscribe` answers in `skills`; None leaves the key out."""
+        self.recover_on_enable = False
+        """Stand a fallen duck up when `robot.enable` arrives, as the policy taking over would."""
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.server: asyncio.AbstractServer | None = None
@@ -79,21 +100,22 @@ class FakeRobotd:
                 await self._arrived.wait()
         return self.notifications
 
-    async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
-        """Stream `robot.state` the way a real robotd does, until the connection goes away."""
-        frame = {
+    def frame(self) -> dict[str, Any]:
+        """The `robot.state` notification for this tick, from the attributes as they are now."""
+        safety: dict[str, Any] = {"fallen": self.fallen, "limp": self.limp}
+        if self.picked_up is not None:
+            safety["picked_up"] = self.picked_up
+        return {
             "jsonrpc": "2.0",
             "method": "robot.state",
-            "params": {
-                "t": 1.0,
-                "policy": self.policy,
-                "safety": {"fallen": self.fallen, "limp": False},
-            },
+            "params": {"t": 1.0, "policy": self.policy, "safety": safety},
         }
-        line = (json.dumps(frame) + "\n").encode()
+
+    async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
+        """Stream `robot.state` the way a real robotd does, until the connection goes away."""
         while not writer.is_closing():
             try:
-                writer.write(line)
+                writer.write((json.dumps(self.frame()) + "\n").encode())
                 await writer.drain()
             except (ConnectionError, OSError):
                 return
@@ -117,6 +139,8 @@ class FakeRobotd:
                     result["reason"] = "control loop at 43.9 Hz"
             elif method in ("robot.stop", "robot.enable"):
                 result = {"accepted": True}
+                if method == "robot.enable" and self.recover_on_enable:
+                    self.fallen, self.policy = False, "stand"
             elif method == "robot.do":
                 ok = params.get("skill") in (
                     "ground_pick",
@@ -135,6 +159,8 @@ class FakeRobotd:
                 result = {"accepted": params.get("tag") in up.SOUND_TAG_LIST}
             elif method == "robot.subscribe":
                 result = {"accepted": True, "walk": "alpha_walking.onnx"}
+                if self.skills is not None:
+                    result["skills"] = self.skills
                 # A real robotd streams until the connection ends. Sending one frame and
                 # stopping made every posture assertion race the staleness window, which is
                 # a flake on a loaded CI box and, worse, meant nothing ever exercised the
@@ -175,6 +201,31 @@ async def robotd():
     await fake.start()
     yield fake
     await fake.stop()
+
+
+async def _until(t: JsonRpcUnixTransport, check: Callable[[dict[str, Any]], bool]) -> None:
+    """Wait until the transport has read a state frame `check` accepts, which is when a change
+    made on the fake has reached quackd. The fake sends one every tenth of a second."""
+    for _ in range(200):
+        if check(t._last_state or {}):
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(
+        f"the transport never read the frame the fake was changed to: {t._last_state}"
+    )
+
+
+async def _landed(t: JsonRpcUnixTransport) -> None:
+    """Return once the fake has read every line the transport sent before this one.
+
+    Notifications get no reply, so a test cannot wait on them directly. A request can be: the
+    fake reads one connection in order, so by the time it answers this, it has recorded every
+    `robot.move` written ahead of it."""
+    await t.request(up.ROBOT_HEALTH.name)
+
+
+def _moves(fake: FakeRobotd) -> int:
+    return sum(1 for n in fake.notifications if n["method"] == up.ROBOT_MOVE.name)
 
 
 async def test_handshake_and_intents(robotd: FakeRobotd) -> None:
@@ -469,8 +520,11 @@ async def test_quackd_never_sends_the_two_methods_that_move_or_drop_every_joint(
 
 
 async def test_a_sitting_policy_reads_as_sitting(registry: VerbRegistry) -> None:
-    """The `"sit" in policy` branch had never been exercised over the wire."""
-    fake = FakeRobotd(policy="sit_rise")
+    """`sit` is the label robotd reports while the sit-stand network holds the seat.
+
+    This used `sit_rise`, which no robotd has ever reported, and passed because `sit` was
+    matched as a substring. The match is exact now, and `sit_rise` reads as unknown."""
+    fake = FakeRobotd(policy="sit")
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
@@ -531,4 +585,330 @@ async def test_no_camera_without_url(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert await t.get_frame() is None
+    await t.close()
+
+
+# ── posture fails closed ─────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(("label", "posture"), [("walk", "standing"), ("stand", "standing")])
+async def test_the_two_labels_that_stand_the_duck_up(label: str, posture: str) -> None:
+    fake = FakeRobotd(policy=label, skills=STOCK_SKILLS)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == posture and state.extras["posture_reason"] is None
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "sit_rise",  # no robotd says this; the substring match read it as sitting
+        "rise",
+        "ground_pick",
+        "skill",
+        "held",
+        "homing",
+        "rest",
+        "limp_fall",
+        "limp_pose",
+        "kick_left",  # one of the robot's own skills
+        "kick_left:unwind",
+        "moonwalk",  # whatever a newer robotd adds
+    ],
+)
+async def test_every_other_label_reads_as_unknown_and_refuses_a_walk(
+    registry: VerbRegistry, label: str
+) -> None:
+    """robotd reports far more labels than the three quackd reads, and every one without `sit`
+    in it used to read as standing unless the duck had fallen, so a duck in somebody's hands,
+    one riding a fall down, one halfway through a kick and whatever a newer robot adds could
+    each be sent a walk. Each now reads as unknown, says which label it was, and refuses twice:
+    in the precondition, and in the transport, for a caller that never checked one."""
+    fake = FakeRobotd(policy=label, skills=STOCK_SKILLS)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown" and state.extras["fall_detection"] is True
+        assert repr(label) in state.extras["posture_reason"]
+
+        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        assert not result.ok and result.summary.startswith("cannot walk: posture is unknown")
+        assert repr(label) in result.summary
+
+        ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+        assert not ack.accepted and repr(label) in (ack.reason or "")
+        await _landed(t)
+        assert _moves(fake) == 0
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_skill_named_like_a_gait_is_still_a_skill() -> None:
+    """robotd keeps only `ground_pick` and `sit_toggle` back from the names a policy set may
+    give a skill, so a set can call one `walk`. The robot's own skill list is read first."""
+    fake = FakeRobotd(policy="walk", skills=["walk"])
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert (
+            state.posture == "unknown"
+            and "also one of its skills" in state.extras["posture_reason"]
+        )
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_frame_that_names_no_policy_is_unknown() -> None:
+    fake = FakeRobotd(policy=None)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown" and "names no policy" in state.extras["posture_reason"]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_limp_duck_is_not_standing_whatever_its_label_says(registry: VerbRegistry) -> None:
+    """`safety.limp` is robotd dropping the gains so the duck yields. Read before the label,
+    which on its own would have stood this one up."""
+    fake = FakeRobotd(policy="walk", limp=True)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown" and "safety.limp" in state.extras["posture_reason"]
+        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        assert not result.ok and "safety.limp" in result.summary
+        await _landed(t)
+        assert _moves(fake) == 0
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_duck_somebody_holds_is_held_before_it_is_fallen(registry: VerbRegistry) -> None:
+    """Held at an angle, a duck reads as fallen as well as picked up. "Fallen; run stand_up
+    first" sent the pilot to the one verb that asks the policy to drive, with the legs in a
+    person's hands. Being held is read first, everything that moves the duck refuses on it,
+    `stand_up` among them, and nothing that moves a joint goes out."""
+    fake = FakeRobotd(policy="held", picked_up=True, fallen=True)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        state = await t.get_state()
+        assert state.posture == "unknown" and state.extras["picked_up"] is True
+        assert "holding" in state.extras["posture_reason"]
+
+        ex = Executor(registry, t, contract=MOVERS.frontmatter)
+        for verb, params in (
+            ("walk", {"vx": 0.1, "duration_s": 0.2}),
+            ("kick", {"leg": "left"}),
+            ("gaze", {"direction": "left"}),
+            ("stand", {}),
+            ("stand_up", {}),
+        ):
+            result = await ex.run_verb(verb, params)
+            assert not result.ok and "holding" in result.summary, (verb, result.summary)
+            assert "stand_up first" not in result.summary, verb
+        await _landed(t)
+        spoken = {r["method"] for r in fake.requests} | {n["method"] for n in fake.notifications}
+        assert not spoken & {"robot.move", "robot.do", "robot.look", "robot.enable"}
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def _quick(seconds: float) -> None:
+    """`stand_up` gives the policy three seconds. The fake needs one frame to answer in."""
+    await asyncio.sleep(min(seconds, 0.3))
+
+
+@pytest.mark.parametrize(
+    ("policy", "fallen", "recovers", "enabled", "ok", "summary"),
+    [
+        ("walk", False, False, False, True, "already upright"),
+        ("sit", False, False, False, False, "the duck is upright and seated: run stand"),
+        ("walk", True, True, True, True, "upright"),
+        ("homing", False, True, True, True, "upright"),
+        ("homing", False, False, True, False, "posture is unknown (robotd reports policy 'homing'"),
+    ],
+    ids=["standing", "seated", "fallen", "unknown", "unknown-after"],
+)
+async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
+    registry: VerbRegistry,
+    policy: str,
+    fallen: bool,
+    recovers: bool,
+    enabled: bool,
+    ok: bool,
+    summary: str,
+) -> None:
+    """`robot.enable` is motion. It went out before anything was read, to a duck already on its
+    feet and to one on its seat as much as to one on the floor, and afterwards a duck that was
+    merely not fallen was called upright. Now a fallen duck and one that is `unknown` for a
+    reason other than a person holding it are asked, and only one that reads standing after is
+    called upright."""
+    fake = FakeRobotd(policy=policy, fallen=fallen)
+    fake.recover_on_enable = recovers
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        t.sleep = _quick  # type: ignore[method-assign]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        assert result.ok is ok and summary in result.summary, result.summary
+        assert ("robot.enable" in [r["method"] for r in fake.requests]) is enabled
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_stand_up_asks_nothing_of_a_duck_nobody_can_see(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """With no state arriving, quackd cannot see whether the duck is down or in somebody's
+    hands, so it does not ask the policy to drive it either way."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert robotd._stream is not None
+    robotd._stream.cancel()  # the stream stops, and nothing marks the last frame fresh again
+    with contextlib.suppress(asyncio.CancelledError):
+        await robotd._stream
+    robotd._stream = None
+    t._last_state_at = None
+    result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+    assert not result.ok and "nothing is reporting" in result.summary
+    assert "robot.enable" not in [r["method"] for r in robotd.requests]
+    await t.close()
+
+
+async def test_a_move_held_back_holds_every_move_until_a_stop(robotd: FakeRobotd) -> None:
+    """The duck reading standing again is not enough: the verb that was walking when it stopped
+    standing is still sending, and what it sends is the walk it was doing before."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+
+    robotd.picked_up, robotd.policy = True, "held"
+    await _until(t, lambda s: s["safety"].get("picked_up") is True)
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    assert not ack.accepted and "holding" in (ack.reason or "")
+
+    robotd.picked_up, robotd.policy = False, "walk"
+    await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
+    assert (await t.get_state()).posture == "standing"
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    assert not ack.accepted and "until the verb that was moving it stops" in (ack.reason or "")
+    await _landed(t)
+    assert _moves(robotd) == 1, "only the move from before the duck was picked up went out"
+
+    await t.stop()
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    await _landed(t)
+    assert _moves(robotd) == 2
+
+    # the stop a caller sends as an intent is the same robot.stop, and ends the hold the same way
+    robotd.policy = "homing"
+    await _until(t, lambda s: s["policy"] == "homing")
+    assert not (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    robotd.policy = "walk"
+    await _until(t, lambda s: s["policy"] == "walk")
+    assert (await t.send_intent(Intent.stop())).accepted
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    await _landed(t)
+    assert _moves(robotd) == 3
+    await t.close()
+
+
+class _BallAhead:
+    """A detector that always sees the ball dead ahead, `distance_m` away."""
+
+    name = "ball_ahead"
+
+    def __init__(self, distance_m: float) -> None:
+        self.distance_m = distance_m
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [
+            Detection(
+                label="ball",
+                cx=0.5,
+                cy=0.5,
+                area=0.01,
+                bearing_deg=0.0,
+                est_distance_m=self.distance_m,
+            )
+        ]
+
+
+async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_down(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """`go_to`'s precondition was read when it started, and it sends its next twist ten times
+    a second whatever became of the last. A duck picked up halfway through would have had a
+    fresh twist waiting for it the whole time, and walked off on it the moment it was put down,
+    since robotd's policy drives whatever twist is freshest. The first `robot.move` after the
+    pick-up is held back, and so is every one after it until the verb has stopped the duck."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url="http://example/x.jpg")
+    picture = Image.new("RGB", (8, 8))
+
+    async def fetch() -> Image.Image:
+        return picture
+
+    t._fetch_frame = fetch  # type: ignore[method-assign]
+    await t.connect()
+    assert t.camera_working
+    ball = _BallAhead(distance_m=1.0)
+    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=ball)
+    going = asyncio.create_task(ex.run_verb("go_to", {"target": "ball", "timeout_s": 30}))
+    try:
+        # robot.look is a request, so until the pick-up every notification is a robot.move
+        await robotd.wait_notifications(3, wait_s=5.0)
+        assert _moves(robotd) == len(robotd.notifications)
+
+        robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
+        await _until(t, lambda s: s["safety"].get("picked_up") is True)
+        await _landed(t)
+        held_at = _moves(robotd)
+        await asyncio.sleep(0.3)  # three of go_to's ticks, with the duck in somebody's hands
+        await _landed(t)
+        assert _moves(robotd) == held_at, "robot.move kept going out to a duck somebody holds"
+
+        robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
+        await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
+        await asyncio.sleep(0.5)  # five more ticks, the duck standing again
+        await _landed(t)
+        assert not going.done(), "go_to is still running, so the hold is what kept the duck still"
+        assert _moves(robotd) == held_at, "a robot.move went out after the duck was put down"
+
+        ball.distance_m = 0.1  # let go_to arrive, so it ends as every walking verb does, stopped
+        result = await asyncio.wait_for(going, 5)
+    finally:
+        going.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await going
+    assert result.ok and robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+
+    walked = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})  # a new verb walks again
+    await _landed(t)
+    assert walked.ok and _moves(robotd) > held_at
     await t.close()

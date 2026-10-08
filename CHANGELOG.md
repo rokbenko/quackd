@@ -23,6 +23,36 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
 
+- **A Microduck that is not standing is no longer sent a walk, and one picked up during a `go_to` no
+  longer walks off when it is put down.** `microduck:jsonrpc` read the duck as sitting when its
+  policy label contained `sit`, and as standing for every other label unless `safety.fallen` said it
+  was down. robotd's label names what drove the tick, not where the duck is, and most of its labels
+  are not a duck ready to walk: `held` while no network drives, which on a robotd with the pick-up
+  detector is also a duck somebody is holding, `homing`, `rise` off the seat, `ground_pick`, a skill
+  such as a kick, and whatever label a newer robotd adds. Each could be sent a walk, and `go_to`,
+  `search_scan` and `approach_and` checked no posture at all. Posture is an allowlist now. `walk`
+  and `stand` read as standing and `sit`, matched exactly, as sitting. Every other label reads as
+  `unknown`, and so do a duck somebody holds (`safety.picked_up`), even one that also reads fallen,
+  and a limp one (`safety.limp`) that does not, with `extras.posture_reason` saying which. `move`,
+  `kick`, `grab`, `go_to`, `search_scan` and `approach_and` refuse a duck whose posture is
+  `unknown`, where they used to go ahead, and the last three need the duck standing on every
+  backend, so on the simulators they now refuse a seated or fallen duck they used to steer while its
+  legs ignored every twist. A duck somebody holds is read before a fallen one, so the refusal says
+  so instead of pointing at `stand_up`, and `gaze`, `sit` and `stand` refuse it as well. `stand_up`
+  reads the duck before it sends `robot.enable`: it refuses a duck somebody holds or that nothing
+  reports on, says a standing duck is already upright, points a seated one at `stand`, and calls the
+  duck upright afterwards only if it reads standing. Underneath all of these, `microduck:jsonrpc`
+  sends no `robot.move` unless the newest state reads standing, and once it has held one back it
+  sends none until the verb that was walking stops. The preconditions are read once, when a verb
+  starts, and `go_to` sends its next twist whatever became of the last, so a duck picked up halfway
+  through one would have been put down onto a fresh twist and walked off on it. A `search_scan`
+  stops between its turns, so it turns again once the duck is back on its feet. A verb refused for
+  posture says why, and the answer is to wait for the duck to stand, or to run the `stand` or
+  `stand_up` it names. `tests/test_jsonrpc.py` runs every label robotd reports through a fake
+  robotd, picks the duck up halfway through a `go_to` and puts it back down, and checks what
+  `stand_up` sends for each posture, and `tests/test_adapters.py` holds the three camera verbs to
+  `standing` and an `unknown` posture to a refusal. Each of them failed before this change.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

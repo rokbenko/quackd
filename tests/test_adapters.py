@@ -9,8 +9,9 @@ import pytest
 import quackd.safety
 from quackd.adapters.base import RobotAdapter, adapter_name, backend_name
 from quackd.duckfile.parser import parse_duck_text
+from quackd.perception.base import Detection
 from quackd.safety import Executor
-from quackd.transport.base import DuckState, Intent
+from quackd.transport.base import DuckState, Intent, Posture
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import default_registry, registry_from_manifest
 from quackd_microduck import MicroduckAdapter
@@ -100,6 +101,78 @@ async def test_preconditions_come_from_the_adapter_by_name() -> None:
     ex = Executor(custom, MicroduckAdapter(MockTransport()), contract=DUCK.frontmatter)
     result = await ex.run_verb("move")
     assert not result.ok and "nope, custom" in result.summary
+
+
+class _BallAhead:
+    """Sees the ball a metre ahead on every frame, so a verb let through would walk at it."""
+
+    name = "ball_ahead"
+
+    def detect(self, image: object) -> list[Detection]:
+        return [Detection(label="ball", cx=0.5, cy=0.5, area=0.01, est_distance_m=1.0)]
+
+
+WALKS_ON_SIGHT = ("go_to", "search_scan", "approach_and")
+SIGHTED = parse_duck_text(
+    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+    "  allow: [walk, kick, grab, go_to, search_scan, approach_and]\nsuccess: [x]\n---\n# T\nx\n"
+)
+
+
+@pytest.mark.parametrize("posture", ["sitting", "fallen"])
+async def test_the_verbs_that_walk_on_what_the_camera_sees_need_the_duck_standing(
+    posture: Posture,
+) -> None:
+    """`go_to`, `search_scan` and `approach_and` walk the duck as surely as `move`, and had no
+    precondition at all, so a seated or fallen duck was steered at a ball for as long as the
+    verb ran. They need `standing` now, which a blind manifest leaves out with the verbs."""
+    from quackd_microduck import microduck_manifest
+
+    seeing = microduck_manifest("jsonrpc")
+    for verb in WALKS_ON_SIGHT:
+        assert seeing.preconditions[verb] == seeing.preconditions["move"] == ["standing"]
+    assert not set(WALKS_ON_SIGHT) & set(microduck_manifest("jsonrpc", camera=False).preconditions)
+
+    down = MicroduckAdapter(
+        MockTransport(states=[DuckState(posture=posture, fallen=posture == "fallen")])
+    )
+    manifest = await down.connect()
+    ex = Executor(
+        registry_from_manifest(manifest, down),
+        down,
+        contract=SIGHTED.frontmatter,
+        detector=_BallAhead(),
+    )
+    for verb, params in (
+        ("go_to", {}),
+        ("search_scan", {}),
+        ("approach_and", {"then": "kick"}),
+    ):
+        result = await ex.run_verb(verb, params)
+        assert not result.ok and posture in result.summary, (verb, result.summary)
+    assert down.transport.intents_of("move") == []  # type: ignore[attr-defined]
+
+
+async def test_a_posture_nobody_can_vouch_for_refuses_every_verb_that_walks() -> None:
+    """`unknown` used to pass `standing`. The simulators and the mock never report it, but a
+    real robot does for everything quackd cannot vouch for, and says why in `posture_reason`.
+    The mock here would take every twist it was sent, so only the precondition stands between
+    an unknown duck and a walk."""
+    why = "robotd reports policy 'homing' (the joints are ramping to the home pose)"
+    unknown = MicroduckAdapter(
+        MockTransport(states=[DuckState(posture="unknown", extras={"posture_reason": why})])
+    )
+    manifest = await unknown.connect()
+    ex = Executor(
+        registry_from_manifest(manifest, unknown),
+        unknown,
+        contract=SIGHTED.frontmatter,
+        detector=_BallAhead(),
+    )
+    for verb in ("walk", "kick", "grab", *WALKS_ON_SIGHT):
+        result = await ex.run_verb(verb, {"then": "kick"} if verb == "approach_and" else {})
+        assert not result.ok and f"posture is unknown ({why})" in result.summary, verb
+    assert unknown.transport.intents == []  # type: ignore[attr-defined]
 
 
 def test_the_executor_hardcodes_no_posture() -> None:

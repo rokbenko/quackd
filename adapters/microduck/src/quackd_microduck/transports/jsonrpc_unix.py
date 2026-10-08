@@ -4,15 +4,27 @@ Every method name here is VERIFIED against upstream's `duck-ipc-proto` at a pinn
 (see `upstream_api.py`), but nobody has run this against a Microduck. What is honest today:
 the handshake and its version refusal, the intent vocabulary, the deadman-friendly `move`
 notifications, the state subscription, and the health poll. What is not: posture, which is
-inferred from the policy name (UNVERIFIED), and everything about the camera.
+inferred from the policy label (UNVERIFIED, and failing closed), and everything about the
+camera.
 
-Two rules run through this file, and both exist because the robot is on a floor and quackd
+These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
 
 - **Silence is not consent.** A state frame that stops arriving, or arrives without a
   `safety` block, reads as `unknown` rather than as a standing duck, because `fallen: false`
   from a stream nobody is watching is not a fact about the robot. The preconditions refuse
   on `unknown`, so a link that dies stops the duck instead of freeing it.
+- **Only a label quackd has read stands the duck up.** `robot.state.policy` names whatever
+  drove the tick, and robotd reports far more labels than `walk` and `stand`: a duck in
+  somebody's hands, one riding a fall down, one halfway through a kick. Each of them reads as
+  `unknown`, with `extras.posture_reason` saying which, and so does any label a newer robotd
+  adds, so a vocabulary that grows refuses walks instead of allowing them.
+- **Once the duck stops standing, the walk stays stopped.** No `robot.move` goes out unless
+  the newest state reads standing, and once one is held back none goes out until `stop()`,
+  which every verb that walks sends on its way out. The preconditions are read once, when a
+  verb starts, and `go_to` sends its next twist whatever became of the last one, so without
+  the hold a duck picked up halfway through a `go_to` would walk off the moment it was put
+  down.
 - **A frame kept is not a frame seen.** `get_frame` expires what it caches. `go_to` steers
   on every tick, so a camera that died with the ball in shot would otherwise show the ball
   in shot forever while the duck walked at it.
@@ -34,8 +46,8 @@ import os
 import sys
 import time
 import urllib.request
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Sequence
+from typing import Any, NamedTuple
 
 from PIL import Image
 
@@ -95,6 +107,77 @@ def camera_stale_after_s(fps: float) -> float:
     return max(2.0, 4.0 / max(0.1, fps))
 
 
+def posture_of(
+    policy: str | None, safety: dict[str, Any], *, skills: Sequence[str] = ()
+) -> tuple[Posture, str | None]:
+    """Where the duck is, from one fresh state frame, and why it is `unknown` when it is.
+
+    An allowlist, because the label names whatever drove the tick and robotd has more labels
+    than quackd will ever have read: two stand the duck up, one seats it, and every other one
+    reads as `unknown` with a reason naming it. It used to run the other way, with `sit` matched
+    as a substring and every other label read as standing, so a duck in somebody's hands
+    (`held`), one riding a fall down (`limp_fall`), one halfway through a kick, and whatever
+    label a newer robot added could each be sent a walk.
+
+    The order is the safety order. Somebody holding the duck comes first, before `fallen`: a
+    duck held at an angle reads as fallen, and "fallen" points the pilot at `stand_up`, which
+    asks the policy to drive legs that are in a person's hands. `fallen` comes before the label,
+    because a duck on the floor is down whatever network is driving it, and on a robot whose
+    `limp_fall` is off the walk network is still what drives one lying there. `safety.limp`,
+    the gains dropped so the duck yields, is next, and then the label.
+    """
+    if safety.get("picked_up"):
+        return "unknown", "somebody is holding the duck (safety.picked_up)"
+    if safety.get("fallen"):
+        return "fallen", None
+    if safety.get("limp"):
+        return "unknown", "robotd has dropped the gains so the duck yields (safety.limp)"
+    # A skill reports its own name, and robotd keeps only `ground_pick` and `sit_toggle` back
+    # from the names a policy set may give one, so a set can call a skill `walk`. The robot's
+    # own list is read before the allowlist, or a duck halfway through that skill would stand.
+    if policy and policy in skills:
+        return "unknown", _not_standing_because(policy, skills)
+    if policy in up.SITTING_LABELS:
+        return "sitting", None
+    if policy in up.STANDING_LABELS:
+        return "standing", None
+    return "unknown", _not_standing_because(policy, skills)
+
+
+def _not_standing_because(policy: str | None, skills: Sequence[str]) -> str:
+    """Why a label that neither stands nor seats the duck leaves its posture unknown."""
+    if not policy:
+        return "robotd's state frame names no policy"
+    said = f"robotd reports policy {policy!r}"
+    if policy in skills:
+        if policy in up.STANDING_LABELS or policy in up.SITTING_LABELS:
+            return f"{said}, which is also one of its skills, so quackd cannot tell which it is"
+        return f"{said} (one of its skills, which holds the legs until it ends)"
+    if policy in up.NOT_STANDING_LABELS:
+        return f"{said} ({up.NOT_STANDING_LABELS[policy]})"
+    if policy.endswith(up.UNWIND_SUFFIX):
+        return f"{said} (a skill unwinding back to the gait)"
+    return f"{said}, which quackd has not read, so it cannot tell where the duck is"
+
+
+class StateRead(NamedTuple):
+    """The newest state frame, read once for both `get_state` and the hold on `robot.move`, so
+    what the pilot is told about the duck and what the wire is allowed cannot disagree."""
+
+    state: dict[str, Any]
+    age: float | None
+    fresh: bool
+    """A frame recent enough to believe, carrying a `safety` block that says `fallen`."""
+    policy: str
+    fallen: bool
+    picked_up: bool | None
+    """None when no fresh frame says either way, since a stream nobody is watching cannot say
+    that the duck is on the floor."""
+    posture: Posture
+    reason: str | None
+    """Why `posture` is `unknown`, or None when it is not."""
+
+
 def default_address() -> str:
     root = os.environ.get(up.RUNTIME_DIR_ENV.name, "/run")
     return f"unix://{root}/robotd.sock"
@@ -151,6 +234,9 @@ class JsonRpcUnixTransport:
         self.hello: dict[str, Any] | None = None
         self.stop_error: str | None = None
         """Why the last `stop` did not reach the robot, or None if it did (or none was sent)."""
+        self._move_held: str | None = None
+        """Why `robot.move` is being held back until the next `stop()`, or None while it is not.
+        Set by the first move refused for a duck that was not standing (`_move_refusal`)."""
         self.camera_working = False
         """Whether a frame actually arrived during connect. What the manifest narrows on."""
         self.subscribed: dict[str, Any] | None = None
@@ -405,13 +491,16 @@ class JsonRpcUnixTransport:
             return None
         return time.monotonic() - self._last_state_at
 
-    async def get_state(self) -> DuckState:
-        health = self._last_health
-        if health is None:
-            with contextlib.suppress(TransportError):
-                health = await self.request(up.ROBOT_HEALTH.name)
-                self._last_health = health if isinstance(health, dict) else None
+    def _skills(self) -> tuple[str, ...]:
+        """The skill names this robot answered `robot.subscribe` with (`up.SKILL_SOURCE`), which
+        are also the labels it reports while one of them runs."""
+        answer = self.subscribed if isinstance(self.subscribed, dict) else {}
+        skills = answer.get("skills")
+        return tuple(str(s) for s in skills) if isinstance(skills, list) else ()
 
+    def _read(self) -> StateRead:
+        """The newest state frame and what it says about the duck, without asking robotd
+        anything: `robot.move` is held back on this, every tenth of a second, mid-verb."""
         # A duck nobody is watching reads as unknown, never as standing. `fallen` is a plain
         # bool on the wire and in DuckState, so silence and "upright" are the same value there
         # — the difference has to live in `posture` and in `fall_detection`, or a stream that
@@ -421,39 +510,54 @@ class JsonRpcUnixTransport:
         arriving = age is not None and age <= state_stale_after_s(self.state_hz)
         state = (self._last_state or {}) if arriving else {}
         safety = state.get("safety")
-        policy = str(state.get("policy") or "unknown")
+        named = state.get("policy")
+        policy = str(named or "unknown")
         fallen = bool((safety or {}).get("fallen"))
         # Frames arriving is not the same as frames that say anything about falling. Upstream
         # declares `safety` on every state frame, but a frame without one would otherwise read
         # as "not fallen" on the strength of a key that was never there.
-        fresh = arriving and isinstance(safety, dict) and "fallen" in safety
-        posture: Posture
-        if not fresh:
-            posture = "unknown"
-        elif fallen:
-            posture = "fallen"
-        elif "sit" in policy:  # up.POSTURE_FROM_POLICY — an assumption
-            posture = "sitting"
-        elif policy == "unknown":
-            posture = "unknown"
-        else:
-            posture = "standing"
+        if not (arriving and isinstance(safety, dict) and "fallen" in safety):
+            if age is None:
+                silent = "no robot.state frame has arrived"
+            elif not arriving:
+                silent = f"the newest robot.state frame is {age:.1f} s old"
+            else:
+                silent = "robotd's state frame carries no safety block"
+            return StateRead(state, age, False, policy, fallen, None, "unknown", silent)
+        posture, why = posture_of(str(named) if named else None, safety, skills=self._skills())
+        picked_up = bool(safety.get("picked_up"))
+        return StateRead(state, age, True, policy, fallen, picked_up, posture, why)
+
+    async def get_state(self) -> DuckState:
+        health = self._last_health
+        if health is None:
+            with contextlib.suppress(TransportError):
+                health = await self.request(up.ROBOT_HEALTH.name)
+                self._last_health = health if isinstance(health, dict) else None
+
+        read = self._read()
         battery = ((health or {}).get("battery") or {}).get("percent")
         return DuckState(
             t=self.now(),
-            policy=policy,
-            posture=posture,
-            fallen=fallen,
+            policy=read.policy,
+            posture=read.posture,
+            fallen=read.fallen,
             battery_percent=float(battery) if battery is not None else None,
             extras={
                 "health": health,
-                "move": state.get("move"),
-                "loop": state.get("loop"),
-                "odom": state.get("odom"),
+                "move": read.state.get("move"),
+                "loop": read.state.get("loop"),
+                "odom": read.state.get("odom"),
                 # False means quackd cannot see falls at all right now, so `fallen: false` above
                 # is silence rather than a verdict. The preconditions read this.
-                "fall_detection": fresh,
-                "state_age_s": round(age, 3) if age is not None else None,
+                "fall_detection": read.fresh,
+                # Why the posture is `unknown`, in words the pilot and `report_state` can use,
+                # or None when it is not. `standing` refuses on it and quotes it.
+                "posture_reason": read.reason,
+                # True while somebody holds the duck, which the preconditions and `stand_up`
+                # read before `fallen`; None while no fresh frame says either way.
+                "picked_up": read.picked_up,
+                "state_age_s": round(read.age, 3) if read.age is not None else None,
                 "subscribed": self.subscribed,
                 "camera": self.camera_health(),
                 "stop_error": self.stop_error,
@@ -461,18 +565,61 @@ class JsonRpcUnixTransport:
             },
         )
 
+    def _move_refusal(self) -> str | None:
+        """Why the next `robot.move` must not go out, or None when it may.
+
+        It may only while the newest state reads standing, and once one has been held back no
+        other goes out until `stop()`. The preconditions cannot do this alone: they are read
+        once, when a verb starts, and `go_to` sends its next twist whatever became of the last
+        one. Picked up halfway through a `go_to`, a duck reads `held` once robotd's pick-up
+        detector has paused its policy, but the moment it is put down the policy drives
+        whatever twist is freshest, and `go_to` had kept sending one ten times a second. Held
+        back until the verb that was walking has stopped, the duck stays where it was put.
+
+        `stop()` is what every verb that walks sends on its way out, so the hold lasts as long
+        as the verb that ran into it. `search_scan` also stops between its turns, so a scan
+        whose duck was picked up turns again once the duck is back on its feet and reads
+        standing, one turn at a time, where a `go_to` or a `move` does not move again at all.
+
+        Nothing is sent in place of the refused twist: robotd zeroes a twist nobody refreshes
+        within its deadman window (`up.DEADMAN`), and a zero sent here would be one more
+        `robot.move` to a duck quackd has just decided not to drive.
+        """
+        if self._move_held is not None:
+            return (
+                f"quackd has sent no robot.move since the duck stopped standing "
+                f"({self._move_held}), and sends none until the verb that was moving it stops"
+            )
+        read = self._read()
+        if read.posture == "standing":
+            return None
+        why = read.reason or (
+            "the duck has fallen" if read.posture == "fallen" else f"the duck is {read.posture}"
+        )
+        self._move_held = why
+        log.warning("robot.move held back until the next stop: the duck is not standing (%s)", why)
+        return (
+            f"the duck is not standing ({why}), so quackd sent no robot.move, and sends none "
+            "until the verb that was moving it stops"
+        )
+
     async def send_intent(self, intent: Intent) -> Ack:
         p = intent.params
         try:
             match intent.kind:
                 case "move":
+                    if (refusal := self._move_refusal()) is not None:
+                        return Ack(accepted=False, reason=refusal)
                     await self.notify(
                         up.ROBOT_MOVE.name,
                         {"vx": p.get("vx", 0.0), "vy": p.get("vy", 0.0), "vyaw": p.get("wz", 0.0)},
                     )
                     return Ack()
                 case "stop":
-                    await self.request(up.ROBOT_STOP.name)
+                    try:
+                        await self.request(up.ROBOT_STOP.name)
+                    finally:
+                        self._move_held = None  # the stop `stop()` sends, so it ends the hold too
                     return Ack()
                 case "do":
                     res = await self.request(up.ROBOT_DO.name, {"skill": p.get("skill")})
@@ -539,6 +686,11 @@ class JsonRpcUnixTransport:
         while delivering nothing. What actually stops a Microduck in that situation is robotd's
         own deadman: `robot.move` notifications stop arriving and the velocity goes to zero
         (`up.DEADMAN`). That is a real protection and this is not a substitute for it.
+
+        It also ends the hold on `robot.move` (`_move_refusal`), after the request rather than
+        before it, so no twist slips out while the stop is on the wire. Whether or not the stop
+        landed, the verb that was walking is over, and the next one is let through only by a
+        state that reads standing again.
         """
         try:
             await self.request(up.ROBOT_STOP.name)
@@ -551,6 +703,8 @@ class JsonRpcUnixTransport:
                 self.address,
                 e,
             )
+        finally:
+            self._move_held = None
 
     def now(self) -> float:
         return time.monotonic() - self._t0
