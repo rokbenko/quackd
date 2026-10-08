@@ -539,6 +539,57 @@ async def test_openai_responses_bad_json_arguments_do_not_crash(_no_effort_env: 
     assert "_unparsed" in turn.tool_calls[0].arguments
 
 
+def responses_refusal(*, beside: Any = None) -> Any:
+    """A Responses result whose message is a refusal part: its words under `refusal`, no
+    `text`, the shape the SDK's `ResponseOutputRefusal` has."""
+    said = NS(type="message", content=[NS(type="refusal", refusal="I can't help with that.")])
+    return NS(
+        output=[*([beside] if beside is not None else []), said],
+        status="completed",
+        usage=NS(input_tokens=11, output_tokens=4, output_tokens_details=NS(reasoning_tokens=0)),
+    )
+
+
+async def test_a_responses_refusal_part_is_a_turn_with_no_call_that_says_so(
+    _no_effort_env: None,
+) -> None:
+    """The parser read `text` alone, so a refusal part was dropped and the turn came back as
+    an empty one with no call: the record showed a pilot that said nothing where the vendor
+    had said no. It now reads as an Anthropic or OpenRouter refusal does."""
+    client = RefusesToolsOnChat(responses_refusal())
+    turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    assert turn.tool_calls == []
+    assert turn.text == "[refusal] I can't help with that."
+    assert turn.stop_reason == "refusal"
+
+
+async def test_a_refusal_part_beside_a_call_keeps_the_call(_no_effort_env: None) -> None:
+    """Responses output is a list of items, so a refusal can arrive beside a `stop` or a
+    declare. The call is the turn's answer and is kept; the refusal is said beside it."""
+    stop = NS(type="function_call", call_id="call_r2", name="stop", arguments="{}")
+    client = RefusesToolsOnChat(responses_refusal(beside=stop))
+    turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    assert turn.tool_calls == [ToolCall(id="call_r2", name="stop", arguments={})]
+    assert turn.text == "[refusal] I can't help with that."
+    assert turn.stop_reason == "tool_calls"
+
+
+async def test_a_chat_completions_refusal_is_a_turn_with_no_call_that_says_so() -> None:
+    """Chat Completions carries the same refusal as a field of the message, which Grok and
+    the local presets read through this parser too."""
+    message = NS(content=None, tool_calls=None, refusal="I can't help with that.")
+    response = NS(
+        choices=[NS(message=message, finish_reason="stop")],
+        usage=NS(prompt_tokens=50, completion_tokens=9),
+    )
+    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+        "SYS", history(), TOOLS
+    )
+    assert turn.tool_calls == []
+    assert turn.text == "[refusal] I can't help with that."
+    assert turn.stop_reason == "refusal"
+
+
 async def test_openai_does_not_swallow_an_unrelated_bad_request(_no_effort_env: None) -> None:
     """Only the 400 that names both halves switches API, so a real error still surfaces."""
 

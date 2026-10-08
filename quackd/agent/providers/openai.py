@@ -229,6 +229,7 @@ def parse_responses(response: Any) -> ProviderTurn:
     tool_calls: list[ToolCall] = []
     texts: list[str] = []
     thoughts: list[str] = []
+    refusals: list[str] = []
     for item in getattr(response, "output", None) or []:
         kind = getattr(item, "type", None)
         if kind == "function_call":
@@ -247,6 +248,15 @@ def parse_responses(response: Any) -> ProviderTurn:
             )
         elif kind == "message":
             for part in getattr(item, "content", None) or []:
+                # A refusal is its own part, with its words under `refusal` and no `text`, so
+                # reading `text` alone dropped it and the turn arrived as an empty one with no
+                # call: the record then showed a pilot that said nothing where the vendor had
+                # said no. It reads as Anthropic's and OpenRouter's do, `[refusal] ...`.
+                if getattr(part, "type", None) == "refusal":
+                    said = getattr(part, "refusal", None)
+                    if isinstance(said, str) and said.strip():
+                        refusals.append(said.strip())
+                    continue
                 text = getattr(part, "text", None)
                 if isinstance(text, str) and text.strip():
                     texts.append(text)
@@ -255,11 +265,22 @@ def parse_responses(response: Any) -> ProviderTurn:
                 text = getattr(part, "text", None)
                 if isinstance(text, str) and text.strip():
                     thoughts.append(text)
+    # Said whether or not a call came with it, and a call that did is kept: the output is a
+    # list of items, so a refusal part can sit beside a `stop` or a declare, and dropping
+    # those would turn the one call that answered into none.
+    texts += [f"[refusal] {said}" for said in refusals]
     usage = getattr(response, "usage", None)
     details = getattr(usage, "output_tokens_details", None)
     # the Responses API spells the same things `input_tokens` and `input_tokens_details`, and
     # means them the same way: the total already contains both cached slices
     input_details = getattr(usage, "input_tokens_details", None)
+    stop_reason: str | None
+    if tool_calls:
+        stop_reason = "tool_calls"
+    elif refusals:
+        stop_reason = "refusal"
+    else:
+        stop_reason = getattr(response, "status", None)
     return ProviderTurn(
         tool_calls=tool_calls,
         text="\n".join(texts) or None,
@@ -272,7 +293,7 @@ def parse_responses(response: Any) -> ProviderTurn:
         ),
         # No finish_reason here. `status` is "completed" or "incomplete", and the loop only
         # reads this for the log, so say the same words the other parser would.
-        stop_reason="tool_calls" if tool_calls else getattr(response, "status", None),
+        stop_reason=stop_reason,
         raw=None,
         thinking="\n".join(thoughts) or None,
     )
@@ -307,11 +328,18 @@ def parse_response(response: Any) -> ProviderTurn:
         ),
         None,
     )
+    # The same refusal, as Chat Completions carries it: a field of the message rather than a
+    # part, read by Grok, the local presets and everything else on this path. OpenRouter
+    # overwrites the text with these same words and drops the calls (`openrouter.py`).
+    refusal = getattr(message, "refusal", None)
+    said = refusal.strip() if isinstance(refusal, str) else ""
+    parts = [getattr(message, "content", None) or None, f"[refusal] {said}" if said else None]
+    finish = getattr(choice, "finish_reason", None)
     return ProviderTurn(
         tool_calls=tool_calls,
-        text=getattr(message, "content", None) or None,
+        text="\n".join(p for p in parts if p) or None,
         usage=read_usage(usage),
-        stop_reason=getattr(choice, "finish_reason", None),
+        stop_reason="refusal" if said and not tool_calls else finish,
         raw=None,
         thinking=reasoning.strip() if reasoning else None,
     )

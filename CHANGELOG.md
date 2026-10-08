@@ -22,6 +22,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   tenth of a second after the duck's hello, which failed every time without the waits.
   `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
+- **An OpenAI refusal reaches the record in its own words.** OpenAI says no as a part of its own on
+  the Responses API, with its words under `refusal` and no text, and as a `refusal` field of the
+  message on Chat Completions. quackd's OpenAI parser read only text, so it dropped both, and a
+  turn the vendor declined arrived as an empty one with no call: the record showed a pilot that
+  said nothing. The turn's text now reads `[refusal]` and the vendor's words, as an Anthropic or
+  OpenRouter refusal already did, and a turn that carries only a refusal stops with `refusal`. A
+  call that arrives beside a refusal part is kept, since the Responses output is a list and that
+  call is the turn's answer. Grok and the local servers read the Chat Completions parser, so they
+  say a refusal the same way. `tests/test_providers.py` holds a Responses refusal, one beside a
+  call, and a Chat Completions refusal.
 
 ## [0.17.1] — 2026-10-07
 
