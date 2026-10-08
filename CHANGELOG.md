@@ -53,6 +53,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `stand_up` sends for each posture, and `tests/test_adapters.py` holds the three camera verbs to
   `standing` and an `unknown` posture to a refusal. Each of them failed before this change.
 
+- **`microduck:jsonrpc` connects to a robot on robotd's current release, daemon-v0.16.1, which it
+  refused.** quackd read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake
+  refuses a robotd that answers with any other number. Upstream's releases reached API 27 with
+  daemon-v0.12.0, and every release since was refused at connect, daemon-v0.16.1 on API 41 among
+  them. quackd now reads robotd at daemon-v0.16.1 (`d818af5`), every reference in `upstream_api.py`
+  is anchored there, and the handshake expects API 41. Everything quackd sends reads the same at
+  both commits, and so does everything it reads but for fields added to `robot.state` and
+  `robot.health`, so nothing else on the wire changes. The handshake still takes one number, so a
+  robot on any other release is refused, the daemon-v0.11.0 the old read matched among them. The
+  re-read also changes what the pilot is told. The policy labels posture is sorted by are read in
+  robotd's source now rather than assumed, so the one assumption a state lists in
+  `extras.assumptions` is `stand_up`'s, which asks the policy to drive and which upstream does not
+  promise gets a fallen duck up. robotd's own stand-up after a fall was `limp_fall`, and on
+  daemon-v0.16.1 that is off by default and a fall changes nothing in robotd, so the Microduck's
+  datasheet no longer says the duck can get itself upright, `stand_up`'s description says it may not
+  manage, and a duck still down after it is no longer told an onboard recovery has not finished. The
+  WebSocket gateway `microduck:websocket` would talk to is gone from upstream's design, and the
+  stub's refusal says so instead of pointing at it. The Microduck page's upstream tables are
+  rewritten at the new commit with what robotd has added since: the camera routes `mediad` serves
+  (`GET :8080/frame`, `media.frame`), the idle look-around that moves the head once the duck has
+  been still for two seconds, the pick-up detector, and the `velstand.onnx` walk. The fake robotd in
+  `tests/test_jsonrpc.py` answers as daemon-v0.16.1 does, with its hello, its subscribe answer, its
+  state frame and params that refuse a member robotd does not know, and a run of every verb that
+  reaches the socket leaves it with nothing refused. The tests that hold the page to the commit and
+  the release, the posture labels to the source they are read from, the assumptions to what
+  `upstream_api.py` calls unverified, and the datasheet and `stand_up` to promising no recovery each
+  failed before this change.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

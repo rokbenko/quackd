@@ -1,7 +1,10 @@
 """The experimental robot transport against a fake robotd over TCP loopback.
 
-The fake speaks exactly the VERIFIED subset of duck-ipc-proto we rely on, so this proves
-our framing, handshake, deadman feeding, and error handling — not that a real duck agrees.
+The fake answers as a robotd at the pin does (`upstream_api.RELEASE`): its hello and its
+subscribe answer, a state frame of that release's shape every tick, and params decoded the way
+robotd decodes them, where a member it does not know is refused by name. So this proves our
+framing, handshake, deadman feeding and error handling against what upstream's source says,
+not that a real duck agrees.
 """
 
 from __future__ import annotations
@@ -9,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 import sys
 import time
 from collections.abc import Callable
@@ -41,9 +45,70 @@ MOVERS = parse_duck_text(
 )
 #: The skills a stock robot answers `robot.subscribe` with.
 STOCK_SKILLS = ["roulade", "kick_left", "kick_right"]
+#: What else a stock robot at the pin answers `robot.subscribe` with: the walk it loads
+#: (`up.VELSTAND`) and no standing network, then the sit-stand and ground-pick files that
+#: robotd-params names for the walk mode.
+STOCK_POLICIES = {
+    "walk": up.VELSTAND.name,
+    "sitstand": "alpha_sitstand.onnx",
+    "ground_pick": "alpha_ground_pick.onnx",
+}
+#: The order `robot.state.joints` is indexed in, `JOINT_NAMES` in duck-ipc-proto.
+JOINTS = (
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "mouth",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle",
+)
+#: `HeadParams` and `LookResult.head`, in the order `robot.state.head` carries them.
+HEAD = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
+#: Each call quackd makes that takes params, with every member its params type declares at the
+#: pin and the ones that have no default. Every one of those types denies unknown fields, so a
+#: member robotd does not know is INVALID_PARAMS naming it (the doc above `API_VERSION` in
+#: lib.rs says why).
+PARAMS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "hello": (frozenset({"api_version"}), frozenset({"api_version"})),
+    "robot.move": (frozenset({"vx", "vy", "vyaw"}), frozenset()),
+    "robot.head": (frozenset(HEAD), frozenset()),
+    "robot.look": (frozenset({"x", "y", "z", "neck_pitch"}), frozenset()),
+    "robot.enable": (frozenset({"on", "toggle"}), frozenset({"on"})),
+    "robot.do": (frozenset({"skill"}), frozenset({"skill"})),
+    "robot.pose": (frozenset({"z", "roll", "pitch", "active"}), frozenset()),
+    "robot.sound": (frozenset({"tag", "hold"}), frozenset({"tag"})),
+    "robot.subscribe": (frozenset({"hz"}), frozenset()),
+}
+#: The calls quackd makes that take no params, which robotd answers whatever arrives with them.
+NO_PARAMS = frozenset({"robot.stop", "robot.health"})
 
 
 CURRENT_API = int(up.API_VERSION.name)
+
+
+def camera_pose(yaw: float) -> dict[str, list[float]]:
+    """`frames.camera` for a camera turned `yaw` radians to the left of straight ahead.
+
+    The camera frame is OpenCV's (+x right, +y down, +z along the optical axis) and the pose is
+    in the trunk frame (x forward, y left, z up), with a scalar-first quaternion. Looking straight
+    ahead the optical axis is the trunk's +x, the camera's +x is the trunk's -y and its +y the
+    trunk's -z, which is the quaternion [0.5, -0.5, 0.5, -0.5]; a turn left is that, rotated by
+    `yaw` about the trunk's +z."""
+    c, s = math.cos(yaw / 2), math.sin(yaw / 2)
+    w, x, y, z = 0.5, -0.5, 0.5, -0.5
+    return {
+        "pos": [0.05, 0.0, 0.1],
+        "quat": [c * w - s * z, c * x - s * y, c * y + s * x, c * z + s * w],
+    }
 
 
 class FakeRobotd:
@@ -56,7 +121,8 @@ class FakeRobotd:
         policy: str | None = "walk",
         limp: bool = False,
         picked_up: bool | None = None,
-        skills: list[str] | None = None,
+        skills: list[str] | None = STOCK_SKILLS,
+        missing: frozenset[str] = frozenset(),
     ) -> None:
         self.api_version = api_version
         self.healthy = healthy
@@ -68,15 +134,25 @@ class FakeRobotd:
         self.picked_up = picked_up
         """None leaves `safety.picked_up` out, as a robotd from before the pick-up detector does."""
         self.skills = skills
-        """What `robot.subscribe` answers in `skills`; None leaves the key out."""
+        """What `robot.subscribe` answers in `skills`; None leaves the key out, as a robotd whose
+        skills are not config yet does."""
+        self.missing = missing
+        """Calls this robotd answers METHOD_NOT_FOUND, as one from before they existed would."""
+        self.head = [0.0, 0.0, 0.0, 0.0]
+        """The commanded head, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
+        `robot.look` or `robot.head` asked for. A real robotd adds its idle glances on top."""
         self.recover_on_enable = False
         """Stand a fallen duck up when `robot.enable` arrives, as the policy taking over would."""
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
+        self.rejected: list[tuple[str, str]] = []
+        """Every call robotd would have refused, with why. A notification gets no answer, so this
+        is the only place a refused `robot.move` shows up at all."""
         self.server: asyncio.AbstractServer | None = None
         self.port = 0
         self._arrived = asyncio.Event()
         self._stream: asyncio.Task[None] | None = None
+        self._t0 = time.monotonic()
 
     async def start(self) -> None:
         self.server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
@@ -102,13 +178,37 @@ class FakeRobotd:
 
     def frame(self) -> dict[str, Any]:
         """The `robot.state` notification for this tick, from the attributes as they are now."""
-        safety: dict[str, Any] = {"fallen": self.fallen, "limp": self.limp}
+        safety: dict[str, Any] = {
+            "fallen": self.fallen,
+            "limp": self.limp,
+            "gravity": [0.0, 0.0, -1.0],
+            "gain": 200,
+        }
         if self.picked_up is not None:
             safety["picked_up"] = self.picked_up
+        joints = [0.0] * len(JOINTS)
+        for name, angle in zip(HEAD, self.head, strict=True):
+            joints[JOINTS.index(name)] = angle
+        t = time.monotonic() - self._t0
         return {
             "jsonrpc": "2.0",
             "method": "robot.state",
-            "params": {"t": 1.0, "policy": self.policy, "safety": safety},
+            "params": {
+                "t": t,
+                "move": {"requested": [0.0, 0.0, 0.0], "applied": [0.0, 0.0, 0.0]},
+                "head": list(self.head),
+                "policy": self.policy,
+                "safety": safety,
+                "loop": {"hz": 50.0, "missed": 0},
+                "joints": joints,
+                "targets": joints,
+                "odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0},
+                "t_ns": int(time.monotonic_ns()),
+                "frames": {
+                    "camera": camera_pose(self.head[2]),
+                    "tof": {"pos": [0.05, 0.0, 0.1], "quat": [1.0, 0.0, 0.0, 0.0]},
+                },
+            },
         }
 
     async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
@@ -121,18 +221,78 @@ class FakeRobotd:
                 return
             await asyncio.sleep(1.0 / max(1, hz))
 
+    def refusal(self, method: str, params: Any) -> tuple[int, str] | None:
+        """The error robotd answers this call with, or None when it would take it.
+
+        In robotd's order (`Call::parse`): a method it does not have is METHOD_NOT_FOUND, then
+        params are decoded, and a member the params type does not declare, one it requires and
+        did not get, or a sound tag that is not one of the seven, is INVALID_PARAMS naming it, in
+        serde's words."""
+        if method in self.missing or method not in PARAMS.keys() | NO_PARAMS:
+            return up.ERR_METHOD_NOT_FOUND, f"unknown method {json.dumps(method)}"
+        if method in NO_PARAMS:
+            return None
+        known, required = PARAMS[method]
+        if not isinstance(params, dict):
+            return up.ERR_INVALID_PARAMS, f"invalid type: {json.dumps(params)}, expected a map"
+        for member in params:
+            if member not in known:
+                expected = ", ".join(f"`{name}`" for name in sorted(known))
+                return (
+                    up.ERR_INVALID_PARAMS,
+                    f"unknown field `{member}`, expected one of {expected}",
+                )
+        for member in sorted(required - params.keys()):
+            return up.ERR_INVALID_PARAMS, f"missing field `{member}`"
+        if method == "robot.sound" and params["tag"] not in up.SOUND_TAG_LIST:
+            return up.ERR_INVALID_PARAMS, f"unknown variant `{params['tag']}`"
+        return None
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         while line := await reader.readline():
             msg = json.loads(line)
+            method, params = msg["method"], msg.get("params") or {}
             if "id" not in msg:
                 self.notifications.append(msg)
+                if (refused := self.refusal(method, params)) is not None:
+                    # robotd drops a notification it cannot parse and says nothing back
+                    self.rejected.append((method, refused[1]))
+                elif method == "robot.head":
+                    self.head = [float(params.get(k, 0.0)) for k in HEAD]
                 self._arrived.set()
                 continue
             self.requests.append(msg)
-            method, params = msg["method"], msg.get("params") or {}
+            if method == "robot.neverAnswered":
+                # A robotd that accepts a call and never replies, which is what a wedged
+                # daemon looks like from here. Also feeds a junk line, to prove the pump
+                # skips what it cannot parse instead of dying on it.
+                writer.write(b"{not json at all\n")
+                await writer.drain()
+                continue
+            if (refused := self.refusal(method, params)) is not None:
+                self.rejected.append((method, refused[1]))
+                code, message = refused
+                writer.write(
+                    (
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": msg["id"],
+                                "error": {"code": code, "message": message},
+                            }
+                        )
+                        + "\n"
+                    ).encode()
+                )
+                await writer.drain()
+                continue
             result: Any
             if method == "hello":
-                result = {"api_version": self.api_version, "daemon_version": "0.9.9"}
+                result = {
+                    "api_version": self.api_version,
+                    "daemon_version": up.RELEASE.removeprefix("daemon-v"),
+                    "revision": up.PIN[:7],
+                }
             elif method == "robot.health":
                 result = {"healthy": self.healthy, "battery": {"volts": 7.4, "percent": 66.0}}
                 if not self.healthy:
@@ -151,43 +311,32 @@ class FakeRobotd:
                 )
                 result = {"accepted": ok, "reason": None if ok else "unknown skill"}
             elif method == "robot.look":
+                # Turned toward the point, which is the fake's own head and not robotd's IK: a
+                # client never has to know which way a positive head_yaw turns, upstream says.
+                yaw = math.atan2(float(params.get("y", 0.0)), float(params.get("x", 1.0)))
+                self.head = [float(params.get("neck_pitch", 0.0)), 0.0, yaw, 0.0]
                 result = {
-                    "head": {"neck_pitch": 0, "head_pitch": 0, "head_yaw": 0.3, "head_roll": 0},
+                    "head": dict(zip(HEAD, self.head, strict=True)),
                     "clamped": False,
                 }
             elif method == "robot.sound":
-                result = {"accepted": params.get("tag") in up.SOUND_TAG_LIST}
+                result = {"accepted": True}
             elif method == "robot.subscribe":
-                result = {"accepted": True, "walk": "alpha_walking.onnx"}
-                if self.skills is not None:
+                result = {"accepted": True, **STOCK_POLICIES}
+                if self.skills:
                     result["skills"] = self.skills
                 # A real robotd streams until the connection ends. Sending one frame and
                 # stopping made every posture assertion race the staleness window, which is
                 # a flake on a loaded CI box and, worse, meant nothing ever exercised the
                 # steady state — only the first 300 ms after connecting.
                 self._stream = asyncio.create_task(self._publish(writer, params.get("hz") or 10))
-            elif method == "robot.neverAnswered":
-                # A robotd that accepts a call and never replies, which is what a wedged
-                # daemon looks like from here. Also feeds a junk line, to prove the pump
-                # skips what it cannot parse instead of dying on it.
-                writer.write(b"{not json at all\n")
-                await writer.drain()
-                continue
             else:
-                writer.write(
-                    (
-                        json.dumps(
-                            {
-                                "jsonrpc": "2.0",
-                                "id": msg["id"],
-                                "error": {"code": -32601, "message": f"unknown method {method}"},
-                            }
-                        )
-                        + "\n"
-                    ).encode()
-                )
-                await writer.drain()
-                continue
+                # A continuous intent sent with an id, which quackd never does. robotd takes it
+                # the same as the notification and answers it, rather than ignoring a call for
+                # its framing (`apply_intent` in robotd/src/main.rs).
+                if method == "robot.head":
+                    self.head = [float(params.get(k, 0.0)) for k in HEAD]
+                result = {"accepted": True}
             writer.write(
                 (json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n").encode()
             )
@@ -231,7 +380,11 @@ def _moves(fake: FakeRobotd) -> int:
 async def test_handshake_and_intents(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
-    assert t.hello == {"api_version": CURRENT_API, "daemon_version": "0.9.9"}
+    assert t.hello == {
+        "api_version": CURRENT_API,
+        "daemon_version": up.RELEASE.removeprefix("daemon-v"),
+        "revision": up.PIN[:7],
+    }
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.2))).accepted
     notifications = await robotd.wait_notifications(1)
     assert notifications[-1] == {
@@ -290,15 +443,17 @@ async def test_api_version_mismatch_refuses() -> None:
 
 
 async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships() -> None:
-    """A robotd on the old contract is refused, not guessed at.
+    """A robotd on an old contract is refused, not guessed at.
 
     `API_VERSION` was 16 for a week after upstream had moved to 23, and nothing here noticed
-    because the fake was pinned to the same stale number. Naming 16 explicitly means a future
-    bump has to come past this test rather than sliding through with the fake.
+    because the fake was pinned to the same stale number. It was then 23 while every robotd
+    release from daemon-v0.12.0 on said 27 or more, and quackd refused each of them. Naming the
+    number means a bump has to come past this test rather than sliding through with the fake,
+    and naming 16 keeps the oldest contract quackd ever spoke refused.
     """
-    # Named, not `>= 23`: a bump has to come past this line and past a fresh read of upstream,
+    # Named, not `>= 41`: a bump has to come past this line and past a fresh read of upstream,
     # rather than sailing through because the number only went up.
-    assert CURRENT_API == 23, "re-read duck-ipc-proto at a new pin before changing this"
+    assert CURRENT_API == 41, "re-read duck-ipc-proto at a new pin before changing this"
     fake = FakeRobotd(api_version=16)
     await fake.start()
     try:
@@ -353,7 +508,7 @@ async def test_connect_subscribes_so_state_arrives_without_anyone_iterating(
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert [r["method"] for r in robotd.requests] == ["hello", "robot.subscribe"]
-    assert t.subscribed == {"accepted": True, "walk": "alpha_walking.onnx"}
+    assert t.subscribed == {"accepted": True, **STOCK_POLICIES, "skills": STOCK_SKILLS}
 
     state = await t.get_state()  # no subscribe() call anywhere in this test
     assert state.policy == "walk" and state.posture == "standing"
@@ -572,12 +727,17 @@ async def test_a_substituted_sound_says_it_was_substituted(robotd: FakeRobotd) -
 
 
 async def test_an_upstream_error_carries_its_code(robotd: FakeRobotd) -> None:
-    """`BUSY` and `PERMISSION_DENIED` are different answers, and both were flattened to text."""
+    """`BUSY` and `PERMISSION_DENIED` are different answers, and both were flattened to text.
+    So are a call robotd does not have and a member of one it does not know, the two ways a
+    robotd from another release refuses, each by name."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     with pytest.raises(TransportError) as caught:
         await t.request("robot.notAMethod")
-    assert caught.value.code == up.ERR_METHOD_NOT_FOUND
+    assert caught.value.code == up.ERR_METHOD_NOT_FOUND and "robot.notAMethod" in str(caught.value)
+    with pytest.raises(TransportError) as caught:
+        await t.request(up.ROBOT_LOOK.name, {"x": 1.0, "elevation": 0.2})
+    assert caught.value.code == up.ERR_INVALID_PARAMS and "`elevation`" in str(caught.value)
     await t.close()
 
 
@@ -585,6 +745,84 @@ async def test_no_camera_without_url(robotd: FakeRobotd) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert await t.get_frame() is None
+    await t.close()
+
+
+# ── the robot at the pin ─────────────────────────────────────────────────────────────────
+
+#: Every verb of the Microduck's that reaches robotd's socket without a camera.
+WIRE_VERBS = parse_duck_text(
+    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+    "  allow: [walk, kick, quack, gaze, stand_up]\nsuccess: [x]\n---\n# Task\nx\n"
+)
+
+
+async def test_nothing_quackd_sends_is_a_member_robotd_does_not_know(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """Every params type robotd decodes denies unknown fields, so a member it does not know is
+    refused by name, on that one call. That is how a robotd from another release says a call
+    changed shape, and a notification gets no answer at all: a `robot.move` robotd refused
+    would be a walk quackd reported and the duck never took. The fake decodes the way robotd
+    does at the pin, and every verb that reaches the socket, a pose and a stop go through it
+    with nothing refused."""
+    robotd.fallen, robotd.recover_on_enable = True, True  # so that stand_up has to ask
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    t.sleep = _quick  # type: ignore[method-assign]
+    ex = Executor(registry, t, contract=WIRE_VERBS.frontmatter)
+    for verb, params in (
+        ("stand_up", {}),
+        ("walk", {"vx": 0.1, "duration_s": 0.2}),
+        ("kick", {"leg": "left"}),
+        ("quack", {"text": "hi"}),
+        ("gaze", {"direction": "left"}),
+    ):
+        result = await ex.run_verb(verb, params)
+        assert result.ok, (verb, result.summary)
+    assert (await t.send_intent(Intent(kind="pose", params={"z": 0.0, "pitch": 0.1}))).accepted
+    await t.stop()
+    await _landed(t)
+    assert robotd.rejected == []
+    sent = {r["method"] for r in robotd.requests} | {n["method"] for n in robotd.notifications}
+    wire = (up.HELLO, up.ROBOT_SUBSCRIBE, up.ROBOT_ENABLE, up.ROBOT_MOVE, up.ROBOT_DO)
+    wire += (up.ROBOT_SOUND, up.ROBOT_LOOK, up.ROBOT_POSE, up.ROBOT_STOP, up.ROBOT_HEALTH)
+    assert {ref.name for ref in wire} <= sent
+    await t.close()
+
+
+async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
+    registry: VerbRegistry,
+) -> None:
+    """A robotd from before a call existed answers METHOD_NOT_FOUND naming it, the other way a
+    robot from another release says no. The verb that needed the call fails with the code and
+    the name, instead of reporting what the duck did not do."""
+    fake = FakeRobotd(missing=frozenset({up.ROBOT_LOOK.name}))
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        result = await ex.run_verb("gaze", {"direction": "left"})
+        assert not result.ok and str(up.ERR_METHOD_NOT_FOUND) in result.summary
+        assert up.ROBOT_LOOK.name in result.summary
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_the_state_lists_as_assumed_only_what_upstream_api_calls_unverified(
+    robotd: FakeRobotd,
+) -> None:
+    """`extras.assumptions` is what the pilot is told not to take for the robot's own work, so
+    nothing read in robotd's source belongs in it. Posture was its one entry until the policy
+    labels were read at the pin, and what is left is stand_up's `robot.enable`, which upstream
+    does not promise gets a fallen duck up."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    listed = (await t.get_state()).extras["assumptions"]
+    assert listed == [up.STAND_UP_RPC.name]
+    assert set(listed) <= {ref.name for ref in up.refs_by_status("UNVERIFIED")}
     await t.close()
 
 
@@ -750,8 +988,9 @@ async def _quick(seconds: float) -> None:
         ("walk", True, True, True, True, "upright"),
         ("homing", False, True, True, True, "upright"),
         ("homing", False, False, True, False, "posture is unknown (robotd reports policy 'homing'"),
+        ("walk", True, False, True, False, "robotd does not promise to get a fallen duck up"),
     ],
-    ids=["standing", "seated", "fallen", "unknown", "unknown-after"],
+    ids=["standing", "seated", "fallen", "unknown", "unknown-after", "fallen-stays-down"],
 )
 async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
     registry: VerbRegistry,
@@ -766,7 +1005,8 @@ async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
     feet and to one on its seat as much as to one on the floor, and afterwards a duck that was
     merely not fallen was called upright. Now a fallen duck and one that is `unknown` for a
     reason other than a person holding it are asked, and only one that reads standing after is
-    called upright."""
+    called upright. One still down afterwards was told an onboard recovery had not finished, and
+    on daemon-v0.16.1 robotd runs none (`up.FALLEN_IS_A_REPORT`)."""
     fake = FakeRobotd(policy=policy, fallen=fallen)
     fake.recover_on_enable = recovers
     await fake.start()

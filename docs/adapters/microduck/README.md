@@ -13,53 +13,70 @@ and policies the physics simulator runs.
 
 ## Upstream API
 
-Read: 2026-09-04, pinned at [`bc41fb5`](https://github.com/pollen-robotics/microduck/tree/bc41fb5c9a9b39894669c1e022e375cf83800382)
-(upstream `main`, 2026-09-03). Upstream contract: `duck-ipc-proto` **API v23** (`API_VERSION`),
-JSON-RPC 2.0, one object per line (NDJSON), one unix socket per service.
-Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/duck-ipc-proto/src/lib.rs) ·
-[architecture.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/architecture.md) ·
-[robotd-design.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/robotd-design.md) ·
-[remote-webrtc.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/design/remote-webrtc.md) ·
-[roadmap.md](https://github.com/pollen-robotics/microduck/blob/bc41fb5c9a9b39894669c1e022e375cf83800382/docs/project/roadmap.md).
+Read: 2026-10-08, pinned at [`d818af5`](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1)
+(`daemon-v0.16.1`, 2026-10-07). Upstream contract: `duck-ipc-proto` **API v41** (`API_VERSION`),
+JSON-RPC 2.0, one object per line (NDJSON), one unix socket per service. The pin is a release,
+because a robot runs one.
+
+The previous read, on 2026-09-04, pinned `main` at `bc41fb5` on API v23. quackd's handshake
+accepted that number and no other, so it refused every robotd release from `daemon-v0.12.0`
+(API v27) on. Everything quackd sends reads the same at both pins, doc comments included, and so
+does everything it reads but for fields added to `robot.state` and `robot.health`, of which
+quackd reads one, `safety.picked_up`. Upstream's own rule for the number is that "A bump
+promises nothing in either direction".
+
+Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/duck-ipc-proto/src/lib.rs) ·
+[robotd/src](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/robotd/src) ·
+[robotd-params/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/robotd-params/src/lib.rs) ·
+[mediad/src](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/mediad/src) ·
+[architecture.md](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/docs/design/architecture.md) ·
+[robotd-design.md](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/docs/design/robotd-design.md) ·
+[remote-webrtc.md](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/docs/design/remote-webrtc.md) ·
+[roadmap.md](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/docs/project/roadmap.md).
 
 ### VERIFIED (read from upstream source)
 
 | Thing | Value | Used for |
 |---|---|---|
-| API version | `23` | `hello` handshake; mismatch → we refuse rather than guess |
+| API version | `41` | `hello` handshake. No robotd refuses a peer for a different number ("No daemon refuses a call because this number differs"), but quackd refuses any number but this one rather than guess |
 | Framing | `NDJSON: one JSON-RPC 2.0 object per line` | wire |
 | Runtime dir | env `DUCK_RUNTIME_DIR` overrides `/run` | socket path |
-| Sockets | `/run/robotd.sock`, `/run/configd.sock`, `/run/updaterd.sock`, `/run/padd/pad.sock` (pad.input only), `/run/tofd/tof.sock` (tof.stream only) | addresses |
-| `hello` | params `{api_version}` → `{api_version, daemon_version?, revision?}` | connect |
+| Sockets | `/run/robotd.sock`, `/run/configd.sock`, `/run/updaterd.sock`, `/run/padd/pad.sock` (pad.input only), `/run/tofd/tof.sock` (tof.stream only), `/run/mediad/media.sock` (media.frame only, and local) | addresses |
+| `hello` | params `{api_version}` → `{api_version, daemon_version, revision}`, the last two always on the wire and possibly `null` | connect |
 | `robot.move` | **notification** `{vx, vy, vyaw}` m/s, rad/s, trunk frame, x forward, y left, +vyaw left | `move`, `go_to`, `search_scan` (re-sent every 100 ms). Never sent while posture is not `standing`, and once one is held back for that, none goes out until the verb that sent it stops |
 | `robot.stop` | request; zero velocity, *not* limp | `stop`, every run's final stop |
 | `robot.head` | notification `{neck_pitch, head_pitch, head_yaw, head_roll}` | (not used; `robot.look` preferred) |
-| `robot.look` | request `{x, y, z, neck_pitch}` → `{head, clamped}` | `gaze`, re-centering before steering |
+| `robot.look` | request `{x, y, z, neck_pitch}` → `{head, clamped}`. `head` is what went down the path `robot.head` feeds, and upstream's word on it is "resend these to hold the gaze" | `gaze`, re-centering before steering. Sent once per gaze, so on `daemon-v0.16.1` the idle look-around (below) can move the head off it two seconds later |
 | `robot.do` | request `{skill}` → `{accepted, reason?}`, answered on accept/refuse rather than on completion. `Skill` is now `String` — "a name, not an enumeration" — and `ground_pick | kick_left | kick_right | sit_toggle | roulade` are the names a *stock* robot answers to; a robot's skills are config, and an unknown one is refused with the list it does know | `kick`, `grab`, `sit`/`stand` |
 | `robot.pose` | notification `{z, roll, pitch, active}` | `pose` intent (no verb yet) |
 | `robot.enable` | request `{on, toggle?}` (`toggle` is `#[serde(default)]`, so `{on}` alone is valid). Policy execution, **not a flag**: upstream says it "can bring a limp robot up as a side effect of being asked to drive", so treat it as motion | `stand_up` |
 | `robot.init` / `robot.relax` | power the joints + ramp to home pose (moves every joint) / torque **off** (collapse) | **never sent by quackd** |
 | `robot.sound` | request `{tag, hold?}`; tags `alarm | greet | inquire | peck | chirp | coo | wheee` — no TTS | `quack` and `say` (text → tag) |
-| `robot.subscribe` → `robot.state` | request `{hz?}`, then notifications `{t, move{requested,applied,limited_by}, head[4], policy, safety{fallen,limp,gravity,gain?}, loop{hz,missed}, joints, targets, odom, theremin?, chorale?}` | state |
+| `robot.subscribe` → `robot.state` | request `{hz?}`, then notifications `{t, move{requested,applied,limited_by}, head[4], policy, safety{fallen,limp,gravity,gain?,picked_up}, loop{hz,missed}, joints, targets, velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}`. `head` is the commanded head, idle glances included | state |
 | `robot.state is not pushed until robot.subscribe` | the loop publishes into a bounded broadcast and never waits on a subscriber, so a slow client gets a gap rather than backpressure | why the transport subscribes inside `connect()` |
 | `robot.subscribe -> SubscribeResult.skills` | the answer carries `{accepted, walk?, stand?, unavailable?, sitstand?, ground_pick?, skills[]}` — what is constant for the process | learning the robot's real skill list instead of assuming five |
-| `safety.fallen gates nothing upstream` | "computed every tick … debounced 0.2 s", and "a report, not a rule" | refusing to walk a fallen duck is quackd's own rule, so quackd must read the frame |
-| `robot.health` | request → `{healthy, degraded?, reason?, battery{volts,percent}?, motors?}` | heartbeat every 500 ms; battery abort |
-| `robot.mode` / `robot.setMode` | `{mode: walk|roller}` | (not used yet) |
+| `robot.state.policy`: `walk, stand, ground_pick, sit, rise, <skill>, <skill>:unwind, skill` while a network drives, `held, homing, rest, limp_fall, limp_pose` while none does | read in robotd's `control.rs` and `main.rs`. The label names what drove the tick, not where the duck is, but which of the first five it is follows the controller's seat latch: `sit` while it holds the seat, `rise` on the way up, `walk` or `stand` once the duck is up. `held` is also what a duck somebody holds reports. Every label but `rest`, the end of a shutdown, was there at `bc41fb5` too | `jsonrpc` reads `walk` and `stand` as standing and `sit`, matched exactly, as sitting. Every other label, a skill's own name, and a label quackd has never read are `unknown`, and so are a duck somebody holds (`safety.picked_up`, read before `safety.fallen`) and a limp one that has not fallen (`safety.limp`), with `extras.posture_reason` saying which. Every verb that walks refuses on `unknown`, `go_to`, `search_scan` and `approach_and` included. `sit`/`stand` read posture first and **refuse** when it is unknown, because upstream has one `sit_toggle` rather than a sit and a stand: firing it unaimed is a coin flip whose losing side sits a standing duck down |
+| `safety.fallen gates nothing upstream` | "computed every tick … debounced 0.2 s", and "a report, not a rule". robotd does nothing else about a fall at this pin: `limp_fall`, its one answer to one, is off by default, and "With it off, a fall changes nothing" | refusing to walk a fallen duck is quackd's own rule, so quackd must read the frame |
+| `safety.picked_up` | somebody is holding the duck: the pick-up detector has paused the policy, which reads `held`, until the duck is put down. Absent from a robotd older than the detector, "which reads as never picked up" | read before `safety.fallen`, since a duck held at an angle reads as fallen too. Nothing that moves the duck is sent while it is true, and a walk it interrupts stays stopped (`robot.move`, above) |
+| `robot.health` | request → `{healthy, degraded?, reason?, battery{volts,percent}?, motors?, cpu_temp_c?, cpu_throttle?, control_loop?, bus, imu?}` | heartbeat every 500 ms; battery abort |
+| `robot.mode` / `robot.setMode` | `{mode}`, `walk` or `roller` | (not used yet) |
+| `robot.policies` | request → `{mode, enabled, slots, skills, homed?, sitting?}`: what each policy slot runs, whether the duck has reached its home pose, and whether it is "parked in its seat" | documented, not called: every state frame's label already says `sit` and `homing`, so asking would cost a request per state read for nothing new |
 | `tof.stream` → `tof.frame` | 8×8 depth on tofd's socket | (not used yet) |
 | `pad.input` | gamepad raw tap; the pad is the authority | documented, not used |
-| `robotd intent deadman` | velocity zeroes when intents stop; "stop is not limp" | why `move` re-sends |
+| `robotd intent deadman` | "if intents stop arriving, the velocity goes to zero. Stop is not limp" | why `move` re-sends |
+| `RobotState.frames` | where the camera and the ToF sensor are in the trunk frame at the measured head joints, the camera in OpenCV axes (+x right, +y down, +z along the optical axis). On the stream since API v24 | not read |
+| `robotd's idle look-around` | new in `daemon-v0.16.1`. Once the duck is still and nobody has steered its head for 2 s, robotd glances around on top of the commanded head, up to 0.6 rad of yaw and 0.2 rad of pitch, fading in and out over 1.5 s. A `robot.look` or `robot.head` from anyone holds it off for another 2 s | nothing yet. A `gaze` is one `robot.look`, so on a robot this new the head wanders off it two seconds after the gaze, whenever the duck is standing still |
+| `velstand.onnx` | the walk a stock robotd loads at this pin: one network that "walks on a twist and stands still at zero command", so no standing network is loaded by default. That is why `limp_fall`, whose stand-up hands the duck to the standing network, is off | what a real duck walks on. `microduck:mujoco` still runs `alpha_walking` and `alpha_stand` ([below](#the-ducks-physics-upstreams)) |
+| `GET :8080/frame` | `mediad`'s console port answers with one upright PNG per request, uncached and at most four at a time, or with `503` "Camera snapshot unavailable; retry when capture is running." Port 8080 on every address by default, with no authentication. New since `bc41fb5`, where the port served the console page alone | nothing by name. An HTTP `--camera-url` decodes any PNG, so it can point here, and nobody has pointed it at a robot |
+| `media.frame` | one raw UYVY frame on `mediad`'s local socket: a JSON header `{width, height, format, bytes, captured_at_unix_us, rotate}`, then the bytes. "Deliberately not a `Call`", so it never reaches the WebRTC control datachannel | not called |
+| `media.detections` | `mediad`'s duck detector, `{width, height, took_ms, boxes[{x0,y0,x1,y1,score}]}`, pushed on each WebRTC peer's control datachannel and nowhere else. It finds ducks, not balls. Off by default, and two looks a second when on, which upstream calls "a thermal number, not a taste" | the WebRTC camera keeps the newest one. Nothing steers on it |
 
 ### UNVERIFIED (designed, assumed, or missing upstream) — and what we do
 
 | Thing | Status upstream | What quackd does |
 |---|---|---|
-| `robot.state.policy == 'sit' means sitting` | assumption: the state frame names what drove the tick, not where the duck is. `walk` and `stand` are the two networks that drive a duck on its feet and `sit` the one that holds its seat. robotd also reports `rise`, `ground_pick`, a skill's own name and that name with `:unwind`, and `held`, `homing`, `limp_fall` and `limp_pose` while no network drives. By daemon-v0.16.1 it also reports `rest`, and `safety.picked_up` while somebody holds the duck. Upstream notes two gaits can "both report `walk`", so the name is a policy and not a posture | `jsonrpc` reads `walk` and `stand` as standing and `sit`, matched exactly, as sitting, and lists the assumption in `extras.assumptions`. Every other label, a label quackd has never read, a duck somebody holds (`safety.picked_up`, read before `safety.fallen`) and a limp one that has not fallen (`safety.limp`) are `unknown`, and `extras.posture_reason` says which. Every verb that walks refuses on `unknown`, `go_to`, `search_scan` and `approach_and` included. `sit`/`stand` read posture first and **refuse** when it is unknown, because upstream has one `sit_toggle` rather than a sit and a stand: firing it unaimed is a coin flip whose losing side sits a standing duck down |
-| `WebSocket agent gateway` | architecture.md §5.3 designs "open a WebSocket, poll a frame, send intents"; roadmap M5 in progress, not shipped | `--robot microduck:websocket` is a stub that raises with the links |
-| `get_frame` | §5.3: "JPEG on demand, or 1–2 fps push"; not in duck-ipc-proto | not called anywhere; the stub will use it when it exists |
-| `camera snapshot over a unix socket` | today the camera reaches clients only through `mediad`'s WebRTC track; no socket-level frame method, and `robotctl`/`duckctl` have no camera subcommand either | `jsonrpc.get_frame()` returns `None` unless `--camera-url` names a source: an HTTP snapshot you provide, or `mediad`'s WebRTC track (below). A snapshot is pulled on a 5 fps timer and served from memory, so `observe` costs no round trip and a failed fetch is reported by `camera_health()` rather than raised. Without one the manifest drops `camera` and the four verbs that need eyes, instead of advertising sight the robot has not got |
-| `mediad media.detections notifications` | **built**, not merely designed: `mediad/src/detect.rs` emits `{width, height, took_ms, boxes[{x0,y0,x1,y1,score}]}` at ~2 Hz (RKNN on the NPU, ONNX on CPU) — and it detects *ducks*, not balls. UNVERIFIED because it is broadcast to WebRTC signalling clients while `remote-webrtc.md` still says perception consumes pixels locally: source and design doc disagree | unreachable from `robotd`'s socket either way, so our `Detector` protocol is still the stand-in |
-| `stand_up` | no such RPC; `robotd` recovers from falls itself (limp → settle → ramp → standing policy) | `stand_up` reads the duck before it sends anything. It refuses a duck somebody holds and one nothing reports on, says so of one already standing, and points one on its seat at `stand`. Only a fallen duck, or one whose posture is `unknown` for another reason, is sent `robot.enable {on: true}`, and afterwards it is called upright only if posture reads `standing` |
+| `WebSocket agent gateway` | dropped. At `bc41fb5`, architecture.md §5.3 designed one, "open a WebSocket, poll a frame, send intents". At this pin the same table sends a server-side agent over the "rendezvous control lane", JSON-RPC over HTTP/SSE with no WebRTC, and roadmap M5's SDK is that lane | `--robot microduck:websocket` is a stub that refuses to connect, with the links |
+| `stand_up asks robotd's policy to drive (robot.enable), which upstream does not promise gets a fallen duck up` | there is no stand-up call for a duck on the floor. `robot.enable` is policy execution, which "can bring a limp robot up as a side effect of being asked to drive", and `robot.init`, upstream's stand-up for a duck on its feet, moves every joint. robotd's own stand-up after a fall was the end of `limp_fall`, which is off by default at this pin. Whether velstand gets a duck off the floor has not been seen | `stand_up` reads the duck before it sends anything. It refuses a duck somebody holds and one nothing reports on, says so of one already standing, and points one on its seat at `stand`. Only a fallen duck, or one whose posture is `unknown` for another reason, is sent `robot.enable {on: true}`, and afterwards it is called upright only if posture reads `standing`. Every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
 
 ## What this robot is, as numbers
 
@@ -94,9 +111,11 @@ unreachable rather than merely forbidden.
 
 ## Getting a picture off a real Microduck
 
-There is no camera method in `duck-ipc-proto`, no snapshot or MJPEG route in `mediad` (its HTTP
-port serves one page), and no camera subcommand in `robotctl` or `duckctl`. The camera reaches
-clients as an H.264 WebRTC track and nowhere else. Two ways to point quackd at it:
+`robotd`'s socket carries no picture, so quackd takes the camera from `--camera-url`. Without
+one, `jsonrpc.get_frame()` returns `None` and the manifest drops `camera` and the four verbs that
+need eyes, instead of advertising sight the robot has not got. An HTTP snapshot is pulled on a
+5 fps timer and served from memory, so `observe` costs no round trip, and a failed fetch is
+reported by `camera_health()` rather than raised. Two ways to point quackd at the camera:
 
 | | `--camera-url webrtc://<duck>:8443` | `--camera-url http://<host>:9872/snapshot.jpg` |
 |---|---|---|

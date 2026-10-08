@@ -117,8 +117,11 @@ def test_doctor_shows_a_robot_manifest() -> None:
 
 async def test_websocket_stub_points_at_upstream() -> None:
     t = WebSocketTransport()
-    with pytest.raises(TransportError, match=r"architecture\.md"):
+    with pytest.raises(TransportError, match=r"architecture\.md") as refused:
         await t.connect()
+    # Upstream dropped the gateway by daemon-v0.16.1, so the refusal names the lane that replaced
+    # it, and it no longer tells anyone to track a design that is gone.
+    assert "rendezvous" in str(refused.value) and "Track it" not in str(refused.value)
     await t.stop()  # never raises: a stop must always be safe
 
 

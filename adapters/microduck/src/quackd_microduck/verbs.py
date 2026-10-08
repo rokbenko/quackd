@@ -217,7 +217,12 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     if (held := _held(state)) is not None:
         return VerbResult.fail(f"asked the policy to run, but {held}")
     if state.fallen:
-        return VerbResult.fail("still down; the onboard recovery has not finished")
+        # It used to say an onboard recovery had not finished, which sent the pilot to wait for
+        # one. robotd's recovery was limp_fall, and on daemon-v0.16.1 that is off by default.
+        return VerbResult.fail(
+            "asked the policy to run, and the duck is still down: robotd does not promise to get "
+            "a fallen duck up, so it may need a hand"
+        )
     if state.posture != "standing":
         return VerbResult.fail(
             f"asked the policy to run, and posture is {state.posture}{_why_unknown(state)}"
@@ -299,7 +304,14 @@ MICRODUCK_VERBS: dict[str, Verb] = {
             timeout_s=10,
             done_condition="the scoop finished; the result says whether the beak holds something.",
         ),
-        Verb("stand_up", "Recover to standing after a fall.", stand_up, NoParams, timeout_s=15),
+        Verb(
+            "stand_up",
+            "Ask the robot's policy to get a fallen duck up. It may not manage, and the result "
+            "says whether the duck is upright.",
+            stand_up,
+            NoParams,
+            timeout_s=15,
+        ),
         Verb(
             "quack",
             "Make a duck sound, optionally with text (mapped to a tone).",

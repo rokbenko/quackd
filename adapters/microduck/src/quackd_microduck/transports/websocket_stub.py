@@ -5,6 +5,10 @@ poll a frame, send intents" with `get_frame` returning a JPEG. The roadmap (2026
 lists that SDK surface as in progress. This file exists so the CLI can name the transport,
 `quackd doctor` can explain its status, and the day upstream ships it there is exactly one
 place to fill in. It never invents a method name.
+
+By daemon-v0.16.1 upstream had dropped that design: §5.3 sends a server-side agent over a
+rendezvous control lane instead (`upstream_api.WEBSOCKET_GATEWAY`), so the refusal below says
+there is nothing to connect to rather than something to wait for.
 """
 
 from __future__ import annotations
@@ -28,9 +32,9 @@ class WebSocketTransport:
 
     def _not_shipped(self) -> TransportError:
         return TransportError(
-            "the WebSocket agent gateway is designed upstream but not shipped "
+            "upstream ships no WebSocket agent gateway to connect to "
             f"({up.WEBSOCKET_GATEWAY.status}: {up.WEBSOCKET_GATEWAY.note}). "
-            f"Track it at {up.WEBSOCKET_GATEWAY.source} and {up.ROADMAP}. "
+            f"See {up.WEBSOCKET_GATEWAY.source} and {up.ROADMAP}. "
             "Use --robot microduck:jsonrpc (experimental) or --robot microduck:sim2d."
         )
 

@@ -232,7 +232,9 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
 
     ADR-0022 asked every adapter for a pin and grandfathered this one, and in the week that
     followed upstream went from API v16 to v23 with nothing here to show it. A pin in the URL
-    is what makes that visible next time.
+    is what makes that visible next time. Then robotd's releases went on to v41 while the pin
+    stayed at v23, so every ref cites the one pin, the ones that quote a design doc included:
+    a ref left at an older commit is one the last re-read skipped.
     """
     assert len(upstream_api.PIN) == 40 and upstream_api.PIN.isalnum()
     assert upstream_api.PIN in upstream_api.API_VERSION.source
@@ -240,6 +242,29 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
     assert "/blob/main/" not in upstream_api.IPC_PROTO
     for ref in upstream_api.all_refs():
         assert "/blob/main/" not in ref.source, ref
+        assert upstream_api.PIN in ref.source, ref
+
+
+def test_the_posture_labels_are_the_ones_robotd_names() -> None:
+    """quackd sorts `robot.state.policy` into standing, sitting and everything else, and the
+    labels it sorts were an UNVERIFIED assumption until they were read in robotd's source at the
+    pin. The sort has to cover exactly what the two VERIFIED refs name: a label quackd sorts
+    that robotd never reports is one read wrong, and one robotd reports that quackd does not
+    sort is one nobody read."""
+    driven, not_driven = upstream_api.POLICY_LABELS_DRIVEN, upstream_api.POLICY_LABELS_NOT_DRIVEN
+    named = [label for ref in (driven, not_driven) for label in ref.name.split(", ")]
+    # a configured skill reports its own name, and that name with the suffix while it unwinds
+    placeholders = ["<skill>", "<skill>" + upstream_api.UNWIND_SUFFIX]
+    assert all(p in named for p in placeholders), named
+    sorted_labels = [
+        *upstream_api.STANDING_LABELS,
+        *upstream_api.SITTING_LABELS,
+        *upstream_api.NOT_STANDING_LABELS,
+    ]
+    assert len(set(sorted_labels)) == len(sorted_labels), "a label is sorted twice"
+    assert sorted(set(named) - set(placeholders)) == sorted(sorted_labels)
+    for ref in (driven, not_driven):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
 def test_lerobot_and_rosbridge_vocabularies_match_what_was_read() -> None:

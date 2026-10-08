@@ -38,6 +38,24 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     assert not unverified, f"the Microduck's page is missing microduck_rl assumptions: {unverified}"
 
 
+def test_the_microduck_page_says_which_read_it_is() -> None:
+    """The page names the commit it read, the release that commit is and the day, and links the
+    robot's repository at that commit and no other.
+
+    The guard above holds the page to every name in `upstream_api.py`, and the names barely move
+    between releases, so a page still describing an older read passes it: this one carried
+    `bc41fb5` and API v23 until the re-read at daemon-v0.16.1. The pin, the release, the day and
+    the links are what a re-pin changes."""
+    doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    section = doc.split("\n## Upstream API\n", 1)[1].split("\n## ", 1)[0]
+    # the read line itself, since the prose below it names the previous read's commit and day
+    tree = f"https://github.com/pollen-robotics/microduck/tree/{up.PIN}"
+    assert f"Read: {up.READ_ON}, pinned at [`{up.PIN[:7]}`]({tree})" in section
+    assert f"(`{up.RELEASE}`" in section and f"**API v{up.API_VERSION.name}**" in section
+    linked = set(re.findall(r"github\.com/pollen-robotics/microduck/(?:blob|tree)/(\w+)", doc))
+    assert linked == {up.PIN}, f"the page links the robot's repository at {sorted(linked)}"
+
+
 def test_adapter_status_lists_every_backend() -> None:
     from quackd.adapters.factory import BACKENDS
 

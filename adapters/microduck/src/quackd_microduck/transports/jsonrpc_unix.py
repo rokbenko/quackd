@@ -1,11 +1,11 @@
 """EXPERIMENTAL: the real robot, over robotd's JSON-RPC socket.
 
-Every method name here is VERIFIED against upstream's `duck-ipc-proto` at a pinned commit
+Every method name here is VERIFIED against upstream's `duck-ipc-proto` at a pinned release
 (see `upstream_api.py`), but nobody has run this against a Microduck. What is honest today:
 the handshake and its version refusal, the intent vocabulary, the deadman-friendly `move`
-notifications, the state subscription, and the health poll. What is not: posture, which is
-inferred from the policy label (UNVERIFIED, and failing closed), and everything about the
-camera.
+notifications, the state subscription, the health poll, and posture, which is read off the
+policy label against the labels robotd's own source names and fails closed on every other.
+What is not: everything about the camera.
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
@@ -32,7 +32,7 @@ is at the other end of an ssh tunnel:
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
 Frames: `--camera-url http://.../snapshot.jpg`, or `webrtc://host:8443` for `mediad`'s own
-video track, which is the only camera upstream offers.
+video track. robotd's socket carries no picture.
 """
 
 from __future__ import annotations
@@ -447,7 +447,7 @@ class JsonRpcUnixTransport:
         session. `camera_health()` is where the failure is visible instead.
         """
         if not self.camera_url:
-            return None  # no socket-level camera method upstream (up.CAMERA_SNAPSHOT)
+            return None  # robotd's socket carries no picture, so --camera-url is the only one
         if self._webrtc is not None:
             return self._webrtc.latest(max_age_s=camera_stale_after_s(self.camera_fps))
         if self._camera_task is None:  # not connected: fetch once rather than nothing
@@ -561,7 +561,11 @@ class JsonRpcUnixTransport:
                 "subscribed": self.subscribed,
                 "camera": self.camera_health(),
                 "stop_error": self.stop_error,
-                "assumptions": [up.POSTURE_FROM_POLICY.name],
+                # What quackd stands in for on this robot, which the pilot is told not to take
+                # for the robot's own work. Posture used to be the first of them. It is read off
+                # labels robotd's own source names now, so what is left is stand_up, which asks
+                # the policy to drive and is all quackd has for a duck on the floor.
+                "assumptions": [up.STAND_UP_RPC.name],
             },
         )
 

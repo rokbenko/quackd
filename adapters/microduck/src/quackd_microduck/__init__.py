@@ -69,7 +69,11 @@ DATASHEET = Datasheet(
     notes=[
         "The speed caps are a software clamp in robotd, not a measured hardware maximum",
         "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
-        "It falls, and it can get itself upright again",
+        # It said the duck could get itself upright again, which was robotd's limp_fall. On
+        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT), and this
+        # is the sheet a pilot judges a task against before anything moves.
+        "It falls, and may not get up again by itself: on daemon-v0.16.1 robotd does nothing "
+        "about a fall but report it",
     ],
 )
 
@@ -79,10 +83,10 @@ def microduck_manifest(
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
 
-    `camera` is the one thing a description of the robot cannot settle on its own. Upstream has
-    no socket-level camera method at all — the camera reaches clients through `mediad`'s WebRTC
-    track — so on the jsonrpc backend a frame exists only when `--camera-url` names something
-    serving one. Advertising `observe` either way promises the pilot vision it may not have.
+    `camera` is the one thing a description of the robot cannot settle on its own. robotd's
+    socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
+    names something serving one. Advertising `observe` either way promises the pilot vision it
+    may not have.
     """
     core = [
         verb_spec(CORE["report_state"], core=True),

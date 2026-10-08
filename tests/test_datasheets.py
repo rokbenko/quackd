@@ -12,7 +12,7 @@ import pytest
 from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
 from quackd.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
-from quackd_microduck import microduck_manifest
+from quackd_microduck import MICRODUCK_VERBS, microduck_manifest
 from quackd_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
@@ -81,6 +81,17 @@ def test_the_microduck_says_what_it_knows_and_what_nobody_published() -> None:
     assert "Not published: payload, reach, endurance." in text
     assert "a beak, no arms" in text
     assert "carry, hold or push anything" in text
+
+
+def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
+    """The sheet said the duck could get itself upright again, and that was robotd's
+    `limp_fall`, which is off by default on daemon-v0.16.1, where a fall changes nothing in
+    robotd. The sheet is what the pilot judges a task against, and `stand_up`'s description is
+    what it reads before calling the verb, so neither may promise a recovery the robot does
+    not run."""
+    text = body_section(microduck_manifest("sim2d"))
+    assert "may not get up again by itself" in text and "get itself upright" not in text
+    assert "may not manage" in MICRODUCK_VERBS["stand_up"].description
 
 
 def test_an_unpublished_figure_is_a_question_for_a_person_not_a_refusal() -> None:
