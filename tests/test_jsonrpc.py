@@ -37,6 +37,7 @@ from quackd_microduck.transports.jsonrpc_unix import (
     READER_LIMIT,
     JsonRpcUnixTransport,
     camera_stale_after_s,
+    default_address,
     move_echo_after_s,
     parse_address,
     state_stale_after_s,
@@ -623,6 +624,18 @@ def test_parse_address() -> None:
     assert parse_address("tcp://duck.local:9870") == ("tcp", "duck.local", 9870)
     with pytest.raises(TransportError):
         parse_address("http://nope")
+
+
+def test_the_default_address_is_robotds_own_socket_whatever_duck_runtime_dir_says(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DUCK_RUNTIME_DIR` moves the directory upstream's daemons publish their identity files in,
+    never robotd's socket, which is a literal `--socket` default (`up.RUNTIME_DIR_ENV`). quackd
+    read it on the machine it ran on, so in a shell that set it, for upstream's tests or a daemon
+    run by hand, the default named a socket no robotd creates."""
+    monkeypatch.setenv(up.RUNTIME_DIR_ENV.name, "/home/someone/.cache/duck-sim")
+    assert default_address() == f"unix://{up.SOCKET_ROBOTD.name}" == "unix:///run/robotd.sock"
+    assert JsonRpcUnixTransport().address == default_address()
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the Windows hint only fires on Windows")

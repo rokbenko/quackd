@@ -124,6 +124,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the link. `tests/test_jsonrpc.py` sends a frame between the two limits, which is read, and two
   past the new one, after which the link still answers. Both failed before this change.
 
+- **`microduck:jsonrpc` with no `--address` looks for robotd's socket where robotd makes it,
+  whatever `DUCK_RUNTIME_DIR` says.** It looked for `$DUCK_RUNTIME_DIR/robotd.sock` whenever that
+  variable was set where quackd ran. Upstream's `DUCK_RUNTIME_DIR` moves only the directory its
+  daemons publish their identity files in, for upstream's own tests and for a daemon run by hand,
+  and robotd's socket is a literal `--socket` default that no variable moves, so with the variable
+  set the default named a socket no robotd creates. The default is `unix:///run/robotd.sock` now,
+  and quackd does not read the variable. A robotd anywhere else, such as each duck upstream's
+  `scripts/duck-sim` starts, is reached with `--address`. A test in `tests/test_jsonrpc.py` sets
+  the variable and expects robotd's own socket, and it failed before this change.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

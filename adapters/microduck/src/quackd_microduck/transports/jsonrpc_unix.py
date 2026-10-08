@@ -52,7 +52,6 @@ import io
 import json
 import logging
 import math
-import os
 import sys
 import time
 import urllib.parse
@@ -275,8 +274,17 @@ def _pickup_detection(read: StateRead) -> bool | None:
 
 
 def default_address() -> str:
-    root = os.environ.get(up.RUNTIME_DIR_ENV.name, "/run")
-    return f"unix://{root}/robotd.sock"
+    """Where robotd listens unless it was told otherwise: its own `--socket` default.
+
+    It used to be `$DUCK_RUNTIME_DIR/robotd.sock` whenever that variable was set, read on the
+    machine running quackd. Upstream's variable moves only the directories its daemons publish
+    their `identity.json` in, for its own tests and for a daemon run by hand
+    (`up.RUNTIME_DIR_ENV`), and robotd's socket is a literal default that no variable moves
+    (`up.SOCKET_ROBOTD`), so with the variable set the default named a socket no robotd ever
+    creates. A robotd somewhere else, as each duck in upstream's `scripts/duck-sim` is, under a
+    name of its own, is reached with `--address`, like any other.
+    """
+    return f"unix://{up.SOCKET_ROBOTD.name}"
 
 
 def parse_address(address: str) -> tuple[str, str, int | None]:

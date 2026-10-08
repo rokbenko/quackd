@@ -114,7 +114,17 @@ FRAMING = UpstreamRef(
     src(_ARCH_DOC, 190),
     "'Wire format: JSON-RPC 2.0, one object per line (NDJSON).'",
 )
-RUNTIME_DIR_ENV = UpstreamRef("DUCK_RUNTIME_DIR", "VERIFIED", src(_PROTO, 532), "overrides /run")
+RUNTIME_DIR_ENV = UpstreamRef(
+    "DUCK_RUNTIME_DIR",
+    "VERIFIED",
+    src(_PROTO, 532),
+    "Moves runtime_root(), the directory each daemon publishes /run/<service>/identity.json under "
+    "(lib.rs:520-541), and nothing else: 'Not a configuration knob for a robot — nothing on the "
+    "board sets it', it exists for upstream's tests and for a daemon run by hand. robotd's socket "
+    "is a literal --socket default, SOCKET_ROBOTD (robotd/src/main.rs:235), which it does not "
+    "move, and scripts/duck-sim names each simulated robotd's socket itself. quackd does not read "
+    "it: with no --address, it connects to SOCKET_ROBOTD.",
+)
 
 SOCKET_ROBOTD = UpstreamRef("/run/robotd.sock", "VERIFIED", src(_PROTO, 500))
 SOCKET_CONFIGD = UpstreamRef("/run/configd.sock", "VERIFIED", src(_PROTO, 501))
