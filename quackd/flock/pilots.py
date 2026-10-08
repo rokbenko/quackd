@@ -34,7 +34,7 @@ from quackd import __version__
 from quackd.adapters.base import go_to_rest_if_any
 from quackd.adapters.factory import RobotSpec, describe, make_adapter
 from quackd.adapters.manifest import RobotManifest
-from quackd.agent.loop import AgentLoop, Outcome, RunConfig, RunResult
+from quackd.agent.loop import AgentLoop, Outcome, RunConfig, RunResult, resolve_play
 from quackd.agent.providers.base import LLMProvider, Usage
 from quackd.agent.transcript import new_run_dir, run_label
 from quackd.command import command_line
@@ -217,8 +217,12 @@ async def run_pilot_flock(
     flock_name: str | None = None,
     run_name: str | None = None,
     price: str | None = None,
+    play: bool | None = None,
 ) -> PilotFlockResult:
-    """One pilot per member, all at once, until every one of them has ended."""
+    """One pilot per member, all at once, until every one of them has ended.
+
+    `play` is `--play` or `--no-play` over the task file's own `play`, for every member at
+    once, and None is the file's word."""
     members = list(roster)
     if not MIN_MEMBERS <= len(members) <= MAX_MEMBERS:
         raise ValueError(
@@ -312,9 +316,11 @@ async def run_pilot_flock(
                 # is three bills at one rate
                 price=price,
                 summary_file=False,
+                play=play,
             )
         )
 
+    played, played_from = resolve_play(duck.frontmatter.play, play)
     transcript.write(
         "flock_start",
         duck=duck.name,
@@ -338,6 +344,9 @@ async def run_pilot_flock(
         seed=seed,
         dry_run=dry_run,
         contract=duck.frontmatter.model_dump(),
+        # as each member's `run_start` says it, so the flock's own record agrees with them
+        # when `--play` or `--no-play` overrode the file
+        play={"on": played, "from": played_from},
     )
 
     results: dict[str, RunResult] = {}

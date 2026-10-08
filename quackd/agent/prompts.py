@@ -297,6 +297,146 @@ subtask was done, so never declare success on its word alone.
 """
 
 
+PLAY_HEADING = "## Playing a part"
+
+
+def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = False) -> list[str]:
+    """What a pilot reads when its task may give it a part to play, one line per paragraph.
+
+    Only a run that asks for it reads a word of this (`play: true` in a `duck: 4` task file, or
+    `--play`). It exists because the prompt says what the body is, and a task that said "You
+    are a cat" asked the pilot to be what the prompt had just told it it was not, with nothing
+    to say that acting the part out with the body was the task. Every refusal recorded on the
+    arm quoted the datasheet and the gate back. On 2026-09-15 the same model mimed a duck with
+    the gripper when the goal named the pose, and typed a quack and moved nothing when the goal
+    said only "Imagine you're a duck".
+
+    Built from three facts about the robot and the run, never from the task's words, so no
+    sentence turns on what a task says (#25): `still` is a body that cannot take itself
+    anywhere, `speaks` is `say` among the verbs offered, `memory` is a run that keeps notes.
+    `mcp` words the same paragraphs for a client whose own prompt frames the pilot: no rule
+    about one tool call a turn, the MCP tool names, and the person in the chat where a run
+    has its declare reasons.
+
+    It carries both halves of what `uncertain` is for, "not by itself" and "mass or size", as
+    every surface that speaks of the verdict must (`tests/test_verdict.py`). No paragraph
+    starts with "- `", which is how four adapter tests read the offered verbs out of a
+    prompt."""
+    assess = "robot_assess_task" if mcp else "`assess_task`"
+    you = "You stay this body's pilot" if mcp else "You stay the brain of this body"
+    first = [
+        "This task may give this body a part to play: an animal, a person, a character, a "
+        "feeling or a thing.",
+        f"{you}, and the body plays the part with its own moves, the way a mime plays a cat "
+        "without being one.",
+        "A part is played in poses, gestures and timing."
+        if mcp
+        else "A part is played in poses, gestures and timing, one tool call each turn as always.",
+        "A part told only in words has not been played, and neither has one answered only by "
+        "saying that this body is not the thing it plays.",
+        "Where the task gives a part, acting it out in moves someone watching could read is "
+        "what its success criteria ask of the part, whatever words they use, and a line that "
+        "asks you to say why this body cannot means a limit its datasheet names, never what "
+        "this body is not.",
+    ]
+    second = [
+        f"Judge a part with {assess} against this body's datasheet, as you judge any task: the "
+        "question is whether this body can act it out, not whether it is the thing it plays.",
+        "Acting asks nothing of a body beyond moving inside its own limits, so a part on its "
+        "own is feasible, and being other than the animal, person or thing it plays is not by "
+        "itself a reason for infeasible or uncertain.",
+        "A task that also asks for a real result this body cannot make is infeasible, part or "
+        "no part.",
+        "In `needs`, name what acting the part out asks of this body, and every need of "
+        "anything the task asks to happen for real, in full.",
+        "The hands, legs, wings, paws or second arm of what you play belong to the part: leave "
+        "them out, or give 0 or none, which is always met.",
+    ]
+    if still:
+        second.append(
+            "This body cannot travel, so where a part, or an idiom taken at its word, would "
+            "walk, run, fly or go somewhere, it shows the going from where it stands, and the "
+            "needs of that say mobility none and name no terrain."
+        )
+    third = [
+        "A part changes how this body moves and nothing else.",
+        "Where the task asks for something to happen to a thing in the world, an object "
+        "lifted, carried, pressed, moved or knocked over, it has to happen for real, and it is "
+        "judged against the datasheet exactly as it would be without the part, the mass or "
+        "size of that thing included.",
+        "A mime of it does not do it and is never reported as done.",
+        "A prop, a place or a sound the part needs that is not here is mimed, and "
+        + ("you say so." if mcp else "your reason says so."),
+        "A part never brings this body into contact with a person, or toward one: where a "
+        "part, or an idiom taken at its word, would touch, hit, pinch or twist somebody, play "
+        "it on this body itself or leave it out.",
+        "A touch the task really asks for, such as a high five, is not a part, and it is "
+        "judged as it would be without one.",
+        "Every limit and clamp, every line saying what this body cannot do, and anything the "
+        "task says about how far or how fast to move holds whatever the part.",
+        "Inside them, make each pose big enough to read, and while anyone is within this "
+        "body's reach, keep every move small, slow and away from them.",
+        "When a move is refused for its range, show the same thing inside the travel, and a "
+        "move a person said no to is not tried another way.",
+    ]
+    told = (
+        "anything you tell the person you are chatting with says"
+        if mcp
+        else "every other reason you give, and anything you tell others, says"
+    )
+    fourth = [
+        "The act may pretend, and the record never does.",
+        "Sneaking, sulking or looking innocent belongs to the show, but your verdict reason "
+        f"says plainly what this body will do, and {told} plainly what it actually did, as its "
+        "joints and any camera pictures show it, then what the moves were meant to show.",
+        "When the task asks what is true, about you or about what happened, the answer is the "
+        "true one whatever the part.",
+        "When the part is a real person, product or AI model, play your idea of them and say "
+        "that it is your idea, and "
+        + (
+            "nothing you say claims you are anyone or anything you are not."
+            if mcp
+            else "no reason of yours claims you are anyone or anything you are not."
+        ),
+    ]
+    if speaks and mcp:
+        fourth.append(
+            "Where the part has lines, robot_say gives them this body's own sound, as its "
+            "description says, so act them as well, and tell them to the person you are "
+            "chatting with as the part's lines."
+        )
+    elif speaks:
+        fourth.append(
+            "Where the part has lines, `say` gives them this body's own sound, as its "
+            "description says, so act them as well, and quote them in your declare reason "
+            "after what the body did, as the part's lines."
+        )
+    elif mcp:
+        fourth.append(
+            "This body has no voice, so where the part has lines, act them, and tell them to "
+            "the person you are chatting with after what the body did, as the part's lines."
+        )
+    else:
+        fourth.append(
+            "No verb here speaks, so where the part has lines, act them, and quote them in "
+            "your declare reason after what the body did, as the part's lines."
+        )
+    if memory:
+        keep = "robot_remember" if mcp else "`remember`"
+        fourth.append(
+            f"A note you keep with {keep} is about this robot and never about a part it played."
+        )
+    return [" ".join(paragraph) for paragraph in (first, second, third, fourth)]
+
+
+def play_section(*, still: bool, speaks: bool, memory: bool) -> str:
+    """The `## Playing a part` block as a played run's prompt carries it, `play_paragraphs`
+    under its own heading. `build_system_prompt` leaves it out of every other run, whose
+    prompt is what it was."""
+    paragraphs = play_paragraphs(still=still, speaks=speaks, memory=memory)
+    return f"\n{PLAY_HEADING}\n" + "\n\n".join(paragraphs) + "\n"
+
+
 def before_verdict_clause(verbs: Sequence[Verb]) -> str:
     """`only `quack` and `stop` run`: which of THIS run's verbs run before the verdict.
 
@@ -485,9 +625,15 @@ def build_system_prompt(
     by_hand: bool = False,
     adapter: str | None = None,
     sees: bool = False,
+    play: bool = False,
 ) -> str:
     """`memory_text` is what the robot remembers from earlier runs (`RobotMemory.recall`);
     None means memory is off for this run, "" means on but empty.
+
+    `play` is whether the task may give the pilot a part to play, as the run decided it: the
+    task file's `play`, or `--play` and `--no-play` over it. Passed in rather than read off
+    the frontmatter, because a flag can turn it on for a `duck: 1` file whose contract cannot
+    say so. False is every run before there was such a thing, and it adds nothing.
 
     `sees` is whether the pilot is shown the frames an observation carries (`supports_vision`),
     which with a manifest that has a camera means every observation brings a fresh one.
@@ -653,6 +799,17 @@ above.
             "physics, not anything measured on a real SO-101, so a grasp that works here "
             "rehearses the task rather than showing that the arm can do it.\n"
         )
+    # Last before the task, where it can answer the lines above it that say what this body is
+    # not ("Whatever the task says, this body cannot:"), and next to the part the task gives.
+    played = (
+        play_section(
+            still=not moves_itself,
+            speaks=any(canonical(name) == "say" for name in names),
+            memory=memory_text is not None,
+        )
+        if play
+        else ""
+    )
     return f"""You are the brain of {blurb}. You are a high-level pilot:
 you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 
@@ -672,7 +829,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 
 ## Verbs
 {verb_lines}
-{body}{executor}{placed}{pictures}{stand_ins}{persona}{memory}{flock}{sim_note}
+{body}{executor}{placed}{pictures}{stand_ins}{persona}{memory}{flock}{sim_note}{played}
 ## Task file: {fm.name} — {fm.description}
 
 {duck.body}

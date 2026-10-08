@@ -495,6 +495,49 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     assert "QUACKD_POLICY_URL" not in env_example, "the policy server's address has no variable"
 
 
+def test_play_is_documented_where_it_is_configured() -> None:
+    """`--play` and a task file's `play: true` change what a pilot is told, so somebody turning
+    them on has to find what they add and what they leave alone: the front page's `run`,
+    `preflight` and `record` rows and its Configuration table, the spec's v4 key, the guide, the
+    MCP page, the ADR and the safety page, which says a part unlocks nothing. The guide quotes
+    the section as the code renders it for an arm. No variable sets play, so `.env.example` must
+    never grow a line for it."""
+    from quackd.agent.prompts import play_section
+    from quackd.cli import app
+
+    callbacks = {
+        (c.name or c.callback.__name__).replace("_", "-"): c.callback
+        for c in app.registered_commands
+        if c.callback is not None
+    }
+    for name in ("run", "record", "preflight"):
+        assert "play" in callbacks[name].__code__.co_varnames, name
+    assert "play" not in callbacks["serve-mcp"].__code__.co_varnames
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for name in ("run", "preflight", "record"):
+        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        assert "--play" in row and "--no-play" in row, f"the README's {name} row names neither"
+    for path, needles in (
+        ("README.md", ("| Play |", "play: true", "duck: 4", "docs/guides/play.md")),
+        ("docs/reference/duck-spec.md", ("`play` (v4)", "duck: 4", "--no-play", "guides/play.md")),
+        (
+            "docs/guides/play.md",
+            ("--play", "--no-play", "## Playing a part", "robot_load_duckfile", "run_start.play"),
+        ),
+        ("docs/guides/mcp.md", ("play: true", "guides/play.md")),
+        ("docs/concepts/safety.md", ("guides/play.md", "a played run has exactly the verbs")),
+        ("docs/adr/0051-a-pilot-can-play-a-part.md", ("--play", "--no-play", "duck: 4")),
+    ):
+        text = (REPO / path).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle in text, f"{path} does not mention {needle!r}"
+    guide = (REPO / "docs" / "guides" / "play.md").read_text(encoding="utf-8")
+    quoted = play_section(still=True, speaks=False, memory=False).strip()
+    assert quoted in guide, "docs/guides/play.md no longer quotes the section the arm reads"
+    env_example = (REPO / ".env.example").read_text(encoding="utf-8")
+    assert "QUACKD_PLAY" not in env_example, "no variable sets play"
+
+
 def test_the_controller_is_documented_where_it_is_configured() -> None:
     """`--controller vla` takes the model out of a run and leaves its success to a person, so
     somebody choosing it has to find what it asks of them: the front page's `run` row and its

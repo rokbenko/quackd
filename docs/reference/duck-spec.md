@@ -1,4 +1,4 @@
-# The `.duck` file — spec v0, v1, v2 and v3 (normative)
+# The `.duck` file — spec v0, v1, v2, v3 and v4 (normative)
 
 A `.duck` file is a task for an LLM-piloted robot, or for a flock of them. It is
 deliberately **SKILL.md-shaped**: YAML frontmatter between `---` fences, then a Markdown
@@ -9,8 +9,9 @@ too. `duck: 1` (quackd 0.4) adds what a multi-robot task needs, and `duck: 2` ad
 task says about the *body*: a correction to the robot's own datasheet, and what a flock role
 physically needs ([ADR-0019](../adr/0019-duck-spec-v1.md),
 [ADR-0032](../adr/0032-datasheets-and-the-verdict.md)). `duck: 3` adds what a task lets the
-body's learned policy be told, and for how long ([`policy`](#policy-v3)). `duck: 0` files parse
-and run unchanged.
+body's learned policy be told, and for how long ([`policy`](#policy-v3)). `duck: 4` adds one
+thing a task says about the pilot rather than the body: that it may be given a part to play
+([`play`](#play-v4)). `duck: 0` files parse and run unchanged.
 
 Machine-readable schema: [`../quackd/duckfile/schema.json`](../../quackd/duckfile/schema.json)
 (generated from `quackd/duckfile/schema.py`; a test keeps them in sync).
@@ -31,7 +32,7 @@ Encoding UTF-8. The first non-blank, non-comment line must be `---`.
 
 | Field | Type | Required | Enforced by | Meaning |
 |---|---|---|---|---|
-| `duck` | `0`, `1`, `2` or `3` | yes | parser | Spec version. `1` unlocks `requires`, `robots`, `flock.roles`, `flock.frame_hints` and `flock.allocation.method: pilots`; `2` unlocks `datasheet` and `flock.roles.<role>.needs`; `3` unlocks `policy`. Using a key under too low a version is an error that names the fix. |
+| `duck` | `0`, `1`, `2`, `3` or `4` | yes | parser | Spec version. `1` unlocks `requires`, `robots`, `flock.roles`, `flock.frame_hints` and `flock.allocation.method: pilots`; `2` unlocks `datasheet` and `flock.roles.<role>.needs`; `3` unlocks `policy`; `4` unlocks `play`. Using a key under too low a version is an error that names the fix. |
 | `name` | slug `^[a-z0-9][a-z0-9-]{0,63}$` | yes | parser | Identifier; run directories and the fake pilot's strategies key on it. |
 | `description` | string | yes | — | One human-facing line. Shown in the system prompt. |
 | `author` | string | no | — | Credit. |
@@ -43,6 +44,7 @@ Encoding UTF-8. The first non-blank, non-comment line must be `---`.
 | `success` | list of strings, ≥ 1 | yes | LLM (+ ground truth in sim tests) | Criteria the model judges itself against via `declare_success(reason)`. |
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |
+| `play` (v4) | bool | no (default `false`) | — | The task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section, `## Playing a part`, to the system prompt and changes no gate. `quackd run --play` or `--no-play` overrides it for one run ([`play`](#play-v4), [guides/play.md](../guides/play.md)). An auction flock cannot carry it. |
 | `providers` | list of strings | no | — | Tested-with, **not** a restriction. |
 | `learned_verbs` | list of `{name, policy, description?, metadata?}` | no | `validate` rejects non-empty | Reserved for v2 ([concepts/learned-verbs.md](../concepts/learned-verbs.md)). |
 | `flock` | mapping, see below | no | **coordinator** or **pilots** | Cooperating robots. Absent means a single robot, unless the run names a stored flock (`--flock NAME`), which makes it a pilot flock. |
@@ -175,6 +177,7 @@ is refused at runtime and the LLM is told so.
   or transport that failed, or a bug). The robot is stopped in every case and its adapter
   closed.
 - `--max-steps` on the CLI overrides `budgets.max_steps` for one run.
+- `--play` and `--no-play` override `play` for one run, on `run`, `record` and `preflight`.
 - `--dry-run` executes the verbs their adapter declared `read_only` (`observe`, alias
   `get_frame`, `report_state`, the rosbridge base's `introspect`) and logs everything else
   without sending an intent.
@@ -184,8 +187,8 @@ is refused at runtime and the LLM is told so.
 `quackd validate <files or globs or bundled names>` prints a table and exits 1 on any
 failure, with a path and a field-level reason. Checks: parse, schema (a `policy` section's
 bounds, `manipulate` allowed beside it, no `pick` beside a list of instructions, and no
-`policy` in a flock duck among them), unknown verbs, `learned_verbs` empty, no `confirm` in
-an auction flock. With `--robot <adapter>:<backend>` (one or
+`policy` in a flock duck among them), unknown verbs, `learned_verbs` empty, no `confirm` or
+`play` in an auction flock. With `--robot <adapter>:<backend>` (one or
 more) or `--robots name=spec,...`, the file is also checked against those robots' manifests:
 `requires` (or, for v0, `allow`) per robot, and every flock role fillable by at least one
 robot. Without a flag, the duck's own `robots:` default is used, and a file that names no
@@ -204,7 +207,8 @@ adds `requires`, `robots`, `flock.roles`, `flock.frame_hints` and, since 0.9,
 `flock.allocation.method: pilots` ([ADR-0019](../adr/0019-duck-spec-v1.md),
 [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)); `duck: 2` adds `datasheet` and
 `flock.roles.<role>.needs` ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)); `duck: 3`
-(0.16) adds `policy`. Older files keep parsing because the version is explicit and the parser
+(0.16) adds `policy`; `duck: 4` adds `play` ([ADR-0051](../adr/0051-a-pilot-can-play-a-part.md)).
+Older files keep parsing because the version is explicit and the parser
 is strict; the only new rejections a v0 file can hit are two contradictions no shipped file
 contains (a verb listed next to its alias, `stop` in `confirm`). Older quackd versions refuse
 newer files, which is the correct failure.
@@ -320,3 +324,59 @@ quackd validate
 `quackd run stack-blocks.duck --controller vla --policy-url ...` hands the policy these three
 instructions in order and then asks you whether the arm stacked the block
 ([adapters/lerobot/README.md](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+
+### `play` (v4)
+
+A task can give the pilot a part to play: an animal, a person, a character, a feeling or a
+thing, which it acts out with the body it has ([guides/play.md](../guides/play.md)). `play: true`
+in a `duck: 4` file adds one section to the system prompt, `## Playing a part`, directly before
+the task file, and nothing else. The tools, the observations and every gate are what they are on
+any run, and a file without the key, or with `play: false`, reads the prompt it always did.
+`quackd run --play` turns it on for one run of any file, a `--goal` included, and `--no-play`
+turns a file's `play` off for one run. No variable sets either.
+
+The section is quackd's own words, the same for every task on one body, and three facts about
+the run choose its variant, never what the task says: whether the body can take itself
+anywhere, whether it offers `say`, and whether the run keeps notes. It tells the pilot that a
+part is acted out in moves, that the verdict asks whether this body can act it out rather than
+whether it is the thing it plays, and that the legs, wings or second arm of what it plays are
+left out of `needs`. Anything the task asks to happen to a thing in the world still has to
+happen for real, and is judged as it would be without the part. No part brings the body into
+contact with a person, or toward one, and every reason the pilot gives says plainly what the
+body actually did.
+
+Each member of a pilot flock reads the section. A coordinator flock has no pilot to read it, so
+`play` beside `flock.allocation.method: auction` is refused, and so are `--play` on a coordinator
+flock and a played file under `--controller vla`, whose policy reads no prompt. Over MCP,
+`robot_load_duckfile` hands a played file's part to the client as a `play` field, worded for a
+chat.
+
+```yaml
+---
+duck: 4
+name: t-rex
+description: Be a T-rex.
+verbs:
+  allow: [report_state, move_joints, gripper, stop]
+requires: [move_joints]
+budgets:
+  max_steps: 8
+success:
+  - You have shown what the task asks with the arm's joints and gripper, in moves someone watching could read, and your reason says what the arm did.
+persona: "Game for anything: commit to the bit with the whole arm, and say plainly in your reasons what it actually did."
+play: true
+---
+# Task
+You are a T-rex. Show me.
+```
+
+```console
+$ quackd validate t-rex.duck
+quackd validate
++--------------------------------------+
+| file       | name  | verbs | result  |
+|------------+-------+-------+---------|
+| t-rex.duck | t-rex |     4 | + valid |
++--------------------------------------+
++ 1 file valid
+```

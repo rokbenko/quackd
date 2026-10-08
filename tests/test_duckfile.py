@@ -95,7 +95,7 @@ def test_advisory_abort_conditions_pass_through() -> None:
     [
         (lambda s: s.replace("---\nduck", "duck", 1), "missing frontmatter"),
         (lambda s: s.replace("---\n# Task", "# Task"), "unterminated"),
-        (lambda s: s.replace("duck: 0", "duck: 4"), "duck"),
+        (lambda s: s.replace("duck: 0", "duck: 5"), "duck"),
         (lambda s: s.replace("success: [x]", "success: [x]\nrequires: [quack]"), "needs duck: 1"),
         (lambda s: s.replace("name: t", "name: Not A Slug"), "name"),
         (lambda s: s.replace("success: [x]", "success: [x]\nbogus: 1"), "bogus"),

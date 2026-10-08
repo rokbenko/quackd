@@ -441,6 +441,15 @@ def policy_row(policy: Mapping[str, Any]) -> str:
     return f"{policy.get('server')}  {served}" if served else str(policy.get("server"))
 
 
+def play_row(on: bool, source: str, *, file_play: bool) -> str | None:
+    """Whether a run's pilot may play a part, and whose word that was, for the `play` row of a
+    run's header: the live one `quackd run` prints and the one a replay opens with. None for a
+    run that neither plays nor turned a task file's play off, whose header is what it was."""
+    if on:
+        return "on, from the task file" if source == "task file" else f"on, from {source}"
+    return f"off, from {source}" if file_play else None
+
+
 def _ok(outcome: str) -> bool:
     return outcome == "ok"
 
@@ -529,6 +538,9 @@ def render_events(
             head += f" detector={detector}"
         if d.get("dry_run"):
             head += " DRY RUN"
+        # only a run that played, so every other line reads as it did, older records included
+        if isinstance(play := d.get("play"), Mapping) and play.get("on"):
+            head += " play"
         if "connect_s" in d:
             head += f" connected in {d['connect_s']:.2f} s"
         lines: list[LogLine] = [LogLine("run", head, "bold", mark="start")]
@@ -1214,6 +1226,17 @@ class ConsoleLog(LineLog):
         # arm had a policy server, so every other replay opens as it always did
         if isinstance(policy := d.get("policy"), Mapping) and policy.get("server"):
             rows.append(("policy", policy_row(policy)))
+        # the play row the live header had, from the record's own `play`, and none for a
+        # record from before there was one
+        if isinstance(play := d.get("play"), Mapping):
+            contract = d.get("contract") or {}
+            said = play_row(
+                bool(play.get("on")),
+                str(play.get("from")),
+                file_play=bool(contract.get("play")),
+            )
+            if said is not None:
+                rows.append(("play", said))
         # A replay has no CLI header in front of it and, until the record carried a wall clock,
         # no way at all of saying when the run it is showing you happened: the directory name
         # was the only answer, and a directory gets renamed and copied.

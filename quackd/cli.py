@@ -546,10 +546,13 @@ def _header_rows(
     host_camera: dict[str, Any] | None = None,
     sees: bool = True,
     policy: Mapping[str, Any] | None = None,
+    play: str | None = None,
 ) -> list[tuple[str, Any]]:
     """The things worth knowing before a run starts, and nothing else: who pilots, which body,
     what reads its frames, the board when there is one, and the policy server the arm hands its
-    segments to when there is one, with the checkpoint it said it serves when it was asked."""
+    segments to when there is one, with the checkpoint it said it serves when it was asked.
+    `play` is the row `quackd.log.play_row` words, or None for a run that says nothing about
+    play, whose header is what it was."""
     from quackd.log import policy_row
 
     rows: list[tuple[str, Any]] = [
@@ -561,6 +564,8 @@ def _header_rows(
         rows.append(("host", _host_row(board, hello, host_camera)))
     if policy is not None:
         rows.append(("policy", policy_row(policy)))
+    if play is not None:
+        rows.append(("play", play))
     if dry_run:
         rows.append(
             (
@@ -1361,6 +1366,7 @@ def _run_impl(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     controller: str | None = None,
+    play: bool | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError as _AdapterError
     from quackd.adapters.base import policy_choice, policy_hint
@@ -1378,7 +1384,7 @@ def _run_impl(
         resolve_decision_price,
     )
     from quackd.agent.images import TaskImageError, load_task_images
-    from quackd.agent.loop import RunConfig, run_duck
+    from quackd.agent.loop import RunConfig, resolve_play, run_duck
     from quackd.agent.providers.base import LLMProvider, ProviderError
     from quackd.agent.providers.factory import make_provider, resolve_llm
     from quackd.agent.providers.pricing import parse_price as _parse_price
@@ -1401,6 +1407,7 @@ def _run_impl(
         ConsoleLog,
         fan_out,
         log_enabled_default,
+        play_row,
         prompt_shown_default,
         thinking_limit_default,
     )
@@ -1471,6 +1478,7 @@ def _run_impl(
                     ("--extra-body", extra_body is not None),
                     ("--vision", vision is not None),
                     ("--image", bool(images)),
+                    ("--no-play" if play is False else "--play", play is not None),
                 )
                 if given
             ],
@@ -1510,6 +1518,16 @@ def _run_impl(
             f"{duck.name} lists none",
             hint="list them under policy.instructions in a duck: 3 task file "
             "(docs/reference/duck-spec.md), or give --goal",
+        )
+        return
+    if vla and duck is not None and duck.frontmatter.play:
+        # Here rather than with the flags above, which run before the file is read. The policy
+        # flies the arm with no pilot to read a part, so a run recorded as played would be
+        # one nobody played.
+        _fail(
+            f"{duck.name} gives its pilot a part to play, and --controller vla flies the arm "
+            "with no pilot to read it",
+            hint="run it without --controller vla",
         )
         return
     # Before the dispatch below, because a flock takes neither of the two flags and dropping
@@ -1809,6 +1827,24 @@ def _run_impl(
                 log_prompt=log_prompt,
                 run_name=run_name,
                 price=price,
+                play=play,
+            )
+            return
+        # A coordinator flock's members follow its plan, and none of them is a pilot a part
+        # could reach, so either way of asking for one is refused rather than dropped.
+        if play is not None:
+            _fail(
+                "a coordinator flock has no pilot for --play or --no-play to reach: its members "
+                "follow the flock's plan",
+                hint="drop the flag, or run the task as a pilot flock",
+            )
+            return
+        if duck.frontmatter.play:
+            _fail(
+                f"{duck.name} gives its pilot a part to play, and a coordinator flock has no "
+                "pilot to play it",
+                hint="run it on one robot, or as a pilot flock with flock.allocation.method: "
+                "pilots",
             )
             return
         if roster is not None:
@@ -2107,6 +2143,7 @@ def _run_impl(
         decision_llm=decision_pilot,
         decision_price=decision_price,
         host=hello.record(board.address) if board is not None and hello is not None else None,
+        play=play,
     )
     ui.console.print(
         ui.run_header(
@@ -2124,6 +2161,9 @@ def _run_impl(
                 host_camera=manifests[0].extras.get(HOST_CAMERA_EXTRAS),
                 sees="camera" in manifests[0].sensors,
                 policy=served,
+                play=play_row(
+                    *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
+                ),
             ),
             hint="Ctrl-C or q stops the duck. Press it twice to quit at once.",
         )
@@ -2273,13 +2313,15 @@ def _run_pilots_impl(
     log_prompt: bool | None = None,
     run_name: str | None = None,
     price: str | None = None,
+    play: bool | None = None,
 ) -> None:
     """A pilot per body, all at once. The other flock is `_run_flock_impl`."""
+    from quackd.agent.loop import resolve_play
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import make_provider, resolve_llm
     from quackd.agent.providers.pricing import fmt_usd
     from quackd.flock.pilots import run_pilot_flock
-    from quackd.log import fmt_duration, log_enabled_default
+    from quackd.log import fmt_duration, log_enabled_default, play_row
     from quackd.memory import RobotMemory
     from quackd.safety import KillSwitch
     from quackd.transport.base import TransportError
@@ -2327,7 +2369,16 @@ def _run_pilots_impl(
     ui.console.print(
         ui.run_header(
             duck.name,
-            _pilot_header_rows(roster, providers, memories, flock_name=flock_name, dry_run=dry_run),
+            _pilot_header_rows(
+                roster,
+                providers,
+                memories,
+                flock_name=flock_name,
+                dry_run=dry_run,
+                play=play_row(
+                    *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
+                ),
+            ),
             hint="Ctrl-C or q stops every robot. Press it twice to quit at once.",
         )
     )
@@ -2359,6 +2410,7 @@ def _run_pilots_impl(
                 run_name=run_name,
                 price=price,
                 on_run_dir=ui.attach_capture,
+                play=play,
             )
         finally:
             ks.uninstall()
@@ -2404,8 +2456,10 @@ def _pilot_header_rows(
     *,
     flock_name: str | None,
     dry_run: bool,
+    play: str | None = None,
 ) -> list[tuple[str, Any]]:
-    """What is about to happen: which bodies, which pilots, and what is different about it."""
+    """What is about to happen: which bodies, which pilots, and what is different about it.
+    `play` is the row `quackd.log.play_row` words, as on a solo run's header."""
     pilots = {(p.name, p.model) for p in providers.values()}
     rows: list[tuple[str, Any]] = []
     if len(pilots) == 1:
@@ -2435,6 +2489,8 @@ def _pilot_header_rows(
     )
     if flock_name:
         rows.append(("stored as", Text(flock_name, style=ui.STYLES["accent"])))
+    if play is not None:
+        rows.append(("play", play))
     rows.append(("status", Text("EXPERIMENTAL", style=ui.STYLES["warn"])))
     if dry_run:
         rows.append(("mode", Text("DRY RUN: nothing is sent", style=ui.STYLES["warn"])))
@@ -2926,6 +2982,18 @@ _DRY = typer.Option(
 _MAXSTEPS = typer.Option(
     None, "--max-steps", help="Override the duck's max_steps budget.", rich_help_panel="Task"
 )
+# No variable, as `--policy-url` has none: a `.env` line or a robots.json field would make every
+# run of one robot play, and the default prompt is the one this flag must never change.
+_PLAY = typer.Option(
+    None,
+    "--play/--no-play",
+    help="Let the pilot play a part the task gives it, an animal, a person, a character or a "
+    "feeling, by acting it out with the body it has. It adds one section to the system prompt "
+    "and changes no gate. --no-play turns a task file's play: true off for this run. Without "
+    "either the task file decides, and a --goal run plays only with --play. No variable sets "
+    "it, so a run plays only when its file or its command line says so.",
+    rich_help_panel="Task",
+)
 _RUNS = typer.Option(
     "runs", "--runs-dir", help="Where run directories go.", rich_help_panel="Output"
 )
@@ -3081,6 +3149,7 @@ def run(
     seed: int | None = _SEED,
     dry_run: bool = _DRY,
     max_steps: int | None = _MAXSTEPS,
+    play: bool | None = _PLAY,
     runs_dir: str = _RUNS,
     yes: bool = _YES,
     live: bool = _LIVE,
@@ -3165,6 +3234,7 @@ def run(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             controller=controller,
+            play=play,
         )
 
 
@@ -3175,6 +3245,7 @@ def record(
     llm: str | None = _LLM,
     seed: int | None = typer.Option(0, "--seed"),
     max_steps: int | None = _MAXSTEPS,
+    play: bool | None = _PLAY,
     runs_dir: str = _RUNS,
     run_name: str | None = _RUN_NAME,
     gif_size: int = _GIFSIZE,
@@ -3231,6 +3302,7 @@ def record(
             log_on=log,
             log_prompt=log_prompt,
             run_name=run_name,
+            play=play,
         )
 
 
@@ -3273,6 +3345,7 @@ def preflight(
     ),
     image: list[str] = _IMAGE,
     max_steps: int | None = _MAXSTEPS,
+    play: bool | None = _PLAY,
     seeds: int = typer.Option(
         DEFAULT_SEEDS,
         "--seeds",
@@ -3324,6 +3397,7 @@ def preflight(
         policy_url=policy_url,
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
+        play=play,
     )
 
 
@@ -3344,6 +3418,7 @@ def _preflight_impl(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    play: bool | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError, policy_choice
     from quackd.adapters.factory import describe, make_adapter
@@ -3434,6 +3509,7 @@ def _preflight_impl(
         max_steps=max_steps,
         runs_dir=runs_dir,
         task_images=task_images,
+        play=play,
     )
     files = _expand(duckfiles)
     ui.install_logging()

@@ -173,7 +173,7 @@ registrar and a synchronous fake MQTT broker, no sockets. Keep it that way, and 
 
 Checklist: `duck: 0` (or `duck: 1` if you use `requires`, `robots`, `flock.roles` or
 `flock.allocation.method: pilots`, or `duck: 2` if you correct the robot's `datasheet` or a
-role's `needs`) ·
+role's `needs`, or `duck: 4` if the task gives the pilot a part to play with `play: true`) ·
 slug name · `allow` lists only verbs the robot provides (`quackd list-verbs --robot ...`)
 · `confirm` ⊆ `allow` · at least one `success` line · `abort_when` uses the two enforced
 phrasings if you want them enforced · body starts with `# Task` · `quackd validate

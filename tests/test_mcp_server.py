@@ -589,6 +589,18 @@ async def test_the_mcp_verdict_tool_says_what_the_prompt_says() -> None:
         assert "before_verdict" in said, "which verbs run first is a field, not a fixed list"
 
 
+def test_the_mcp_play_field_says_what_the_prompt_says_about_the_verdict() -> None:
+    """A played file hands an MCP pilot its part in the load result, which speaks of the
+    verdict as well, so it is held to the same two halves of #25's rule."""
+    from quackd.agent.prompts import play_paragraphs
+
+    for still in (True, False):
+        said = "\n\n".join(play_paragraphs(still=still, speaks=False, memory=False, mcp=True))
+        assert "not by itself" in said, "it states #25's rule absolutely"
+        assert "mass or size" in said, "it drops the figure that does decide a limit"
+        assert "robot_assess_task" in said, "the MCP tool's own name"
+
+
 async def test_the_mcp_verdict_tool_spells_out_the_words_needs_takes() -> None:
     """MCP types `needs` as a bare dict, so a client is shown no enum and none of the loop's
     field descriptions. An MCP pilot asked to fill `needs` in had to guess the words, and the

@@ -236,8 +236,9 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
     page = (Path(__file__).parents[1] / "docs" / "reference" / "duck-spec.md").read_text(
         encoding="utf-8"
     )
-    # to the end of the page: the file it shows has a `## Strategy` heading of its own
-    section = page.split("\n### `policy` (v3)", 1)[1]
+    # to the `play` section after it, not to the next `## `: the file it shows has a
+    # `## Strategy` heading of its own, and the console block below it has to be its own too
+    section = page.split("\n### `policy` (v3)", 1)[1].split("\n### `play` (v4)", 1)[0]
     found = re.search(r"```yaml\n(---\n.*?)```", section, flags=re.DOTALL)
     assert found, "the policy section no longer shows a whole file"
     table = section.split("```", 1)[0]

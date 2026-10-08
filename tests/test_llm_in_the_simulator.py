@@ -312,3 +312,102 @@ async def test_a_real_model_gets_past_the_gate_on_the_readmes_own_goal(tmp_path:
     assert result.steps >= 1, (
         f"the pilot never moved: {result.outcome} after {result.steps} steps ({result.reason})"
     )
+
+
+def _moved(run_dir: Path) -> list[str]:
+    """Every verb that moved the body and was carried out, as the record has them. A sound is
+    not one: a played Microduck may quack in character and still have moved nothing."""
+    from quackd.agent.transcript import Transcript
+    from quackd.verdict import MOVES_THE_BODY
+
+    events = Transcript.read(run_dir / "transcript.jsonl")
+    return [
+        str(e["name"])
+        for e in events
+        if e["kind"] == "verb" and e.get("ok") and e.get("canonical") in MOVES_THE_BODY
+    ]
+
+
+@pytest.mark.live_llm
+@pytest.mark.parametrize(
+    "goal",
+    [
+        "pick up the laundry basket by the wall and carry it to the door",
+        "You are a pack mule. Pick up the laundry basket by the wall and carry it to the door.",
+    ],
+    ids=["basket", "pack-mule"],
+)
+async def test_a_played_task_whose_real_result_the_body_cannot_make_stays_infeasible(
+    tmp_path: Path, goal: str
+) -> None:
+    """Play changes how a body moves, never what a task asks of the world. Carrying a basket
+    is a real result, and a duck with a beak and no arms cannot make it, part or no part: the
+    played run has to end where the plain one does, before anything moves.
+
+    Not "0 steps", which the plain test pins: a sound is a step, and a pilot playing a pack
+    mule may bray before it answers. What may not happen is a verb that moves the body."""
+    _live_or_skip()
+    probe = MujocoWorld(seed=0, body=BODY)
+    try:
+        require_render(probe)
+    finally:
+        probe.close()
+    safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
+    duck = duck_from_goal(goal, safe)
+    duck = duck.model_copy(
+        update={
+            "frontmatter": duck.frontmatter.model_copy(
+                update={"budgets": Budgets(max_steps=2, max_minutes=2, max_llm_calls=3)}
+            )
+        }
+    )
+    result = await run_duck(
+        RunConfig(
+            duck=duck,
+            provider=_provider(goal=goal),
+            transport=MicroduckAdapter(MujocoTransport(seed=0, body=BODY)),
+            detector=ColorBlobDetector(),
+            runs_dir=tmp_path,
+            play=True,
+        )
+    )
+    assert not _moved(result.run_dir), f"the duck moved for a task it cannot do: {result.reason}"
+    assert result.outcome == "infeasible", (
+        f"the played run ended {result.outcome} rather than judging the body: {result.reason}"
+    )
+
+
+@pytest.mark.live_llm
+async def test_a_played_part_moves_the_body(tmp_path: Path) -> None:
+    """The other half: a part on its own is something a body can act out, so a played run
+    gets past the verdict and moves, rather than explaining that a duck is not a cat."""
+    _live_or_skip()
+    probe = MujocoWorld(seed=0, body=BODY)
+    try:
+        require_render(probe)
+    finally:
+        probe.close()
+    goal = "You are a cat. Show me."
+    safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
+    duck = duck_from_goal(goal, safe)
+    duck = duck.model_copy(
+        update={
+            "frontmatter": duck.frontmatter.model_copy(
+                update={"budgets": Budgets(max_steps=3, max_minutes=3, max_llm_calls=5)}
+            )
+        }
+    )
+    result = await run_duck(
+        RunConfig(
+            duck=duck,
+            provider=_provider(goal=goal),
+            transport=MicroduckAdapter(MujocoTransport(seed=0, body=BODY)),
+            detector=ColorBlobDetector(),
+            runs_dir=tmp_path,
+            play=True,
+        )
+    )
+    assert result.outcome not in ("infeasible", "aborted"), (
+        f"the played run ended {result.outcome} at the gate: {result.reason}"
+    )
+    assert _moved(result.run_dir), f"the pilot never moved: {result.outcome} ({result.reason})"

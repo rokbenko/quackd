@@ -9,6 +9,32 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **A task can give the pilot a part to play.** `play: true` in a `duck: 4` task file, or `--play`
+  on `quackd run`, `record` and `preflight`, adds one section to the system prompt, `## Playing a
+  part`, directly before the task file. It tells the pilot that a part is acted out with the body
+  it has, that the verdict asks whether this body can act it out rather than whether it is the
+  thing it plays, and that the legs, wings or second arm of what it plays stay out of `needs`. A
+  real result the task asks for still has to happen and is judged as it would be without the
+  part, no part brings the body into contact with a person or toward one, and every reason says
+  what the body actually did. `--no-play` turns a file's `play` off for one run, the flag wins
+  over the file, and no variable sets either. The tools, the observations and every gate are what
+  they were, and a run that does not play reads the prompt it always did, byte for byte, which
+  rendering every shipped body with every starter, and the arm with every example file, before
+  and after the change showed. Each member of a pilot flock plays, and a coordinator flock and
+  `--controller vla` refuse it, since neither has a pilot to read it. Over MCP,
+  `robot_load_duckfile` hands a played file's part to the client as `play`. A run's header gains a
+  `play` row when play is on or a file's play was turned off, the log's run line ends with `play`,
+  and the record gains `run_start.play`, whether the pilot was told it may play and whose word
+  that was, beside `contract.play`, the file's own, and a pilot flock's `flock_start` says the
+  same. `tests/test_play.py` holds the schema's rules, a played prompt as the plain one plus one
+  section on every shipped body, the tools and the gate's words unchanged played or not, the
+  record, MCP and the refusals, and two opt-in live tests in `tests/test_llm_in_the_simulator.py`
+  hold that a played task whose real result the body cannot make still ends infeasible and that a
+  played part moves the body ([docs/guides/play.md](docs/guides/play.md),
+  [ADR-0051](docs/adr/0051-a-pilot-can-play-a-part.md)).
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
@@ -32,6 +58,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   call is the turn's answer. Grok and the local servers read the Chat Completions parser, so they
   say a refusal the same way. `tests/test_providers.py` holds a Responses refusal, one beside a
   call, and a Chat Completions refusal.
+
+### Documentation
+
+- **Playing a part.** A guide, [docs/guides/play.md](docs/guides/play.md), says how to turn it
+  on, quotes the section as the SO-101 reads it, and says what a part cannot do: go past the
+  travel, speak on the arm, tell a person from something blue, or reach a decision LLM. The spec
+  reference describes `duck: 4` and `play` with a whole example and the `quackd validate` it
+  passes, [ADR-0051](docs/adr/0051-a-pilot-can-play-a-part.md) records why one named framing
+  rather than an override file or a set of templates, and `docs/concepts/safety.md` says that a
+  part unlocks nothing and that its rules are prose no gate reads.
+
+### Known limitations
+
+- **Played runs have not run on the arm.** Every check of play so far is offline: renders, the
+  test suite and the scripted pilot. Whether a pilot on the SO-101 now acts out the parts it
+  refused is measured on a bench session, the same files with and without `--no-play`.
 
 ## [0.17.1] — 2026-10-07
 

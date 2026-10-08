@@ -148,6 +148,15 @@ class HandOff(Protocol):
         ...
 
 
+def resolve_play(file_play: bool, flag: bool | None) -> tuple[bool, str]:
+    """Whether a run's pilot may be given a part to play, and whose word that is: the task
+    file's, or `--play` or `--no-play` over it. One rule for the loop, which records it, and
+    the CLI's header, which prints it before the run starts."""
+    if flag is None:
+        return file_play, "task file"
+    return flag, "--play" if flag else "--no-play"
+
+
 @dataclass
 class RunConfig:
     duck: DuckFile
@@ -268,6 +277,10 @@ class RunConfig:
     address, the daemon's version, what it can do, and its detector's model and device. None
     is every run without a board. The loop never talks to the board itself: the camera is in
     the transport and the detector is `detector`, and this is only what the record says."""
+    play: bool | None = None
+    """Whether the task may give the pilot a part to play, over the task file's own `play`
+    (`quackd run --play`, `--no-play`). None is the task file's word, which is every run
+    before there was a flag. Last in the class because a caller may fill it by position."""
 
 
 @dataclass
@@ -312,6 +325,11 @@ class AgentLoop:
             # budget the run actually stopped at, and every `--max-steps` run before this one
             # did the same.
             self.duck = cfg.duck.model_copy(update={"frontmatter": self.fm})
+        # Whether the pilot may be given a part, and who said so. Kept beside the contract
+        # rather than folded into it as `--max-steps` is: `--play` on a `duck: 1` file is a run
+        # that plays, and a contract reading `play: true` at `duck: 1` is one the schema
+        # refuses, so the record keeps the file's own contract and says where play came from.
+        self.play, self.play_from = resolve_play(self.fm.play, cfg.play)
         # `getattr`, because a config whose provider is None is a real and supported one: a
         # run that will refuse before its first turn (a body that turned out to have no camera)
         # never needs a model and is built without one. It prices as unpriced, which is the
@@ -1781,6 +1799,7 @@ class AgentLoop:
                 adapter=adapter_name(cfg.transport),
                 # as `_observe` decides whether an observation carries the frames it read
                 sees=bool(cfg.provider.supports_vision),
+                play=self.play,
             )
             system += getattr(cfg.provider, "prompt_hint", "") or ""  # e.g. the local JSON fallback
             # before `run_start`, so a reader of the record meets the pictures the task is
@@ -1805,6 +1824,10 @@ class AgentLoop:
                 robot=manifest.model_dump(mode="json") if manifest is not None else None,
                 dry_run=cfg.dry_run,
                 contract=self.fm.model_dump(),
+                # whether this run's pilot was told it may play a part, and whose word that was:
+                # the task file's, or `--play` or `--no-play` over it (`contract.play` is the
+                # file's own, which a flag does not rewrite)
+                play={"on": self.play, "from": self.play_from},
                 system_prompt=system,
                 tools=[t["name"] for t in tools],
                 memory=cfg.memory.summary() if cfg.memory is not None else None,

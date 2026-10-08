@@ -574,12 +574,13 @@
   "description": "The contract. This is what `schema.json` describes and what the executor enforces.",
   "properties": {
     "duck": {
-      "description": "Spec version: 0 (quackd 0.1 to 0.3), 1 (0.4: requires, robots, flock.roles, flock.frame_hints; 0.9: flock.allocation.method: pilots), 2 (0.9: datasheet, flock.roles.needs) or 3 (0.16: policy). Older files parse unchanged.",
+      "description": "Spec version: 0 (quackd 0.1 to 0.3), 1 (0.4: requires, robots, flock.roles, flock.frame_hints; 0.9: flock.allocation.method: pilots), 2 (0.9: datasheet, flock.roles.needs), 3 (0.16: policy) or 4 (play). Older files parse unchanged.",
       "enum": [
         0,
         1,
         2,
-        3
+        3,
+        4
       ],
       "title": "Duck",
       "type": "integer"
@@ -647,6 +648,12 @@
       "default": null,
       "description": "Tone for the LLM. Optional.",
       "title": "Persona"
+    },
+    "play": {
+      "default": false,
+      "description": "v4: the task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section to the system prompt and changes no gate. `quackd run --play` or `--no-play` overrides it for one run.",
+      "title": "Play",
+      "type": "boolean"
     },
     "providers": {
       "description": "Providers this duck was tested with (not enforced).",
@@ -735,6 +742,6 @@
     "verbs",
     "success"
   ],
-  "title": "quackd .duck frontmatter (v0, v1, v2, v3)",
+  "title": "quackd .duck frontmatter (v0, v1, v2, v3, v4)",
   "type": "object"
 }

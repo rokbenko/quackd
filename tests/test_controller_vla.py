@@ -461,6 +461,9 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
             "so --llm and --image would do nothing",
             id="a-model",
         ),
+        # no pilot reads a part, so either way of asking about one would do nothing
+        pytest.param((*GOAL, *ARM, "--play"), "so --play would do nothing", id="play"),
+        pytest.param((*GOAL, *ARM, "--no-play"), "so --no-play would do nothing", id="no-play"),
         pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
         pytest.param(
             ("--goal", "x" * (INSTRUCTION_MAX_CHARS + 1), *ARM), "characters", id="long-goal"
@@ -521,6 +524,26 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     out = _flat(result.output)
     assert result.exit_code == 1 and "and hand-off lists none" in out, result.output
     assert "policy.instructions" in out and _no_run(tmp_path)
+
+
+def test_a_task_file_that_plays_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refused after the file is read, which is after the flags are: the policy flies the arm
+    with no pilot to read the part, and a run recorded as played would be one nobody played."""
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    duck = tmp_path / "crane.duck"
+    duck.write_text(
+        "---\nduck: 4\nname: crane\ndescription: Play a crane.\nverbs:\n"
+        "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
+        "success: [the block is in the bowl]\n"
+        "policy:\n  instructions: [put the block in the bowl]\n"
+        "play: true\n---\nYou are a crane. Put the block in the bowl.\n",
+        encoding="utf-8",
+    )
+    result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
+    out = _flat(result.output)
+    assert result.exit_code == 1, result.output
+    assert "crane gives its pilot a part to play, and --controller vla flies the arm" in out
+    assert _no_run(tmp_path)
 
 
 def test_a_controller_nobody_defined_is_refused(tmp_path: Path) -> None:
