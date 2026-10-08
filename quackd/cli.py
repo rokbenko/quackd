@@ -1296,7 +1296,7 @@ def _vla_refusal(
                 "--controller vla tells the arm's policy the goal word for word, as its one "
                 f"instruction, and {e}",
                 "give one short subtask as --goal, or list the subtasks under "
-                "policy.instructions in a duck: 3 task file",
+                "policy.instructions in a task file at duck: 3 or later",
             )
     return None
 
@@ -1478,7 +1478,11 @@ def _run_impl(
                     ("--extra-body", extra_body is not None),
                     ("--vision", vision is not None),
                     ("--image", bool(images)),
-                    ("--no-play" if play is False else "--play", play is not None),
+                    ("--play", play is True),
+                    # a goal has no part to turn off; a file's --no-play is weighed once the
+                    # file is read, since it turns a played file's part off and lets its
+                    # instructions fly
+                    ("--no-play", play is False and duckfile is None),
                 )
                 if given
             ],
@@ -1511,23 +1515,34 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
+    if vla and play is False and (duck is None or not duck.frontmatter.play):
+        _fail(
+            "--controller vla is a scripted pilot that asks no model and sees no picture, so "
+            "--no-play would do nothing",
+            hint="drop it, or fly the run with --controller llm",
+        )
+        return
+    if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
+        # Here rather than with the flags above, which run before the file is read, and before
+        # the instructions, which a played file would otherwise be sent to add first. The
+        # policy flies the arm with no pilot to read a part, so a run recorded as played would
+        # be one nobody played. --no-play is the way out only for a file with instructions.
+        _fail(
+            f"{duck.name} gives its pilot a part to play, and --controller vla flies the arm "
+            "with no pilot to read it",
+            hint="run it with --no-play, or without --controller vla"
+            if duck.frontmatter.effective_policy.instructions
+            else "run it without --controller vla, or list policy.instructions in it and run "
+            "it with --no-play",
+        )
+        return
     if vla and duck is not None and not duck.frontmatter.effective_policy.instructions:
         # a goal is its own one instruction, and was held to the rule for one above
         _fail(
             "--controller vla tells the arm's policy the instructions a task file lists, and "
             f"{duck.name} lists none",
-            hint="list them under policy.instructions in a duck: 3 task file "
+            hint="list them under policy.instructions in a task file at duck: 3 or later "
             "(docs/reference/duck-spec.md), or give --goal",
-        )
-        return
-    if vla and duck is not None and duck.frontmatter.play:
-        # Here rather than with the flags above, which run before the file is read. The policy
-        # flies the arm with no pilot to read a part, so a run recorded as played would be
-        # one nobody played.
-        _fail(
-            f"{duck.name} gives its pilot a part to play, and --controller vla flies the arm "
-            "with no pilot to read it",
-            hint="run it without --controller vla",
         )
         return
     # Before the dispatch below, because a flock takes neither of the two flags and dropping
@@ -1751,6 +1766,26 @@ def _run_impl(
         )
         return
     if flock_n is not None or roster is not None or duck.frontmatter.flock is not None:
+        if method != "pilots":
+            # A coordinator flock's members follow its plan, and none of them is a pilot a part
+            # could reach, so a part, and either flag about one, is refused rather than dropped.
+            # The file first, since no flag lifts its refusal, and both before the warning
+            # below, which would otherwise speak of a run that never starts.
+            if duck.frontmatter.play:
+                _fail(
+                    f"{duck.name} gives its pilot a part to play, and a coordinator flock has "
+                    "no pilot to play it",
+                    hint="run it on one robot, or as a pilot flock with "
+                    "flock.allocation.method: pilots",
+                )
+                return
+            if play is not None:
+                _fail(
+                    "a coordinator flock has no pilot for --play or --no-play to reach: its "
+                    "members follow the flock's plan",
+                    hint="drop the flag, or run the task as a pilot flock",
+                )
+                return
         if decision != "off" and named_decision is not None:
             # One loop per member, each with its own executor and budget, and the stepper is
             # built per loop. Wiring it through a flock is a thing to do deliberately with a
@@ -1828,23 +1863,6 @@ def _run_impl(
                 run_name=run_name,
                 price=price,
                 play=play,
-            )
-            return
-        # A coordinator flock's members follow its plan, and none of them is a pilot a part
-        # could reach, so either way of asking for one is refused rather than dropped.
-        if play is not None:
-            _fail(
-                "a coordinator flock has no pilot for --play or --no-play to reach: its members "
-                "follow the flock's plan",
-                hint="drop the flag, or run the task as a pilot flock",
-            )
-            return
-        if duck.frontmatter.play:
-            _fail(
-                f"{duck.name} gives its pilot a part to play, and a coordinator flock has no "
-                "pilot to play it",
-                hint="run it on one robot, or as a pilot flock with flock.allocation.method: "
-                "pilots",
             )
             return
         if roster is not None:
@@ -2994,6 +3012,15 @@ _PLAY = typer.Option(
     "it, so a run plays only when its file or its command line says so.",
     rich_help_panel="Task",
 )
+# preflight has no --goal, and rehearses many runs rather than one
+_PLAY_PREFLIGHT = typer.Option(
+    None,
+    "--play/--no-play",
+    help="--play rehearses every file with a part for its pilot to play, and --no-play without "
+    "the one a file gives it, as a run would. Without either each file decides. It adds one "
+    "section to the system prompt and changes no gate. No variable sets it.",
+    rich_help_panel="Task",
+)
 _RUNS = typer.Option(
     "runs", "--runs-dir", help="Where run directories go.", rich_help_panel="Output"
 )
@@ -3345,7 +3372,7 @@ def preflight(
     ),
     image: list[str] = _IMAGE,
     max_steps: int | None = _MAXSTEPS,
-    play: bool | None = _PLAY,
+    play: bool | None = _PLAY_PREFLIGHT,
     seeds: int = typer.Option(
         DEFAULT_SEEDS,
         "--seeds",

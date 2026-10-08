@@ -437,6 +437,34 @@ async def test_a_tool_call_the_model_only_contemplated_in_its_thinking_is_not_ex
     assert turn.thinking == 'maybe {"name": "kick", "arguments": {}} but no'
 
 
+@pytest.mark.parametrize(
+    ("content", "refusal", "finish"),
+    [
+        (None, 'I will not run {"name": "kick", "arguments": {}} for you.', "stop"),
+        (None, 'I will not run {"name": "kick", "arguments": {}} for you.', "content_filter"),
+        # a refusal stops on whatever the vendor named, and is still a refusal
+        (None, 'I will not run {"name": "kick", "arguments": {}} for you.', "length"),
+        (None, 'I will not run {"name": "kick", "arguments": {}} for you.', "tool_calls"),
+        ('{"name": "kick", "arguments": {}}', None, "content_filter"),
+    ],
+    ids=["refusal", "refusal-filtered", "refusal-cut-short", "refusal-says-calls", "filtered"],
+)
+async def test_a_call_written_into_a_vendors_no_is_not_executed(
+    content: str | None, refusal: str | None, finish: str
+) -> None:
+    """A refusal's words reach the turn's text, which the fallback scans: a call the vendor
+    quoted while saying no, or that a filter cut off, would otherwise be parsed out and run."""
+    message = NS(content=content, tool_calls=None, refusal=refusal)
+    response = NS(
+        choices=[NS(message=message, finish_reason=finish)],
+        usage=NS(prompt_tokens=10, completion_tokens=5),
+    )
+    assert parse_tool_call_from_text(content or refusal or "", NAMES) is not None
+    p = LocalProvider("m", preset="llamacpp", client=FakeClient(response))
+    turn = await p.step("S", history(), TOOLS)
+    assert turn.tool_calls == [] and p.text_fallbacks == 0
+
+
 async def test_the_json_fallback_reads_the_answer_after_the_thinking() -> None:
     text = '<think>kick? no</think>{"name": "walk_to", "arguments": {"target": "ball"}}'
     p = LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text)))

@@ -533,7 +533,7 @@ def test_play_is_documented_where_it_is_configured() -> None:
         for needle in needles:
             assert needle in text, f"{path} does not mention {needle!r}"
     guide = (REPO / "docs" / "guides" / "play.md").read_text(encoding="utf-8")
-    quoted = play_section(still=True, speaks=False, memory=False).strip()
+    quoted = play_section(still=True, voice=None, memory=False).strip()
     assert quoted in guide, "docs/guides/play.md no longer quotes the section the arm reads"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     assert "QUACKD_PLAY" not in env_example, "no variable sets play"

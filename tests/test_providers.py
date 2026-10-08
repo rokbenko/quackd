@@ -25,6 +25,7 @@ from quackd.agent.providers.base import (
     NamedPng,
     Observation,
     ProviderError,
+    ProviderTurn,
     ToolCall,
 )
 from quackd.agent.providers.catalogue import default_model_for, find_model, models_for
@@ -36,7 +37,7 @@ from quackd.agent.providers.gemini import (
     render_contents,
 )
 from quackd.agent.providers.grok import GrokProvider
-from quackd.agent.providers.openai import OpenAIProvider, parse_extra_body
+from quackd.agent.providers.openai import OpenAIProvider, parse_extra_body, parse_responses
 from quackd.agent.providers.openai import render_input as o_input
 from quackd.agent.providers.openai import render_messages as o_messages
 from quackd.agent.providers.openrouter import OpenRouterProvider
@@ -539,13 +540,13 @@ async def test_openai_responses_bad_json_arguments_do_not_crash(_no_effort_env: 
     assert "_unparsed" in turn.tool_calls[0].arguments
 
 
-def responses_refusal(*, beside: Any = None) -> Any:
+def responses_refusal(*, beside: Any = None, status: str = "completed") -> Any:
     """A Responses result whose message is a refusal part: its words under `refusal`, no
     `text`, the shape the SDK's `ResponseOutputRefusal` has."""
     said = NS(type="message", content=[NS(type="refusal", refusal="I can't help with that.")])
     return NS(
         output=[*([beside] if beside is not None else []), said],
-        status="completed",
+        status=status,
         usage=NS(input_tokens=11, output_tokens=4, output_tokens_details=NS(reasoning_tokens=0)),
     )
 
@@ -560,7 +561,7 @@ async def test_a_responses_refusal_part_is_a_turn_with_no_call_that_says_so(
     turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == []
     assert turn.text == "[refusal] I can't help with that."
-    assert turn.stop_reason == "refusal"
+    assert turn.stop_reason == "refusal" and turn.refused
 
 
 async def test_a_refusal_part_beside_a_call_keeps_the_call(_no_effort_env: None) -> None:
@@ -571,7 +572,7 @@ async def test_a_refusal_part_beside_a_call_keeps_the_call(_no_effort_env: None)
     turn = await OpenAIProvider(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == [ToolCall(id="call_r2", name="stop", arguments={})]
     assert turn.text == "[refusal] I can't help with that."
-    assert turn.stop_reason == "tool_calls"
+    assert turn.stop_reason == "tool_calls" and turn.refused
 
 
 async def test_a_chat_completions_refusal_is_a_turn_with_no_call_that_says_so() -> None:
@@ -587,7 +588,91 @@ async def test_a_chat_completions_refusal_is_a_turn_with_no_call_that_says_so() 
     )
     assert turn.tool_calls == []
     assert turn.text == "[refusal] I can't help with that."
-    assert turn.stop_reason == "refusal"
+    assert turn.stop_reason == "refusal" and turn.refused
+
+
+async def test_a_chat_completions_refusal_keeps_the_words_and_the_call_beside_it() -> None:
+    """A message can carry text and a call beside its refusal. All three are kept, and the
+    turn stops as the vendor said, since a call answered it."""
+    stop = NS(id="call_c1", function=NS(name="stop", arguments="{}"))
+    message = NS(content="Stopping here.", tool_calls=[stop], refusal="I can't help with that.")
+    response = NS(
+        choices=[NS(message=message, finish_reason="tool_calls")],
+        usage=NS(prompt_tokens=50, completion_tokens=9),
+    )
+    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+        "SYS", history(), TOOLS
+    )
+    assert turn.tool_calls == [ToolCall(id="call_c1", name="stop", arguments={})]
+    assert turn.text == "Stopping here.\n[refusal] I can't help with that."
+    assert turn.stop_reason == "tool_calls"
+
+
+async def test_a_refusal_keeps_the_reason_its_vendor_named() -> None:
+    """Only a plain `stop` becomes `refusal`. A refusal that ended in a content filter keeps
+    `content_filter`, which is what the record said before the refusal reached the text."""
+    message = NS(content=None, tool_calls=None, refusal="I can't help with that.")
+    response = NS(
+        choices=[NS(message=message, finish_reason="content_filter")],
+        usage=NS(prompt_tokens=50, completion_tokens=9),
+    )
+    turn = await OpenAIProvider(model="gpt-5", client=FakeOpenAI(response)).step(
+        "SYS", history(), TOOLS
+    )
+    assert turn.text == "[refusal] I can't help with that."
+    assert turn.stop_reason == "content_filter" and turn.refused
+
+
+def test_the_responses_api_names_a_filter_and_keeps_a_status_beside_a_refusal() -> None:
+    """A filter that cut a Responses answer short says so only in `incomplete_details`, and is
+    recorded as the chat parser records it. A refusal stops with `refusal` only where the
+    answer completed, as only a plain `stop` does on Chat Completions."""
+    kick = NS(type="output_text", text='{"name": "stop", "arguments": {}}')
+    filtered = NS(
+        output=[NS(type="message", content=[kick])],
+        status="incomplete",
+        incomplete_details=NS(reason="content_filter"),
+        usage=NS(input_tokens=11, output_tokens=4),
+    )
+    turn = parse_responses(filtered)
+    assert turn.stop_reason == "content_filter" and not turn.refused
+    cut = parse_responses(responses_refusal(status="incomplete"))
+    assert cut.stop_reason == "incomplete" and cut.refused
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(responses_refusal(), id="refusal"),
+        pytest.param(responses_refusal(status="incomplete"), id="refusal-cut-short"),
+        pytest.param(
+            NS(
+                output=[
+                    NS(
+                        type="message",
+                        content=[NS(type="output_text", text='{"name": "stop", "arguments": {}}')],
+                    )
+                ],
+                status="incomplete",
+                incomplete_details=NS(reason="content_filter"),
+                usage=NS(input_tokens=11, output_tokens=4),
+            ),
+            id="filtered",
+        ),
+    ],
+)
+async def test_a_vendors_no_is_never_read_for_a_call(response: Any, _no_effort_env: None) -> None:
+    """The text fallback a local server needs reads `turn.text`, and a refusal's words now reach
+    it. A turn that carries a refusal, or that a filter cut short, never gets that far, on the
+    Responses API as on Chat Completions (`tests/test_local_provider.py`)."""
+
+    class Rescues(OpenAIProvider):
+        def _fallback(self, turn: ProviderTurn, tools: list[dict[str, Any]]) -> ProviderTurn:
+            raise AssertionError(f"a vendor's no was read for a call: {turn.text!r}")
+
+    client = RefusesToolsOnChat(response)
+    turn = await Rescues(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
+    assert turn.tool_calls == []
 
 
 async def test_openai_does_not_swallow_an_unrelated_bad_request(_no_effort_env: None) -> None:
@@ -2346,6 +2431,7 @@ async def test_a_refusal_is_a_turn_with_no_call_that_says_so() -> None:
     response = openrouter_response(None, refusal="I can't help with that.", finish="content_filter")
     turn = await OpenRouterProvider(client=FakeOpenAI(response)).step("S", history(), TOOLS)
     assert turn.tool_calls == [] and turn.text == "[refusal] I can't help with that."
+    assert turn.stop_reason == "content_filter"
 
 
 @pytest.mark.parametrize(

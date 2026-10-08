@@ -331,25 +331,28 @@ A task can give the pilot a part to play: an animal, a person, a character, a fe
 thing, which it acts out with the body it has ([guides/play.md](../guides/play.md)). `play: true`
 in a `duck: 4` file adds one section to the system prompt, `## Playing a part`, directly before
 the task file, and nothing else. The tools, the observations and every gate are what they are on
-any run, and a file without the key, or with `play: false`, reads the prompt it always did.
+any run, and a file without the key, or with `play: false`, gets not a word of it.
 `quackd run --play` turns it on for one run of any file, a `--goal` included, and `--no-play`
 turns a file's `play` off for one run. No variable sets either.
 
-The section is quackd's own words, the same for every task on one body, and three facts about
-the run choose its variant, never what the task says: whether the body can take itself
-anywhere, whether it offers `say`, and whether the run keeps notes. It tells the pilot that a
-part is acted out in moves, that the verdict asks whether this body can act it out rather than
-whether it is the thing it plays, and that the legs, wings or second arm of what it plays are
-left out of `needs`. Anything the task asks to happen to a thing in the world still has to
-happen for real, and is judged as it would be without the part. No part brings the body into
-contact with a person, or toward one, and every reason the pilot gives says plainly what the
-body actually did.
+The section is quackd's own words and reads no word of the task. Three facts about the run
+choose its variant: whether the body can take itself anywhere, whether the run's verbs include
+`say`, or a duck's `quack`, and whether the run keeps notes. It tells the pilot that a part is
+acted out in moves, that the verdict asks whether this body can act it out rather than whether
+it is the thing it plays, and that the legs, wings or second arm of what it plays are left out
+of `needs`. It also tells the pilot that anything the task asks to happen to a thing in the
+world still has to happen for real and is judged as it would be without the part, that no part
+brings the body into contact with a person or within reach of one, and that every reason it
+gives says plainly what the body actually did. These are words the pilot reads, and no gate
+reads them ([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-against)).
 
 Each member of a pilot flock reads the section. A coordinator flock has no pilot to read it, so
-`play` beside `flock.allocation.method: auction` is refused, and so are `--play` on a coordinator
-flock and a played file under `--controller vla`, whose policy reads no prompt. Over MCP,
-`robot_load_duckfile` hands a played file's part to the client as a `play` field, worded for a
-chat.
+`play` beside `flock.allocation.method: auction` is refused, a coordinator flock refuses a
+played file whatever the flags, and it refuses `--play` and `--no-play` with any file.
+`--controller vla` reads no prompt either: it refuses `--play`, `--no-play` on a `--goal` or a
+file with no part to turn off, and a played file unless `--no-play` turns its part off. Over
+MCP, a played file's `robot_load_duckfile` result carries the section's paragraphs, worded for
+a chat, as `play`.
 
 ```yaml
 ---

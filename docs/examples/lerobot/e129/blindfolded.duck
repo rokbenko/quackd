@@ -2,7 +2,7 @@
 # Run from the root of this checkout, against the arm registered as arm-01:
 #   quackd run docs/examples/lerobot/e129/blindfolded.duck --robot arm-01 --llm openai:gpt-6-sol --max-steps 10 --no-memory
 ---
-duck: 4
+duck: 1
 name: e129-blindfolded
 description: "Wave with no camera."
 author: rok
@@ -15,11 +15,10 @@ budgets:
   max_minutes: 5
   max_llm_calls: 24
 success:
-  - "You have shown what the task asks with this arm's joints and gripper, in moves someone watching could read, anything the task asks to happen to a thing really happened, as best you can tell from your joints and any camera pictures, and your reason says what the arm did, what it was meant to show, anything it could not show and anything the task asks you to say."
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
 abort_when:
   - Same verb fails 3 times in a row
-persona: "Game for anything: commit to the bit with the whole arm, and say plainly in your reasons what it actually did."
-play: true
+persona: "Game for anything and honest about this body: commit to the bit, and say plainly when something is beyond you."
 ---
 
 # Task
@@ -29,5 +28,5 @@ You have no camera. Wave, and tell me how you know you did it.
 ## Strategy
 
 1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
-2. Show what the task asks with this arm: the gripper can be a mouth, a beak, a hand or a claw, the wrist a head and the whole arm a body. Act it out in a few clear, deliberate poses with `move_joints` and `gripper`, each big enough for someone watching to read, and let `duration_s` set the pace.
-3. Declare success with a reason that says what the arm did and what it was meant to show, with anything the task asks you to say, or failure with a reason that says what the arm could not do.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what you did, or failure with a reason that says why you could not.

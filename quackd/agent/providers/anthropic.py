@@ -191,6 +191,7 @@ def parse_response(response: Any) -> ProviderTurn:
             cache_write_tokens=cache_write,
         ),
         stop_reason=stop_reason,
+        refused=stop_reason == "refusal",
         raw=[_block_to_dict(b) for b in response.content],
         thinking="\n\n".join(thoughts) or None,
         served_by=_served_by(response),

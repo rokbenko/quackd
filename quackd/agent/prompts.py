@@ -8,7 +8,7 @@ stated here *and* enforced by the loop; saying it is not the same as trusting it
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from quackd.duckfile.schema import DuckFile
@@ -299,21 +299,36 @@ subtask was done, so never declare success on its word alone.
 
 PLAY_HEADING = "## Playing a part"
 
+PLAY_VOICES = ("say", "quack")
+"""The verbs a played part can give its lines with, in the order the section prefers one:
+`say`, and the ducks' `quack`, which maps its text to a tone as their `say` does."""
 
-def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = False) -> list[str]:
+
+def play_voice(names: Iterable[str]) -> str | None:
+    """The verb a played part gives its lines with, read off the verbs a run offers, or None
+    where none of them speaks. A fact about the robot and the allowlist, never the task's
+    words (#25)."""
+    offered = {canonical(name) for name in names}
+    return next((voice for voice in PLAY_VOICES if voice in offered), None)
+
+
+def play_paragraphs(
+    *, still: bool, voice: str | None, memory: bool, mcp: bool = False
+) -> list[str]:
     """What a pilot reads when its task may give it a part to play, one line per paragraph.
 
     Only a run that asks for it reads a word of this (`play: true` in a `duck: 4` task file, or
     `--play`). It exists because the prompt says what the body is, and a task that said "You
     are a cat" asked the pilot to be what the prompt had just told it it was not, with nothing
     to say that acting the part out with the body was the task. Every refusal recorded on the
-    arm quoted the datasheet and the gate back. On 2026-09-15 the same model mimed a duck with
+    arm quoted quackd's own words back. On 2026-09-15 the same model mimed a duck with
     the gripper when the goal named the pose, and typed a quack and moved nothing when the goal
     said only "Imagine you're a duck".
 
     Built from three facts about the robot and the run, never from the task's words, so no
     sentence turns on what a task says (#25): `still` is a body that cannot take itself
-    anywhere, `speaks` is `say` among the verbs offered, `memory` is a run that keeps notes.
+    anywhere, `voice` is the verb among those offered that gives a part its lines
+    (`play_voice`), `memory` is a run that keeps notes.
     `mcp` words the same paragraphs for a client whose own prompt frames the pilot: no rule
     about one tool call a turn, the MCP tool names, and the person in the chat where a run
     has its declare reasons.
@@ -336,21 +351,21 @@ def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = Fals
         "saying that this body is not the thing it plays.",
         "Where the task gives a part, acting it out in moves someone watching could read is "
         "what its success criteria ask of the part, whatever words they use, and a line that "
-        "asks you to say why this body cannot means a limit its datasheet names, never what "
-        "this body is not.",
+        "asks you to say what you cannot do, or why this body cannot, means a real limit, such "
+        "as one its datasheet names, never what this body is not.",
     ]
     second = [
         f"Judge a part with {assess} against this body's datasheet, as you judge any task: the "
         "question is whether this body can act it out, not whether it is the thing it plays.",
         "Acting asks nothing of a body beyond moving inside its own limits, so a part on its "
-        "own is feasible, and being other than the animal, person or thing it plays is not by "
-        "itself a reason for infeasible or uncertain.",
+        "own is feasible, and being other than what it plays is not by itself a reason for "
+        "infeasible or uncertain.",
         "A task that also asks for a real result this body cannot make is infeasible, part or "
         "no part.",
         "In `needs`, name what acting the part out asks of this body, and every need of "
         "anything the task asks to happen for real, in full.",
-        "The hands, legs, wings, paws or second arm of what you play belong to the part: leave "
-        "them out, or give 0 or none, which is always met.",
+        "The hands, legs, wings, paws, beak or second arm of what you play belong to the part: "
+        "leave them out, or give 0 or none, which is always met.",
     ]
     if still:
         second.append(
@@ -367,16 +382,30 @@ def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = Fals
         "A mime of it does not do it and is never reported as done.",
         "A prop, a place or a sound the part needs that is not here is mimed, and "
         + ("you say so." if mcp else "your reason says so."),
-        "A part never brings this body into contact with a person, or toward one: where a "
-        "part, or an idiom taken at its word, would touch, hit, pinch or twist somebody, play "
-        "it on this body itself or leave it out.",
-        "A touch the task really asks for, such as a high five, is not a part, and it is "
-        "judged as it would be without one.",
-        "Every limit and clamp, every line saying what this body cannot do, and anything the "
-        "task says about how far or how fast to move holds whatever the part.",
+        # The arm's own guard is late: a joint blocked partway through a timed move is found
+        # only when the move's time is up, and until then it pushes as the step cap allows
+        # (`quackd_lerobot.verbs`). A part asks for bigger poses than a plain task, close to
+        # the table the arm stands on.
+        "A blow, a stomp or a touch at something that is not here stops before it reaches "
+        "anything, the surface this body stands on included, and one at something that is "
+        "here lands only where the task asks for that touch for real.",
+        # the arm has no guard against its own links meeting: only the joints' travel, and a
+        # simulator's collision model where there is one
+        "A touch of one part of this body on another, whatever the task asks, stops well "
+        "short, because nothing stops one part of it striking another, and a grip closing on "
+        "nothing is no such touch.",
+        "A part never brings this body into contact with a person, or within reach of one: "
+        "where a part, or an idiom taken at its word, would touch, hit, pinch or twist "
+        "somebody, play it on this body itself or leave it out.",
+        "A touch on a person or a thing that the task really asks for, such as a high five, is "
+        "not a part, and it is judged as it would be without one, but an idiom taken at its "
+        "word never asks for one.",
+        "Every limit and clamp, every line saying what this body cannot do, and every limit "
+        "the task sets on how far or how fast to move holds whatever the part.",
         "Inside them, make each pose big enough to read, and while anyone is within this "
-        "body's reach, keep every move small, slow and away from them.",
-        "When a move is refused for its range, show the same thing inside the travel, and a "
+        "body's reach, keep every move small and slow, and every move but a touch the task "
+        "really asks for away from them.",
+        "When a move is refused for its range, show the same thing inside that range, and a "
         "move a person said no to is not tried another way.",
     ]
     told = (
@@ -399,22 +428,27 @@ def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = Fals
             else "no reason of yours claims you are anyone or anything you are not."
         ),
     ]
-    if speaks and mcp:
+    if voice is not None and mcp:
+        # `say` has a tool of its own over MCP, and `quack` is reached as any verb is
+        spoken = "robot_say" if voice == "say" else f"robot_run_verb with `{voice}`"
         fourth.append(
-            "Where the part has lines, robot_say gives them this body's own sound, as its "
+            f"Where the part has lines, {spoken} gives them this body's own sound, as its "
             "description says, so act them as well, and tell them to the person you are "
-            "chatting with as the part's lines."
+            "chatting with after what the body did, as the part's lines."
         )
-    elif speaks:
+    elif voice is not None:
         fourth.append(
-            "Where the part has lines, `say` gives them this body's own sound, as its "
+            f"Where the part has lines, `{voice}` gives them this body's own sound, as its "
             "description says, so act them as well, and quote them in your declare reason "
             "after what the body did, as the part's lines."
         )
     elif mcp:
+        # not "this body has no voice": `voice` is read off what the loaded task allows, and
+        # a Microduck whose task leaves `say` and `quack` out still has its tones
         fourth.append(
-            "This body has no voice, so where the part has lines, act them, and tell them to "
-            "the person you are chatting with after what the body did, as the part's lines."
+            "No verb this task allows speaks, so where the part has lines, act them, and tell "
+            "them to the person you are chatting with after what the body did, as the part's "
+            "lines."
         )
     else:
         fourth.append(
@@ -429,11 +463,11 @@ def play_paragraphs(*, still: bool, speaks: bool, memory: bool, mcp: bool = Fals
     return [" ".join(paragraph) for paragraph in (first, second, third, fourth)]
 
 
-def play_section(*, still: bool, speaks: bool, memory: bool) -> str:
+def play_section(*, still: bool, voice: str | None, memory: bool) -> str:
     """The `## Playing a part` block as a played run's prompt carries it, `play_paragraphs`
     under its own heading. `build_system_prompt` leaves it out of every other run, whose
     prompt is what it was."""
-    paragraphs = play_paragraphs(still=still, speaks=speaks, memory=memory)
+    paragraphs = play_paragraphs(still=still, voice=voice, memory=memory)
     return f"\n{PLAY_HEADING}\n" + "\n\n".join(paragraphs) + "\n"
 
 
@@ -803,9 +837,7 @@ above.
     # not ("Whatever the task says, this body cannot:"), and next to the part the task gives.
     played = (
         play_section(
-            still=not moves_itself,
-            speaks=any(canonical(name) == "say" for name in names),
-            memory=memory_text is not None,
+            still=not moves_itself, voice=play_voice(names), memory=memory_text is not None
         )
         if play
         else ""

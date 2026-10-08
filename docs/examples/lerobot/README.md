@@ -31,19 +31,25 @@ to take torque off where the arm stands: hold the arm and press Enter, or leave 
 seconds and torque stays on. After that, hold the arm and run `quackd robot release arm-01`,
 because connecting takes torque off every motor for a moment.
 
-120 of these files give the pilot a part to play, a feeling to show or a question to answer with
+118 of these files give the pilot a part to play, a feeling to show or a question to answer with
 its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,
 which adds one section to the pilot's prompt telling it to act the part out with the arm it has
 ([guides/play.md](../../guides/play.md)), so they need a quackd that has it: an older one refuses
 their version. They share a success line, a persona that begins `Game for anything: commit to the
-bit` and the last two steps of their strategy, which ask for the act and a reason that says what
-the arm did, and none of them counts saying why the body cannot as a success any more. Eight of
-them, where a person or a held prop is at the arm, keep the older, slower second step. Run one
-with `--no-play` to see it without the section. The lines they had before are in this folder's
-git history. The other 103 keep every line they were written with, so a task with a result on
-the table, a stillness test, a trap or a benchmark reads what it always did. `e004/royalty`,
-`e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23 September,
-are among the 120 and no longer read what they read that day.
+bit` and a last step that asks for a reason saying what the arm did, and none of them counts
+saying why the body cannot as a success any more. Their second step asks for the act in a few
+clear poses. Fourteen of them keep the older second step instead, which asks for small,
+deliberate moves rather than big poses: those where a person, a held prop, or a thing or surface
+the gripper must really touch is at the arm, and `e089/less`, whose waves are meant to shrink.
+That step and the section are requests no gate reads, and nothing keeps a played arm away from a
+person ([guides/play.md](../../guides/play.md#what-does-not-change)), so keep people beyond the
+arm's reach in these as in any played run. Run one with `--no-play` to see it without the
+section. The lines they had before are in this folder's git history. The other 105 keep every
+line they had, so a task with a result on the table, a high five, a guess or a question answered
+in words, a stillness test, a trap, a benchmark or a free choice reads what it always did.
+`e004/royalty`, `e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23
+September, are among the 118 and no longer read what they read that day, and the 29 September
+rehearsal below ran the five `e004` files as they read before.
 
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
@@ -98,7 +104,9 @@ None of these had run on an arm when they were written. On 23 September ten of t
 on `arm-01`, on quackd 0.12.0: `e001/circle`, `e003/small-then-tall`, `e004/royalty`,
 `e004/mornings`, `e005/do-nothing`, `e006/high-five`, `e011/yoga`, `e022/pat-on-the-back`,
 `e114/as-fast-as-you-can` and `e116/slow-raise`. Every run of `e001`, `e022` and `e114` ended
-before the pilot's first call, at connect or on the rest move. The other 213 files have not run
-on an arm, and nothing quackd changed after that afternoon has run on one either. The budgets
-are estimates, sized so that a run which goes well finishes well inside them, and the task files
-are plain text: [reference/duck-spec.md](../../reference/duck-spec.md) is what every field means.
+before the pilot's first call, at connect or on the rest move. The other 213 files had not run
+on an arm by then. Later runs of more of them on `arm-01`, on the lab's install, are what
+[ADR-0051](../../adr/0051-a-pilot-can-play-a-part.md) answers, and nothing quackd changed after
+that afternoon has run on an arm. The budgets are estimates, sized so that a run which goes well
+finishes well inside them, and the task files are plain text:
+[reference/duck-spec.md](../../reference/duck-spec.md) is what every field means.

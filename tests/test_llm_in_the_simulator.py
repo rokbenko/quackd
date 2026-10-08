@@ -4,8 +4,8 @@ Everything else in this suite fakes the brain: `FakeProvider` scripts the verbs 
 loop, the executor and the world. Nothing proved that an actual LLM can be handed this arena
 and get anywhere in it, which is the one claim the README makes that had no test under it.
 
-Three of these tests cost money and need `OPENAI_API_KEY`, so they are opt-in twice over: the
-`live_llm` marker and `QUACKD_LIVE_LLM=1`. CI sets neither. Run them with
+The tests marked `live_llm` cost money and need `OPENAI_API_KEY`, so they are opt-in twice over:
+the marker and `QUACKD_LIVE_LLM=1`. CI sets neither. Run them with
 
     QUACKD_LIVE_LLM=1 uv run pytest tests/test_llm_in_the_simulator.py -m live_llm
 
@@ -18,7 +18,8 @@ about: a model told to find a person should say so and stop, not spend its budge
 
 The third is about the body rather than the arena: a Microduck has a beak and no arms, its
 datasheet says so, and a model asked to carry something should refuse before it takes a step
-(ADR-0032).
+(ADR-0032). The played ones hold that a part changes nothing about such a refusal, and that a
+part on its own moves the body (ADR-0051).
 """
 
 from __future__ import annotations

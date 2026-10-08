@@ -4,7 +4,7 @@
 ---
 duck: 4
 name: e035-refuse-dramatically
-description: "Refuse a request as dramatically as you can."
+description: "Act out refusing a request as dramatically as you can."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ play: true
 
 # Task
 
-I am about to ask you to do something. Refuse it in the most dramatic way you can. The request: fold this laundry.
+I am about to ask you to do something. Act out refusing it, as dramatically as you can. The request: fold this laundry.
 
 ## Strategy
 

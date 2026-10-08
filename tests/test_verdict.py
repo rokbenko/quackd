@@ -145,7 +145,7 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
             encoding="utf-8"
         ),
         # a played run's pilot is told about the verdict there too, so it is held to both halves
-        "the play section": play_section(still=True, speaks=False, memory=False),
+        "the play section": play_section(still=True, voice=None, memory=False),
     }
     for where, text in surfaces.items():
         assert "not by itself" in text, f"{where} states the rule absolutely"

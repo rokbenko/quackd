@@ -545,6 +545,20 @@ checks:
     assert start["memory"] is None and "remember" not in start["tools"], start
 
 
+def test_play_reaches_the_rehearsed_run(tmp_path: Path, twin: dict[str, Any]) -> None:
+    """`--play` rehearses a file with the part a run of it would give its pilot, and its record
+    says whose word that was, as a run's does."""
+    _preflight(tmp_path, _duck(tmp_path), twin["runs"], "--play")
+    (transcript,) = twin["runs"].rglob("transcript.jsonl")
+    start = next(
+        json.loads(line)
+        for line in transcript.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["kind"] == "run_start"
+    )
+    assert start["play"] == {"on": True, "from": "--play"}
+    assert "\n## Playing a part\n" in start["system_prompt"]
+
+
 def test_a_run_whose_predicates_do_not_hold_fails_saying_which(
     tmp_path: Path, twin: dict[str, Any], pan_pilot: float
 ) -> None:

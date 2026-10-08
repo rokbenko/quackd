@@ -461,9 +461,15 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
             "so --llm and --image would do nothing",
             id="a-model",
         ),
-        # no pilot reads a part, so either way of asking about one would do nothing
+        # no pilot reads a part, so either way of asking about one would do nothing, and a
+        # goal has no part for --no-play to turn off, so it is named with the other flags
         pytest.param((*GOAL, *ARM, "--play"), "so --play would do nothing", id="play"),
         pytest.param((*GOAL, *ARM, "--no-play"), "so --no-play would do nothing", id="no-play"),
+        pytest.param(
+            (*GOAL, *ARM, "--llm", "fake", "--no-play"),
+            "so --llm and --no-play would do nothing",
+            id="a-model-and-no-play",
+        ),
         pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
         pytest.param(
             ("--goal", "x" * (INSTRUCTION_MAX_CHARS + 1), *ARM), "characters", id="long-goal"
@@ -526,24 +532,69 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     assert "policy.instructions" in out and _no_run(tmp_path)
 
 
-def test_a_task_file_that_plays_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Refused after the file is read, which is after the flags are: the policy flies the arm
-    with no pilot to read the part, and a run recorded as played would be one nobody played."""
-    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+def _crane(tmp_path: Path, *, instructions: bool = True, played: bool = True) -> Path:
     duck = tmp_path / "crane.duck"
     duck.write_text(
         "---\nduck: 4\nname: crane\ndescription: Play a crane.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n"
-        "policy:\n  instructions: [put the block in the bowl]\n"
-        "play: true\n---\nYou are a crane. Put the block in the bowl.\n",
+        + ("policy:\n  instructions: [put the block in the bowl]\n" if instructions else "")
+        + f"play: {'true' if played else 'false'}\n"
+        + "---\nYou are a crane. Put the block in the bowl.\n",
         encoding="utf-8",
     )
+    return duck
+
+
+@pytest.mark.parametrize("instructions", [True, False], ids=["instructions", "none"])
+def test_a_task_file_that_plays_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, instructions: bool
+) -> None:
+    """Refused after the file is read, which is after the flags are: the policy flies the arm
+    with no pilot to read the part, and a run recorded as played would be one nobody played.
+    Before the instructions, so a file with none is not first sent to add them only to be
+    refused for its part. The hint names the flag that turns the part off only where that
+    leaves instructions for the policy to fly."""
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    duck = _crane(tmp_path, instructions=instructions)
     result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
     out = _flat(result.output)
     assert result.exit_code == 1, result.output
     assert "crane gives its pilot a part to play, and --controller vla flies the arm" in out
+    hint = (
+        "run it with --no-play, or without --controller vla"
+        if instructions
+        else "run it without --controller vla, or list policy.instructions in it and run it "
+        "with --no-play"
+    )
+    assert hint in out
     assert _no_run(tmp_path)
+
+
+def test_no_play_on_a_file_with_no_part_would_do_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file that does not play has no part for `--no-play` to turn off, and that is only
+    known once the file is read."""
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    duck = _crane(tmp_path, played=False)
+    result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla", "--no-play")
+    assert result.exit_code == 1, result.output
+    assert "so --no-play would do nothing" in _flat(result.output)
+    assert _no_run(tmp_path)
+
+
+def test_no_play_lets_a_played_file_fly_its_instructions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-play` turns a file's part off, and a file whose part is off is one the policy can
+    fly: neither play refusal stands. The run then goes as far as the dead policy server."""
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    result = _cli(tmp_path, str(_crane(tmp_path)), *ARM, "--controller", "vla", "--no-play")
+    out = _flat(result.output)
+    assert "gives its pilot a part to play" not in out, result.output
+    assert "would do nothing" not in out, result.output
+    assert f"{DEAD} did not take a connection" in out, "it got as far as the policy server"
 
 
 def test_a_controller_nobody_defined_is_refused(tmp_path: Path) -> None:
@@ -651,3 +702,39 @@ def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["provider"] == V.NAME and summary["cost_usd"] == 0.0
     assert summary["policy"]["segments"] == 1
+
+
+def test_a_played_file_flown_with_no_play_says_its_part_was_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving
+) -> None:
+    """`--no-play` lets the policy fly a played file's instructions, and the run says the part
+    was off where a played run says it was on: the header's row and `run_start.play`, with the
+    contract kept as the file's own."""
+    pytest.importorskip("mujoco")
+    from quackd_lerobot.sim import standin
+
+    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    monkeypatch.setattr(cli, "_ask", lambda _question: True)
+    result = _cli(
+        tmp_path,
+        str(_crane(tmp_path)),
+        "--robot",
+        "lerobot:mujoco",
+        "--policy-url",
+        held.url,
+        "--policy-token",
+        TOKEN,
+        "--controller",
+        "vla",
+        "--no-play",
+    )
+    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
+        pytest.skip("no OpenGL context for offscreen rendering")
+    assert result.exit_code == 0, result.output
+    assert "play off, from --no-play" in _flat(result.output)
+    (run_dir,) = (tmp_path / "runs").iterdir()
+    events = Transcript.read(run_dir / "transcript.jsonl")
+    start = next(e for e in events if e["kind"] == "run_start")
+    assert start["play"] == {"on": False, "from": "--no-play"}
+    assert start["contract"]["play"] is True, "the file's own word, which the flag overrode"

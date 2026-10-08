@@ -22,7 +22,8 @@ part at every turn:
   or spoke of playing, miming or pretending at all.
 - The verdict gate holds a `feasible` to the body's own datasheet. A pilot willing to play a cat
   that named the cat's legs, `mobility: legged`, or `any`, which 0.12.0 offered where 0.14.0 added
-  `none`, was refused, and the refusal offers `infeasible` first.
+  `none`, would have been refused, as a `feasible` wave naming `mobility: any` was on 23 September,
+  and `legged` still is. The refusal offers `infeasible` first.
 - All 223 example files counted "said plainly why this body cannot" as success, 202 told the
   pilot to be "honest about this body ... say plainly when something is beyond you", and 214
   offered failure as the last step of their strategy.
@@ -50,33 +51,42 @@ one of them saying the robot is "capable of human or animal like capabilities".
   told only in words has not been played. The verdict asks whether this body can act it out, the
   needs of what it plays are left out of `needs`, and every need of a real result is named in
   full. A real result still has to happen and is judged as it would be without the part, no part
-  brings the body into contact with a person or toward one, and every limit holds. The act may
-  pretend and the record never does. Its sentences about the verdict carry both halves of #25's
-  rule, "not by itself" and "mass or size".
+  brings the body into contact with a person or within reach of one, and every limit holds. The
+  act may pretend and the record never does. Its sentences about the verdict carry both halves
+  of #25's rule, "not by itself" and "mass or size".
 - **Three facts about the run choose its variants**, never the task's words (#25): whether the
-  body can take itself anywhere, whether it offers `say`, and whether the run keeps notes.
+  body can take itself anywhere, whether the run's verbs include `say`, or a duck's `quack`, and
+  whether the run keeps notes.
 - **Everything else is what it was.** The tools, the observations, the opening, the Rules, the
-  datasheet and its `cannot` lines, `ASSESS_TASK`, `own_sheet_objection` and every gate. A run
-  that does not play reads the prompt it read before, byte for byte, which was checked by
-  rendering every shipped body with every starter, and the arm with every example file, before
-  and after the change.
+  datasheet and its `cannot` lines, `ASSESS_TASK`, `own_sheet_objection` and every gate. With
+  play off quackd adds nothing to the prompt, which was checked by rendering every shipped body
+  with every starter, and the arm with every example file that does not play, before and after
+  the change. An example file that now plays reads its new lines with `--no-play` as well.
 - **The record keeps the file's contract.** `run_start.play` says whether the pilot was told it
   may play and whose word that was: `task file`, `--play` or `--no-play`. `contract.play` stays
   the file's own, since `--play` on a `duck: 1` file would otherwise record a contract the schema
   refuses. A pilot flock's `flock_start` says the same.
 - **Over MCP the part rides on the file.** `robot_load_duckfile` returns a played file's
   paragraphs as `play`, worded for a chat, and a file that does not play loads exactly as before.
-- **Refused where nobody would read it:** a coordinator flock, with the flag or with `play`
-  beside `allocation.method: auction`, and `--controller vla`, with the flag or a played file.
+- **Refused where nobody would read it:** a coordinator flock, with either flag or a played
+  file, which the parser already refuses beside `allocation.method: auction`, and
+  `--controller vla`, with `--play`, with `--no-play` where there is no part to turn off, or with
+  a played file unless `--no-play` turns its part off. Then the policy flies the file's
+  instructions and the record says play was off.
 - **OpenAI refusals reach the record.** A refusal part on the Responses API and a `refusal` field
   on Chat Completions were dropped, so a vendor's no looked like a model saying nothing. They now
   read `[refusal]` and the vendor's words, as Anthropic's and OpenRouter's already did, which is
-  what tells a model's refusal from a vendor's on the next bench session.
-- **The examples opt in where the task is to show something.** 120 of the 223 files under
+  what tells a model's refusal from a vendor's on the next bench session. A call a vendor quotes
+  in its refusal is words, so a local model's text is never read for one in a turn that ends in a
+  refusal or a content filter.
+- **The examples opt in where the task is to show something.** 118 of the 223 files under
   `docs/examples/lerobot` are `duck: 4` with `play: true`, and lose the success line, the persona
-  and the strategy step that made refusing a way to succeed. Eight of them, where a person or a
-  held prop is at the arm, keep the slower second step they had. The other 103, whose task is a
-  result on the table, a stillness test, a trap or a benchmark, keep every byte.
+  and the strategy step that made refusing a way to succeed. Fourteen of them keep the older
+  second step, which asks for small, deliberate moves rather than big poses: those where a
+  person, a held prop, or a thing or surface the gripper must really touch is at the arm, and
+  `e089/less`, whose waves are meant to shrink. The other 105, whose task is a result on the
+  table, a high five, a guess or a question answered in words, a stillness test, a trap, a
+  benchmark or a free choice, keep every byte.
 
 ## Why not
 
@@ -88,10 +98,10 @@ one of them saying the robot is "capable of human or animal like capabilities".
   would make every measurement of play depend on a file on one machine. `--extra-body` already
   refuses `instructions` for that reason. An append-only `--prompt-note` remains possible later.
 - **(c) Templates.** Whole alternative prompts drift from the one that every fix lands in. "A
-  robot capable of human or animal like capabilities" contradicts the datasheet two sections
-  later and invites the needs the gate refuses. One named framing is (c) at its narrowest.
-- **An enum or a template name.** "mode" is already `--decision-mode`, `flock.frame_hints` and the
-  header's DRY RUN row, and `mode: work` would rename a default that must stay byte-identical. A
+  robot capable of human or animal like capabilities" contradicts the datasheet further down the
+  same prompt and invites the needs the gate refuses. One named framing is (c) at its narrowest.
+- **An enum or a template name.** "mode" is already `--decision-mode` and the header's `mode`
+  row, which says DRY RUN, and `mode: work` would rename a default that must stay byte-identical. A
   second framing, if one is ever wanted, is a new key under a new spec version.
 - **A keyword heuristic.** quackd cannot know what a sentence needs (#25), so nothing turns play
   on from the words of a task.
@@ -108,8 +118,8 @@ one of them saying the robot is "capable of human or animal like capabilities".
 - A played prompt is longer by one section, on every turn.
 - The act is prose. Whether a mime is reported as a real result is held only where a gate or a
   sidecar check reads the world, and otherwise by the record and whoever reads it. That no part
-  moves toward a person is prose too: nothing in quackd sees a person, and the colour detector
-  reads blue as one.
+  comes within a person's reach is prose too: no gate sees a person, the pilot learns of one only
+  from its detector and its pictures, and the colour detector, the default, reads blue as one.
 - A played run moves where a plain one might have stopped. That is its purpose and its risk,
   which is why it is opt-in per file or per run and why the header and the record say when it
   was on.

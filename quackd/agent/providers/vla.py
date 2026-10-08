@@ -77,7 +77,8 @@ class VlaProvider:
         if not instructions:
             raise ValueError(
                 "--controller vla needs at least one instruction to hand the arm's policy: list "
-                "them under policy.instructions in a duck: 3 task file, or give --goal"
+                "them under policy.instructions in a task file at duck: 3 or later, or give "
+                "--goal"
             )
         # held to the one rule every instruction is, so a pilot built from Python is refused
         # the same words a task file or a goal would be

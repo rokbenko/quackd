@@ -223,6 +223,12 @@ class ProviderTurn(BaseModel):
     text: str | None = None
     usage: Usage = Field(default_factory=Usage)
     stop_reason: str | None = None
+    refused: bool = Field(
+        default=False,
+        description="The vendor said no in a refusal of its own: a refusal part or field, or a "
+        "`refusal` stop. Its words are in `text` as `[refusal] ...`, and a call written out in "
+        "them is never read as one, whatever `stop_reason` says.",
+    )
     raw: Any = None
     thinking: str | None = Field(
         default=None,
