@@ -2,10 +2,11 @@
 
 Every method name here is VERIFIED against upstream's `duck-ipc-proto` at a pinned release
 (see `upstream_api.py`), but nobody has run this against a Microduck. What is honest today:
-the handshake and its version refusal, the intent vocabulary, the deadman-friendly `move`
-notifications, the state subscription, the health poll, and posture, which is read off the
-policy label against the labels robotd's own source names and fails closed on every other.
-What is not: everything about the camera.
+the handshake, which refuses a robotd older than the oldest version quackd has read and warns
+about any version but the one it read, the intent vocabulary, the deadman-friendly `move`
+notifications and robotd's own echo of them, the state subscription, the health poll, and
+posture, which is read off the policy label against the labels robotd's own source names and
+fails closed on every other. What is not: everything about the camera.
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
@@ -25,6 +26,14 @@ is at the other end of an ssh tunnel:
   verb starts, and `go_to` sends its next twist whatever became of the last one, so without
   the hold a duck picked up halfway through a `go_to` would walk off the moment it was put
   down.
+- **A version quackd has not read is served, and says so.** No robotd refuses a peer for a
+  different API version, and a call whose shape moved refuses itself by name, so quackd
+  serves any robotd from `up.API_FLOOR` up, warns whenever its version is not the one read,
+  and names the call and both versions when one is refused (`up.VERSION_SKEW`, ADR-0051).
+- **A notification nobody answered is not a walk.** robotd answers no `robot.move`, so one it
+  could not parse used to be a walk reported and never taken. Its own state says what it was
+  last asked for (`up.MOVE_ECHO`), and a twist that state has not shown a few frames later
+  holds `robot.move` back the way a duck that stops standing does.
 - **A frame kept is not a frame seen.** `get_frame` expires what it caches. `go_to` steers
   on every tick, so a camera that died with the ball in shot would otherwise show the ball
   in shot forever while the duck walked at it.
@@ -42,10 +51,13 @@ import contextlib
 import io
 import json
 import logging
+import math
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
+from collections import deque
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, NamedTuple
 
@@ -88,6 +100,79 @@ def state_stale_after_s(hz: float) -> float:
 
 #: The window at the default rate, for tests and for anything reading the module constant.
 STATE_STALE_AFTER_S = state_stale_after_s(STATE_HZ)
+
+#: The longest line the reader takes from robotd, a mebibyte. asyncio's default is 64 KiB,
+#: which is also the most robotd takes in a line it reads (`MAX_LINE` in robotd/src/main.rs),
+#: but nothing bounds what robotd writes, and `robot.state` gained the joints' velocities and
+#: currents, an IMU, the camera's and the ToF sensor's poses and the whole skeleton between API
+#: 24 and 36. A frame is a few kilobytes at the pin. Over the default, `readline` raised out of
+#: the pump, which died without a word, and every request after it waited out its timeout on a
+#: socket nobody read. Sixteen times robotd's own limit leaves room for what a newer robotd
+#: adds, and `_read_loop` skips a line longer still instead of ending the link on it.
+READER_LIMIT = 2**20
+
+#: How many state frames robotd gets to show a twist before quackd decides it has not taken it.
+#: robotd stores a `robot.move` as it arrives and reports it in the next frame it publishes
+#: (`up.MOVE_ECHO`), at most one frame period later, so three periods leave two for the twist
+#: to reach the robot and the frame to come back. A link slower than that has a walk robotd
+#: did take held back, which stops the duck and says why.
+#:
+#: Counted as frames read and as time, and the verdict waits for both. On time alone, a frame
+#: robotd built before the twist reached it, still in the socket when quackd's own process
+#: stalled and read the moment it woke, arrives "three periods later" and reads as a twist
+#: robotd did not take. On frames alone, three read in one burst say nothing about time.
+MOVE_ECHO_FRAMES = 3
+
+
+def move_echo_after_s(hz: float) -> float:
+    """How long after a twist went out a state frame may arrive still not showing it, with
+    `MOVE_ECHO_FRAMES` read since, before `robot.move` is held back as a call robotd has not
+    taken.
+
+    `MOVE_ECHO_FRAMES` frame periods at the rate actually subscribed at, for the reason
+    `state_stale_after_s` is: a transport built with a slower stream waits proportionally
+    longer, rather than calling every twist lost before a frame could have shown it."""
+    return MOVE_ECHO_FRAMES / max(0.1, hz)
+
+
+Twist = tuple[float, float, float]
+"""`[vx, vy, vyaw]`, the order `robot.move`'s params and `move.requested` both use."""
+
+#: robotd reports the very float it parsed, and JSON carries a float's shortest round-trip form
+#: both ways, so a twist it took reads back equal. The tolerance only spares a reader that
+#: prints a number differently; it is not a measurement of anything.
+_ECHO_TOLERANCE = 1e-9
+
+
+def _twist_of(move: Any) -> Twist | None:
+    """`move.requested` from a state frame, or None when it is not three numbers."""
+    asked = move.get("requested") if isinstance(move, dict) else None
+    if not isinstance(asked, list) or len(asked) != 3:
+        return None
+    if not all(isinstance(v, int | float) and not isinstance(v, bool) for v in asked):
+        return None
+    return (float(asked[0]), float(asked[1]), float(asked[2]))
+
+
+def _number(value: Any) -> float:
+    """A twist component as quackd sent it, or NaN for one that is not a number. robotd drops a
+    `robot.move` it cannot parse, and NaN matches nothing a frame shows, so the echo still
+    judges an intent built by hand with a member robotd cannot read."""
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return float(value)
+    return math.nan
+
+
+def _same_twist(a: Twist, b: Twist) -> bool:
+    return all(
+        math.isclose(x, y, rel_tol=_ECHO_TOLERANCE, abs_tol=_ECHO_TOLERANCE)
+        for x, y in zip(a, b, strict=True)
+    )
+
+
+def _shown(twist: Twist) -> str:
+    return "[" + ", ".join(f"{v:g}" for v in twist) + "]"
+
 
 #: How often to pull a snapshot when `--camera-url` names one. `go_to` and `search_scan` steer
 #: at 10 Hz, so this is the rate a control decision can be stale by: keep it well above the
@@ -178,6 +263,17 @@ class StateRead(NamedTuple):
     """Why `posture` is `unknown`, or None when it is not."""
 
 
+def _pickup_detection(read: StateRead) -> bool | None:
+    """Whether a fresh frame's `safety` block carries `picked_up`, or None with no fresh frame.
+
+    Its presence and not its value: robotd writes the key whenever it has the detector, and one
+    from before it leaves the key out, which a reader takes for never picked up
+    (`up.SAFETY_PICKED_UP`). That reading is exactly what quackd must not take on trust, since
+    a duck in somebody's hands is then sent walks like any other."""
+    safety = read.state.get("safety") if read.fresh else None
+    return ("picked_up" in safety) if isinstance(safety, dict) else None
+
+
 def default_address() -> str:
     root = os.environ.get(up.RUNTIME_DIR_ENV.name, "/run")
     return f"unix://{root}/robotd.sock"
@@ -235,8 +331,28 @@ class JsonRpcUnixTransport:
         self.stop_error: str | None = None
         """Why the last `stop` did not reach the robot, or None if it did (or none was sent)."""
         self._move_held: str | None = None
-        """Why `robot.move` is being held back until the next `stop()`, or None while it is not.
-        Set by the first move refused for a duck that was not standing (`_move_refusal`)."""
+        """What made quackd hold `robot.move` back until the next `stop()`, or None while it is
+        not: the duck stopped standing, or robotd stopped showing the twists it was sent
+        (`_move_refusal`). Worded to follow "since"."""
+        self._unshown: deque[tuple[float, int, Twist]] = deque(maxlen=256)
+        """Every twist sent since the newest one a state frame has shown, oldest first, each
+        with when it went out and how many frames had been read by then (`_frames_read`).
+        Emptied by a stop, which ends the verb that sent them. Bounded only so that a stream
+        that never echoes cannot grow it: the hold empties it long before, once
+        `MOVE_ECHO_FRAMES` frames and `move_echo_after_s` have passed."""
+        self._frames_read = 0
+        """How many `robot.state` frames this connection has read, for `_not_taken`."""
+        self.move_echo: dict[str, Any] | None = None
+        """What robotd's own state last said about the twists quackd sent (`up.MOVE_ECHO`):
+        `taken` True with the twist it showed and how long after it went out the frame that
+        showed it arrived, or False with what it showed instead when `robot.move` was held
+        back for it. None until a frame has said either."""
+        self.robotd: dict[str, Any] | None = None
+        """Which robotd answered `hello`, beside what quackd read, as `extras.robotd`."""
+        self.runtime_warning: str | None = None
+        """Why this robotd's API version is worth a word, or None when it is the one quackd
+        read. Logged at connect, carried in `extras.robotd`, and printed by `doctor`, which
+        reads it off any transport under this name."""
         self.camera_working = False
         """Whether a frame actually arrived during connect. What the manifest narrows on."""
         self.subscribed: dict[str, Any] | None = None
@@ -253,9 +369,13 @@ class JsonRpcUnixTransport:
                         "unix sockets are not available on Windows; forward the robot's socket "
                         "with `ssh -L 9870:/run/robotd.sock <robot>` and use --address tcp://127.0.0.1:9870"
                     )
-                self._reader, self._writer = await asyncio.open_unix_connection(host)
+                self._reader, self._writer = await asyncio.open_unix_connection(
+                    host, limit=READER_LIMIT
+                )
             else:
-                self._reader, self._writer = await asyncio.open_connection(host, port)
+                self._reader, self._writer = await asyncio.open_connection(
+                    host, port, limit=READER_LIMIT
+                )
         except OSError as e:
             raise TransportError(f"cannot connect to {self.address}: {e}") from e
         self._pump = asyncio.create_task(self._read_loop(), name="quackd-jsonrpc-pump")
@@ -272,11 +392,34 @@ class JsonRpcUnixTransport:
         result = await self.request(up.HELLO.name, {"api_version": self.api_version})
         self.hello = result if isinstance(result, dict) else {"result": result}
         remote = self.hello.get("api_version")
-        if remote is not None and int(remote) != self.api_version:
+        floor = int(up.API_FLOOR.name)
+        # The number decides only whether quackd has read anything this robot speaks. Above the
+        # floor a difference is served, as upstream's own clients serve one, because what
+        # refuses a changed call is the call, by name (up.VERSION_SKEW). The exact match this
+        # replaced refused every robotd release from daemon-v0.12.0 on, six days after the read.
+        if not isinstance(remote, int) or isinstance(remote, bool):
             raise TransportError(
-                f"robotd speaks API v{remote}, quackd was written against v{self.api_version} "
-                f"({up.IPC_PROTO}); refusing rather than guessing"
+                f"robotd's hello carried api_version {remote!r}, which is not a version number, "
+                f"so whatever answered at {self.address} is not a robotd quackd can check against "
+                f"the API v{self.api_version} it read; refusing"
             )
+        if remote < floor:
+            raise TransportError(
+                f"robotd speaks API v{remote}, older than API v{floor}, the oldest quackd has read "
+                f"({up.IPC_PROTO}); refusing. Update the robot to a release on API v{floor} or "
+                f"later: quackd read {up.RELEASE}, on API v{self.api_version}"
+            )
+        if remote != self.api_version:
+            self.runtime_warning = self._skew_warning(remote)
+            log.warning("%s", self.runtime_warning)
+        self.robotd = {
+            "api_version": remote,
+            "read": self.api_version,
+            "floor": floor,
+            "daemon_version": self.hello.get("daemon_version"),
+            "revision": self.hello.get("revision"),
+            "warning": self.runtime_warning,
+        }
         # Nothing arrives until we ask (up.STATE_NEEDS_SUBSCRIBE), and everything that decides
         # whether the duck may walk reads the frames this starts: posture, `safety.fallen`, the
         # preconditions in the manifest. Subscribing here rather than in `subscribe()` is what
@@ -298,6 +441,33 @@ class JsonRpcUnixTransport:
                 self._camera_loop(), name="quackd-jsonrpc-camera"
             )
             self.camera_working = await self._await_first_frame()
+
+    def _skew_warning(self, remote: int) -> str:
+        """What to tell the person running quackd about a robotd on an API version it did not
+        read, newer or older, with what quackd does about the difference.
+
+        Older is warned about as well as newer. The floor is the oldest version quackd has read,
+        not every version between it and the pin, and the number is a poor guide to what a
+        robot has: daemon-v0.15.0 to daemon-v0.15.2 all say API 37 and only the last reports
+        `safety.picked_up` (`up.SAFETY_PICKED_UP`)."""
+        build = (self.hello or {}).get("daemon_version")
+        which = f"API v{remote}" + (f" (daemon {build})" if build else "")
+        read = f"the API v{self.api_version} quackd read at {up.RELEASE} on {up.READ_ON}"
+        if remote > self.api_version:
+            return (
+                f"this robotd speaks {which}, newer than {read}. It is served, as upstream's own "
+                "clients serve one, because a call whose shape moved refuses itself by name: a "
+                "verb that fails naming METHOD_NOT_FOUND or INVALID_PARAMS is that, and a "
+                "robot.move the robot's state does not show is held back (extras.move_echo). "
+                "Before it walks, read the robot's own duck-ipc-proto version notes, above "
+                "API_VERSION in its lib.rs, for anything touching the calls quackd makes."
+            )
+        return (
+            f"this robotd speaks {which}, older than {read}. quackd serves every version from "
+            f"API v{int(up.API_FLOOR.name)}, the oldest it has read end to end, but has not read "
+            "this one: a call it lacks fails the verb naming the call, and what it does not "
+            "report reads as absent, safety.picked_up among them (extras.pickup_detection)."
+        )
 
     async def _await_first_frame(self, timeout_s: float = 5.0) -> bool:
         """Wait for the snapshot loop's first frame, so `connect()` knows if there is a camera."""
@@ -345,7 +515,14 @@ class JsonRpcUnixTransport:
     async def _read_loop(self) -> None:
         assert self._reader is not None
         while True:
-            line = await self._reader.readline()
+            try:
+                line = await self._reader.readline()
+            except ValueError as e:
+                # A line over READER_LIMIT. `readline` has already let go of it, so the next read
+                # starts past it, or at a tail of it that the parse below throws away. Raising
+                # here is what used to end the pump, and with it every answer still to come.
+                log.warning("skipped a line from robotd over %d bytes: %s", READER_LIMIT, e)
+                continue
             if not line:
                 for fut in self._pending.values():
                     if not fut.done():
@@ -353,7 +530,9 @@ class JsonRpcUnixTransport:
                 return
             try:
                 msg = json.loads(line)
-            except json.JSONDecodeError:
+            except ValueError:  # not JSON, or the tail of a skipped line cut mid-character
+                continue
+            if not isinstance(msg, dict):
                 continue
             if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
                 pending = self._pending.get(int(msg["id"]))
@@ -375,11 +554,18 @@ class JsonRpcUnixTransport:
                 if msg["method"] == up.ROBOT_STATE.name:
                     # Before the queue push, deliberately: the queue is bounded and drops when
                     # nobody drains it, and freshness must not depend on anyone consuming.
-                    self._last_state = msg.get("params") or {}
-                    self._last_state_at = time.monotonic()
-                    self._state_arrived.set()
+                    self._took_state(msg.get("params"))
                 with contextlib.suppress(asyncio.QueueFull):
                     self._notifications.put_nowait(msg)
+
+    def _took_state(self, params: Any) -> None:
+        """One `robot.state` frame read: the newest state, when it arrived, how many have, and
+        which of the twists quackd sent it shows robotd has taken (`_settle`)."""
+        self._last_state = params if isinstance(params, dict) else {}
+        self._last_state_at = time.monotonic()
+        self._frames_read += 1
+        self._state_arrived.set()
+        self._settle(self._last_state, self._last_state_at)
 
     def _write(self, obj: dict[str, Any]) -> None:
         if self._writer is None:
@@ -402,6 +588,43 @@ class JsonRpcUnixTransport:
         except TimeoutError as e:
             self._pending.pop(req_id, None)
             raise TransportError(f"{method}: no answer within {self.request_timeout_s:g}s") from e
+        except TransportError as e:
+            if e.code in (up.ERR_METHOD_NOT_FOUND, up.ERR_INVALID_PARAMS):
+                raise TransportError(self._refused_by_name(method, e), code=e.code) from e
+            raise
+
+    def _refused_by_name(self, method: str, error: TransportError) -> str:
+        """robotd's own words for a call it refused by its name or its params, with what the
+        two versions were, since that is the refusal upstream put where the version gate was
+        (`up.VERSION_SKEW`) and the version is half of what it means.
+
+        `hello` that robotd's socket does not have is a socket that is not robotd's: tofd, for
+        one, answers every call but its two streams with METHOD_NOT_FOUND."""
+        said = f"{method}: {error}"
+        if method == up.HELLO.name and error.code == up.ERR_METHOD_NOT_FOUND:
+            return (
+                f"{said}. Whatever answered at {self.address} has no {method}, so it is not "
+                f"robotd: point --address at robotd's socket, {up.SOCKET_ROBOTD.name}"
+            )
+        remote = (self.robotd or {}).get("api_version")
+        read = f"API v{self.api_version} at {up.RELEASE}"
+        kind = (
+            "a call this robotd does not have"
+            if error.code == up.ERR_METHOD_NOT_FOUND
+            else "params this robotd does not take"
+        )
+        if remote is None:
+            return f"{said}. That is {kind}, before it said its version; quackd read {read}"
+        if remote != self.api_version:
+            return (
+                f"{said}. That is {kind}: robotd speaks API v{remote} and quackd read {read}, "
+                "and the call differs between the two"
+            )
+        return (
+            f"{said}. That is {kind}, though it speaks the {read} quackd read, so this robot was "
+            "built from a duck-ipc-proto quackd has not read: upstream does not promise one "
+            "version number the same calls"
+        )
 
     async def notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": up.JSONRPC_VERSION, "method": method, "params": params})
@@ -557,6 +780,15 @@ class JsonRpcUnixTransport:
                 # True while somebody holds the duck, which the preconditions and `stand_up`
                 # read before `fallen`; None while no fresh frame says either way.
                 "picked_up": read.picked_up,
+                # Whether this robotd reports safety.picked_up at all, which one older than its
+                # pick-up detector does not, and then nothing tells quackd somebody holds the
+                # duck. None while no fresh frame says either way.
+                "pickup_detection": _pickup_detection(read),
+                # Which robotd this is beside what quackd read, the warning when the two
+                # differ, and what it reports that the floor does not promise.
+                "robotd": self._robotd_record(read),
+                # What robotd's own state last said about the twists quackd sent.
+                "move_echo": self.move_echo,
                 "state_age_s": round(read.age, 3) if read.age is not None else None,
                 "subscribed": self.subscribed,
                 "camera": self.camera_health(),
@@ -568,6 +800,39 @@ class JsonRpcUnixTransport:
                 "assumptions": [up.STAND_UP_RPC.name],
             },
         )
+
+    def _robotd_record(self, read: StateRead) -> dict[str, Any] | None:
+        """`extras.robotd`: the hello, what quackd read, the floor, the warning, and two things
+        the floor serves robots without, read off the robot rather than off its version.
+
+        `state_frames` is whether the newest state carries `frames` (`up.STATE_FRAMES`),
+        `mediad_frame` whether mediad's `GET /frame` has answered (`up.MEDIAD_FRAME_HTTP`), which
+        quackd knows only when `--camera-url` points at it. Each is None when nothing has said."""
+        if self.robotd is None:
+            return None
+        return {
+            **self.robotd,
+            "state_frames": (read.state.get("frames") is not None) if read.state else None,
+            "mediad_frame": self._mediad_frame_answered(),
+        }
+
+    def _mediad_frame_answered(self) -> bool | None:
+        """Whether mediad's `GET /frame` has answered at least once, or None when `--camera-url`
+        is not that route. A robotd from before daemon-v0.13.0 has no such route to answer."""
+        url = self.camera_url
+        if not url or is_webrtc_url(url):
+            return None
+        if urllib.parse.urlsplit(url).path != up.MEDIAD_FRAME_PATH:
+            return None
+        return self._frame_at is not None
+
+    @property
+    def safety(self) -> dict[str, Any]:
+        """What robotd's own frames say it can detect, for `doctor`, which reads a transport's
+        `safety` for its go/no-go rows: whether it reports `safety.picked_up` at all. Empty
+        until a fresh frame has said either way."""
+        detection = _pickup_detection(self._read())
+        return {} if detection is None else {"pickup_detection": detection}
 
     def _move_refusal(self) -> str | None:
         """Why the next `robot.move` must not go out, or None when it may.
@@ -588,23 +853,115 @@ class JsonRpcUnixTransport:
         Nothing is sent in place of the refused twist: robotd zeroes a twist nobody refreshes
         within its deadman window (`up.DEADMAN`), and a zero sent here would be one more
         `robot.move` to a duck quackd has just decided not to drive.
+
+        The same hold covers a duck that is standing and a robotd that is not taking the twists:
+        one quackd sent that the state has not shown `MOVE_ECHO_FRAMES` frames and
+        `move_echo_after_s` later (`_not_taken`).
+        That is how a `robot.move` robotd could not parse shows, since a notification gets no
+        answer, and the verb that ran into it stops rather than reporting a walk.
         """
         if self._move_held is not None:
             return (
-                f"quackd has sent no robot.move since the duck stopped standing "
-                f"({self._move_held}), and sends none until the verb that was moving it stops"
+                f"quackd has sent no robot.move since {self._move_held}, and sends none until "
+                "the verb that was moving it stops"
             )
         read = self._read()
-        if read.posture == "standing":
+        if read.posture != "standing":
+            why = read.reason or (
+                "the duck has fallen" if read.posture == "fallen" else f"the duck is {read.posture}"
+            )
+            self._move_held = f"the duck stopped standing ({why})"
+            log.warning(
+                "robot.move held back until the next stop: the duck is not standing (%s)", why
+            )
+            return (
+                f"the duck is not standing ({why}), so quackd sent no robot.move, and sends none "
+                "until the verb that was moving it stops"
+            )
+        if (unseen := self._not_taken()) is not None:
+            self._move_held = "robotd stopped showing the twists it was sent"
+            log.warning("robot.move held back until the next stop: %s", unseen)
+            return (
+                f"robotd has not taken robot.move: {unseen}. quackd sends no more until the verb "
+                "that was moving it stops"
+            )
+        return None
+
+    def _settle(self, state: dict[str, Any], arrived: float) -> None:
+        """Strike off every twist a state frame shows robotd has taken.
+
+        The frame's `move.requested` is the twist robotd was last asked for (`up.MOVE_ECHO`).
+        Matched against the newest of the unshown twists first, since robotd takes them in the
+        order they were sent and a frame that shows one has taken every one before it. A frame
+        that shows only an older twist than one still waiting, which is robotd's state from
+        before the newer one arrived, strikes off nothing newer than the one it shows."""
+        if not self._unshown:
+            return
+        asked = _twist_of(state.get("move"))
+        if asked is None:
+            return
+        for i in range(len(self._unshown) - 1, -1, -1):
+            sent_at, _, twist = self._unshown[i]
+            if _same_twist(twist, asked):
+                break
+        else:
+            return
+        for _ in range(i + 1):
+            self._unshown.popleft()
+        self.move_echo = {
+            "taken": True,
+            "twist": list(twist),
+            "after_s": round(arrived - sent_at, 3),
+        }
+
+    def _not_taken(self) -> str | None:
+        """Why the newest state says robotd has not taken the twists quackd sent, or None.
+
+        Judged on the oldest moving twist no frame has shown, and only once `MOVE_ECHO_FRAMES`
+        frames have been read since it went out, the newest of them `move_echo_after_s` after
+        it: a twist sent a moment ago has not had the time to show, a frame read late may have
+        been built before the twist reached robotd, and a stopped twist proves nothing, since a
+        robot that took nothing reads stopped too. So a walk shorter than the window is never
+        judged, and is reported on what it sent alone, as it always was.
+
+        Two things look alike here, and the words name both. A robotd that could not parse the
+        twist answers nothing and goes on showing what it had. One that took it shows the next
+        twist anybody sent, and a connected gamepad sends one at least ten times a second, a stop
+        while its sticks are still (`up.PAD_DRIVES`), so a pad in somebody's hand fights every
+        walk quackd sends. Holding the walk back is right either way: the duck is not doing what
+        quackd asked, and the pad is the robot's authority, not quackd."""
+        waiting = next((entry for entry in self._unshown if any(entry[2])), None)
+        if waiting is None or self._last_state_at is None:
             return None
-        why = read.reason or (
-            "the duck has fallen" if read.posture == "fallen" else f"the duck is {read.posture}"
+        sent_at, frames_then, twist = waiting
+        waited = self._last_state_at - sent_at
+        if self._frames_read - frames_then < MOVE_ECHO_FRAMES:
+            return None
+        if waited < move_echo_after_s(self.state_hz):
+            return None
+        asked = _twist_of((self._last_state or {}).get("move"))
+        self.move_echo = {
+            "taken": False,
+            "twist": list(twist),
+            "requested": list(asked) if asked is not None else None,
+            "after_s": round(waited, 3),
+        }
+        shows = (
+            f"still says it was asked for {_shown(asked)}"
+            if asked is not None
+            else "carries no move.requested to say"
         )
-        self._move_held = why
-        log.warning("robot.move held back until the next stop: the duck is not standing (%s)", why)
+        remote = (self.robotd or {}).get("api_version")
+        unread = (
+            f", and this robotd speaks API v{remote}, which quackd has not read"
+            if remote is not None and remote != self.api_version
+            else ""
+        )
         return (
-            f"the duck is not standing ({why}), so quackd sent no robot.move, and sends none "
-            "until the verb that was moving it stops"
+            f"quackd sent {_shown(twist)}, and the robot.state that arrived {waited:.1f} s later "
+            f"{shows}. robotd answers a robot.move with nothing, so either it could not parse "
+            f"this one{unread}, or another client sent one after it, as padd does at least ten "
+            "times a second while a gamepad is connected, a stop while its sticks are still"
         )
 
     async def send_intent(self, intent: Intent) -> Ack:
@@ -614,16 +971,17 @@ class JsonRpcUnixTransport:
                 case "move":
                     if (refusal := self._move_refusal()) is not None:
                         return Ack(accepted=False, reason=refusal)
-                    await self.notify(
-                        up.ROBOT_MOVE.name,
-                        {"vx": p.get("vx", 0.0), "vy": p.get("vy", 0.0), "vyaw": p.get("wz", 0.0)},
-                    )
+                    vx, vy, wz = p.get("vx", 0.0), p.get("vy", 0.0), p.get("wz", 0.0)
+                    await self.notify(up.ROBOT_MOVE.name, {"vx": vx, "vy": vy, "vyaw": wz})
+                    # Written and drained, so the state could show it from now on (_settle).
+                    sent = (_number(vx), _number(vy), _number(wz))
+                    self._unshown.append((time.monotonic(), self._frames_read, sent))
                     return Ack()
                 case "stop":
                     try:
                         await self.request(up.ROBOT_STOP.name)
                     finally:
-                        self._move_held = None  # the stop `stop()` sends, so it ends the hold too
+                        self._release()  # the stop `stop()` sends, so it ends the hold too
                     return Ack()
                 case "do":
                     res = await self.request(up.ROBOT_DO.name, {"skill": p.get("skill")})
@@ -708,7 +1066,13 @@ class JsonRpcUnixTransport:
                 e,
             )
         finally:
-            self._move_held = None
+            self._release()
+
+    def _release(self) -> None:
+        """The verb that was walking is over: lift the hold on `robot.move`, and forget the
+        twists it sent, which a stop replaces with zero whether or not robotd showed them."""
+        self._move_held = None
+        self._unshown.clear()
 
     def now(self) -> float:
         return time.monotonic() - self._t0

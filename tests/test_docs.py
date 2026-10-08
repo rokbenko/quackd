@@ -56,6 +56,25 @@ def test_the_microduck_page_says_which_read_it_is() -> None:
     assert linked == {up.PIN}, f"the page links the robot's repository at {sorted(linked)}"
 
 
+def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
+    """The page says how long robotd's state has to show a `robot.move` before quackd holds the
+    walk back, in frames and in seconds at the rate quackd subscribes at. All three are numbers
+    in `jsonrpc_unix.py`, and the page is where somebody on a slow tunnel reads why a walk that
+    robotd took was stopped."""
+    from quackd_microduck.transports.jsonrpc_unix import (
+        MOVE_ECHO_FRAMES,
+        STATE_HZ,
+        move_echo_after_s,
+    )
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    said = (
+        f"{_NUMBER_WORDS[MOVE_ECHO_FRAMES]} frames after it went out "
+        f"({move_echo_after_s(STATE_HZ):g} s at the {STATE_HZ} Hz quackd subscribes at)"
+    )
+    assert said in " ".join(page.split()), f"the Microduck page does not say {said!r}"
+
+
 def test_adapter_status_lists_every_backend() -> None:
     from quackd.adapters.factory import BACKENDS
 

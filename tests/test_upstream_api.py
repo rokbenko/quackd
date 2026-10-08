@@ -245,6 +245,23 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
         assert upstream_api.PIN in ref.source, ref
 
 
+def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
+    """The floor and the version read are numbers the handshake compares, and the frame route is
+    a path the transport matches `--camera-url` against, so each has to agree with the ref beside
+    it: a floor above the version read refuses the very robot quackd read, and a path that is not
+    the route's leaves `extras.robotd.mediad_frame` saying nothing about it. What the rule rests
+    on, upstream's own word on a skew and the two facts the echo reads, was read, not assumed."""
+    assert int(upstream_api.API_FLOOR.name) <= int(upstream_api.API_VERSION.name)
+    assert upstream_api.MEDIAD_FRAME_HTTP.name.endswith(upstream_api.MEDIAD_FRAME_PATH)
+    for ref in (
+        upstream_api.API_FLOOR,
+        upstream_api.VERSION_SKEW,
+        upstream_api.MOVE_ECHO,
+        upstream_api.PAD_DRIVES,
+    ):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
 def test_the_posture_labels_are_the_ones_robotd_names() -> None:
     """quackd sorts `robot.state.policy` into standing, sitting and everything else, and the
     labels it sorts were an UNVERIFIED assumption until they were read in robotd's source at the

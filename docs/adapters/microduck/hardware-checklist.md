@@ -59,13 +59,22 @@ names this command if you try.
 quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870
 ```
 
-Read three things: that the handshake passed, what `robot.health` said, and the verb list.
+Read three things: that the handshake passed, what `robot.health` said, and the verb list. The
+`robotd` row under health should name the release, the API version and the revision the robot
+answered with.
 
-> **Abort on an API version mismatch.** quackd refuses rather than guessing, and it prints
-> both numbers. quackd is written against the version in
-> [`docs/adapters/microduck/README.md`](README.md); a prototype can be ahead of public `main` as
-> easily as behind it. If they differ, read the robot's own `duck-ipc-proto` before going on —
-> the field shapes matter more than the number.
+> **Abort if the handshake is refused.** quackd refuses a robotd older than API v23, the oldest
+> it has read end to end, and one whose `hello` names no version, and it prints why. A robot on
+> any other version is served, and when that version is not the one in
+> [`docs/adapters/microduck/README.md`](README.md), `doctor`'s advice says so. If it says the
+> robot is newer than what quackd read, go through the robot's own `duck-ipc-proto` version
+> notes, above `API_VERSION` in its `lib.rs`, for anything touching the calls quackd makes before
+> going on. The field shapes matter more than the number, and a call whose shape moved fails the
+> verb that sends it, naming the call.
+
+> Read the `pickup_detection` row too. `False` means this robotd is older than its pick-up
+> detector, so nothing tells quackd when somebody is holding the duck: stop it before you pick it
+> up, every time.
 
 > Abort if `healthy` is false, or if the battery is low. A duck that browns out mid-walk
 > teaches you nothing.
@@ -174,6 +183,14 @@ quackd run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:987
 Start with `--no-memory` for a clean first run, then `--memory-dir` so the campaign's notes stay
 out of your simulator's.
 
+The pad in your hand fights every walk quackd sends, even while nobody touches it: `padd` tells
+robotd to stand still at least ten times a second while a pad is connected and its sticks are
+still, and robotd keeps the newest twist from anyone. quackd checks each walk against robotd's
+own `move.requested`, so a walk the pad keeps stopping should end with
+`robotd has not taken robot.move` and robotd still saying it was asked for `[0, 0, 0]`. That is
+the pad's authority, which quackd does not arbitrate. Write down how often it happens: nobody
+has measured it.
+
 > Abort and let the gamepad take it if the duck goes over. Nothing quackd sends stands a fallen
 > duck up on its own: `stand_up` is `robot.enable {on: true}` and it checks `safety.fallen`
 > afterwards rather than claiming upright, so the recovery is `robotd`'s or it is the owner's.
@@ -196,6 +213,9 @@ What is most worth writing down, because it is what nobody can check without a d
 
 - whether `posture` tracked the real robot, and whether `policy` said `sit` when it sat
   (quackd assumes it does, and says so in `extras.assumptions`)
+- what `extras.robotd` said the robot runs, and what `extras.move_echo` said of a walk: how
+  long after a twist went out robotd's state showed it, which is the number the echo window
+  (three state frames) was set without
 - whether `robot.enable` brought a limp robot up, and how much it moved doing it
 - whether `media.detections` arrived on the control datachannel — upstream's source says it
   does and upstream's design doc says it does not, and one of them is out of date

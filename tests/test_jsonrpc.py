@@ -1,9 +1,11 @@
 """The experimental robot transport against a fake robotd over TCP loopback.
 
 The fake answers as a robotd at the pin does (`upstream_api.RELEASE`): its hello and its
-subscribe answer, a state frame of that release's shape every tick, and params decoded the way
-robotd decodes them, where a member it does not know is refused by name. So this proves our
-framing, handshake, deadman feeding and error handling against what upstream's source says,
+subscribe answer, a state frame of that release's shape every tick, reporting the twist it was
+last asked for, and params decoded the way robotd decodes them, where a member it does not know
+is refused by name. Switches make it a robotd of another release: another API version, calls it
+does not have, a `robot.move` it does not take, no pick-up detector, no `frames`. So this proves
+our framing, handshake, deadman feeding and error handling against what upstream's source says,
 not that a real duck agrees.
 """
 
@@ -12,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import sys
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -25,11 +29,15 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.base import Detection
 from quackd.safety import Executor
 from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.verbs.core import MOVE_RESEND_S
 from quackd.verbs.registry import VerbRegistry
 from quackd_microduck import upstream_api as up
 from quackd_microduck.transports.jsonrpc_unix import (
+    MOVE_ECHO_FRAMES,
+    READER_LIMIT,
     JsonRpcUnixTransport,
     camera_stale_after_s,
+    move_echo_after_s,
     parse_address,
     state_stale_after_s,
 )
@@ -93,6 +101,9 @@ NO_PARAMS = frozenset({"robot.stop", "robot.health"})
 
 
 CURRENT_API = int(up.API_VERSION.name)
+FLOOR = int(up.API_FLOOR.name)
+NO_VERSION = object()
+"""A hello answer with no `api_version` at all, for `FakeRobotd(api_version=...)`."""
 
 
 def camera_pose(yaw: float) -> dict[str, list[float]]:
@@ -115,16 +126,19 @@ class FakeRobotd:
     def __init__(
         self,
         *,
-        api_version: int = CURRENT_API,
+        api_version: object = CURRENT_API,
         healthy: bool = True,
         fallen: bool = False,
         policy: str | None = "walk",
         limp: bool = False,
-        picked_up: bool | None = None,
+        picked_up: bool | None = False,
         skills: list[str] | None = STOCK_SKILLS,
         missing: frozenset[str] = frozenset(),
+        drop_moves: bool = False,
+        reports_frames: bool = True,
     ) -> None:
         self.api_version = api_version
+        """What `hello` answers in `api_version`, NO_VERSION to leave it out."""
         self.healthy = healthy
         # The duck as the next state frame will describe it. Each frame is built from these when
         # it is sent, so a test can pick the duck up, lay it down or start a skill mid-verb.
@@ -132,12 +146,27 @@ class FakeRobotd:
         self.policy = policy
         self.limp = limp
         self.picked_up = picked_up
-        """None leaves `safety.picked_up` out, as a robotd from before the pick-up detector does."""
+        """None leaves `safety.picked_up` out, as a robotd from before the pick-up detector,
+        daemon-v0.15.2, does. One at the pin writes it on every frame, held or not."""
         self.skills = skills
         """What `robot.subscribe` answers in `skills`; None leaves the key out, as a robotd whose
         skills are not config yet does."""
         self.missing = missing
         """Calls this robotd answers METHOD_NOT_FOUND, as one from before they existed would."""
+        self.params = dict(PARAMS)
+        """The members each call's params take, this robotd's own copy, so a test can give one
+        call the shape a newer robotd might."""
+        self.drop_moves = drop_moves
+        """Take no `robot.move` at all, as a robotd that cannot parse one does: it says nothing
+        back, and `move.requested` goes on reporting what it was asked for before."""
+        self.reports_frames = reports_frames
+        """False leaves `frames` out of the state, as a robotd from before API 24 does."""
+        self.extra_state: dict[str, Any] = {}
+        """Members added to every state frame, to make one as long as a test needs."""
+        self.frames_sent = 0
+        self.twist = [0.0, 0.0, 0.0]
+        """The twist robotd was last asked for, `[vx, vy, vyaw]`, which every state frame reports
+        as `move.requested` (`up.MOVE_ECHO`). A stop zeroes it; the deadman does not."""
         self.head = [0.0, 0.0, 0.0, 0.0]
         """The commanded head, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
         `robot.look` or `robot.head` asked for. A real robotd adds its idle glances on top."""
@@ -190,26 +219,24 @@ class FakeRobotd:
         for name, angle in zip(HEAD, self.head, strict=True):
             joints[JOINTS.index(name)] = angle
         t = time.monotonic() - self._t0
-        return {
-            "jsonrpc": "2.0",
-            "method": "robot.state",
-            "params": {
-                "t": t,
-                "move": {"requested": [0.0, 0.0, 0.0], "applied": [0.0, 0.0, 0.0]},
-                "head": list(self.head),
-                "policy": self.policy,
-                "safety": safety,
-                "loop": {"hz": 50.0, "missed": 0},
-                "joints": joints,
-                "targets": joints,
-                "odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0},
-                "t_ns": int(time.monotonic_ns()),
-                "frames": {
-                    "camera": camera_pose(self.head[2]),
-                    "tof": {"pos": [0.05, 0.0, 0.1], "quat": [1.0, 0.0, 0.0, 0.0]},
-                },
-            },
+        params: dict[str, Any] = {
+            "t": t,
+            "move": {"requested": list(self.twist), "applied": list(self.twist)},
+            "head": list(self.head),
+            "policy": self.policy,
+            "safety": safety,
+            "loop": {"hz": 50.0, "missed": 0},
+            "joints": joints,
+            "targets": joints,
+            "odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0},
+            "t_ns": int(time.monotonic_ns()),
         }
+        if self.reports_frames:
+            params["frames"] = {
+                "camera": camera_pose(self.head[2]),
+                "tof": {"pos": [0.05, 0.0, 0.1], "quat": [1.0, 0.0, 0.0, 0.0]},
+            }
+        return {"jsonrpc": "2.0", "method": "robot.state", "params": params | self.extra_state}
 
     async def _publish(self, writer: asyncio.StreamWriter, hz: int) -> None:
         """Stream `robot.state` the way a real robotd does, until the connection goes away."""
@@ -219,7 +246,15 @@ class FakeRobotd:
                 await writer.drain()
             except (ConnectionError, OSError):
                 return
+            self.frames_sent += 1
             await asyncio.sleep(1.0 / max(1, hz))
+
+    def _take(self, method: str, params: dict[str, Any]) -> None:
+        """A continuous intent robotd parsed, however it was framed (`apply_intent`)."""
+        if method == "robot.head":
+            self.head = [float(params.get(k, 0.0)) for k in HEAD]
+        elif method == "robot.move" and not self.drop_moves:
+            self.twist = [float(params.get(k, 0.0)) for k in ("vx", "vy", "vyaw")]
 
     def refusal(self, method: str, params: Any) -> tuple[int, str] | None:
         """The error robotd answers this call with, or None when it would take it.
@@ -228,11 +263,11 @@ class FakeRobotd:
         params are decoded, and a member the params type does not declare, one it requires and
         did not get, or a sound tag that is not one of the seven, is INVALID_PARAMS naming it, in
         serde's words."""
-        if method in self.missing or method not in PARAMS.keys() | NO_PARAMS:
+        if method in self.missing or method not in self.params.keys() | NO_PARAMS:
             return up.ERR_METHOD_NOT_FOUND, f"unknown method {json.dumps(method)}"
         if method in NO_PARAMS:
             return None
-        known, required = PARAMS[method]
+        known, required = self.params[method]
         if not isinstance(params, dict):
             return up.ERR_INVALID_PARAMS, f"invalid type: {json.dumps(params)}, expected a map"
         for member in params:
@@ -257,8 +292,8 @@ class FakeRobotd:
                 if (refused := self.refusal(method, params)) is not None:
                     # robotd drops a notification it cannot parse and says nothing back
                     self.rejected.append((method, refused[1]))
-                elif method == "robot.head":
-                    self.head = [float(params.get(k, 0.0)) for k in HEAD]
+                else:
+                    self._take(method, params)
                 self._arrived.set()
                 continue
             self.requests.append(msg)
@@ -289,16 +324,19 @@ class FakeRobotd:
             result: Any
             if method == "hello":
                 result = {
-                    "api_version": self.api_version,
                     "daemon_version": up.RELEASE.removeprefix("daemon-v"),
                     "revision": up.PIN[:7],
                 }
+                if self.api_version is not NO_VERSION:
+                    result["api_version"] = self.api_version
             elif method == "robot.health":
                 result = {"healthy": self.healthy, "battery": {"volts": 7.4, "percent": 66.0}}
                 if not self.healthy:
                     result["reason"] = "control loop at 43.9 Hz"
             elif method in ("robot.stop", "robot.enable"):
                 result = {"accepted": True}
+                if method == "robot.stop":
+                    self.twist = [0.0, 0.0, 0.0]  # robotd's stop zeroes the twist it was asked for
                 if method == "robot.enable" and self.recover_on_enable:
                     self.fallen, self.policy = False, "stand"
             elif method == "robot.do":
@@ -334,8 +372,7 @@ class FakeRobotd:
                 # A continuous intent sent with an id, which quackd never does. robotd takes it
                 # the same as the notification and answers it, rather than ignoring a call for
                 # its framing (`apply_intent` in robotd/src/main.rs).
-                if method == "robot.head":
-                    self.head = [float(params.get(k, 0.0)) for k in HEAD]
+                self._take(method, params)
                 result = {"accepted": True}
             writer.write(
                 (json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n").encode()
@@ -431,35 +468,133 @@ async def test_subscribe_yields_state_and_posture(robotd: FakeRobotd) -> None:
     await t.close()
 
 
-async def test_api_version_mismatch_refuses() -> None:
-    fake = FakeRobotd(api_version=CURRENT_API + 1)
+async def test_a_robotd_newer_than_the_read_is_served_and_says_so(
+    registry: VerbRegistry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """It used to be refused at connect, which is how every robotd release from daemon-v0.12.0
+    on was a closed socket, the first of them six days after the read. No robotd refuses a peer
+    for a different number, and a call whose shape moved refuses itself by name
+    (`up.VERSION_SKEW`), so a newer one is served now, and the log, `doctor` and every state
+    say which robot it is and that quackd has not read it."""
+    newer = CURRENT_API + 1
+    fake = FakeRobotd(api_version=newer)
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        with pytest.raises(TransportError, match=f"API v{CURRENT_API + 1}"):
+        with caplog.at_level(logging.WARNING, logger="quackd.transport.jsonrpc"):
             await t.connect()
+        warning = t.runtime_warning or ""
+        assert f"API v{newer}" in warning and f"API v{CURRENT_API}" in warning
+        assert "newer" in warning and up.RELEASE in warning
+        assert any(r.getMessage() == warning for r in caplog.records), caplog.records
+        state = await t.get_state()
+        assert state.extras["robotd"] == {
+            "api_version": newer,
+            "read": CURRENT_API,
+            "floor": FLOOR,
+            "daemon_version": up.RELEASE.removeprefix("daemon-v"),
+            "revision": up.PIN[:7],
+            "warning": warning,
+            "state_frames": True,
+            "mediad_frame": None,
+        }
+        # and served: the duck walks
+        result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+            "walk", {"vx": 0.1, "duration_s": 0.2}
+        )
+        assert result.ok, result.summary
+        await t.close()
     finally:
         await fake.stop()
 
 
 async def test_the_version_quackd_was_written_against_is_the_one_upstream_ships() -> None:
-    """A robotd on an old contract is refused, not guessed at.
+    """A robotd older than the oldest contract quackd has read is refused, not guessed at.
 
     `API_VERSION` was 16 for a week after upstream had moved to 23, and nothing here noticed
     because the fake was pinned to the same stale number. It was then 23 while every robotd
     release from daemon-v0.12.0 on said 27 or more, and quackd refused each of them. Naming the
     number means a bump has to come past this test rather than sliding through with the fake,
-    and naming 16 keeps the oldest contract quackd ever spoke refused.
+    and so does the floor, the oldest read: 16 stays refused, and so does the version just
+    below the floor, in words that name both numbers.
     """
     # Named, not `>= 41`: a bump has to come past this line and past a fresh read of upstream,
     # rather than sailing through because the number only went up.
     assert CURRENT_API == 41, "re-read duck-ipc-proto at a new pin before changing this"
-    fake = FakeRobotd(api_version=16)
+    assert FLOOR == 23, "the floor is the oldest contract quackd has read end to end"
+    for below in (16, FLOOR - 1):
+        fake = FakeRobotd(api_version=below)
+        await fake.start()
+        try:
+            t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+            with pytest.raises(TransportError) as refused:
+                await t.connect()
+            said = str(refused.value)
+            assert f"API v{below}," in said and f"older than API v{FLOOR}" in said, said
+            assert t._pump is None and t._writer is None  # and nothing is left open
+        finally:
+            await fake.stop()
+
+
+async def test_a_robotd_older_than_the_read_but_not_the_floor_is_served_and_warned_about() -> None:
+    """The floor is the oldest version quackd has read, not a promise about every version
+    between it and the pin: daemon-v0.15.0 to daemon-v0.15.2 all say API 37, and only the last
+    reports `safety.picked_up`. So an older robotd is warned about as a newer one is."""
+    fake = FakeRobotd(api_version=FLOOR, picked_up=None)
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
-        with pytest.raises(TransportError, match="API v16"):
+        await t.connect()
+        warning = t.runtime_warning or ""
+        assert f"API v{FLOOR}" in warning and "older" in warning, warning
+        state = await t.get_state()
+        assert state.extras["robotd"]["warning"] == warning
+        assert state.extras["pickup_detection"] is False
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_the_version_read_connects_without_a_warning(robotd: FakeRobotd) -> None:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert t.runtime_warning is None
+    record = (await t.get_state()).extras["robotd"]
+    assert record["api_version"] == record["read"] == CURRENT_API and record["warning"] is None
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    "answered",
+    [NO_VERSION, None, str(CURRENT_API), float(CURRENT_API), True],
+    ids=["missing", "null", "string", "float", "bool"],
+)
+async def test_a_hello_that_names_no_version_is_refused(answered: object) -> None:
+    """Whatever answered `hello` without an integer `api_version` is not a robotd quackd can
+    check against anything. It used to be served, because the old gate compared only a version
+    that was there, and `True` passed as the number 1 would have."""
+    fake = FakeRobotd(api_version=answered)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        with pytest.raises(TransportError, match="not a version number"):
             await t.connect()
+    finally:
+        await fake.stop()
+
+
+async def test_a_socket_with_no_hello_is_not_robotd() -> None:
+    """tofd, for one, answers every call but its two streams with METHOD_NOT_FOUND, `hello`
+    included, so `--address` pointed at the wrong socket says so rather than reading as a
+    robotd that lacks a call."""
+    fake = FakeRobotd(missing=frozenset({up.HELLO.name}))
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        with pytest.raises(TransportError) as refused:
+            await t.connect()
+        assert refused.value.code == up.ERR_METHOD_NOT_FOUND
+        assert "is not robotd" in str(refused.value) and up.SOCKET_ROBOTD.name in str(refused.value)
     finally:
         await fake.stop()
 
@@ -738,6 +873,8 @@ async def test_an_upstream_error_carries_its_code(robotd: FakeRobotd) -> None:
     with pytest.raises(TransportError) as caught:
         await t.request(up.ROBOT_LOOK.name, {"x": 1.0, "elevation": 0.2})
     assert caught.value.code == up.ERR_INVALID_PARAMS and "`elevation`" in str(caught.value)
+    # on the version quackd read, which upstream does not promise means the same calls
+    assert f"API v{CURRENT_API}" in str(caught.value) and "has not read" in str(caught.value)
     await t.close()
 
 
@@ -794,10 +931,12 @@ async def test_nothing_quackd_sends_is_a_member_robotd_does_not_know(
 async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
     registry: VerbRegistry,
 ) -> None:
-    """A robotd from before a call existed answers METHOD_NOT_FOUND naming it, the other way a
-    robot from another release says no. The verb that needed the call fails with the code and
-    the name, instead of reporting what the duck did not do."""
-    fake = FakeRobotd(missing=frozenset({up.ROBOT_LOOK.name}))
+    """A robotd from another release answers METHOD_NOT_FOUND naming a call it does not have,
+    which is the refusal upstream put where the version gate was. The verb that needed the call
+    fails with the code, the name and both versions, instead of reporting what the duck did not
+    do, since a robot quackd has not read is served now and this is how it says no."""
+    newer = CURRENT_API + 1
+    fake = FakeRobotd(api_version=newer, missing=frozenset({up.ROBOT_LOOK.name}))
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
@@ -806,6 +945,7 @@ async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
         result = await ex.run_verb("gaze", {"direction": "left"})
         assert not result.ok and str(up.ERR_METHOD_NOT_FOUND) in result.summary
         assert up.ROBOT_LOOK.name in result.summary
+        assert f"robotd speaks API v{newer} and quackd read API v{CURRENT_API}" in result.summary
         await t.close()
     finally:
         await fake.stop()
@@ -1152,3 +1292,328 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
     await _landed(t)
     assert walked.ok and _moves(robotd) > held_at
     await t.close()
+
+
+# ── a robotd quackd has not read ─────────────────────────────────────────────────────────
+
+
+async def _eventually(check: Callable[[], bool], what: str, wait_s: float = 30.0) -> None:
+    """Return once `check` holds. Waited for rather than slept, so a loaded machine that is slow
+    to deliver frames is slow here too rather than wrong; `wait_s` only ends a test whose
+    `check` never comes true."""
+    deadline = time.monotonic() + wait_s
+    while not check():
+        if time.monotonic() > deadline:
+            raise AssertionError(f"{what} did not happen within {wait_s:g} s")
+        await asyncio.sleep(0.01)
+
+
+async def _past_the_echo_window(t: JsonRpcUnixTransport, since: float) -> None:
+    """Return once `MOVE_ECHO_FRAMES` state frames have been read since `since`, the newest of
+    them `move_echo_after_s` after it: the first frame a twist sent at `since` is judged on."""
+    window, read = move_echo_after_s(t.state_hz), t._frames_read
+    await _eventually(
+        lambda: (
+            t._frames_read - read >= MOVE_ECHO_FRAMES
+            and t._last_state_at is not None
+            and t._last_state_at - since >= window
+        ),
+        "the echo window closing",
+    )
+
+
+def _drop_by_switch(fake: FakeRobotd) -> None:
+    fake.drop_moves = True
+
+
+def _drop_by_renaming(fake: FakeRobotd) -> None:
+    # a robotd whose MoveParams call the turn rate `wz`, as a newer one might: quackd's `vyaw`
+    # is then a member it does not know, which it refuses by name, to nobody, as a notification
+    fake.params["robot.move"] = (frozenset({"vx", "vy", "wz"}), frozenset())
+
+
+@pytest.mark.parametrize("drop", [_drop_by_switch, _drop_by_renaming], ids=["dropped", "renamed"])
+async def test_a_move_robotd_did_not_take_holds_every_move_until_a_stop(
+    robotd: FakeRobotd, drop: Callable[[FakeRobotd], None]
+) -> None:
+    """robotd answers no notification, so a `robot.move` it could not parse used to be a walk
+    quackd reported and the duck never took, and serving a robotd quackd has not read is what
+    makes one likely. Its own state says what it was last asked for (`up.MOVE_ECHO`): a twist
+    that state has not shown `move_echo_after_s` later holds every `robot.move` back, the way a
+    duck that stops standing does, until the verb that sent it stops."""
+    drop(robotd)
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted  # nothing to judge yet
+    await _past_the_echo_window(t, time.monotonic())
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    reason = ack.reason or ""
+    assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
+    assert "still says it was asked for [0, 0, 0]" in reason
+    # both things that look like this from here: a robotd that could not parse the twist, and
+    # another client, a gamepad's padd among them, sending one after it (`up.PAD_DRIVES`)
+    assert "could not parse" in reason and "another client" in reason
+    if drop is _drop_by_renaming:  # refused by name, to nobody, as a notification is
+        refused = [why for method, why in robotd.rejected if method == up.ROBOT_MOVE.name]
+        assert refused and refused[0].startswith("unknown field `vyaw`"), robotd.rejected
+    echo = (await t.get_state()).extras["move_echo"]
+    assert echo["taken"] is False and echo["twist"] == [0.1, 0.0, 0.0]
+    assert echo["requested"] == [0.0, 0.0, 0.0]
+    assert echo["after_s"] >= move_echo_after_s(t.state_hz)
+    await _landed(t)
+    assert _moves(robotd) == 1, "a robot.move went out after the robot's state had not shown one"
+
+    # robotd taking twists again does not lift the hold: the verb that ran into it has to stop
+    robotd.drop_moves, robotd.params = False, dict(PARAMS)
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    assert not ack.accepted and "since robotd stopped showing the twists" in (ack.reason or "")
+    await t.stop()
+    assert (await t.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+    await _until(t, lambda s: s["move"]["requested"] == [0.2, 0.0, 0.0])
+    assert t.move_echo is not None and t.move_echo["taken"] is True
+    assert t.move_echo["twist"] == [0.2, 0.0, 0.0]
+    await t.close()
+
+
+async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRobotd) -> None:
+    """A frame robotd built before a twist reached it can be read well after the twist went
+    out, when quackd's own process stalls with the frame still in its socket. Judged on time
+    alone, that one frame read as robotd not taking the twist, and held back a walk it took. The
+    echo waits for `MOVE_ECHO_FRAMES` frames read since the twist went out as well, so a stall
+    delays the verdict rather than inventing one.
+
+    The stream is stopped and the frames handed to the transport one at a time, all of them
+    built before the twist, so nothing about this machine's timing decides the outcome."""
+    robotd.drop_moves = True  # the state never shows the twist, so every frame here is stale
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    assert robotd._stream is not None
+    robotd._stream.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await robotd._stream
+    robotd._stream = None
+    await _landed(t)  # every frame the stream wrote has been read; from here, only these
+    stale = robotd.frame()["params"]
+    t._took_state(stale)  # so the duck reads standing however long the line above took
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    sent_at, read_then, twist = t._unshown[0]
+    # long enough ago that time alone has closed the window
+    t._unshown[0] = (sent_at - 10 * move_echo_after_s(t.state_hz), read_then, twist)
+    for _ in range(MOVE_ECHO_FRAMES - 1):
+        t._took_state(stale)  # read now, built before the twist could show in it
+        assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    t._took_state(stale)
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    assert not ack.accepted and (ack.reason or "").startswith("robotd has not taken robot.move")
+    await t.close()
+
+
+async def test_a_walk_robotd_does_not_take_stops_and_says_so(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """The walk used to say `walked` for every twist it had sent, taken or not. Now the slice
+    after the echo window fails it, the verb stops the duck as it does on any refusal, and the
+    pilot is told what robotd's state said instead."""
+    robotd.drop_moves = True
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    duration = 10 * move_echo_after_s(t.state_hz)
+    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        "walk", {"vx": 0.1, "duration_s": duration}
+    )
+    assert not result.ok and "robotd has not taken robot.move" in result.summary, result.summary
+    assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+    await _landed(t)
+    assert _moves(robotd) < round(duration / MOVE_RESEND_S), "the walk ran its whole length"
+    await t.close()
+
+
+async def test_a_walk_robotd_takes_is_shown_and_never_held(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """The same walk on a robotd that takes every twist runs its whole length, and the state
+    says how long after it went out robotd showed the last one."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    duration = 3 * move_echo_after_s(t.state_hz)
+    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        "walk", {"vx": 0.1, "duration_s": duration}
+    )
+    assert result.ok, result.summary
+    await _landed(t)
+    assert _moves(robotd) == round(duration / MOVE_RESEND_S)
+    echo = t.move_echo
+    assert echo is not None and echo["taken"] is True and echo["twist"] == [0.1, 0.0, 0.0]
+    await t.close()
+
+
+#: What asyncio's StreamReader takes in a line unless it is told otherwise, 64 KiB.
+ASYNCIO_DEFAULT_LIMIT = 2**16
+
+
+async def test_a_state_frame_longer_than_asyncios_default_line_is_read(
+    robotd: FakeRobotd,
+) -> None:
+    """`robot.state` has grown with every release since API 24, and robotd bounds nothing it
+    writes. A line over asyncio's default limit raised out of the pump, which died without a
+    word, and every answer after it was a timeout."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    pose = {"pos": [0.0, 0.0, 0.0], "quat": [1.0, 0.0, 0.0, 0.0]}
+    count = (READER_LIMIT // 2) // len(json.dumps(pose))
+    robotd.extra_state = {"skeleton": [pose] * count}
+    assert ASYNCIO_DEFAULT_LIMIT < len(json.dumps(robotd.frame())) < READER_LIMIT
+    await _eventually(
+        lambda: len((t._last_state or {}).get("skeleton") or ()) == count,
+        "a state frame longer than asyncio's default line reaching quackd",
+    )
+    assert (await t.get_state()).posture == "standing"
+    await t.close()
+
+
+async def test_a_line_over_the_limit_is_skipped_and_the_link_lives(robotd: FakeRobotd) -> None:
+    """A line longer than the reader takes is let go of, and the next one is read: the pump
+    lives, a request is still answered, and state frames still arrive."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    sent = robotd.frames_sent
+    robotd.extra_state = {"skeleton": "x" * (2 * READER_LIMIT)}
+    await _eventually(lambda: robotd.frames_sent >= sent + 2, "two long lines going out")
+    robotd.extra_state = {}
+    after = time.monotonic()
+    await t.heartbeat()  # answered, so the pump read past both long lines
+    await _eventually(
+        lambda: t._last_state_at is not None and t._last_state_at > after,
+        "a state frame after the long lines",
+    )
+    assert t._pump is not None and not t._pump.done()
+    assert (await t.get_state()).posture == "standing"
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    ("picked_up", "detection"),
+    [(False, True), (True, True), (None, False)],
+    ids=["reported", "held", "older-than-the-detector"],
+)
+async def test_the_state_says_whether_the_robot_reports_a_pickup(
+    picked_up: bool | None, detection: bool
+) -> None:
+    """A robotd from before its pick-up detector leaves `safety.picked_up` out, which reads as
+    never picked up, so a duck in somebody's hands is sent walks like any other. The version
+    cannot say which robot that is, so the state says, from the frame itself."""
+    fake = FakeRobotd(picked_up=picked_up, policy="held" if picked_up else "walk")
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        assert (await t.get_state()).extras["pickup_detection"] is detection
+        assert t.safety == {"pickup_detection": detection}
+        t._last_state_at = None  # a stream that never started says neither
+        assert (await t.get_state()).extras["pickup_detection"] is None and t.safety == {}
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize("reports", [True, False], ids=["frames", "older-than-frames"])
+async def test_the_state_says_whether_the_robot_reports_its_frames(reports: bool) -> None:
+    fake = FakeRobotd(reports_frames=reports)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        assert (await t.get_state()).extras["robotd"]["state_frames"] is reports
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    ("path", "answers", "recorded"),
+    [
+        (up.MEDIAD_FRAME_PATH, True, True),
+        (up.MEDIAD_FRAME_PATH, False, False),
+        ("/x.jpg", True, None),
+    ],
+    ids=["answered", "silent", "another-camera"],
+)
+async def test_the_state_says_whether_mediads_frame_answered(
+    robotd: FakeRobotd, path: str, answers: bool, recorded: bool | None
+) -> None:
+    """mediad's `GET /frame` arrived in daemon-v0.13.0, so a robotd the floor serves may have
+    nothing there. quackd knows only when `--camera-url` asks it, and says so then."""
+    t = JsonRpcUnixTransport(
+        f"tcp://127.0.0.1:{robotd.port}", camera_url=f"http://127.0.0.1:1{path}"
+    )
+    picture = Image.new("RGB", (8, 8))
+
+    async def fetch() -> Image.Image:
+        if not answers:
+            raise OSError("connection refused")
+        return picture
+
+    t._fetch_frame = fetch  # type: ignore[method-assign]
+    await t.connect()
+    assert (await t.get_state()).extras["robotd"]["mediad_frame"] is recorded
+    await t.close()
+
+
+@contextlib.contextmanager
+def _robotd_on_its_own_loop(**kwargs: Any) -> Iterator[FakeRobotd]:
+    """A fake robotd serving from a loop in a thread of its own, for code that runs a loop of
+    its own, as `doctor.probe` does with `asyncio.run`."""
+    loop = asyncio.new_event_loop()
+    started: list[FakeRobotd] = []
+    ready = threading.Event()
+
+    def serve() -> None:
+        asyncio.set_event_loop(loop)
+        fake = FakeRobotd(**kwargs)
+        loop.run_until_complete(fake.start())
+        started.append(fake)
+        ready.set()
+        loop.run_forever()
+
+    thread = threading.Thread(target=serve, name="fake-robotd", daemon=True)
+    thread.start()
+    assert ready.wait(30), "the fake robotd never started"
+    try:
+        yield started[0]
+    finally:
+        asyncio.run_coroutine_threadsafe(started[0].stop(), loop).result(30)
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(30)
+        loop.close()
+
+
+def _probed(**kwargs: Any) -> Any:
+    from quackd import doctor
+    from quackd_microduck import describe
+
+    with _robotd_on_its_own_loop(**kwargs) as fake:
+        address = f"tcp://127.0.0.1:{fake.port}"
+        report = doctor.probe("microduck:jsonrpc", describe("jsonrpc"), address, None, None)
+    assert report.ok and report.error is None, report
+    return report
+
+
+def test_doctor_says_which_robotd_answered_and_what_it_cannot_see() -> None:
+    """`doctor` is the hardware checklist's go/no-go gate, so the robot's release, a version
+    quackd has not read and a robotd with no pick-up detector are on its screen before
+    anything moves: a row for the first, advice for the other two."""
+    newer = CURRENT_API + 1
+    report = _probed(api_version=newer, picked_up=None)
+    rows = {row.what: row for row in report.rows}
+    release = up.RELEASE.removeprefix("daemon-v")
+    assert rows["  robotd"].value == f"{release}, API v{newer}, revision {up.PIN[:7]}"
+    assert (rows["  pickup_detection"].value, rows["  pickup_detection"].state) == ("False", "warn")
+    advice = "\n".join(report.advisories)
+    assert f"API v{newer}" in advice and "newer than" in advice, advice
+    assert "nothing on this robot reports when somebody is holding it" in advice
+
+    report = _probed()
+    rows = {row.what: row for row in report.rows}
+    assert (rows["  pickup_detection"].value, rows["  pickup_detection"].state) == ("True", "plain")
+    advice = "\n".join(report.advisories)
+    assert "API v" not in advice and "holding" not in advice, advice

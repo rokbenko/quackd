@@ -14,7 +14,9 @@ This is the third read. The first, on 2026-08-28, was against `main` with no pin
 week after it upstream went from API 16 to 23 and `Skill` stopped being an enum, which a moving
 link could not show (ADR-0022). The second, on 2026-09-04, pinned `main` at bc41fb5 on API 23.
 quackd's handshake accepted that number and no other, so it refused every robotd release from
-daemon-v0.12.0 (API 27) on at connect.
+daemon-v0.12.0 (API 27) on at connect. It now serves any number from API_FLOOR up and warns on
+every one but API_VERSION, which is upstream's own rule (VERSION_SKEW, ADR-0051): a robot
+quackd has not read is refused by the calls that changed, by name, rather than by its number.
 
 What changed between the last two reads, for the names quackd actually uses, is the version
 number and fields added to three of the types it reads: `RobotState` gained `t_ns`, `imu`,
@@ -74,11 +76,37 @@ API_VERSION = UpstreamRef(
     "41",
     "VERIFIED",
     src(_PROTO, 454),
-    "duck-ipc-proto API_VERSION at the pin. It was 16 on 2026-08-28 and 23 at the previous pin, "
-    "on 2026-09-04. No robotd refuses a peer for a different number ('No daemon refuses a call "
-    "because this number differs', lib.rs:57), but quackd's handshake refuses any number but "
-    "this one rather than guessing, so this number is the difference between a session and a "
-    "closed socket.",
+    "duck-ipc-proto API_VERSION at the pin: the version quackd read, and the one it sends in "
+    "hello. It was 16 on 2026-08-28 and 23 at the previous pin, on 2026-09-04. A robotd on any "
+    "version from API_FLOOR up is served, as upstream's own clients serve one (VERSION_SKEW), "
+    "and one on any version but this is warned about: in the log, in doctor and in every "
+    "state's extras.robotd.",
+)
+API_FLOOR = UpstreamRef(
+    "23",
+    "VERIFIED",
+    src(_PROTO, 165),
+    "The oldest duck-ipc-proto quackd has read end to end. The previous read, at bc41fb5 on "
+    "2026-09-04, was on API 23, which is the version note this cites, and daemon-v0.11.0 was the "
+    "first release on it. Everything quackd sends has the same shape there as at the pin, and so "
+    "does everything it reads but safety.picked_up and frames, which a robotd that old does not "
+    "report. A robotd below this is refused at connect, and so is a hello that names no version, "
+    "which is not a robotd quackd can check against anything.",
+)
+VERSION_SKEW = UpstreamRef(
+    "No daemon refuses a call because this number differs",
+    "VERIFIED",
+    src(_PROTO, 57),
+    "Upstream's rule for two peers on different versions (lib.rs:51-82). 'A bump promises "
+    "nothing in either direction', and no daemon refuses a peer over the number: robotd answers "
+    "hello without comparing (robotd/src/main.rs:5397), and robotctl warns once and carries on, "
+    "because 'a call that cannot be served will name itself' (robotctl/src/main.rs:1571-1572). "
+    "'What refuses instead' is the call: a method a release does not have is METHOD_NOT_FOUND "
+    "naming it, and a params member it does not know is INVALID_PARAMS naming the member, since "
+    "every params type denies unknown fields. A notification gets neither, because nothing "
+    "answers one, which is what MOVE_ECHO is for. The doc comment above the rule still says 'A "
+    "peer speaking a different version is refused rather than misparsed' (lib.rs:39-40); the rule "
+    "and robotd's own hello say otherwise.",
 )
 FRAMING = UpstreamRef(
     "NDJSON: one JSON-RPC 2.0 object per line",
@@ -188,6 +216,18 @@ ROBOT_STATE = UpstreamRef(
     "velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}. "
     "head is the commanded head, the idle look-around's glances included.",
 )
+MOVE_ECHO = UpstreamRef(
+    "robot.state.move.requested",
+    "VERIFIED",
+    src("robotd/src/main.rs", 3746),
+    "The twist robotd was last asked for, as it was asked. robot.move stores [vx, vy, vyaw] "
+    "untouched (robotd/src/main.rs:4361) and every state frame reports it as requested, beside "
+    "applied, the twist after the deadman and the limits, and robotd's own test holds it to "
+    "that: 'what the client asked for must survive to the stream' (main.rs:7419). robot.move is "
+    "a notification, so robotd answers nothing when it cannot parse one, and this is the only "
+    "place quackd can see whether a twist was taken. Once the state has gone a few frames "
+    "without showing one it sent, quackd sends no robot.move until the verb that sent it stops.",
+)
 ROBOT_HEALTH = UpstreamRef(
     "robot.health",
     "VERIFIED",
@@ -217,6 +257,19 @@ TOF_STREAM = UpstreamRef(
 TOF_FRAME = UpstreamRef("tof.frame", "VERIFIED", src(_PROTO, 953))
 PAD_INPUT = UpstreamRef(
     "pad.input", "VERIFIED", src(_PROTO, 920), "gamepad raw tap; the pad is the authority, not us"
+)
+PAD_DRIVES = UpstreamRef(
+    "padd drives while a pad is connected",
+    "VERIFIED",
+    src("padd/src/main.rs", 1230),
+    "From the moment a gamepad connects ('pad connected — driving', padd/src/main.rs:727), padd "
+    "sends robot.move on every tick its sticks ask for motion, and re-sends an unchanged stop "
+    "every HEARTBEAT, 100 ms, while they do not: 'without it robotd's twist would age past the "
+    "deadman while a pad sat connected and idle' (main.rs:1215-1229). robotd keeps the newest "
+    "twist from any client, so a connected pad nobody is touching tells robotd to stand still at "
+    "least ten times a second, over whatever twist quackd sends, and robot.state.move.requested "
+    "then shows the pad's (MOVE_ECHO). With the pad gone, padd sits the robot down after "
+    "PAD_LOST_SIT, 1 s (main.rs:193).",
 )
 
 SKILLS = UpstreamRef(
@@ -284,7 +337,11 @@ SAFETY_PICKED_UP = UpstreamRef(
     "the legs hold the pause pose until it is put back down', and while it is true the policy "
     "label reads held. 'Absent from a robotd that predates the detector, which reads as never "
     "picked up.' quackd reads it before safety.fallen, because a duck held at an angle also "
-    "reads as fallen, and nothing that moves the duck is sent while it is true.",
+    "reads as fallen, and nothing that moves the duck is sent while it is true. It first shipped "
+    "in daemon-v0.15.2, on the API 37 that daemon-v0.15.0 and daemon-v0.15.1 report without it, "
+    "so the version cannot say whether a robot has it, and quackd publishes whether its frames "
+    "carry the key as extras.pickup_detection. robotd writes the key whether or not [pickup] is "
+    "enabled, so present means the detector exists, not that it runs.",
 )
 STATE_FRAMES = UpstreamRef(
     "RobotState.frames",
@@ -294,7 +351,8 @@ STATE_FRAMES = UpstreamRef(
     "this tick's measured head joints, 'from the same head FK robot.look uses'. A pose is "
     "{pos} in metres and {quat} scalar-first [w, x, y, z], and camera is the OpenCV camera "
     "frame, '+x right, +y down, +z along the optical axis' (lib.rs:3963-3974). On the stream "
-    "since API 24. quackd does not read it.",
+    "since API 24, which first shipped in daemon-v0.12.0 on API 27. quackd reads nothing in it, "
+    "and records only whether a robot reports it, as extras.robotd.state_frames.",
 )
 IDLE_HEAD = UpstreamRef(
     "robotd's idle look-around",
@@ -387,8 +445,12 @@ MEDIAD_FRAME_HTTP = UpstreamRef(
     "(Cache-Control no-store) and at most four at a time, or with 503 'Camera snapshot "
     "unavailable; retry when capture is running.' The port is 8080 on every address by default "
     "(mediad/src/main.rs:32 and :79), with no authentication. New since bc41fb5, where the port "
-    "served the console page alone.",
+    "served the console page alone: it first shipped in daemon-v0.13.0. When --camera-url's path "
+    "is MEDIAD_FRAME_PATH, extras.robotd.mediad_frame records whether it has answered.",
 )
+#: The path mediad serves its snapshot at (MEDIAD_FRAME_HTTP), which is how quackd tells a
+#: `--camera-url` that points at it from any other HTTP camera.
+MEDIAD_FRAME_PATH = "/frame"
 MEDIA_FRAME = UpstreamRef(
     "media.frame",
     "VERIFIED",

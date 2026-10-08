@@ -9,6 +9,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **A Microduck on any robotd from API 23 up is served, and quackd says so when its version is not
+  the 41 it read.** `microduck:jsonrpc` refused a robotd whose `hello` named any version but the one
+  quackd read, which is how every robotd release from daemon-v0.12.0 on came to be refused, and how
+  the next would have been after any re-read, since robotd ships a release every few days. No robotd
+  refuses a peer over the number: upstream's rule is that a bump promises nothing, and that a call
+  whose shape moved refuses itself by name. quackd follows it now. A robotd older than API 23, the
+  oldest quackd has read end to end, is still refused at connect, and so is one whose `hello` names
+  no version, which used to be let through. Any other is served, and when its version is not 41 the
+  log, `quackd doctor` and every state's `extras.robotd` say so, beside the release and the revision
+  the robot answered with, which `doctor` also prints as a `robotd` row. A call robotd refuses with
+  `METHOD_NOT_FOUND` or `INVALID_PARAMS` fails the verb naming the call and both versions, and a
+  socket with no `hello` is called not robotd's. `robot.move` is a notification, which robotd
+  answers with nothing, so every twist is now checked against robotd's own state: one that
+  `move.requested` has not shown three state frames after it went out holds `robot.move` back until
+  the verb that was walking stops, the hold a duck that stops standing already gets, and the walk
+  fails saying what robotd showed instead, with the verdict in `extras.move_echo`. A gamepad
+  connected to the robot tells robotd to stand still at least ten times a second while nobody
+  touches it, so with one connected a walk can now stop this way, where it used to go on sending
+  twists the pad was overriding. `extras.pickup_detection` says whether the robot reports
+  `safety.picked_up`, which robotd first shipped in daemon-v0.15.2, and `doctor` warns when it does
+  not, since nothing then tells quackd that somebody is holding the duck. `extras.robotd` also says
+  whether the state carries `frames`, and whether mediad's `GET /frame` answered when `--camera-url`
+  asked it, since the floor serves releases with neither.
+  [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md) records the rule.
+  `tests/test_jsonrpc.py` serves a robotd one version newer than the read and one at the floor,
+  refuses two below it and five kinds of `hello` with no integer version, fails a verb whose call
+  the robot lacks with both versions named, holds a walk back on a robotd that drops `robot.move`
+  and on one that refuses its params by name, but not on frames read late after a stall, and probes
+  the robot through `doctor` for the new row and both warnings. Each of them failed before this
+  change.
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
@@ -55,15 +88,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **`microduck:jsonrpc` connects to a robot on robotd's current release, daemon-v0.16.1, which it
   refused.** quackd read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake
-  refuses a robotd that answers with any other number. Upstream's releases reached API 27 with
+  refused a robotd that answered with any other number. Upstream's releases reached API 27 with
   daemon-v0.12.0, and every release since was refused at connect, daemon-v0.16.1 on API 41 among
   them. quackd now reads robotd at daemon-v0.16.1 (`d818af5`), every reference in `upstream_api.py`
-  is anchored there, and the handshake expects API 41. Everything quackd sends reads the same at
-  both commits, and so does everything it reads but for fields added to `robot.state` and
-  `robot.health`, so nothing else on the wire changes. The handshake still takes one number, so a
-  robot on any other release is refused, the daemon-v0.11.0 the old read matched among them. The
-  re-read also changes what the pilot is told. The policy labels posture is sorted by are read in
-  robotd's source now rather than assumed, so the one assumption a state lists in
+  is anchored there, and quackd's hello names API 41. Everything quackd sends reads the same at both
+  commits, and so does everything it reads but for fields added to `robot.state` and `robot.health`,
+  so nothing else on the wire changes. Which other versions the handshake serves now is under
+  Changed. The re-read also changes what the pilot is told. The policy labels posture is sorted by
+  are read in robotd's source now rather than assumed, so the one assumption a state lists in
   `extras.assumptions` is `stand_up`'s, which asks the policy to drive and which upstream does not
   promise gets a fallen duck up. robotd's own stand-up after a fall was `limp_fall`, and on
   daemon-v0.16.1 that is off by default and a fall changes nothing in robotd, so the Microduck's
@@ -80,6 +112,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the release, the posture labels to the source they are read from, the assumptions to what
   `upstream_api.py` calls unverified, and the datasheet and `stand_up` to promising no recovery each
   failed before this change.
+
+- **A `robot.state` line longer than 64 KiB no longer cuts `microduck:jsonrpc` off from the robot
+  without a word.** The reader took asyncio's default line limit, 64 KiB, and a longer line raised
+  out of the task that reads robotd's socket, which died silently. Every request after it waited out
+  its timeout, the heartbeat's among them, which ended the run. A state frame is a few kilobytes at
+  daemon-v0.16.1, but robotd bounds nothing it writes, its state frame gained the camera's pose, an
+  IMU, the whole skeleton and the joints' velocities and currents between API 24 and 36, and a
+  robotd newer than quackd's read is served now. The reader takes a line of up to a mebibyte,
+  sixteen times the most robotd takes in a line it reads, and skips a longer one rather than ending
+  the link. `tests/test_jsonrpc.py` sends a frame between the two limits, which is read, and two
+  past the new one, after which the link still answers. Both failed before this change.
 
 ## [0.17.1] — 2026-10-07
 

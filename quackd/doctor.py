@@ -866,11 +866,14 @@ def probe(
         # The deadman window is a free parameter and whether there is a token at all is the
         # difference between the documented setup and an open port, so both belong in front
         # of the operator at the checklist's go/no-go gate.
-        add(ProbeRow("safety", "as this bridge reported it"))
+        # "as the robot reported it", not "this bridge": robotd reports here too now, and the
+        # Open Duck's bridge is on the robot as much as robotd is
+        add(ProbeRow("safety", "as the robot reported it"))
         for key in (
             "deadman_ms",
             "auth",
             "fall_detection",
+            "pickup_detection",
             "getup_policy",
             "estop",
             "runtime_commit",
@@ -878,7 +881,8 @@ def probe(
             if key in told:
                 reported = told[key]
                 worrying = (key == "auth" and reported == "none") or (
-                    key in ("fall_detection", "getup_policy") and reported is False
+                    key in ("fall_detection", "pickup_detection", "getup_policy")
+                    and reported is False
                 )
                 add(ProbeRow(f"  {key}", str(reported), "warn" if worrying else "plain"))
     camera_ok = True
@@ -979,6 +983,14 @@ def probe(
             "nothing on this robot detects a fall, so posture never becomes 'fallen' and no "
             "verb refuses because it is down. You are the fall detector: keep it on a stand "
             "and watch it."
+        )
+    # The other half of the same promise: a body whose software predates its pick-up detector
+    # reads as never held, which is the reading that lets a walk carry on in somebody's hands.
+    if told.get("pickup_detection") is False:
+        report.advisories.append(
+            "nothing on this robot reports when somebody is holding it, so no verb refuses "
+            "because it is held, and a walk under way carries on when it is put down. Stop it "
+            "before you pick it up."
         )
     # `note` and not just `rest_ok`: the rest move can report that it arrived and the
     # disconnect's own re-read still find the arm away, or fail to read it at all. That is the

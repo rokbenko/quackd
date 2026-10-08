@@ -141,6 +141,15 @@ def microduck_manifest(
     )
 
 
+def _robotd_line(robotd: dict[str, Any]) -> str:
+    """`0.16.1, API v41, revision d818af5`: the release, the version and the build that answered
+    `hello`. robotd sends null for a release number its own build cannot parse as one, and for
+    the revision of a build that did not come out of its CI, so either can be missing."""
+    build = robotd.get("daemon_version") or "a build that names no release"
+    revision = robotd.get("revision") or "none"
+    return f"{build}, API v{robotd.get('api_version')}, revision {revision}"
+
+
 class MicroduckAdapter:
     """A `RobotAdapter` over any of the Microduck transports."""
 
@@ -187,11 +196,13 @@ class MicroduckAdapter:
         except HeartbeatError as e:
             return Health(ok=False, reason=str(e))
         state = await self.transport.get_state()
-        return Health(
-            ok=True,
-            battery_percent=state.battery_percent,
-            extras={"policy": state.policy, "posture": state.posture},
-        )
+        extras: dict[str, Any] = {"policy": state.policy, "posture": state.posture}
+        # Which robotd answered, a row in doctor's health block, so the release a robot runs is
+        # on the screen at the checklist's go/no-go gate whether or not it is the one quackd
+        # read. Only a real robot says; the simulators and the mock have no such record.
+        if isinstance(robotd := state.extras.get("robotd"), dict):
+            extras["robotd"] = _robotd_line(robotd)
+        return Health(ok=True, battery_percent=state.battery_percent, extras=extras)
 
     async def heartbeat(self) -> None:
         await self.transport.heartbeat()
