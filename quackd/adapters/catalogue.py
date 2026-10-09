@@ -48,7 +48,7 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         backends=("sim2d", "mujoco", "mock", "jsonrpc", "websocket"),
         status=(
             "✅ in the package: sim2d, mock · ✅ mujoco (physics, needs quackd[mujoco]) · "
-            "🧪 jsonrpc · ⏳ websocket"
+            "🧪 jsonrpc · ⏳ websocket (deprecated)"
         ),
         summary="a 25 cm biped duck from Pollen Robotics",
         extra="quackd[microduck]",

@@ -1,14 +1,18 @@
-"""The WebSocket agent transport upstream designed but has not shipped. STUB.
+"""The WebSocket agent transport upstream designed and then dropped. STUB, and deprecated.
 
-architecture.md §5.3 (draft, 2026-07-22) says a server-side agent should "open a WebSocket,
-poll a frame, send intents" with `get_frame` returning a JPEG. The roadmap (2026-08-26)
-lists that SDK surface as in progress. This file exists so the CLI can name the transport,
-`quackd doctor` can explain its status, and the day upstream ships it there is exactly one
-place to fill in. It never invents a method name.
+architecture.md §5.3 (draft, 2026-07-22) said a server-side agent should "open a WebSocket,
+poll a frame, send intents" with `get_frame` returning a JPEG, and the roadmap (2026-08-26)
+listed that SDK surface as in progress. This file existed so the CLI could name the transport,
+`quackd doctor` could explain its status, and the day upstream shipped it there would be
+exactly one place to fill in. It never invents a method name.
 
 By daemon-v0.16.1 upstream had dropped that design: §5.3 sends a server-side agent over a
-rendezvous control lane instead (`upstream_api.WEBSOCKET_GATEWAY`), so the refusal below says
-there is nothing to connect to rather than something to wait for.
+rendezvous control lane instead (`upstream_api.WEBSOCKET_GATEWAY`), which carries no pixels and
+which upstream's own relay calls not a teleop lane (`upstream_api.RENDEZVOUS_LANE`). quackd does
+not drive over it, so there is nothing for this stub to become. It is deprecated and is removed
+in 0.19.0, and until then `quackd run`, `doctor` and `serve-mcp` print one line naming
+`microduck:jsonrpc` when they connect through it (`quackd_microduck.DEPRECATED_BACKENDS`). The
+refusal below ends with the same line.
 """
 
 from __future__ import annotations
@@ -19,9 +23,10 @@ from typing import Any
 from PIL import Image
 
 from quackd.transport.base import Ack, DuckState, Intent, TransportError
+from quackd_microduck import DEPRECATED_BACKENDS
 from quackd_microduck import upstream_api as up
 
-STATUS = "STUB — waiting for upstream"
+STATUS = "STUB — deprecated, removed in 0.19.0: upstream dropped the gateway"
 
 
 class WebSocketTransport:
@@ -34,8 +39,8 @@ class WebSocketTransport:
         return TransportError(
             "upstream ships no WebSocket agent gateway to connect to "
             f"({up.WEBSOCKET_GATEWAY.status}: {up.WEBSOCKET_GATEWAY.note}). "
-            f"See {up.WEBSOCKET_GATEWAY.source} and {up.ROADMAP}. "
-            "Use --robot microduck:jsonrpc (experimental) or --robot microduck:sim2d."
+            f"See {up.WEBSOCKET_GATEWAY.source}, {up.RENDEZVOUS_LANE.source} and {up.ROADMAP}. "
+            f"{DEPRECATED_BACKENDS[self.name]}."
         )
 
     async def connect(self) -> None:

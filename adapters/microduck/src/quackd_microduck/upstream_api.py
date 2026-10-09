@@ -625,6 +625,25 @@ FEATURE_STREAM = UpstreamRef(
     "newest one and steers on none of them.",
 )
 
+# ── how a program reaches a duck from somewhere else ────────────────────────────────────
+
+RENDEZVOUS_LANE = UpstreamRef(
+    "rendezvous control lane",
+    "VERIFIED",
+    src("mediad/src/relay.rs", 44),
+    "What upstream sends a server-side agent over now, in place of the WebSocket gateway it once "
+    "designed (WEBSOCKET_GATEWAY): JSON-RPC over HTTP/SSE through upstream's rendezvous service, "
+    "which mediad's relay bridges to the robot's own sockets. Upstream names two limits on it. "
+    "'No pixels': 'Video over this would be base64 inside JSON at the rate below', so frames "
+    "come from WebRTC or media.stream (docs/design/remote-access-design.md:589-590). And 'What "
+    "it is not is a teleop lane': 'The rendezvous allows 1200 requests per 60 s per peer', and "
+    "'exceeding it earns a `429` on the *whole peer*, which would take the robot's own lease "
+    "down with it'. A walk under quackd re-sends its twist against robotd's deadman until it "
+    "ends, a joystick's rate rather than a behaviour's, so quackd does not drive over it: "
+    "microduck:websocket is deprecated, and a robot elsewhere is reached over ssh with "
+    "microduck:jsonrpc.",
+)
+
 # ── assumptions and things upstream has designed but not shipped ────────────────────────
 
 WEBSOCKET_GATEWAY = UpstreamRef(

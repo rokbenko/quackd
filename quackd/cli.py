@@ -42,6 +42,7 @@ from quackd.command import command_text
 from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
+    from quackd.adapters.factory import RobotSpec
     from quackd.safety import KillSwitch
 
 app = typer.Typer(
@@ -94,6 +95,23 @@ def _deprecated(msg: str) -> None:
     ui.err_console.print(
         Text(msg, style=ui.STYLES["warn"]), markup=False, highlight=False, soft_wrap=True
     )
+
+
+def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
+    """`_deprecated`'s line for each backend these robots are on that its adapter is retiring
+    (`deprecated_backend`), once a line however many of them are on it, so a fleet of two ducks
+    on one such backend is told once.
+
+    `run` calls it as soon as it knows its robots, before it builds or connects any and before
+    its header panel, and `doctor` just before its probe connects. `serve-mcp` resolves its
+    robots inside `quackd.mcp_server` and is handed `_deprecated` to say the same lines with,
+    just before it builds the bodies its server connects as it starts. The line goes to stderr
+    in all three, so `doctor --json` and the MCP wire on `serve-mcp`'s stdout stay what they
+    were."""
+    from quackd.adapters.factory import deprecated_backend
+
+    for line in dict.fromkeys(filter(None, (deprecated_backend(spec) for spec in specs))):
+        _deprecated(line)
 
 
 def _warn_old_spellings() -> None:
@@ -1503,6 +1521,8 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
+    # every way a run names its robots has reached here, the flock's and the fleet's too
+    _deprecated_backends(specs)
     if vla and duck is not None and not duck.frontmatter.effective_policy.instructions:
         # a goal is its own one instruction, and was held to the rule for one above
         _fail(
@@ -3827,6 +3847,11 @@ def doctor(
         board, unusable = HostChoice(), refused_host(text, str(e))
 
     def warn(adapter: Any) -> None:
+        # A backend its adapter is retiring is said first, in the line a run prints for it,
+        # and only here, where doctor connects through it: without --address nothing connects,
+        # and the adapters table says which backends are going.
+        if robot:
+            _deprecated_backends([robot])
         # Before the connect, and only for a body that is handed to people, which is the one
         # whose connect takes torque off: the arm's close note sends a person here when it is
         # holding itself up away from its fold. On stderr under --json, whose stdout is one
@@ -3955,6 +3980,9 @@ def serve_mcp(
             policy_url=policy_url,
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
+            # the robots are resolved in there, so a retiring backend is said from there, in
+            # the line `run` and `doctor` print for it
+            warn=_deprecated,
         )
     except (TransportError, RegistryError) as e:
         _fail(str(e))

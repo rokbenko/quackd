@@ -35,6 +35,20 @@ rather than being read from the core, because this file is all an adapter's sdis
 contains."""
 
 BACKENDS = ("sim2d", "mujoco", "mock", "jsonrpc", "websocket")
+DEPRECATED_BACKENDS = {
+    "websocket": (
+        "microduck:websocket is deprecated and is removed in 0.19.0: upstream dropped the "
+        "WebSocket agent gateway it was waiting for. Use --robot microduck:jsonrpc, with "
+        "--camera-url http://127.0.0.1:8080/frame for mediad's camera"
+    ),
+}
+"""A backend on its way out, to the one line `quackd run`, `doctor` and `serve-mcp` print when
+they connect through it (`quackd.adapters.factory.deprecated_backend`). The WebSocket stub was
+waiting for a gateway upstream's architecture.md designed, and by daemon-v0.16.1 upstream had
+dropped it for a lane quackd will not drive over, so there is nothing for the stub to become.
+The line names what replaces it: the robot's own socket, and mediad's `/frame` for a picture,
+both through an ssh tunnel the Microduck page gives. RELEASING.md wants a removal announced a
+minor ahead, so it stays a release with this line on it."""
 
 # The 0.3 descriptions of the renamed verbs, so an old duck's tool schemas are byte-identical.
 _MOVE_DESCRIPTION = (
@@ -347,6 +361,7 @@ def make(
 
 __all__ = [
     "BACKENDS",
+    "DEPRECATED_BACKENDS",
     "MICRODUCK_VERBS",
     "MicroduckAdapter",
     "conditions",

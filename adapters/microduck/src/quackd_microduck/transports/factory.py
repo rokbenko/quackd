@@ -17,7 +17,7 @@ TRANSPORT_STATUS = {
     "mujoco": "✅ physics: upstream's model and walk policy (needs quackd[mujoco])",
     "mock": "✅ scripted, for tests",
     "jsonrpc": "🧪 experimental — real robot over robotd's unix socket (or a TCP forward)",
-    "websocket": "⏳ stub — tracks upstream architecture.md §5.3, not shipped upstream",
+    "websocket": "⏳ stub, deprecated and removed in 0.19.0: upstream dropped the gateway",
 }
 
 

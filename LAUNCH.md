@@ -107,8 +107,10 @@ ask ("add a `.duck` to `ducks/`, or an adapter for the robot on your desk").
 >    `robot.sound{tag}`, `robot.health` as the heartbeat. Everything I couldn't verify is
 >    tagged UNVERIFIED in one file — mainly: how to read posture from `robot.state.policy`,
 >    and that there's no socket-level camera snapshot yet.
-> 2. **The WebSocket agent surface** from architecture.md §5.3 — I have a stub waiting for it.
->    If the design changes, I'd rather track it than guess.
+> 2. **The WebSocket agent surface** from architecture.md §5.3 is gone at daemon-v0.16.1, and
+>    agents go over the rendezvous lane now, which your relay says is not a teleop lane. So I've
+>    deprecated the stub I had waiting for it, and I drive over robotd's socket through ssh.
+>    Tell me if that's the wrong read.
 >
 > No Pollen assets are used (no meshes, no logos), Apache-2.0 like upstream, and the README
 > says "unofficial" up top. Thank you for building the robot. Repo: <link>
@@ -169,8 +171,7 @@ please correct it" framing.
 - **Third beat: when Microducks arrive**, which is around Christmas 2026 for the earliest
   pre-orders and four to six months out for later ones, so this beat lands per person rather
   than on one date: a hardware run of the six Microduck
-  starters, `jsonrpc` flipped to ✅, and the WebSocket backend if upstream shipped it. That's
-  the launch that earns v1.
+  starters and `jsonrpc` flipped to ✅. That's the launch that earns v1.
 
 ## Metrics that matter
 

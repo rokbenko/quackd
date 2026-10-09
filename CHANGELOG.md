@@ -61,6 +61,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   keeps it when a later frame is wide, and `tests/test_docs.py` holds the page to the numbers in
   the code. Each failed before this change.
 
+### Deprecated
+
+- **`microduck:websocket` is deprecated, and is removed in 0.19.0.** It was a stub that refused to
+  connect while it waited for the WebSocket agent gateway upstream's architecture.md designed, and
+  by daemon-v0.16.1 upstream had dropped that design. A server-side agent goes over upstream's
+  rendezvous control lane now, which carries no pixels and which upstream's own relay calls not a
+  teleop lane: past 1200 requests a minute the service refuses the whole peer, the robot's own
+  lease included. A walk under quackd re-sends its twist at a joystick's rate, so quackd will not
+  drive over it, and nothing will come for the stub to become. `quackd run`, `quackd doctor` and
+  `quackd serve-mcp` print one line on stderr when they connect through it, naming
+  `--robot microduck:jsonrpc`, with `--camera-url http://127.0.0.1:8080/frame` for mediad's
+  camera, as what to use instead. A fleet with several robots on it is told once. The stub's
+  refusal ends with the same line, and `quackd list-adapters`, `doctor`'s adapters table and the
+  status pages call the backend deprecated. An adapter declares a backend on its way out as
+  `DEPRECATED_BACKENDS`, beside `SIMULATOR_BACKENDS`, and `docs/adapters/writing-an-adapter.md`
+  says how. `tests/test_doctor_and_stub.py` runs all three commands on the stub and finds the line
+  once in each, ahead of the stub's refusal in `run` and `serve-mcp`, finds none from any other
+  backend, and finds it in the log of a server built without the CLI. Each failed before this
+  change.
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on

@@ -266,6 +266,26 @@ def is_simulator(spec: RobotSpec | str) -> bool:
     return spec.backend in tuple(backends)
 
 
+def deprecated_backend(spec: RobotSpec | str) -> str | None:
+    """The one line a backend on its way out is announced with, or None for any other.
+
+    Read off the adapter module's own `DEPRECATED_BACKENDS`, a backend's name to that line,
+    which says what to use instead and the release the backend goes in, and a module that
+    declares none has none, as with `SIMULATOR_BACKENDS` above. `quackd run`, `doctor` and
+    `serve-mcp` print it when they connect through the backend, which RELEASING.md asks of a
+    removal announced a minor ahead. An adapter that is not installed, or does not import, has
+    nothing to say here: the command that asked builds the body next and refuses it there, in
+    its own words, as it did before anything was deprecated."""
+    if isinstance(spec, str):
+        spec = parse_robot_spec(spec)
+    try:
+        declared = getattr(_module(spec.adapter), "DEPRECATED_BACKENDS", None)
+    except (AdapterError, ImportError):
+        return None
+    line = declared.get(spec.backend) if isinstance(declared, Mapping) else None
+    return str(line) if line else None
+
+
 def registry_for(spec: RobotSpec, manifest: RobotManifest | None = None) -> VerbRegistry:
     """The vocabulary of a robot that is not connected (`list-verbs --robot`, `--goal`).
 

@@ -1159,6 +1159,7 @@ def fleet_from_flags(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    warn: Callable[[str], None] | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1175,10 +1176,17 @@ def fleet_from_flags(
     to, by the same rule and in `quackd run`'s words. The server is asked what it serves once
     the arm is built, and one that does not answer refuses the server, as the board does. Both
     verbs are confirm gated, so an MCP client reaches them only on a server started with
-    `--yes`."""
+    `--yes`.
+
+    A robot on a backend its adapter is retiring (`deprecated_backend`) is said just before the
+    bodies are built, which the server's lifespan connects as it starts: once a line however
+    many robots are on the backend, through `warn`, which `quackd serve-mcp` hands the line
+    `quackd run` prints, or through this module's logger when nothing is handed. Either way it
+    is stderr, and stdout stays the wire."""
     from quackd.adapters.base import policy_choice, policy_hint
     from quackd.adapters.factory import (
         RobotSpec,
+        deprecated_backend,
         describe,
         make_adapter,
         parse_robots,
@@ -1332,6 +1340,11 @@ def fleet_from_flags(
                 # on a line of its own, as `quackd run` prints a hint under its refusal
                 + (f"\n  {hint}" if hint else "")
             )
+    for line in dict.fromkeys(filter(None, (deprecated_backend(spec) for spec in specs))):
+        if warn is not None:
+            warn(line)
+        else:
+            logger.warning("%s", line)
     adapters = {}
     for (name, spec), one in zip(zip(manifests, specs, strict=True), resolved, strict=True):
         where = one.adapter_kwargs(address=address, camera_url=camera_url, token=token)
@@ -1380,7 +1393,7 @@ def serve(
     robots: str | None = None,
     flock: str | None = None,
     registry_dir: str | None = None,
-    warn: Any = None,
+    warn: Callable[[str], None] | None = None,
     memory: bool = True,
     memory_dir: str | None = None,
     log: bool | None = None,
@@ -1407,6 +1420,9 @@ def serve(
         policy_url=policy_url,
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
+        # how a retiring backend is said: `quackd serve-mcp` hands the line `quackd run`
+        # prints, and a caller that hands nothing gets it through the logger
+        warn=warn,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"

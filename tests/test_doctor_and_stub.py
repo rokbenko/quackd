@@ -34,6 +34,8 @@ from quackd.registry import Registry, RobotEntry
 from quackd.transport.base import CameraFrame, TransportError
 from quackd_lerobot import LeRobotAdapter
 from quackd_lerobot.mock import REST, LeRobotMock
+from quackd_microduck import DEPRECATED_BACKENDS
+from quackd_microduck import upstream_api as microduck_api
 from quackd_microduck.transports.websocket_stub import WebSocketTransport
 from tests.fake_jetson_hostd import CannedReply, FakeHostd, dead_address, default_board
 from tests.jetson_fixtures import (
@@ -122,7 +124,133 @@ async def test_websocket_stub_points_at_upstream() -> None:
     # Upstream dropped the gateway by daemon-v0.16.1, so the refusal names the lane that replaced
     # it, and it no longer tells anyone to track a design that is gone.
     assert "rendezvous" in str(refused.value) and "Track it" not in str(refused.value)
+    # It links the relay that says why quackd does not drive over that lane either, and ends
+    # with the line the commands print, so a library caller that never sees them is told too.
+    assert microduck_api.RENDEZVOUS_LANE.source in str(refused.value)
+    assert str(refused.value).endswith(f"{WEBSOCKET_LINE}.")
     await t.stop()  # never raises: a stop must always be safe
+
+
+# ── microduck:websocket is deprecated, and says so where it is connected through ────────
+
+WEBSOCKET_LINE = DEPRECATED_BACKENDS["websocket"]
+
+
+def _announced(stderr: str) -> list[str]:
+    """The deprecation line wherever it was printed on a line of its own, which `_deprecated`
+    does without folding it. The stub's refusal ends with the same sentence and a full stop,
+    run into its own text, so a refusal is never counted as a second announcement."""
+    return [line.strip() for line in stderr.splitlines() if line.strip() == WEBSOCKET_LINE]
+
+
+def test_only_the_websocket_backend_is_announced_as_deprecated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`deprecated_backend` reads each adapter module's own `DEPRECATED_BACKENDS`, and of every
+    backend of the seven adapters only the WebSocket stub declares one. Its line names what to
+    use instead, the robot's own socket and mediad's `/frame` for the camera, and the release it
+    goes in. An adapter that declares nothing has nothing, and so has one that is not installed,
+    which the command goes on to refuse in its own words."""
+    from quackd.adapters import factory
+    from quackd.adapters.base import AdapterNotInstalled
+
+    line = factory.deprecated_backend("microduck:websocket")
+    assert line == WEBSOCKET_LINE
+    for needle in ("--robot microduck:jsonrpc", "/frame", "removed in 0.19.0"):
+        assert needle in WEBSOCKET_LINE, needle
+    others = [
+        f"{adapter}:{backend}"
+        for adapter, backends in factory.BACKENDS.items()
+        for backend in backends
+        if f"{adapter}:{backend}" != "microduck:websocket"
+    ]
+    assert others and [s for s in others if factory.deprecated_backend(s)] == []
+    # the table `list-adapters` and doctor print says so whether or not anything connects
+    assert "⏳ websocket (deprecated)" in factory.info("microduck").status
+
+    def absent(adapter: str) -> object:
+        raise AdapterNotInstalled(adapter, "quackd[microduck]")
+
+    monkeypatch.setattr(factory, "_module", absent)
+    assert factory.deprecated_backend("microduck:websocket") is None
+
+
+def test_a_line_is_said_once_however_many_robots_are_on_the_backend() -> None:
+    """A fleet of two ducks on the stub is told once, and a robot on any other backend adds
+    nothing. `_deprecated` keeps every line it printed for the run's saved terminal, which is
+    what is read here."""
+    from quackd import cli
+
+    cli._DEPRECATIONS.clear()
+    cli._deprecated_backends(["microduck:websocket", "microduck:mock", "microduck:websocket"])
+    assert cli._DEPRECATIONS == [WEBSOCKET_LINE]
+    cli._DEPRECATIONS.clear()
+
+
+def test_run_says_the_websocket_backend_is_deprecated_before_it_connects(tmp_path: Path) -> None:
+    """Once, on stderr, and before the stub refuses the connect: the reader meets the way out
+    before the error it explains."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "hello-world",
+            "--robot",
+            "microduck:websocket",
+            "--llm",
+            "fake",
+            "--no-gif",
+            "--no-memory",
+            "--runs-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert _announced(result.stderr) == [WEBSOCKET_LINE]
+    refusal = result.stderr.index("upstream ships no WebSocket agent gateway")
+    assert result.stderr.index(WEBSOCKET_LINE) < refusal
+
+
+def test_doctor_says_the_websocket_backend_is_deprecated_when_it_connects() -> None:
+    """With `--address` doctor connects, and says it first. On stderr under `--json` too, whose
+    stdout stays one JSON document. Without an address nothing connects and nothing is said: the
+    adapters table marks the backend as deprecated instead."""
+    for flags in ([], ["--json"]):
+        argv = ["doctor", "--robot", "microduck:websocket", "--address", "ws://127.0.0.1:9"]
+        result = CliRunner().invoke(app, [*argv, *flags])
+        assert result.exit_code == 1, result.output
+        assert _announced(result.stderr) == [WEBSOCKET_LINE], flags
+    assert "upstream ships no WebSocket" in json.loads(result.stdout)["robot"]["probe"]["error"]
+    quiet = CliRunner().invoke(app, ["doctor", "--robot", "microduck:websocket"])
+    assert _announced(quiet.stderr) == []
+
+
+def test_serve_mcp_says_the_websocket_backend_is_deprecated_once() -> None:
+    """Two ducks on the stub, one line, through the CLI's own `_deprecated`, and nothing on
+    stdout, which is the MCP wire. The server's start connects both and the stub refuses."""
+    from quackd import cli
+
+    result = CliRunner().invoke(
+        app,
+        ["serve-mcp", "--robots", "a=microduck:websocket,b=microduck:websocket", "--no-memory"],
+    )
+    assert result.exit_code == 1, result.output
+    assert _announced(result.stderr) == [WEBSOCKET_LINE]
+    assert cli._DEPRECATIONS == [WEBSOCKET_LINE]
+    assert result.stdout == ""
+    refusal = result.stderr.index("upstream ships no WebSocket agent gateway")
+    assert result.stderr.index(WEBSOCKET_LINE) < refusal
+
+
+def test_a_server_built_without_the_cli_logs_the_line(caplog: pytest.LogCaptureFixture) -> None:
+    """`fleet_from_flags` called by a program rather than by `quackd serve-mcp` is handed no
+    `warn`, and says the line through its logger, at warning level."""
+    from quackd.mcp_server import fleet_from_flags
+
+    with caplog.at_level("WARNING", logger="quackd.mcp"):
+        fleet_from_flags(robot="microduck:websocket")
+    said = [r.getMessage() for r in caplog.records if r.name == "quackd.mcp"]
+    assert said == [WEBSOCKET_LINE]
 
 
 # ── the report, and the renderer that is not allowed to know anything it does not ───────
