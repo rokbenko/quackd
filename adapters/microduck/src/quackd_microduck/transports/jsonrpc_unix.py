@@ -835,14 +835,14 @@ class JsonRpcUnixTransport:
         """Read robotd's lines until the link ends: hand each answer to the request waiting on
         it, and keep each state frame.
 
-        No one line ends it. A line longer than `READER_LIMIT`, one that is not JSON or not an
-        object, an answer whose `id` is not one quackd numbers with and one whose `error` is not
-        an object each used to raise out of here, and the task died without a word: every
-        request after it, the heartbeat's among them, waited out its timeout on a socket nobody
-        read, with the real answer right behind the bad line. Each is skipped now, or answered
-        as the error it is. Only the end of the link ends it, robotd closing the socket or the
-        socket failing, and that fails every request still waiting, and every one after, with
-        why (`_lose`)."""
+        No one line ends it. An answer whose `id` was a word or a list, and an answer to a
+        waiting call whose `error` was not an object, each raised out of here, as a line longer
+        than `READER_LIMIT` once did, and the task died without a word: every request after it,
+        the heartbeat's among them, waited out its timeout on a socket nobody read, with the
+        real answer right behind the bad line. Each is skipped now, or answered as the error it
+        is, and a line whose handling raises is skipped too. Only the end of the link ends it,
+        robotd closing the socket or the socket failing, and that fails every request still
+        waiting, and every one after, with why (`_lose`)."""
         assert self._reader is not None
         while True:
             try:
@@ -1366,7 +1366,8 @@ class JsonRpcUnixTransport:
         """What robotd's own frames say it can detect, and what quackd is holding back, for
         `doctor`, which reads a transport's `safety` for its go/no-go rows: whether it reports
         `safety.picked_up` at all, which is left out until a fresh frame has said either way,
-        and `move_hold`, why `robot.move` is held back for a verb still running, or None."""
+        and `move_hold`, why `robot.move` is held back for a verb still running, or None. On
+        the connection `doctor` opens for itself no verb has walked, so there it is None."""
         detection = _pickup_detection(self._read())
         told: dict[str, Any] = {} if detection is None else {"pickup_detection": detection}
         told["move_hold"] = self._hold_record()

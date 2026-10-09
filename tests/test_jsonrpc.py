@@ -1807,12 +1807,12 @@ async def test_a_walk_robotd_takes_is_shown_and_never_held(
     ids=["string-id", "list-id", "bool-id", "null-error", "string-error"],
 )
 async def test_no_one_line_ends_the_link(robotd: FakeRobotd, junk: str, answer: str) -> None:
-    """An answer whose `id` was not an integer raised out of the task that reads robotd's
-    socket, and so did one whose `error` was not an object, a JSON-RPC 1.0 peer's null beside
-    its result among them. The task died without a word, and every answer after it, the real
-    one right behind the bad line included, waited out its timeout. An id quackd did not send
-    answers nothing, a null error beside a result is the result, and an error that is not an
-    object fails the call it answers, saying what came."""
+    """An answer whose `id` was a word or a list raised out of the task that reads robotd's
+    socket, and so did an answer to a waiting call whose `error` was not an object, a JSON-RPC
+    1.0 peer's null beside its result among them. The task died without a word, and every
+    answer after it, the real one right behind the bad line included, waited out its timeout.
+    An id quackd did not send answers nothing, a null error beside a result is the result,
+    and an error that is not an object fails the call it answers, saying what came."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     robotd.junk = [junk.format(id=t._next_id)]

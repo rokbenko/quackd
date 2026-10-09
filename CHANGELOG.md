@@ -130,14 +130,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   said it had timed out, and `search_scan` reported a full sweep of a duck that never turned and
   said the target was not there. The hold is each verb's own, so a stop from another call, the
   pilot's `stop` among them, does not set walking again a verb still running, and while it stands
-  the state reads `unknown`, with `extras.move_hold` and `doctor` saying why. A verb refused for
-  posture says why, and the answer is to wait for the duck to stand, or to run the `stand` or
-  `stand_up` it names. `tests/test_jsonrpc.py` runs every label robotd reports through a fake
-  robotd, picks the duck up halfway through a `go_to` and puts it back down, once while another call
-  stops the duck and once while it walks beside it, and checks what `stand_up` sends for each
-  posture, `tests/test_composite.py` holds `go_to` and `search_scan` to the first twist a body
-  refuses, and `tests/test_adapters.py` holds the three camera verbs to `standing` and an `unknown`
-  posture to a refusal. Each of them failed before this change.
+  the state reads `unknown` and `extras.move_hold` says why, which `doctor` prints as a `move_hold`
+  row too, `none` on the connection it opens itself. A verb refused for posture says why, and the
+  answer is to wait for the duck to stand, or to run the `stand` or `stand_up` it names.
+  `tests/test_jsonrpc.py` runs every label robotd reports through a fake robotd, picks the duck up
+  halfway through a `go_to` and puts it back down, once while another call stops the duck and once
+  while it walks beside it, and checks what `stand_up` sends for each posture,
+  `tests/test_composite.py` holds `go_to` and `search_scan` to the first twist a body refuses, and
+  `tests/test_adapters.py` holds the three camera verbs to `standing` and an `unknown` posture to a
+  refusal. Each of them failed before this change.
 
 - **`microduck:jsonrpc` connects to a robot on robotd's current release, daemon-v0.16.1, which it
   refused.** quackd read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake
@@ -179,20 +180,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **A Microduck link that fails, or a line from robotd that quackd cannot match, ends no more than
   the call it meets, and says so.** Two kinds of line still ended the task that reads robotd's
-  socket the way an over-long one did: an answer whose `id` is not one of the integers quackd
-  numbers its calls with, and one whose `error` is not an object, such as the null a JSON-RPC 1.0
-  peer writes beside every result. Each is skipped now, or fails the call it answers. A socket that
-  dropped let its own `ConnectionResetError` out of `microduck:jsonrpc`: out of the heartbeat, which
-  promises `HeartbeatError`, out of `get_state` and `send_intent`, and out of `stop`, which promises
-  never to raise, and a verb's stop raised it from inside the executor's handler for the verb's
-  failure, so the call raised instead of answering. Each fails with the transport's own error now,
-  `stop` raises nothing, every call made after robotd closed the socket fails at once where the
-  first stop waited out its two seconds, and the state reads the duck as `unknown` from then on. On
-  every body, the executor no longer lets a stop that fails out of the handlers that send one, and
-  says it failed. `tests/test_jsonrpc.py` sends answers with a string and a list for an `id`, a null
-  `error` beside a result and a string for one, drops the socket under the transport and hangs up
-  from the fake robotd, and `tests/test_executor.py` ends a verb that raises, one that times out and
-  one an abort ends on a stop that raises. Each failed before this change.
+  socket the way an over-long one did: an answer whose `id` is a word or a list rather than a number
+  quackd gave a call, and an answer to a waiting call whose `error` is not an object, such as the
+  null a JSON-RPC 1.0 peer writes beside every result. Each is skipped now, or fails the call it
+  answers. A socket that dropped let its own `ConnectionResetError` out of `microduck:jsonrpc`: out
+  of the heartbeat, which promises `HeartbeatError`, out of `get_state` and `send_intent`, and out
+  of `stop`, which promises never to raise, and a verb's stop raised it from inside the executor's
+  handler for the verb's failure, so the call raised instead of answering. Each fails with the
+  transport's own error now, `stop` raises nothing, every call made after robotd closed the socket
+  fails at once where the first stop waited out its two seconds, and the state reads the duck as
+  `unknown` from then on. On every body, the executor no longer lets a stop that fails out of the
+  handlers that send one, and says it failed. `tests/test_jsonrpc.py` sends answers with a string
+  and a list for an `id`, a null `error` beside a result and a string for one, drops the socket
+  under the transport and hangs up from the fake robotd, and `tests/test_executor.py` ends a verb
+  that raises, one that times out and one an abort ends on a stop that raises. Each failed before
+  this change.
 
 - **`microduck:jsonrpc` with no `--address` looks for robotd's socket where robotd makes it,
   whatever `DUCK_RUNTIME_DIR` says.** It looked for `$DUCK_RUNTIME_DIR/robotd.sock` whenever that
