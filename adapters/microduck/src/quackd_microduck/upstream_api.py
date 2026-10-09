@@ -505,8 +505,10 @@ UNWIND_SUFFIX = ":unwind"
 #
 # robotd's socket carries no picture. At the pin mediad hands one out three ways: its WebRTC
 # video track, GET /frame on its console port, and media.frame on its local socket. quackd's
-# `--camera-url` can reach the first two. What its duck detector finds rides each WebRTC peer's
-# control channel, beside the track.
+# `--camera-url` can reach the first two. The track is the picture as the camera took it, which
+# on an alpha is a quarter turn off upright, and media.video, on each WebRTC peer's control
+# channel, says how far to turn it and what the lens is. What mediad's duck detector finds rides
+# that channel too.
 
 MEDIAD_FRAME_HTTP = UpstreamRef(
     "GET :8080/frame",
@@ -531,6 +533,65 @@ MEDIA_FRAME = UpstreamRef(
     "bytes, captured_at_unix_us, rotate} with format UYVY. 'Deliberately not a Call', so it "
     "never reaches the WebRTC control datachannel. quackd does not call it.",
 )
+MEDIA_VIDEO = UpstreamRef(
+    "media.video",
+    "VERIFIED",
+    src("mediad/src/session.rs", 57),
+    "{width, height, rotate, mono_ns, real_ns, intrinsics?}: what the video is, which mediad "
+    "answers itself on each WebRTC peer's control datachannel, as a call and as a notification "
+    "it pushes when the channel opens (mediad/src/session.rs:35-54 and :82-114). The push can be "
+    "lost: 'Pushing it when the channel appears races the browser', so upstream's own console "
+    "asks, 'because a question it asks when it is ready cannot arrive too early'. width and "
+    "height are the frame as it is sent, which nothing on the robot turns (CAMERA_MOUNT), rotate "
+    "is 'Degrees clockwise the camera is mounted from upright', and intrinsics, absent rather "
+    "than null 'when the geometry is unknown', are 'For the frame as it is sent': 'A consumer "
+    "that rotates the image has to rotate these too — cx and cy swap, and so do fx and fy' "
+    "(mediad/src/camera.rs:90-93). quackd's WebRTC camera asks once, which is the one line it "
+    "writes to the channel, and reads the answer or the push, whichever comes. It hands out no "
+    "frame until one of them has said rotate, and takes the field of view of an upright frame "
+    "from intrinsics.",
+)
+CAMERA_MOUNT = UpstreamRef(
+    "an alpha's camera is mounted a quarter turn off upright, a beta's upright",
+    "VERIFIED",
+    src("robotd-params/src/board.rs", 82),
+    "camera_mount_degrees is 90 on the Zero 3W, the alpha board, whose 'IMX219 sits a quarter "
+    "turn off', and 0 on the beta, whose 'GC2093 sits the right way up', and mediad tells every "
+    "consumer that angle as media.video's rotate (robotd-params/src/board.rs:77-87). Nothing on "
+    "the robot turns the pixels, 'Nothing converts and nothing rotates' "
+    "(mediad/src/pipeline.rs:28), since a videoflip cost the encoder its zero-copy path, so the "
+    "WebRTC track off an alpha is sideways and the consumer turns it. Upstream's uyvy crate, "
+    "which mediad turns its PNGs and its duck detector's input with, turns a frame clockwise by "
+    "rotate: 'A quarter turn clockwise sends source (x, y) to upright (h-1-y, x)' "
+    "(uyvy/src/lib.rs:56-80). quackd's WebRTC camera turns each frame the same way. A mediad "
+    "started with --flip-in-pipeline turns the pixels in its pipeline as well and still reports "
+    "the mount as rotate (mediad/src/main.rs:590-595), so quackd would turn its frames twice, as "
+    "upstream's console would.",
+)
+ALPHA_INTRINSICS = UpstreamRef(
+    "the alpha family's camera calibration",
+    "VERIFIED",
+    src("robotd-params/src/lib.rs", 645),
+    "CameraIntrinsics::alpha(), 'the head camera module and M12 lens every alpha unit carries — "
+    "one part across the family, so one solve is every unit's calibration', solved on a 1280 by "
+    "720 frame 'as mediad sends it (unrotated)' (robotd-params/src/lib.rs:634-661), its numbers "
+    "ALPHA_SOLVE. mediad sends it as media.video's intrinsics, scaled to the stream and "
+    "with source family, unless the robot carries a solve of its own "
+    "(mediad/src/camera.rs:221-234). Turned upright, an alpha frame is as wide as the rows it "
+    "was sent with, across fy, so its lens is 2*atan(360/fy) on the solve's own frame: 37.4 "
+    "degrees. Its principal point is not the frame's centre, and quackd's detectors, which take "
+    "a bearing from the centre, do not correct for it.",
+)
+#: CameraIntrinsics::alpha() (ALPHA_INTRINSICS): the frame it was solved on, its focal lengths
+#: and its principal point, in pixels of that frame as mediad sends it, which is not turned.
+ALPHA_SOLVE = {
+    "width": 1280,
+    "height": 720,
+    "fx": 1061.8060025020175,
+    "fy": 1062.193713957031,
+    "cx": 596.7776848217006,
+    "cy": 474.52348043048636,
+}
 FEATURE_STREAM = UpstreamRef(
     "media.detections",
     "VERIFIED",

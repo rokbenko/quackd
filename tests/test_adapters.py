@@ -46,6 +46,30 @@ async def test_a_microduck_with_no_camera_does_not_advertise_the_verbs_that_need
     assert {"move", "stop", "say", "gaze", "quack"} <= set(blind.verb_names())
 
 
+async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> None:
+    """`quackd run` takes the lens its detector measures bearings through from the manifest's
+    `camera_fov_deg` when no `--fov-deg` names one, and `serve-mcp` has no `--fov-deg` at all.
+    A real Microduck camera that reports its lens puts it there at connect, and a body that
+    reports none, or something that is not a lens, leaves the limits as they were."""
+    from quackd_microduck import microduck_manifest
+
+    assert microduck_manifest("jsonrpc", camera_fov_deg=41.5).limits["camera_fov_deg"] == 41.5
+    assert "camera_fov_deg" not in microduck_manifest("jsonrpc").limits
+    blind = microduck_manifest("jsonrpc", camera=False, camera_fov_deg=41.5)
+    assert "camera_fov_deg" not in blind.limits, "a lens without a camera is no lens"
+
+    reporting = MockTransport()
+    reporting.camera_fov_deg = 41.5  # type: ignore[attr-defined]
+    manifest = await MicroduckAdapter(reporting).connect()
+    assert manifest.limits["camera_fov_deg"] == 41.5
+    plain = await MicroduckAdapter(MockTransport()).connect()
+    assert set(plain.limits) == {"max_vx", "max_vy", "max_wz"}, "the simulators report no lens"
+    for odd in (0, -37.4, 180, 360.0, float("nan"), float("inf"), "37.4", True):
+        garbled = MockTransport()
+        garbled.camera_fov_deg = odd  # type: ignore[attr-defined]
+        assert "camera_fov_deg" not in (await MicroduckAdapter(garbled).connect()).limits, odd
+
+
 async def test_connect_returns_the_manifest_and_the_registry_matches_the_default() -> None:
     adapter = MicroduckAdapter(MockTransport())
     assert isinstance(adapter, RobotAdapter)

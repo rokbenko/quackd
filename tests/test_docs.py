@@ -75,6 +75,30 @@ def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
     assert said in " ".join(page.split()), f"the Microduck page does not say {said!r}"
 
 
+def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> None:
+    """The page gives the alpha family's calibration and the lens it makes of an upright alpha
+    frame, which is what an alpha over WebRTC reports as `camera_fov_deg`. Both are worked out
+    here from the solve `upstream_api.py` carries, so the page cannot keep a number the solve
+    no longer gives."""
+    from quackd_microduck.webrtc import upright_fov_deg
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    solve = up.ALPHA_SOLVE
+    shown = ", ".join(f"`{k}` {solve[k]:.1f}" for k in ("fx", "fy", "cx", "cy"))
+    assert shown in page, f"the Microduck page does not give the alpha solve as {shown!r}"
+    video = {
+        "width": solve["width"],
+        "height": solve["height"],
+        "rotate": 90,  # the Zero 3W's mount (up.CAMERA_MOUNT)
+        "intrinsics": dict(solve),
+    }
+    fov = upright_fov_deg(video)
+    assert fov is not None
+    said = f"its lens is {fov:.1f}°"
+    assert said in page, f"the Microduck page does not say {said!r}"
+
+
 def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
     """The page says how often a held gaze goes out again, against how long robotd waits before
     it glances, and how long `go_to` and `search_scan` wait for a glance to fade. Each is a number

@@ -79,7 +79,11 @@ DATASHEET = Datasheet(
 
 
 def microduck_manifest(
-    backend: str, robot_id: str = "microduck", *, camera: bool = True
+    backend: str,
+    robot_id: str = "microduck",
+    *,
+    camera: bool = True,
+    camera_fov_deg: float | None = None,
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
 
@@ -87,6 +91,11 @@ def microduck_manifest(
     socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
     names something serving one. Advertising `observe` either way promises the pilot vision it
     may not have.
+
+    `camera_fov_deg` is the lens that camera reported, in degrees across the frames it hands
+    out, when it reported one. It goes in the limits, where `quackd run` takes the lens its
+    detector measures through when no `--fov-deg` names one, and where `serve-mcp`, which has
+    no `--fov-deg`, always takes it, as the LeRobot arm's camera does.
     """
     core = [
         verb_spec(CORE["report_state"], core=True),
@@ -122,6 +131,9 @@ def microduck_manifest(
     }
     if camera:
         preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
+    limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5}
+    if camera and camera_fov_deg is not None:
+        limits["camera_fov_deg"] = float(camera_fov_deg)
     return RobotManifest(
         id=robot_id,
         vendor="pollen-robotics",
@@ -134,11 +146,19 @@ def microduck_manifest(
         preconditions=preconditions,
         safety_authority=SafetyAuthority(native="robotd_deadman", deadman=True, heartbeat_hz=2.0),
         frame=Frame(reference="body"),
-        limits={"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5},
+        limits=limits,
         backend=backend,
         blurb=BLURB,
         datasheet=DATASHEET,
     )
+
+
+def _lens(value: Any) -> float | None:
+    """A field of view a camera reported, when it is one: a number of degrees between nothing and
+    a half turn. Anything else is no lens, and the detector falls back on its own."""
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value < 180:
+        return float(value)
+    return None
 
 
 def _robotd_line(robotd: dict[str, Any]) -> str:
@@ -172,7 +192,14 @@ class MicroduckAdapter:
             camera = bool(self.transport.camera_working)
         else:
             camera = getattr(self.transport, "camera_url", True) is not None
-        self.manifest = microduck_manifest(self.backend, self.robot_id, camera=camera)
+        # The lens the camera reported, read once a frame has arrived, which is where the
+        # transport learns it. The simulators report none: the detector knows their lens.
+        self.manifest = microduck_manifest(
+            self.backend,
+            self.robot_id,
+            camera=camera,
+            camera_fov_deg=_lens(getattr(self.transport, "camera_fov_deg", None)),
+        )
         return self.manifest
 
     async def disconnect(self) -> None:

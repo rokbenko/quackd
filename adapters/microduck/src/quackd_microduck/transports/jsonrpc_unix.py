@@ -829,6 +829,20 @@ class JsonRpcUnixTransport:
         age = time.monotonic() - self._frame_at
         return None if age > camera_stale_after_s(self.camera_fps) else age
 
+    @property
+    def camera_fov_deg(self) -> float | None:
+        """How wide the frames `get_frame` hands out are, in degrees, when the camera says, or
+        None when it does not.
+
+        `MicroduckAdapter.connect` puts it in the manifest's limits as `camera_fov_deg`, which
+        is where `quackd run` takes the lens its detector measures bearings through when no
+        `--fov-deg` names one, and where `serve-mcp`, which has no `--fov-deg`, always takes it.
+        Without one a real camera is measured through the simulator's 90 degrees. Over WebRTC
+        it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`)."""
+        if self._webrtc is not None:
+            return self._webrtc.fov_deg
+        return None
+
     def camera_health(self) -> dict[str, Any]:
         """What the camera is doing, for `doctor` and for the run's own state."""
         if not self.camera_url:

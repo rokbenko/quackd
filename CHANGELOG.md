@@ -161,6 +161,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_composite.py` holds both verbs to the wait. Each of them failed with its part of this
   change taken out.
 
+- **WebRTC frames from a Microduck come out upright, and are measured through the lens mediad
+  reports.** An alpha's camera is mounted a quarter turn off upright and nothing on the robot turns
+  the pixels back, so `--camera-url webrtc://` handed `observe`, `go_to` and `search_scan` frames
+  lying on their side, where how far across the picture a ball sat said how high it was in the
+  room, not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and
+  quackd never read it. It asks now, once, which is the one line it writes to the control channel,
+  reads the answer or the push mediad sends when the channel opens, and turns every frame clockwise
+  by that much, the way upstream's own code does. No frame goes out until mediad has said, so a
+  mediad that never says leaves the run with no camera and `camera_health()` saying why, rather
+  than one that steers on a picture on its side. The same answer carries the lens, for the frame as
+  it is sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
+  `quackd run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
+  37.4° across an upright alpha frame by the alpha family's calibration, where both used to measure
+  through the simulator's 90°. The calibration's principal point is off the frame's centre, which
+  quackd does not correct. `camera_health()` reports the turn, the lens and the intrinsics.
+  `tests/test_microduck_webrtc.py` turns a frame by each of the four angles mediad can report and
+  checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
+  it off the answer and off the push, and takes the lens from the intrinsics at each angle, and
+  `tests/test_adapters.py` carries the lens into the manifest. Each failed before this change.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and
