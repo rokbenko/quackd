@@ -2208,6 +2208,105 @@ async def test_a_stop_ends_the_held_gaze(
     await t.close()
 
 
+def _gaze_tasks() -> list[asyncio.Task[Any]]:
+    """Every hold still running on this loop, found by the name `_hold` gives its task rather
+    than through the transport, which is what loses track of one."""
+    return [
+        task
+        for task in asyncio.all_tasks()
+        if task.get_name() == "quackd-jsonrpc-gaze" and not task.done()
+    ]
+
+
+async def test_two_looks_at_once_leave_one_hold_and_a_stop_ends_it(robotd: FakeRobotd) -> None:
+    """Every call a pilot makes over MCP runs as a task of its own, and nothing makes one wait
+    for another, so a `gaze` and a `go_to` sent together are two looks waiting on their answers
+    at once. Each ended the hold before it went out, when there was none yet to end, and each
+    answer then started one. The transport kept only the second, so the first went on sending
+    its head every period after every stop, with nothing able to reach it and the state saying
+    no gaze was held. Only the newest look holds, the one robotd took last, and a stop ends it."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = 0.0
+    looks = (Intent.look(1.0, 0.5, 0.0), Intent.look(1.0, -0.5, 0.0))
+    acks = await asyncio.gather(*(t.send_intent(look) for look in looks))
+    assert all(ack.accepted for ack in acks), acks
+    newest = dict(zip(HEAD, robotd.head, strict=True))  # robotd took the second look last
+    await _eventually(lambda: _heads(robotd) >= 3, "the held gaze going out three times")
+    sent = [n["params"] for n in robotd.notifications if n["method"] == up.ROBOT_HEAD.name]
+    assert all(params == newest for params in sent), sent
+    assert len(_gaze_tasks()) == 1
+    await t.stop()
+    await _nothing_more_goes_out(t, robotd)
+    assert _gaze_tasks() == []
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None and extras["gaze_released"] == "stopped"
+    await t.close()
+
+
+@pytest.mark.parametrize("how", ["stop()", "stop intent"])
+async def test_a_look_still_waiting_on_its_answer_when_a_stop_comes_holds_nothing(
+    robotd: FakeRobotd, how: str
+) -> None:
+    """A look's answer can come back after a stop that went out behind it: the pilot's `stop`
+    sent beside a `gaze`, or a stop while a slow link holds the look's answer up. The hold used
+    to start from that answer, so `robot.head` went out every period after the stop that was to
+    end it. A look whose answer comes after a stop starts no hold."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = 0.0
+    robotd.link.clear()  # robotd reads nothing more for now, so the look waits on its answer
+    look = asyncio.create_task(t.send_intent(Intent.look(1.0, 0.5, 0.0)))
+    await _eventually(lambda: len(t._pending) == 1, "the look on the wire")
+    stopping = t.stop() if how == "stop()" else t.send_intent(Intent.stop())
+    stop = asyncio.ensure_future(stopping)
+    await _eventually(lambda: len(t._pending) == 2, "the stop on the wire behind it")
+    robotd.link.set()  # robotd takes both in the order sent, and answers the look first
+    assert (await look).accepted
+    await stop
+    arrived = [method for _, method in robotd.arrived]
+    assert arrived[-2:] == [up.ROBOT_LOOK.name, up.ROBOT_STOP.name], arrived
+    await _nothing_more_goes_out(t, robotd)
+    assert _heads(robotd) == 0 and _gaze_tasks() == []
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None and extras["gaze_released"] == "stopped"
+    await t.close()
+
+
+async def test_a_look_answered_while_the_connection_closes_holds_nothing(
+    robotd: FakeRobotd, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`close()` ends the hold first, while the socket is still open, so that no hold wakes to a
+    writer that is gone and warns about a link nobody broke. A look whose answer landed while
+    `close()` was still shutting the rest down started a hold all the same, after it, and that
+    hold's first `robot.head` met the closed writer and warned exactly that."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = 0.0
+    robotd.link.clear()
+    look = asyncio.create_task(t.send_intent(Intent.look(1.0, 0.5, 0.0)))
+    await _eventually(lambda: len(t._pending) == 1, "the look on the wire")
+
+    async def camera() -> None:
+        # a camera that takes until the look has its answer to shut down, so that the answer
+        # lands while `close()` is still at work
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await look
+
+    t._camera_task = asyncio.create_task(camera())
+    await asyncio.sleep(0)
+    robotd.link.set()
+    with caplog.at_level(logging.WARNING, logger=jsonrpc_unix.log.name):
+        await t.close()
+        assert (await look).accepted
+        await asyncio.sleep(10 * HOLD_S)
+    assert t._gaze is None and _gaze_tasks() == []
+    assert t.gaze_released == "the connection was closed"
+    assert "gaze hold" not in caplog.text, caplog.text
+
+
 def _pick_up(fake: FakeRobotd, held: bool) -> None:
     fake.picked_up, fake.policy = held, "held" if held else "walk"
 

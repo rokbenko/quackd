@@ -49,9 +49,11 @@ is at the other end of an ssh tunnel:
   daemon-v0.16.1 robotd glances around on its own once nobody has steered the head for two
   seconds (`up.IDLE_HEAD`), so a `robot.look` no longer keeps the camera where it pointed it.
   The head a look answered with goes out again every `GAZE_HOLD_S`, as upstream says to, and
-  nothing goes out while the duck is not standing or sitting. The hold ends on a stop, on the
-  next look, on a link that fails, and on `robot.state.head` showing that something else is
-  steering the head, which quackd lets have it rather than pulling it back every second.
+  nothing goes out while the duck is not standing or sitting. There is one hold at most, the
+  newest look's. It ends on a stop, on the next look, on a link that fails, and on
+  `robot.state.head` showing that something else is steering the head, which quackd lets have
+  it rather than pulling it back every second, and a look whose answer comes after a stop
+  starts none.
 - **A frame kept is not a frame seen.** `get_frame` expires what it caches. `go_to` steers
   on every tick, so a camera that died with the ball in shot would otherwise show the ball
   in shot forever while the duck walked at it.
@@ -574,8 +576,16 @@ class JsonRpcUnixTransport:
         at the handshake. `go_to` and `search_scan` read it with `getattr` and wait it out after
         centring the head, so that they never steer on a head still swinging back."""
         self._gaze: _GazeHold | None = None
-        """The gaze `_hold_gaze` is keeping on the head, or None while there is none."""
+        """The gaze `_hold_gaze` is keeping on the head, or None while there is none. There is
+        never more than one (`_hold`)."""
         self._gaze_task: asyncio.Task[None] | None = None
+        self._looks = 0
+        """How many `robot.look`s have gone out on this transport, which numbers each one."""
+        self._look_to_hold: int | None = None
+        """The number of the look whose answer is to start the next hold, or None when no look's
+        answer is to start one. A look is it from the moment it goes out until a later look goes
+        out or a stop, a stop intent or `close()` ends the hold (`_end_gaze`), so only the newest
+        look, with nothing after it, starts a hold (`_next_look`)."""
         self.gaze_released: str | None = None
         """Why the last gaze hold ended, or None while one runs or before any has."""
         self._previous_state: dict[str, Any] | None = None
@@ -1621,19 +1631,27 @@ class JsonRpcUnixTransport:
                     res = await self.request(up.ROBOT_DO.name, {"skill": p.get("skill")})
                     return _ack(res)
                 case "look":
-                    # This look replaces whatever head a hold was keeping, so the hold ends before
-                    # it goes out: a re-send landing after it would put the old gaze back.
-                    self._end_gaze("a later robot.look replaced it")
-                    res = await self.request(
-                        up.ROBOT_LOOK.name,
-                        {
-                            "x": p.get("x", 1.0),
-                            "y": p.get("y", 0.0),
-                            "z": p.get("z", 0.0),
-                            "neck_pitch": 0.0,
-                        },
-                    )
-                    if (head := _look_head(res)) is not None:
+                    # Numbered and written with nothing awaited in between, so the look that is
+                    # the newest here is the one robotd takes last, and the head its answer
+                    # carries is the one robotd's head slot is left holding.
+                    look = self._next_look()
+                    try:
+                        res = await self.request(
+                            up.ROBOT_LOOK.name,
+                            {
+                                "x": p.get("x", 1.0),
+                                "y": p.get("y", 0.0),
+                                "z": p.get("z", 0.0),
+                                "neck_pitch": 0.0,
+                            },
+                        )
+                    finally:
+                        # whether it is still the newest look, with no stop after it, read
+                        # once the answer is in, a refusal or a cancellation included
+                        newest = self._look_to_hold == look
+                        if newest:
+                            self._look_to_hold = None
+                    if newest and (head := _look_head(res)) is not None:
                         self._hold(head)
                     clamped = isinstance(res, dict) and res.get("clamped")
                     return Ack(accepted=True, reason="clamped" if clamped else None)
@@ -1697,7 +1715,8 @@ class JsonRpcUnixTransport:
         another call does not set walking again a verb still running that the hold was set for.
 
         And it ends a held gaze (`_hold_gaze`), before the request, so that no `robot.head`
-        follows a stop onto the wire. The `stop` verb is what the pilot is told to reach for when
+        follows a stop onto the wire, and so does a look still waiting on its answer, which then
+        starts none (`_end_gaze`). The `stop` verb is what the pilot is told to reach for when
         anything looks wrong and the heartbeat sends this when the link is in doubt, and a head
         pulled back to where it was every second after either would be quackd going on steering
         the robot. A verb that steers on the camera centres the head again for itself.
@@ -1720,21 +1739,55 @@ class JsonRpcUnixTransport:
 
     # ── the gaze hold ───────────────────────────────────────────────────────────────
 
+    def _next_look(self) -> int:
+        """Number a `robot.look` about to go out, end the hold it replaces, and make it the look
+        whose answer starts the next one, and return its number.
+
+        The hold ends before the look goes out, since a re-send landing after it would put the
+        old gaze back. That alone used to be all, and it ended only a hold that had started: a
+        look still waiting on its answer had none yet. Every call over MCP runs as a task of its
+        own and nothing makes one wait for another, so a `gaze` and a `go_to` sent together were
+        two looks out at once, neither with a hold to end, and both answers started one. The
+        transport kept the second, and the first went on sending its head every period with no
+        way left to reach it, past every stop, the pilot's among them, while the state said no
+        gaze was held. And a stop sent while a look waited on its answer found no hold to end, so
+        the answer started one after the stop. Now only the newest look's answer starts a hold,
+        and only while nothing has come after it: a later look takes the claim over, and
+        `_end_gaze` takes it away."""
+        self._end_gaze("a later robot.look replaced it")
+        self._looks += 1
+        self._look_to_hold = self._looks
+        return self._looks
+
     def _hold(self, head: Head) -> None:
-        """Start holding the head a `robot.look` answered with."""
+        """Start holding the head the newest `robot.look` answered with.
+
+        There is never more than one hold. The look that calls this is the newest, and every hold
+        before it ended as it went out (`_next_look`), so there is none left to end here. If one
+        were, putting this one in its place would leave its task with nothing to reach it,
+        sending a head nobody asked for after every stop, so it is ended here all the same: that
+        costs nothing, and a hold nothing can end is the one thing the hold must never be."""
+        self._end_gaze("a later robot.look replaced it")
         gaze = _GazeHold(head=head, since=time.monotonic())
         self._gaze, self.gaze_released = gaze, None
         self._gaze_task = asyncio.create_task(self._hold_gaze(gaze), name="quackd-jsonrpc-gaze")
 
     def _end_gaze(self, why: str) -> asyncio.Task[None] | None:
-        """End the gaze hold if one runs, saying why, and hand back its task, cancelled.
+        """End the gaze hold if one runs, and take away the claim of any look still waiting on its
+        answer to start one, saying why, and hand back the hold's task, cancelled.
+
+        `stop()`, the stop intent and each look call this before their own line goes out, and
+        `close()` before it shuts anything down, so whatever comes after it, the answer of a look
+        already on the wire included, starts no hold. Why is said for a look that was waiting as
+        much as for a hold that ran: a pilot whose `gaze` went out beside a `stop` reads that the
+        stop ended it.
 
         Not a coroutine, so whoever ends the hold knows nothing more goes out from the moment it
         returns: the hold writes only right after it wakes, and a cancelled task wakes only to
         end."""
-        task, gaze = self._gaze_task, self._gaze
-        self._gaze, self._gaze_task = None, None
-        if gaze is not None:
+        task, gaze, waiting = self._gaze_task, self._gaze, self._look_to_hold
+        self._gaze, self._gaze_task, self._look_to_hold = None, None, None
+        if gaze is not None or waiting is not None:
             self.gaze_released = why
         if task is not None and not task.done():
             task.cancel()
