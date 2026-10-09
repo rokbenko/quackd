@@ -6,7 +6,10 @@ the handshake, which refuses a robotd older than the oldest version quackd has r
 about any version but the one it read, the intent vocabulary, the deadman-friendly `move`
 notifications and robotd's own echo of them, the state subscription, the health poll, and
 posture, which is read off the policy label against the labels robotd's own source names and
-fails closed on every other. What is not: everything about the camera.
+fails closed on every other, and the camera's routes, read in `mediad`'s source. What is not,
+and is listed in `extras.assumptions` while it applies: what `stand_up`'s `robot.enable` does
+for a duck on the floor (`up.STAND_UP_RPC`), and the lens of `mediad`'s `/frame`, which is
+taken from the first frame's shape (`up.ALPHA_UPRIGHT_FOV`).
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:

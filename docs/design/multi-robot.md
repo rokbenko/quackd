@@ -276,7 +276,7 @@ def backend_name(t: Any) -> str:
 
 ### 4.3 Verbs
 
-`verbs/aliases.py` holds `ALIASES = {"get_frame": "observe", "walk_to": "go_to", "walk": "move"}` with `canonical()` and `aliases_of()`. No uppercase `GET_FRAME` constant may exist anywhere: it is a banned UNVERIFIED identifier in the containment test.
+`verbs/aliases.py` holds `ALIASES = {"get_frame": "observe", "walk_to": "go_to", "walk": "move"}` with `canonical()` and `aliases_of()`. No uppercase `GET_FRAME` constant may exist anywhere: it is a banned UNVERIFIED identifier in the containment test. *Read on 2026-10-09:* that ban ended with the ref. The containment test bans the names of the UNVERIFIED refs that exist, and quackd's re-read of robotd at daemon-v0.16.1 retired `GET_FRAME`, because upstream had dropped the `get_frame` design it named.
 
 `verbs/core.py` (bodies byte-identical to builtin and composite except the name literals):
 

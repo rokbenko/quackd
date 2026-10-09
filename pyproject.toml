@@ -124,10 +124,10 @@ xlerobot = ["quackd-xlerobot>=0.17.1,<0.18"]
 alohamini = ["quackd-alohamini>=0.17.1,<0.18"]
 open_duck = ["quackd-open-duck>=0.17.1,<0.18"]
 toddlerbot = ["quackd-toddlerbot>=0.17.1,<0.18"]
-# The Microduck's camera reaches clients only as an H.264 WebRTC track from mediad — there is
-# no camera method in duck-ipc-proto and no snapshot endpoint — so a picture means being a
-# WebRTC peer. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not
-# pointing quackd at a real Microduck, and never imported unless --camera-url says webrtc://.
+# The Microduck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
+# mediad also serves one PNG per GET /frame, which needs nothing installed, so this is for the
+# stream. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not pulling the
+# track off a real Microduck, and never imported unless --camera-url says webrtc://.
 microduck-camera = ["quackd-microduck[camera]>=0.17.1,<0.18"]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py

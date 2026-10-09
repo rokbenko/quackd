@@ -80,9 +80,10 @@ for `quackd doctor --host`.
 and `bridge/toddlerbot/` is the daemon that runs there
 ([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)). That is the case where the host
 daemon, and perhaps a model server, share a board with a robot's control loop, and it has a section
-of its own below. The Microduck's onboard computer is a Radxa and the Open Duck Mini's is a
-Raspberry Pi Zero 2 W, and neither is this. For those, a Jetson is a second machine on the
-bench, lending its model and its detector to a robot that has neither.
+of its own below. The Microduck's onboard computer is a Radxa Zero 3W on an alpha and Seeed's
+RK3566 board on a beta, and the Open Duck Mini's is a Raspberry Pi Zero 2 W, and none of them is
+this. For those, a Jetson is a second machine on the bench, lending its model and its detector
+to a robot that has neither.
 
 ## Which JetPack
 

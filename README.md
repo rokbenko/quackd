@@ -924,7 +924,7 @@ browser test.
 
 | Body | `--robot ... --address ...` | Needs |
 |---|---|---|
-| Microduck | `microduck:jsonrpc --address unix:///run/robotd.sock` on the robot, or `tcp://127.0.0.1:9870` after `ssh -L 9870:/run/robotd.sock <robot>`. For a picture, `--camera-url webrtc://<robot>:8443`, because `robotd` serves no frames | `quackd[microduck]`, and `quackd[microduck-camera]` for the camera |
+| Microduck | `microduck:jsonrpc --address unix:///run/robotd.sock` on the robot, or `tcp://127.0.0.1:9870` after `ssh -L 9870:/run/robotd.sock microduck@<robot>`, as an account in the robot's `robot` group. For a picture, which `robotd` does not serve, `--camera-url http://127.0.0.1:8080/frame` after `ssh -L 8080:127.0.0.1:8080 microduck@<robot>`, `mediad`'s own snapshot, or `--camera-url webrtc://<robot>:8443` for its video track | `quackd[microduck]`, and `quackd[microduck-camera]` for the WebRTC camera |
 | Open Duck Mini v2 | `open_duck:bridge --address tcp://open-duck.local:9871 --camera-url http://open-duck.local:9872/snapshot.jpg --token <the bridge token>` | `quackd[open_duck]`, and no robot library: the daemon runs on the robot |
 | LeRobot arm | `lerobot:real --address /dev/ttyACM0` (the arm's serial port, `COM5` on Windows), and `--camera-url opencv://N` for a USB webcam (`lerobot-find-cameras opencv` prints the indices), which repeats, because this is the one body that reads more than one camera | `quackd[lerobot]`, Python 3.12 or newer, and `quackd robot rest-pose NAME` recorded for it, or the arm falls when the run ends |
 | Any ROS base | `rosbridge:ws --address "ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed"` | `quackd[rosbridge]` |

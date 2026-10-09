@@ -6,8 +6,9 @@ abort condition, and they are ordered so that the duck's feet do not touch the g
 step 9.
 
 **This is a robot you are probably borrowing.** Nothing here installs anything on it, stops any
-of its services, or needs `sudo`. Step 6 has an alternative that does, and it is marked, and it
-is the one to skip unless whoever owns the duck has said yes.
+of its services, or needs `sudo`, unless the account you log in with is not in the robot's
+`robot` group. Step 1 says how to tell, and putting the account in the group is marked as the
+one change to make only once whoever owns the duck has said yes.
 
 **The gamepad is the real e-stop.** Upstream is explicit that `padd` has authority and quackd
 does not arbitrate. Somebody should be holding it. quackd's `stop` is a request over a socket,
@@ -44,16 +45,34 @@ So the speeds that walk there are not the speeds that will walk here.
 
 ## 1. Reach the daemon at all
 
-`robotd` listens on a unix socket, not a port, so from a laptop it is an ssh forward:
+`robotd` listens on a unix socket, not a port, so from a laptop it is an ssh forward, as
+`microduck`, the account upstream's own tools log in with:
 
 ```bash
-ssh -L 9870:/run/robotd.sock radxa@<duck>
+ssh -L 9870:/run/robotd.sock microduck@<duck>
 ```
 
-Windows cannot open a unix socket at all, so this is not optional there — quackd says so and
-names this command if you try.
+`<duck>` is the robot's address on your network, which upstream's `duckctl ip` prints off the
+robot's Bluetooth advertisement. Windows cannot open a unix socket at all, so this is not
+optional there — quackd says so and names this command if you try.
 
-> Abort if ssh does not come up. Everything below is this tunnel.
+The socket is `root:robot`, mode 0660, and robotd checks nothing else about who connects, so
+the forward works only for an account in the `robot` group, or for root. Check it before
+anything else:
+
+```bash
+ssh microduck@<duck> id -nG
+```
+
+Upstream's group file creates the group with nobody in it, and its provisioning scripts add only
+whoever ran them with `sudo`. A board provisioned as `microduck`, which is how upstream's own
+example runs `scripts/provision-board.sh`, has it in the group, and one set up any other way may
+not.
+
+> Abort if ssh does not come up, or if `robot` is not among the groups it prints. Everything
+> below is this tunnel, and without the group the socket refuses it. **Only with permission:**
+> `sudo usermod -aG robot microduck` on the duck adds the account, from its next ssh login on.
+> That is a change to somebody else's robot, so ask whoever owns it first.
 
 ## 2. What the robot says it is
 
@@ -121,29 +140,44 @@ quackd run microduck-lookout --robot microduck:jsonrpc --address tcp://127.0.0.1
 
 ## 6. Video
 
-Frames are the reason most people are doing this, and upstream serves none over `robotd`'s
-socket. The camera is an H.264 WebRTC track from `mediad` and nothing else.
+Frames are the reason most people are doing this, and `robotd`'s socket carries none. `mediad`
+serves them, and the camera to start with is its own snapshot route, `GET /frame` on its console
+port, one upright PNG per request:
 
 ```bash
-ssh -L 8443:127.0.0.1:8443 radxa@<duck>          # in another terminal
+ssh -L 8080:127.0.0.1:8080 microduck@<duck>      # in another terminal
+quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
+  --camera-url http://127.0.0.1:8080/frame
+```
+
+`doctor` fetches a frame and prints its size. On an alpha, expect a picture taller than wide,
+720 by 1280 at `mediad`'s default quality: quackd takes that shape for an alpha's camera and
+measures through the lens it assumes for one, which every state then lists in
+`extras.assumptions` ([the Microduck page](README.md#getting-a-picture-off-a-real-microduck)).
+On a beta, expect a wide one, which gets no lens. It needs no extra, takes no media session, and
+installs and stops nothing on the duck. The route arrived in `daemon-v0.13.0`.
+
+> Abort if no frame arrives. quackd waits 5 s for the first one, through the `503` that `mediad`
+> answers while it cannot hand a frame out, and `doctor` prints the last failure under the
+> camera's row: `mediad`'s own reason when its `503` never cleared, a `404`, which is a robot
+> older than the route, or a refused connection.
+
+**WebRTC instead**, for the stream: `mediad`'s H.264 track, which quackd turns upright by the
+mount `mediad` reports and measures through `mediad`'s own calibration. It needs
+`quackd[microduck-camera]`, the same duck package with its WebRTC camera
+(`uv pip install 'quackd[microduck-camera]'`), and it takes the robot's one media session, so
+the browser console cannot be open at the same time:
+
+```bash
+ssh -L 8443:127.0.0.1:8443 microduck@<duck>      # in another terminal
 quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
   --camera-url webrtc://127.0.0.1:8443
 ```
 
-`doctor` fetches a frame and prints its size. Needs `quackd[microduck-camera]`, which is the
-same duck package with its WebRTC camera: `uv pip install 'quackd[microduck-camera]'`.
-
-This takes the robot's one media session, so the browser console cannot be open at the same
-time. It installs nothing on the duck.
-
 > Abort if no frame arrives. Check `mediad` registered a producer — if its pipeline never
-> reached PLAYING there is nothing to connect to, and quackd says so rather than hanging.
-> ICE on a shared office network is the next thing to suspect.
-
-**The alternative, only with permission:** a snapshot server on the duck itself needs
-`sudo systemctl stop mediad` first, because `mediad` holds `/dev/video0` for the life of its
-process. That stops their console and their WebRTC. Do not do this to a borrowed robot without
-asking.
+> reached PLAYING there is nothing to connect to, and quackd says so rather than hanging. A
+> `mediad` that never says how its camera is mounted gets no frame handed out, and quackd says
+> that too. ICE on a shared office network is the next thing to suspect.
 
 ## 7. The head, on a stand
 
@@ -191,11 +225,11 @@ Now, and only now, put the duck on the floor and run a short walk. Hand on the g
 
 ```bash
 quackd run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
-  --camera-url webrtc://127.0.0.1:8443 --llm anthropic --memory-dir ./duck-day
+  --camera-url http://127.0.0.1:8080/frame --llm anthropic --memory-dir ./duck-day
 ```
 
-Start with `--no-memory` for a clean first run, then `--memory-dir` so the campaign's notes stay
-out of your simulator's.
+The camera is step 6's, through the same tunnel. Start with `--no-memory` for a clean first run,
+then `--memory-dir` so the campaign's notes stay out of your simulator's.
 
 The pad in your hand fights every walk quackd sends, even while nobody touches it: `padd` tells
 robotd to stand still at least ten times a second while a pad is connected and its sticks are
@@ -205,9 +239,11 @@ own `move.requested`, so a walk the pad keeps stopping should end with
 the pad's authority, which quackd does not arbitrate. Write down how often it happens: nobody
 has measured it.
 
-> Abort and let the gamepad take it if the duck goes over. Nothing quackd sends stands a fallen
-> duck up on its own: `stand_up` is `robot.enable {on: true}` and it checks `safety.fallen`
-> afterwards rather than claiming upright, so the recovery is `robotd`'s or it is the owner's.
+> Abort and let the gamepad take it if the duck goes over. Nothing quackd sends is known to stand
+> a fallen duck up: `stand_up` asks the policy to drive again with `robot.enable {on: true}`,
+> only for a duck nobody holds, and calls it upright only if it then reads standing. A robot on
+> `daemon-v0.16.1` does nothing about a fall but report it, since its own get-up, `limp_fall`, is
+> off by default, so the recovery is the owner's.
 
 ## 10. Tell everyone
 
@@ -225,14 +261,23 @@ and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURI
 
 What is most worth writing down, because it is what nobody can check without a duck:
 
-- whether `posture` tracked the real robot, and whether `policy` said `sit` when it sat
-  (quackd assumes it does, and says so in `extras.assumptions`)
+- whether `posture` tracked the real robot: whether `policy` said `sit` when it sat, `rise` on
+  the way up, and `held` with `safety.picked_up` true while somebody held it, and whether a walk
+  was refused then. quackd read those labels in robotd's source, and nobody has seen them on a
+  robot
+- whether the `microduck` account was in the `robot` group out of the box (step 1)
 - what `extras.robotd` said the robot runs, and what `extras.move_echo` said of a walk: how
   long after a twist went out robotd's state showed it, which is the number the echo window
   (three state frames) was set without
-- whether `robot.enable` brought a limp robot up, and how much it moved doing it
+- whether `stand_up`'s `robot.enable` got a fallen duck up, and how much it moved doing it
 - whether the head held still after a `gaze`, whether `extras.head_yaw_deg` agreed with where the
   camera visibly pointed, and how long the gamepad had the head before quackd let go of it
-- whether `media.detections` arrived on the control datachannel — upstream's source says it
-  does and upstream's design doc says it does not, and one of them is out of date
+- what pulling `/frame` cost the duck: how old `extras.camera` said the newest frame was, and the
+  `cpu_temp_c` and `cpu_throttle` that `extras.health` carried while it ran. Nobody has measured
+  either, and 2 frames a second is a guess at what a duck can afford
+- whether a WebRTC frame came out upright beside a `/frame` one, and the `rotate` that `mediad`
+  gave, which `extras.camera` carries
+- whether `media.detections` arrived on the control datachannel, on a robot whose duck detector
+  was turned on, since it is off by default: upstream's source says it does, and nobody has seen
+  one
 - what `robot.subscribe` listed in `skills`, which is where a robot's real skill set lives now

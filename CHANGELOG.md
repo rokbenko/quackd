@@ -134,9 +134,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   commits, and so does everything it reads but for fields added to `robot.state` and `robot.health`,
   so nothing else on the wire changes. Which other versions the handshake serves now is under
   Changed. The re-read also changes what the pilot is told. The policy labels posture is sorted by
-  are read in robotd's source now rather than assumed, so the one assumption a state lists in
-  `extras.assumptions` is `stand_up`'s, which asks the policy to drive and which upstream does not
-  promise gets a fallen duck up. robotd's own stand-up after a fall was `limp_fall`, and on
+  are read in robotd's source now rather than assumed, so `extras.assumptions` lists `stand_up`'s
+  in posture's place, the assumption that asking the policy to drive gets a fallen duck up, which
+  upstream does not promise. robotd's own stand-up after a fall was `limp_fall`, and on
   daemon-v0.16.1 that is off by default and a fall changes nothing in robotd, so the Microduck's
   datasheet no longer says the duck can get itself upright, `stand_up`'s description says it may not
   manage, and a duck still down after it is no longer told an onboard recovery has not finished. The
@@ -257,6 +257,42 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the physics section to the revisions the simulator fetches, and the licences page to the set it
   pins, counted off a list in `sim3d/upstream_api.py`. Each failed with its part of this change
   taken out.
+
+### Documentation
+
+- **The Microduck's pages log in as `microduck`, the account upstream's own tools use, and say it
+  has to be in the robot's `robot` group.** The hardware checklist tunnelled to the duck as `radxa`,
+  which was quackd's guess. robotd's socket is `root:robot`, mode 0660, and robotd checks nothing
+  else about who connects. Upstream's group file creates the group with nobody in it and its
+  provisioning scripts add only whoever ran them with `sudo`, which is `microduck` on a board
+  provisioned the way upstream's own example does it, so the account has to be checked rather than
+  assumed. Step 1 of the checklist checks for the group with `ssh microduck@<duck> id -nG` and marks
+  adding the account as a change to make only with the owner's yes, and the README's real-robot row,
+  the Microduck page's sockets row, the status page and the issue template say so too. Step 6 starts
+  with `mediad`'s `GET /frame` and keeps WebRTC for the stream, without the snapshot server that
+  needed `mediad` stopped, step 9 runs on `/frame`, its fall note no longer leaves the recovery to
+  robotd, and step 10 asks for what the re-read could not settle, the policy labels on a real duck
+  and what `/frame` costs it among them.
+
+- **The pages and strings that still described the Microduck at quackd's previous read describe it
+  at daemon-v0.16.1.** The FAQ and the Open Duck page said quackd reads API v23, LAUNCH.md's draft
+  to Pollen said so too and that there is no socket-level camera snapshot, PLAN.md that the read was
+  API v23 and the camera WebRTC, and the `--camera-url` help and both `pyproject.toml` comments that
+  WebRTC is the only camera upstream offers. Between them they now say what the read found: API v41,
+  a robotd from API v23 up served, and `mediad`'s `GET /frame` beside its WebRTC track. The issue
+  template asks about the handshake, posture, the camera and the duck detector as they work now, and
+  `microduck-lookout` says a camera rather than a video. `docs/concepts/safety.md` said upstream
+  arbitrates authority and that releasing the sticks stops the robot through the deadman, where
+  robotd keeps the newest twist from any client and a connected pad sends one at least ten times a
+  second, the zeros of its still sticks included. `docs/concepts/learned-verbs.md` said a policy
+  slot robotd could swap over its socket was not designed yet, where `robot.loadPolicy` has done
+  that since API v18 and `robot.setSkill` has named a policy as a skill since v22, and it names the
+  slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson guide no longer calls every
+  Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011 carries a dated note on the
+  three rows the re-read overtook, and the 0.4 design note says its `GET_FRAME` ban ended with the
+  ref. `tests/test_docs.py` fails a living page, a line of quackd's or an adapter's source, a
+  `pyproject.toml`, an issue template or a bundled duck that says one of the retired things again,
+  and it failed before this change.
 
 ## [0.17.1] — 2026-10-07
 

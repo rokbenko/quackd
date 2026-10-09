@@ -465,9 +465,11 @@ write says nothing about what that write did.
 
 - **Run on the floor, not a table.** A 25 cm biped and a table edge do not mix.
 - **Keep pets and kids clear of `kick`** (and `grab`, and `roulade`).
-- **The gamepad preempts remote control.** Upstream arbitrates authority; there is no
-  stop button because releasing the sticks stops the robot via the deadman. quackd does not
-  try to out-rank the pad.
+- **The gamepad preempts remote control.** robotd keeps the newest twist from any client, and a
+  connected pad sends one at least ten times a second, the zeros of its still sticks included,
+  so releasing the sticks stops the robot and a pad nobody is touching fights every walk quackd
+  sends. A pad that drops out leaves robotd's deadman to stop the walking, and `padd` sits the
+  robot down a second later. quackd does not try to out-rank the pad.
 - quackd never sends `robot.relax` (torque off — the robot collapses) or `robot.init`
   (moves every joint). Use `robotctl` for those, with the robot on its stand.
 - A good first contract: `allow: [quack, gaze, stop]`, then add walking.

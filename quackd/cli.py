@@ -2999,8 +2999,9 @@ _CAMERA_URL: list[str] = typer.Option(
     [],
     "--camera-url",
     help="Where frames come from, overriding whatever the robot advertises. An HTTP snapshot "
-    "(http://host:9872/snapshot.jpg), or webrtc://host:8443 to pull mediad's video track off a "
-    r"Microduck, which is the only camera upstream offers and needs quackd\[microduck-camera]. "
+    "(http://host:9872/snapshot.jpg, or http://host:8080/frame, the PNG a Microduck's mediad "
+    "serves), or webrtc://host:8443 to pull mediad's video track off a Microduck, which needs "
+    r"quackd\[microduck-camera]. "
     "Needed when you reach the robot through a tunnel and its own URL is not routable. On a "
     "LeRobot arm it is a USB webcam by its OpenCV index, opencv://0, with ?width, ?height, "
     "?fps, ?fourcc, ?rotation, ?fov, ?name and ?backend=msmf for a Windows camera that lists "

@@ -181,6 +181,64 @@ def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
         assert said in page, f"the Microduck page does not say {said!r}"
 
 
+#: What the pages said about a real Microduck before quackd read robotd again at daemon-v0.16.1,
+#: in the words they said it in. The re-read falsified each one, and a page reverted to any of
+#: them would read as current.
+_RETIRED_MICRODUCK_CLAIMS = (
+    # the login: upstream's own tools log in as `microduck`, and `radxa` was quackd's guess
+    "radxa@",
+    # the version: quackd reads API v41, and serves a robotd from API v23 up
+    "`duck-ipc-proto` v23",
+    "API v23, pinned",
+    # the camera: mediad serves GET /frame and media.frame as well as its WebRTC track
+    "the only camera upstream offers",
+    "the only path upstream",
+    "no snapshot endpoint",
+    "no socket-level camera snapshot",
+    "systemctl stop mediad",
+    # posture: the labels are read in robotd's source, and `sit` is matched exactly
+    "a policy whose name contains `sit`",
+    # falls: limp_fall, robotd's own get-up, is off by default at daemon-v0.16.1
+    "recovers from falls itself",
+    # the pad: robotd keeps the newest twist from any client, and padd sends its own stops
+    "Upstream arbitrates authority",
+    # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
+    "hot-swapped over the socket (not designed yet)",
+)
+
+
+def test_no_living_document_still_describes_the_microduck_before_the_re_read() -> None:
+    """quackd read robotd again at daemon-v0.16.1, and pages and strings across the tree still
+    said what the read before it had: an account to ssh in as that was quackd's guess, API v23,
+    WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
+    posture as an assumption, a robotd that gets a fallen duck up, an arbitration robotd does not
+    do, and no way to swap a policy over the socket. Each was spelled its own way, and a revert of
+    any one reads as current, so the old spellings are kept out of every living page and of
+    everything else a person reads: the CLI's and the adapters' strings, the pyproject comments,
+    the issue templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes
+    keep them, dated, as history. Whitespace is collapsed first, so a revert that was reflowed on
+    its way back is caught too."""
+    sources = [
+        *_living_docs(),
+        REPO / "pyproject.toml",
+        *sorted((REPO / "adapters").glob("*/pyproject.toml")),
+        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "adapters").rglob("*.py")),
+        *sorted((REPO / ".github" / "ISSUE_TEMPLATE").glob("*.yml")),
+        *sorted((REPO / "ducks").glob("*.duck")),
+    ]
+    stale = [
+        f"{path.relative_to(REPO).as_posix()}: {claim!r}"
+        for path in sources
+        for claim in _RETIRED_MICRODUCK_CLAIMS
+        if claim in " ".join(path.read_text(encoding="utf-8").split())
+    ]
+    assert not stale, (
+        "these still describe a real Microduck the way quackd's read before daemon-v0.16.1 did "
+        f"(docs/adapters/microduck/README.md has the read): {stale}"
+    )
+
+
 def test_adapter_status_lists_every_backend() -> None:
     from quackd.adapters.factory import BACKENDS
 

@@ -99,8 +99,10 @@ without a word, and quackd recorded the walk as taken.
   robotd did take, which stops the duck and says why rather than walking it blind. Nobody has
   measured the round trip on a real tunnel, and `extras.move_echo` records how long each twist
   a frame showed took to show.
-- `robot.head` and `robot.pose` have no echo. No verb sends either today: `gaze` goes through
-  `robot.look`, a request, and nothing sends a pose.
+- `robot.head` and `robot.pose` have no echo. The one `robot.head` quackd sends is the gaze
+  hold's, the head a `robot.look` answered with, sent again every second, and the hold lets go
+  once `robot.state.head` moves off it, which is also what a robotd that does not take it shows
+  when it glances around again. Nothing sends a pose.
 - robotd keeps the newest twist from any client, and a connected gamepad sends one at least ten
   times a second, a stop while nobody touches its sticks (`up.PAD_DRIVES`). With a pad
   connected every walk quackd sends is fought by it, as it was at the previous read too, and the

@@ -10,6 +10,14 @@ signatures here are also the 0.3 spellings: `get_frame`, `walk_to` and `walk` ar
 `observe`, `go_to` and `move` today. The live per-method table, VERIFIED against upstream, is
 [adapter-status.md](../adapters/microduck/README.md).
 
+**Amended 2026-10-09:** quackd's re-read of robotd at `daemon-v0.16.1`, on 2026-10-08, overtook
+three rows below. robotd does not recover from falls itself there: `limp_fall`, its stand-up
+after a fall, is off by default, so `stand_up` asks the policy to drive with no promise that the
+duck gets up, and reads the duck before it asks. The policy labels posture is read from were
+read in robotd's source, so posture is an allowlist that fails closed rather than an assumption.
+And `get_frame`'s missing socket method is settled: robotd's socket carries no picture, and
+`mediad` serves one PNG per `GET /frame`, which `--camera-url` reads.
+
 ## Context
 
 Verbs are the LLM's vocabulary; upstream's `duck-ipc-proto` is the robot's. The two are

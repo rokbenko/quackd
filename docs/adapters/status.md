@@ -105,8 +105,10 @@ in, and there is an issue template waiting for the result.
 **Got your hands on a Microduck?**
 [adapters/microduck/hardware-checklist.md](microduck/hardware-checklist.md) is the order to try it
 in, and there is an issue template waiting for the result. Nothing in it installs anything on the
-robot or needs `sudo`, because the first Microduck most people touch will belong to somebody else.
-`microduck-lookout` is the task to point at it first: nothing in its allowlist moves a leg.
+robot, and the one step that can need `sudo`, putting the account you log in with in the robot's
+`robot` group, is marked as the owner's to allow, because the first Microduck most people touch
+will belong to somebody else. `microduck-lookout` is the task to point at it first: nothing in its
+allowlist moves a leg.
 
 Ran `--robot open_duck:bridge` against a duck you built, `toddlerbot:bridge` against a
 ToddlerBot on its stand, `xlerobot:zmq` against a cart, `alohamini:zmq` against an AlohaMini,

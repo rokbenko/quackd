@@ -1037,8 +1037,10 @@ async def test_the_state_lists_as_assumed_only_what_upstream_api_calls_unverifie
 ) -> None:
     """`extras.assumptions` is what the pilot is told not to take for the robot's own work, so
     nothing read in robotd's source belongs in it. Posture was its one entry until the policy
-    labels were read at the pin, and what is left is stand_up's `robot.enable`, which upstream
-    does not promise gets a fallen duck up."""
+    labels were read at the pin. On a robot with no camera what is left is stand_up's
+    `robot.enable`, which upstream does not promise gets a fallen duck up, and the lens assumed
+    for a tall `/frame` joins it while one is in use
+    (`test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens`)."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     listed = (await t.get_state()).extras["assumptions"]

@@ -113,7 +113,7 @@ the Feetech serial bus, and nothing of upstream's copied.
 The protocol is quackd's own, NDJSON JSON-RPC 2.0 over TCP, with methods `duck.hello`,
 `duck.command`, `duck.stop`, `duck.state`, `duck.health`, `duck.sound` and `duck.antennas`.
 It is deliberately not the Microduck's `robot.move` and `robot.health`: those are a different
-robot's `duck-ipc-proto` API v23, and reusing the words would make a transcript ambiguous
+robot's `duck-ipc-proto` API v41, and reusing the words would make a transcript ambiguous
 about which robot moved.
 
 Safety, in the order it matters:

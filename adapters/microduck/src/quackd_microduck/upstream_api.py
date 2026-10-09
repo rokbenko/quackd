@@ -425,9 +425,10 @@ IDLE_HEAD = UpstreamRef(
     "client steering the head is never fought' (robotd/src/intents.rs:247-248), and only for "
     "as long as it keeps steering. So quackd holds a gaze: after a robot.look it sends "
     "LookResult.head again as robot.head every GAZE_HOLD_S, half of IDLE_AFTER, until a stop, "
-    "the next look or the end of the connection. And go_to and search_scan wait FADE after "
-    "centring the head, before the first frame they steer on, since a glance that was under "
-    "way when the look arrived takes that long to fade out.",
+    "the next look, another client steering the head, a link that fails or the end of the "
+    "connection. And go_to and search_scan wait FADE after centring the head, before the first "
+    "frame they steer on, since a glance that was under way when the look arrived takes that "
+    "long to fade out.",
 )
 #: The idle look-around in numbers (IDLE_HEAD): robotd starts it once nobody has commanded the
 #: head for IDLE_AFTER (robotd/src/idle_head.rs:26), and fades it in or out over FADE (:29).
