@@ -3,8 +3,8 @@
 At the pin `mediad` hands a picture out three ways: this track, one PNG per `GET /frame` on its
 console port (`up.MEDIAD_FRAME_HTTP`), and one raw frame per `media.frame` on a socket only the
 robot itself can reach (`up.MEDIA_FRAME`). The track is the stream, decoded here frame by frame,
-and it takes this extra and a WebRTC peer. `docs/adapters/microduck/README.md` carries the
-reference for all three.
+and it takes this extra and a WebRTC peer, where `GET /frame`, the camera quackd's docs start
+with, takes neither. `docs/adapters/microduck/README.md` carries the reference for all three.
 
 The track is the picture as the camera took it. On an alpha the camera is mounted a quarter turn
 off upright and nothing on the robot turns the pixels back (`up.CAMERA_MOUNT`), so each frame
@@ -89,14 +89,20 @@ NO_MOUNT = (
     f"frames arrived, but mediad never said how its camera is mounted ({up.MEDIA_VIDEO.name}'s "
     "rotate), so quackd hands none out: on an alpha they would be on their side"
 )
+#: Why `latest` hands out nothing while frames come and the turn has not, yet.
+UNTURNED = (
+    f"mediad has not said how its camera is mounted ({up.MEDIA_VIDEO.name}'s rotate), so quackd "
+    "hands out no frame: on an alpha it would be on its side"
+)
 
 log = logging.getLogger("quackd.microduck.webrtc")
 
 _MISSING = (
     "the WebRTC camera needs aiortc, av and websockets, which are not installed. "
     "Install them with `pip install 'quackd[microduck-camera]'`. "
-    "The alternative that needs no extra is an HTTP snapshot server and "
-    "`--camera-url http://.../snapshot.jpg`."
+    "The camera that needs no extra is mediad's own snapshot route: "
+    f"`--camera-url http://127.0.0.1:8080{up.MEDIAD_FRAME_PATH}` through "
+    "`ssh -L 8080:127.0.0.1:8080 microduck@<duck>`."
 )
 
 
@@ -218,6 +224,25 @@ class WebRtcCamera:
         if self.video is None or self.rotate is None:
             return None
         return upright_fov_deg(self.video)
+
+    def why_no_frame(self, *, max_age_s: float | None = None) -> str | None:
+        """Why `latest` hands out nothing just now, or None when it would hand out a frame: the
+        session's own error, no frame decoded yet, the turn not known yet, or a frame too old to
+        steer on. The transport's `camera_error`, which a verb that found no frame quotes."""
+        if self.latest(max_age_s=max_age_s) is not None:
+            return None
+        if self.error is not None:
+            return self.error
+        if self._frame is None or self._frame_at is None:
+            return f"no frame has decoded from {self.address} yet"
+        if self.rotate is None:
+            return UNTURNED
+        age = time.monotonic() - self._frame_at
+        window = "" if max_age_s is None else f" the {max_age_s:g} s"
+        return (
+            f"the newest frame from {self.address} is {age:.1f} s old, older than{window} quackd "
+            "steers on"
+        )
 
     async def start(self, *, wait: bool = True) -> bool:
         """Open the session. With `wait`, resolve once a frame decodes and `mediad` has said how

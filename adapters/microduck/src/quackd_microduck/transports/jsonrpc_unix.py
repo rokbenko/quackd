@@ -44,11 +44,16 @@ is at the other end of an ssh tunnel:
 - **A frame kept is not a frame seen.** `get_frame` expires what it caches. `go_to` steers
   on every tick, so a camera that died with the ball in shot would otherwise show the ball
   in shot forever while the duck walked at it.
+- **A lens nobody measured is named as assumed.** `mediad`'s PNG carries no lens, so the one
+  quackd takes from the first frame's shape is listed in `extras.assumptions` for as long as
+  the detector measures through it (`up.ALPHA_UPRIGHT_FOV`).
 
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
-Frames: `--camera-url http://.../snapshot.jpg`, or `webrtc://host:8443` for `mediad`'s own
-video track. robotd's socket carries no picture.
+Frames: robotd's socket carries no picture. `--camera-url http://127.0.0.1:8080/frame`, after
+`ssh -L 8080:127.0.0.1:8080 microduck@<duck>`, reads `mediad`'s own snapshot route, the camera
+the docs start with, and `webrtc://host:8443` its video track, which takes
+`quackd[microduck-camera]`. Any other HTTP URL is read as a snapshot server of its own.
 """
 
 from __future__ import annotations
@@ -61,11 +66,13 @@ import logging
 import math
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import deque
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, NamedTuple
 
 from PIL import Image
@@ -282,6 +289,21 @@ class _GazeHold:
 #: pilot's roughly-once-a-second glance, and below what an ssh tunnel will carry.
 CAMERA_FPS = 5.0
 
+#: How often to pull `mediad`'s own `GET /frame` (`up.MEDIAD_FRAME_HTTP`) instead, the camera
+#: the docs start with. Every request has the duck encode a PNG of its whole picture, with no
+#: downscale, and what that costs a robot has not been measured, so mediad is asked for fewer
+#: frames than any other HTTP camera. It still hands `go_to` a frame inside the window
+#: `camera_stale_after_s` gives it.
+MEDIAD_FRAME_FPS = 2.0
+
+#: How long one snapshot may take before it counts as failed. mediad gives up on a frame from
+#: its own capture after as long, and answers 503 then (`up.MEDIAD_FRAME_HTTP`).
+SNAPSHOT_TIMEOUT_S = 3.0
+
+#: How long `connect()` waits for an HTTP camera's first frame, through the failures a camera
+#: that is coming up answers with (`_snapshot_failure`), before it reports no camera for the run.
+FIRST_FRAME_WAIT_S = 5.0
+
 
 def camera_stale_after_s(fps: float) -> float:
     """How old a frame may be before `get_frame` stops handing it out.
@@ -289,10 +311,66 @@ def camera_stale_after_s(fps: float) -> float:
     A cached frame that never expires is worse than no frame at all: `go_to` steers on every
     tick, and a camera that died with the ball in shot would show the ball in shot forever
     while the duck walked at it. Four frame periods, floored at two seconds so a slow-but-
-    working camera is not dropped, and floored again by the fetch timeout so one slow HTTP
-    round trip cannot look like a dead camera.
+    working camera is not dropped. Nothing floors it at `SNAPSHOT_TIMEOUT_S`, which at
+    `MEDIAD_FRAME_FPS` is the longer of the two, so one PNG slow enough leaves `go_to` with no
+    frame, and it stops, rather than steering on a picture that old.
     """
     return max(2.0, 4.0 / max(0.1, fps))
+
+
+def is_mediad_frame(url: str | None) -> bool:
+    """Whether `--camera-url` names `mediad`'s own snapshot route: an HTTP URL whose path is
+    `up.MEDIAD_FRAME_PATH`. Anything else is a camera quackd knows nothing about."""
+    if not url or is_webrtc_url(url):
+        return False
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme in ("http", "https") and parts.path == up.MEDIAD_FRAME_PATH
+
+
+def default_camera_fps(url: str | None) -> float:
+    """The rate frames are pulled at when nobody chose one: `MEDIAD_FRAME_FPS` from `mediad`'s
+    `/frame` and `CAMERA_FPS` from any other camera. Over WebRTC frames come as fast as the
+    track decodes, and the rate only sets how old one may be before it is not handed out."""
+    return MEDIAD_FRAME_FPS if is_mediad_frame(url) else CAMERA_FPS
+
+
+class SnapshotRefused(Exception):
+    """An HTTP camera that answered with an error status instead of a picture, with the first
+    line of what it said. mediad's 503 says why, "retry when capture is running", and urllib's
+    own message leaves that out."""
+
+    def __init__(self, code: int, reason: str, said: str) -> None:
+        self.code = code
+        status = " ".join(f"HTTP {code} {reason}".split())
+        super().__init__(f"{status}: {said}" if said else status)
+
+
+def _first_line(answer: Any) -> str:
+    """The first line of an HTTP error's body, read only as far as a short one goes."""
+    with contextlib.suppress(Exception):
+        body = answer.read(512).decode("utf-8", errors="replace")
+        for line in body.splitlines():
+            if line.strip():
+                return str(line.strip()[:200])
+    return ""
+
+
+def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
+    """What to say about a snapshot that did not come, and whether `connect()` should wait for
+    another.
+
+    It waits through two failures, the two a camera that is coming up answers with: a 503, which
+    is what `mediad`'s `/frame` answers while it cannot hand a frame out, "retry when capture is
+    running", and a request that ran out of time, which a duck busy encoding a PNG can be slow
+    to answer. Any other is a URL with nothing behind it, as a refused connection, a 404 from a
+    robot older than the route, or a page that is not a picture, and waiting longer would only
+    put off saying so."""
+    if isinstance(error, SnapshotRefused | urllib.error.HTTPError):
+        return str(error), error.code == HTTPStatus.SERVICE_UNAVAILABLE
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, TimeoutError):
+        return f"no answer within {SNAPSHOT_TIMEOUT_S:g} s", True
+    return str(reason) or type(reason).__name__, False
 
 
 def posture_of(
@@ -415,7 +493,8 @@ class JsonRpcUnixTransport:
         api_version: int = int(up.API_VERSION.name),
         request_timeout_s: float = 2.0,
         state_hz: int = STATE_HZ,
-        camera_fps: float = CAMERA_FPS,
+        camera_fps: float | None = None,
+        camera_wait_s: float | None = None,
         gaze_hold_s: float = GAZE_HOLD_S,
     ) -> None:
         self.address = address or default_address()
@@ -423,7 +502,12 @@ class JsonRpcUnixTransport:
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s
         self.state_hz = state_hz
-        self.camera_fps = camera_fps
+        self.camera_fps = default_camera_fps(camera_url) if camera_fps is None else camera_fps
+        """How often an HTTP camera is asked for a frame, and what sets how old one may be:
+        `MEDIAD_FRAME_FPS` from `mediad`'s `/frame` and `CAMERA_FPS` from any other camera,
+        unless the caller chose."""
+        self.camera_wait_s = FIRST_FRAME_WAIT_S if camera_wait_s is None else camera_wait_s
+        """How long `connect()` waits for an HTTP camera's first frame (`_await_first_frame`)."""
         self.gaze_hold_s = gaze_hold_s
         self.head_fade_s = 0.0
         """How long robotd takes to fade an idle glance out once a look arrives: `up.IDLE_FADE_S`
@@ -444,6 +528,12 @@ class JsonRpcUnixTransport:
         self._frame: Image.Image | None = None
         self._frame_at: float | None = None
         self._frame_error: str | None = None
+        """Why the newest HTTP snapshot did not come, or None since one did."""
+        self._frame_retryable = False
+        """Whether `_frame_error` is a failure `connect()` waits through (`_snapshot_failure`)."""
+        self._first_frame_size: tuple[int, int] | None = None
+        """The first HTTP frame's width and height, which the lens of `/frame` is taken from
+        (`_assumed_fov_deg`)."""
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -564,10 +654,13 @@ class JsonRpcUnixTransport:
         # never reached PLAYING would otherwise still advertise observe, go_to, search_scan
         # and approach_and, every one of which can then only answer "no camera".
         if is_webrtc_url(self.camera_url):
-            # The only camera upstream actually offers. Nothing is installed on the robot.
+            # mediad's video track, turned upright by what mediad says its mount is. Nothing is
+            # installed on the robot.
             self._webrtc = WebRtcCamera(str(self.camera_url))
             self.camera_working = await self._webrtc.start()
         elif self.camera_url:
+            # mediad's own `/frame`, the camera the docs start with, or any other HTTP snapshot,
+            # pulled on a timer from here on.
             self._camera_task = asyncio.create_task(
                 self._camera_loop(), name="quackd-jsonrpc-camera"
             )
@@ -600,10 +693,20 @@ class JsonRpcUnixTransport:
             "report reads as absent, safety.picked_up among them (extras.pickup_detection)."
         )
 
-    async def _await_first_frame(self, timeout_s: float = 5.0) -> bool:
-        """Wait for the snapshot loop's first frame, so `connect()` knows if there is a camera."""
-        deadline = time.monotonic() + timeout_s
-        while self._frame is None and self._frame_error is None:
+    async def _await_first_frame(self) -> bool:
+        """Wait for the snapshot loop's first frame, so `connect()` knows if there is a camera.
+
+        Whether a run can see is decided here, once: the manifest offers `observe`, `go_to`,
+        `search_scan` and `approach_and` only on a camera that worked at connect. So the wait
+        lasts `camera_wait_s` through the failures of a camera that is coming up, the 503
+        `mediad`'s `/frame` answers while it cannot hand a frame out and a request that ran out
+        of time, where it used to end at the first failure of any kind and leave the whole run
+        blind over one 503. Any other failure ends it at once (`_snapshot_failure`), and
+        whichever came last is what `camera_health()` and `camera_error` say."""
+        deadline = time.monotonic() + self.camera_wait_s
+        while self._frame is None:
+            if self._frame_error is not None and not self._frame_retryable:
+                break
             if time.monotonic() >= deadline:
                 break
             await asyncio.sleep(0.02)
@@ -774,8 +877,12 @@ class JsonRpcUnixTransport:
         url = self.camera_url or ""
 
         def fetch() -> bytes:
-            with urllib.request.urlopen(url, timeout=3) as resp:
-                return resp.read()
+            try:
+                with urllib.request.urlopen(url, timeout=SNAPSHOT_TIMEOUT_S) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as e:
+                # read here, in the thread and while the answer is open: mediad's 503 says why
+                raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
 
         data = await asyncio.to_thread(fetch)
         return Image.open(io.BytesIO(data)).convert("RGB")
@@ -785,17 +892,21 @@ class JsonRpcUnixTransport:
 
         Same shape as the camera daemon quackd already ships for the Open Duck: capture on a
         clock rather than on request, so a slow or broken camera cannot stall the caller and a
-        run asking for a frame every step does not pay an HTTP round trip every step.
+        run asking for a frame every step does not pay an HTTP round trip every step. A failure
+        is kept, with whether `connect()` waits through it, until the next frame comes.
         """
         period = 1.0 / max(0.1, self.camera_fps)
         while True:
             started = time.monotonic()
             try:
-                self._frame = await self._fetch_frame()
-                self._frame_at = time.monotonic()
-                self._frame_error = None
+                frame = await self._fetch_frame()
             except Exception as e:  # a camera hiccup must not end a run
-                self._frame_error = str(e)
+                self._frame_error, self._frame_retryable = _snapshot_failure(e)
+            else:
+                if self._first_frame_size is None:
+                    self._first_frame_size = frame.size
+                self._frame, self._frame_at = frame, time.monotonic()
+                self._frame_error, self._frame_retryable = None, False
             await asyncio.sleep(max(0.0, period - (time.monotonic() - started)))
 
     async def get_frame(self) -> Image.Image | None:
@@ -838,24 +949,77 @@ class JsonRpcUnixTransport:
         is where `quackd run` takes the lens its detector measures bearings through when no
         `--fov-deg` names one, and where `serve-mcp`, which has no `--fov-deg`, always takes it.
         Without one a real camera is measured through the simulator's 90 degrees. Over WebRTC
-        it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`)."""
+        it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`), and from
+        `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_fov_deg`)."""
         if self._webrtc is not None:
             return self._webrtc.fov_deg
-        return None
+        return self._assumed_fov_deg()
+
+    def _assumed_fov_deg(self) -> float | None:
+        """The lens of `mediad`'s `/frame` as quackd assumes it, from the shape of the first frame
+        a working camera gave, or None (`up.ALPHA_UPRIGHT_FOV`).
+
+        The PNG carries no lens. On a stock robot only an alpha's camera, an IMX219 mounted a
+        quarter turn off and turned upright for the PNG, gives a picture taller than wide, so
+        the sensor's field along its long side (`up.IMX219_FOV`) runs down the picture, and its
+        width sees that field scaled by the picture's shape through the tangent of half of it.
+        That is the module's design and not a calibration. It is taken from the first frame
+        alone because the manifest the detector reads it from is built once, at connect. A
+        wider frame, which is a beta's, and every camera but `mediad`'s get none, and the
+        detector falls back on its own, as it always has without `--fov-deg`."""
+        size = self._first_frame_size
+        if size is None or not self.camera_working or not is_mediad_frame(self.camera_url):
+            return None
+        width, height = size
+        if not 0 < width < height:
+            return None
+        half = math.radians(up.IMX219_FOV_DEG) / 2
+        return math.degrees(2 * math.atan(math.tan(half) * width / height))
+
+    @property
+    def camera_error(self) -> str | None:
+        """Why `get_frame` has no frame to hand out just now, or None when it has one, and when no
+        `--camera-url` named a camera, which `observe` says in words of its own.
+
+        `observe`, `go_to` and `search_scan` read this off whatever they were handed when a
+        frame does not come (core's `_no_frame`), and `MicroduckAdapter` passes it on. This
+        transport had none to give, so a verb said only that it got no frame, while
+        `camera_health()` held the 503 or the refused connection that was the reason."""
+        if not self.camera_url:
+            return None
+        if self._webrtc is not None:
+            return self._webrtc.why_no_frame(max_age_s=camera_stale_after_s(self.camera_fps))
+        if self.frame_age_s() is not None:
+            return None
+        if self._frame_error is not None:
+            return f"GET {self.camera_url}: {self._frame_error}"
+        if self._frame_at is None:
+            return f"no frame has come from {self.camera_url} yet"
+        age = time.monotonic() - self._frame_at
+        return (
+            f"the newest frame from {self.camera_url} is {age:.1f} s old, older than the "
+            f"{camera_stale_after_s(self.camera_fps):g} s quackd steers on"
+        )
 
     def camera_health(self) -> dict[str, Any]:
-        """What the camera is doing, for `doctor` and for the run's own state."""
+        """What the camera is doing, for `doctor` and for the run's own state. `error` is the
+        newest fetch's failure, kept until a frame comes, which is what `doctor` prints under
+        the camera's row."""
         if not self.camera_url:
             return {"configured": False}
         if self._webrtc is not None:
             return self._webrtc.health()
         age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
+        fov = self._assumed_fov_deg()
         return {
             "configured": True,
             "url": self.camera_url,
             "ok": self._frame is not None,
             "age_s": age,
             "size": list(self._frame.size) if self._frame is not None else None,
+            "fps": self.camera_fps,
+            "fov_deg": None if fov is None else round(fov, 1),
+            "fov_assumed": None if fov is None else up.ALPHA_UPRIGHT_FOV.name,
             "error": self._frame_error,
         }
 
@@ -957,10 +1121,19 @@ class JsonRpcUnixTransport:
                 # What quackd stands in for on this robot, which the pilot is told not to take
                 # for the robot's own work. Posture used to be the first of them. It is read off
                 # labels robotd's own source names now, so what is left is stand_up, which asks
-                # the policy to drive and is all quackd has for a duck on the floor.
-                "assumptions": [up.STAND_UP_RPC.name],
+                # the policy to drive and is all quackd has for a duck on the floor, and the lens
+                # of mediad's /frame while it is assumed from the first frame's shape.
+                "assumptions": self._assumptions(),
             },
         )
+
+    def _assumptions(self) -> list[str]:
+        """`extras.assumptions`: `stand_up`'s `robot.enable` always, and the lens of `mediad`'s
+        `/frame` while the detector measures through the one assumed from the first frame."""
+        listed = [up.STAND_UP_RPC.name]
+        if self._assumed_fov_deg() is not None:
+            listed.append(up.ALPHA_UPRIGHT_FOV.name)
+        return listed
 
     def _robotd_record(self, read: StateRead) -> dict[str, Any] | None:
         """`extras.robotd`: the hello, what quackd read, the floor, the warning, and two things
@@ -980,10 +1153,7 @@ class JsonRpcUnixTransport:
     def _mediad_frame_answered(self) -> bool | None:
         """Whether mediad's `GET /frame` has answered at least once, or None when `--camera-url`
         is not that route. A robotd from before daemon-v0.13.0 has no such route to answer."""
-        url = self.camera_url
-        if not url or is_webrtc_url(url):
-            return None
-        if urllib.parse.urlsplit(url).path != up.MEDIAD_FRAME_PATH:
+        if not is_mediad_frame(self.camera_url):
             return None
         return self._frame_at is not None
 

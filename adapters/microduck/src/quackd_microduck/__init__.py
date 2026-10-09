@@ -249,6 +249,14 @@ class MicroduckAdapter:
         return getattr(self.transport, "stop_error", None)
 
     @property
+    def camera_error(self) -> str | None:
+        """Why the camera has no frame to hand out just now, when the transport knows. `observe`,
+        `go_to` and `search_scan` read it off the object they were handed when a frame does not
+        come, which is this adapter, for `stop_error`'s reason."""
+        error = getattr(self.transport, "camera_error", None)
+        return str(error) if error else None
+
+    @property
     def head_fade_s(self) -> float:
         """How long `go_to` and `search_scan` wait after centring the head, which they read off
         the object they were handed, this adapter: on `jsonrpc` the time a robotd that glances

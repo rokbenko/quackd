@@ -82,11 +82,12 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 | `+head_yaw looks left (+y) on alpha` | upstream's own test of its head FK pins this sign, and that "+head_pitch looks DOWN (-z) on alpha", so that an update to the model cannot make the robot nod the wrong way | on a robotd that reports no `frames`, the measured head_yaw joint is `extras.head_yaw_deg`, and `head_pose_from` says `joints`. No pitch comes that way: the camera's pitch is the neck and head pitch joints through the FK together, and robotd's home pose holds both at 0.3491 rad |
 | `robotd's idle look-around` | new in `daemon-v0.16.1`, the first release with it, on API v41. Once the duck is still and nobody has steered its head for 2 s, robotd glances around on top of the commanded head, up to 0.6 rad of yaw and 0.2 rad of pitch, fading in and out over 1.5 s rather than jumping. A `robot.look` or `robot.head` from anyone holds it off for another 2 s | quackd holds a gaze against it (`robot.head`, above). On a robotd from API v41 up, `go_to` and `search_scan` wait 1.5 s after centring the head, sending nothing that moves the duck, before the first frame they act on, since a glance under way when the look arrived takes that long to fade out. `daemon-v0.16.0`, on API v39, has no look-around, and neither verb waits there. An `observe` with no gaze held, the first of a run or one after a stop, can still see a glancing head once the duck has stood still for 2 s |
 | `velstand.onnx` | the walk a stock robotd loads at this pin: one network that "walks on a twist and stands still at zero command", so no standing network is loaded by default. That is why `limp_fall`, whose stand-up hands the duck to the standing network, is off | what a real duck walks on. `microduck:mujoco` still runs `alpha_walking` and `alpha_stand` ([below](#the-ducks-physics-upstreams)) |
-| `GET :8080/frame` | `mediad`'s console port answers with one upright PNG per request, uncached and at most four at a time, or with `503` "Camera snapshot unavailable; retry when capture is running." Port 8080 on every address by default, with no authentication. New since `bc41fb5`, where the port served the console page alone, and first released in `daemon-v0.13.0` | nothing by name. An HTTP `--camera-url` decodes any PNG, so it can point here, and nobody has pointed it at a robot. When its path is `/frame`, `extras.robotd.mediad_frame` says whether the route has answered |
+| `GET :8080/frame` | `mediad`'s console port answers with one upright PNG per request, encoded from the whole picture on the robot with "No downscale", uncached and at most four at a time. When it cannot hand one out, four being encoded already or no frame from its capture within 3 s, it answers `503` "Camera snapshot unavailable; retry when capture is running." Port 8080 on every address by default, with no authentication. New since `bc41fb5`, where the port served the console page alone, and first released in `daemon-v0.13.0` | the camera this page starts with ([below](#getting-a-picture-off-a-real-microduck)): pulled at a rate of its own, waited for through a `503` at connect, and its first frame's shape taken for the lens. `extras.robotd.mediad_frame` says whether the route has answered |
 | `media.frame` | one raw UYVY frame on `mediad`'s local socket: a JSON header `{width, height, format, bytes, captured_at_unix_us, rotate}`, then the bytes. "Deliberately not a `Call`", so it never reaches the WebRTC control datachannel | not called |
 | `media.video` | `{width, height, rotate, mono_ns, real_ns, intrinsics?}`, which `mediad` answers itself on each WebRTC peer's control datachannel, as a call and as a push when the channel opens. The push can be lost, so upstream's own console asks, "because a question it asks when it is ready cannot arrive too early". `rotate` is "Degrees clockwise the camera is mounted from upright", and `intrinsics`, absent when the geometry is unknown, are for the frame as it is sent, which nothing turns: a consumer that turns the frame swaps `fx` with `fy` and `cx` with `cy` | the WebRTC camera asks once, the one line it writes to the channel, and reads the answer or the push. It turns every frame upright by `rotate` and hands out no frame until one of the two has said it. The lens of an upright frame comes from `intrinsics`, as twice the arctangent of half the upright width over the focal length across it, and goes in the manifest as `camera_fov_deg` |
 | `an alpha's camera is mounted a quarter turn off upright, a beta's upright` | `rotate` is 90 on the Zero 3W, the alpha board, and 0 on the beta. Nothing on the robot turns the pixels, so the WebRTC track off an alpha is sideways and its consumer turns it clockwise by `rotate`, as upstream's `uyvy` crate does for `mediad`'s PNGs and its duck detector: a quarter turn sends source (x, y) to upright (h-1-y, x) | quackd turns each WebRTC frame the same way. A `mediad` started with `--flip-in-pipeline` turns the pixels as well and still reports the mount, so quackd would turn its frames twice, as upstream's console would |
 | `the alpha family's camera calibration` | one solve shared by every alpha unit, made on a 1280 by 720 frame as `mediad` sends it, unturned: `fx` 1061.8, `fy` 1062.2, `cx` 596.8, `cy` 474.5. `mediad` sends it, scaled to the stream, as `media.video`'s `intrinsics`, unless the robot carries a solve of its own | an upright alpha frame is as wide as the rows it was sent with, across `fy`, so its lens is 37.4°. Its principal point is not the frame's centre, and quackd's detectors, which take a bearing from the centre, do not correct for it |
+| `an IMX219 sees 62 degrees across its frame's long side` | the alpha's head camera behind its M12 lens: its field of view across a frame in the 1920 by 1080 mode `mediad` pins, the same at every size it streams at, since each is the sensor's whole field scaled. The beta's GC2093 has none: "nobody has measured this lens yet" | what the lens of a tall `/frame` is worked out from (the UNVERIFIED row below) |
 | `media.detections` | `mediad`'s duck detector, `{width, height, took_ms, boxes[{x0,y0,x1,y1,score}]}`, pushed on each WebRTC peer's control datachannel and nowhere else. It finds ducks, not balls. Off by default, and two looks a second when on, which upstream calls "a thermal number, not a taste" | the WebRTC camera keeps the newest one. Nothing steers on it |
 
 ### UNVERIFIED (designed, assumed, or missing upstream) — and what we do
@@ -95,6 +96,7 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 |---|---|---|
 | `WebSocket agent gateway` | dropped. At `bc41fb5`, architecture.md §5.3 designed one, "open a WebSocket, poll a frame, send intents". At this pin the same table sends a server-side agent over the "rendezvous control lane", JSON-RPC over HTTP/SSE with no WebRTC, and roadmap M5's SDK is that lane | `--robot microduck:websocket` is a stub that refuses to connect, with the links |
 | `stand_up asks robotd's policy to drive (robot.enable), which upstream does not promise gets a fallen duck up` | there is no stand-up call for a duck on the floor. `robot.enable` is policy execution, which "can bring a limp robot up as a side effect of being asked to drive", and `robot.init`, upstream's stand-up for a duck on its feet, moves every joint. robotd's own stand-up after a fall was the end of `limp_fall`, which is off by default at this pin. Whether velstand gets a duck off the floor has not been seen | `stand_up` reads the duck before it sends anything. It refuses a duck somebody holds and one nothing reports on, says so of one already standing, and points one on its seat at `stand`. Only a fallen duck, or one whose posture is `unknown` for another reason, is sent `robot.enable {on: true}`, and afterwards it is called upright only if posture reads `standing`. Every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
+| `a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom` | quackd's own reading of a PNG that carries no lens. On a stock robot only an alpha's camera, mounted a quarter turn off and turned upright for the PNG, gives a picture taller than wide, and a beta's gives a wide one. It is the module's design with the principal point at the centre, not a calibration, and it rests on the shape alone: upstream's `scripts/duck-sim` renders its twin's camera rolled like an alpha's at MuJoCo's 45° across the frame as sent, so a tall `/frame` from a twin is 45° wide and this is wrong there | the first frame of a working `/frame` camera, when taller than wide, sets the manifest's `camera_fov_deg` to 2·atan(tan 31° · w/h), and every state lists this in `extras.assumptions`. `--fov-deg` overrides it on `quackd run`, and a wide frame gets no lens |
 
 ## What this robot is, as numbers
 
@@ -131,22 +133,44 @@ unreachable rather than merely forbidden.
 
 `robotd`'s socket carries no picture, so quackd takes the camera from `--camera-url`. Without
 one, `jsonrpc.get_frame()` returns `None` and the manifest drops `camera` and the four verbs that
-need eyes, instead of advertising sight the robot has not got. An HTTP snapshot is pulled on a
-5 fps timer and served from memory, so `observe` costs no round trip, and a failed fetch is
-reported by `camera_health()` rather than raised. Two ways to point quackd at the camera:
+need eyes, instead of advertising sight the robot has not got. `mediad` on the duck serves the
+camera two ways quackd reads, and its own snapshot route, `/frame`, is the one to start with:
 
-| | `--camera-url webrtc://<duck>:8443` | `--camera-url http://<host>:9872/snapshot.jpg` |
+| | `--camera-url http://127.0.0.1:8080/frame` | `--camera-url webrtc://127.0.0.1:8443` |
 |---|---|---|
-| Where it runs | your machine | wherever the snapshot server is |
-| Touches the robot | nothing | a snapshot server has to hold `/dev/video0`, so `mediad` must be stopped first — it holds the device for the life of its process |
-| Needs | `quackd[microduck-camera]` (aiortc, av, websockets) | nothing |
-| Costs | one media session, so it competes with the browser console | `mediad`, and therefore the console and the WebRTC path, while it runs |
+| What it is | `mediad`'s snapshot route: one upright PNG per request | `mediad`'s H.264 video track, which quackd turns upright |
+| The tunnel | `ssh -L 8080:127.0.0.1:8080 microduck@<duck>` | `ssh -L 8443:127.0.0.1:8443 microduck@<duck>` |
+| Needs | nothing | `quackd[microduck-camera]` (aiortc, av, websockets) |
+| How often | 2 frames a second | as fast as the track decodes |
+| The lens | assumed from the first frame's shape | `mediad`'s own calibration |
+| Costs | a PNG of the whole picture, encoded on the duck for every frame | one media session, so it competes with the browser console |
+| Since | `daemon-v0.13.0` | every release quackd serves |
 
-The WebRTC route is the one to reach for on a robot you do not own. Signalling is
-gst-plugins-rs `net/webrtc`, read from `mediad/webclient/index.html` at the pin: the producer
-offers and quackd answers. **There is no authentication** — upstream's own note is that a
-pairing PIN which is `000000` on every robot "authenticates nobody" — so tunnel it
-(`ssh -L 8443:127.0.0.1:8443 radxa@<duck>`) rather than trusting the network.
+Neither installs anything on the duck, and neither authenticates: `mediad` answers on every
+address, and upstream's own note on its WebRTC side is that a pairing PIN which is `000000` on
+every robot "authenticates nobody". Reach both through the tunnel rather than across a room's
+wifi.
+
+**`/frame`** is pulled on a timer and the newest frame is served from memory, so `observe` costs
+no round trip, and a failed fetch is reported rather than raised. quackd asks mediad for 2 frames
+a second, where any other HTTP camera is asked for 5, since every request has the duck encode a
+PNG of its whole picture and nobody has measured what that costs a robot, and a frame older than
+2 s is not handed out, so one slow PNG stops `go_to` rather than steering it on an old picture.
+At connect quackd waits up to 5 s for the first frame, through the `503` mediad answers while it
+cannot hand one out and through requests that run out of time, and gives up at once on anything
+else, such as a refused connection or the `404` of a robot too old for the route. Whatever came
+last is in `camera_health()`, which `quackd doctor` prints under the camera's row, and a verb
+that finds no frame says it.
+
+The PNG carries no lens. A first frame taller than wide is taken for an alpha's, whose IMX219
+sees 62° along its long side and is turned upright for the PNG, so across a 720 by 1280 frame,
+the default 720p turned upright, quackd measures through 37.3°. That goes in the manifest as
+`camera_fov_deg`, so an MCP session measures through it too, and every state lists the assumption
+in `extras.assumptions` (the UNVERIFIED row above). `--fov-deg` overrides it on `quackd run`. A
+frame wider than tall, which is a beta's, gets no lens: pass `--fov-deg` there.
+
+**WebRTC** is the stream. Signalling is gst-plugins-rs `net/webrtc`, read from
+`mediad/webclient/index.html` at the pin: the producer offers and quackd answers.
 
 On an alpha the WebRTC track is sideways: the camera is mounted a quarter turn off upright and
 nothing on the robot turns the pixels. `mediad` says by how much, as `media.video`'s `rotate`,

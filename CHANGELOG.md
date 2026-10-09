@@ -42,6 +42,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the robot through `doctor` for the new row and both warnings. Each of them failed before this
   change.
 
+- **A Microduck's camera is mediad's own `GET /frame` now, which `microduck:jsonrpc` pulls at 2
+  frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck
+  page starts with `--camera-url http://127.0.0.1:8080/frame` through
+  `ssh -L 8080:127.0.0.1:8080 microduck@<duck>`, the upright PNG mediad has served since
+  daemon-v0.13.0, with no extra installed and nothing stopped on the duck, where it used to offer
+  WebRTC or a snapshot server of your own with mediad stopped. Every request has the duck encode a
+  PNG of its whole picture, and nobody has measured what that costs a robot, so quackd pulls
+  mediad's route at 2 frames a second, where every other HTTP camera is still pulled at 5. The
+  PNG carries no lens, so a first frame taller than wide, which on a stock robot only an alpha's
+  camera gives, is taken for the IMX219's 62° running down the picture: 37.3° across the 720 by
+  1280 frame of the default 720p. That goes in the manifest as `camera_fov_deg`, which `serve-mcp`
+  measures through for want of a `--fov-deg`, and every state lists the assumption in
+  `extras.assumptions`, since it is the module's design rather than a calibration, and wrong on a
+  duck in upstream's own simulator, whose camera is 45° wide. A wide frame and every other camera
+  get no lens, as before. `tests/test_jsonrpc.py` asks mediad's route at its rate and every other
+  camera at theirs, takes the lens from a tall first frame of mediad's and from no other, and
+  keeps it when a later frame is wide, and `tests/test_docs.py` holds the page to the numbers in
+  the code. Each failed before this change.
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
@@ -180,6 +199,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
   it off the answer and off the push, and takes the lens from the intrinsics at each angle, and
   `tests/test_adapters.py` carries the lens into the manifest. Each failed before this change.
+
+- **A 503 at connect no longer leaves a Microduck without a camera for the whole run, and a verb
+  that finds no frame says why.** `microduck:jsonrpc` decides once, at connect, whether a run can
+  see, and it stopped waiting for an HTTP camera's first frame at the first failure of any kind.
+  mediad's `/frame` answers 503 while it cannot hand a frame out, and says to retry, so one of
+  those at connect took `observe`, `go_to`, `search_scan` and `approach_and` away for the run.
+  quackd now waits up to 5 s through 503s and through requests that run out of time, and gives up
+  at once on anything else, such as a refused connection or the 404 of a robot older than the
+  route. Whatever came last is in `camera_health()`, with mediad's own reason where it gave one,
+  and `quackd doctor` prints it under the camera's row. `observe`, `go_to` and `search_scan` quote
+  a body's `camera_error` when no frame comes, and `microduck:jsonrpc` had none, so they said only
+  that no frame came. It says now: the last failure, a frame too old to steer on, or, over WebRTC,
+  a mount mediad has not said. `tests/test_jsonrpc.py` waits through two 503s to a frame, gives up
+  on a camera still unavailable when the wait runs out with mediad's reason in hand, gives up at
+  once on a 404 and on a refused connection, waits through both forms of a timeout, fails
+  `observe` and `go_to` with mediad's reason, and finds it in `doctor`'s camera rows, and
+  `tests/test_microduck_webrtc.py` checks what the WebRTC camera says. Each failed before this
+  change.
 
 ## [0.17.1] — 2026-10-07
 

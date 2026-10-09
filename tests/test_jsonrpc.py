@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.server
+import io
 import json
 import logging
 import math
+import socket
 import sys
 import threading
 import time
+import urllib.error
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -34,8 +38,11 @@ from quackd.verbs.core import MOVE_RESEND_S
 from quackd.verbs.registry import VerbRegistry
 from quackd_microduck import MicroduckAdapter
 from quackd_microduck import upstream_api as up
+from quackd_microduck.transports import jsonrpc_unix
 from quackd_microduck.transports.jsonrpc_unix import (
+    CAMERA_FPS,
     GAZE_HOLD_S,
+    MEDIAD_FRAME_FPS,
     MOVE_ECHO_FRAMES,
     READER_LIMIT,
     JsonRpcUnixTransport,
@@ -2090,3 +2097,329 @@ async def test_a_glance_fading_out_is_not_somebody_elses_head(
     )
     assert t._gaze is gaze and t.gaze_released is None, t.gaze_released
     await t.close()
+
+
+# ── mediad's /frame, the camera the docs start with ─────────────────────────────────────
+
+#: What mediad's `/frame` answers when it cannot hand a frame out (mediad/src/web.rs:123-124).
+UNAVAILABLE = b"Camera snapshot unavailable; retry when capture is running.\n"
+#: The words of it that a reader of quackd's error should be shown.
+UNAVAILABLE_SAID = UNAVAILABLE.decode().strip()
+#: A contract under which the two verbs that need a frame may run.
+SEES = parse_duck_text(
+    "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, go_to]\n"
+    "success: [x]\n---\n# Task\nx\n"
+)
+
+
+def _png(width: int, height: int) -> bytes:
+    picture = io.BytesIO()
+    Image.new("RGB", (width, height), (40, 80, 120)).save(picture, "PNG")
+    return picture.getvalue()
+
+
+def _closed_port() -> int:
+    """A loopback port nothing listens on, so a connection to it is refused."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+class SnapshotServer:
+    """An HTTP camera on loopback that answers each GET with the next reply of its script, and
+    with the last one for ever after: 200 and a PNG, or a status and a reason, as mediad's
+    `/frame` answers. It counts the requests, so a test can tell a camera waited for from one
+    given up on."""
+
+    def __init__(self, *replies: tuple[int, bytes]) -> None:
+        self.replies = list(replies)
+        self.requests = 0
+        self._lock = threading.Lock()
+        server = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                status, body = server._next()
+                self.send_response(status)
+                self.send_header("Content-Type", "image/png" if status == 200 else "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt: str, *args: Any) -> None:
+                pass
+
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = int(self.httpd.server_address[1])
+        self._thread = threading.Thread(
+            target=self.httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+        )
+
+    def _next(self) -> tuple[int, bytes]:
+        with self._lock:
+            self.requests += 1
+            return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+
+    def url(self, path: str = up.MEDIAD_FRAME_PATH) -> str:
+        return f"http://127.0.0.1:{self.port}{path}"
+
+    def __enter__(self) -> SnapshotServer:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self._thread.join(30)
+
+
+def test_mediads_frame_is_asked_for_at_a_rate_of_its_own() -> None:
+    """Every `GET /frame` has the duck encode a PNG of its whole picture, which nobody has
+    measured on a robot, so mediad's route is asked at `MEDIAD_FRAME_FPS` and every other camera
+    at `CAMERA_FPS`, as before. The rate is what the snapshot loop's period and the age a frame
+    may reach both come from. A rate the caller chooses still wins."""
+    address = "tcp://127.0.0.1:1"
+    route = f"http://127.0.0.1:8080{up.MEDIAD_FRAME_PATH}"
+    assert JsonRpcUnixTransport(address, camera_url=route).camera_fps == MEDIAD_FRAME_FPS
+    assert MEDIAD_FRAME_FPS < CAMERA_FPS, "mediad's route is asked for less than any camera"
+    for other in (
+        "http://127.0.0.1:9872/snapshot.jpg",
+        f"http://127.0.0.1:8080{up.MEDIAD_FRAME_PATH}/x",
+        "webrtc://127.0.0.1:8443",
+        None,
+    ):
+        assert JsonRpcUnixTransport(address, camera_url=other).camera_fps == CAMERA_FPS, other
+    chosen = JsonRpcUnixTransport(address, camera_url=route, camera_fps=CAMERA_FPS + 1)
+    assert chosen.camera_fps == CAMERA_FPS + 1
+
+
+async def test_a_503_at_connect_is_waited_through_until_a_frame_comes(robotd: FakeRobotd) -> None:
+    """mediad's `/frame` answers 503 while it cannot hand a frame out, and its body says to try
+    again. One failure of any kind used to end the wait at connect, and with it the camera for
+    the whole run, since whether a run can see is decided there once. quackd asks again now,
+    until a frame comes or the wait runs out."""
+    with SnapshotServer((503, UNAVAILABLE), (503, UNAVAILABLE), (200, _png(720, 1280))) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        await t.connect()
+        try:
+            assert t.camera_working and camera.requests >= 3
+            assert t.camera_error is None and t.camera_health()["error"] is None
+        finally:
+            await t.close()
+
+
+async def test_a_camera_still_unavailable_when_the_wait_runs_out_is_none_and_says_why(
+    robotd: FakeRobotd,
+) -> None:
+    """A mediad that answers 503 for the whole wait gives the run no camera, and the last thing
+    it said is what `camera_health()`, the state and `camera_error` say, mediad's reason
+    included, which urllib's own words for a 503 leave out."""
+    with SnapshotServer((503, UNAVAILABLE)) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=3.0
+        )
+        await t.connect()
+        try:
+            assert not t.camera_working
+            assert camera.requests > 1, "it asked again before it gave up"
+            state = await t.get_state()
+            for told in (t.camera_health()["error"], state.extras["camera"]["error"]):
+                assert told is not None and "503" in told and UNAVAILABLE_SAID in told, told
+            assert t.camera_error == f"GET {camera.url()}: {t.camera_health()['error']}"
+        finally:
+            await t.close()
+
+
+@pytest.mark.parametrize("answer", ["404", "refused"])
+async def test_a_url_with_nothing_behind_it_is_given_up_on_at_once(
+    robotd: FakeRobotd, answer: str
+) -> None:
+    """A refused connection, or the 404 of a robot older than the route, is not a camera coming
+    up, and waiting out the rest of the wait for it would only put off saying so."""
+    wait = 60.0
+    with SnapshotServer((404, b"Not Found\n")) as camera:
+        url = camera.url() if answer == "404" else f"http://127.0.0.1:{_closed_port()}/frame"
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=url, camera_wait_s=wait
+        )
+        started = time.monotonic()
+        await t.connect()
+        took = time.monotonic() - started
+        try:
+            assert not t.camera_working and took < wait / 4, took
+            error = t.camera_health()["error"]
+            assert error, "and it says why"
+            if answer == "404":
+                assert error.startswith("HTTP 404"), error
+        finally:
+            await t.close()
+
+
+async def test_a_snapshot_that_runs_out_of_time_is_asked_for_again(robotd: FakeRobotd) -> None:
+    """A duck busy encoding a PNG can be slow to answer, and a request that runs out of time
+    comes back from urllib in either of two forms, a bare `TimeoutError` while reading and a
+    `URLError` around one while connecting. Both are waited through at connect."""
+    t = JsonRpcUnixTransport(
+        f"tcp://127.0.0.1:{robotd.port}",
+        camera_url=f"http://127.0.0.1:1{up.MEDIAD_FRAME_PATH}",
+        camera_wait_s=60.0,
+    )
+    failures: list[Exception] = [
+        TimeoutError("timed out"),
+        urllib.error.URLError(TimeoutError("timed out")),
+    ]
+    picture = Image.new("RGB", (8, 8))
+
+    async def fetch() -> Image.Image:
+        if failures:
+            raise failures.pop(0)
+        return picture
+
+    t._fetch_frame = fetch  # type: ignore[method-assign]
+    await t.connect()
+    try:
+        assert t.camera_working and not failures
+    finally:
+        await t.close()
+
+
+@pytest.mark.parametrize(
+    ("path", "size", "assumed"),
+    [
+        (up.MEDIAD_FRAME_PATH, (720, 1280), True),
+        (up.MEDIAD_FRAME_PATH, (1280, 720), False),
+        ("/snapshot.png", (720, 1280), False),
+    ],
+    ids=["tall-frame", "wide-frame", "another-camera"],
+)
+async def test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens(
+    robotd: FakeRobotd, path: str, size: tuple[int, int], assumed: bool
+) -> None:
+    """The PNG carries no lens, and `serve-mcp` has no `--fov-deg` to give one, so a body with
+    none is measured through the simulator's 90 degrees. On a stock robot only an alpha's camera,
+    turned upright for the PNG, gives a picture taller than wide, so a tall first frame from
+    mediad's route is taken for the IMX219's 62 degrees running down the picture: the lens goes
+    in the manifest, and every state names the assumption. A wide picture, a beta's, and any
+    other camera are left without one."""
+    with SnapshotServer((200, _png(*size))) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(path), camera_wait_s=60.0
+        )
+        adapter = MicroduckAdapter(t)
+        manifest = await adapter.connect()
+        try:
+            assert t.camera_working
+            extras = (await t.get_state()).extras
+            if not assumed:
+                assert t.camera_fov_deg is None and "camera_fov_deg" not in manifest.limits
+                assert extras["assumptions"] == [up.STAND_UP_RPC.name]
+                assert extras["camera"]["fov_deg"] is None
+                return
+            width, height = size
+            half = math.radians(up.IMX219_FOV_DEG) / 2
+            lens = math.degrees(2 * math.atan(math.tan(half) * width / height))
+            assert t.camera_fov_deg == pytest.approx(lens)
+            assert manifest.limits["camera_fov_deg"] == pytest.approx(lens)
+            assert extras["assumptions"] == [up.STAND_UP_RPC.name, up.ALPHA_UPRIGHT_FOV.name]
+            assert extras["camera"]["fov_deg"] == round(lens, 1)
+            assert extras["camera"]["fov_assumed"] == up.ALPHA_UPRIGHT_FOV.name
+            # what the assumption itself says the lens is, at this very shape
+            assert f"{lens:.1f} degrees at {width} by {height}" in up.ALPHA_UPRIGHT_FOV.note
+        finally:
+            await adapter.disconnect()
+
+
+async def test_the_lens_is_the_first_frames_and_stays(robotd: FakeRobotd) -> None:
+    """The detector reads its lens off the manifest, which is built once, at connect, so the
+    lens the transport reports and the assumption every state names stay the first frame's
+    whatever shape a later frame is."""
+    t = JsonRpcUnixTransport(
+        f"tcp://127.0.0.1:{robotd.port}",
+        camera_url=f"http://127.0.0.1:1{up.MEDIAD_FRAME_PATH}",
+        camera_wait_s=60.0,
+    )
+    frames = [Image.new("RGB", (720, 1280)), Image.new("RGB", (1280, 720))]
+
+    async def fetch() -> Image.Image:
+        return frames.pop(0) if len(frames) > 1 else frames[0]
+
+    t._fetch_frame = fetch  # type: ignore[method-assign]
+    await t.connect()
+    try:
+        lens = t.camera_fov_deg
+        assert lens is not None
+        await _eventually(
+            lambda: t._frame is not None and t._frame.size == (1280, 720), "a wide frame"
+        )
+        assert t.camera_fov_deg == lens
+        assert up.ALPHA_UPRIGHT_FOV.name in (await t.get_state()).extras["assumptions"]
+    finally:
+        await t.close()
+
+
+def test_camera_error_says_why_get_frame_has_nothing() -> None:
+    """Nothing yet, the newest fetch's failure, or a frame too old to steer on, and None while a
+    frame is there to hand out. No `--camera-url` is None too: `observe` says that itself."""
+    address = "tcp://127.0.0.1:1"
+    assert JsonRpcUnixTransport(address).camera_error is None
+    t = JsonRpcUnixTransport(address, camera_url=f"http://127.0.0.1:1{up.MEDIAD_FRAME_PATH}")
+    assert t.camera_error == f"no frame has come from {t.camera_url} yet"
+    t._frame_error = "HTTP 503 Service Unavailable"
+    assert t.camera_error == f"GET {t.camera_url}: HTTP 503 Service Unavailable"
+    t._frame, t._frame_at, t._frame_error = Image.new("RGB", (8, 8)), time.monotonic(), None
+    assert t.camera_error is None
+    window = camera_stale_after_s(t.camera_fps)
+    t._frame_at = time.monotonic() - 10 * window
+    assert t.camera_error is not None and f"older than the {window:g} s" in t.camera_error
+
+
+async def test_a_verb_that_finds_no_frame_says_why(
+    robotd: FakeRobotd, registry: VerbRegistry
+) -> None:
+    """`observe`, `go_to` and `search_scan` quote `camera_error` off what they were handed when a
+    frame does not come, which on a run is the adapter. `microduck:jsonrpc` had none to give, so
+    a verb said only that it got no frame while `camera_health()` knew mediad's 503."""
+    with SnapshotServer((200, _png(720, 1280)), (503, UNAVAILABLE)) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        adapter = MicroduckAdapter(t)
+        await adapter.connect()
+        try:
+            assert t.camera_working, "a frame came, and then the camera stopped answering"
+            await _eventually(
+                lambda: t.frame_age_s() is None and t._frame_error is not None,
+                "the frame going stale behind 503s",
+            )
+            ex = Executor(registry, adapter, contract=SEES.frontmatter, detector=_BallAhead(1.0))
+            for verb, params in (("observe", {}), ("go_to", {"target": "ball", "timeout_s": 20})):
+                result = await ex.run_verb(verb, params)
+                assert not result.ok, verb
+                assert "503" in result.summary and UNAVAILABLE_SAID in result.summary, (
+                    verb,
+                    result.summary,
+                )
+            assert adapter.camera_error == t.camera_error is not None
+        finally:
+            await adapter.disconnect()
+
+
+def test_doctor_prints_the_cameras_last_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`doctor` is the checklist's go/no-go gate, and the camera's rows are where somebody sees
+    why a `/frame` camera gave nothing: mediad's own 503, the last thing it said after quackd
+    waited through it."""
+    from quackd import doctor
+    from quackd_microduck import describe
+
+    monkeypatch.setattr(jsonrpc_unix, "FIRST_FRAME_WAIT_S", 1.0)
+    with SnapshotServer((503, UNAVAILABLE)) as camera, _robotd_on_its_own_loop() as fake:
+        address = f"tcp://127.0.0.1:{fake.port}"
+        report = doctor.probe("microduck:jsonrpc", describe("jsonrpc"), address, camera.url(), None)
+    rows = {row.what: row for row in report.rows}
+    assert not report.ok and rows["camera"].value == "no frame"
+    error = rows["  error"]
+    assert error.state == "fail" and "503" in error.value and UNAVAILABLE_SAID in error.value
+    assert camera.requests > 1

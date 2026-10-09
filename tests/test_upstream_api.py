@@ -318,6 +318,28 @@ def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
         assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
+def test_the_camera_numbers_are_the_ones_read() -> None:
+    """The lens of a tall `/frame` is worked out from the IMX219's field of view, and the lens of
+    an upright WebRTC frame comes from the calibration mediad sends, the alpha family's on an
+    alpha. Each number sits beside the VERIFIED ref that read it and says what that ref says, and
+    that a tall frame is an alpha's is the one thing assumed."""
+    fov = upstream_api.IMX219_FOV_DEG
+    assert f"{fov:g} degrees" in upstream_api.IMX219_FOV.name
+    assert f"{fov:g} degrees" in upstream_api.ALPHA_UPRIGHT_FOV.name
+    assert f"tan({fov / 2:g} degrees)" in upstream_api.ALPHA_UPRIGHT_FOV.note
+    assert upstream_api.ALPHA_UPRIGHT_FOV.status == "UNVERIFIED"
+    solve = upstream_api.ALPHA_SOLVE
+    assert set(solve) == {"width", "height", "fx", "fy", "cx", "cy"}
+    assert f"{solve['width']:g} by {solve['height']:g} frame" in upstream_api.ALPHA_INTRINSICS.note
+    for ref in (
+        upstream_api.IMX219_FOV,
+        upstream_api.ALPHA_INTRINSICS,
+        upstream_api.CAMERA_MOUNT,
+        upstream_api.MEDIA_VIDEO,
+    ):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
 def test_lerobot_and_rosbridge_vocabularies_match_what_was_read() -> None:
     assert lerobot_api.ROBOT_TYPE_SO101.name == "so101_follower"
     assert lerobot_api.SO_MOTORS.name.split(", ") == [

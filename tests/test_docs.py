@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import re
 from pathlib import Path
 
@@ -97,6 +98,37 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
     assert fov is not None
     said = f"its lens is {fov:.1f}°"
     assert said in page, f"the Microduck page does not say {said!r}"
+
+
+def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
+    """The page says how often quackd asks mediad's `/frame` for a frame against any other
+    camera, how old a frame may get, how long connect waits for the first, and the lens a tall
+    first frame is taken for. Each is a number in the code or in upstream's source, and the page
+    is where somebody with a duck at the other end of a tunnel reads why a run saw what it saw."""
+    from quackd_microduck.transports.jsonrpc_unix import (
+        CAMERA_FPS,
+        FIRST_FRAME_WAIT_S,
+        MEDIAD_FRAME_FPS,
+        camera_stale_after_s,
+    )
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    half = up.IMX219_FOV_DEG / 2
+    width, height = 720, 1280  # the default 720p, turned upright on an alpha
+    lens = math.degrees(2 * math.atan(math.tan(math.radians(half)) * width / height))
+    for said in (
+        f"| How often | {MEDIAD_FRAME_FPS:g} frames a second |",
+        f"quackd asks mediad for {MEDIAD_FRAME_FPS:g} frames a second, where any other HTTP "
+        f"camera is asked for {CAMERA_FPS:g}",
+        f"a frame older than {camera_stale_after_s(MEDIAD_FRAME_FPS):g} s is not handed out",
+        f"waits up to {FIRST_FRAME_WAIT_S:g} s for the first frame",
+        f"sees {up.IMX219_FOV_DEG:g}° along its long side",
+        f"across a {width} by {height} frame, the default 720p turned upright, quackd measures "
+        f"through {lens:.1f}°",
+        f"2·atan(tan {half:g}° · w/h)",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
 
 
 def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:

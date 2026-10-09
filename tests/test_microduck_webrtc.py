@@ -28,6 +28,7 @@ from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 from quackd_microduck.webrtc import (
     INTRINSICS_SHOWN,
     NO_MOUNT,
+    UNTURNED,
     WebRtcCamera,
     is_webrtc_url,
     signalling_url,
@@ -438,6 +439,23 @@ def test_the_transport_reports_the_lens_its_webrtc_camera_measures_through() -> 
     camera._took_video(_video(90, intrinsics={"fx": 1000.0, "fy": 990.0}))
     transport._webrtc = camera
     assert transport.camera_fov_deg == camera.fov_deg is not None
+
+
+def test_why_no_frame_is_what_a_verb_that_got_none_says(camera: WebRtcCamera) -> None:
+    """The transport's `camera_error` over WebRTC, which `observe`, `go_to` and `search_scan`
+    quote when no frame comes: none decoded yet, the turn not said yet, the session's own error,
+    a frame too old, and None while a frame would be handed out."""
+    transport = JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=camera.address)
+    transport._webrtc = camera
+    assert transport.camera_error is not None and "no frame has decoded" in transport.camera_error
+    camera._took_frame(_numbered(4, 2))
+    assert transport.camera_error == UNTURNED and up.MEDIA_VIDEO.name in UNTURNED
+    camera._took_video(_video(90))
+    assert transport.camera_error is None
+    camera._frame_at = time.monotonic() - 3600  # an hour old: the session has gone quiet
+    assert transport.camera_error is not None and "s old" in transport.camera_error
+    camera.error = "the robot ended the session"
+    assert transport.camera_error == "the robot ended the session"
 
 
 def test_health_says_what_is_wrong_before_a_frame_arrives(camera: WebRtcCamera) -> None:

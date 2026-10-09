@@ -514,12 +514,18 @@ MEDIAD_FRAME_HTTP = UpstreamRef(
     "GET :8080/frame",
     "VERIFIED",
     src("mediad/src/web.rs", 97),
-    "mediad's console port answers GET /frame with one upright PNG per request, uncached "
-    "(Cache-Control no-store) and at most four at a time, or with 503 'Camera snapshot "
-    "unavailable; retry when capture is running.' The port is 8080 on every address by default "
+    "mediad's console port answers GET /frame with one upright PNG per request, encoded from the "
+    "whole picture on the robot, 'No downscale' (mediad/src/snapshot.rs:94), uncached "
+    "(Cache-Control no-store) and at most four at a time. When it cannot hand one out, four "
+    "being encoded already, no frame from its capture, or none within the 3 s it waits for one "
+    "(snapshot.rs:9), it answers 503 'Camera snapshot unavailable; retry when capture is "
+    "running.' (mediad/src/web.rs:102-133). The port is 8080 on every address by default "
     "(mediad/src/main.rs:32 and :79), with no authentication. New since bc41fb5, where the port "
     "served the console page alone: it first shipped in daemon-v0.13.0. When --camera-url's path "
-    "is MEDIAD_FRAME_PATH, extras.robotd.mediad_frame records whether it has answered.",
+    "is MEDIAD_FRAME_PATH, quackd pulls it at a rate of its own, lower than any other camera's, "
+    "waits through a 503 at connect, takes the lens from the first frame's shape "
+    "(ALPHA_UPRIGHT_FOV), and records whether the route has answered as "
+    "extras.robotd.mediad_frame.",
 )
 #: The path mediad serves its snapshot at (MEDIAD_FRAME_HTTP), which is how quackd tells a
 #: `--camera-url` that points at it from any other HTTP camera.
@@ -592,6 +598,20 @@ ALPHA_SOLVE = {
     "cx": 596.7776848217006,
     "cy": 474.52348043048636,
 }
+IMX219_FOV = UpstreamRef(
+    "an IMX219 sees 62 degrees across its frame's long side",
+    "VERIFIED",
+    src("mediad/src/sensor.rs", 99),
+    "hfov_deg of the IMX219, the alpha robots' head camera behind its M12 lens, the 'Horizontal "
+    "field of view across a frame in [Sensor::mode], degrees', that mode being 1920 by 1080 "
+    "(mediad/src/sensor.rs:36-39 and :81-101). It is the same at every size mediad streams "
+    "at, since each is the sensor's whole field scaled: 'the field of view is what stays fixed "
+    "as the ISP scales the frame to whatever [media] quality asks for' (mediad/src/camera.rs:"
+    "16-18). The beta's GC2093 has none, since 'nobody has measured this lens yet' "
+    "(sensor.rs:110-111). IMX219_FOV_DEG is the number.",
+)
+#: The IMX219's field of view across its frame's long side, in degrees (IMX219_FOV).
+IMX219_FOV_DEG = 62.0
 FEATURE_STREAM = UpstreamRef(
     "media.detections",
     "VERIFIED",
@@ -628,6 +648,24 @@ STAND_UP_RPC = UpstreamRef(
     "default: 'With it off, a fall changes nothing: the policy keeps driving and the humans "
     "stay in charge' (robotd-params/src/lib.rs:1978-1979). Whether velstand gets a duck off the "
     "floor has not been seen.",
+)
+ALPHA_UPRIGHT_FOV = UpstreamRef(
+    "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",
+    "UNVERIFIED",
+    src("mediad/src/sensor.rs", 99),
+    "quackd's own reading of mediad's GET /frame (MEDIAD_FRAME_HTTP), whose PNG carries no lens. "
+    "On a stock robot only an alpha's camera gives a picture taller than wide: its IMX219 is "
+    "mounted a quarter turn off upright (CAMERA_MOUNT) and turned upright for the PNG, so the 62 "
+    "degrees along its long side (IMX219_FOV) run from the picture's top to its bottom, and "
+    "across its width it sees 2*atan(tan(31 degrees) * w/h), 37.3 degrees at 720 by 1280. That "
+    "is the module's design, with the principal point at the centre, and not a calibration: the "
+    "alpha family's own solve gives a little more (ALPHA_INTRINSICS). It rests on the shape "
+    "alone. A beta's camera sits upright and gives a wide picture, which gets no lens, but "
+    "upstream's scripts/duck-sim renders its twin's camera rolled like an alpha's, at MuJoCo's 45 "
+    "degrees across the frame as sent (mediad/src/main.rs:245-248, mediad/src/camera.rs:236-256), "
+    "so a tall /frame from a twin is 45 degrees wide and this is wrong there. The first frame of "
+    "a working /frame camera sets the manifest's camera_fov_deg from it, --fov-deg overrides it "
+    "on quackd run, and every state lists it in extras.assumptions while it is in use.",
 )
 
 
