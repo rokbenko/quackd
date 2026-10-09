@@ -151,6 +151,18 @@ whether it clamped.
 > Abort if the head moves somewhere you did not ask for. The IK is upstream's, and a clamp is
 > expected — an unexpected direction is not.
 
+A robot on `daemon-v0.16.1` or later glances around on its own once it has stood still for two
+seconds with nobody steering its head. After a `gaze`, quackd sends the head where the gaze put it
+again every second, so the head should stay where it was pointed for as long as you watch, and
+`report_state` should show what is held in `extras.gaze_hold`, and about the bearing you asked for
+in `extras.head_yaw_deg`. A `stop` ends the hold, and two seconds later the head may start to look
+around: that is robotd's, not a fault. Pose the head with the gamepad while a gaze is held, and
+quackd should let go of it rather than pull it back, with `extras.gaze_released` saying
+`overridden`.
+
+> Abort if the head wanders off a gaze while `extras.gaze_hold` says it is held, or if quackd
+> keeps pulling the head back from the gamepad.
+
 ## 8. Pull the tunnel out, mid-walk
 
 **Feet still off the ground.** Start a short walk, and kill the ssh tunnel while it is moving.
@@ -217,6 +229,8 @@ What is most worth writing down, because it is what nobody can check without a d
   long after a twist went out robotd's state showed it, which is the number the echo window
   (three state frames) was set without
 - whether `robot.enable` brought a limp robot up, and how much it moved doing it
+- whether the head held still after a `gaze`, whether `extras.head_yaw_deg` agreed with where the
+  camera visibly pointed, and how long the gamepad had the head before quackd let go of it
 - whether `media.detections` arrived on the control datachannel — upstream's source says it
   does and upstream's design doc says it does not, and one of them is out of date
 - what `robot.subscribe` listed in `skills`, which is where a robot's real skill set lives now

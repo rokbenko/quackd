@@ -75,6 +75,24 @@ def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
     assert said in " ".join(page.split()), f"the Microduck page does not say {said!r}"
 
 
+def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
+    """The page says how often a held gaze goes out again, against how long robotd waits before
+    it glances, and how long `go_to` and `search_scan` wait for a glance to fade. Each is a number
+    in the code, and the page is where somebody watching a real head reads whether what it does
+    is quackd's or robotd's."""
+    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    for said in (
+        f"goes out again every {GAZE_HOLD_S:g} s (`GAZE_HOLD_S`, half of robotd's "
+        f"{up.IDLE_AFTER_S:g} s wait",
+        f"wait {up.IDLE_FADE_S:g} s after centring the head",
+        f"from API v{up.IDLE_HEAD_SINCE_API} up",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
 def test_adapter_status_lists_every_backend() -> None:
     from quackd.adapters.factory import BACKENDS
 

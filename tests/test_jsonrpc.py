@@ -29,10 +29,13 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.base import Detection
 from quackd.safety import Executor
 from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.transport.mock import MockTransport
 from quackd.verbs.core import MOVE_RESEND_S
 from quackd.verbs.registry import VerbRegistry
+from quackd_microduck import MicroduckAdapter
 from quackd_microduck import upstream_api as up
 from quackd_microduck.transports.jsonrpc_unix import (
+    GAZE_HOLD_S,
     MOVE_ECHO_FRAMES,
     READER_LIMIT,
     JsonRpcUnixTransport,
@@ -105,22 +108,44 @@ CURRENT_API = int(up.API_VERSION.name)
 FLOOR = int(up.API_FLOOR.name)
 NO_VERSION = object()
 """A hello answer with no `api_version` at all, for `FakeRobotd(api_version=...)`."""
+NO_HEAD = object()
+"""A `robot.look` answer with no `head` at all, for `FakeRobotd.look_head`."""
 
 
-def camera_pose(yaw: float) -> dict[str, list[float]]:
-    """`frames.camera` for a camera turned `yaw` radians to the left of straight ahead.
+Quat = tuple[float, float, float, float]
+"""A rotation as a scalar-first quaternion, `[w, x, y, z]`, the way `RobotState.frames` has it."""
 
-    The camera frame is OpenCV's (+x right, +y down, +z along the optical axis) and the pose is
-    in the trunk frame (x forward, y left, z up), with a scalar-first quaternion. Looking straight
-    ahead the optical axis is the trunk's +x, the camera's +x is the trunk's -y and its +y the
-    trunk's -z, which is the quaternion [0.5, -0.5, 0.5, -0.5]; a turn left is that, rotated by
-    `yaw` about the trunk's +z."""
-    c, s = math.cos(yaw / 2), math.sin(yaw / 2)
-    w, x, y, z = 0.5, -0.5, 0.5, -0.5
-    return {
-        "pos": [0.05, 0.0, 0.1],
-        "quat": [c * w - s * z, c * x - s * y, c * y + s * x, c * z + s * w],
-    }
+#: `frames.camera` looking straight ahead. The camera frame is OpenCV's (+x right, +y down, +z
+#: along the optical axis) and the pose is in the trunk frame (x forward, y left, z up), so the
+#: optical axis is the trunk's +x, the camera's +x is the trunk's -y and its +y the trunk's -z.
+AHEAD: Quat = (0.5, -0.5, 0.5, -0.5)
+
+
+def _turned(axis: tuple[float, float, float], angle: float) -> Quat:
+    """A turn of `angle` radians about the unit `axis`, right-handed."""
+    s = math.sin(angle / 2)
+    return (math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s)
+
+
+def _then(a: Quat, b: Quat) -> Quat:
+    """`b`, then `a`: the Hamilton product `a * b`."""
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b
+    return (
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+    )
+
+
+def camera_pose(yaw: float, pitch: float = 0.0) -> dict[str, list[float]]:
+    """`frames.camera` for a camera turned `yaw` radians to the left of straight ahead and tilted
+    `pitch` radians up: `AHEAD`, tilted up about the trunk's +y, which takes a negative angle,
+    then turned about the trunk's +z. Built from the turns rather than from the angles quackd
+    reads back, so that reading them back is something the test checks."""
+    quat = _then(_turned((0.0, 0.0, 1.0), yaw), _then(_turned((0.0, 1.0, 0.0), -pitch), AHEAD))
+    return {"pos": [0.05, 0.0, 0.1], "quat": list(quat)}
 
 
 class FakeRobotd:
@@ -169,8 +194,26 @@ class FakeRobotd:
         """The twist robotd was last asked for, `[vx, vy, vyaw]`, which every state frame reports
         as `move.requested` (`up.MOVE_ECHO`). A stop zeroes it; the deadman does not."""
         self.head = [0.0, 0.0, 0.0, 0.0]
-        """The commanded head, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
-        `robot.look` or `robot.head` asked for. A real robotd adds its idle glances on top."""
+        """The head slot, `[neck_pitch, head_pitch, head_yaw, head_roll]`: what the last
+        `robot.look` or `robot.head` asked for, from anyone."""
+        self.head_alpha = 1.0
+        """How far each state frame's `head` moves toward the slot, the smoothing robotd applies
+        every control tick. 1 reports the slot as it is."""
+        self.shown = [0.0, 0.0, 0.0, 0.0]
+        """The `head` the last state frame reported, which the joints and the camera follow."""
+        self.steering: list[float] | None = None
+        """Another client's head, written over the slot before every frame, the way a gamepad
+        posing the head sends one at least ten times a second; None while nobody else does."""
+        self.glance: list[float] = []
+        """Yaw to add to the `head` the next frames report, one a frame, the way robotd adds an
+        idle glance to the head slot while it fades one out."""
+        self.look_head: Any = None
+        """What `robot.look` answers in `head` instead of the head it turned to, when set, and
+        NO_HEAD to leave `head` out."""
+        self.looked_at: list[int] = []
+        """How many notifications had arrived when each `robot.look` did."""
+        self.arrived: list[tuple[float, str]] = []
+        """When each call arrived, on this machine's monotonic clock, and which it was."""
         self.recover_on_enable = False
         """Stand a fallen duck up when `robot.enable` arrives, as the policy taking over would."""
         self.notifications: list[dict[str, Any]] = []
@@ -216,14 +259,20 @@ class FakeRobotd:
         }
         if self.picked_up is not None:
             safety["picked_up"] = self.picked_up
+        if self.steering is not None:
+            self.head = list(self.steering)
+        shown = zip(self.shown, self.head, strict=True)
+        self.shown = [s + self.head_alpha * (h - s) for s, h in shown]
         joints = [0.0] * len(JOINTS)
-        for name, angle in zip(HEAD, self.head, strict=True):
+        for name, angle in zip(HEAD, self.shown, strict=True):
             joints[JOINTS.index(name)] = angle
+        reported = list(self.shown)
+        reported[HEAD.index("head_yaw")] += self.glance.pop(0) if self.glance else 0.0
         t = time.monotonic() - self._t0
         params: dict[str, Any] = {
             "t": t,
             "move": {"requested": list(self.twist), "applied": list(self.twist)},
-            "head": list(self.head),
+            "head": reported,
             "policy": self.policy,
             "safety": safety,
             "loop": {"hz": 50.0, "missed": 0},
@@ -233,8 +282,10 @@ class FakeRobotd:
             "t_ns": int(time.monotonic_ns()),
         }
         if self.reports_frames:
+            # the fake's own head: yaw turns the camera, and a positive head_pitch tilts it down,
+            # the sign upstream's FK test pins (`up.HEAD_YAW_SIGN`)
             params["frames"] = {
-                "camera": camera_pose(self.head[2]),
+                "camera": camera_pose(self.shown[2], -self.shown[1]),
                 "tof": {"pos": [0.05, 0.0, 0.1], "quat": [1.0, 0.0, 0.0, 0.0]},
             }
         return {"jsonrpc": "2.0", "method": "robot.state", "params": params | self.extra_state}
@@ -288,6 +339,7 @@ class FakeRobotd:
         while line := await reader.readline():
             msg = json.loads(line)
             method, params = msg["method"], msg.get("params") or {}
+            self.arrived.append((time.monotonic(), method))
             if "id" not in msg:
                 self.notifications.append(msg)
                 if (refused := self.refusal(method, params)) is not None:
@@ -352,12 +404,15 @@ class FakeRobotd:
             elif method == "robot.look":
                 # Turned toward the point, which is the fake's own head and not robotd's IK: a
                 # client never has to know which way a positive head_yaw turns, upstream says.
-                yaw = math.atan2(float(params.get("y", 0.0)), float(params.get("x", 1.0)))
-                self.head = [float(params.get("neck_pitch", 0.0)), 0.0, yaw, 0.0]
-                result = {
-                    "head": dict(zip(HEAD, self.head, strict=True)),
-                    "clamped": False,
-                }
+                self.looked_at.append(len(self.notifications))
+                x, y = float(params.get("x", 1.0)), float(params.get("y", 0.0))
+                up_by = math.atan2(float(params.get("z", 0.0)), math.hypot(x, y))
+                self.head = [float(params.get("neck_pitch", 0.0)), -up_by, math.atan2(y, x), 0.0]
+                result = {"head": dict(zip(HEAD, self.head, strict=True)), "clamped": False}
+                if self.look_head is NO_HEAD:
+                    del result["head"]
+                elif self.look_head is not None:
+                    result["head"] = self.look_head
             elif method == "robot.sound":
                 result = {"accepted": True}
             elif method == "robot.subscribe":
@@ -413,6 +468,10 @@ async def _landed(t: JsonRpcUnixTransport) -> None:
 
 def _moves(fake: FakeRobotd) -> int:
     return sum(1 for n in fake.notifications if n["method"] == up.ROBOT_MOVE.name)
+
+
+def _heads(fake: FakeRobotd) -> int:
+    return sum(1 for n in fake.notifications if n["method"] == up.ROBOT_HEAD.name)
 
 
 async def test_handshake_and_intents(robotd: FakeRobotd) -> None:
@@ -914,10 +973,10 @@ async def test_nothing_quackd_sends_is_a_member_robotd_does_not_know(
     refused by name, on that one call. That is how a robotd from another release says a call
     changed shape, and a notification gets no answer at all: a `robot.move` robotd refused
     would be a walk quackd reported and the duck never took. The fake decodes the way robotd
-    does at the pin, and every verb that reaches the socket, a pose and a stop go through it
-    with nothing refused."""
+    does at the pin, and every verb that reaches the socket, a held gaze, a pose and a stop go
+    through it with nothing refused."""
     robotd.fallen, robotd.recover_on_enable = True, True  # so that stand_up has to ask
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
     await t.connect()
     t.sleep = _quick  # type: ignore[method-assign]
     ex = Executor(registry, t, contract=WIRE_VERBS.frontmatter)
@@ -930,13 +989,15 @@ async def test_nothing_quackd_sends_is_a_member_robotd_does_not_know(
     ):
         result = await ex.run_verb(verb, params)
         assert result.ok, (verb, result.summary)
+    await _eventually(lambda: _heads(robotd) > 0, "the gaze going out again as robot.head")
     assert (await t.send_intent(Intent(kind="pose", params={"z": 0.0, "pitch": 0.1}))).accepted
     await t.stop()
     await _landed(t)
     assert robotd.rejected == []
     sent = {r["method"] for r in robotd.requests} | {n["method"] for n in robotd.notifications}
     wire = (up.HELLO, up.ROBOT_SUBSCRIBE, up.ROBOT_ENABLE, up.ROBOT_MOVE, up.ROBOT_DO)
-    wire += (up.ROBOT_SOUND, up.ROBOT_LOOK, up.ROBOT_POSE, up.ROBOT_STOP, up.ROBOT_HEALTH)
+    wire += (up.ROBOT_SOUND, up.ROBOT_LOOK, up.ROBOT_HEAD, up.ROBOT_POSE, up.ROBOT_STOP)
+    wire += (up.ROBOT_HEALTH,)
     assert {ref.name for ref in wire} <= sent
     await t.close()
 
@@ -1274,9 +1335,9 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
     ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=ball)
     going = asyncio.create_task(ex.run_verb("go_to", {"target": "ball", "timeout_s": 30}))
     try:
-        # robot.look is a request, so until the pick-up every notification is a robot.move
-        await robotd.wait_notifications(3, wait_s=5.0)
-        assert _moves(robotd) == len(robotd.notifications)
+        # after its look go_to waits for robotd to let go of any glance (`head_fade_s`), and the
+        # gaze hold may send robot.head meanwhile, so it is steering once three moves are out
+        await _eventually(lambda: _moves(robotd) >= 3, "go_to steering", wait_s=10.0)
 
         robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
         await _until(t, lambda s: s["safety"].get("picked_up") is True)
@@ -1630,3 +1691,402 @@ def test_doctor_says_which_robotd_answered_and_what_it_cannot_see() -> None:
     assert (rows["  pickup_detection"].value, rows["  pickup_detection"].state) == ("True", "plain")
     advice = "\n".join(report.advisories)
     assert "API v" not in advice and "holding" not in advice, advice
+
+
+# ── the gaze hold, and where the camera points ──────────────────────────────────────────
+
+#: How often a held gaze goes out again in these tests: twenty times as often as on a robot, so a
+#: test sees a run of re-sends in the time a robot would send one.
+HOLD_S = GAZE_HOLD_S / 20
+
+
+async def _looked(fake: FakeRobotd, bearing_deg: float = 30.0) -> JsonRpcUnixTransport:
+    """A transport connected to `fake` that has looked `bearing_deg` to the left, as `gaze` does,
+    and whose hold has gone out again at least once since. The fake does not glance, so there is
+    no glance for the hold to wait out before it judges what the head shows."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = 0.0
+    rad = math.radians(bearing_deg)
+    assert (await t.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))).accepted
+    sent = _heads(fake)
+    await _eventually(lambda: _heads(fake) > sent, "the held gaze going out again")
+    return t
+
+
+async def _nothing_more_goes_out(t: JsonRpcUnixTransport, fake: FakeRobotd) -> None:
+    """Wait ten hold periods, and check that no `robot.head` reached the fake in them."""
+    await _landed(t)
+    sent = _heads(fake)
+    await asyncio.sleep(10 * HOLD_S)
+    await _landed(t)
+    assert _heads(fake) == sent, "robot.head kept going out"
+
+
+async def test_a_gaze_is_sent_again_until_something_ends_it(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """Since daemon-v0.16.1 robotd glances around on its own two seconds after anybody last
+    steered the head (`up.IDLE_HEAD`), so one `robot.look` no longer holds a gaze, and a pilot's
+    `observe` after its `gaze` could be taken from a head looking somewhere else. The head the
+    look answered with goes back as `robot.head`, as upstream says to, at half robotd's wait,
+    and the state says what is held."""
+    assert JsonRpcUnixTransport().gaze_hold_s == GAZE_HOLD_S == up.IDLE_AFTER_S / 2
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        "gaze", {"direction": "left"}
+    )
+    assert result.ok, result.summary
+    answered = dict(zip(HEAD, robotd.head, strict=True))
+    await _eventually(lambda: _heads(robotd) >= 3, "the gaze going out three more times")
+    sent = [n["params"] for n in robotd.notifications if n["method"] == up.ROBOT_HEAD.name]
+    assert all(params == answered for params in sent), sent
+    state = await t.get_state()
+    assert state.extras["gaze_hold"] == {"head": answered, "every_s": HOLD_S, "paused": None}
+    assert state.extras["gaze_released"] is None and robotd.rejected == []
+    await t.close()
+
+
+async def test_a_later_look_replaces_the_held_gaze(robotd: FakeRobotd) -> None:
+    """A hold that went on sending the head of the look before would pull the head back from
+    the one after, so the old hold ends before the new look goes out, and every `robot.head`
+    after it is the new head."""
+    t = await _looked(robotd, 30.0)
+    before = dict(zip(HEAD, robotd.head, strict=True))
+    rad = math.radians(-30.0)
+    assert (await t.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))).accepted
+    after = dict(zip(HEAD, robotd.head, strict=True))
+    assert after != before
+    at = robotd.looked_at[-1]
+
+    def later() -> list[Any]:
+        heads = robotd.notifications[at:]
+        return [n["params"] for n in heads if n["method"] == up.ROBOT_HEAD.name]
+
+    await _eventually(lambda: len(later()) >= 3, "the new gaze going out three times")
+    assert all(params == after for params in later()), later()
+    await t.close()
+
+
+@pytest.mark.parametrize("how", ["stop()", "stop intent", "stop verb"])
+async def test_a_stop_ends_the_held_gaze(
+    registry: VerbRegistry, robotd: FakeRobotd, how: str
+) -> None:
+    """The `stop` verb is what the pilot is told to reach for when anything looks wrong, and the
+    heartbeat sends the same stop when the link is in doubt. A hold that went on pulling the
+    head back every second after either would be quackd still steering the robot."""
+    t = await _looked(robotd)
+    if how == "stop()":
+        await t.stop()
+    elif how == "stop intent":
+        assert (await t.send_intent(Intent.stop())).accepted
+    else:
+        assert (await Executor(registry, t, contract=DUCK.frontmatter).run_verb("stop", {})).ok
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None and extras["gaze_released"] == "stopped"
+    await _nothing_more_goes_out(t, robotd)
+    await t.close()
+
+
+def _pick_up(fake: FakeRobotd, held: bool) -> None:
+    fake.picked_up, fake.policy = held, "held" if held else "walk"
+
+
+def _go_limp(fake: FakeRobotd, limp: bool) -> None:
+    fake.limp = limp
+
+
+def _fall(fake: FakeRobotd, fallen: bool) -> None:
+    fake.fallen = fallen
+
+
+def _kick(fake: FakeRobotd, kicking: bool) -> None:
+    fake.policy = "kick_left" if kicking else "walk"  # one of the robot's own skills
+
+
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        (_pick_up, "somebody is holding the duck"),
+        (_go_limp, "safety.limp"),
+        (_fall, "the duck has fallen"),
+        (_kick, "'kick_left'"),
+    ],
+    ids=["picked-up", "limp", "fallen", "off-the-allowlist"],
+)
+async def test_a_held_gaze_waits_while_the_duck_is_not_standing_or_sitting(
+    robotd: FakeRobotd, change: Callable[[FakeRobotd, bool], None], said: str
+) -> None:
+    """quackd moves nothing of a duck it cannot vouch for, and the head is part of it, so no
+    `robot.head` goes out while the duck is in somebody's hands, limp, fallen or on a label
+    other than `walk`, `stand` or `sit`. Those pass, so the hold waits rather than ends, and the
+    head goes out again once the duck stands."""
+    t = await _looked(robotd)
+    change(robotd, True)
+    await _eventually(lambda: t._read().posture not in ("standing", "sitting"), "the change")
+    await _nothing_more_goes_out(t, robotd)
+    hold = (await t.get_state()).extras["gaze_hold"]
+    assert hold is not None and said in (hold["paused"] or ""), hold
+
+    change(robotd, False)
+    await _eventually(lambda: t._read().posture == "standing", "the duck standing again")
+    sent = _heads(robotd)
+    await _eventually(lambda: _heads(robotd) > sent, "the held gaze going out again")
+    assert (await t.get_state()).extras["gaze_hold"]["paused"] is None
+    await t.close()
+
+
+async def test_a_head_somebody_else_steers_is_let_go_of(robotd: FakeRobotd) -> None:
+    """`robot.state.head` is the head slot every client writes, a gamepad posing the head among
+    them, ten times a second. Pulling it back every second would be the fight upstream's own idle
+    wait exists to spare such a client, so once the head moves away from the held one, the hold
+    lets go and says why. robotd smooths a new head in over several frames, and so does the fake
+    here."""
+    robotd.head_alpha = 0.5
+    t = await _looked(robotd, 30.0)
+    robotd.steering = [0.0, 0.0, math.radians(-40.0), 0.0]  # a pad turns the head the other way
+    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None
+    released = extras["gaze_released"] or ""
+    assert released.startswith("overridden: robot.state.head went from"), released
+    assert "another client is steering the head" in released
+    await _nothing_more_goes_out(t, robotd)
+    await t.close()
+
+
+async def test_a_head_still_closing_on_the_held_one_is_not_somebody_elses(
+    robotd: FakeRobotd,
+) -> None:
+    """robotd's smoothing is a setting, and a robot set to smooth slowly shows a head that is
+    not yet the held one for many frames after the look. It closes on it every frame, which no
+    other client's head does, so the hold keeps it."""
+    robotd.head_alpha = 0.1
+    t = await _looked(robotd, 30.0)
+    reads = t._frames_read
+    await _eventually(lambda: t._frames_read >= reads + 10, "ten more state frames")
+    held = dict(zip(HEAD, robotd.head, strict=True))
+    assert robotd.shown != robotd.head, "the fake's head reached the held one, proving nothing"
+    assert t._gaze is not None and t.gaze_released is None, t.gaze_released
+    assert (await t.get_state()).extras["gaze_hold"]["head"] == held
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ConnectionResetError("Connection lost"), TransportError("not connected")],
+    ids=["socket-died", "writer-gone"],
+)
+async def test_a_link_that_fails_under_the_hold_ends_it_quietly(
+    robotd: FakeRobotd, failure: Exception
+) -> None:
+    """A `robot.head` that cannot be written ends the hold, and not with an exception nobody
+    reads: a socket that died raises `ConnectionResetError` out of the drain rather than
+    `TransportError`. The heartbeat answers for the link, and the state stops saying a gaze is
+    held."""
+    t = await _looked(robotd)
+    task = t._gaze_task
+    assert task is not None
+
+    async def broken(method: str, params: dict[str, Any]) -> None:
+        raise failure
+
+    t.notify = broken  # type: ignore[method-assign]
+    await _eventually(task.done, "the hold ending")
+    assert not task.cancelled() and task.exception() is None
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None
+    assert str(failure) in (extras["gaze_released"] or ""), extras["gaze_released"]
+    await t.close()
+
+
+async def test_closing_the_connection_ends_the_held_gaze(robotd: FakeRobotd) -> None:
+    t = await _looked(robotd)
+    task = t._gaze_task
+    await t.close()
+    assert task is not None and task.cancelled()
+    assert t._gaze is None and t._gaze_task is None
+    assert t.gaze_released == "the connection was closed"
+
+
+@pytest.mark.parametrize(
+    "answered",
+    [
+        NO_HEAD,
+        [0.0, 0.0, 0.5, 0.0],
+        {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.5},
+        {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.5, "head_roll": 0.0, "eye": 0.0},
+        {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": "0.5", "head_roll": 0.0},
+        {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": True, "head_roll": 0.0},
+        {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": math.inf, "head_roll": 0.0},
+    ],
+    ids=["absent", "a-list", "three-joints", "a-fifth-joint", "a-string", "a-bool", "infinite"],
+)
+async def test_a_look_answered_with_no_head_to_send_back_holds_nothing(
+    robotd: FakeRobotd, answered: Any
+) -> None:
+    """The hold sends `LookResult.head` back as it came, and `HeadParams` sets a joint it is not
+    sent to 0, so only exactly its four joints, each a number, are held. Anything else would be
+    a joint zeroed or guessed on every re-send, and no hold beats that."""
+    robotd.look_head = answered
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    assert (await t.send_intent(Intent.look(1.0, 0.5, 0.0))).accepted
+    await _nothing_more_goes_out(t, robotd)
+    assert _heads(robotd) == 0 and t._gaze is None
+    assert (await t.get_state()).extras["gaze_hold"] is None
+    await t.close()
+
+
+async def test_a_dry_run_holds_no_gaze(registry: VerbRegistry, robotd: FakeRobotd) -> None:
+    """A dry run sends nothing, and the hold starts only from a look robotd answered, so a dry
+    run's `gaze` leaves nothing behind that goes on sending."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    ex = Executor(registry, t, contract=DUCK.frontmatter, dry_run=True)
+    result = await ex.run_verb("gaze", {"direction": "left"})
+    assert result.ok and result.data.get("dry_run") is True
+    await _nothing_more_goes_out(t, robotd)
+    assert _heads(robotd) == 0 and up.ROBOT_LOOK.name not in [r["method"] for r in robotd.requests]
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    ("yaw_deg", "pitch_deg"), [(30.0, 0.0), (-45.0, 0.0), (0.0, 14.0), (20.0, -10.0)]
+)
+async def test_the_state_says_where_the_camera_points(
+    robotd: FakeRobotd, yaw_deg: float, pitch_deg: float
+) -> None:
+    """The simulators have always said where the head points as `head_yaw_deg`, and a flock
+    member adds it to a camera bearing to get one from the body. The real duck never said, so on
+    a robot the camera read as straight ahead wherever the head had turned. `frames.camera` is
+    where robotd's own FK puts the camera, and its optical axis is the answer."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
+    look = Intent.look(math.cos(yaw), math.sin(yaw), math.tan(pitch))
+    assert (await t.send_intent(look)).accepted
+    await _until(t, lambda s: s["head"] == robotd.head)
+    extras = (await t.get_state()).extras
+    assert extras["head_yaw_deg"] == pytest.approx(yaw_deg, abs=0.05)
+    assert extras["head_pitch_deg"] == pytest.approx(pitch_deg, abs=0.05)
+    assert extras["head_pose_from"] == "frames.camera"
+    await t.close()
+
+
+async def test_without_frames_the_head_yaw_joint_says_where_the_camera_points() -> None:
+    """A robotd from before API 24 reports no `frames`. The measured head_yaw joint turns the
+    camera left when it is positive, which upstream's FK test pins (`up.HEAD_YAW_SIGN`), so it
+    gives the yaw. It gives no pitch, and nothing at all comes from a frame that is too old."""
+    fake = FakeRobotd(reports_frames=False)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        yaw = math.radians(30.0)
+        assert (await t.send_intent(Intent.look(math.cos(yaw), math.sin(yaw), 0.1))).accepted
+        await _until(t, lambda s: s["head"] == fake.head)
+        extras = (await t.get_state()).extras
+        assert extras["head_yaw_deg"] == pytest.approx(30.0, abs=0.05)
+        assert extras["head_pitch_deg"] is None and extras["head_pose_from"] == "joints"
+        t._last_state_at = None
+        extras = (await t.get_state()).extras
+        assert extras["head_yaw_deg"] is None and extras["head_pose_from"] is None
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    ("api", "fade"),
+    [
+        (up.IDLE_HEAD_SINCE_API, up.IDLE_FADE_S),
+        (CURRENT_API + 1, up.IDLE_FADE_S),
+        (up.IDLE_HEAD_SINCE_API - 1, 0.0),
+        (FLOOR, 0.0),
+    ],
+    ids=["first-to-glance", "newer", "older", "floor"],
+)
+async def test_the_head_fade_is_robotds_on_a_robotd_that_glances(api: int, fade: float) -> None:
+    """`go_to` and `search_scan` wait `head_fade_s` after centring the head, so it is robotd's
+    FADE on a release that glances and nothing on one that does not, and the adapter, which is
+    what those verbs are handed, says the same. A body whose head moves only when asked says 0."""
+    fake = FakeRobotd(api_version=api)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        assert t.head_fade_s == 0.0
+        await t.connect()
+        assert t.head_fade_s == fade and MicroduckAdapter(t).head_fade_s == fade
+        await t.close()
+    finally:
+        await fake.stop()
+    assert MicroduckAdapter(MockTransport()).head_fade_s == 0.0
+
+
+async def test_go_to_lets_a_glance_fade_before_it_steers(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """robotd fades a glance out over FADE once a look arrives, rather than dropping it, so a
+    frame taken straight after `go_to` centred the head could come from a head still most of a
+    glance off, and `go_to` would turn toward a ball that is not there. Through the adapter, as
+    a run hands it to the verb, nothing that moves the duck goes out until FADE after the look:
+    this ball is close enough that the first frame ends the walk, so the stop comes then."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url="http://example/x.jpg")
+    picture = Image.new("RGB", (8, 8))
+
+    async def fetch() -> Image.Image:
+        return picture
+
+    t._fetch_frame = fetch  # type: ignore[method-assign]
+    adapter = MicroduckAdapter(t)
+    await adapter.connect()
+    ex = Executor(registry, adapter, contract=MOVERS.frontmatter, detector=_BallAhead(0.1))
+    result = await ex.run_verb("go_to", {"target": "ball", "timeout_s": 30})
+    assert result.ok, result.summary
+    looked = next(at for at, method in robotd.arrived if method == up.ROBOT_LOOK.name)
+    stopped = next(at for at, method in robotd.arrived if method == up.ROBOT_STOP.name)
+    assert _moves(robotd) == 0
+    # asyncio may wake a timer up to one tick of its clock early
+    early = time.get_clock_info("monotonic").resolution
+    assert stopped - looked >= up.IDLE_FADE_S - early, stopped - looked
+    assert adapter.head_fade_s == up.IDLE_FADE_S
+    await adapter.close()
+
+
+@pytest.mark.parametrize("after", ["the look", "a pause"])
+async def test_a_glance_fading_out_is_not_somebody_elses_head(
+    robotd: FakeRobotd, after: str
+) -> None:
+    """robotd fades a glance out rather than dropping it, and while it fades, the head it reports
+    can swing away from the held one with the glance riding on it. So nothing is judged on frames
+    read before `head_fade_s` and a hold period have passed since the head was last sent its
+    target: since the look, and since the first re-send after a pause, which is when robotd
+    starts to let go of whatever it glanced at while nothing went out. The fade is this test's,
+    and the glance the fake's, three frames swinging away."""
+    fade = 40 * HOLD_S
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = fade
+    assert (await t.send_intent(Intent.look(1.0, 0.5, 0.0))).accepted
+    gaze = t._gaze
+    assert gaze is not None
+    if after == "a pause":
+        # the window after the look closes first, then the duck is held and put back down
+        looked = gaze.since
+        await _eventually(lambda: time.monotonic() > looked + fade + 2 * HOLD_S, "the window")
+        _pick_up(robotd, True)
+        await _eventually(lambda: gaze.paused is not None, "the hold pausing")
+        _pick_up(robotd, False)
+        await _eventually(lambda: gaze.paused is None, "the hold taking up again")
+    robotd.glance = [0.05, 0.1, 0.15]  # swinging away from the held head, frame by frame
+    sent = time.monotonic()  # the head was sent its target a moment ago, by the look or a re-send
+    await _eventually(lambda: not robotd.glance, "the glance going by")
+    reads = t._frames_read
+    await _eventually(
+        lambda: t._frames_read >= reads + 3 and time.monotonic() > sent + fade + 5 * HOLD_S,
+        "the frames after the glance, and five hold periods past the fade",
+    )
+    assert t._gaze is gaze and t.gaze_released is None, t.gaze_released
+    await t.close()

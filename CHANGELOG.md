@@ -134,6 +134,33 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `scripts/duck-sim` starts, is reached with `--address`. A test in `tests/test_jsonrpc.py` sets
   the variable and expects robotd's own socket, and it failed before this change.
 
+- **A Microduck's gaze holds against robotd's idle look-around, its state says where the camera
+  points, and `go_to` and `search_scan` no longer act on a glancing head.** Since daemon-v0.16.1
+  robotd glances around on its own once the duck has stood still for two seconds with nobody
+  steering its head, up to 0.6 rad of yaw, and lets go of a glance by fading it out over 1.5 s. A
+  `gaze` was one `robot.look`, so the head wandered off it two seconds later, and an `observe` after
+  it could report bearings off by as much. `microduck:jsonrpc` now sends the head a look answered
+  with again as `robot.head` every second, as upstream's own doc for that answer says to, and the
+  state says what is held as `extras.gaze_hold`. Nothing goes out while the duck reads as anything
+  but standing or sitting, so a duck somebody holds, a limp or a fallen one and one halfway through
+  a skill get no head command, and the hold takes up again once the duck stands. A stop ends the
+  hold before the stop itself goes out, and so do the next look, a link that fails and the end of
+  the connection. When `robot.state.head` moves away from the held head, which is another client
+  steering it, a gamepad posing the head among them, the hold lets go rather than pull the head
+  back every second, and `extras.gaze_released` says `overridden`. On a robotd from API 41, the
+  first release that glances, `go_to` and `search_scan` wait 1.5 s after centring the head, with
+  nothing sent that moves the duck, before the first frame they act on. The state also says where
+  the camera points, as `extras.head_yaw_deg` and `head_pitch_deg`, positive left and up, read off
+  `frames.camera`, or the yaw off the head_yaw joint on a robotd without `frames`. A flock member
+  adds that yaw to a camera bearing to get one from the body, so on a real Microduck it now places
+  what it sees where the head was turned, where it used to take the camera for looking straight
+  ahead. `tests/test_jsonrpc.py` holds a gaze against a fake robotd and ends it each way it ends,
+  pauses it for each posture that pauses it, lets go of a head another client steers but not of
+  one robotd is still smoothing in or fading a glance off, reads the camera's yaw and pitch off
+  `frames.camera` and the yaw off the joint, and times `go_to` against the fade, and
+  `tests/test_composite.py` holds both verbs to the wait. Each of them failed with its part of this
+  change taken out.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

@@ -284,6 +284,40 @@ def test_the_posture_labels_are_the_ones_robotd_names() -> None:
         assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
+def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
+    """The gaze hold sends `HEAD_PARAMS` back to robotd, the head pose finds the head_yaw joint
+    by its place in `JOINT_NAMES`, and the verbs that steer on the camera wait `IDLE_FADE_S` on a
+    robotd from `IDLE_HEAD_SINCE_API` on. Each is a name or a number read upstream at the pin,
+    and each has to agree with the ref that says where it was read."""
+    assert upstream_api.HEAD_PARAMS == ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
+    assert "{" + ", ".join(upstream_api.HEAD_PARAMS) + "}" in upstream_api.ROBOT_HEAD.note
+    assert upstream_api.JOINT_NAMES == (
+        "left_hip_yaw",
+        "left_hip_roll",
+        "left_hip_pitch",
+        "left_knee",
+        "left_ankle",
+        "neck_pitch",
+        "head_pitch",
+        "head_yaw",
+        "head_roll",
+        "mouth",
+        "right_hip_yaw",
+        "right_hip_roll",
+        "right_hip_pitch",
+        "right_knee",
+        "right_ankle",
+    )
+    note = upstream_api.IDLE_HEAD.note
+    assert f"IDLE_AFTER ({upstream_api.IDLE_AFTER_S:g} s)" in note
+    assert f"FADE ({upstream_api.IDLE_FADE_S:g} s)" in note
+    assert f"on API {upstream_api.IDLE_HEAD_SINCE_API}" in note
+    # IDLE_HEAD was read at the pin, so the release the pin is has to be one that glances
+    assert int(upstream_api.API_VERSION.name) >= upstream_api.IDLE_HEAD_SINCE_API
+    for ref in (upstream_api.IDLE_HEAD, upstream_api.HEAD_YAW_SIGN, upstream_api.STATE_FRAMES):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
 def test_lerobot_and_rosbridge_vocabularies_match_what_was_read() -> None:
     assert lerobot_api.ROBOT_TYPE_SO101.name == "so101_follower"
     assert lerobot_api.SO_MOTORS.name.split(", ") == [

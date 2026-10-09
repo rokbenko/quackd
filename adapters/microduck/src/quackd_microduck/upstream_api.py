@@ -163,7 +163,12 @@ ROBOT_HEAD = UpstreamRef(
     "robot.head",
     "VERIFIED",
     src(_PROTO, 649),
-    "NOTIFICATION {neck_pitch, head_pitch, head_yaw, head_roll} rad",
+    "NOTIFICATION {neck_pitch, head_pitch, head_yaw, head_roll} rad, HEAD_PARAMS, in joint "
+    "space. robotd stores it as it arrives, from any client, in the one head slot robot.look "
+    "writes too (robotd/src/main.rs:4364-4365), and robot.state.head reports that slot smoothed "
+    "toward each new value a little every control tick, with any idle glance added on top "
+    "(main.rs:3059-3060 and :3099-3104). quackd sends it for one thing, to hold a gaze: the head "
+    "a robot.look answered with, sent again every GAZE_HOLD_S (IDLE_HEAD).",
 )
 ROBOT_LOOK = UpstreamRef(
     "robot.look",
@@ -173,6 +178,10 @@ ROBOT_LOOK = UpstreamRef(
     "'What was handed to the same path robot.head feeds — resend these to hold the gaze' "
     "(lib.rs:2233), which since daemon-v0.16.1 matters: see IDLE_HEAD.",
 )
+#: HeadParams: the four head joints robot.head takes and LookResult.head answers with, in the
+#: order robot.state.head carries them (lib.rs:2206-2211). The type defaults a member it is not
+#: sent to 0, and denies one it does not know.
+HEAD_PARAMS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
 ROBOT_DO = UpstreamRef(
     "robot.do",
     "VERIFIED",
@@ -224,7 +233,27 @@ ROBOT_STATE = UpstreamRef(
     "notification {t, move{requested,applied,limited_by}, head[4], policy, "
     "safety{fallen,limp,gravity,gain?,picked_up}, loop{hz,missed}, joints, targets, "
     "velocities?, currents_ma?, odom, theremin?, chorale?, t_ns, imu?, frames?, skeleton?}. "
-    "head is the commanded head, the idle look-around's glances included.",
+    "head is the head robotd commands this tick: the slot robot.look and robot.head write, "
+    "smoothed, with the idle look-around's glances on top (ROBOT_HEAD).",
+)
+#: The order robot.state.joints is indexed in, JOINT_NAMES (lib.rs:552-568): the left leg, the
+#: neck, head and mouth, then the right leg.
+JOINT_NAMES = (
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "mouth",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle",
 )
 MOVE_ECHO = UpstreamRef(
     "robot.state.move.requested",
@@ -361,21 +390,53 @@ STATE_FRAMES = UpstreamRef(
     "this tick's measured head joints, 'from the same head FK robot.look uses'. A pose is "
     "{pos} in metres and {quat} scalar-first [w, x, y, z], and camera is the OpenCV camera "
     "frame, '+x right, +y down, +z along the optical axis' (lib.rs:3963-3974). On the stream "
-    "since API 24, which first shipped in daemon-v0.12.0 on API 27. quackd reads nothing in it, "
-    "and records only whether a robot reports it, as extras.robotd.state_frames.",
+    "since API 24, which first shipped in daemon-v0.12.0 on API 27. quackd turns camera's "
+    "optical axis, quat applied to [0, 0, 1], into extras.head_yaw_deg and head_pitch_deg, "
+    "where the camera points from the trunk, positive left and up: the convention the "
+    "simulators have always published head_yaw_deg in. It records whether a robot reports "
+    "frames at all as extras.robotd.state_frames, and reads the head_yaw joint instead on a "
+    "robotd that does not (HEAD_YAW_SIGN).",
+)
+HEAD_YAW_SIGN = UpstreamRef(
+    "+head_yaw looks left (+y) on alpha",
+    "VERIFIED",
+    src("kinematics/src/head.rs", 261),
+    "Upstream's own test of its head FK pins the sign of two joints, so that 'an MJCF update' "
+    "cannot make 'the robot nod the wrong way' (kinematics/src/head.rs:250-264): this one, and "
+    "'+head_pitch looks DOWN (-z) on alpha'. On a frame with no frames.camera, quackd takes "
+    "the measured head_yaw joint, robot.state.joints at its index in JOINT_NAMES, as "
+    "extras.head_yaw_deg, with this sign, which ignores how the pitch joints tilt the plane "
+    "the head pans in. It takes no pitch that way: the camera's pitch is neck_pitch and "
+    "head_pitch through the FK together, and robotd's home pose holds both at 0.3491 rad "
+    "(DEFAULT_POSITION, duck-control/src/model.rs:37-53), so the head_pitch joint alone says "
+    "nothing quackd could read as up or down.",
 )
 IDLE_HEAD = UpstreamRef(
     "robotd's idle look-around",
     "VERIFIED",
     src("robotd/src/idle_head.rs", 26),
-    "New in daemon-v0.16.1. Once the policy has the robot, nothing asks it to move, nobody has "
-    "commanded the head for IDLE_AFTER (2 s), and it is not falling, held, singing or running "
-    "a skill (robotd/src/main.rs:3071-3078), robotd glances around on top of the commanded "
-    "head, up to 0.6 rad of yaw and 0.2 rad of pitch, fading in and out over FADE (1.5 s). A "
-    "robot.look or robot.head from anyone resets the wait, 'so a client steering the head is "
-    "never fought' (robotd/src/intents.rs:247-248), and only for as long as it keeps steering. "
-    "quackd's gaze sends one robot.look and does not send it again.",
+    "New in daemon-v0.16.1, the first release with it, on API 41; daemon-v0.16.0, on API 39, "
+    "has none, and the commit that brought it to upstream's main was still on API 39. Once the "
+    "policy has the robot, nothing asks it to move, nobody has commanded the head for "
+    "IDLE_AFTER (2 s), and it is not falling, held, singing or running a skill "
+    "(robotd/src/main.rs:3071-3078), robotd glances around on top of the commanded head, up to "
+    "0.6 rad of yaw and 0.2 rad of pitch, fading in and out over FADE (1.5 s) 'so it never "
+    "jumps' (idle_head.rs:16-17). A robot.look or robot.head from anyone resets the wait, 'so a "
+    "client steering the head is never fought' (robotd/src/intents.rs:247-248), and only for "
+    "as long as it keeps steering. So quackd holds a gaze: after a robot.look it sends "
+    "LookResult.head again as robot.head every GAZE_HOLD_S, half of IDLE_AFTER, until a stop, "
+    "the next look or the end of the connection. And go_to and search_scan wait FADE after "
+    "centring the head, before the first frame they steer on, since a glance that was under "
+    "way when the look arrived takes that long to fade out.",
 )
+#: The idle look-around in numbers (IDLE_HEAD): robotd starts it once nobody has commanded the
+#: head for IDLE_AFTER (robotd/src/idle_head.rs:26), and fades it in or out over FADE (:29).
+IDLE_AFTER_S = 2.0
+IDLE_FADE_S = 1.5
+#: The API version the first release with the idle look-around reports, daemon-v0.16.1's. A
+#: robotd on an older one is not waited for. A build of upstream's main from between
+#: daemon-v0.16.0 and daemon-v0.16.1 can glance on a lower number, but a robot runs a release.
+IDLE_HEAD_SINCE_API = 41
 VELSTAND = UpstreamRef(
     "velstand.onnx",
     "VERIFIED",

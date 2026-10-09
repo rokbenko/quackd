@@ -101,7 +101,22 @@ async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
 
 
 async def _look_ahead(ctx: VerbContext) -> None:
+    """Centre the head before a verb that steers on what the camera sees, and give it the time
+    to get there.
+
+    A body whose robot turns the head on its own while it stands still says, as `head_fade_s`,
+    how long that takes to wear off once a look arrives. A Microduck's robotd has glanced around
+    since daemon-v0.16.1, and lets go of a glance by fading it out over a second and a half
+    rather than at once, so the first frame `go_to` and `search_scan` acted on, taken straight
+    after the look, could come from a head still most of a glance off centre: a bearing off by
+    that much, and `go_to` turning toward it at full rate. The wait comes first, with the body
+    still: nothing is sent that moves it, and the frame after it is the first one acted on. A
+    body without the attribute waits for nothing, as before.
+    """
     await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
+    fade = getattr(ctx.transport, "head_fade_s", 0.0)
+    if isinstance(fade, int | float) and not isinstance(fade, bool) and fade > 0:
+        await ctx.transport.sleep(float(fade))
 
 
 async def _see(

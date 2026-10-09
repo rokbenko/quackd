@@ -221,6 +221,15 @@ class MicroduckAdapter:
         `verbs/core.py` looks for it on the object it was handed, which is this adapter."""
         return getattr(self.transport, "stop_error", None)
 
+    @property
+    def head_fade_s(self) -> float:
+        """How long `go_to` and `search_scan` wait after centring the head, which they read off
+        the object they were handed, this adapter: on `jsonrpc` the time a robotd that glances
+        around on its own takes to let go of a glance once a look arrives, and 0 on every
+        backend whose head moves only when it is asked to."""
+        fade = getattr(self.transport, "head_fade_s", 0.0)
+        return float(fade) if isinstance(fade, int | float) and not isinstance(fade, bool) else 0.0
+
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)
 
