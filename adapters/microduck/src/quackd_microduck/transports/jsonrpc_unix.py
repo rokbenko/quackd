@@ -37,6 +37,9 @@ is at the other end of an ssh tunnel:
   could not parse used to be a walk reported and never taken. Its own state says what it was
   last asked for (`up.MOVE_ECHO`), and a twist that state has not shown a few frames later
   holds `robot.move` back the way a duck that stops standing does.
+- **A link that fails says so, and only so.** Whatever the socket does, every call here fails
+  with `TransportError`, `stop()` does not raise, and no one line robotd writes ends the task
+  that reads them.
 - **A gaze is held until something says to let go, and never against anyone.** Since
   daemon-v0.16.1 robotd glances around on its own once nobody has steered the head for two
   seconds (`up.IDLE_HEAD`), so a `robot.look` no longer keeps the camera where it pointed it.
@@ -189,6 +192,13 @@ def _same_twist(a: Twist, b: Twist) -> bool:
 
 def _shown(values: Sequence[float]) -> str:
     return "[" + ", ".join(f"{v:g}" for v in values) + "]"
+
+
+def _id_of(value: Any) -> int | None:
+    """An answer's `id` as one of the integers quackd numbers its requests with, or None for
+    anything else: a string, a list, a float, a bool, which Python would otherwise read as 0
+    or 1, and the null robotd answers a line it could not parse with. None matches no request."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 #: How often a held gaze goes out again (`_hold_gaze`): half of robotd's IDLE_AFTER, the wait
@@ -541,6 +551,9 @@ class JsonRpcUnixTransport:
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
         self._pending: dict[int, asyncio.Future[Any]] = {}
+        self._lost: str | None = None
+        """Why the link ended, once robotd closed it or the socket failed, which every call
+        made after says at once instead of waiting out `request_timeout_s` (`_lose`)."""
         self._notifications: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
         self._next_id = 1
         self._last_state: dict[str, Any] | None = None
@@ -755,6 +768,17 @@ class JsonRpcUnixTransport:
             self._reader = None
 
     async def _read_loop(self) -> None:
+        """Read robotd's lines until the link ends: hand each answer to the request waiting on
+        it, and keep each state frame.
+
+        No one line ends it. A line longer than `READER_LIMIT`, one that is not JSON or not an
+        object, an answer whose `id` is not one quackd numbers with and one whose `error` is not
+        an object each used to raise out of here, and the task died without a word: every
+        request after it, the heartbeat's among them, waited out its timeout on a socket nobody
+        read, with the real answer right behind the bad line. Each is skipped now, or answered
+        as the error it is. Only the end of the link ends it, robotd closing the socket or the
+        socket failing, and that fails every request still waiting, and every one after, with
+        why (`_lose`)."""
         assert self._reader is not None
         while True:
             try:
@@ -765,40 +789,67 @@ class JsonRpcUnixTransport:
                 # here is what used to end the pump, and with it every answer still to come.
                 log.warning("skipped a line from robotd over %d bytes: %s", READER_LIMIT, e)
                 continue
+            except OSError as e:
+                self._lose(f"the link to robotd failed: {e}")
+                return
             if not line:
-                for fut in self._pending.values():
-                    if not fut.done():
-                        fut.set_exception(TransportError("robotd closed the connection"))
+                self._lose("robotd closed the connection")
                 return
             try:
-                msg = json.loads(line)
-            except ValueError:  # not JSON, or the tail of a skipped line cut mid-character
-                continue
-            if not isinstance(msg, dict):
-                continue
-            if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
-                pending = self._pending.get(int(msg["id"]))
-                if pending is not None and not pending.done():
-                    del self._pending[int(msg["id"])]
-                    if "error" in msg:
-                        err = msg["error"]
-                        # Carrying the number lets a caller tell BUSY (retry) from
-                        # PERMISSION_DENIED (do not) without parsing the message text. The
-                        # codes are in `upstream_api` and were spelled nowhere else.
-                        pending.set_exception(
-                            TransportError(
-                                f"{err.get('code')}: {err.get('message')}", code=err.get("code")
-                            )
-                        )
-                    else:
-                        pending.set_result(msg.get("result"))
-            elif "method" in msg:
-                if msg["method"] == up.ROBOT_STATE.name:
-                    # Before the queue push, deliberately: the queue is bounded and drops when
-                    # nobody drains it, and freshness must not depend on anyone consuming.
-                    self._took_state(msg.get("params"))
-                with contextlib.suppress(asyncio.QueueFull):
-                    self._notifications.put_nowait(msg)
+                self._take_line(line)
+            except Exception as e:  # one line quackd mishandles must not cut the robot off
+                log.warning("skipped a line from robotd that quackd could not read: %r", e)
+
+    def _take_line(self, line: bytes) -> None:
+        """One line from robotd: an answer to a request, or a notification."""
+        try:
+            msg = json.loads(line)
+        except ValueError:  # not JSON, or the tail of a skipped line cut mid-character
+            return
+        if not isinstance(msg, dict):
+            return
+        if msg.get("id") is not None and ("result" in msg or "error" in msg):
+            # robotd echoes the integer id quackd sent, and an id that is anything else answers
+            # nothing quackd is waiting on
+            if (req_id := _id_of(msg["id"])) is not None:
+                self._answered(req_id, msg)
+        elif "method" in msg:
+            if msg["method"] == up.ROBOT_STATE.name:
+                # Before the queue push, deliberately: the queue is bounded and drops when
+                # nobody drains it, and freshness must not depend on anyone consuming.
+                self._took_state(msg.get("params"))
+            with contextlib.suppress(asyncio.QueueFull):
+                self._notifications.put_nowait(msg)
+
+    def _answered(self, req_id: int, msg: dict[str, Any]) -> None:
+        """Hand robotd's answer to the request waiting on it."""
+        pending = self._pending.pop(req_id, None)
+        if pending is None or pending.done():
+            return
+        error = msg.get("error")
+        if error is None and "result" in msg:
+            # a JSON-RPC 1.0 peer writes a null error beside every result
+            pending.set_result(msg.get("result"))
+        elif isinstance(error, dict):
+            code = error.get("code")
+            # Carrying the number lets a caller tell BUSY (retry) from PERMISSION_DENIED (do
+            # not) without parsing the message text. The codes are in `upstream_api`.
+            number = code if isinstance(code, int) and not isinstance(code, bool) else None
+            pending.set_exception(TransportError(f"{code}: {error.get('message')}", code=number))
+        else:
+            pending.set_exception(
+                TransportError(f"robotd answered with an error quackd cannot read: {error!r:.200}")
+            )
+
+    def _lose(self, why: str) -> None:
+        """The link has ended: every request still waiting fails with why, and so does every
+        call made after, at once. The first `stop()` after robotd closed the socket used to
+        wait out the whole `request_timeout_s` for an answer nobody could send."""
+        self._lost = why
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(TransportError(why))
+        self._pending.clear()
 
     def _took_state(self, params: Any) -> None:
         """One `robot.state` frame read: the newest state, when it arrived, how many have, and
@@ -811,30 +862,58 @@ class JsonRpcUnixTransport:
         self._settle(self._last_state, self._last_state_at)
 
     def _write(self, obj: dict[str, Any]) -> None:
+        """Put one line on the wire, failing with `TransportError` however it fails."""
         if self._writer is None:
             raise TransportError("not connected")
-        self._writer.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
+        try:
+            self._writer.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
+        except (OSError, RuntimeError) as e:
+            raise TransportError(f"{obj.get('method')}: the link to robotd is gone: {e}") from e
+
+    async def _drain(self, method: str) -> None:
+        """Wait for the line just written to be taken by the socket, which raises
+        `ConnectionResetError`, or on Windows `ConnectionAbortedError`, once the link has
+        dropped. Every caller here catches `TransportError`, and that is what it raises then."""
+        writer = self._writer
+        if writer is None:
+            raise TransportError(f"{method}: not connected")
+        try:
+            await writer.drain()
+        except (OSError, RuntimeError) as e:
+            raise TransportError(f"{method}: the link to robotd is gone: {e}") from e
 
     async def request(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        """Send one call and wait for robotd's answer to it.
+
+        Every way it can fail raises `TransportError`, which is all any caller here catches.
+        It used to send the line and then wait on the socket outside any handler, so after a
+        drop the socket's own `ConnectionResetError` came out of `heartbeat`, `get_state`,
+        `send_intent` and `stop`, each of which promises otherwise, and out of a verb's stop
+        inside the executor's own handler for the verb's failure. After the link has ended it
+        fails at once, saying why, rather than wait out `request_timeout_s` for an answer nobody
+        can send."""
+        if self._lost is not None:
+            raise TransportError(f"{method}: {self._lost}")
         req_id = self._next_id
         self._next_id += 1
         fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
-        self._pending[req_id] = fut
         msg: dict[str, Any] = {"jsonrpc": up.JSONRPC_VERSION, "id": req_id, "method": method}
         if params is not None:
             msg["params"] = params
-        self._write(msg)
-        assert self._writer is not None
-        await self._writer.drain()
+        self._pending[req_id] = fut
         try:
+            self._write(msg)
+            await self._drain(method)
             return await asyncio.wait_for(fut, timeout=self.request_timeout_s)
         except TimeoutError as e:
-            self._pending.pop(req_id, None)
             raise TransportError(f"{method}: no answer within {self.request_timeout_s:g}s") from e
         except TransportError as e:
             if e.code in (up.ERR_METHOD_NOT_FOUND, up.ERR_INVALID_PARAMS):
                 raise TransportError(self._refused_by_name(method, e), code=e.code) from e
             raise
+        finally:
+            # answered, timed out or never written, a request is forgotten once it is over
+            self._pending.pop(req_id, None)
 
     def _refused_by_name(self, method: str, error: TransportError) -> str:
         """robotd's own words for a call it refused by its name or its params, with what the
@@ -842,12 +921,26 @@ class JsonRpcUnixTransport:
         (`up.VERSION_SKEW`) and the version is half of what it means.
 
         `hello` that robotd's socket does not have is a socket that is not robotd's: tofd, for
-        one, answers every call but its two streams with METHOD_NOT_FOUND."""
+        one, answers every call but its two streams with METHOD_NOT_FOUND. So is one that has
+        no `robot.subscribe`, the first `robot.*` call the handshake makes, which every robotd
+        from `up.API_FLOOR` up has: updaterd shares robotd's protocol, answers `hello` with a
+        version of its own, and refuses every `robot.*` call by name
+        (`up.OTHER_DAEMONS_ANSWER_HELLO`). That refusal used to be put down to a robotd built
+        from a protocol quackd had not read, which sent the reader to upstream's version notes
+        when the fix was the socket an ssh forward points at."""
         said = f"{method}: {error}"
         if method == up.HELLO.name and error.code == up.ERR_METHOD_NOT_FOUND:
             return (
                 f"{said}. Whatever answered at {self.address} has no {method}, so it is not "
                 f"robotd: point --address at robotd's socket, {up.SOCKET_ROBOTD.name}"
+            )
+        if method == up.ROBOT_SUBSCRIBE.name and error.code == up.ERR_METHOD_NOT_FOUND:
+            return (
+                f"{said}. Whatever answered at {self.address} answered {up.HELLO.name} but has "
+                f"no {method}, which every robotd from API v{int(up.API_FLOOR.name)} up has, so "
+                f"it is not robotd: other daemons on the robot answer {up.HELLO.name} too, "
+                f"updaterd at {up.SOCKET_UPDATERD.name} among them. Point --address at robotd's "
+                f"socket, {up.SOCKET_ROBOTD.name}"
             )
         remote = (self.robotd or {}).get("api_version")
         read = f"API v{self.api_version} at {up.RELEASE}"
@@ -870,9 +963,12 @@ class JsonRpcUnixTransport:
         )
 
     async def notify(self, method: str, params: dict[str, Any]) -> None:
+        """Send one notification, which robotd answers with nothing. Fails with
+        `TransportError` however the link has, as `request` does."""
+        if self._lost is not None:
+            raise TransportError(f"{method}: {self._lost}")
         self._write({"jsonrpc": up.JSONRPC_VERSION, "method": method, "params": params})
-        assert self._writer is not None
-        await self._writer.drain()
+        await self._drain(method)
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
@@ -1048,7 +1144,11 @@ class JsonRpcUnixTransport:
         # never started looks exactly like a robot that is fine. Same invariant the Open Duck
         # bridge states in `bridge.py`.
         age = self.state_age_s()
-        arriving = age is not None and age <= state_stale_after_s(self.state_hz)
+        # a link that has ended sends no frame again, so the last one stops being believed at
+        # once rather than once it has aged
+        arriving = (
+            self._lost is None and age is not None and age <= state_stale_after_s(self.state_hz)
+        )
         state = (self._last_state or {}) if arriving else {}
         safety = state.get("safety")
         named = state.get("policy")
@@ -1058,7 +1158,9 @@ class JsonRpcUnixTransport:
         # declares `safety` on every state frame, but a frame without one would otherwise read
         # as "not fallen" on the strength of a key that was never there.
         if not (arriving and isinstance(safety, dict) and "fallen" in safety):
-            if age is None:
+            if self._lost is not None:
+                silent = f"the link to robotd is gone ({self._lost})"
+            elif age is None:
                 silent = "no robot.state frame has arrived"
             elif not arriving:
                 silent = f"the newest robot.state frame is {age:.1f} s old"
@@ -1387,7 +1489,9 @@ class JsonRpcUnixTransport:
         swallow the failure silently, which meant the heartbeat could log "stopping the duck"
         while delivering nothing. What actually stops a Microduck in that situation is robotd's
         own deadman: `robot.move` notifications stop arriving and the velocity goes to zero
-        (`up.DEADMAN`). That is a real protection and this is not a substitute for it.
+        (`up.DEADMAN`). That is a real protection and this is not a substitute for it. It said
+        it never raised and caught `TransportError` alone, so after a drop the socket's own
+        `ConnectionResetError` came out of it, from inside the very handlers it is promised to.
 
         It also ends the hold on `robot.move` (`_move_refusal`), after the request rather than
         before it, so no twist slips out while the stop is on the wire. Whether or not the stop
@@ -1404,13 +1508,13 @@ class JsonRpcUnixTransport:
         try:
             await self.request(up.ROBOT_STOP.name)
             self.stop_error = None
-        except TransportError as e:
-            self.stop_error = str(e)
+        except Exception as e:  # nothing the socket does gets out of here
+            self.stop_error = str(e) or type(e).__name__
             log.warning(
                 "stop could not be delivered to %s (%s). The robot's own deadman zeroes "
                 "velocity when robot.move stops arriving, which is what stops it now.",
                 self.address,
-                e,
+                self.stop_error,
             )
         finally:
             self._release()
@@ -1547,6 +1651,20 @@ class JsonRpcUnixTransport:
 
 
 def _ack(result: Any) -> Ack:
-    if isinstance(result, dict) and "accepted" in result:
-        return Ack(accepted=bool(result["accepted"]), reason=result.get("reason"))
-    return Ack()
+    """robotd's `IntentResult` as an `Ack`, and a refusal for an answer that is not one.
+
+    `accepted` is a bool robotd writes on every `IntentResult`, at the floor and at the pin, so
+    an answer without it is not an answer quackd has read: a robotd newer than the read whose
+    result moved, which `up.VERSION_SKEW` serves and which no call refuses by name, or something
+    else on the socket. It used to read as accepted, so a `robot.do` robotd refused could be
+    reported as a kick. Unread is not consent, and the refusal names what came back."""
+    if isinstance(result, dict) and isinstance(result.get("accepted"), bool):
+        reason = result.get("reason")
+        return Ack(accepted=result["accepted"], reason=None if reason is None else str(reason))
+    return Ack(
+        accepted=False,
+        reason=(
+            f"robotd answered {result!r:.200}, which carries no accepted that quackd can read, "
+            "so it is not taken for a yes"
+        ),
+    )

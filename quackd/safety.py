@@ -251,13 +251,17 @@ class Executor:
             return float(self.transport.now())
         return None
 
-    def _timed_out(self, name: str, verb: Verb, *, timed: bool) -> str:
+    def _timed_out(
+        self, name: str, verb: Verb, *, timed: bool, unstopped: str | None = None
+    ) -> str:
         """What a verb this executor's own timeout ended says, asked after the stop that follows
-        it. A policy segment's adds why, where the robot can tell (`slow_policy`): a simulator's
-        clock stands still while its policy thinks, so a policy slower than the latency it
-        declared outruns a timeout sized from that latency, and the bare timeout read as a
-        simulator that had hung. Never a reason to lose the result."""
-        said = f"{name} timed out after {verb.timeout_s:g}s; stopped"
+        it, and why that stop failed when it did (`unstopped`, from `_stop_after`). A policy
+        segment's adds why, where the robot can tell (`slow_policy`): a simulator's clock stands
+        still while its policy thinks, so a policy slower than the latency it declared outruns a
+        timeout sized from that latency, and the bare timeout read as a simulator that had hung.
+        Never a reason to lose the result."""
+        stopped = "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+        said = f"{name} timed out after {verb.timeout_s:g}s; {stopped}"
         why = None
         if timed:
             with contextlib.suppress(Exception):
@@ -277,6 +281,22 @@ class Executor:
         if self.event_log is None:
             return self.transport
         return LoggedTransport(self.transport, self.event_log)
+
+    async def _stop_after(self) -> str | None:
+        """Send the stop the executor owes a verb it ended, or one that ended in an error, and
+        return why it failed, or None when it did not. Never raises.
+
+        These stops run on the way out of a failure, and a link that has dropped is the commonest
+        failure there is, so the stop is the call most likely to fail too. A transport whose stop
+        raised took the whole call with it: `run_verb` raised the stop's own error from inside
+        the handler that exists to turn the verb's into a result, and the pilot got a traceback
+        for a verb the result would have explained. `LoggedTransport.stop` caught it already; a
+        run without an event log had no such cover."""
+        try:
+            await self.logged_transport().stop()
+        except Exception as e:
+            return f"{type(e).__name__}: {e}"
+        return None
 
     # ── policy ──────────────────────────────────────────────────────────────────────
 
@@ -625,13 +645,16 @@ class Executor:
                 verb, parsed, interruptible=canonical != "stop", source=source, name=name
             )
         except TimeoutError:
-            await self.logged_transport().stop()
-            result = VerbResult.fail(self._timed_out(name, verb, timed=timed))
+            unstopped = await self._stop_after()
+            result = VerbResult.fail(self._timed_out(name, verb, timed=timed, unstopped=unstopped))
         except SafetyStop:
             raise
         except Exception as e:  # a buggy verb must not take the run down un-stopped
-            await self.logged_transport().stop()
-            result = VerbResult.fail(f"{name} raised {type(e).__name__}: {e}; stopped")
+            unstopped = await self._stop_after()
+            stopped = (
+                "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+            )
+            result = VerbResult.fail(f"{name} raised {type(e).__name__}: {e}; {stopped}")
         finally:
             # Charged however the call ends. A call cancelled from outside, an MCP client that
             # went, or one aborted mid-segment leaves with no result, and its segment ran all
@@ -715,7 +738,13 @@ class Executor:
                 outcome="fired",
                 reason="aborted mid-verb: the verb was cancelled and a stop was sent",
             )
-            await self.logged_transport().stop()
+            # the abort is what leaves here, even when the stop after it failed: a heartbeat that
+            # lost the link sets it, and that stop's own error used to leave in its place
+            if (unstopped := await self._stop_after()) is not None:
+                raise Aborted(
+                    f"aborted mid-verb; the verb was cancelled, and the stop sent after it failed: "
+                    f"{unstopped}"
+                )
             raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
         raise TimeoutError
 

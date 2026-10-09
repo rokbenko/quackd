@@ -21,26 +21,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no version, which used to be let through. Any other is served, and when its version is not 41 the
   log, `quackd doctor` and every state's `extras.robotd` say so, beside the release and the revision
   the robot answered with, which `doctor` also prints as a `robotd` row. A call robotd refuses with
-  `METHOD_NOT_FOUND` or `INVALID_PARAMS` fails the verb naming the call and both versions, and a
-  socket with no `hello` is called not robotd's. `robot.move` is a notification, which robotd
-  answers with nothing, so every twist is now checked against robotd's own state: one that
-  `move.requested` has not shown three state frames after it went out holds `robot.move` back until
-  the verb that was walking stops, the hold a duck that stops standing already gets, and the walk
-  fails saying what robotd showed instead, with the verdict in `extras.move_echo`. A gamepad
-  connected to the robot tells robotd to stand still at least ten times a second while nobody
-  touches it, so with one connected a walk can now stop this way, where it used to go on sending
-  twists the pad was overriding. `extras.pickup_detection` says whether the robot reports
-  `safety.picked_up`, which robotd first shipped in daemon-v0.15.2, and `doctor` warns when it does
-  not, since nothing then tells quackd that somebody is holding the duck. `extras.robotd` also says
-  whether the state carries `frames`, and whether mediad's `GET /frame` answered when `--camera-url`
-  asked it, since the floor serves releases with neither.
+  `METHOD_NOT_FOUND` or `INVALID_PARAMS` fails the verb naming the call and both versions, a socket
+  with no `hello` is called not robotd's, and so is one that answers `hello` but has no
+  `robot.subscribe`, as updaterd's does. An answer to `robot.do`, `robot.sound` or `robot.enable`
+  that carries no `accepted` quackd can read is a refusal that names what came back, where it read
+  as a yes. `robot.move` is a notification, which robotd answers with nothing, so every twist is now
+  checked against robotd's own state: one that `move.requested` has not shown three state frames
+  after it went out holds `robot.move` back until the verb that was walking stops, the hold a duck
+  that stops standing already gets, and the walk fails saying what robotd showed instead, with the
+  verdict in `extras.move_echo`. A gamepad connected to the robot tells robotd to stand still at
+  least ten times a second while nobody touches it, so with one connected a walk can now stop this
+  way, where it used to go on sending twists the pad was overriding. `extras.pickup_detection` says
+  whether the robot reports `safety.picked_up`, which robotd first shipped in daemon-v0.15.2, and
+  `doctor` warns when it does not, since nothing then tells quackd that somebody is holding the
+  duck. `extras.robotd` also says whether the state carries `frames`, and whether mediad's
+  `GET /frame` answered when `--camera-url` asked it, since the floor serves releases with neither.
   [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md) records the rule.
   `tests/test_jsonrpc.py` serves a robotd one version newer than the read and one at the floor,
   refuses two below it and five kinds of `hello` with no integer version, fails a verb whose call
   the robot lacks with both versions named, holds a walk back on a robotd that drops `robot.move`
-  and on one that refuses its params by name, but not on frames read late after a stall, and probes
-  the robot through `doctor` for the new row and both warnings. Each of them failed before this
-  change.
+  and on one that refuses its params by name, but not on frames read late after a stall, calls a
+  socket with no `robot.subscribe` not robotd's, takes a kick answered with no `accepted` for a
+  refusal, and probes the robot through `doctor` for the new row and both warnings. Each of them
+  failed before this change.
 
 - **A Microduck's camera is mediad's own `GET /frame` now, which `microduck:jsonrpc` pulls at 2
   frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck
@@ -162,6 +165,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   sixteen times the most robotd takes in a line it reads, and skips a longer one rather than ending
   the link. `tests/test_jsonrpc.py` sends a frame between the two limits, which is read, and two
   past the new one, after which the link still answers. Both failed before this change.
+
+- **A Microduck link that fails, or a line from robotd that quackd cannot match, ends no more than
+  the call it meets, and says so.** Two kinds of line still ended the task that reads robotd's
+  socket the way an over-long one did: an answer whose `id` is not one of the integers quackd
+  numbers its calls with, and one whose `error` is not an object, such as the null a JSON-RPC 1.0
+  peer writes beside every result. Each is skipped now, or fails the call it answers. A socket that
+  dropped let its own `ConnectionResetError` out of `microduck:jsonrpc`: out of the heartbeat, which
+  promises `HeartbeatError`, out of `get_state` and `send_intent`, and out of `stop`, which promises
+  never to raise, and a verb's stop raised it from inside the executor's handler for the verb's
+  failure, so the call raised instead of answering. Each fails with the transport's own error now,
+  `stop` raises nothing, every call made after robotd closed the socket fails at once where the
+  first stop waited out its two seconds, and the state reads the duck as `unknown` from then on. On
+  every body, the executor no longer lets a stop that fails out of the handlers that send one, and
+  says it failed. `tests/test_jsonrpc.py` sends answers with a string and a list for an `id`, a null
+  `error` beside a result and a string for one, drops the socket under the transport and hangs up
+  from the fake robotd, and `tests/test_executor.py` ends a verb that raises, one that times out and
+  one an abort ends on a stop that raises. Each failed before this change.
 
 - **`microduck:jsonrpc` with no `--address` looks for robotd's socket where robotd makes it,
   whatever `DUCK_RUNTIME_DIR` says.** It looked for `$DUCK_RUNTIME_DIR/robotd.sock` whenever that

@@ -44,7 +44,8 @@ without a word, and quackd recorded the walk as taken.
   `INVALID_PARAMS` fails the verb that sent it in robotd's own words, with the call and both
   versions: the refusal upstream put where the version gate was, and the version is half of
   what it means. A `hello` refused as `METHOD_NOT_FOUND` is a socket that is not robotd's, tofd
-  for one, and says so.
+  for one, and says so, and so is a `robot.subscribe` refused that way: updaterd shares
+  robotd's protocol and answers `hello` too (`up.OTHER_DAEMONS_ANSWER_HELLO`).
 - **A notification is checked against robotd's echo.** Every state frame reports the twist
   robotd was last asked for, as it was asked (`robot.state.move.requested`, `up.MOVE_ECHO`). A
   twist quackd sent that the state has not shown three frames later (0.3 s at the 10 Hz quackd
@@ -92,7 +93,9 @@ without a word, and quackd recorded the walk as taken.
   keeps its shape, units or a sign, passes every check here: robotd refuses nothing and echoes
   what it was sent. `daemon-v0.16.1`'s idle look-around is the kind of change that gets
   through, behaviour that moved without a shape moving, and it was found by reading upstream,
-  not by a check. The warning is what tells a person to read.
+  not by a check. The warning is what tells a person to read. A result whose shape moved is
+  refused by nothing upstream either: an `IntentResult` with no `accepted` quackd can read is
+  taken for a refusal that names what came back, never for a yes.
 - The echo judges a twist only once three frames have been read since it went out and three
   frame periods have passed, so a walk shorter than that is reported on what it sent, as every
   walk was. A link whose round trip takes longer than two frame periods holds back a walk
@@ -113,7 +116,8 @@ without a word, and quackd recorded the walk as taken.
   shows how often.
 - The reader takes a line of up to a mebibyte from robotd, sixteen times robotd's own limit for
   a line it reads, and skips a longer one rather than ending the link, because nothing bounds
-  what robotd writes and a newer robot's state can only grow.
+  what robotd writes and a newer robot's state can only grow. No other line ends the link
+  either, one with an `id` quackd did not send or an `error` that is not an object among them.
 - **Nobody has run quackd against a Microduck.** Everything here was tested against
   `tests/test_jsonrpc.py`'s fake robotd, which answers as the source says robotd does: on other
   versions, without calls, dropping `robot.move`, and with no pick-up detector.

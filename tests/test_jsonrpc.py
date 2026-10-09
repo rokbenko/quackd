@@ -228,6 +228,12 @@ class FakeRobotd:
         self.rejected: list[tuple[str, str]] = []
         """Every call robotd would have refused, with why. A notification gets no answer, so this
         is the only place a refused `robot.move` shows up at all."""
+        self.junk: list[str] = []
+        """Lines written, in order, just before the next answer, each once."""
+        self.answers: dict[str, Any] = {}
+        """What a call is answered with instead of what robotd answers it with, by method, for
+        an answer whose shape moved."""
+        self.writers: list[asyncio.StreamWriter] = []
         self.server: asyncio.AbstractServer | None = None
         self.port = 0
         self._arrived = asyncio.Event()
@@ -247,6 +253,11 @@ class FakeRobotd:
             self._stream = None
         self.server.close()
         await self.server.wait_closed()
+
+    def hang_up(self) -> None:
+        """Close every connection from this end, as a robotd that exits does."""
+        for writer in self.writers:
+            writer.close()
 
     async def wait_notifications(self, n: int, wait_s: float = 2.0) -> list[dict[str, Any]]:
         """Notifications have no reply, so the test must wait for the server to read them."""
@@ -342,7 +353,14 @@ class FakeRobotd:
             return up.ERR_INVALID_PARAMS, f"unknown variant `{params['tag']}`"
         return None
 
+    def _answer(self, writer: asyncio.StreamWriter, answer: dict[str, Any]) -> None:
+        for junk in self.junk:
+            writer.write((junk + "\n").encode())
+        self.junk = []
+        writer.write((json.dumps(answer) + "\n").encode())
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.writers.append(writer)
         while line := await reader.readline():
             msg = json.loads(line)
             method, params = msg["method"], msg.get("params") or {}
@@ -367,18 +385,8 @@ class FakeRobotd:
             if (refused := self.refusal(method, params)) is not None:
                 self.rejected.append((method, refused[1]))
                 code, message = refused
-                writer.write(
-                    (
-                        json.dumps(
-                            {
-                                "jsonrpc": "2.0",
-                                "id": msg["id"],
-                                "error": {"code": code, "message": message},
-                            }
-                        )
-                        + "\n"
-                    ).encode()
-                )
+                error = {"code": code, "message": message}
+                self._answer(writer, {"jsonrpc": "2.0", "id": msg["id"], "error": error})
                 await writer.drain()
                 continue
             result: Any
@@ -437,9 +445,8 @@ class FakeRobotd:
                 # its framing (`apply_intent` in robotd/src/main.rs).
                 self._take(method, params)
                 result = {"accepted": True}
-            writer.write(
-                (json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\n").encode()
-            )
+            result = self.answers.get(method, result)
+            self._answer(writer, {"jsonrpc": "2.0", "id": msg["id"], "result": result})
             await writer.drain()
         writer.close()
 
@@ -1528,6 +1535,147 @@ async def test_a_walk_robotd_takes_is_shown_and_never_held(
     echo = t.move_echo
     assert echo is not None and echo["taken"] is True and echo["twist"] == [0.1, 0.0, 0.0]
     await t.close()
+
+
+# ── a link that fails ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("junk", "answer"),
+    [
+        ('{{"jsonrpc":"2.0","id":"x","result":1}}', "x"),
+        ('{{"jsonrpc":"2.0","id":[{id}],"result":1}}', "list"),
+        ('{{"jsonrpc":"2.0","id":true,"result":1}}', "bool"),
+        ('{{"jsonrpc":"2.0","id":{id},"error":null,"result":{{"healthy":true}}}}', "null-error"),
+        ('{{"jsonrpc":"2.0","id":{id},"error":"boom"}}', "string-error"),
+    ],
+    ids=["string-id", "list-id", "bool-id", "null-error", "string-error"],
+)
+async def test_no_one_line_ends_the_link(robotd: FakeRobotd, junk: str, answer: str) -> None:
+    """An answer whose `id` was not an integer raised out of the task that reads robotd's
+    socket, and so did one whose `error` was not an object, a JSON-RPC 1.0 peer's null beside
+    its result among them. The task died without a word, and every answer after it, the real
+    one right behind the bad line included, waited out its timeout. An id quackd did not send
+    answers nothing, a null error beside a result is the result, and an error that is not an
+    object fails the call it answers, saying what came."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    robotd.junk = [junk.format(id=t._next_id)]
+    if answer == "string-error":
+        with pytest.raises(TransportError, match="an error quackd cannot read: 'boom'"):
+            await t.request(up.ROBOT_HEALTH.name)
+    else:
+        health = await t.request(up.ROBOT_HEALTH.name)
+        assert isinstance(health, dict) and health["healthy"] is True
+    assert t._pump is not None and not t._pump.done()
+    await t.heartbeat()  # and the link still works afterwards
+    await t.close()
+
+
+class _Dropped:
+    """The writer of a socket that has dropped, as asyncio leaves it: a line is taken and goes
+    nowhere, and waiting for it to drain raises, `ConnectionResetError` on most systems."""
+
+    def write(self, data: bytes) -> None:
+        pass
+
+    async def drain(self) -> None:
+        raise ConnectionResetError("Connection lost")
+
+    def close(self) -> None:
+        pass
+
+    async def wait_closed(self) -> None:
+        pass
+
+
+async def test_a_dropped_socket_fails_every_call_the_way_each_promises(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """Waiting for a line to drain into a dropped socket raises the socket's own error, and the
+    transport let it out: `heartbeat` raised it where `HeartbeatError` is promised, which is all
+    `health()` catches, `send_intent` where an `Ack` is, `get_state` where a state reading
+    `unknown` is, and `stop`, which promises never to raise. Out of a verb's stop inside the
+    executor's own handler for the verb's failure, it took the whole call with it."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    gone = t._writer
+    t._writer = _Dropped()  # type: ignore[assignment]
+    t._last_health = None  # so get_state has to ask
+    try:
+        with pytest.raises(HeartbeatError, match="the link to robotd is gone"):
+            await t.heartbeat()
+        ack = await t.send_intent(Intent.stop())
+        assert not ack.accepted and "the link to robotd is gone" in (ack.reason or "")
+        await t.get_state()
+        await t.stop()  # must not raise
+        assert t.stop_error is not None and "Connection lost" in t.stop_error
+        result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+            "walk", {"vx": 0.1, "duration_s": 0.3}
+        )
+        assert not result.ok and "the link to robotd is gone" in result.summary, result.summary
+    finally:
+        t._writer = gone
+        await t.close()
+
+
+async def test_a_robotd_that_hung_up_is_said_to_have_at_once(robotd: FakeRobotd) -> None:
+    """The first call after robotd closed the socket, a stop as often as not, waited out the
+    whole timeout for an answer nobody could send, and was then put down to a slow robot. The
+    task reading the socket saw the close, and every call after it says so at once, while the
+    state stops believing the last frame there will ever be."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=60.0)
+    await t.connect()
+    robotd.hang_up()
+    await _eventually(lambda: t._pump is not None and t._pump.done(), "the reader seeing it")
+    async with asyncio.timeout(t.request_timeout_s / 2):
+        await t.stop()
+    assert t.stop_error is not None and "robotd closed the connection" in t.stop_error
+    state = await t.get_state()
+    assert state.posture == "unknown" and "the link to robotd is gone" in (
+        state.extras["posture_reason"] or ""
+    )
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    "answered",
+    [{"ok": False, "reason": "the policy is not driving"}, {}, None, {"accepted": "yes"}],
+    ids=["renamed", "empty", "null", "not-a-bool"],
+)
+async def test_an_answer_with_no_accepted_is_not_a_yes(
+    registry: VerbRegistry, robotd: FakeRobotd, answered: object
+) -> None:
+    """robotd writes `accepted` on every `IntentResult`, at the floor and at the pin, so an
+    answer without it is not one quackd has read: a robotd newer than the read, which is served
+    now, whose result moved. It read as accepted, so a kick robotd refused was reported as a
+    kick. It is a refusal now, naming what came back."""
+    robotd.answers[up.ROBOT_DO.name] = answered
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb("kick", {})
+    assert not result.ok and "carries no accepted" in result.summary, result.summary
+    assert repr(answered)[:20] in result.summary
+    await t.close()
+
+
+async def test_a_socket_that_answers_hello_but_not_robot_subscribe_is_not_robotd() -> None:
+    """updaterd shares robotd's protocol and answers `hello` with a version of its own, and
+    refuses every `robot.*` call by name (`up.OTHER_DAEMONS_ANSWER_HELLO`). An ssh forward to
+    its socket passed the handshake, and the refusal of `robot.subscribe` was put down to a
+    robotd built from a protocol quackd had not read, which sent the reader to upstream's version
+    notes when the fix was the socket the forward points at."""
+    fake = FakeRobotd(missing=frozenset({up.ROBOT_SUBSCRIBE.name}))
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        with pytest.raises(TransportError) as caught:
+            await t.connect()
+        said = str(caught.value)
+        assert "it is not robotd" in said and up.SOCKET_ROBOTD.name in said, said
+        assert up.SOCKET_UPDATERD.name in said and "has not read" not in said, said
+    finally:
+        await fake.stop()
 
 
 #: What asyncio's StreamReader takes in a line unless it is told otherwise, 64 KiB.
