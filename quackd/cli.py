@@ -1374,6 +1374,7 @@ def _run_impl(
         decision_llm_is_available,
         make_decision_llm,
         parse_decision_llm,
+        resolve_decision_address,
         resolve_decision_mode,
         resolve_decision_price,
     )
@@ -1720,6 +1721,12 @@ def _run_impl(
             # to name one.
             refused=(decision_llm or "").strip().lower() == "off",
         )
+        if named_decision is not None and decision != "off":
+            # Here rather than when the client is built below, because the client is built only
+            # on a machine that has the SDK and the key, and everywhere else the run would go
+            # ahead without its stepper. An address the named row can never be handed is a typo,
+            # and a typo stops the run on every machine.
+            resolve_decision_address(named_decision[0], decision_url)
     except DecisionError as e:
         _fail(str(e))
         return
@@ -1976,7 +1983,9 @@ def _run_impl(
     if decision != "off" and named_decision is not None:
         # `chosen` rather than `spec`, which in this function is the robot's.
         chosen, decision_model = named_decision
-        available, why = decision_llm_is_available(chosen)
+        # With the address, because whether a key is wanted can depend on where it would go:
+        # `openai` sends one only to OpenAI's own API, so a run at a server you run needs none.
+        available, why = decision_llm_is_available(chosen, url=decision_url)
         if not available:
             ui.console.print(
                 _warn_line(f"--decision-llm {chosen.name} asked for, running without it: {why}"),
@@ -1989,7 +1998,7 @@ def _run_impl(
             except DecisionError as e:
                 _fail(str(e))
                 return
-            decision_price = resolve_decision_price(chosen)
+            decision_price = resolve_decision_price(chosen, url=decision_url)
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
         # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
@@ -2856,22 +2865,25 @@ _DECISION_LLM = typer.Option(
     "decision LLM generates no text at all: it answers the turns whose answer is a choice "
     "among calls this body can make, a read, the brake, a gripper, a gaze, and hands "
     "everything else to the model, including every pose and every sentence. `jev` is "
-    "TypeSafe's, hosted; `kev`, `von`, `openjev` and `opendecision` are open ones you run "
-    "yourself; `laya` runs inside this process; `local` is any other server, with "
-    "--decision-url. Needs "
-    r"quackd\[decision] (or quackd\[laya])"
-    " and whatever key the one you name asks for, which for every one you run yourself is "
-    "none. Off unless you name one. QUACKD_DECISION_LLM does the same.",
+    "TypeSafe's and `openai` is OpenAI's Decisions API, both hosted; `kev`, `von`, `openjev` "
+    "and `opendecision` are open ones you run yourself; `laya` runs inside this process; "
+    "`local` is any other System One server, with --decision-url. Needs "
+    r"quackd\[decision], or quackd\[laya] for laya and quackd\[openai] for openai,"
+    " and whatever key the one you name asks for: TYPESAFE_API_KEY for jev, OPENAI_API_KEY "
+    "for openai, and none for one you run yourself. Off unless you name one. "
+    "QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
     rich_help_panel="Model",
 )
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
-    help="Where your own System One server listens, e.g. http://localhost:8009 — no path, "
-    "because the client adds /v1/systemone itself. Required by --decision-llm local, and the "
-    "way to move any other one off the port its row expects. QUACKD_DECISION_URL does the "
-    "same.",
+    help="Where the decision LLM listens, e.g. http://localhost:8009 — no path, because the "
+    "client adds /v1/systemone itself, or /v1/decisions for `openai`, which refuses one. "
+    "Required by --decision-llm local, and the way to move any other one off the address its "
+    "row expects. `openai` sends OPENAI_API_KEY to OpenAI's own API alone, "
+    "https://api.openai.com or its us., eu. and ae. hosts, and the word local anywhere else. "
+    "QUACKD_DECISION_URL does the same for the rows that want no key.",
     rich_help_panel="Model",
 )
 _DECISION_MODE = typer.Option(

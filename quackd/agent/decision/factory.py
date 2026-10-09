@@ -3,8 +3,10 @@
 Three flags and four variables resolve here, in one place, so that a refusal can name where a
 value came from: a flag somebody has just typed and a line in a `.env` they have forgotten
 want different sentences. Nothing in this module imports a backend until a run has named one,
-and nothing imports `typesafe_sdk` or `laya` at all -- the classes that do are one function
-call away and are reached only from `make_decision_llm`.
+and nothing imports `typesafe_sdk`, `openai` or `laya` at all -- the classes that do are one
+function call away and are reached only from `make_decision_llm`. `decisions_api` is also
+asked for its address rules once a run has named its row, and those are the standard library
+alone.
 
 Kept separate from `catalogue` the way `providers/factory` is kept separate from its own, so
 `quackd doctor` can ask "which decision LLMs could run here?" without paying for any of them.
@@ -26,8 +28,8 @@ from quackd.agent.decision.base import (
     DecisionMissingKey,
     DecisionNotInstalled,
 )
+from quackd.agent.decision.catalogue import DECISIONS_API, IN_PROCESS, SYSTEM_ONE
 from quackd.agent.decision.catalogue import ENTRY_POINT_GROUP as ENTRY_POINT_GROUP
-from quackd.agent.decision.catalogue import IN_PROCESS, SYSTEM_ONE
 from quackd.agent.decision.catalogue import PRESET_NAMES as PRESET_NAMES
 from quackd.agent.decision.catalogue import PRESETS as PRESETS
 from quackd.agent.decision.catalogue import DecisionMode as DecisionMode
@@ -174,17 +176,17 @@ def resolve_decision_mode(flag: str | None, *, named: bool, refused: bool = Fals
 def resolve_decision_url(spec: DecisionSpec, url: str | None = None) -> str | None:
     """`--decision-url`, then `QUACKD_DECISION_URL`, then where the row says it listens.
 
-    `None` is right for two rows and wrong for one: the hosted model's address belongs to the
-    SDK, the in-process one has none, and `local` is the row that exists to be told, so
+    `None` is right for two rows and wrong for one: `jev`'s address belongs to its SDK, the
+    in-process one has none, and `local` is the row that exists to be told, so
     `make_decision_llm` refuses it rather than guessing.
 
     The variable is read only for a row that wants no key, and that is a security rule rather
     than a tidiness one. `QUACKD_DECISION_URL` is the sort of line somebody leaves in a `.env`
     after an afternoon with a server on their own machine. Left to apply to every row, it
-    would silently retarget the hosted one, and the hosted one is the row whose client reads
-    `TYPESAFE_API_KEY` for itself -- so a key meant for a company's API would be sent to
-    whatever is listening on localhost. A flag typed on the line is a different thing: it says
-    where this run goes, and it is obeyed for any row.
+    would silently retarget the hosted ones, and those are the rows that send a key -- so a key
+    meant for a company's API would be sent to whatever is listening on localhost. A flag typed
+    on the line is a different thing: it says where this run goes, and it is obeyed for any
+    row, with the key rule of the row's own client deciding what that address is sent.
 
     Whitespace is stripped everywhere, because `QUACKD_DECISION_URL="   "` is a shell saying
     unset and reading it as an address defeated the one refusal `local` exists to make.
@@ -194,6 +196,28 @@ def resolve_decision_url(spec: DecisionSpec, url: str | None = None) -> str | No
     if spec.key_env is None and (from_env := (os.environ.get(ENV_URL) or "").strip()):
         return from_env
     return spec.url or None
+
+
+def resolve_decision_address(spec: DecisionSpec, url: str | None = None) -> str | None:
+    """`resolve_decision_url`, refused here when the row's client could never be handed it.
+
+    Asked while the CLI is still reading its flags, before the soft probe that lets a run go
+    ahead without its stepper, and the order is the point. An address OpenAI's row cannot use
+    -- `https://api.openai.com/v1` is the likeliest, copied from anywhere that writes the
+    address with its version on -- checked only by the client would be refused only on a
+    machine with the SDK and the key, and everywhere else would come out as "running without
+    it" and a run that exits 0. A typo should stop the run on every machine, and from here it
+    does.
+
+    Only the `DECISIONS_API` row is held to it. A System One server is reached through an SDK
+    that appends its path to whatever it is given, and a server behind a gateway at a path of
+    its own is a real thing somebody may be pointing at."""
+    address = resolve_decision_url(spec, url)
+    if spec.backend == DECISIONS_API and address is not None:
+        from quackd.agent.decision.decisions_api import check_address
+
+        check_address(address)
+    return address
 
 
 def resolve_decision_model(spec: DecisionSpec, model: str | None = None) -> str | None:
@@ -206,7 +230,7 @@ def resolve_decision_model(spec: DecisionSpec, model: str | None = None) -> str 
     return spec.model
 
 
-def resolve_decision_price(spec: DecisionSpec) -> Price:
+def resolve_decision_price(spec: DecisionSpec, url: str | None = None) -> Price:
     """What one question is costed at: `QUACKD_DECISION_PRICE`, then the row's published rate,
     then the self-hosted rate.
 
@@ -214,26 +238,53 @@ def resolve_decision_price(spec: DecisionSpec) -> Price:
     the rest of quackd already prices a local model at -- not `None`, which quackd reserves
     for "there is a rate and nobody here knows it". A paid endpoint behind `local` is the
     exception, and `QUACKD_DECISION_PRICE` is how you say so.
+
+    `url` is the address the run was given, and it matters for one row. `openai` at an address
+    that is not OpenAI's is a server of your own that speaks the same format, sent the word
+    rather than the key, and a server of your own is costed as one rather than at OpenAI's
+    rate. At OpenAI's regional hosts it is OpenAI's rate, because that is the only one they
+    publish for this endpoint.
     """
     text = os.environ.get(PRICE_ENV)
     if text is not None and text.strip():
         return parse_price(text, source=PRICE_ENV)
+    if spec.backend == DECISIONS_API:
+        from quackd.agent.decision.decisions_api import is_openai_host
+
+        if not is_openai_host(resolve_decision_url(spec, url) or ""):
+            return SELF_HOSTED
     return spec.price if spec.price is not None else SELF_HOSTED
 
 
-def decision_llm_is_available(spec: DecisionSpec) -> tuple[bool, str]:
+def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tuple[bool, str]:
     """Whether this decision LLM could run here, and in plain words why not.
 
     Asked before the robot is connected, and answered softly: a missing extra or key means the
     run goes ahead on the model alone, because the stepper is an optimisation and the model is
     the pilot either way. What is not asked here is whether a server is actually listening --
     that is a turn's problem, and a turn that cannot reach one escalates.
+
+    `url` is the address the run was given, and it matters for one row. `openai` wants
+    `OPENAI_API_KEY` only where the key would be sent, which is OpenAI's own API: at a server of
+    your own it is sent the word instead, and a run there must not be switched off for want of
+    a key it was never going to send. It is also the row whose SDK can be installed and still
+    lack the client, so that is asked too (`decisions_api.client_problem`), and comes out as the
+    same sentence as a missing one rather than as a traceback.
     """
     if spec.sdk is not None:
         try:
             importlib.import_module(spec.sdk)
         except Exception:
             return False, str(DecisionNotInstalled(spec.name, spec.extra or spec.name))
+    if spec.backend == DECISIONS_API:
+        from quackd.agent.decision.decisions_api import client_problem, is_openai_host
+
+        if (problem := client_problem(spec)) is not None:
+            return False, problem
+        address = resolve_decision_url(spec, url) or ""
+        if spec.key_env and is_openai_host(address) and not os.environ.get(spec.key_env):
+            return False, str(DecisionMissingKey(spec.name, spec.key_env))
+        return True, ""
     if spec.key_env and not os.environ.get(spec.key_env):
         return False, str(DecisionMissingKey(spec.name, spec.key_env))
     return True, ""
@@ -262,6 +313,12 @@ def make_decision_llm(
         from quackd.agent.decision.systemone import SystemOneLLM
 
         return SystemOneLLM(spec, model=model, url=url)
+    if spec.backend == DECISIONS_API:
+        # Before the plugin lookup below, which would otherwise take this row for a plugin and
+        # fail with a `KeyError` the CLI does not catch.
+        from quackd.agent.decision.decisions_api import DecisionsAPILLM
+
+        return DecisionsAPILLM(spec, model=model, url=url)
     if spec.backend == IN_PROCESS:
         from quackd.agent.decision.laya import LayaLLM
 

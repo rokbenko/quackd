@@ -24,7 +24,7 @@ quackd run arm-grip-check --robot lerobot:mock --decision-llm openjev --decision
 | `summary` | `OpenJev, self-hosted: DiffusionGemma behind vLLM, or MLX on Apple silicon` |
 | `install` | `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.3.0`, its own README's command verbatim and nothing else, so the cell is one thing you can paste. The Apple silicon path is `OPENJEV_BACKEND=mlx python -m openjev` instead, in the quickstart above |
 | `url` | `http://127.0.0.1:8080` |
-| `key_env` | `none`, a server that wants no key: the client sends the literal `local` instead, the word `NO_KEY` holds in `systemone.py`, so a hosted key sitting in the same `.env` is never posted to a port on your own machine |
+| `key_env` | `none`, a server that wants no key: the client sends the literal `local` instead, the word `NO_KEY` holds in `base.py`, so a hosted key sitting in the same `.env` is never posted to a port on your own machine |
 | `model` | `openjev-latest` |
 | `price` | `none`, which is not free and not unknown: it is a server you run, and `factory.resolve_decision_price` turns it into the self-hosted rate quackd already prices a local model at |
 | `extra` | `decision`, installed as `quackd[decision]` |

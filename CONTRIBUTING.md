@@ -287,18 +287,21 @@ extras, `quackd[decision]` and `quackd[laya]`, are not part of `quackd[all]`. If
 something that answers a question rather than writing an answer, none of the six entries above
 apply to it.
 
-**And a decision LLM is usually a row rather than a module.** They share a wire format,
+**And a decision LLM is usually a row rather than a module.** Most of them share a wire format,
 `POST /v1/systemone`, rather than a vendor, so one that speaks it is one `DecisionSpec` in
 `quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default model
 id, key variable if it wants one, price if anybody publishes one), one page under
 `docs/guides/decision-llms/`, and one row in the table in
 [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md). No new file under
 `quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
-already moves it off the port its row expects. The two shapes that are not a row: one with a Python
-API of its own rather than a server, which is a plugin announcing itself under the
+already moves it off the port its row expects. The three shapes that are not just a row: one with
+a Python API of its own rather than a server, which is a plugin announcing itself under the
 `quackd.decision_llms` entry point group and carrying its own `make(spec, *, url, model)`, the way a
-third party's robot adapter announces itself; and a change to what the stepper *asks*, which is
-`stepper.py` and belongs to none of them.
+third party's robot adapter announces itself; a server that speaks another wire format, which is a
+backend of its own beside `systemone.py`, as `decisions_api.py` is for OpenAI's
+`POST /v1/decisions`: a constant in `catalogue.py`, a client that translates both ways, a branch
+in `make_decision_llm`, and the catalogue tests that pin which backends exist; and a change to
+what the stepper *asks*, which is `stepper.py` and belongs to none of them.
 
 Four things a row needs, and a test reads the first three:
 

@@ -65,10 +65,10 @@ meta = ["openai>=1.66,<4"]
 openrouter = ["openai>=1.66,<4"]
 # The System One protocol client: the optional discrete stepper in front of the model
 # (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
-# Every decision LLM quackd knows that is a server speaks the same wire format and is reached by
-# repointing its base URL, so this one wheel covers Jev, Kev, Von, OpenJev, OpenDecision and
-# whatever else answers at `--decision-url`. That is why the extra is named for the protocol
-# and not for a vendor.
+# Every decision LLM quackd knows that is a System One server is reached by repointing its base
+# URL, so this one wheel covers Jev, Kev, Von, OpenJev, OpenDecision and whatever else answers
+# at `--decision-url`. That is why the extra is named for the protocol and not for a vendor.
+# `--decision-llm openai` speaks OpenAI's own format instead, through the `openai` extra above.
 # Not a provider, and deliberately not in `all`: it answers typed questions about a state and
 # generates nothing, so it cannot pilot a robot and does not belong in `--llm`. Nothing here
 # is imported unless a run names a decision LLM.
@@ -292,8 +292,9 @@ markers = [
     # bare `pytest -m live_llm` on a machine with a key still skips until it is asked for.
     "live_llm: calls a real LLM over the network (needs OPENAI_API_KEY and QUACKD_LIVE_LLM=1)",
     # The same bargain for the stepper, and the only tests that can measure how long a real
-    # decision LLM takes: four of the seven publish a figure for their own hardware and their
-    # own task, and none of those is a measurement of answering a robot through quackd.
+    # decision LLM takes: four of the eight publish a figure for their own hardware and their
+    # own task, OpenAI only a ratio to its own Responses API, and none of those is a measurement
+    # of answering a robot through quackd.
     """live_decision: calls a real decision LLM over the network (needs that preset's key, \
 TYPESAFE_API_KEY for jev, and QUACKD_LIVE_DECISION=1)""",
 ]

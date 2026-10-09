@@ -2,16 +2,21 @@
 
 A *decision LLM* answers typed questions about a state and generates nothing: a choice from a
 set you define, a yes/no probability, a score on a rubric. TypeSafe's Jev was the first, and
-what every one of these shares is not a vendor but a wire format -- `POST /v1/systemone`, a
-named state and a mapping of typed questions in, answers with probabilities out. So a server
-is a row in the table below and not a module, and the one quackd cannot name is reached with
-`--decision-llm local --decision-url`.
+what most of these share is not a vendor but a wire format -- `POST /v1/systemone`, a named
+state and a mapping of typed questions in, answers with probabilities out. So a server that
+speaks it is a row in the table below and not a module, and the one quackd cannot name is
+reached with `--decision-llm local --decision-url`.
+
+One row speaks something else. OpenAI's Decisions API asks the same kind of question in its own
+shape, at `POST /v1/decisions`, so `openai` is a row with a backend of its own, `DECISIONS_API`,
+and the translation lives in `decisions_api.py` rather than here. It is still a row: its address,
+its key variable, its model and its rate are data like everybody else's.
 
 `factory.py` builds them; this file only says which ones exist. The split is the one
 `adapters/catalogue.py` makes and for the same reason: `quackd doctor` renders the whole table
 on a machine where none of them is installed, and `--help` reads the names. Everything here is
-a string, a number or a `Price`, and nothing here may import `typesafe_sdk`, `laya`, pydantic
-or anything else heavy.
+a string, a number or a `Price`, and nothing here may import `typesafe_sdk`, `openai`, `laya`,
+pydantic or anything else heavy.
 
 A decision LLM with an API of its own rather than a server announces itself through the
 `quackd.decision_llms` entry point group, the way a third party's adapter does.
@@ -36,7 +41,15 @@ module, and that module carries `make(spec, *, url, model)` and describes itself
 
 SYSTEM_ONE = "systemone"
 """Reached over HTTP with `typesafe_sdk`, which is the protocol's own client. Every server
-below speaks the same wire format, so they differ only in the row."""
+below but one speaks the same wire format, so they differ only in the row."""
+
+DECISIONS_API = "decisions"
+"""Reached over HTTP at `POST /v1/decisions`, OpenAI's own wire format, through the `openai`
+SDK's generic request. The questions go as a list rather than a mapping and the answers come
+back as a list that names each question, so this is a second transport rather than a second
+address, and `decisions_api.py` translates both ways. Named for the format rather than for the
+vendor, the way `SYSTEM_ONE` is: a server of your own that answers `/v1/decisions` is the same
+backend at another address."""
 
 IN_PROCESS = "laya"
 """Loaded into this process and asked directly. No server, no network, no key."""
@@ -49,14 +62,14 @@ class DecisionSpec:
     name: str
     """What `--decision-llm` takes, and what the record says answered."""
     backend: str
-    """`SYSTEM_ONE`, `IN_PROCESS`, or a plugin's own name."""
+    """`SYSTEM_ONE`, `DECISIONS_API`, `IN_PROCESS`, or a plugin's own name."""
     summary: str
     """One line for `doctor`, and for a message that has to say what this is."""
     install: str
     """How you get it running, in one line, for the person reading `doctor` and wondering."""
     url: str | None = None
-    """Where it listens with nothing overridden. `None` for the hosted one, whose address the
-    SDK owns, and for the in-process one, which has no address at all."""
+    """Where it listens with nothing overridden. `None` for `jev`, whose address its SDK owns,
+    and for the in-process one, which has no address at all."""
     key_env: str | None = None
     """The variable holding its key. `None` is a server that wants no key, and the client
     sends `NO_KEY` instead, so a hosted key sitting in somebody's `.env` is never sent to a
@@ -75,11 +88,19 @@ class DecisionSpec:
     definition if it was found."""
     sdk: str | None = "typesafe_sdk"
     """The import name that says whether that extra is here. `None` skips the probe."""
+    sees: bool = False
+    """Whether quackd may show this row a picture. False on every row, `openai` included,
+    although OpenAI's API takes an image: the stepper sends a decision LLM text and nothing
+    else (`stepper.Stepper._build_state`), and that a vendor would accept a camera frame is not
+    a decision that one should be sent. A field rather than a sentence in the stepper so that
+    the day a row may see is one changed row and one changed test, and nothing a plugin says
+    about itself can set it."""
 
 
-#: Every decision LLM quackd names, in the order `doctor` prints them: the one that set the
-#: format, the servers that speak it, the escape hatch for the one quackd has never heard of,
-#: then the one that needs no server at all. Adding a wire-compatible server is one row.
+#: Every decision LLM quackd names, in the order `doctor` prints them: the two hosted ones, Jev
+#: first because it set the format, then the servers that speak that format, the escape hatch for
+#: the one quackd has never heard of, and the one that needs no server at all. Adding a server
+#: that speaks System One is one row.
 #:
 #: `127.0.0.1` rather than `localhost` throughout, because these servers bind IPv4 and a
 #: `localhost` that resolves to `::1` first is refused with nothing useful said.
@@ -97,9 +118,43 @@ PRESETS: dict[str, DecisionSpec] = {
         model="jev-1.13.0",
         model_env="TYPESAFE_DEFAULT_MODEL",
         # TypeSafe charge $0.042 per million input tokens and do not charge for output
-        # ([their models page](https://docs.typesafe.ai/models), read 2026-09-21). The only
-        # row here with a published rate: every other one is a server you run yourself.
+        # ([their models page](https://docs.typesafe.ai/models), read 2026-09-21). One of the
+        # two rows here with a published rate, `openai` the other: every other one is a server
+        # you run yourself.
         price=Price(input=0.042, output=0.0, source="published"),
+    ),
+    "openai": DecisionSpec(
+        name="openai",
+        backend=DECISIONS_API,
+        summary="OpenAI's Decisions API, hosted: gpt-6-luna over POST /v1/decisions",
+        # The pilot's own extra, because the client is the same `openai` SDK the pilot uses: an
+        # extra of its own would install that wheel under a second name. Nor does this row move
+        # the floor the extra pins, because the request it makes is one the SDK has carried
+        # since before that floor (`decisions_api.py` says which).
+        install="quackd[openai] and OPENAI_API_KEY (platform.openai.com)",
+        # An address, unlike `jev`'s `None`, and the backend hands the SDK `<url>/v1` on every
+        # build whatever was typed. Left to itself the SDK reads `OPENAI_BASE_URL` when it is
+        # given no address, and `.env.example` tells a reader to set exactly that for a model on
+        # their own machine, so the hosted key would follow it there. Holding the address here
+        # is also what lets `doctor` print where the key goes.
+        url="https://api.openai.com",
+        key_env="OPENAI_API_KEY",
+        # The only model the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08.
+        # Whether the name moves under a run is on the row's page as an assumption.
+        model="gpt-6-luna",
+        # OpenAI charge $0.10 per million input tokens and nothing for output, cache reads or
+        # cache writes, by the same guide on the same day:
+        # https://developers.openai.com/api/docs/guides/decisions
+        # `checked` is spelled out because a published rate without one is stamped with the day
+        # the pilots' catalogue was read, which is not the day this one was. The guide adds that
+        # regional processing premiums and long-context multipliers apply and publishes neither
+        # for this endpoint, so a run at `eu.api.openai.com` is costed at this rate, and
+        # `QUACKD_DECISION_PRICE` is how you say otherwise.
+        price=Price(input=0.10, output=0.0, source="published", checked="2026-10-08"),
+        extra="openai",
+        sdk="openai",
+        # Text only, like every row: the field's own docstring says why.
+        sees=False,
     ),
     "kev": DecisionSpec(
         name="kev",

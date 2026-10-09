@@ -2,12 +2,13 @@
 
 `test_decision.py` next door is about the stepper: which turns are a choice, what an answer
 has to clear, what the record says. This file is about everything in front of that -- the
-flags, the variables, the table of presets, the two backends and the plugin hook -- because
-that is the half that grew when Jev stopped being the only one.
+flags, the variables, the table of presets, the backends and the plugin hook -- because that is
+the half that grew when Jev stopped being the only one. What only the `openai` row does, its
+translation and where its key goes, is `test_decisions_api.py`.
 
-The one rule worth stating up front: nothing in this file may need `typesafe_sdk` or `laya` to
-be installed. Both are optional extras, CI installs neither, and a suite that quietly skipped
-here would be a suite that never tested the thing this release is.
+The one rule worth stating up front: nothing in this file may need `typesafe_sdk`, `openai` or
+`laya` to be installed. All three are optional extras, CI installs none of them, and a suite that
+quietly skipped here would be a suite that never tested the thing this release is.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import pytest
 from quackd.agent.decision import factory
 from quackd.agent.decision.base import TIMEOUT_S, DecisionError
 from quackd.agent.decision.catalogue import (
+    DECISIONS_API,
     ENTRY_POINT_GROUP,
     IN_PROCESS,
     PRESET_NAMES,
@@ -84,26 +86,36 @@ def test_every_preset_row_is_complete() -> None:
     names itself in `--help` and then fails somewhere further in."""
     for name, spec in PRESETS.items():
         assert spec.name == name, f"{name}: the row and its key disagree"
-        assert spec.backend in (SYSTEM_ONE, IN_PROCESS), f"{name}: unknown backend"
+        assert spec.backend in (SYSTEM_ONE, IN_PROCESS, DECISIONS_API), f"{name}: unknown backend"
         assert spec.summary and not spec.summary.endswith("."), f"{name}: summary is a label"
         assert spec.install, f"{name}: nothing says how to get it running"
         assert spec.sdk, f"{name}: no import to probe, so doctor cannot say if it is here"
 
 
-def test_only_the_hosted_row_carries_a_key_a_price_or_a_model_variable() -> None:
-    """The three things that belong to a vendor rather than to the format. A second row growing
-    any of them is the table drifting back towards one-module-per-vendor."""
+def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_a_model_variable() -> None:
+    """The things that belong to a vendor rather than to a format. Two rows are hosted, so two
+    carry a key and a published rate, and a third growing either is the table drifting back
+    towards one-module-per-vendor. The model variable is the one SDK's own that quackd honours
+    where that SDK owns the address, which is `jev` alone: `openai`'s backend always hands its
+    SDK an address."""
     for name, spec in PRESETS.items():
-        hosted = name == "jev"
+        hosted = name in ("jev", "openai")
         assert bool(spec.key_env) is hosted, f"{name}: key_env"
         assert bool(spec.price) is hosted, f"{name}: price"
-        assert bool(spec.model_env) is hosted, f"{name}: model_env"
+        assert bool(spec.model_env) is (name == "jev"), f"{name}: model_env"
+
+
+def test_no_row_may_be_shown_a_picture() -> None:
+    """The stepper sends text and nothing else, `openai` included although its API would take
+    an image. The day one may see is this set growing, deliberately and nowhere else."""
+    assert {name for name, spec in PRESETS.items() if spec.sees} == set()
 
 
 def test_a_preset_url_carries_no_path() -> None:
     """The SDK appends `/v1/systemone` to whatever it is given, without normalising, so a row
     written in the style of `providers/local.py` -- which stores `http://host:8000/v1` --
-    would ask for `/v1/v1/systemone` and get a 404 that named nothing."""
+    would ask for `/v1/v1/systemone` and get a 404 that named nothing. The `openai` row is held
+    to the same rule for the same reason: its backend adds `/v1` itself."""
     for name, spec in PRESETS.items():
         if spec.url is None:
             continue
@@ -123,6 +135,7 @@ def test_the_hosted_model_is_pinned_and_the_open_ones_are_named() -> None:
     that answered. And the open servers do not share an id: OpenJev refuses a pinned Jev
     version with a 400, so a shared default would have been wrong there on every request."""
     assert PRESETS["jev"].model == "jev-1.13.0"
+    assert PRESETS["openai"].model == "gpt-6-luna"
     assert PRESETS["openjev"].model != PRESETS["jev"].model
     assert PRESETS["local"].model is None
 
@@ -147,6 +160,15 @@ def test_neither_optional_extra_is_in_all() -> None:
     assert "typesafe" not in everything and "laya" not in everything
 
 
+def test_the_openai_row_installs_nothing_the_pilot_does_not() -> None:
+    """Its extra is the pilot's own, so naming it adds no package to `quackd[all]` and no line
+    to the lock: every requirement it installs is already one `all` carries, word for word."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = pyproject["project"]["optional-dependencies"]
+    assert PRESETS["openai"].extra == "openai"
+    assert set(extras["openai"]) <= set(extras["all"])
+
+
 def test_the_catalogue_costs_nothing_to_import() -> None:
     """`--help` imports this table and so does every press of TAB. Nothing in it may reach for
     a vendor SDK, for torch, or for pydantic.
@@ -160,7 +182,7 @@ def test_the_catalogue_costs_nothing_to_import() -> None:
             imported.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
-    for heavy in ("typesafe_sdk", "laya", "torch", "pydantic", "httpx", "importlib"):
+    for heavy in ("typesafe_sdk", "openai", "laya", "torch", "pydantic", "httpx", "importlib"):
         assert heavy not in imported, f"catalogue.py imports {heavy}"
 
 
@@ -341,11 +363,17 @@ def test_a_named_model_beats_the_variable(monkeypatch: pytest.MonkeyPatch) -> No
     assert resolve_decision_model(PRESETS["jev"], "jev-1.13.0") == "jev-1.13.0"
 
 
-def test_a_server_you_run_is_free_and_the_hosted_one_is_not() -> None:
+def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
     """Not `None`, which quackd reserves for "there is a rate and nobody here knows it". A
     model on your own machine bills you in electricity, and that is the same `$0` the rest of
-    quackd already prices a local pilot at."""
+    quackd already prices a local pilot at.
+
+    OpenAI's rate was read on a day of its own, and the record says which: without its own
+    `checked` it would be stamped with the day the pilots' catalogue was read."""
     assert resolve_decision_price(PRESETS["jev"]).input == 0.042
+    openai = resolve_decision_price(PRESETS["openai"])
+    assert (openai.input, openai.output, openai.source) == (0.10, 0.0, "published")
+    assert openai.record()["checked"] == "2026-10-08"
     for name in ("kev", "von", "openjev", "opendecision", "local", "laya"):
         price = resolve_decision_price(PRESETS[name])
         assert (price.input, price.output) == (0.0, 0.0), name

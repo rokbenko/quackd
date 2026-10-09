@@ -22,12 +22,16 @@ HEAVY = (
     "paho",
     "mujoco",
     "onnxruntime",
-    # The two clients a decision LLM can be reached through: the System One SDK for a server,
-    # hosted or your own, and the in-process encoder. Both are off by default, so a default
-    # install must import the modules that know about them, build a run config and refuse
-    # `--decision-mode on` politely, with neither of these anywhere on the machine.
+    # The three clients a decision LLM can be reached through: the System One SDK for a server,
+    # hosted or your own, the in-process encoder, and OpenAI's SDK for its Decisions API. All
+    # three are off by default, so a default install must import the modules that know about
+    # them, build a run config and refuse `--decision-mode on` politely, with none of these
+    # anywhere on the machine. `openai` is the pilot's SDK too, which is why it is blocked here
+    # in a process of its own rather than checked for in this one: the suite imports it
+    # wherever it is installed.
     "typesafe_sdk",
     "laya",
+    "openai",
 )
 
 SCRIPT = f"""
@@ -53,6 +57,10 @@ ok, why = decision_llm_is_available(PRESETS["jev"])
 assert not ok and "quackd[decision]" in why, why
 ok, why = decision_llm_is_available(PRESETS["laya"])
 assert not ok and "quackd[laya]" in why, why
+ok, why = decision_llm_is_available(PRESETS["openai"])
+assert not ok and "quackd[openai]" in why, why
+ok, why = decision_llm_is_available(PRESETS["openai"], url="http://127.0.0.1:8765")
+assert not ok and "quackd[openai]" in why, why
 from quackd.adapters.factory import BACKENDS, RobotSpec, describe, list_adapters, make_adapter
 rows = list_adapters()
 assert [r["name"] for r in rows] == [

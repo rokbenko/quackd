@@ -12,7 +12,7 @@ it lives in its row in [`catalogue.py`](../../../quackd/agent/decision/catalogue
 
 ```bash
 uv pip install "quackd[decision]"    # not run here
-export TYPESAFE_API_KEY=...          # not run here: this is the only row that wants a key
+export TYPESAFE_API_KEY=...          # not run here: one of the two rows that want a key
 quackd run arm-grip-check --robot lerobot:mock --decision-llm jev --decision-mode shadow    # not run here: no decision LLM is installed on this machine
 ```
 
@@ -59,8 +59,8 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 - **The key is mandatory and validated.** Without one, and without `TYPESAFE_API_KEY`, the client
   raises `TypeSafeError` at construction; the validator rejects empty, non-ASCII, non-printable
   and whitespace-containing keys, and accepts the literal `local`, which is what every self-hosted
-  row sends instead. This being the only keyed row is why `QUACKD_DECISION_URL` is not read for
-  it.
+  row sends instead. Wanting a key is why `QUACKD_DECISION_URL` is not read for it, as it is not
+  for `openai`, the one other row that wants one.
 - **Two clocks, meaning different things.** `RetryPolicy.timeout` (30.0 s) is the budget for the
   *whole retry sequence*; the client's own `timeout=` (default 10.0 s) is the budget for *one
   request*. Setting only the first left a turn able to wait ten seconds, which `timeout=TIMEOUT_S`
@@ -87,14 +87,14 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 | Thing | Value | What quackd does with it |
 |---|---|---|
 | Constructor | `AsyncTypeSafeClient(*, api_key, model, retry, timeout, headers, transport, http_client, base_url)`, all keyword-only, on `httpx2>=2.0.0` (not `httpx`), `pydantic>=2.12` and `tenacity>=9`; both clients are context managers, and never closing one emits no warning | `systemone.py` builds it while the CLI is still parsing, so a bad install is a sentence before the robot connects, and `quackd[decision]` is this client and nothing else |
-| Key handling | `TypeSafeError` at construction with no key and no `TYPESAFE_API_KEY`; the validator rejects empty, non-ASCII, non-printable and whitespace-containing keys and accepts `local` | `doctor` reports the variable unset, and a run that names this row without a key says so once before it connects to the robot and carries on without the stepper: `DecisionMissingKey` is what `decision_llm_is_available` puts in that sentence, and is never raised. `NO_KEY = "local"` in `systemone.py` is what every keyless row sends |
+| Key handling | `TypeSafeError` at construction with no key and no `TYPESAFE_API_KEY`; the validator rejects empty, non-ASCII, non-printable and whitespace-containing keys and accepts `local` | `doctor` reports the variable unset, and a run that names this row without a key says so once before it connects to the robot and carries on without the stepper: `DecisionMissingKey` is what `decision_llm_is_available` puts in that sentence, and is never raised. `NO_KEY = "local"` in `base.py` is what every keyless row sends |
 | Address | argument, else `TYPESAFE_BASE_URL`, else `https://api.typesafe.ai`, `rstrip("/")`, with `SYSTEM_ONE_PATH = "/v1/systemone"` from `typesafe_sdk/_core/constants.py` appended by string concatenation | the row's `url` is `none` and quackd passes `base_url` only when a flag gave one; `--decision-url` takes a scheme, a host and a port and no path |
 | Two timeouts | `RetryPolicy` frozen: `max_retries=2, backoff_initial=0.5, backoff_max=5.0, backoff_jitter=0.25, http_statuses={408, 429, 500..599}, respect_retry_after=True, timeout=30.0`, that last one the budget for the whole retry sequence; the per-request clock is the client's own `timeout=`, default `10.0` s | overridden with `max_retries=1, backoff_max=0.2, timeout=1.0` because one retry fits a one-second turn and two do not, plus `TIMEOUT_S` on the client itself and `asyncio.wait_for` around `decide()` |
 | The call | `system_one(state, questions, *, model, retry, timeout, extra_headers, extra_body, response_model)`, async; the SDK always sends `model`, substituting its own default when the call names none, and its own headers (`Authorization: Bearer <key>`, `User-Agent: typesafe-sdk/0.7.1`, `X-TypeSafe-SDK`, `X-TypeSafe-Runtime`, `X-TypeSafe-Retry-Count` on retries) overwrite anything passed in `headers=` | one request a turn carrying all four questions, with the row's id named explicitly so the record says what quackd asked for; quackd passes no headers, because one passed here would be silently discarded |
 | Plain dicts are questions | `Noul`, `Choice` and `Score` plus the three TypedDicts; a noul dict needs only `{"type": "noul"}`, while choice and score require criteria | the four questions are built once as dicts and reach every backend unrebuilt |
 | Response | `SystemOneResponse` has exactly `model`, `usage` and `answers`, plus `nouls`, `choices` and `scores` views; missing `model` or `usage` raises `TypeSafeAPIResponseValidationError`, though contents are lenient and `usage: {}` parses. There is no `latency` attribute, contrary to the docs site, which is wrong there. Answers parse `strict=True`: a noul spelled `"0.9"` is rejected, an int `1` widens to `1.0`, and unknown answer types are dropped with a warning rather than failing the response | `stepper._answer` reads it as an object or as a plain mapping and quackd times the call itself into `latency_s`; a partly answered turn costs the turn as `gate: unreadable` rather than moving the body on two questions nobody answered |
 | Error taxonomy | `TypeSafeError`, `TypeSafeAPIError(status, body, headers, endpoint, .request_id)` with per-status subclasses (400, 401, 403, 404, 422, 429, 5xx), plus connection, timeout and response-validation errors | `Stepper.advise` catches everything and records `gate: error`; a decision LLM may never end a run |
-| Price | $0.042 per million input tokens, output not charged ([their models page](https://docs.typesafe.ai/models), read 2026-09-21) | the only row with a published rate; carried as `Price` and stamped on `run_start` beside the name, model and url |
+| Price | $0.042 per million input tokens, output not charged ([their models page](https://docs.typesafe.ai/models), read 2026-09-21) | one of the two rows with a published rate, `openai` the other; carried as `Price` and stamped on `run_start` beside the name, model and url |
 
 ## UNVERIFIED, and what quackd does about each
 

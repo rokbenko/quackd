@@ -14,7 +14,9 @@ gave the wire format its name -- *System One* -- and there are several now: **[K
 **[Von](von.md)**, **[OpenJev](openjev.md)** and **[OpenDecision](opendecision.md)** are
 servers you run yourself, **[Laya](laya.md)** loads into this process, and anything
 else that speaks the same `POST /v1/systemone` is reached with `--decision-url`
-([local](local.md)). quackd treats them as one seam with a row of data in front of
+([local](local.md)). **[OpenAI's Decisions API](openai.md)** is a second hosted one, which asks
+the same kind of question in a wire format of its own, `POST /v1/decisions`, and so has a client
+of its own to translate it. quackd treats them all as one seam with a row of data in front of
 it, so most of this page is about the half that does not change with the vendor.
 
 **A decision LLM is not another LLM, and it is not a smaller one.** That is the whole point of it,
@@ -59,8 +61,8 @@ decision LLM, needs no key for one, and never switches this on because it found 
 
 - [What it is, and what it is not](#what-it-is-and-what-it-is-not)
 - [The ones quackd names](#the-ones-quackd-names)
-  * A page each: [jev](jev.md) · [kev](kev.md) · [von](von.md) · [openjev](openjev.md) ·
-    [opendecision](opendecision.md) · [local](local.md) · [laya](laya.md)
+  * A page each: [jev](jev.md) · [openai](openai.md) · [kev](kev.md) · [von](von.md) ·
+    [openjev](openjev.md) · [opendecision](opendecision.md) · [local](local.md) · [laya](laya.md)
 - [What is not covered, and why](#what-is-not-covered-and-why)
 - [Install and switch on](#install-and-switch-on)
 - [The SO-101 arm, in four parts](#the-so-101-arm-in-four-parts)
@@ -96,7 +98,10 @@ does the angles and the prose.
 The two seams are genuinely separate, and it is worth saying so plainly now that the flags look
 alike. `--llm` names the pilot, which is a provider and a model: `--llm openai:gpt-5`.
 `--decision-llm` names the thing in front of it: `--decision-llm kev`. Neither list contains the
-other, and a run that names no decision LLM is quackd exactly as it has always been.
+other, though two words are in both, and the flag is what says which seam one means: `--llm local`
+is a model server of your own flying the robot and `--decision-llm local` a System One server of
+your own in front of it, and `--llm openai` is OpenAI's chat models where `--decision-llm openai` is
+their Decisions API. A run that names no decision LLM is quackd exactly as it has always been.
 
 ## The ones quackd names
 
@@ -109,6 +114,7 @@ bottom of the table exists for the ones quackd has never heard of.
 | Name | Who makes it | Where it runs | How you get it running | Key | Default URL | Default model | Page |
 |---|---|---|---|---|---|---|---|
 | `jev` | TypeSafe ([typesafe.ai](https://typesafe.ai/)) | their machines, hosted | `quackd[decision] and TYPESAFE_API_KEY (typesafe.ai)` | `TYPESAFE_API_KEY` | the SDK's own | `jev-1.13.0` | [jev](jev.md) |
+| `openai` | OpenAI ([platform.openai.com](https://platform.openai.com/)) | their machines, hosted | `quackd[openai] and OPENAI_API_KEY (platform.openai.com)` | `OPENAI_API_KEY` | `https://api.openai.com` | `gpt-6-luna` | [openai](openai.md) |
 | `kev` | [jaredpalmer/kev](https://github.com/jaredpalmer/kev) | your own GPU | `git clone https://github.com/jaredpalmer/kev && cd kev && uv sync --extra serve && KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009` | none needed | `http://127.0.0.1:8009` | `kev-latest` | [kev](kev.md) |
 | `von` | `von-sdk` on PyPI | your own machine, CPU included | `pip install von-sdk && von serve --host 127.0.0.1 --port 8000` | none needed | `http://127.0.0.1:8000` | `von-latest` | [von](von.md) |
 | `openjev` | `razorback16/openjev` | your own GPU, or MLX on Apple silicon | `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.3.0`, or `OPENJEV_BACKEND=mlx python -m openjev` on Apple silicon | none needed | `http://127.0.0.1:8080` | `openjev-latest` | [openjev](openjev.md) |
@@ -116,25 +122,26 @@ bottom of the table exists for the ones quackd has never heard of.
 | `local` | whoever wrote your server | wherever you put it | `--decision-url http://host:port (or QUACKD_DECISION_URL)` | none needed | you have to say | the server names its own | [local](local.md) |
 | `laya` | an encoder off Hugging Face | **in this process**, no server at all | `uv pip install "quackd[laya]"`, which pulls torch. Its weights download on first use | none needed | none at all | `typed-decisions` | [laya](laya.md) |
 
-**How you get it running** is a command you can paste on five of the seven rows, and the catalogue
+**How you get it running** is a command you can paste on five of the eight rows, and the catalogue
 row holds exactly that command with nothing else inside it: where a cell here adds a clause, as
 `openjev`'s does for Apple silicon and `laya`'s does for what it pulls, the clause is the table's
-and starts after the code span ends. The two rows that are not commands say so by being
-unrunnable: `jev` names an extra and a key you have to get from a vendor, and `local` names the
-flag that tells quackd where your server already is. Each page carries the same line and the
-sentence around it.
+and starts after the code span ends. The three rows that are not commands say so by being
+unrunnable: `jev` and `openai` name an extra and a key you have to get from a vendor, and `local`
+names the flag that tells quackd where your server already is. Each page carries the same line and
+the sentence around it.
 
-Two more columns are worth reading twice. **Key** is `none needed` on every row but the hosted
-one, and that is structural rather than a convenience: a server you run yourself is sent the
-literal word `local` in the key field, so a `TYPESAFE_API_KEY` sitting in the same `.env` is never
-posted to a port on your own machine. **Default model** is per row rather than shared, and
-[openjev](openjev.md) is what happens to anyone who assumes otherwise: its accepted
-ids are a closed set, and a pinned Jev version is refused with a 400 on every request.
+Two more columns are worth reading twice. **Key** is `none needed` on every row but the two hosted
+ones, and that is structural rather than a convenience: a server you run yourself is sent the
+literal word `local` in the key field, so a `TYPESAFE_API_KEY` or an `OPENAI_API_KEY` sitting in
+the same `.env` is never posted to a port on your own machine. **Default model** is per row rather
+than shared, and [openjev](openjev.md) is what happens to anyone who assumes otherwise: its
+accepted ids are a closed set, and a pinned Jev version is refused with a 400 on every request.
 
-Six of the seven rows speak the same wire format over the same client, which is why a server
-quackd has never heard of costs no code at all. `laya` is the seventh and the proof that the seam
-here is a protocol rather than an HTTP call: the same four questions go to it unchanged, and it
-has no address to send them to.
+Six of the eight rows speak the same wire format over the same client, which is why a server
+quackd has never heard of costs no code at all. `openai` is the seventh, and speaks OpenAI's own
+`POST /v1/decisions` through a client of its own that translates the same four questions out and
+the answers back. `laya` is the eighth and the proof that the seam here is a protocol rather than
+an HTTP call: the same four questions go to it unchanged, and it has no address to send them to.
 
 > [!WARNING]
 > **Two of the confidence floors on this page are numbers TypeSafe publish, and two are
@@ -154,6 +161,8 @@ discrete stepper: decision LLMs (quackd run --decision-llm; off unless you name 
 |--------------+--------------------+--------------------+--------------------+-------------------|
 | jev          | missing            | TYPESAFE_API_KEY   | jev-1.13.0         |                   |
 |              | (quackd[decision]) | unset              |                    |                   |
+| openai       | missing            | OPENAI_API_KEY     | gpt-6-luna         | https://api.opena |
+|              | (quackd[openai])   | unset              |                    | i.com             |
 | kev          | missing            | none needed        | kev-latest         | http://127.0.0.1: |
 |              | (quackd[decision]) |                    |                    | 8009              |
 | von          | missing            | none needed        | von-latest         | http://127.0.0.1: |
@@ -175,9 +184,10 @@ sentence and every verdict is still the model's (docs/guides/decision-llms/READM
 
 > [!NOTE]
 > **None of the install or serve commands on the pages under `docs/guides/decision-llms/` has been
-> run here.** They are transcribed from each project's own README and source, read on 2026-09-22,
-> and each page marks the lines it could not run. No output is pasted for any of them, because
-> inventing a line a server printed would be the one kind of mistake these pages cannot afford.
+> run here.** They are transcribed from each project's own README and source, read on 2026-09-22
+> (OpenAI's guide on 2026-10-08), and each page marks the lines it could not run. No output is
+> pasted for any of them, because inventing a line a server printed would be the one kind of
+> mistake these pages cannot afford.
 > The `quackd` commands on this page were run, and say so where it matters.
 
 Each row has a page under [`docs/guides/decision-llms/`](./), in the shape of the robot pages
@@ -222,20 +232,23 @@ have. They would have to measure it first, which is what `--decision-mode shadow
 ## Install and switch on
 
 ```bash
-uv pip install "quackd[decision]"                  # the System One client, for every server row
+uv pip install "quackd[decision]"                  # the System One client, for every System One row
+uv pip install "quackd[openai]"                    # the openai row, on the pilot's own SDK
 uv pip install "quackd[laya]"                      # the one that runs in this process
 uv pip install "quackd[lerobot,decision,openai]"   # the arm, a decision LLM and a model
 ```
 
-Neither extra is part of `quackd[all]`, for the same reason the simulators are not: `laya` pulls
-torch, and nobody should pay for a vendor that is not in their run.
+Neither `quackd[decision]` nor `quackd[laya]` is part of `quackd[all]`, for the same reason the
+simulators are not: `laya` pulls torch, and nobody should pay for a vendor that is not in their
+run. The `openai` row needs neither: its client is the pilot's own SDK, which `quackd[all]`
+already carries.
 
 Three flags, because there are many decision LLMs now rather than one:
 
 | Flag | What it says | Default |
 |---|---|---|
 | `--decision-llm NAME[:MODEL]` | which one answers, and optionally which model id it answers as | none, and then none of the rest of this happens |
-| `--decision-url URL` | where your own server listens. No path: the client adds `/v1/systemone` | whatever the row says |
+| `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. No path: the client adds `/v1/systemone`, or `/v1/decisions` on `openai`, where a path stops the run | whatever the row says |
 | `--decision-mode off\|shadow\|on` | what its answer is allowed to do | `on` once you have named one, `off` when you have not |
 
 **Naming a decision LLM is asking for it**, so the mode defaults to `on` rather than to a second
@@ -265,8 +278,8 @@ and it stops the run before anything connects:
 
 ```
 $ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm nope
-✗ error: unknown decision LLM 'nope' from --decision-llm; choose one of jev, kev, von, openjev,
-opendecision, local, laya
+✗ error: unknown decision LLM 'nope' from --decision-llm; choose one of jev, openai, kev, von,
+openjev, opendecision, local, laya
 ```
 
 So does a mode nobody defined:
@@ -430,24 +443,26 @@ broken, and the log says `not_offered` for it without a request being made at al
 > from the SO-101 run on 2026-09-15, the size of the request quackd actually builds (measured
 > against the mock arm), and TypeSafe's published per-call latency and price. Every input is named
 > below so you can disagree with any of them. It rests on the `jev` row because that is the only
-> row with published figures at all: the servers you run yourself have no rate card and no latency
-> anybody here has measured. `--decision-mode shadow` replaces the whole section with measurements
-> from your own bench, and a number from there is worth more than this arithmetic.
+> row with a published latency as well as a rate: `openai` publishes a rate and, for speed, only a
+> ratio to OpenAI's own Responses API, and the servers you run yourself have no rate card and no
+> latency anybody here has measured. `--decision-mode shadow` replaces the whole section with
+> measurements from your own bench, and a number from there is worth more than this arithmetic.
 
 ### The inputs, and where each one comes from
 
 Two of these are TypeSafe's own figures for Jev, and what they do and do not support is on [its
 page](jev.md). The short version is that their headline pair disagrees with their
 own worked example, so what is used here is the underlying numbers rather than the multiple.
-Nothing in this repository repeats a vendor's multiple as a quackd measurement, and no other row
-on that table publishes a latency or a rate at all.
+Nothing in this repository repeats a vendor's multiple as a quackd measurement, no other row on
+that table publishes a latency, and the one other that publishes a rate is `openai`, at $0.10 per
+million input tokens ([its page](openai.md)).
 
 | Figure | Source |
 |---|---|
 | **0.114 s** per call | [typesafe.ai](https://typesafe.ai/), their worked example ([jev](jev.md)) |
 | **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](jev.md)) |
 | **238x lower input price** than a frontier model | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
-| **$0** per question on every other row | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
+| **$0** per question on every row you run yourself | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
 
 And what quackd brings to it, all measured:
 
@@ -582,7 +597,7 @@ finished never moves anything else:
 An answer the router cannot read at all -- a confidence that is a word, a `probabilities` that is
 a list -- costs that turn and nothing more. Reading the answer is part of the call, so it fails
 the way the call does: the error is recorded and the model takes over. That tolerance is
-deliberate now that the answer can come from seven different implementations rather than one.
+deliberate now that the answer can come from eight different implementations rather than one.
 
 A Noul carries no confidence, so 0.5 on the two of them is a raw probability meaning "more likely
 than not". Escalating when the job is not in fact done costs one model call; not escalating when
@@ -608,7 +623,7 @@ says which is which because a number nobody published is a number nobody has cal
 
 > [!WARNING]
 > **Two of these are Jev's numbers, two are quackd's, and every decision LLM here inherits all
-> four unmeasured.** The floors are one table shared by all seven rows, because a floor is a
+> four unmeasured.** The floors are one table shared by all eight rows, because a floor is a
 > property of quackd's appetite for risk as much as of anybody's calibration -- but the confidence
 > they are compared against is computed by whatever answered, and a 4B decoder with a decision
 > head, a 395M encoder and a zero-shot classifier do not mean the same thing by 0.87. TypeSafe say
@@ -637,9 +652,9 @@ hold whichever decision LLM answered.
 - **End a run.** `declare_success`, `declare_failure` and `assess_task` are all sentences, so the
   stepper cannot call any of them. Every ending goes through the model or through a budget.
 - **Write to memory, or speak to a flock.** `remember` and `tell` are sentences too.
-- **See anything.** These are text models -- Jev is documented as text only, and no row here takes
-  an image -- so no camera frame ever reaches one. A turn that needs eyes escalates rather than
-  guessing.
+- **See anything.** quackd sends every row text and nothing else -- Jev is documented as text
+  only, and OpenAI's API, which would take an image, is never sent one -- so no camera frame ever
+  reaches one. A turn that needs eyes escalates rather than guessing.
 - **Start a policy segment.** `manipulate` is offered and compared, and never taken, in either
   mode, so every segment of a learned policy driving the arm is one the model asked for.
 - **Get past a gate.** The allowlist, the budgets, the confirm gates, the preconditions and the
@@ -796,7 +811,9 @@ fake answering in its place. If you run any of it, the numbers are worth an issu
 A decision LLM that is not a System One server -- its own API, its own transport, a wrapper round
 something that was never meant for this -- announces itself through the entry point group
 `quackd.decision_llms`, exactly the way a third party's robot adapter does. quackd never has to
-know about you, and nothing here has to change to let you in.
+know about you, and nothing here has to change to let you in. The one exception is a server that
+answers OpenAI's `POST /v1/decisions`, which needs no plugin: it is the `openai` row, with
+`--decision-url` at its own address ([openai](openai.md)).
 
 One module, one function, and five or six module-level strings that describe the row `doctor` will
 print for you:
@@ -872,7 +889,7 @@ Three flags and four variables. The flag always beats the variable.
 | Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
 | Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
-| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev`, and the self-hosted $0 for every server you run |
+| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run |
 
 `QUACKD_DECISION_PRICE` takes the same form `--price` does for the model, and it is quackd's own
 variable rather than any SDK's, which is why it is not spelled `TYPESAFE_*`: everything with that
@@ -884,8 +901,8 @@ And the rest:
 
 | What | How |
 |---|---|
-| Key | `TYPESAFE_API_KEY` for `jev`, in the environment or a `.env`. Every other row needs none, and is sent the word `local` instead |
-| Install | `quackd[decision]` for every server row, `quackd[laya]` for the in-process one. Neither is in `quackd[all]` |
+| Key | `TYPESAFE_API_KEY` for `jev` and `OPENAI_API_KEY` for `openai`, in the environment or a `.env`, the second sent to OpenAI's own API and nowhere else. Every other row needs none, and is sent the word `local` instead, as `openai` is at any other address |
+| Install | `quackd[decision]` for every System One row, `quackd[openai]` for `openai` and `quackd[laya]` for the in-process one. Only `quackd[openai]`, the pilot's own, is in `quackd[all]` |
 | Model | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 
 `TYPESAFE_BASE_URL` is not read by quackd at all: it belongs to the SDK, and `--decision-url` is
@@ -901,13 +918,14 @@ in front of.
 
 ## Limitations
 
-- **Text only.** No image, audio or video input on any row here
-  ([models](https://docs.typesafe.ai/models) for the hosted one). A turn that needs to look
-  escalates.
-- **A network call in a decision loop**, for six of the seven rows. There is a one-second timeout
-  and one retry, and a failure costs that turn and never the run: the error is recorded and the
-  model takes over. A CPU-only server on your own machine may well need more than a second, and
-  `--decision-mode shadow` is how you find that out before it matters.
+- **Text only.** quackd sends no image, audio or video to any row here: Jev takes none
+  ([models](https://docs.typesafe.ai/models)), and OpenAI's API, which would take an image, is
+  sent text alone. A turn that needs to look escalates.
+- **A network call in a decision loop**, for seven of the eight rows. There is a one-second
+  timeout, with one retry inside it on a System One row and none on `openai`, and a failure costs
+  that turn and never the run: the error is recorded and the model takes over. A CPU-only server
+  on your own machine may well need more than a second, and `--decision-mode shadow` is how you
+  find that out before it matters.
 - **The in-process one trades the network for a load.** `laya` needs no port and no key, and pays
   about seven seconds the first time a run asks it anything, plus a download the first time ever.
 - **English first.** Other languages are supported with lower accuracy, and a `.duck` written in
@@ -918,9 +936,11 @@ in front of.
 - **Confidence is calibrated over groups, not promised per answer.** A 0.93 is not a promise about
   that one answer; it is a statement about how a population of 0.93s behaves -- and it is a
   statement about the population *that backend* produces, which is why the floors are a starting
-  point rather than a setting.
-- **Only one row has published figures at all.** The speed and cost section is built on Jev's, and
-  the six other rows have no rate card and no latency anybody here has measured.
+  point rather than a setting. OpenAI do not claim theirs is calibrated at all
+  ([openai](openai.md)).
+- **Two rows publish a rate, and one a latency.** The speed and cost section is built on Jev's
+  figures, `openai` publishes a rate and, for speed, only a ratio to OpenAI's own Responses API,
+  and the six other rows have no rate card and no latency anybody here has measured.
 - **Unmeasured here.** No agreement rate, no calibration curve, no hardware run, for any of them.
   Nothing on this page is a measurement of a decision LLM driving a robot, because nobody has done
   that yet.

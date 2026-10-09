@@ -4,8 +4,9 @@ any other server that speaks /v1/systemone, at --decision-url. This is the row t
 told where to go: no vendor, no upstream to link, no licence to name and no version to pin,
 because what it describes is the wire format rather than an implementation of it. Any server that
 answers `POST /v1/systemone` is reachable without quackd knowing anything else about it, which is
-the whole point of the format being the abstraction; one that does not speak it is a plugin
-instead, under the `quackd.decision_llms` entry point group ([writing a
+the whole point of the format being the abstraction. One that speaks OpenAI's
+`POST /v1/decisions` instead is the [openai](openai.md) row at its own address, and one that
+speaks neither is a plugin, under the `quackd.decision_llms` entry point group ([writing a
 plugin](README.md#writing-a-plugin)). A decision LLM has no `upstream_api.py` the way an
 adapter does, so every name quackd spells for this one lives in its row in
 [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
@@ -44,7 +45,7 @@ local:<id>` is the whole of what this row is for.
 | The request | `POST {your base url}/v1/systemone`, carrying `{state, model, questions}`. quackd's state is a flat mapping of short English strings -- `goal`, `success_when`, `body`, `where`, `now`, `camera`, `last`, `recent`, `tried`, `notes`, `flock` -- and its questions are four plain dicts of `{type, instructions, criteria}`, with the types `choice` and `noul` |
 | No path on the address | the client appends `/v1/systemone` itself, so `--decision-url` takes a scheme, a host and a port and nothing else. A value with a path on the end produces `/v1/v1/systemone` and a 404 that names nothing, and a test holds every row in the catalogue to the same rule |
 | The response | `{model, answers, usage}`. The `model` and `usage` keys must be present or the SDK's parser raises, though their contents may be null or empty. `answers` is keyed by the question names you were sent, and each one is a choice (`{type: "choice", choice, confidence}`, plus `probabilities` where you have them), a noul (`{type: "noul", noul}`) or a score (`type: "score"`). The `type` is not optional: the SDK tells the kinds of answer apart by it, so an answer without one fails validation, and quackd hands that turn to the model |
-| The key | quackd sends the literal word `local`, `NO_KEY` in [`systemone.py`](../../../quackd/agent/decision/systemone.py), because the SDK requires a non-empty printable ASCII key and a server you run wants none. A hosted key sitting in your environment is never sent here |
+| The key | quackd sends the literal word `local`, `NO_KEY` in [`base.py`](../../../quackd/agent/decision/base.py), because the SDK requires a non-empty printable ASCII key and a server you run wants none. A hosted key sitting in your environment is never sent here |
 | The model id | `--decision-llm local:<id>` names what the server should answer as. With none given the SDK substitutes its own default, `jev-latest`, which a server that validates ids may refuse, so name one |
 | The budget, and the price | one second a turn: `TIMEOUT_S` is declared in [`base.py`](../../../quackd/agent/decision/base.py) and enforced with `asyncio.wait_for` around `decide()` in [`stepper.py`](../../../quackd/agent/decision/stepper.py), at the seam rather than left to the client, and at most one retry inside it. A server you run is costed at the self-hosted $0; a paid endpoint behind this row is the one case where that is wrong, and `QUACKD_DECISION_PRICE`, in the same syntax as `QUACKD_PRICE`, is how you say so |
 
@@ -108,7 +109,8 @@ changes.
 A server that speaks the format can stop being `local` and become a row and a page of its own,
 which is four things and no code: the row, a page like this one, a row in the hub's table and a
 line in the changelog ([CONTRIBUTING.md](../../../CONTRIBUTING.md) has the checklist). One that does
-not speak it is a plugin instead ([writing a plugin](README.md#writing-a-plugin)).
+not speak it is the [openai](openai.md) row if it answers `POST /v1/decisions`, and a plugin
+otherwise ([writing a plugin](README.md#writing-a-plugin)).
 Either way, run it in shadow mode on your own bench ([Measuring it
 yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 and the answers that surprised you, and say which interface and port you ran the server on:

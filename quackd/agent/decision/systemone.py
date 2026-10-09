@@ -19,16 +19,16 @@ import importlib
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from quackd.agent.decision.base import NO_KEY as NO_KEY
 from quackd.agent.decision.base import TIMEOUT_S, DecisionNotInstalled
 
 if TYPE_CHECKING:
     from quackd.agent.decision.catalogue import DecisionSpec
 
-NO_KEY = "local"
-"""What goes in the key field for a server that wants none. Not the empty string: the SDK
-rejects that, and this is the word Kev's own example uses. A row with a `key_env` sends
-nothing instead and lets the SDK read the variable itself, so a hosted key in somebody's
-`.env` never reaches a server on their own machine."""
+# `NO_KEY` lives in `base.py` now, because `decisions_api.py` sends it too, and is re-exported
+# here so that everything which knew it as this module's still finds it. A row with a `key_env`
+# sends nothing instead and lets the SDK read the variable itself; every other row, and a keyed
+# one reached at an address somebody typed, sends the word.
 
 MAX_RETRIES = 1
 

@@ -31,6 +31,14 @@ A starting value, like the floors. It was chosen against Jev's published latency
 CPU-only server on your own machine may well need more; `--decision-mode shadow` is how you
 find that out before it matters."""
 
+NO_KEY = "local"
+"""What goes in the key field for a server that wants none, and for a keyed row reached at an
+address that is not its vendor's. A word rather than nothing, because either SDK handed no key
+goes and reads its own variable for one, and that is the hosted key this exists to keep at
+home; and not the empty string, which TypeSafe's refuses. `local` is the word Kev's own example
+uses. Here rather than in either client because both send it, for the same reason: a hosted key
+sitting in somebody's `.env` never reaches a server on their own machine."""
+
 
 class DecisionError(RuntimeError):
     """A decision LLM that cannot be built or cannot be reached. Raised while the CLI is still
@@ -61,7 +69,9 @@ class DecisionLLM(Protocol):
     for this turn -- and a mapping of question name to a plain dict in the System One shape:
     `{"type": "choice" | "noul" | "score", "instructions": ..., "criteria": ...}`. Plain dicts
     rather than an SDK's own classes, so the same four questions go to a hosted API, a server
-    on this machine and a model in this process without being rebuilt for each.
+    on this machine and a model in this process without being rebuilt for each. A backend whose
+    wire format is another shape translates them itself, both ways, and hands back answers in
+    this one (`decisions_api.py`), so the stepper never learns which it was talking to.
 
     What comes back may be anything `stepper._answer` can read: an object carrying `answers`,
     or a mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and
@@ -78,8 +88,9 @@ class DecisionLLM(Protocol):
     model: str
     """The id it answers as, for the record. Empty where the backend names none."""
     url: str | None
-    """Where it was reached, for the record, or `None` for the hosted default and for one
-    that runs in this process. Written through `command.redacted_url`, never raw."""
+    """Where it was reached, for the record, or `None` where its SDK owns the address (`jev`
+    at its default) and for one that runs in this process. Written through
+    `command.redacted_url`, never raw."""
 
     async def decide(
         self, state: Mapping[str, str], questions: Mapping[str, Mapping[str, Any]]

@@ -9,6 +9,37 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **OpenAI's Decisions API as a decision LLM: `--decision-llm openai`.** OpenAI opened
+  `POST /v1/decisions` to every developer on 2026-10-06, with `gpt-6-luna` its only model, and it
+  asks the kind of question a decision LLM answers in a wire format of its own: the questions go as
+  a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
+  question. So it is a second backend rather than a row on the System One client.
+  `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
+  out and the answers back, strictly by the name each answer carries and never by its position, and
+  a question the API declines is left unanswered and named in a `refused` list beside the answers.
+  It reaches the API through the `openai` SDK's generic request rather than its `decisions`
+  resource, which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves,
+  and it installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
+  `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or its `us.`, `eu.`
+  and `ae.` regional hosts, over https with no user in the address: any other `--decision-url` is a
+  server of your own that answers the same format, sent the word `local` and costed at the
+  self-hosted rate unless `QUACKD_DECISION_PRICE` says otherwise. What the SDK reads for itself is
+  answered too. `OPENAI_BASE_URL` never moves the address, nothing `OPENAI_CUSTOM_HEADERS` sets is
+  ever sent, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI and nowhere else. A
+  `--decision-url` with a path, a query or a fragment stops the run before anything connects, on
+  every machine, with or without the SDK and the key, and a run at a server of your own needs no
+  key. The client waits one second and never retries, and a turn is billed at the published $0.10
+  per million input tokens, output not charged, on the count OpenAI reports. The catalogue gains a
+  `sees` field, false on every row, `openai` included, because quackd sends a decision LLM text and
+  nothing else. SECURITY.md says where each decision LLM's key may go, and the row has
+  [a page of its own](docs/guides/decision-llms/openai.md). `tests/test_decisions_api.py` drives the
+  translation, the key, the headers and the address through a fake of the SDK,
+  `tests/fake_decisions_api.py`. The honest part: nothing has answered a real robot and no request
+  has reached OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is
+  gated on were shaped around Jev, so shadow mode comes first.
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on

@@ -14,8 +14,9 @@ enum, so there is nothing for a classifier to enumerate even in principle.
 
 This is quackd's half and does not change with the vendor. The questions go out as plain dicts
 in the System One shape, so the same four reach a hosted API, a server on this machine and a
-model in this process without being rebuilt; which of those answers them is `factory.py`'s
-question and `catalogue.py`'s table. Nothing here imports a backend at all.
+model in this process without being rebuilt here, and a backend whose wire format is another
+shape translates them on its own side; which of those answers them is `factory.py`'s question
+and `catalogue.py`'s table. Nothing here imports a backend at all.
 """
 
 from __future__ import annotations
@@ -381,7 +382,8 @@ def build_questions(offered: Sequence[Call], what: Mapping[str, str]) -> dict[st
     Plain dicts rather than an SDK's own `Choice` and `Noul`: the System One format spells a
     question as a type, an instruction and its criteria, and each backend reads that mapping
     itself. Built once here, they go to a hosted API, to a server on this machine and to a
-    model in this process without being rebuilt for any of them.
+    model in this process, and the backend that speaks OpenAI's format rather than this one
+    translates them on its own side (`decisions_api.py`).
 
     All four go every time. The questions are answered in parallel and in isolation against the
     same state, so adding one costs almost nothing, and `feasible` is asked on every turn even
