@@ -57,6 +57,38 @@ def test_the_microduck_page_says_which_read_it_is() -> None:
     assert linked == {up.PIN}, f"the page links the robot's repository at {sorted(linked)}"
 
 
+def test_the_microduck_page_says_which_physics_read_it_is() -> None:
+    """The physics section names the day `sim3d/upstream_api.py` was read, and links the model
+    and the policies at the revisions the simulator fetches and at no others.
+
+    The robot's read has the guard above, and nothing held this one: a re-pin that moved the
+    simulator's policies and left the page would go on sending somebody checking the licence to
+    a revision quackd no longer fetches. The re-read on 2026-10-09 moved the policies from
+    `088524a`, older than upstream's `v5`, to `v7`."""
+    from quackd_microduck.sim3d import upstream_api as microduck_rl
+
+    doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    section = doc.split("\n## The duck's physics upstreams\n", 1)[1].split("\n## ", 1)[0]
+    section = " ".join(section.split())
+    model = f"{microduck_rl.REPO}/tree/{microduck_rl.PIN}"
+    policies = f"{microduck_rl.POLICIES_REPO}/tree/{microduck_rl.POLICIES_PIN}"
+    assert f"Read: {microduck_rl.READ_ON}, pinned at [`{microduck_rl.PIN[:7]}`]({model})" in section
+    assert f"policies at [`{microduck_rl.POLICIES_PIN[:7]}`]({policies})" in section
+    linked = {
+        "microduck_rl": set(
+            re.findall(r"github\.com/pollen-robotics/microduck_rl/(?:blob|tree)/(\w+)", doc)
+        ),
+        "microduck-policies": set(
+            re.findall(
+                r"huggingface\.co/pollen-robotics/microduck-policies/(?:blob|tree|resolve)/(\w+)",
+                doc,
+            )
+        ),
+    }
+    pinned = {"microduck_rl": {microduck_rl.PIN}, "microduck-policies": {microduck_rl.POLICIES_PIN}}
+    assert linked == pinned, f"the page links the simulator's upstreams at {linked}"
+
+
 def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
     """The page says how long robotd's state has to show a `robot.move` before quackd holds the
     walk back, in frames and in seconds at the rate quackd subscribes at. All three are numbers
@@ -849,6 +881,43 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
                 assert claim not in prose, (
                     f"{path.name} says {claim!r}; quackd has {right} ({', '.join(CLOUD_NAMES)})"
                 )
+
+
+def test_the_licences_page_counts_the_policies_the_simulator_pins() -> None:
+    """`docs/reference/licenses.md` says how many policies a Microduck ships with, and the
+    number is the set `sim3d/upstream_api.py` pins, counted off its list rather than written here.
+
+    The page said nine until the re-read on 2026-10-09, though upstream's set had been ten since
+    `v5` added `velstand.onnx` on 2026-09-14: quackd's pin was older than `v5`, and nothing
+    compared the two. The ADRs keep the count they were written with, so only the living pages
+    are held to it. The list is also where every policy file quackd names has to be: the two the
+    simulator fetches, the four it stands in for, and the walk a stock robotd loads."""
+    from quackd_microduck.sim3d import upstream_api as microduck_rl
+
+    files = microduck_rl.POLICY_FILES
+    right = _NUMBER_WORDS[len(files)]
+    licences = REPO / "docs" / "reference" / "licenses.md"
+    said = f"the {right} ONNX policies a Microduck ships with"
+    assert said in " ".join(licences.read_text(encoding="utf-8").split()), (
+        f"docs/reference/licenses.md does not say {said!r}"
+    )
+    # only the claim about the set: SECURITY.md's "two ONNX policies" are the two quackd fetches
+    for path in _living_docs():
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).lower().split())
+        for count, word in _NUMBER_WORDS.items():
+            claim = f"{word} onnx policies a microduck ships with"
+            assert count == len(files) or claim not in prose, (
+                f"{path.name} says {claim!r}; the simulator pins {right}"
+            )
+    named = {
+        microduck_rl.WALK_POLICY.name,
+        microduck_rl.STAND_POLICY.name,
+        *microduck_rl.KICK_STANDIN.name.split(", "),
+        up.VELSTAND.name,
+    }
+    assert named <= set(files), (
+        f"not in the policy set the simulator pins: {sorted(named - set(files))}"
+    )
 
 
 # ── OpenRouter's page, and the code it quotes ───────────────────────────────────────────

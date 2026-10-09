@@ -38,7 +38,9 @@ no camera transport and no deadman. Four skills there are quackd's own stand-ins
 robot's, and say so in `state.extras.assumptions`: `kick` and `grab` use the cartoon's contact
 rules, `sit` is refused, and a fall is recovered by resetting the model. The gait floor in the
 simulator was measured on one machine with the XML's own actuators, and upstream deploys a
-different actuator model, so the speeds that walk there are not the speeds that will walk here.
+different actuator model and, from daemon-v0.13.0, a different network too: a robot walks and
+stands on `velstand.onnx`, where the simulator runs `alpha_walking.onnx` and `alpha_stand.onnx`.
+So the speeds that walk there are not the speeds that will walk here.
 
 ## 1. Reach the daemon at all
 

@@ -218,6 +218,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_microduck_webrtc.py` checks what the WebRTC camera says. Each failed before this
   change.
 
+- **The physics simulator fetches its policies at upstream's `v7`, the set a robot on
+  daemon-v0.16.1 is seeded with, and nothing in quackd says a robot stands on `alpha_stand.onnx`
+  any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx` and their
+  manifest from a revision of `pollen-robotics/microduck-policies` older than upstream's `v5`.
+  `v5` added `velstand.onnx`, one network that walks and stands, which every robotd from
+  daemon-v0.13.0 loads with no standing network, so the licences page's nine policies were one
+  short of what a Microduck ships with, and `sim3d/upstream_api.py` said the daemon runs
+  `alpha_stand.onnx` while the twist is small. quackd now fetches at `v7`'s revision, `6677ec0`.
+  The walking and standing files are the same bytes there, so the simulator walks exactly as it
+  did and only the manifest's pinned hash moved. The cache is named after the revision, so the
+  first `microduck:mujoco` run after upgrading fetches the two policies again, 1.6 MB, without
+  being asked. The model stays at `2b25a48`: `microduck_rl`'s `develop` is 36 commits on, and
+  every file quackd fetches from it is the same bytes there. The browser demo fetches from the
+  same revision. The Microduck page names the new read, the licences page counts ten, the
+  hardware checklist's rehearsal says a robot walks on another network than the simulator's, and
+  ADR-0030 carries a dated note beside the nine it was written with. `tests/test_docs.py` holds
+  the physics section to the revisions the simulator fetches, and the licences page to the set it
+  pins, counted off a list in `sim3d/upstream_api.py`. Each failed with its part of this change
+  taken out.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

@@ -205,20 +205,25 @@ first run fetches it. The real duck's other tests — that it walks, turns, stay
 to sit and stands itself up — go with the second. The gait numbers below are still one machine's
 word; the sweeps are not.
 
-Read: 2026-09-07, pinned at
+Read: 2026-10-09, pinned at
 [`2b25a48`](https://github.com/pollen-robotics/microduck_rl/tree/2b25a48b08f1f17bc38c90bb03144c81fbd9ed07)
 (`develop`, 2026-09-06) and policies at
-[`088524a`](https://huggingface.co/pollen-robotics/microduck-policies/tree/088524a64e2557dc453256b6071dbb9d23888802).
+[`6677ec0`](https://huggingface.co/pollen-robotics/microduck-policies/tree/6677ec007142bbaf05123a468f6ae58d13808786)
+(`v7`, 2026-10-05), the set daemon-v0.16.1 seeds a robot with. The first read, on 2026-09-07,
+pinned the policies at `088524a`, from before `v5`, and `alpha_walking.onnx` and
+`alpha_stand.onnx` are the same bytes at both, so the simulator walks as it did. `develop` had
+moved on to `273afe0` by this read, and every file quackd fetches from it is the same bytes
+there, so the model's commit stays.
 
 | What | Status | Why it matters |
 |---|---|---|
 | `robot_walk.xml` and its 38 STL meshes | **VERIFIED** | the body: one free joint, 14 hinges, position actuators, an IMU and a head camera |
-| `alpha_walking.onnx`, `alpha_stand.onnx` | **VERIFIED** | `obs[1,61] → actions[1,14]`, the normaliser baked in, Apache-2.0 on the Hub |
+| `alpha_walking.onnx`, `alpha_stand.onnx` | **VERIFIED** | `obs[1,61] → actions[1,14]`, the normaliser baked in, Apache-2.0 on the Hub. Not what a stock robot runs: every robotd from daemon-v0.13.0 walks and stands on `velstand.onnx` (the robot's own row above), and keeps this pair in the set "for a board that loads them back by hand" |
 | observation layout, 13-value command, `ctrl = default_pose + action`, 50 Hz | **VERIFIED** | read from `scripts/infer_policy.py`; the same layout appears in the daemon and in Pollen's own browser simulator |
 | projected gravity is the world's `-z` in the trunk frame | **VERIFIED** | get its sign wrong and the duck braces and stands still for every command, silently |
 | the gait floor: `no gait below vx 0.23 m/s or wz 1.0 rad/s; above it about 0.38x the commanded speed` | **UNVERIFIED** | measured here on one machine with the XML's own actuators, and re-measured on 2026-09-17 when MuJoCo 3.13 moved it up from 0.22: the floor belongs to the physics build as much as to the policy. Upstream trains and deploys with a different actuator model, so a real duck may track commands directly |
 | `a positive head_pitch in the command vector tilts the camera down` | **UNVERIFIED** | measured by driving the command and watching the rendered head camera, not read anywhere, so quackd negates its own pitch to make looking up positive. `neck_pitch` and `head_roll` are left at zero: quackd's gaze has one pitch and no roll, so nothing has exercised them |
-| the four stand-ins, in place of `ball_kick_left.onnx, ball_kick_right.onnx, alpha_ground_pick.onnx, alpha_sitstand.onnx` | **UNVERIFIED** | upstream's episodic policies did nothing from a standing pose when tried and the sit-stand one toppled the model, so these four are quackd's stand-ins and say so in `extras.assumptions` |
+| the four stand-ins, in place of `ball_kick_left.onnx, ball_kick_right.onnx, alpha_ground_pick.onnx, alpha_sitstand.onnx` | **UNVERIFIED** | upstream's episodic policies did nothing from a standing pose when tried and the sit-stand one toppled the model, so these four are quackd's stand-ins and say so in `extras.assumptions`. The sit-stand file tried was the one before `v6`, which replaced it with one upstream says "no longer tips over backward when the head moves abruptly while seated", and that one has not been tried |
 
 The head camera is the one place quackd deliberately does not do what the file says: upstream's
 `<camera>` quaternion is not MuJoCo's viewing convention, so rendering through it looks

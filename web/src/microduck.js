@@ -20,7 +20,7 @@
  */
 
 const RL_PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"; // microduck_rl develop, 2026-09-06
-const POLICY_REV = "088524a64e2557dc453256b6071dbb9d23888802"; // microduck-policies main
+const POLICY_REV = "6677ec007142bbaf05123a468f6ae58d13808786"; // microduck-policies v7, 2026-10-05
 const RAW = `https://raw.githubusercontent.com/pollen-robotics/microduck_rl/${RL_PIN}/src/mjlab_microduck/robot/microduck`;
 const POLICIES = `https://huggingface.co/pollen-robotics/microduck-policies/resolve/${POLICY_REV}`;
 
