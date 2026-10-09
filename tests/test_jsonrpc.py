@@ -42,6 +42,7 @@ from quackd_microduck.transports import jsonrpc_unix
 from quackd_microduck.transports.jsonrpc_unix import (
     CAMERA_FPS,
     GAZE_HOLD_S,
+    HELD_FOR_A_VERB,
     MEDIAD_FRAME_FPS,
     MOVE_ECHO_FRAMES,
     READER_LIMIT,
@@ -60,7 +61,8 @@ DUCK = parse_duck_text(
 #: Every verb that moves the duck, for the tests of what a duck that is not standing refuses.
 MOVERS = parse_duck_text(
     "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
-    "  allow: [walk, go_to, kick, gaze, sit, stand, stand_up]\nsuccess: [x]\n---\n# Task\nx\n"
+    "  allow: [walk, go_to, search_scan, kick, gaze, sit, stand, stand_up]\n"
+    "success: [x]\n---\n# Task\nx\n"
 )
 #: The skills a stock robot answers `robot.subscribe` with.
 STOCK_SKILLS = ["roulade", "kick_left", "kick_right"]
@@ -228,6 +230,11 @@ class FakeRobotd:
         self.rejected: list[tuple[str, str]] = []
         """Every call robotd would have refused, with why. A notification gets no answer, so this
         is the only place a refused `robot.move` shows up at all."""
+        self.link = asyncio.Event()
+        self.link.set()
+        """Cleared, the link holds quackd's lines back, as one lost segment on an ssh tunnel does
+        until it is sent again: the fake reads nothing more, while its state stream goes on, and
+        once it is set again takes every line it was sent, in the order sent."""
         self.junk: list[str] = []
         """Lines written, in order, just before the next answer, each once."""
         self.answers: dict[str, Any] = {}
@@ -362,6 +369,7 @@ class FakeRobotd:
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self.writers.append(writer)
         while line := await reader.readline():
+            await self.link.wait()
             msg = json.loads(line)
             method, params = msg["method"], msg.get("params") or {}
             self.arrived.append((time.monotonic(), method))
@@ -1271,9 +1279,35 @@ async def test_stand_up_asks_nothing_of_a_duck_nobody_can_see(
     await t.close()
 
 
+@pytest.mark.parametrize(("policy", "fallen"), [("walk", True), ("homing", False)])
+async def test_stand_up_asks_nothing_of_a_duck_whose_robot_cannot_say_it_is_held(
+    registry: VerbRegistry, policy: str, fallen: bool
+) -> None:
+    """A robotd from before its pick-up detector leaves `safety.picked_up` out of every frame,
+    and the floor serves every release back to daemon-v0.11.0 now. `picked_up` read as False
+    there, so a duck held at an angle, which reads as fallen, was sent `robot.enable`, and the
+    legs moved in the hands holding it. Not knowing whether the duck is held is refused here as
+    not knowing its posture is refused a walk, and the state says the pick-up is unknown."""
+    fake = FakeRobotd(policy=policy, fallen=fallen, picked_up=None)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        extras = (await t.get_state()).extras
+        assert extras["picked_up"] is None and extras["pickup_detection"] is False
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        assert not result.ok and "does not report whether somebody is holding" in result.summary
+        assert "robot.enable" not in [r["method"] for r in fake.requests]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
 async def test_a_move_held_back_holds_every_move_until_a_stop(robotd: FakeRobotd) -> None:
     """The duck reading standing again is not enough: the verb that was walking when it stopped
-    standing is still sending, and what it sends is the walk it was doing before."""
+    standing is still sending, and what it sends is the walk it was doing before. While it is
+    held back the state reads `unknown` and says why, where `report_state` said `standing` of a
+    duck whose walk quackd was holding back, with nothing saying so."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
@@ -1285,13 +1319,18 @@ async def test_a_move_held_back_holds_every_move_until_a_stop(robotd: FakeRobotd
 
     robotd.picked_up, robotd.policy = False, "walk"
     await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
-    assert (await t.get_state()).posture == "standing"
+    state = await t.get_state()
+    assert state.posture == "unknown" and "holding" in state.extras["move_hold"]
+    assert state.extras["posture_reason"].startswith(HELD_FOR_A_VERB)
+    assert "holding" in t.safety["move_hold"], "doctor reads the hold here"
     ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
     assert not ack.accepted and "until the verb that was moving it stops" in (ack.reason or "")
     await _landed(t)
     assert _moves(robotd) == 1, "only the move from before the duck was picked up went out"
 
     await t.stop()
+    state = await t.get_state()
+    assert state.posture == "standing" and state.extras["move_hold"] is None
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
     await _landed(t)
     assert _moves(robotd) == 2
@@ -1330,25 +1369,55 @@ class _BallAhead:
         ]
 
 
-async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_down(
-    registry: VerbRegistry, robotd: FakeRobotd
-) -> None:
-    """`go_to`'s precondition was read when it started, and it sends its next twist ten times
-    a second whatever became of the last. A duck picked up halfway through would have had a
-    fresh twist waiting for it the whole time, and walked off on it the moment it was put down,
-    since robotd's policy drives whatever twist is freshest. The first `robot.move` after the
-    pick-up is held back, and so is every one after it until the verb has stopped the duck."""
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", camera_url="http://example/x.jpg")
+def _seeing(fake: FakeRobotd) -> JsonRpcUnixTransport:
+    """A transport to `fake` whose camera hands out one blank picture, for the verbs that steer
+    on a frame; the detector a test hands the executor decides what is in it."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}", camera_url="http://example/x.jpg")
     picture = Image.new("RGB", (8, 8))
 
     async def fetch() -> Image.Image:
         return picture
 
     t._fetch_frame = fetch  # type: ignore[method-assign]
+    return t
+
+
+class _NothingThere:
+    """A detector that sees nothing, so `search_scan` turns on to its last step."""
+
+    name = "nothing_there"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return []
+
+
+async def _ended(task: asyncio.Task[Any], what: str) -> Any:
+    """`task`'s result once it has ended, which a test waits for rather than sleeps for."""
+    await _eventually(task.done, what)
+    return task.result()
+
+
+async def _cancelled(*tasks: asyncio.Task[Any] | None) -> None:
+    for task in tasks:
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
+
+async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_down(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """`go_to`'s precondition was read when it started, and it sent its next twist ten times a
+    second whatever became of the last. A duck picked up halfway through would have had a fresh
+    twist waiting for it the whole time, and walked off on it the moment it was put down, since
+    robotd's policy drives whatever twist is freshest. The first `robot.move` after the pick-up
+    is held back, and `go_to` ends there, stopped, saying why, where it used to steer on without
+    a twist until its timeout and then say only that it had timed out."""
+    t = _seeing(robotd)
     await t.connect()
     assert t.camera_working
-    ball = _BallAhead(distance_m=1.0)
-    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=ball)
+    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=_BallAhead(distance_m=1.0))
     going = asyncio.create_task(ex.run_verb("go_to", {"target": "ball", "timeout_s": 30}))
     try:
         # after its look go_to waits for robotd to let go of any glance (`head_fade_s`), and the
@@ -1359,28 +1428,100 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
         await _until(t, lambda s: s["safety"].get("picked_up") is True)
         await _landed(t)
         held_at = _moves(robotd)
-        await asyncio.sleep(0.3)  # three of go_to's ticks, with the duck in somebody's hands
-        await _landed(t)
-        assert _moves(robotd) == held_at, "robot.move kept going out to a duck somebody holds"
-
-        robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
-        await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
-        await asyncio.sleep(0.5)  # five more ticks, the duck standing again
-        await _landed(t)
-        assert not going.done(), "go_to is still running, so the hold is what kept the duck still"
-        assert _moves(robotd) == held_at, "a robot.move went out after the duck was put down"
-
-        ball.distance_m = 0.1  # let go_to arrive, so it ends as every walking verb does, stopped
-        result = await asyncio.wait_for(going, 5)
+        result = await _ended(going, "go_to ending at the twist held back")
     finally:
-        going.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await going
-    assert result.ok and robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+        await _cancelled(going)
+    said = "go_to: a twist was refused, so the body stopped: the duck stopped standing (somebody"
+    assert not result.ok and result.summary.startswith(said), result.summary
+    assert "holding the duck" in result.data["move_refused"]
+    assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+
+    robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
+    await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
+    await _landed(t)
+    assert _moves(robotd) == held_at, "a robot.move went out after the duck was picked up"
+    assert (await t.get_state()).extras["move_hold"] is None, "the hold ended with go_to"
 
     walked = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})  # a new verb walks again
     await _landed(t)
     assert walked.ok and _moves(robotd) > held_at
+    await t.close()
+
+
+@pytest.mark.parametrize("other", ["stop", "walk"])
+async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
+    registry: VerbRegistry, robotd: FakeRobotd, other: str
+) -> None:
+    """The hold was one flag that any stop cleared. Over MCP every call is a task of its own, so
+    a `go_to` held back for a duck somebody had picked up was set walking again, onto the duck
+    once it was put down, by the pilot's `stop` from another call, or by the stop a second walk
+    sent on its way out once the same hold had refused it. The hold belongs to the verbs that
+    were walking, and only each one's own stop lets it go.
+
+    `go_to` waits here on a frame that does not come, past its last re-send, so the pick-up is
+    seen in the state rather than through a twist it sends: a verb that sends nothing while the
+    duck is in somebody's hands is held back all the same."""
+    t = _seeing(robotd)
+    await t.connect()
+    seeing = asyncio.Event()
+    seeing.set()
+    see = t.get_frame
+
+    async def gated() -> Image.Image | None:
+        await seeing.wait()
+        return await see()
+
+    t.get_frame = gated  # type: ignore[method-assign]
+    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=_BallAhead(distance_m=1.0))
+    going = asyncio.create_task(ex.run_verb("go_to", {"target": "ball", "timeout_s": 30}))
+    walking: asyncio.Task[Any] | None = None
+    try:
+        await _eventually(lambda: _moves(robotd) >= 3, "go_to steering", wait_s=10.0)
+        if other == "walk":  # a second call, walking beside go_to
+            walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 10.0}))
+        mark = len(robotd.notifications)
+        seeing.clear()
+        # go_to re-sends its twist for one deadman window while it waits, then zeroes it once
+        zero = {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}
+        await _eventually(
+            lambda: any(n["params"] == zero for n in robotd.notifications[mark:]),
+            "go_to's last re-send, a zero twist",
+        )
+
+        robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
+        await _until(t, lambda s: s["safety"].get("picked_up") is True)
+        await _landed(t)
+        held_at = _moves(robotd)
+        if other == "stop":
+            assert (await ex.run_verb("stop")).ok
+        else:
+            assert walking is not None
+            walked = await _ended(walking, "the walk ending at the twist held back")
+            assert not walked.ok and "holding the duck" in walked.summary, walked.summary
+        assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name, "another call's stop went out"
+
+        robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
+        await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
+        state = await t.get_state()
+        assert not going.done() and state.posture == "unknown", state.extras["posture_reason"]
+        assert "holding the duck" in state.extras["move_hold"]
+        # a third call is refused before it sends anything, and stand_up asks the policy nothing
+        refused = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
+        assert not refused.ok and "still running" in refused.summary, refused.summary
+        refused = await ex.run_verb("stand_up", {})
+        assert not refused.ok and "still running" in refused.summary, refused.summary
+
+        seeing.set()  # the frame go_to was waiting on comes
+        result = await _ended(going, "go_to ending at the twist held back")
+    finally:
+        await _cancelled(going, walking)
+    said = "go_to: a twist was refused, so the body stopped: the duck stopped standing (somebody"
+    assert not result.ok and result.summary.startswith(said), result.summary
+    await _landed(t)
+    assert _moves(robotd) == held_at, "a robot.move went out after the duck was picked up"
+    assert "robot.enable" not in [r["method"] for r in robotd.requests]
+    state = await t.get_state()
+    assert state.posture == "standing" and state.extras["move_hold"] is None
     await t.close()
 
 
@@ -1396,20 +1537,6 @@ async def _eventually(check: Callable[[], bool], what: str, wait_s: float = 30.0
         if time.monotonic() > deadline:
             raise AssertionError(f"{what} did not happen within {wait_s:g} s")
         await asyncio.sleep(0.01)
-
-
-async def _past_the_echo_window(t: JsonRpcUnixTransport, since: float) -> None:
-    """Return once `MOVE_ECHO_FRAMES` state frames have been read since `since`, the newest of
-    them `move_echo_after_s` after it: the first frame a twist sent at `since` is judged on."""
-    window, read = move_echo_after_s(t.state_hz), t._frames_read
-    await _eventually(
-        lambda: (
-            t._frames_read - read >= MOVE_ECHO_FRAMES
-            and t._last_state_at is not None
-            and t._last_state_at - since >= window
-        ),
-        "the echo window closing",
-    )
 
 
 def _drop_by_switch(fake: FakeRobotd) -> None:
@@ -1429,16 +1556,20 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_a_stop(
     """robotd answers no notification, so a `robot.move` it could not parse used to be a walk
     quackd reported and the duck never took, and serving a robotd quackd has not read is what
     makes one likely. Its own state says what it was last asked for (`up.MOVE_ECHO`): a twist
-    that state has not shown `move_echo_after_s` later holds every `robot.move` back, the way a
-    duck that stops standing does, until the verb that sent it stops."""
+    that state has not shown, once robotd has answered a call quackd made after it and a few
+    frames have come since, holds every `robot.move` back, the way a duck that stops standing
+    does, until the verb that sent it stops. The state says so before the next twist is tried."""
     drop(robotd)
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted  # nothing to judge yet
-    await _past_the_echo_window(t, time.monotonic())
+    await _eventually(lambda: t.safety["move_hold"] is not None, "the echo's verdict")
+    asked = [r["method"] for r in robotd.requests]
+    assert up.ROBOT_HEALTH.name in asked, "robotd was asked whether it had read the twist"
     ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
     reason = ack.reason or ""
     assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
+    assert "has since answered a call quackd made after it" in reason
     assert "still says it was asked for [0, 0, 0]" in reason
     # both things that look like this from here: a robotd that could not parse the twist, and
     # another client, a gamepad's padd among them, sending one after it (`up.PAD_DRIVES`)
@@ -1456,7 +1587,9 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_a_stop(
     # robotd taking twists again does not lift the hold: the verb that ran into it has to stop
     robotd.drop_moves, robotd.params = False, dict(PARAMS)
     ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
-    assert not ack.accepted and "since robotd stopped showing the twists" in (ack.reason or "")
+    reason = ack.reason or ""
+    assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
+    assert "until the verb that was moving it stops" in reason
     await t.stop()
     assert (await t.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
     await _until(t, lambda s: s["move"]["requested"] == [0.2, 0.0, 0.0])
@@ -1467,15 +1600,18 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_a_stop(
 
 async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRobotd) -> None:
     """A frame robotd built before a twist reached it can be read well after the twist went
-    out, when quackd's own process stalls with the frame still in its socket. Judged on time
-    alone, that one frame read as robotd not taking the twist, and held back a walk it took. The
-    echo waits for `MOVE_ECHO_FRAMES` frames read since the twist went out as well, so a stall
-    delays the verdict rather than inventing one.
+    out: when quackd's own process stalls with the frame still in its socket, and every frame
+    robotd sends while a link holds quackd's own lines back. Counted from the send, either read
+    as robotd not taking the twist, and held back a walk it took. The echo counts only frames
+    read after robotd has answered a call quackd made after the twist, `MOVE_ECHO_FRAMES` of
+    them, so a stall delays the verdict rather than inventing one.
 
     The stream is stopped and the frames handed to the transport one at a time, all of them
-    built before the twist, so nothing about this machine's timing decides the outcome."""
+    built before the twist, so nothing about this machine's timing decides the outcome. The
+    timeout is long, so that robotd not answering at all, a verdict of its own, cannot come
+    first."""
     robotd.drop_moves = True  # the state never shows the twist, so every frame here is stale
-    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=60.0)
     await t.connect()
     assert robotd._stream is not None
     robotd._stream.cancel()
@@ -1484,13 +1620,19 @@ async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRob
     robotd._stream = None
     await _landed(t)  # every frame the stream wrote has been read; from here, only these
     stale = robotd.frame()["params"]
-    t._took_state(stale)  # so the duck reads standing however long the line above took
+    robotd.link.clear()  # robotd reads nothing more for now, the question quackd asks included
+    t._took_state(stale)  # so the duck reads standing however long the lines above took
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
-    sent_at, read_then, twist = t._unshown[0]
-    # long enough ago that time alone has closed the window
-    t._unshown[0] = (sent_at - 10 * move_echo_after_s(t.state_hz), read_then, twist)
-    for _ in range(MOVE_ECHO_FRAMES - 1):
+    sent = t._unshown[0]
+    sent.at -= 10 * move_echo_after_s(t.state_hz)  # long enough ago that time has closed it
+    for _ in range(3 * MOVE_ECHO_FRAMES):
         t._took_state(stale)  # read now, built before the twist could show in it
+        assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    assert sent.heard is None, "nothing robotd answered says it has read the twist"
+    robotd.link.set()  # robotd reads everything it was sent, answers, and takes no twist
+    await _eventually(lambda: sent.heard is not None, "robotd's answer")
+    for _ in range(MOVE_ECHO_FRAMES - 1):
+        t._took_state(stale)
         assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
     t._took_state(stale)
     ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
@@ -1498,12 +1640,95 @@ async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRob
     await t.close()
 
 
+async def test_a_walk_a_link_held_back_for_a_while_is_taken_and_never_held(
+    robotd: FakeRobotd,
+) -> None:
+    """A link that holds quackd's lines back for longer than the echo window, as one lost
+    segment on an ssh tunnel does until it is sent again, used to stop a walk robotd took.
+    Frames kept coming, each showing the twist from before the stall, so every twist sent into
+    it read as refused after three of them, and a `go_to` stopped dead on a healthy robot,
+    which then took each twist in the order sent once the stall cleared. robotd's answers are
+    held back with the twists, and the echo counts from them now, so the walk goes on.
+
+    Each twist differs from the last, as `go_to`'s do while the ball drifts across the
+    picture, so no frame from before the stall can show one by value. The timeout is long, so
+    that the question quackd asks during the stall is still waiting for its answer when the
+    stall ends, rather than counted as one robotd did not answer."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=60.0)
+    await t.connect()
+    turn = 0.0
+
+    async def tick() -> None:
+        nonlocal turn
+        turn += 0.001
+        ack = await t.send_intent(Intent.move(0.1, 0.0, turn))
+        assert ack.accepted, ack.reason
+        await asyncio.sleep(MOVE_RESEND_S)
+
+    await tick()
+    await _until(t, lambda s: s["move"]["requested"][2] > 0)  # robotd shows the walk
+    robotd.link.clear()
+    frames, since, window = t._frames_read, time.monotonic(), move_echo_after_s(t.state_hz)
+    # three windows' worth of frames and of time, none showing a twist sent into the stall
+    while t._frames_read - frames < 3 * MOVE_ECHO_FRAMES or time.monotonic() - since < 3 * window:
+        await tick()
+    newest = turn
+    robotd.link.set()  # robotd reads them all, takes each in the order sent, and shows the last
+    await _until(t, lambda s: s["move"]["requested"][2] >= newest)
+    for _ in range(2 * MOVE_ECHO_FRAMES):  # and the walk goes on
+        await tick()
+    assert t.safety["move_hold"] is None
+    assert t.move_echo is not None and t.move_echo["taken"] is True
+    await t.stop()
+    await t.close()
+
+
+async def test_a_walk_asks_robotd_once_as_it_starts(robotd: FakeRobotd) -> None:
+    """Asked only once a twist had gone the window unshown, robotd's answer came a round trip
+    and three frames later still, and a walk as short as one of `search_scan`'s turns ended on
+    its own stop first, which writes off every twist before it, so a turn robotd never took was
+    counted as turned. Each walk asks once, as it starts, and no more while robotd shows it."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    before = len(robotd.requests)
+
+    def asked() -> list[dict[str, Any]]:
+        return [r for r in robotd.requests[before:] if r["method"] == up.ROBOT_HEALTH.name]
+
+    for _ in range(MOVE_ECHO_FRAMES + 1):  # sent at once, so no window closes on any of them
+        assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    await _eventually(lambda: bool(asked()), "robotd being asked as the walk started")
+    await t.stop()
+    assert len(asked()) == 1, "asked once a walk, not once a twist"
+    await t.close()
+
+
+async def test_a_robotd_that_does_not_answer_cannot_be_said_to_take_a_walk(
+    robotd: FakeRobotd,
+) -> None:
+    """A link that holds the question quackd asks for longer than a call may wait is the link
+    the heartbeat gives up on too. robotd cannot be shown to have read the twists, so they are
+    held back as twists it has not taken, and the refusal says the question went unanswered."""
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    t.request_timeout_s = move_echo_after_s(t.state_hz)  # short, and set past the handshake
+    robotd.link.clear()
+    assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    await _eventually(lambda: t.safety["move_hold"] is not None, "the echo's verdict")
+    ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
+    reason = ack.reason or ""
+    assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
+    assert f"did not answer the {up.ROBOT_HEALTH.name}" in reason and "no answer within" in reason
+    robotd.link.set()
+    await t.close()
+
+
 async def test_a_walk_robotd_does_not_take_stops_and_says_so(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:
     """The walk used to say `walked` for every twist it had sent, taken or not. Now the slice
-    after the echo window fails it, the verb stops the duck as it does on any refusal, and the
-    pilot is told what robotd's state said instead."""
+    after the echo's verdict fails it, the verb stops the duck as it does on any refusal, and
+    the pilot is told what robotd's state said instead."""
     robotd.drop_moves = True
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
@@ -1515,6 +1740,36 @@ async def test_a_walk_robotd_does_not_take_stops_and_says_so(
     assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
     await _landed(t)
     assert _moves(robotd) < round(duration / MOVE_RESEND_S), "the walk ran its whole length"
+    await t.close()
+
+
+@pytest.mark.parametrize("verb", ["go_to", "search_scan"])
+async def test_a_verb_that_steers_stops_on_a_robotd_that_does_not_take_its_twists(
+    registry: VerbRegistry, robotd: FakeRobotd, verb: str
+) -> None:
+    """`go_to` and `search_scan` threw away what the transport said of a twist robotd had not
+    taken. `go_to` ran out its timeout and said it had timed out, and `search_scan` reported a
+    full sweep of a duck that never turned, the ball not in it, which a pilot reads as the room
+    being empty. Each stops at the first twist held back now and says what robotd showed
+    instead, which is what the hardware checklist tells the operator a pad held as an e-stop
+    ends a walk with. The turns are a quarter turn each, longer than the echo takes to judge."""
+    robotd.drop_moves = True
+    t = _seeing(robotd)
+    await t.connect()
+    detector: Any = _BallAhead(distance_m=1.0) if verb == "go_to" else _NothingThere()
+    params: dict[str, Any] = (
+        {"target": "ball", "timeout_s": 30}
+        if verb == "go_to"
+        else {"target": "ball", "step_deg": 90, "max_steps": 4}
+    )
+    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=detector)
+    result = await ex.run_verb(verb, params)
+    assert not result.ok and result.summary.startswith(f"{verb}: a twist was refused, so ")
+    assert "robotd has not taken robot.move" in result.summary, result.summary
+    if verb == "search_scan":
+        assert "the scan stopped after 0 of 4 turns (0°)" in result.summary, result.summary
+        assert result.data["steps"] == 0
+    assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
     await t.close()
 
 
@@ -1738,10 +1993,15 @@ async def test_the_state_says_whether_the_robot_reports_a_pickup(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        assert (await t.get_state()).extras["pickup_detection"] is detection
-        assert t.safety == {"pickup_detection": detection}
+        extras = (await t.get_state()).extras
+        assert extras["pickup_detection"] is detection
+        # a frame without the key says nothing either way, which is not "nobody holds it"
+        assert extras["picked_up"] is picked_up
+        assert t.safety == {"pickup_detection": detection, "move_hold": None}
         t._last_state_at = None  # a stream that never started says neither
-        assert (await t.get_state()).extras["pickup_detection"] is None and t.safety == {}
+        extras = (await t.get_state()).extras
+        assert extras["pickup_detection"] is None and extras["picked_up"] is None
+        assert t.safety == {"move_hold": None}
         await t.close()
     finally:
         await fake.stop()
@@ -1846,6 +2106,8 @@ def test_doctor_says_which_robotd_answered_and_what_it_cannot_see() -> None:
     report = _probed()
     rows = {row.what: row for row in report.rows}
     assert (rows["  pickup_detection"].value, rows["  pickup_detection"].state) == ("True", "plain")
+    # what quackd holds back for a verb still running, which on doctor's own connection is none
+    assert (rows["  move_hold"].value, rows["  move_hold"].state) == ("none", "plain")
     advice = "\n".join(report.advisories)
     assert "API v" not in advice and "holding" not in advice, advice
 

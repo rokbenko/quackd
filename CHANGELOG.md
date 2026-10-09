@@ -27,23 +27,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   that carries no `accepted` quackd can read is a refusal that names what came back, where it read
   as a yes. `robot.move` is a notification, which robotd answers with nothing, so every twist is now
   checked against robotd's own state: one that `move.requested` has not shown three state frames
-  after it went out holds `robot.move` back until the verb that was walking stops, the hold a duck
-  that stops standing already gets, and the walk fails saying what robotd showed instead, with the
-  verdict in `extras.move_echo`. A gamepad connected to the robot tells robotd to stand still at
-  least ten times a second while nobody touches it, so with one connected a walk can now stop this
-  way, where it used to go on sending twists the pad was overriding. `extras.pickup_detection` says
-  whether the robot reports `safety.picked_up`, which robotd first shipped in daemon-v0.15.2, and
-  `doctor` warns when it does not, since nothing then tells quackd that somebody is holding the
-  duck. `extras.robotd` also says whether the state carries `frames`, and whether mediad's
-  `GET /frame` answered when `--camera-url` asked it, since the floor serves releases with neither.
-  [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md) records the rule.
-  `tests/test_jsonrpc.py` serves a robotd one version newer than the read and one at the floor,
-  refuses two below it and five kinds of `hello` with no integer version, fails a verb whose call
-  the robot lacks with both versions named, holds a walk back on a robotd that drops `robot.move`
-  and on one that refuses its params by name, but not on frames read late after a stall, calls a
-  socket with no `robot.subscribe` not robotd's, takes a kick answered with no `accepted` for a
-  refusal, and probes the robot through `doctor` for the new row and both warnings. Each of them
-  failed before this change.
+  after robotd answered a call quackd made after it holds `robot.move` back until the verb that was
+  walking stops, the hold a duck that stops standing already gets, and the verb fails saying what
+  robotd showed instead, with the verdict in `extras.move_echo`. Frames are counted from robotd's
+  answer and not from the send, since robotd reads a connection in order, so a link that held
+  quackd's lines back for a while delays the verdict instead of stopping a walk robotd then took,
+  and each walk costs a `robot.health` more than it did. A gamepad connected to the robot tells
+  robotd to stand still at least ten times a second while nobody touches it, so with one connected a
+  walk can now stop this way, where it used to go on sending twists the pad was overriding.
+  `extras.pickup_detection` says whether the robot reports `safety.picked_up`, which robotd first
+  shipped in daemon-v0.15.2, and `doctor` warns when it does not, since nothing then tells quackd
+  that somebody is holding the duck. `extras.robotd` also says whether the state carries `frames`,
+  and whether mediad's `GET /frame` answered when `--camera-url` asked it, since the floor serves
+  releases with neither. [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md)
+  records the rule. `tests/test_jsonrpc.py` serves a robotd one version newer than the read and one
+  at the floor, refuses two below it and five kinds of `hello` with no integer version, fails a verb
+  whose call the robot lacks with both versions named, holds a walk back on a robotd that drops
+  `robot.move` and on one that refuses its params by name, but not on frames read late after a
+  stall, nor on a link that held quackd's lines back for longer than the window, calls a socket with
+  no `robot.subscribe` not robotd's, takes a kick answered with no `accepted` for a refusal, and
+  probes the robot through `doctor` for the new row and both warnings. Each of them failed before
+  this change.
 
 - **A Microduck's camera is mediad's own `GET /frame` now, which `microduck:jsonrpc` pulls at 2
   frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck
@@ -115,18 +119,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   legs ignored every twist. A duck somebody holds is read before a fallen one, so the refusal says
   so instead of pointing at `stand_up`, and `gaze`, `sit` and `stand` refuse it as well. `stand_up`
   reads the duck before it sends `robot.enable`: it refuses a duck somebody holds or that nothing
-  reports on, says a standing duck is already upright, points a seated one at `stand`, and calls the
+  reports on, and one on a robotd that cannot say whether it is held, which used to read as nobody
+  holding it, says a standing duck is already upright, points a seated one at `stand`, and calls the
   duck upright afterwards only if it reads standing. Underneath all of these, `microduck:jsonrpc`
-  sends no `robot.move` unless the newest state reads standing, and once it has held one back it
-  sends none until the verb that was walking stops. The preconditions are read once, when a verb
-  starts, and `go_to` sends its next twist whatever became of the last, so a duck picked up halfway
-  through one would have been put down onto a fresh twist and walked off on it. A `search_scan`
-  stops between its turns, so it turns again once the duck is back on its feet. A verb refused for
+  sends no `robot.move` unless the newest state reads standing, and once the duck stops standing
+  while a verb walks, it sends that verb none until it stops. The preconditions are read once, when
+  a verb starts, so a duck picked up halfway through a `go_to` would have been put down onto a fresh
+  twist and walked off on it. `go_to`, `search_scan` and `move` each stop at the first twist held
+  back and say why, on every backend, where `go_to` steered on without one until its timeout and
+  said it had timed out, and `search_scan` reported a full sweep of a duck that never turned and
+  said the target was not there. The hold is each verb's own, so a stop from another call, the
+  pilot's `stop` among them, does not set walking again a verb still running, and while it stands
+  the state reads `unknown`, with `extras.move_hold` and `doctor` saying why. A verb refused for
   posture says why, and the answer is to wait for the duck to stand, or to run the `stand` or
   `stand_up` it names. `tests/test_jsonrpc.py` runs every label robotd reports through a fake
-  robotd, picks the duck up halfway through a `go_to` and puts it back down, and checks what
-  `stand_up` sends for each posture, and `tests/test_adapters.py` holds the three camera verbs to
-  `standing` and an `unknown` posture to a refusal. Each of them failed before this change.
+  robotd, picks the duck up halfway through a `go_to` and puts it back down, once while another call
+  stops the duck and once while it walks beside it, and checks what `stand_up` sends for each
+  posture, `tests/test_composite.py` holds `go_to` and `search_scan` to the first twist a body
+  refuses, and `tests/test_adapters.py` holds the three camera verbs to `standing` and an `unknown`
+  posture to a refusal. Each of them failed before this change.
 
 - **`microduck:jsonrpc` connects to a robot on robotd's current release, daemon-v0.16.1, which it
   refused.** quackd read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake

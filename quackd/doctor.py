@@ -874,17 +874,26 @@ def probe(
             "auth",
             "fall_detection",
             "pickup_detection",
+            "move_hold",
             "getup_policy",
             "estop",
             "runtime_commit",
         ):
             if key in told:
                 reported = told[key]
-                worrying = (key == "auth" and reported == "none") or (
-                    key in ("fall_detection", "pickup_detection", "getup_policy")
-                    and reported is False
+                # `move_hold` is why quackd holds a walk back for a verb still running, which the
+                # Microduck's transport says beside what the robot detects, and None while it
+                # holds none
+                worrying = (
+                    (key == "auth" and reported == "none")
+                    or (
+                        key in ("fall_detection", "pickup_detection", "getup_policy")
+                        and reported is False
+                    )
+                    or (key == "move_hold" and reported is not None)
                 )
-                add(ProbeRow(f"  {key}", str(reported), "warn" if worrying else "plain"))
+                shown = "none" if reported is None else str(reported)
+                add(ProbeRow(f"  {key}", shown, "warn" if worrying else "plain"))
     camera_ok = True
     several = False
     dead: list[str] = []

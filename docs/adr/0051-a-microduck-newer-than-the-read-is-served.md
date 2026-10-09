@@ -48,9 +48,13 @@ without a word, and quackd recorded the walk as taken.
   robotd's protocol and answers `hello` too (`up.OTHER_DAEMONS_ANSWER_HELLO`).
 - **A notification is checked against robotd's echo.** Every state frame reports the twist
   robotd was last asked for, as it was asked (`robot.state.move.requested`, `up.MOVE_ECHO`). A
-  twist quackd sent that the state has not shown three frames later (0.3 s at the 10 Hz quackd
-  subscribes at) holds `robot.move` back until the verb that sent it stops, which is the hold a
-  duck that stops standing already gets. The verb fails saying what the state showed instead,
+  twist the state has not shown three frames after it went out (0.3 s at the 10 Hz quackd
+  subscribes at) is judged on the frames read after robotd answered a call quackd made after it,
+  since robotd reads a connection's lines in order (`up.LINES_IN_ORDER`), and three of those
+  that still do not show it hold `robot.move` back until the verb that sent it stops, which is
+  the hold a duck that stops standing already gets. quackd asks robotd a `robot.health` as each
+  walk starts, and again when a twist has gone the window unshown with no answer yet. Every
+  verb that walks fails at the first twist held back, saying what the state showed instead,
   and `extras.move_echo` keeps the last verdict, and on a walk robotd took, how long after it
   went out the twist showed.
 - **What the version cannot say is read off the robot.** `extras.pickup_detection` says
@@ -77,15 +81,19 @@ without a word, and quackd recorded the walk as taken.
   prove nothing about a notification, and robotd already names the call that fails, at the
   moment it fails, which is when a person needs the name.
 - **Trusting notifications.** A `robot.move` robotd could not parse is a walk quackd reported
-  and the duck never took. The echo costs nothing on the wire: the frames already arrive.
+  and the duck never took. The echo costs a `robot.health` a walk on the wire, and the frames
+  already arrive.
 - **Judging the echo on the first frame after a twist.** robotd reports a twist in the next
   frame it publishes, but that frame still has to come back down the ssh tunnel, and a window
   of one frame would hold back walks robotd took. Three leave two for the round trip.
-- **Judging the echo on time alone.** A frame robotd built before the twist reached it can be
-  read well after the twist went out, when quackd's own process stalls with the frame still in
-  its socket, and on time alone it reads as a twist robotd did not take. The verdict waits for
-  three frames read since the twist went out as well as for the time, so a stall delays it
-  rather than inventing one.
+- **Judging the echo from the send.** A frame robotd built before the twist reached it can be
+  read well after the twist went out: when quackd's own process stalls with the frame still in
+  its socket, and every frame robotd sends while a link holds quackd's own lines back, as one
+  lost segment on an ssh tunnel does until it is sent again. Counted from the send, either reads
+  as a twist robotd did not take, and the second stopped a `go_to` on a robot that took every
+  twist in the order sent once the stall cleared. The frames counted are the ones read after
+  robotd answered a call made after the twist, which a stall holds back with the twists, so a
+  stall delays the verdict rather than inventing one.
 
 ## Consequences
 
@@ -98,10 +106,11 @@ without a word, and quackd recorded the walk as taken.
   taken for a refusal that names what came back, never for a yes.
 - The echo judges a twist only once three frames have been read since it went out and three
   frame periods have passed, so a walk shorter than that is reported on what it sent, as every
-  walk was. A link whose round trip takes longer than two frame periods holds back a walk
-  robotd did take, which stops the duck and says why rather than walking it blind. Nobody has
-  measured the round trip on a real tunnel, and `extras.move_echo` records how long each twist
-  a frame showed took to show.
+  walk was. Past that it waits on robotd's answer, so a link that holds quackd's lines back
+  delays the verdict by as long, and one that holds them past a call's timeout, which the
+  heartbeat gives up on too, holds the walk back as one robotd could not be shown to take.
+  Nobody has measured the round trip on a real tunnel, and `extras.move_echo` records how long
+  each twist a frame showed took to show.
 - `robot.head` and `robot.pose` have no echo. The one `robot.head` quackd sends is the gaze
   hold's, the head a `robot.look` answered with, sent again every second, and the hold lets go
   once `robot.state.head` moves off it, which is also what a robotd that does not take it shows
@@ -110,10 +119,10 @@ without a word, and quackd recorded the walk as taken.
   times a second, a stop while nobody touches its sticks (`up.PAD_DRIVES`). With a pad
   connected every walk quackd sends is fought by it, as it was at the previous read too, and the
   frames show the pad's stop as well as quackd's twist, so the echo holds a walk back whenever
-  three frames in a row show only the pad's. That is the pad's authority, which quackd does not
-  arbitrate, made visible: the walk stops and says what robotd showed instead. The hardware
-  checklist asks for that same pad in hand as the e-stop, so the first run on a robot is where it
-  shows how often.
+  three frames after robotd's answer show only the pad's. That is the pad's authority, which
+  quackd does not arbitrate, made visible: the walk stops and says what robotd showed instead.
+  The hardware checklist asks for that same pad in hand as the e-stop, so the first run on a
+  robot is where it shows how often.
 - The reader takes a line of up to a mebibyte from robotd, sixteen times robotd's own limit for
   a line it reads, and skips a longer one rather than ending the link, because nothing bounds
   what robotd writes and a newer robot's state can only grow. No other line ends the link

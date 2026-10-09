@@ -81,6 +81,19 @@ def _held(state: DuckState) -> str | None:
     return None
 
 
+def _walk_held(state: DuckState) -> str | None:
+    """Why a walk is held back for a verb that is still running, or None when none is.
+
+    `jsonrpc` holds `robot.move` back for a verb that was walking when the duck stopped standing
+    or robotd stopped taking its twists, until that verb stops, and says so in `move_hold`. The
+    duck may be standing again by then, and posture reads `unknown` for as long, so the refusal
+    names the hold rather than a posture nobody could tell."""
+    hold = state.extras.get("move_hold")
+    if not hold:
+        return None
+    return f"a verb that was walking is still running, and quackd holds its walk back ({hold})"
+
+
 def _not_fallen(state: DuckState) -> str | None:
     if _blind(state):
         return "nothing is reporting falls, so quackd cannot tell whether the duck is upright"
@@ -105,6 +118,8 @@ def _standing(state: DuckState) -> str | None:
         return "the duck has fallen; run stand_up first"
     if state.posture == "sitting":
         return "the duck is sitting; run stand first"
+    if state.posture == "unknown" and (walk := _walk_held(state)) is not None:
+        return f"{walk}; wait for it to end"
     if state.posture == "unknown":
         return f"posture is unknown{_why_unknown(state)}, so quackd cannot tell it is standing"
     return None
@@ -191,8 +206,13 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     the policy then drives legs a person is holding. A duck already standing is told so and sent
     nothing. One upright on its seat is pointed at `stand`, the toggle that gets it up, which
     enabling the policy is not. A duck nothing reports on is refused too, since nobody can see
-    whether it is held. A fallen duck, and one whose posture is `unknown` for any other reason,
-    gets the request, and afterwards only a duck that reads standing is called upright.
+    whether it is held. Before the request goes out, two more are refused. One on a robot that
+    does not report being held at all: a robotd from before its pick-up detector leaves
+    `safety.picked_up` out of every frame, and an unknown pick-up is refused here as an unknown
+    posture is refused a walk, where it used to read as nobody holding the duck. And one while a
+    walk is held back for a verb still running, since the duck reads `unknown` for that while
+    it may well be standing. A fallen duck, and one whose posture is `unknown` for any other
+    reason, gets the request, and afterwards only a duck that reads standing is called upright.
     """
     state = await ctx.transport.get_state()
     if (held := _held(state)) is not None:
@@ -206,6 +226,15 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         return VerbResult.success("already upright")
     if state.posture == "sitting":
         return VerbResult.fail("the duck is upright and seated: run stand")
+    if (walk := _walk_held(state)) is not None:
+        return VerbResult.fail(f"cannot stand_up: {walk}; wait for it to end")
+    if state.extras.get("pickup_detection") is False:
+        # `jsonrpc` alone says this, from a fresh frame that has no `safety.picked_up`
+        return VerbResult.fail(
+            "cannot stand_up: this robot does not report whether somebody is holding the duck "
+            "(no safety.picked_up), so quackd will not ask the policy to drive legs that may be "
+            "in somebody's hands. Stand it up by hand"
+        )
     if (fail := await send_or_fail(ctx, Intent.enable(True))) is not None:
         return fail
     await ctx.transport.sleep(3.0)

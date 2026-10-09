@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
@@ -100,6 +100,38 @@ async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
     return None
 
 
+class _Refused(Exception):
+    """A twist the body refused, carried with its reason out of the helper that sent it, deep
+    in a steering loop, to the verb that stops on it (`_stopped_by`)."""
+
+
+async def _twist(ctx: VerbContext, vx: float, vy: float, wz: float) -> None:
+    """Send one twist, and raise `_Refused` with the body's own reason when it refuses it.
+
+    `move` has always ended at a refused twist, through `send_or_fail`. `go_to`, `search_scan`
+    and the helpers they steer through threw the answer away, so a body that would not take a
+    twist was steered on regardless: `go_to` ran out its whole timeout and said only that it
+    had timed out, and `search_scan` reported a full sweep of a duck that never turned, which a
+    pilot reads as the target not being in the room. A Microduck's transport refuses a twist
+    once the duck has stopped standing or robotd has stopped showing the twists it was sent, and
+    every body refuses one it cannot deliver, a dropped link above all, so each of those reached
+    the pilot as a timeout or a target not found."""
+    ack = await ctx.transport.send_intent(Intent.move(vx, vy, wz))
+    if not ack.accepted:
+        raise _Refused(ack.reason or "no reason given")
+
+
+async def _stopped_by(
+    ctx: VerbContext, verb: str, stopped: str, refused: _Refused, **data: Any
+) -> VerbResult:
+    """Stop the body after a twist it refused, and fail saying what was refused and why, the
+    way `detector_failed` says a frame the detector could not read stopped it."""
+    await ctx.transport.stop()
+    return VerbResult.fail(
+        f"{verb}: a twist was refused, so {stopped}: {refused}", move_refused=str(refused), **data
+    )
+
+
 async def _look_ahead(ctx: VerbContext) -> None:
     """Centre the head before a verb that steers on what the camera sees, and give it the time
     to get there.
@@ -154,13 +186,14 @@ def _clamped(ctx: VerbContext, vx: float, vy: float, wz: float) -> tuple[float, 
 
 
 async def _turn(ctx: VerbContext, radians: float) -> None:
-    """Rotate in place by `radians`, feeding the deadman every tick."""
+    """Rotate in place by `radians`, feeding the deadman every tick. A twist the body refuses
+    ends the turn where it is, with `_Refused` for the verb to stop on."""
     rate = min(TURN_RATE, speed_limits(ctx.manifest)[2])
     wz = rate if radians >= 0 else -rate
     duration = abs(radians) / rate
     ticks = max(1, round(duration / TICK_S))
     for _ in range(ticks):
-        await ctx.transport.send_intent(Intent.move(0.0, 0.0, wz))
+        await _twist(ctx, 0.0, 0.0, wz)
         await ctx.transport.sleep(duration / ticks)
     await ctx.transport.stop()
 
@@ -223,7 +256,10 @@ async def _see_holding(
     WALK latched. Both kept going on the last twist for as long as the frame took, which
     through a board is up to two seconds for the detection and one more for a snapshot from
     its camera, all of it driving on a decision made from an older frame. A body with a
-    deadman loses nothing, because it was about to stop anyway."""
+    deadman loses nothing, because it was about to stop anyway.
+
+    A re-send the body refuses ends the wait there, with `_Refused`, and the frame still out
+    is let go of: the verb is over, and nothing it would have seen in it changes that."""
     task = asyncio.ensure_future(_see(ctx, label, caption))
     deadline = ctx.transport.now() + HOLD_TTL_S
     try:
@@ -234,14 +270,14 @@ async def _see_holding(
             if twist is None:
                 continue
             if ctx.transport.now() < deadline:
-                await ctx.transport.send_intent(Intent.move(*twist))
+                await _twist(ctx, *twist)
             else:
                 # a zero twist, not `stop()`: on a ToddlerBot `stop` leaves the walk policy for
                 # a held pose, and this stop is one the next frame may undo a moment later
-                await ctx.transport.send_intent(Intent.move(0.0, 0.0, 0.0))
+                await _twist(ctx, 0.0, 0.0, 0.0)
                 twist = None
     finally:
-        if not task.done():  # pragma: no cover - only on cancellation
+        if not task.done():  # on cancellation, and on a twist the body refused
             task.cancel()
 
 
@@ -436,7 +472,13 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             )
         if i == p.max_steps:
             break
-        await _turn(ctx, math.radians(p.step_deg))
+        try:
+            await _turn(ctx, math.radians(p.step_deg))
+        except _Refused as refused:
+            # how far it really turned, the turn it was refused in not counted: a scan of a duck
+            # that never turned used to report the whole sweep, the target not in it
+            stopped = f"the scan stopped after {i} of {p.max_steps} turns ({i * p.step_deg:.0f}°)"
+            return await _stopped_by(ctx, "search_scan", stopped, refused, steps=i)
         await ctx.transport.sleep(TICK_S)  # let the view settle
     return VerbResult.fail(
         f"{p.target} not found after {p.max_steps} steps ({p.max_steps * p.step_deg:.0f}°)"
@@ -444,6 +486,17 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
 
 
 async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
+    """`_go_to`, ended at the first twist the body refuses: stopped, and failed saying why.
+
+    It used to steer on without the twist until its timeout and then say only that it had timed
+    out, the hold, the pad or the link that refused it in a log line nobody piloting reads."""
+    try:
+        return await _go_to(ctx, p)
+    except _Refused as refused:
+        return await _stopped_by(ctx, "go_to", "the body stopped", refused)
+
+
+async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     if ctx.detector is None:
         return VerbResult.fail("go_to needs a detector (none configured)")
     await _look_ahead(ctx)
@@ -467,7 +520,7 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
             # turn toward where it was last seen
             wz = 0.8 if last_bearing >= 0 else -0.8
             held = _clamped(ctx, 0.0, 0.0, wz)
-            await ctx.transport.send_intent(Intent.move(*held))
+            await _twist(ctx, *held)
             await ctx.transport.sleep(TICK_S)
             continue
         lost = 0
@@ -490,7 +543,7 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         if dist is not None and dist < p.stop_distance + 0.15:
             vx = min(vx, 0.1)  # creep in
         held = _clamped(ctx, vx, 0.0, wz)
-        await ctx.transport.send_intent(Intent.move(*held))
+        await _twist(ctx, *held)
         await ctx.transport.sleep(TICK_S)
     await ctx.transport.stop()
     return VerbResult.fail(

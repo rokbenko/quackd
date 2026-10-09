@@ -114,6 +114,19 @@ FRAMING = UpstreamRef(
     src(_ARCH_DOC, 190),
     "'Wire format: JSON-RPC 2.0, one object per line (NDJSON).'",
 )
+LINES_IN_ORDER = UpstreamRef(
+    "robotd reads a connection's lines in order",
+    "VERIFIED",
+    src("robotd/src/main.rs", 4188),
+    "One task per connection reads its lines one at a time (robotd/src/main.rs:4182-4349). A "
+    "notification such as robot.move is applied as it is read, before the next line is "
+    "(main.rs:4309-4316), and a request is answered before the line after it is read "
+    "(main.rs:4343-4347). So an answer to any call quackd wrote after a robot.move says robotd "
+    "has read and stored that twist, which is when MOVE_ECHO can first show it. State frames "
+    "reach the connection from a broadcast the control loop publishes into, decimated to the "
+    "rate asked for (main.rs:4254-4266), so one built just before the twist was stored can still "
+    "go out after that answer, and none built after it can be held back past the next.",
+)
 OTHER_DAEMONS_ANSWER_HELLO = UpstreamRef(
     "updaterd answers hello too",
     "VERIFIED",
@@ -124,17 +137,6 @@ OTHER_DAEMONS_ANSWER_HELLO = UpstreamRef(
     "'Reaching this means a client aimed the wrong socket' (ipc.rs:777-815). So a hello that "
     "passes does not say which daemon answered it, and a robot.subscribe that is "
     "METHOD_NOT_FOUND, a call every robotd from API_FLOOR up has, says it was not robotd.",
-)
-RUNTIME_DIR_ENV = UpstreamRef(
-    "DUCK_RUNTIME_DIR",
-    "VERIFIED",
-    src(_PROTO, 532),
-    "Moves runtime_root(), the directory each daemon publishes /run/<service>/identity.json under "
-    "(lib.rs:520-541), and nothing else: 'Not a configuration knob for a robot — nothing on the "
-    "board sets it', it exists for upstream's tests and for a daemon run by hand. robotd's socket "
-    "is a literal --socket default, SOCKET_ROBOTD (robotd/src/main.rs:235), which it does not "
-    "move, and scripts/duck-sim names each simulated robotd's socket itself. quackd does not read "
-    "it: with no --address, it connects to SOCKET_ROBOTD.",
 )
 RUNTIME_DIR_ENV = UpstreamRef(
     "DUCK_RUNTIME_DIR",

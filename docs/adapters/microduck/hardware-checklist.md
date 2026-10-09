@@ -95,7 +95,8 @@ answered with.
 
 > Read the `pickup_detection` row too. `False` means this robotd is older than its pick-up
 > detector, so nothing tells quackd when somebody is holding the duck: stop it before you pick it
-> up, every time.
+> up, every time. `stand_up` refuses to run on such a robot, so a duck that falls is yours to
+> stand up.
 
 > Abort if `healthy` is false, or if the battery is low. A duck that browns out mid-walk
 > teaches you nothing.
@@ -234,7 +235,7 @@ then `--memory-dir` so the campaign's notes stay out of your simulator's.
 The pad in your hand fights every walk quackd sends, even while nobody touches it: `padd` tells
 robotd to stand still at least ten times a second while a pad is connected and its sticks are
 still, and robotd keeps the newest twist from anyone. quackd checks each walk against robotd's
-own `move.requested`, so a walk the pad keeps stopping should end with
+own `move.requested`, so a `search_scan` or `walk_to` the pad keeps stopping should fail with
 `robotd has not taken robot.move` and robotd still saying it was asked for `[0, 0, 0]`. That is
 the pad's authority, which quackd does not arbitrate. Write down how often it happens: nobody
 has measured it.
