@@ -4,7 +4,7 @@
 ---
 duck: 4
 name: e012-dance
-description: "Dance to imaginary music."
+description: "Dance to music you cannot hear."
 author: rok
 requires: [move_joints]
 verbs:

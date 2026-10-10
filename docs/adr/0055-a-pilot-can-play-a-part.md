@@ -1,4 +1,4 @@
-# ADR-0051: A pilot can play a part
+# ADR-0055: A pilot can play a part
 
 **Status:** accepted · **Date:** 2026-10-08 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a task that gives the pilot a part is judged by whether the body can act it out, and the needs of what it plays are not the body's) and the `.duck` spec, which gains `duck: 4` ([ADR-0019](0019-duck-spec-v1.md)) · Keeps [ADR-0035](0035-one-cli-for-all-your-robots.md)'s "You are the brain of" and [ADR-0005](0005-duck-spec-v0.md)'s rule that the executor enforces the contract and the prompt does not · Implemented in `quackd/agent/prompts.py` (`play_paragraphs`, `play_section`), with changes in the schema, the loop, the CLI, pilot flocks, preflight, the MCP server, the log and the OpenAI provider · Documented in [docs/guides/play.md](../guides/play.md)
 
@@ -22,8 +22,9 @@ part at every turn:
   or spoke of playing, miming or pretending at all.
 - The verdict gate holds a `feasible` to the body's own datasheet. A pilot willing to play a cat
   that named the cat's legs, `mobility: legged`, or `any`, which 0.12.0 offered where 0.14.0 added
-  `none`, would have been refused, as a `feasible` wave naming `mobility: any` was on 23 September,
-  and `legged` still is. The refusal offers `infeasible` first.
+  `none`, would have been refused, as a `feasible` wave naming `mobility: any` was on 23 September.
+  Both still are: what 0.14.0 added is `none`, which every body meets. The refusal offers
+  `infeasible` first.
 - All 223 example files counted "said plainly why this body cannot" as success, 202 told the
   pilot to be "honest about this body ... say plainly when something is beyond you", and 214
   offered failure as the last step of their strategy.
@@ -54,9 +55,10 @@ one of them saying the robot is "capable of human or animal like capabilities".
   brings the body into contact with a person or within reach of one, and every limit holds. The
   act may pretend and the record never does. Its sentences about the verdict carry both halves
   of #25's rule, "not by itself" and "mass or size".
-- **Three facts about the run choose its variants**, never the task's words (#25): whether the
-  body can take itself anywhere, whether the run's verbs include `say`, or a duck's `quack`, and
-  whether the run keeps notes.
+- **Four facts about the run choose its variants**, never the task's words (#25): whether the
+  body can take itself anywhere, whether the run's verbs include `say`, or a duck's `quack`,
+  whether they include `move_joints`, which sets the poses that can reach the table, and whether
+  the run keeps notes.
 - **Everything else is what it was.** The tools, the observations, the opening, the Rules, the
   datasheet and its `cannot` lines, `ASSESS_TASK`, `own_sheet_objection` and every gate. With
   play off quackd adds nothing to the prompt, which was checked by rendering every shipped body
@@ -70,23 +72,28 @@ one of them saying the robot is "capable of human or animal like capabilities".
   paragraphs as `play`, worded for a chat, and a file that does not play loads exactly as before.
 - **Refused where nobody would read it:** a coordinator flock, with either flag or a played
   file, which the parser already refuses beside `allocation.method: auction`, and
-  `--controller vla`, with `--play`, with `--no-play` where there is no part to turn off, or with
-  a played file unless `--no-play` turns its part off. Then the policy flies the file's
-  instructions and the record says play was off.
+  `--controller vla`, with `--play`, or with a played file unless `--no-play` turns its part off.
+  Then the policy flies the file's instructions and the record says play was off.
 - **OpenAI refusals reach the record.** A refusal part on the Responses API and a `refusal` field
-  on Chat Completions were dropped, so a vendor's no looked like a model saying nothing. They now
-  read `[refusal]` and the vendor's words, as Anthropic's and OpenRouter's already did, which is
-  what tells a model's refusal from a vendor's on the next bench session. A call a vendor quotes
-  in its refusal is words, so a local model's text is never read for one in a turn that ends in a
-  refusal or a content filter.
+  on Chat Completions were dropped, so a model's refusal looked like a model saying nothing. They
+  now read `[refusal]` and the refusal's own words, as Anthropic's and OpenRouter's already did,
+  and a Responses refusal part with no words still makes the turn a refusal. That tells a refusal
+  returned in the API's refusal channel, a safety refusal the model wrote, from a pilot that says
+  in its answer that it cannot play the part. The bench counts both. A call quoted in a refusal is
+  words, so a local model's text is never read for one in a turn that carries a refusal, or that
+  a content filter cut short.
 - **The examples opt in where the task is to show something.** 118 of the 223 files under
   `docs/examples/lerobot` are `duck: 4` with `play: true`, and lose the success line, the persona
-  and the strategy step that made refusing a way to succeed. Fourteen of them keep the older
-  second step, which asks for small, deliberate moves rather than big poses: those where a
-  person, a held prop, or a thing or surface the gripper must really touch is at the arm, and
-  `e089/less`, whose waves are meant to shrink. The other 105, whose task is a result on the
-  table, a high five, a guess or a question answered in words, a stillness test, a trap, a
-  benchmark or a free choice, keep every byte.
+  and the strategy step that made refusing a way to succeed. 27 of them keep the older second
+  step, which asks for small, deliberate moves: those where the shoot's run sheet puts a person,
+  a held prop, a camera or a thing within the arm's reach, has someone hold something up in the
+  camera's view, rates the experiment as contact or warns that a pose may strike the arm's own
+  base, and `e089/less`, whose waves are meant to shrink. The other 105, most of which
+  ask for a result on the table, a high five, a guess or a question answered in words, a
+  stillness test, a trap or a benchmark, keep every byte. By the run sheet's own expectations,
+  195 of the 223 files should run as asked, 87 percent, short of the aim of 90 to 95 percent. The
+  28 that should not, where the sheet expects the arm not to do what they ask, in most of them
+  as the point of the experiment, are named in the examples README.
 
 ## Why not
 
@@ -123,5 +130,10 @@ one of them saying the robot is "capable of human or animal like capabilities".
 - A played run moves where a plain one might have stopped. That is its purpose and its risk,
   which is why it is opt-in per file or per run and why the header and the record say when it
   was on.
-- Played runs have not run on the arm. The measurement is a bench session: the same files with
-  and without `--no-play`, read for runs that never moved, or moved and then disowned the part.
+- A body whose only camera rides on it has no picture of itself and the space around it, so its
+  pilot is asked to keep every move of a part small and slow, as the section asks of a pilot that
+  cannot see who is within reach.
+- Played runs have not run on the arm. The measurement is a bench session: the same files as they
+  read at v0.17.1, as they read now with `--no-play` and as they read now, read for runs that
+  never moved, or moved and then disowned the part, with a refusal returned in the API's own
+  channel counted apart.

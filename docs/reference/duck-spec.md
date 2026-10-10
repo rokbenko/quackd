@@ -207,7 +207,7 @@ adds `requires`, `robots`, `flock.roles`, `flock.frame_hints` and, since 0.9,
 `flock.allocation.method: pilots` ([ADR-0019](../adr/0019-duck-spec-v1.md),
 [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)); `duck: 2` adds `datasheet` and
 `flock.roles.<role>.needs` ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)); `duck: 3`
-(0.16) adds `policy`; `duck: 4` adds `play` ([ADR-0051](../adr/0051-a-pilot-can-play-a-part.md)).
+(0.16) adds `policy`; `duck: 4` adds `play` ([ADR-0055](../adr/0055-a-pilot-can-play-a-part.md)).
 Older files keep parsing because the version is explicit and the parser
 is strict; the only new rejections a v0 file can hit are two contradictions no shipped file
 contains (a verb listed next to its alias, `stop` in `confirm`). Older quackd versions refuse
@@ -335,24 +335,24 @@ any run, and a file without the key, or with `play: false`, gets not a word of i
 `quackd run --play` turns it on for one run of any file, a `--goal` included, and `--no-play`
 turns a file's `play` off for one run. No variable sets either.
 
-The section is quackd's own words and reads no word of the task. Three facts about the run
-choose its variant: whether the body can take itself anywhere, whether the run's verbs include
-`say`, or a duck's `quack`, and whether the run keeps notes. It tells the pilot that a part is
-acted out in moves, that the verdict asks whether this body can act it out rather than whether
-it is the thing it plays, and that the legs, wings or second arm of what it plays are left out
-of `needs`. It also tells the pilot that anything the task asks to happen to a thing in the
-world still has to happen for real and is judged as it would be without the part, that no part
-brings the body into contact with a person or within reach of one, and that every reason it
-gives says plainly what the body actually did. These are words the pilot reads, and no gate
-reads them ([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-against)).
+The section is quackd's own words and reads no word of the task. Four facts about the run choose
+its variant: whether the body can take itself anywhere, whether the run's verbs include `say`, or a
+duck's `quack`, whether they include `move_joints`, and whether the run keeps notes. It tells the
+pilot that a part is acted out in moves, that the verdict asks whether this body can act it out
+rather than whether it is the thing it plays, and that the legs, wings or second arm of what it
+plays are left out of `needs`. It also tells the pilot that anything the task asks to happen to a
+thing in the world still has to happen for real and is judged as it would be without the part, that
+no part brings the body into contact with a person or within reach of one, and that its verdict
+reason says plainly what the body will do and every other reason what it actually did. These are
+words the pilot reads, and no gate reads them
+([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-against)).
 
 Each member of a pilot flock reads the section. A coordinator flock has no pilot to read it, so
 `play` beside `flock.allocation.method: auction` is refused, a coordinator flock refuses a
 played file whatever the flags, and it refuses `--play` and `--no-play` with any file.
-`--controller vla` reads no prompt either: it refuses `--play`, `--no-play` on a `--goal` or a
-file with no part to turn off, and a played file unless `--no-play` turns its part off. Over
-MCP, a played file's `robot_load_duckfile` result carries the section's paragraphs, worded for
-a chat, as `play`.
+`--controller vla` reads no prompt either: it refuses `--play`, and a played file unless
+`--no-play` turns its part off. Over MCP, a played file's `robot_load_duckfile` result carries
+the section's paragraphs, worded for a chat, as `play`.
 
 ```yaml
 ---

@@ -230,6 +230,7 @@ def parse_responses(response: Any) -> ProviderTurn:
     texts: list[str] = []
     thoughts: list[str] = []
     refusals: list[str] = []
+    refused = False
     for item in getattr(response, "output", None) or []:
         kind = getattr(item, "type", None)
         if kind == "function_call":
@@ -250,9 +251,11 @@ def parse_responses(response: Any) -> ProviderTurn:
             for part in getattr(item, "content", None) or []:
                 # A refusal is its own part, with its words under `refusal` and no `text`, so
                 # reading `text` alone dropped it and the turn arrived as an empty one with no
-                # call: the record then showed a pilot that said nothing where the vendor had
-                # said no. It reads as Anthropic's and OpenRouter's do, `[refusal] ...`.
+                # call: the record then showed a pilot that said nothing where the model had
+                # said no. It reads as Anthropic's and OpenRouter's do, `[refusal] ...`. The
+                # part's type is enough to make the turn a refused one, words or none.
                 if getattr(part, "type", None) == "refusal":
+                    refused = True
                     said = getattr(part, "refusal", None)
                     if isinstance(said, str) and said.strip():
                         refusals.append(said.strip())
@@ -276,14 +279,17 @@ def parse_responses(response: Any) -> ProviderTurn:
     input_details = getattr(usage, "input_tokens_details", None)
     # No finish_reason here: `status` is "completed" or "incomplete", and a filter that cut the
     # answer short is named in `incomplete_details`. It is recorded as the chat parser names
-    # it, and only a plain "completed" becomes `refusal`, as only a plain "stop" does there.
+    # it, calls or no calls, and only a plain "completed", or no status at all, becomes
+    # `refusal`, as only a plain "stop", or no reason at all, does there.
     status = getattr(response, "status", None)
     if getattr(getattr(response, "incomplete_details", None), "reason", None) == "content_filter":
         status = "content_filter"
     stop_reason: str | None
-    if tool_calls:
+    if status == "content_filter":
+        stop_reason = status
+    elif tool_calls:
         stop_reason = "tool_calls"
-    elif refusals and status in (None, "completed"):
+    elif refused and status in (None, "completed"):
         stop_reason = "refusal"
     else:
         stop_reason = status
@@ -298,7 +304,7 @@ def parse_responses(response: Any) -> ProviderTurn:
             cache_write_tokens=int(getattr(input_details, "cache_write_tokens", 0) or 0),
         ),
         stop_reason=stop_reason,
-        refused=bool(refusals),
+        refused=refused,
         raw=None,
         thinking="\n".join(thoughts) or None,
     )
@@ -336,8 +342,8 @@ def parse_response(response: Any) -> ProviderTurn:
     # The same refusal, as Chat Completions carries it: a field of the message rather than a
     # part, read by Grok, the local presets and everything else on this path. OpenRouter
     # overwrites the text with these same words and drops the calls (`openrouter.py`). Only a
-    # plain `stop` becomes `refusal`: a vendor that named its reason, `content_filter` say,
-    # keeps it.
+    # plain `stop`, or no reason at all, becomes `refusal`: a vendor that named its reason,
+    # `content_filter` say, keeps it.
     refusal = getattr(message, "refusal", None)
     said = refusal.strip() if isinstance(refusal, str) else ""
     parts = [getattr(message, "content", None) or None, f"[refusal] {said}" if said else None]
@@ -623,9 +629,10 @@ class OpenAIProvider:
                     raise ProviderError(f"{self.name}: {type(retry).__name__}: {retry}") from retry
             else:
                 raise ProviderError(f"{self.name}: {type(e).__name__}: {e}") from e
-        # A turn that carries the vendor's own no is never read for a call written out as text,
-        # whatever its stop reason: a call quoted in a refusal, or written before a filter cut
-        # the answer off, is not one to run.
+        # A turn that carries a refusal is never read for a call written out as text, whatever
+        # its stop reason, and nor is one a filter cut short: a call quoted in a refusal, or
+        # written before a filter cut the answer off, is not one to run. A native call in a
+        # filtered answer still runs, as it always has: it is the API's own, and its gates hold.
         if not turn.tool_calls and not turn.refused and turn.stop_reason != "content_filter":
             turn = self._fallback(turn, tools)
         return turn

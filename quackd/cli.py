@@ -1478,11 +1478,10 @@ def _run_impl(
                     ("--extra-body", extra_body is not None),
                     ("--vision", vision is not None),
                     ("--image", bool(images)),
+                    # --no-play is not here: it turns a played file's part off, which is what
+                    # lets that file's instructions fly, and with no part to turn off it says
+                    # what is so, as it does under the default controller
                     ("--play", play is True),
-                    # a goal has no part to turn off; a file's --no-play is weighed once the
-                    # file is read, since it turns a played file's part off and lets its
-                    # instructions fly
-                    ("--no-play", play is False and duckfile is None),
                 )
                 if given
             ],
@@ -1514,13 +1513,6 @@ def _run_impl(
         spec = here.spec
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
-        return
-    if vla and play is False and (duck is None or not duck.frontmatter.play):
-        _fail(
-            "--controller vla is a scripted pilot that asks no model and sees no picture, so "
-            "--no-play would do nothing",
-            hint="drop it, or fly the run with --controller llm",
-        )
         return
     if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
         # Here rather than with the flags above, which run before the file is read, and before

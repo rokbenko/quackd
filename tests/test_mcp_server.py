@@ -595,7 +595,9 @@ def test_the_mcp_play_field_says_what_the_prompt_says_about_the_verdict() -> Non
     from quackd.agent.prompts import play_paragraphs
 
     for still in (True, False):
-        said = "\n\n".join(play_paragraphs(still=still, voice=None, memory=False, mcp=True))
+        said = "\n\n".join(
+            play_paragraphs(still=still, voice=None, memory=False, joints=still, mcp=True)
+        )
         assert "not by itself" in said, "it states #25's rule absolutely"
         assert "mass or size" in said, "it drops the figure that does decide a limit"
         assert "robot_assess_task" in said, "the MCP tool's own name"

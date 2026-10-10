@@ -4,7 +4,7 @@
 ---
 duck: 4
 name: e148-raise-flag
-description: "Raise your imaginary flag."
+description: "Raise the flag taped to your wrist."
 author: rok
 requires: [move_joints]
 verbs:
@@ -24,7 +24,7 @@ play: true
 
 # Task
 
-Raise your imaginary flag to signal do not disturb.
+Raise the flag taped to your wrist to signal do not disturb.
 
 ## Strategy
 

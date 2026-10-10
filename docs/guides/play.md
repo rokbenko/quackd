@@ -3,7 +3,7 @@
 A task can give the pilot a part to play: an animal, a person, a character, a feeling or a
 thing. The pilot acts it out with the body it has. On an arm, a cat's swipe can become a flick
 of the wrist, a T-rex's little arms a tucked elbow and a snapping gripper, and sleep a slow fold
-as far as the travel allows. Play is opt-in, per task file or per run, and with it off quackd
+that stops short of the table. Play is opt-in, per task file or per run, and with it off quackd
 adds not a word to the prompt.
 
 It exists because the pilot's prompt says what the body is, "You are the brain of a six-joint
@@ -12,7 +12,7 @@ Before anything moves, the pilot also has to say whether this body can do the ta
 runs of the example task files on the arm, about half were reported to end with the pilot saying
 it is a robot and cannot be a duck, a person or an animal, and nothing in the prompt said that
 acting the part out with the body was the task. The decision and its history are in
-[ADR-0051](../adr/0051-a-pilot-can-play-a-part.md).
+[ADR-0055](../adr/0055-a-pilot-can-play-a-part.md).
 
 ## Turning it on
 
@@ -48,15 +48,16 @@ each with one line that says why:
 - a coordinator flock, `--flock N` or a task file with `flock.allocation.method: auction`, with
   either flag, and a task file that plays whatever the flags, since its members follow the
   flock's plan and none of them is a pilot;
-- `--controller vla` with `--play`, with `--no-play` where there is no part to turn off, and with
-  a file that plays, since its policy reads no prompt. `--no-play` turns that file's part off,
-  and the policy then flies its `policy.instructions` as it would any file's.
+- `--controller vla` with `--play`, and with a file that plays, since its policy reads no prompt.
+  `--no-play` turns that file's part off, and the policy then flies its `policy.instructions` as
+  it would any file's.
 
 ## What the pilot reads
 
 One section, `## Playing a part`, directly before the task file, after everything else the
 prompt says about the body. As the SO-101 reads it on `lerobot:mock`, an arm that cannot take
-itself anywhere and has no verb that speaks, in a run that keeps no notes:
+itself anywhere, sets its poses with `move_joints` and has no verb that speaks, in a run that
+keeps no notes:
 
 ```text
 ## Playing a part
@@ -64,15 +65,20 @@ This task may give this body a part to play: an animal, a person, a character, a
 
 Judge a part with `assess_task` against this body's datasheet, as you judge any task: the question is whether this body can act it out, not whether it is the thing it plays. Acting asks nothing of a body beyond moving inside its own limits, so a part on its own is feasible, and being other than what it plays is not by itself a reason for infeasible or uncertain. A task that also asks for a real result this body cannot make is infeasible, part or no part. In `needs`, name what acting the part out asks of this body, and every need of anything the task asks to happen for real, in full. The hands, legs, wings, paws, beak or second arm of what you play belong to the part: leave them out, or give 0 or none, which is always met. This body cannot travel, so where a part, or an idiom taken at its word, would walk, run, fly or go somewhere, it shows the going from where it stands, and the needs of that say mobility none and name no terrain.
 
-A part changes how this body moves and nothing else. Where the task asks for something to happen to a thing in the world, an object lifted, carried, pressed, moved or knocked over, it has to happen for real, and it is judged against the datasheet exactly as it would be without the part, the mass or size of that thing included. A mime of it does not do it and is never reported as done. A prop, a place or a sound the part needs that is not here is mimed, and your reason says so. A blow, a stomp or a touch at something that is not here stops before it reaches anything, the surface this body stands on included, and one at something that is here lands only where the task asks for that touch for real. A touch of one part of this body on another, whatever the task asks, stops well short, because nothing stops one part of it striking another, and a grip closing on nothing is no such touch. A part never brings this body into contact with a person, or within reach of one: where a part, or an idiom taken at its word, would touch, hit, pinch or twist somebody, play it on this body itself or leave it out. A touch on a person or a thing that the task really asks for, such as a high five, is not a part, and it is judged as it would be without one, but an idiom taken at its word never asks for one. Every limit and clamp, every line saying what this body cannot do, and every limit the task sets on how far or how fast to move holds whatever the part. Inside them, make each pose big enough to read, and while anyone is within this body's reach, keep every move small and slow, and every move but a touch the task really asks for away from them. When a move is refused for its range, show the same thing inside that range, and a move a person said no to is not tried another way.
+A part changes how this body moves and nothing else. Where the task asks for something to happen to a thing in the world, an object lifted, carried, pressed, moved or knocked over, it has to happen for real, and it is judged against the datasheet exactly as it would be without the part, the mass or size of that thing included. A mime of it does not do it and is never reported as done. A prop, a place or a sound the part needs that is not here is mimed, and your reason says so. A blow, a stomp or a touch at something that is not here stops before it reaches anything, and one at something that is here lands only where the task asks for that touch for real. Every pose and every move made with `move_joints`, a bow, a slump or a fold among them, stops short of the surface this body stands on and of anything else here, unless the task asks it to touch that for real, and comes near either only in small, slow steps. A touch of one part of this body on another, whatever the task asks, stops well short, because nothing stops one part of it striking another, and a grip closing on nothing is no such touch. A part never brings this body into contact with a person, or within reach of one: where a part, or an idiom taken at its word, would touch, hit, pinch or twist somebody, play it on this body itself or leave it out. A touch on a person or a thing that the task really asks for, such as a high five, is not a part, and it is judged as it would be without one, but an idiom taken at its word is never by itself such a request. Every limit and clamp, every line saying what this body cannot do, and every limit the task sets on how far or how fast to move holds whatever the part. Inside them, make each pose big enough to read, and while anyone is within this body's reach, or no camera picture shows this body and where a person near it would stand, keep every move small and slow, and every move but a touch the task really asks for away from anyone. When a move is refused for its range, show the same thing inside that range, and a move a person said no to is not tried another way.
 
 The act may pretend, and the record never does. Sneaking, sulking or looking innocent belongs to the show, but your verdict reason says plainly what this body will do, and every other reason you give, and anything you tell others, says plainly what it actually did, as its joints and any camera pictures show it, then what the moves were meant to show. When the task asks what is true, about you or about what happened, the answer is the true one whatever the part. When the part is a real person, product or AI model, play your idea of them and say that it is your idea, and no reason of yours claims you are anyone or anything you are not. No verb here speaks, so where the part has lines, act them, and quote them in your declare reason after what the body did, as the part's lines.
 ```
 
-Three facts about the run choose its variants, and no word of the task does:
+Four facts about the run choose its variants, and no word of the task does:
 
 - **A body that takes itself somewhere**, such as a Microduck, does not read the sentence about
   travelling, since it can go where the part goes.
+- **A run whose verbs include `move_joints`**, an arm on its table or on a wheeled base, reads
+  that every pose made with it, a bow, a slump or a fold among them, stops short of the surface
+  the body stands on and of anything else there, unless the task asks it to touch that for real,
+  and comes near either only in small, slow steps. A body without it, a duck or a humanoid whose
+  floor motions are verbs of their own, does not.
 - **A run whose verbs include `say`**, or a duck's `quack` where they do not, reads that the verb
   gives the part's lines this body's own sound, and to act them as well. On a Microduck that
   sound is one of its tones and on an Open Duck a mood sound, so a line is never spoken as words.
@@ -90,10 +96,11 @@ reads ([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-a
 
 > [!WARNING]
 > Nothing keeps a played arm away from a person. The section asks the pilot to keep every move
-> small and slow while anyone is within reach, and that is a request in the prompt, not a limit:
-> no gate sees a person, and one the pilot does not notice gets no such care. Seat people beyond
-> the arm's reach while it plays a part, and where a task puts a person at the arm, as a few
-> example files do, keep hands out of its reach while it moves.
+> small and slow while anyone is within reach, or while no camera picture shows the arm and where
+> a person near it would stand, and that is a request in the prompt, not a limit: no gate sees a
+> person, and one the pilot does not notice in a picture that shows the space around the arm gets
+> no such care. Seat people beyond the arm's reach while it plays a part, and where a task puts a
+> person at the arm, as a few example files do, keep hands out of its reach while it moves.
 
 No gate holds that a played task whose real result the body cannot make still ends infeasible,
 a pack mule asked to carry a laundry basket on a Microduck. An opt-in live test asks it of a
@@ -139,21 +146,26 @@ startup with `serve-mcp --duckfile` hands over neither its body nor its part.
 - **Be kept from striking itself or its table.** Nothing on the real arm keeps one link from
   striking another, or the gripper from the table it stands on, and a joint blocked partway
   through a timed move is found only when the move's time is up. The section asks the pilot to
-  stop a touch on its own body well short, and a mimed blow, stomp or touch before it reaches
-  anything, the table included. Watch the first runs of a task that asks for one, such as a pat
-  on its own back or a T-rex's stomp.
+  stop a touch on its own body well short, a mimed blow, stomp or touch before it reaches
+  anything, and every pose, a bow, a slump or a fold among them, short of the table unless the
+  task asks for that touch, coming near it only in small, slow steps. Watch the first runs of a
+  task that asks for one, such as a pat on its own back or a T-rex's stomp.
 - **Speak on the arm.** It has no voice, so the section asks for a part's lines in the declare
   reason, quoted after what the body did.
 - **Tell a person from something blue.** The colour detector reads blue as `person`, and the
-  section asks the pilot to keep every move small and slow while anyone is within reach, so a
-  blue thing in view can shrink every pose, while a person the pilot does not notice gets no
-  such care. Keep blue things out of the primary camera's view, or use `--detector yolo` with
-  `quackd[yolo]`, which reads a person as `person` whatever they wear.
+  section asks the pilot to keep every move small and slow while anyone is within reach, or no
+  camera picture shows the arm and the space around it, so a blue thing in view can shrink every
+  pose, while a person the pilot does not notice in a picture that shows that space gets no such
+  care. Frame the arm and the space around it in a camera's view. Keep blue things out of the
+  primary camera's view, or use `--detector yolo` with `quackd[yolo]`, which reads a person as
+  `person` whatever they wear.
 - **Reach the stepper.** A decision LLM never reads the section. With `--decision-mode on` it may
   take a discrete turn such as `report_state` or `gripper`, and every pose stays the pilot's
   ([guides/decision-llms/README.md](decision-llms/README.md)).
 - **Stay out of memory.** A played run's notes and its ending are kept like any other run's, so
-  `--no-memory` keeps a session of parts out of what the robot remembers.
+  `--no-memory` on `quackd run` keeps a session of parts out of what the robot remembers.
+  `quackd record` has no such flag and keeps them in the Microduck simulator's memory unless
+  `QUACKD_MEMORY_DIR` points it elsewhere, and `quackd preflight` keeps none.
 
 > [!NOTE]
 > Played runs have not run on the arm. What they do there is measured on a bench session and

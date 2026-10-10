@@ -170,10 +170,10 @@ def test_a_trimmed_pilot_flock_contract_keeps_its_play() -> None:
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: f"{s.adapter}:{s.backend}")
-def test_a_run_that_does_not_play_reads_the_prompt_it_always_did(spec: RobotSpec) -> None:
+def test_play_false_adds_nothing_to_the_prompt(spec: RobotSpec) -> None:
     """`play=False` adds nothing to the call without it, which is every caller written before
     there was a keyword. That this call renders what it did before play existed was checked
-    once, by rendering every body before and after the change (ADR-0051): no golden pins it,
+    once, by rendering every body before and after the change (ADR-0055): no golden pins it,
     because the prompt is meant to keep improving."""
     duck = _goal(spec)
     manifest = describe(spec)
@@ -217,14 +217,16 @@ def test_the_offered_verbs_are_the_same_played_or_not(spec: RobotSpec) -> None:
 
 @pytest.mark.parametrize("still", [True, False])
 @pytest.mark.parametrize("voice", ["say", "quack", None])
+@pytest.mark.parametrize("joints", [True, False])
 def test_the_section_says_remember_only_when_the_run_keeps_notes(
-    still: bool, voice: str | None
+    still: bool, voice: str | None, joints: bool
 ) -> None:
-    assert "remember" not in play_section(still=still, voice=voice, memory=False).lower()
-    assert "`remember`" in play_section(still=still, voice=voice, memory=True)
-    mcp = "\n\n".join(play_paragraphs(still=still, voice=voice, memory=False, mcp=True))
+    facts: dict[str, Any] = {"still": still, "voice": voice, "joints": joints}
+    assert "remember" not in play_section(**facts, memory=False).lower()
+    assert "`remember`" in play_section(**facts, memory=True)
+    mcp = "\n\n".join(play_paragraphs(**facts, memory=False, mcp=True))
     assert "remember" not in mcp.lower()
-    kept = "\n\n".join(play_paragraphs(still=still, voice=voice, memory=True, mcp=True))
+    kept = "\n\n".join(play_paragraphs(**facts, memory=True, mcp=True))
     assert "robot_remember" in kept
 
 
@@ -265,7 +267,45 @@ def test_a_body_that_cannot_travel_is_told_how_to_play_going_somewhere() -> None
     assert "This body cannot travel" not in duck, "a body that walks plays going somewhere itself"
 
 
-def test_the_lines_sentence_follows_what_the_body_can_say() -> None:
+@pytest.mark.parametrize(
+    ("spec", "joints", "travel", "table"),
+    [
+        (RobotSpec("lerobot", "mock"), True, True, True),
+        # the same arm on a task that leaves `move_joints` out sets no pose joint by joint
+        (RobotSpec("lerobot", "mock"), False, True, False),
+        (RobotSpec("microduck", "sim2d"), True, False, False),
+        # an arm on a wheeled base sets its poses joint by joint too, and goes where it likes
+        (RobotSpec("xlerobot", "mock"), True, False, True),
+        # unless the task leaves its `move_joints` out
+        (RobotSpec("xlerobot", "mock"), False, False, False),
+        # a standing humanoid with no walk cannot travel, and its floor motions are confirm-gated
+        # verbs of their own, offered here, not poses the pilot sets
+        (RobotSpec("toddlerbot", "bridge"), True, True, False),
+    ],
+    ids=lambda v: f"{v.adapter}:{v.backend}" if isinstance(v, RobotSpec) else str(v),
+)
+def test_the_table_sentence_follows_move_joints_and_the_travel_one_follows_travel(
+    spec: RobotSpec, joints: bool, travel: bool, table: bool
+) -> None:
+    """Each sentence reads one fact: whether the body can take itself anywhere, and whether
+    the task allows `move_joints`, the verb that sets a pose joint by joint near the surface the
+    body stands on. A walking body stands on its floor with every step. Every confirm-gated verb
+    is allowed behind the gate, `move_joints` on a mobile manipulator among them, so no other
+    verb the task allows turns the sentence on. A mimed blow stops before it reaches anything
+    whatever verbs strike it."""
+    registry = registry_for(spec, describe(spec))
+    safe = {v.name for v in registry.verbs() if v.safety_class == "safe"}
+    gated = [v.name for v in registry.verbs() if v.safety_class == "confirm"]
+    if not joints:
+        safe, gated = safe - {"move_joints"}, [g for g in gated if g != "move_joints"]
+    duck = duck_from_goal("You are a T-rex. Show me.", sorted(safe | set(gated)), confirm=gated)
+    section = _section(_render(spec, duck, play=True))
+    assert ("This body cannot travel" in section) is travel
+    assert ("stops short of the surface this body stands on" in section) is table
+    assert "A blow, a stomp or a touch at something that is not here stops before it" in section
+
+
+def test_the_lines_sentence_follows_the_verbs_the_task_allows() -> None:
     """Every safe verb of each body is offered here, so the Microduck's goal offers `say`, which
     the section names over `quack`, and the arm, which has neither, cannot speak at all."""
     duck = _section(
@@ -293,17 +333,22 @@ def test_the_section_keeps_what_the_gate_and_the_record_rest_on() -> None:
 
     The exception for a touch a task really asks for, a high five, is closed to an idiom: "twist
     my arm" taken at its word is a part played on the body itself, never a touch to make. And
-    only such a touch is let toward a person within reach. A mimed blow or stomp stops short of
-    the table, since a part asks for bigger poses than a plain task, and a touch of the body on
+    only such a touch is let toward a person within reach. A pose set with `move_joints` stops
+    short of the table and of anything else here unless the task asks to touch it, since a part
+    asks for bigger poses than a plain task and a bow aims at nothing, and a touch of the body on
     itself stops short whatever the task says, though a grip may still close on nothing."""
-    text = play_section(still=True, voice=None, memory=False)
+    text = play_section(still=True, voice=None, memory=False, joints=True)
     assert "it has to happen for real" in text
     assert "A mime of it does not do it and is never reported as done." in text
     assert "into contact with a person, or within reach of one" in text and "leave it out" in text
-    assert "but an idiom taken at its word never asks for one" in text
-    assert "every move but a touch the task really asks for away from them" in text
-    assert "stops before it reaches anything, the surface this body stands on included" in text
+    assert "but an idiom taken at its word is never by itself such a request" in text
+    assert "every move but a touch the task really asks for away from anyone" in text
+    assert "or no camera picture shows this body and where a person near it would stand" in text
+    assert "A blow, a stomp or a touch at something that is not here stops before" in text
     assert "lands only where the task asks for that touch for real" in text
+    assert "a bow, a slump or a fold among them, stops short of the surface this body" in text
+    assert "and of anything else here, unless the task asks it to touch that for real" in text
+    assert "comes near either only in small, slow steps" in text
     assert "A touch of one part of this body on another, whatever the task asks, stops well" in text
     assert "a grip closing on nothing is no such touch" in text
     assert "A task that also asks for a real result this body cannot make is infeasible" in text
@@ -514,17 +559,21 @@ async def test_a_played_file_hands_the_mcp_pilot_its_part(tmp_path: Path) -> Non
     assert "robot_assess_task" in result["play"]
     assert "not whether it is the thing it plays" in result["play"]
     assert "This body cannot travel" in result["play"], "the arm's own facts"
+    assert "stops short of the surface this body stands on" in result["play"], "move_joints"
     assert "assess_task`" not in result["play"], "the MCP tool's name, not the run's"
     assert "robot_remember" in result["play"], "this session keeps notes"
+    assert "No verb this task allows speaks" in result["play"], "the arm offers neither voice"
+    assert "This task may give the robot a part to play" in result["note"]
     assert "read the play field before you assess it" in result["note"]
 
 
 def test_an_mcp_part_speaks_through_the_tool_that_reaches_its_voice() -> None:
     """Over MCP `say` has a tool of its own and `quack` is reached as any verb is, and either
     way the lines come after what the body did, as they do in a run's declare reason."""
-    said = "\n\n".join(play_paragraphs(still=False, voice="say", memory=False, mcp=True))
+    facts: dict[str, Any] = {"still": False, "memory": False, "joints": False, "mcp": True}
+    said = "\n\n".join(play_paragraphs(voice="say", **facts))
     assert "robot_say gives them this body's own sound" in said
-    quacked = "\n\n".join(play_paragraphs(still=False, voice="quack", memory=False, mcp=True))
+    quacked = "\n\n".join(play_paragraphs(voice="quack", **facts))
     assert "robot_run_verb with `quack` gives them this body's own sound" in quacked
     for text in (said, quacked):
         assert "chatting with after what the body did, as the part's lines" in text
@@ -536,14 +585,27 @@ async def test_a_session_with_no_manifest_loads_a_played_file(tmp_path: Path) ->
     run's prompt takes it. With memory off, the part says nothing about notes."""
     path = tmp_path / "t-rex.duck"
     path.write_text(
-        PLAYED.replace("[report_state, move_joints, gripper, stop]", "[quack, stop]"),
+        PLAYED.replace("[report_state, move_joints, gripper, stop]", "[quack, move_joints, stop]"),
         encoding="utf-8",
     )
     result = await _load(MockTransport(), str(path), memory=False)
     assert result["ok"], result
     assert "This body cannot travel" not in result["play"], "no manifest reads as a body that moves"
+    # the task allows `move_joints`, but this body has no such verb to set a pose with
+    assert "stops short of the surface this body stands on" not in result["play"]
     assert "remember" not in result["play"].lower()
     assert "robot_run_verb with `quack` gives them this body's own sound" in result["play"]
+
+
+async def test_an_mcp_part_reads_its_poses_off_the_verbs_the_task_allows(tmp_path: Path) -> None:
+    """The arm offers `move_joints`, but a task that does not allow it sets no pose with it, so
+    its part reads no sentence about where those poses stop, as a run of the same file would."""
+    path = tmp_path / "t-rex.duck"
+    path.write_text(PLAYED.replace(", move_joints", ""), encoding="utf-8")
+    result = await _load(LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))), str(path))
+    assert result["ok"], result
+    assert "stops short of the surface this body stands on" not in result["play"]
+    assert "This body cannot travel" in result["play"], "the arm's own facts"
 
 
 # ── the command line ────────────────────────────────────────────────────────────────────
@@ -724,7 +786,8 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     edit could leave one unparseable, half edited or miscounted without anything noticing.
     Every file parses, a file plays exactly when it is `duck: 4`, no played file still counts
     saying why the body cannot as a success, every played file carries the lines they share, and
-    the arm's README's counts and the files it names are the files' own."""
+    the arm's README's counts and the files it names are the files' own, the ones it says are
+    meant to fall short among them."""
     folder = REPO / "docs" / "examples"
     for path in sorted(folder.rglob("*.duck")):
         fm = load_duck(str(path)).frontmatter
@@ -733,16 +796,22 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     files = sorted(arm.rglob("*.duck"))
     assert files, "no example files"
     played = [p for p in files if load_duck(str(p)).frontmatter.play]
-    shared = (
-        "You have shown what the task asks with this arm's joints and gripper",
-        "Game for anything: commit to the bit",
-        "3. Declare success with a reason that says what the arm did and what it was meant to show",
+    shared = "Game for anything: commit to the bit"
+    success = "You have shown what the task asks with this arm's joints and gripper"
+    declare = (
+        "3. Declare success with a reason that says what the arm did and what it was meant to show"
     )
+    # Their runs end without a declare, on the cable or on the budget, so their success line and
+    # their last step say so instead.
+    held = {arm / "e067" / "last-words.duck", arm / "e076" / "strike.duck"}
     for path in played:
         text = path.read_text(encoding="utf-8")
         assert "said plainly why this body cannot" not in text, path
-        assert all(line in text for line in shared), f"{path} is half edited"
+        own = ('- "The run ends', "3. Do not declare") if path in held else (success, declare)
+        assert all(line in text for line in (shared, *own)), f"{path} is half edited"
     readme = " ".join((arm / "README.md").read_text(encoding="utf-8").split())
+    for path in held:
+        assert path in played and f"`{path.parent.name}/{path.stem}`" in readme, path
     said = re.search(r"(\d+) of these files give the pilot a part to play", readme)
     assert said, "the examples README no longer says how many files play"
     assert int(said.group(1)) == len(played), f"{len(played)} files play"
@@ -754,6 +823,71 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     assert arm / "e089" / "less.duck" in kept, "the README names e089/less among them"
     for ran in ("e004/royalty", "e004/mornings", "e011/yoga", "e022/pat-on-the-back"):
         assert arm / f"{ran}.duck" in played, ran
+    # Where the run sheet expects the arm not to do what a file asks, by what stops it. An entry
+    # that hedges, names failure as one outcome of several, or expects some of a set to fall
+    # short without saying which, counts as running, so none of those is here.
+    short = {
+        "meet a limit of the arm or of how quackd drives it": (
+            "e001/circle",
+            "e001/duck-picture",
+            "e001/initials",
+            "e001/smiley",
+            "e014/typist",
+            "e019/draw-your-ceo",
+            "e020/draw-your-competitor",
+            "e039/claw-machine",
+            "e100/jenga",
+            "e109/headphones",
+            "e130/where-is-your-hand",
+        ),
+        "meet the seconds each model call takes": (
+            "e037/no-thinking",
+            "e045/metronome",
+            "e096/red-light-green-light",
+            "e113/swat-the-fly",
+        ),
+        "ask for two things at the same time": ("e062/pat-and-rub", "e070/multitasking"),
+        "end on one of quackd's own limits": ("e084/give-110", "e120/out-of-steps"),
+        "are cut short by a person, as the experiment plans": (
+            "e081/too-slow",
+            "e116/slow-raise",
+            "e117/slow-raise",
+            "e121/the-human-says-no",
+        ),
+        "ask for a guess the sheet expects the pilot to refuse": (
+            "e085/dumbbell",
+            "e085/me",
+            "e085/teddy",
+        ),
+        "end on an answer the sheet expects to be wrong": ("e073/is-this-a-ball", "e131/my-left"),
+    }
+    names = [name for group in short.values() for name in group]
+    run = len(files) - len(names)
+    assert f"{run} of the {len(files)}, {round(100 * run / len(files))} percent" in readme
+    assert f"the other {len(names)} are meant to fall short" in readme
+    assert f"Whether the other {run} run as asked" in readme
+    # Each named in the sentence that says why, by its folder where every file in it falls short
+    # and by its own name where a file beside it does not, and no other file named there.
+    span = readme[readme.index("are meant to fall short") : readme.index("Whether the other")]
+    heads = []
+    for why, group in short.items():
+        head = f"{WORDS[len(group)].capitalize()} {why}"
+        assert head in span, head
+        heads.append((span.index(head), why))
+    heads.sort()
+    named = set()
+    for (start, why), (end, _) in zip(heads, [*heads[1:], (len(span), "")], strict=True):
+        for name in short[why]:
+            assert arm / f"{name}.duck" in files, name
+            folder = name.split("/")[0]
+            whole = {f"{folder}/{p.stem}" for p in (arm / folder).glob("*.duck")} <= set(names)
+            said = folder if whole else name
+            assert f"`{said}`" in span[start:end], f"the README does not say why {name} falls short"
+            named.add(said)
+    listed = set(re.findall(r"`(e\d{3}(?:/[\w-]+)?)`", span[heads[0][0] :]))
+    assert listed == named, f"the README also names {sorted(listed - named)} as falling short"
+    drawn = [n for n in names if n.split("/")[0] in ("e001", "e019", "e020")]
+    assert f"the {WORDS[len(drawn)]} drawings of" in span
 
 
 # ── a real model, opt-in ────────────────────────────────────────────────────────────────

@@ -423,6 +423,8 @@ def test_the_pilot_reads_the_last_result_and_the_answer_and_nothing_else() -> No
 def test_a_pilot_built_from_python_is_held_to_the_rule_for_an_instruction() -> None:
     with pytest.raises(ValueError, match="at least one instruction"):
         VlaProvider([])
+    with pytest.raises(ValueError, match="in a task file at duck: 3 or later"):
+        VlaProvider([])
     with pytest.raises(ValueError, match="characters"):
         VlaProvider(["x" * (INSTRUCTION_MAX_CHARS + 1)])
     assert VlaProvider(["  hold still  "]).instructions == ("hold still",)
@@ -461,13 +463,12 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
             "so --llm and --image would do nothing",
             id="a-model",
         ),
-        # no pilot reads a part, so either way of asking about one would do nothing, and a
-        # goal has no part for --no-play to turn off, so it is named with the other flags
+        # no pilot reads a part, so asking for one would do nothing, while --no-play says what
+        # is so and is never named with the flags that do nothing
         pytest.param((*GOAL, *ARM, "--play"), "so --play would do nothing", id="play"),
-        pytest.param((*GOAL, *ARM, "--no-play"), "so --no-play would do nothing", id="no-play"),
         pytest.param(
             (*GOAL, *ARM, "--llm", "fake", "--no-play"),
-            "so --llm and --no-play would do nothing",
+            "so --llm would do nothing",
             id="a-model-and-no-play",
         ),
         pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
@@ -529,7 +530,7 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
     out = _flat(result.output)
     assert result.exit_code == 1 and "and hand-off lists none" in out, result.output
-    assert "policy.instructions" in out and _no_run(tmp_path)
+    assert "policy.instructions in a task file at duck: 3 or later" in out and _no_run(tmp_path)
 
 
 def _crane(tmp_path: Path, *, instructions: bool = True, played: bool = True) -> Path:
@@ -571,17 +572,19 @@ def test_a_task_file_that_plays_is_refused(
     assert _no_run(tmp_path)
 
 
-def test_no_play_on_a_file_with_no_part_would_do_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("task", ["goal", "file"])
+def test_no_play_with_no_part_to_turn_off_is_let_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task: str
 ) -> None:
-    """A file that does not play has no part for `--no-play` to turn off, and that is only
-    known once the file is read."""
+    """With no part to turn off, `--no-play` says what is so: the run does not play. It does
+    under the default controller, and so it does here, rather than being refused for a reason
+    that is not the scripted pilot's. The run then goes as far as the dead policy server."""
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = _crane(tmp_path, played=False)
-    result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla", "--no-play")
-    assert result.exit_code == 1, result.output
-    assert "so --no-play would do nothing" in _flat(result.output)
-    assert _no_run(tmp_path)
+    what = GOAL if task == "goal" else (str(_crane(tmp_path, played=False)),)
+    result = _cli(tmp_path, *what, *ARM, "--controller", "vla", "--no-play")
+    out = _flat(result.output)
+    assert "would do nothing" not in out and "a part to play" not in out, result.output
+    assert f"{DEAD} did not take a connection" in out, "it got as far as the policy server"
 
 
 def test_no_play_lets_a_played_file_fly_its_instructions(

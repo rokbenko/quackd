@@ -526,14 +526,14 @@ def test_play_is_documented_where_it_is_configured() -> None:
         ),
         ("docs/guides/mcp.md", ("play: true", "guides/play.md")),
         ("docs/concepts/safety.md", ("guides/play.md", "a played run has exactly the verbs")),
-        ("docs/adr/0051-a-pilot-can-play-a-part.md", ("--play", "--no-play", "duck: 4")),
+        ("docs/adr/0055-a-pilot-can-play-a-part.md", ("--play", "--no-play", "duck: 4")),
         ("docs/examples/lerobot/README.md", ("play: true", "--no-play", "guides/play.md")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
             assert needle in text, f"{path} does not mention {needle!r}"
     guide = (REPO / "docs" / "guides" / "play.md").read_text(encoding="utf-8")
-    quoted = play_section(still=True, voice=None, memory=False).strip()
+    quoted = play_section(still=True, voice=None, memory=False, joints=True).strip()
     assert quoted in guide, "docs/guides/play.md no longer quotes the section the arm reads"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     assert "QUACKD_PLAY" not in env_example, "no variable sets play"

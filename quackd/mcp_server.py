@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from quackd import __version__
 from quackd.adapters.base import adapter_name, backend_name, go_to_rest_if_any
 from quackd.adapters.manifest import RobotManifest, apply_datasheet_override
-from quackd.agent.prompts import body_summary, play_paragraphs, play_voice
+from quackd.agent.prompts import body_summary, play_joints, play_paragraphs, play_voice
 from quackd.agent.transcript import png_bytes
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.parser import DuckParseError, load_duck
@@ -727,13 +727,15 @@ class RobotSession:
             # The client's own prompt frames this pilot, so what a played run reads in its
             # system prompt arrives here, worded for a chat by the same function. The facts
             # are this session's: a body with no manifest is taken as one that moves, as the
-            # run's prompt takes it, and a voice counts only where this body has the verb.
+            # run's prompt takes it, and a voice or `move_joints` counts only where this body
+            # has the verb.
             allowed = [v for v in duck.frontmatter.verbs.allow if v in self.registry]
             result["play"] = "\n\n".join(
                 play_paragraphs(
                     still=effective is not None and effective.mobility == "none",
                     voice=play_voice(allowed),
                     memory=self.memory is not None,
+                    joints=play_joints(allowed),
                     mcp=True,
                 )
             )

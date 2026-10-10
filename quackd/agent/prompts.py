@@ -312,8 +312,15 @@ def play_voice(names: Iterable[str]) -> str | None:
     return next((voice for voice in PLAY_VOICES if voice in offered), None)
 
 
+def play_joints(names: Iterable[str]) -> bool:
+    """Whether a run offers `move_joints`: a body whose poses the pilot sets joint by joint,
+    an arm on its table or on a base. A fact about the robot and the allowlist, never the
+    task's words (#25)."""
+    return "move_joints" in {canonical(name) for name in names}
+
+
 def play_paragraphs(
-    *, still: bool, voice: str | None, memory: bool, mcp: bool = False
+    *, still: bool, voice: str | None, memory: bool, joints: bool, mcp: bool = False
 ) -> list[str]:
     """What a pilot reads when its task may give it a part to play, one line per paragraph.
 
@@ -323,12 +330,13 @@ def play_paragraphs(
     to say that acting the part out with the body was the task. Every refusal recorded on the
     arm quoted quackd's own words back. On 2026-09-15 the same model mimed a duck with
     the gripper when the goal named the pose, and typed a quack and moved nothing when the goal
-    said only "Imagine you're a duck".
+    said "Imagine you're a duck that quacks".
 
-    Built from three facts about the robot and the run, never from the task's words, so no
+    Built from four facts about the robot and the run, never from the task's words, so no
     sentence turns on what a task says (#25): `still` is a body that cannot take itself
     anywhere, `voice` is the verb among those offered that gives a part its lines
-    (`play_voice`), `memory` is a run that keeps notes.
+    (`play_voice`), `memory` is a run that keeps notes, and `joints` is a run whose verbs
+    include `move_joints` (`play_joints`).
     `mcp` words the same paragraphs for a client whose own prompt frames the pilot: no rule
     about one tool call a turn, the MCP tool names, and the person in the chat where a run
     has its declare reasons.
@@ -382,13 +390,24 @@ def play_paragraphs(
         "A mime of it does not do it and is never reported as done.",
         "A prop, a place or a sound the part needs that is not here is mimed, and "
         + ("you say so." if mcp else "your reason says so."),
+        "A blow, a stomp or a touch at something that is not here stops before it reaches "
+        "anything, and one at something that is here lands only where the task asks for that "
+        "touch for real.",
+    ]
+    if joints:
         # The arm's own guard is late: a joint blocked partway through a timed move is found
         # only when the move's time is up, and until then it pushes as the step cap allows
-        # (`quackd_lerobot.verbs`). A part asks for bigger poses than a plain task, close to
-        # the table the arm stands on.
-        "A blow, a stomp or a touch at something that is not here stops before it reaches "
-        "anything, the surface this body stands on included, and one at something that is "
-        "here lands only where the task asks for that touch for real.",
+        # (`quackd_lerobot.verbs`). A part asks for bigger poses than a plain task, and a bow,
+        # a slump or a fold aims at nothing, so no sentence about a blow covers it. Keyed on
+        # the verb that sets those poses rather than on travel: an arm on a wheeled base has
+        # them, and a standing humanoid's trained floor motions are confirm-gated verbs.
+        third.append(
+            "Every pose and every move made with `move_joints`, a bow, a slump or a fold among "
+            "them, stops short of the surface this body stands on and of anything else here, "
+            "unless the task asks it to touch that for real, and comes near either only in "
+            "small, slow steps."
+        )
+    third += [
         # the arm has no guard against its own links meeting: only the joints' travel, and a
         # simulator's collision model where there is one
         "A touch of one part of this body on another, whatever the task asks, stops well "
@@ -399,12 +418,15 @@ def play_paragraphs(
         "somebody, play it on this body itself or leave it out.",
         "A touch on a person or a thing that the task really asks for, such as a high five, is "
         "not a part, and it is judged as it would be without one, but an idiom taken at its "
-        "word never asks for one.",
+        "word is never by itself such a request.",
         "Every limit and clamp, every line saying what this body cannot do, and every limit "
         "the task sets on how far or how fast to move holds whatever the part.",
+        # A pilot that sees no space around its body cannot tell who is in reach, so it moves
+        # as if someone were. The shoot's front camera frames the arm and where people stand.
         "Inside them, make each pose big enough to read, and while anyone is within this "
-        "body's reach, keep every move small and slow, and every move but a touch the task "
-        "really asks for away from them.",
+        "body's reach, or no camera picture shows this body and where a person near it would "
+        "stand, keep every move small and slow, and every move but a touch the task really "
+        "asks for away from anyone.",
         "When a move is refused for its range, show the same thing inside that range, and a "
         "move a person said no to is not tried another way.",
     ]
@@ -463,11 +485,11 @@ def play_paragraphs(
     return [" ".join(paragraph) for paragraph in (first, second, third, fourth)]
 
 
-def play_section(*, still: bool, voice: str | None, memory: bool) -> str:
+def play_section(*, still: bool, voice: str | None, memory: bool, joints: bool) -> str:
     """The `## Playing a part` block as a played run's prompt carries it, `play_paragraphs`
     under its own heading. `build_system_prompt` leaves it out of every other run, whose
     prompt is what it was."""
-    paragraphs = play_paragraphs(still=still, voice=voice, memory=memory)
+    paragraphs = play_paragraphs(still=still, voice=voice, memory=memory, joints=joints)
     return f"\n{PLAY_HEADING}\n" + "\n\n".join(paragraphs) + "\n"
 
 
@@ -837,7 +859,10 @@ above.
     # not ("Whatever the task says, this body cannot:"), and next to the part the task gives.
     played = (
         play_section(
-            still=not moves_itself, voice=play_voice(names), memory=memory_text is not None
+            still=not moves_itself,
+            voice=play_voice(names),
+            memory=memory_text is not None,
+            joints=play_joints(names),
         )
         if play
         else ""

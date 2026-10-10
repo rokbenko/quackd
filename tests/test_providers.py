@@ -285,6 +285,7 @@ async def test_anthropic_refusal_yields_no_tool_call() -> None:
     p = AnthropicProvider(client=FakeAnthropic(resp))
     turn = await p.step("S", history()[:1], TOOLS)
     assert turn.tool_calls == [] and turn.stop_reason == "refusal" and "policy" in (turn.text or "")
+    assert turn.refused
 
 
 async def test_anthropic_errors_are_classified() -> None:
@@ -638,6 +639,26 @@ def test_the_responses_api_names_a_filter_and_keeps_a_status_beside_a_refusal() 
     assert turn.stop_reason == "content_filter" and not turn.refused
     cut = parse_responses(responses_refusal(status="incomplete"))
     assert cut.stop_reason == "incomplete" and cut.refused
+    # a native call in a filtered answer is kept, as it always was, and the filter is named
+    stop = NS(type="function_call", call_id="call_f1", name="stop", arguments="{}")
+    called = parse_responses(
+        NS(
+            output=[stop],
+            status="incomplete",
+            incomplete_details=NS(reason="content_filter"),
+            usage=NS(input_tokens=11, output_tokens=4),
+        )
+    )
+    assert called.tool_calls == [ToolCall(id="call_f1", name="stop", arguments={})]
+    assert called.stop_reason == "content_filter"
+    # the part's type says it is a refusal, whether or not it carries words
+    silent = NS(
+        output=[NS(type="message", content=[NS(type="refusal", refusal="")])],
+        status="completed",
+        usage=NS(input_tokens=11, output_tokens=4),
+    )
+    quiet = parse_responses(silent)
+    assert quiet.refused and quiet.stop_reason == "refusal" and quiet.text is None
 
 
 @pytest.mark.parametrize(
@@ -673,6 +694,43 @@ async def test_a_vendors_no_is_never_read_for_a_call(response: Any, _no_effort_e
     client = RefusesToolsOnChat(response)
     turn = await Rescues(model="gpt-6-astra", client=client).step("SYS", history(), TOOLS)
     assert turn.tool_calls == []
+
+
+@pytest.mark.parametrize("api", ["chat", "responses"])
+async def test_a_native_call_in_a_filtered_answer_still_runs(
+    api: str, _no_effort_env: None
+) -> None:
+    """Only a call written out as text is never read from an answer a filter cut short. A call
+    the API itself returned in it is the turn's answer, as it always was, and the turn keeps
+    the reason the filter named."""
+    client: Any
+    if api == "chat":
+        model = "gpt-5"
+        stop = NS(id="call_f2", function=NS(name="stop", arguments="{}"))
+        client = FakeOpenAI(
+            NS(
+                choices=[
+                    NS(
+                        message=NS(content=None, tool_calls=[stop]),
+                        finish_reason="content_filter",
+                    )
+                ],
+                usage=NS(prompt_tokens=50, completion_tokens=9),
+            )
+        )
+    else:
+        model = "gpt-6-astra"
+        client = RefusesToolsOnChat(
+            NS(
+                output=[NS(type="function_call", call_id="call_f2", name="stop", arguments="{}")],
+                status="incomplete",
+                incomplete_details=NS(reason="content_filter"),
+                usage=NS(input_tokens=11, output_tokens=4),
+            )
+        )
+    turn = await OpenAIProvider(model=model, client=client).step("SYS", history(), TOOLS)
+    assert turn.tool_calls == [ToolCall(id="call_f2", name="stop", arguments={})]
+    assert turn.stop_reason == "content_filter" and not turn.refused
 
 
 async def test_openai_does_not_swallow_an_unrelated_bad_request(_no_effort_env: None) -> None:

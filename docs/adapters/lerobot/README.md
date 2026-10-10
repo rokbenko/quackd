@@ -1163,9 +1163,11 @@ quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.
 - **It is refused before anything connects** without `--policy-url`, with `--yes`, with no
   terminal to ask on, with `--dry-run`, beside `--decision-llm` or a decision LLM
   `QUACKD_DECISION_LLM` names, with a flag for a model or a picture it would ignore (`--llm`,
-  `--base-url`, `--api-key`, `--extra-body`, `--vision`, `--image`), and for a task file whose
-  `policy.instructions` is empty. A `--goal` has to be one short subtask, as a listed
-  instruction is. `serve-mcp` refuses `--controller`, because over MCP the client is the pilot.
+  `--base-url`, `--api-key`, `--extra-body`, `--vision`, `--image`), with `--play`, for a task
+  file whose `policy.instructions` is empty, and for a task file that gives its pilot a part to
+  play unless `--no-play` turns it off ([guides/play.md](../../guides/play.md)). A `--goal` has
+  to be one short subtask, as a listed instruction is. `serve-mcp` refuses `--controller`,
+  because over MCP the client is the pilot.
 
 ## The simulator: `lerobot:mujoco`
 

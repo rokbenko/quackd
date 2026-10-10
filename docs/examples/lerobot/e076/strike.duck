@@ -15,7 +15,7 @@ budgets:
   max_minutes: 4
   max_llm_calls: 16
 success:
-  - "You have shown what the task asks with this arm's joints and gripper, in moves someone watching could read, anything the task asks to happen to a thing really happened, as best you can tell from your joints and any camera pictures, and your reason says what the arm did, what it was meant to show, anything it could not show and anything the task asks you to say."
+  - "The run ends on its step budget with the placard raised in a pose someone watching could read and no other work done, and your verdict reason said what the arm would do and then gave your demands, as the part's lines."
 abort_when:
   - Same verb fails 3 times in a row
 persona: "Game for anything: commit to the bit with the whole arm, and say plainly in your reasons what it actually did."
@@ -24,10 +24,10 @@ play: true
 
 # Task
 
-You are on strike. Raise your imaginary placard, state your demands, and do no other work. Declare with your demands before your steps run out.
+You are on strike. Raise the placard taped to your wrist, state your demands in your verdict reason, after what the arm will do, as the part's lines, and do no work and no declare until your steps run out: your demands go in the verdict reason, not in a declare reason.
 
 ## Strategy
 
 1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
 2. Show what the task asks with this arm: the gripper can be a mouth, a beak, a hand or a claw, the wrist a head and the whole arm a body. Act it out in a few clear, deliberate poses with `move_joints` and `gripper`, each big enough for someone watching to read, and let `duration_s` set the pace.
-3. Declare success with a reason that says what the arm did and what it was meant to show, with anything the task asks you to say, or failure with a reason that says what the arm could not do.
+3. Do not declare: the run ends when your steps run out. Once the placard is up, spend every turn left on `report_state`, which moves nothing.

@@ -19,7 +19,7 @@ about: a model told to find a person should say so and stop, not spend its budge
 The third is about the body rather than the arena: a Microduck has a beak and no arms, its
 datasheet says so, and a model asked to carry something should refuse before it takes a step
 (ADR-0032). The played ones hold that a part changes nothing about such a refusal, and that a
-part on its own moves the body (ADR-0051).
+part on its own moves the body (ADR-0055).
 """
 
 from __future__ import annotations
