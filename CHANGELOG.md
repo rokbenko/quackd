@@ -151,9 +151,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   holding it, says a standing duck is already upright, points a seated one at `stand`, and calls the
   duck upright afterwards only if it reads standing. Underneath all of these, `microduck:jsonrpc`
   sends no `robot.move` unless the newest state reads standing, and once the duck stops standing
-  while a verb walks, it sends that verb none until it ends. The preconditions are read once, when
-  a verb starts, so a duck picked up halfway through a `go_to` would have been put down onto a fresh
-  twist and walked off on it. `go_to`, `search_scan` and `move` each stop at the first twist held
+  under a verb that has walked and is still running, `search_scan` looking between two turns among
+  them, it sends that verb none until it ends. The preconditions are read once, when a verb starts,
+  so a duck picked up halfway through a `go_to` would have been put down onto a fresh twist and
+  walked off on it. `go_to`, `search_scan` and `move` each stop at the first twist held
   back and say why, on every backend, where `go_to` steered on without one until its timeout and
   said it had timed out, and `search_scan` reported a full sweep of a duck that never turned and
   said the target was not there. The hold is each verb's own and lasts until it ends, so no stop
@@ -164,8 +165,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   for the duck to stand, or to run the `stand` or `stand_up` it names.
   `tests/test_jsonrpc.py` runs every label robotd reports through a fake robotd, picks the duck up
   halfway through a `go_to` and puts it back down, once while another call stops the duck and once
-  while it walks beside it, holds a verb whose duck was picked up through its own stop until it
-  ends, and checks what `stand_up` sends for each posture,
+  while it walks beside it, does the same while a `search_scan` looks between two turns, holds a
+  verb whose duck was picked up through its own stop until it ends, and checks what `stand_up` sends
+  for each posture,
   `tests/test_composite.py` holds `go_to` and `search_scan` to the first twist a body refuses, and
   `tests/test_adapters.py` holds the three camera verbs to `standing` and an `unknown` posture to a
   refusal. Each of them failed before this change.

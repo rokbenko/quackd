@@ -1588,6 +1588,53 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
     await t.close()
 
 
+async def test_a_duck_picked_up_while_a_scan_looks_between_turns_ends_the_scan(
+    registry: VerbRegistry, robotd: FakeRobotd
+) -> None:
+    """`search_scan` stops the duck after every turn and looks, and the turn's stop took the
+    scan off the verbs walking, so a duck picked up while the scan looked was not held for it:
+    the frame that showed the pick-up held back nothing, and a duck put back down before the
+    look ended turned on with the scan's next turn. A verb that has walked is one of them until
+    it ends now, so the pick-up holds the scan, and its next turn is refused."""
+    t = _seeing(robotd)
+    await t.connect()
+    t.head_fade_s = 0.0
+    looking = asyncio.Event()
+    looking.set()
+    see = t.get_frame
+    looks = 0
+
+    async def gated() -> Image.Image | None:
+        nonlocal looks
+        looks += 1
+        if looks == 2:  # the look after the first turn waits until the test lets it go
+            looking.clear()
+            await looking.wait()
+        return await see()
+
+    t.get_frame = gated  # type: ignore[method-assign]
+    ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=_NothingThere())
+    params = {"target": "ball", "step_deg": 45, "max_steps": 4}
+    scanning = asyncio.create_task(ex.run_verb("search_scan", params))
+    try:
+        await _eventually(lambda: not looking.is_set(), "the look after the first turn")
+        turned = _moves(robotd)
+        robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
+        await _until(t, lambda s: s["safety"].get("picked_up") is True)
+        robotd.picked_up, robotd.policy = False, "walk"  # and puts it down before the look ends
+        await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
+        looking.set()
+        result = await _ended(scanning, "the scan ending at its next turn")
+    finally:
+        await _cancelled(scanning)
+    said = "search_scan: a twist was refused, so the scan stopped after 1 of 4 turns (45°): "
+    assert not result.ok and result.summary.startswith(said), result.summary
+    assert "the duck stopped standing (somebody" in result.summary, result.summary
+    await _landed(t)
+    assert _moves(robotd) == turned, "a turn went out after the duck was picked up"
+    await t.close()
+
+
 # ── a robotd quackd has not read ─────────────────────────────────────────────────────────
 
 
