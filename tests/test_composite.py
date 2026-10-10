@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable
 
 import pytest
@@ -123,6 +124,136 @@ async def test_a_steering_verb_lets_the_head_settle_before_its_first_frame(
     assert result.ok, result.summary
     assert body.sent_by_the_first_frame == ["look"]
     assert body.handed_out_at[0] == pytest.approx(fade_s)
+
+
+# ── a body that hands out frames it took a while before ─────────────────────────────────
+
+#: The slice of its own clock `_Kept` moves its heading and its camera on by.
+KEPT_STEP_S = 0.005
+#: How long `_Kept` goes on turning at the last twist it was sent: robotd's deadman window.
+KEPT_DEADMAN_S = 0.3
+
+
+class _Kept(MockTransport):
+    """A body that hands out frames it took a while before, and says when, as a Microduck on
+    mediad's `/frame` does. Its camera asks for a picture every `period` of the body's clock, or
+    as soon as the last one came when that took longer, takes it as it asks, and has it `fetch`
+    later, and `get_frame` hands out the newest that has come. The body turns at the rate of the
+    last twist it was sent until a stop, or until twists stop coming for a deadman window, and
+    each frame carries the time it was taken and the heading it was taken at, in degrees."""
+
+    def __init__(self, *, period: float, fetch: float, head_fade_s: float = 0.0) -> None:
+        super().__init__()
+        self.head_fade_s = head_fade_s
+        self.fetch = fetch
+        self.every = max(period, fetch)
+        self.yaw_deg = 0.0
+        self.wz = 0.0
+        self.twisted_at = 0.0
+        self.handed_out: list[Image.Image] = []
+        # one frame has come already, as one has once a real camera connects, and the camera
+        # asks for the next one now
+        self.newest: Image.Image = self._picture(-self.every)
+        self.coming: list[tuple[float, Image.Image]] = []
+        self.next_ask = 0.0
+
+    def _picture(self, taken_at: float) -> Image.Image:
+        picture = Image.new("RGB", (8, 8))
+        picture.info.update(taken_at=taken_at, yaw_deg=self.yaw_deg)
+        return picture
+
+    def _run(self, seconds: float) -> None:
+        slices = max(1, math.ceil(seconds / KEPT_STEP_S))
+        for _ in range(slices):
+            self._t += seconds / slices
+            if self._t - self.twisted_at > KEPT_DEADMAN_S:
+                self.wz = 0.0
+            self.yaw_deg += math.degrees(self.wz * seconds / slices)
+            while self.next_ask <= self._t:
+                self.coming.append((self.next_ask + self.fetch, self._picture(self.next_ask)))
+                self.next_ask += self.every
+            while self.coming and self.coming[0][0] <= self._t:
+                self.newest = self.coming.pop(0)[1]
+
+    def frame_taken_at(self) -> float:
+        return float(self.newest.info["taken_at"])
+
+    async def get_frame(self) -> Image.Image | None:
+        self.handed_out.append(self.newest)
+        return self.newest
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind == "move":
+            self.wz, self.twisted_at = float(intent.params.get("wz", 0.0)), self._t
+        return await super().send_intent(intent)
+
+    async def stop(self) -> None:
+        self.wz = 0.0
+        await super().stop()
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self._run(seconds)
+        await asyncio.sleep(0)
+
+
+@pytest.mark.parametrize("verb", ["go_to", "search_scan"])
+async def test_the_first_frame_acted_on_was_taken_after_the_head_settled(
+    registry: VerbRegistry, verb: str
+) -> None:
+    """The wait for a glance to fade did not make the frame after it a frame taken after it.
+    A body that hands out the newest frame it holds, which on mediad's `/frame` was asked for up
+    to a frame period and a fetch before, handed both verbs a frame from mid-glance, or from
+    before the look. Here frames come every half second and take as long to fetch, so the
+    newest frame when the wait ends was taken half a second before it. The first frame acted on
+    is one taken once the wait had ended."""
+    fade_s = 1.5
+    body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_BallUnderfoot())
+    result = await ex.run_verb(verb, {"target": "ball"})
+    assert result.ok, result.summary
+    first = body.handed_out[0].info["taken_at"]
+    assert first >= fade_s - 1e-9, f"the first frame acted on was taken at {first:g} s"
+    assert [i.kind for i in body.intents if i.kind != "stop"] == ["look"], "nothing moved first"
+
+
+@pytest.mark.parametrize("fade_s", [1.5, 0.0], ids=["glances", "still"])
+async def test_search_scan_looks_at_each_heading_from_that_heading(
+    registry: VerbRegistry, fade_s: float
+) -> None:
+    """`search_scan` turned, let the view settle for a tick and looked at the newest frame, which
+    on a camera slower than a tick was taken during the turn or before it: a target found there
+    was reported a step late, at a heading the duck had already turned away from. Each view is
+    a frame taken after its turn had settled now, so the frame looked at after each turn shows
+    the heading the turns add up to."""
+    step = 45.0
+    body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": step, "max_steps": 4})
+    assert not result.ok and "not found" in result.summary
+    seen = [round(frame.info["yaw_deg"], 1) for frame in body.handed_out]
+    assert seen == [0.0, 45.0, 90.0, 135.0, 180.0], seen
+
+
+@pytest.mark.parametrize(("fade_s", "after_each_turn"), [(1.5, ["look"]), (0.0, [])])
+async def test_search_scan_claims_the_head_again_after_each_turn_on_a_body_that_glances(
+    registry: VerbRegistry, fade_s: float, after_each_turn: list[str]
+) -> None:
+    """Each turn ends with a stop, and on a Microduck a stop ends the gaze hold the look before
+    the scan started, so the head was nobody's for the rest of the scan, and robotd glances once
+    the duck has stood still long enough while it waits for a frame. On a body whose head
+    glances on its own the scan centres it again after every turn, before anything else goes
+    out. A body whose head moves only when asked is sent what it always was."""
+    body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    await ex.run_verb("search_scan", {"target": "ball", "step_deg": 45.0, "max_steps": 3})
+    kinds = [intent.kind for intent in body.intents]
+    assert kinds[0] == "look"
+    stops = [at for at, kind in enumerate(kinds) if kind == "stop"]  # each turn ends with one
+    assert len(stops) == 3, kinds
+    for at in stops:
+        assert kinds[at + 1 : at + 1 + len(after_each_turn)] == after_each_turn, kinds
+    assert kinds.count("look") == 1 + len(after_each_turn) * len(stops), kinds
 
 
 # ── a twist the body refuses ends the verb that steers ──────────────────────────────────

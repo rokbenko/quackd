@@ -7,6 +7,7 @@ real time while the real robot keeps its deadman fed.
 
 from __future__ import annotations
 
+import math
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -42,6 +43,12 @@ class HeartbeatError(TransportError):
 DEFAULT_CAMERA_NAME = "camera"
 """What a single frame is called when the transport names no camera. Never shown to a
 model: a camera's name is only spoken when a body has more than one."""
+
+FRAME_HEAD_YAW_DEG = "quackd.head_yaw_deg"
+"""The key in a frame's `info` under which a body that knows it records where its camera pointed
+from the trunk when the frame was taken, in degrees of yaw, positive left, the convention
+`DuckState.extras["head_yaw_deg"]` is in. That one says where the camera points now, and a frame
+handed out from memory can be older than the head's last move (`frame_head_yaw_of`)."""
 
 
 @dataclass(frozen=True)
@@ -173,7 +180,13 @@ class DuckTransport(Protocol):
     protocol cannot carry an optional member: `frames_of()` is how callers ask, and a
     transport that has not got one is a transport with a single camera. One that has must
     mark its primary camera's frame `primary=True`, and mark none when that camera gave
-    nothing this time, because that flag is what the detector reads."""
+    nothing this time, because that flag is what the detector reads.
+
+    A transport that hands out frames taken ahead of being asked for, and knows when each was
+    taken, may offer `frame_taken_at() -> float | None` as well. `frame_taken_at_of()` is how
+    callers ask, and a transport without it keeps every verb as it was. One that offers it must
+    stop handing out a frame once it is too old to steer on, since that is what ends a wait for
+    a newer one that never comes (`frames_taken_since`)."""
 
     name: str
 
@@ -243,3 +256,41 @@ def primary_of(frames: Sequence[CameraFrame]) -> Image.Image | None:
     None with frames still in the list is a real state: the other cameras are worth showing a
     model even when the one the bearings are calibrated for has stopped answering."""
     return next((f.image for f in frames if f.primary), None)
+
+
+def _finite(value: Any) -> float | None:
+    if isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    return None
+
+
+def frame_taken_at_of(transport: Any) -> float | None:
+    """When the frame `transport.get_frame()` would hand out now was taken, at the earliest, on
+    the clock `transport.now()` reads, or None when the body does not say.
+
+    A body that draws its frame when it is asked for has nothing to say, since every frame it
+    hands out is taken then, and a body that cannot tell when a frame it kept was taken says
+    nothing rather than guess. Either way the caller acts on the frame it is handed, as every
+    caller did before any body said. A body that keeps frames taken ahead of being asked for,
+    and knows when, offers `frame_taken_at()`: a Microduck on mediad's `/frame` does."""
+    taken_at = getattr(transport, "frame_taken_at", None)
+    return _finite(taken_at()) if callable(taken_at) else None
+
+
+async def frames_taken_since(transport: Any, since: float, poll_s: float) -> None:
+    """Wait until the frame the body would hand out was taken no earlier than `since` on its own
+    clock, checking every `poll_s` of its time, on a body that says when its frames were taken.
+
+    It returns at once on any other body, and as soon as the body has no frame left to hand out,
+    whose `get_frame` then says None and whose verb stops on that. A body that says when its
+    frames were taken stops handing out one too old to steer on, which is what bounds the wait
+    on a camera that has stopped: the frame taken before `since` runs out of age, and nothing
+    newer comes."""
+    while (taken := frame_taken_at_of(transport)) is not None and taken < since:
+        await transport.sleep(poll_s)
+
+
+def frame_head_yaw_of(image: Image.Image | None) -> float | None:
+    """Where the camera pointed from the trunk when `image` was taken, in degrees of yaw positive
+    left, when the body recorded it on the frame (`FRAME_HEAD_YAW_DEG`), or None."""
+    return None if image is None else _finite(image.info.get(FRAME_HEAD_YAW_DEG))

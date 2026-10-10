@@ -32,7 +32,7 @@ from PIL import Image
 from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.base import Detection
 from quackd.safety import Executor
-from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.transport.base import HeartbeatError, Intent, TransportError, frame_head_yaw_of
 from quackd.transport.mock import MockTransport
 from quackd.verbs.core import MOVE_RESEND_S
 from quackd.verbs.registry import VerbRegistry
@@ -2799,18 +2799,23 @@ def _closed_port() -> int:
 class SnapshotServer:
     """An HTTP camera on loopback that answers each GET with the next reply of its script, and
     with the last one for ever after: 200 and a PNG, or a status and a reason, as mediad's
-    `/frame` answers. It counts the requests, so a test can tell a camera waited for from one
-    given up on."""
+    `/frame` answers. A reply may name a delay too, which the answer waits out once the request
+    has arrived, as mediad's picture, taken when the request reaches it, then takes to encode
+    and to come down a tunnel. It counts the requests, so a test can tell a camera waited for
+    from one given up on, and notes when each arrived."""
 
-    def __init__(self, *replies: tuple[int, bytes]) -> None:
+    def __init__(self, *replies: tuple[int, bytes] | tuple[int, bytes, float]) -> None:
         self.replies = list(replies)
         self.requests = 0
+        self.arrived: list[float] = []
+        """When each request arrived, on this machine's monotonic clock."""
         self._lock = threading.Lock()
         server = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                status, body = server._next()
+                status, body, delay = server._next()
+                time.sleep(delay)
                 self.send_response(status)
                 self.send_header("Content-Type", "image/png" if status == 200 else "text/plain")
                 self.send_header("Content-Length", str(len(body)))
@@ -2827,10 +2832,13 @@ class SnapshotServer:
             target=self.httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
         )
 
-    def _next(self) -> tuple[int, bytes]:
+    def _next(self) -> tuple[int, bytes, float]:
         with self._lock:
             self.requests += 1
-            return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+            self.arrived.append(time.monotonic())
+            reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        status, body, *delay = reply
+        return status, body, float(delay[0]) if delay else 0.0
 
     def url(self, path: str = up.MEDIAD_FRAME_PATH) -> str:
         return f"http://127.0.0.1:{self.port}{path}"
@@ -3029,6 +3037,98 @@ async def test_the_lens_is_the_first_frames_and_stays(robotd: FakeRobotd) -> Non
         assert up.ALPHA_UPRIGHT_FOV.name in (await t.get_state()).extras["assumptions"]
     finally:
         await t.close()
+
+
+async def test_a_frame_is_as_old_as_its_request_and_not_its_download(robotd: FakeRobotd) -> None:
+    """mediad takes the picture a `/frame` answers with when the request reaches it, then encodes
+    it and sends it down the tunnel, and quackd started a frame's age only once the last of it
+    had arrived, which left all of that out: a PNG that took a while to come was handed out as
+    if it had just been taken. Its age runs from the request now, and the moment the frame says
+    it was taken is the request's."""
+    slow = 0.6
+    with SnapshotServer((200, _png(720, 1280)), (200, _png(720, 1280), slow)) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        await t.connect()
+        try:
+            first = t._frame
+            await _eventually(lambda: t._frame is not first, "a frame that took a while to come")
+            age, taken = t.frame_age_s(), t.frame_taken_at()
+            # both ends of the wait are read off a clock that may tick only every few milliseconds
+            tick = time.get_clock_info("monotonic").resolution
+            assert age is not None and age >= slow - tick, age
+            assert taken is not None and taken <= t.now() - slow + tick, (taken, t.now())
+        finally:
+            await t.close()
+
+
+async def test_a_frame_slower_to_come_than_the_window_is_never_handed_out(
+    robotd: FakeRobotd,
+) -> None:
+    """A PNG that trickled in over several seconds was handed out as fresh however long it took,
+    since its age began once it had all come, and urllib's timeout bounds each read rather than
+    the request. Counted from the request, a frame that took longer to come than the window
+    quackd steers on is already too old when it arrives: it is not handed out, and the camera
+    says why."""
+    window = camera_stale_after_s(MEDIAD_FRAME_FPS)
+    with SnapshotServer((200, _png(720, 1280)), (200, _png(720, 1280), window + 0.3)) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        await t.connect()
+        try:
+            first = t._frame
+            await _eventually(lambda: t._frame is not first, "the slow frame")
+            assert await t.get_frame() is None
+            assert t.frame_taken_at() is None
+            assert t.camera_error is not None and f"older than the {window:g} s" in t.camera_error
+        finally:
+            await t.close()
+
+
+@pytest.mark.parametrize(
+    ("path", "says"),
+    [(up.MEDIAD_FRAME_PATH, True), ("/snapshot.png", False)],
+    ids=["mediad", "other"],
+)
+async def test_only_mediads_frame_says_when_and_through_which_head_it_was_taken(
+    robotd: FakeRobotd, path: str, says: bool
+) -> None:
+    """mediad's `/frame` takes its picture after the request reaches it, so the request's moment
+    is one the picture is no older than, and the head the newest state frame showed then is the
+    head it was taken through, which a flock member adds a bearing to. Any other HTTP camera may
+    hand out a picture it took before it was asked, so its frames say neither, and nor does a
+    WebRTC frame, which comes some unknown while after the camera took it."""
+    yaw = 30.0
+    with SnapshotServer((200, _png(720, 1280))) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(path), camera_wait_s=60.0
+        )
+        await t.connect()
+        try:
+            point = (math.cos(math.radians(yaw)), math.sin(math.radians(yaw)), 0.0)
+            assert (await t.send_intent(Intent.look(*point))).accepted
+            await _until(t, lambda s: jsonrpc_unix._head_pose(s)[0] == yaw)
+            turned = time.monotonic()
+            await _eventually(
+                lambda: t._frame_at is not None and t._frame_at > turned,
+                "a frame asked for once the state showed the head turned",
+            )
+            frame = await t.get_frame()
+            assert frame is not None and t._frame_at is not None
+            if says:
+                assert t.frame_taken_at() == t._frame_at - t._t0
+                assert frame_head_yaw_of(frame) == yaw, frame.info
+            else:
+                assert t.frame_taken_at() is None and frame_head_yaw_of(frame) is None
+            # and through the adapter, which is what a run hands the verbs
+            assert MicroduckAdapter(t).frame_taken_at() == t.frame_taken_at()
+        finally:
+            await t.close()
+    webrtc = JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url="webrtc://127.0.0.1:8443")
+    assert webrtc.frame_taken_at() is None
+    assert MicroduckAdapter(MockTransport()).frame_taken_at() is None
 
 
 def test_camera_error_says_why_get_frame_has_nothing() -> None:

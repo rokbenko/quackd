@@ -453,8 +453,9 @@ IDLE_HEAD = UpstreamRef(
     "gaze: after a robot.look it sends LookResult.head again as robot.head every GAZE_HOLD_S, half "
     "of IDLE_AFTER, until a stop, the next look, another client steering the head, a link that "
     "fails or the end of the connection. And go_to and search_scan wait FADE after centring the "
-    "head, before the first frame they steer on, since a glance that was under way when the look "
-    "arrived takes that long to fade out.",
+    "head, since a glance that was under way when the look arrived takes that long to fade out, "
+    "and on mediad's /frame they steer only on a frame taken after the wait "
+    "(MEDIA_FRAME_ON_REQUEST).",
 )
 #: The idle look-around in numbers (IDLE_HEAD): robotd counts the duck still only once nobody
 #: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3076), starts the look-around once
@@ -569,6 +570,22 @@ MEDIAD_FRAME_HTTP = UpstreamRef(
 #: The path mediad serves its snapshot at (MEDIAD_FRAME_HTTP), which is how quackd tells a
 #: `--camera-url` that points at it from any other HTTP camera.
 MEDIAD_FRAME_PATH = "/frame"
+MEDIA_FRAME_ON_REQUEST = UpstreamRef(
+    "a frame asked for is taken after it is asked for",
+    "VERIFIED",
+    src("mediad/src/pipeline.rs", 275),
+    "mediad's capture branch copies a frame out only for a reader that has asked for one, and 'A "
+    "reader waits for the next frame rather than taking the last one. The demand has to be "
+    "answered by a capture that happens *after* it' (mediad/src/pipeline.rs:265-284), stamped "
+    "captured_at at 'the moment the buffer existed' (pipeline.rs:1151-1153). GET /frame asks "
+    "for its picture that way, through media.frame on SOCKET_MEDIA, once the request has reached "
+    "it (mediad/src/web.rs:102-113, mediad/src/snapshot.rs:8-49, mediad/src/frame.rs:9 and "
+    ":195), so the PNG it answers with was taken after quackd sent the request. The PNG carries "
+    "no captured_at, so quackd stamps each /frame with the moment its request went out, which "
+    "the picture is no older than: how old a frame is, and whether it was taken after a move "
+    "go_to or search_scan made had settled, are both counted from then, which errs toward older "
+    "and never toward younger.",
+)
 MEDIA_FRAME = UpstreamRef(
     "media.frame",
     "VERIFIED",

@@ -92,6 +92,7 @@ from typing import Any, NamedTuple
 from PIL import Image
 
 from quackd.transport.base import (
+    FRAME_HEAD_YAW_DEG,
     Ack,
     DuckState,
     HeartbeatError,
@@ -382,6 +383,15 @@ def camera_stale_after_s(fps: float) -> float:
     working camera is not dropped. Nothing floors it at `SNAPSHOT_TIMEOUT_S`, which at
     `MEDIAD_FRAME_FPS` is the longer of the two, so one PNG slow enough leaves `go_to` with no
     frame, and it stops, rather than steering on a picture that old.
+
+    How old a frame is counts from the moment quackd asked for it, not from the moment the last
+    of it arrived. mediad takes the picture a `/frame` answers with after the request reaches it
+    (`up.MEDIA_FRAME_ON_REQUEST`), then encodes it and sends it down the tunnel, and the age
+    used to start when the download ended, which left all of that out: a PNG slow to come was
+    handed out as just taken, and then for the whole window after it came, and one that trickled
+    in for longer than the window, which urllib's timeout does not bound since it is per read,
+    was handed out all the same. Counted from the request, a frame slower to arrive than this
+    window is never handed out.
     """
     return max(2.0, 4.0 / max(0.1, fps))
 
@@ -1120,10 +1130,15 @@ class JsonRpcUnixTransport:
         clock rather than on request, so a slow or broken camera cannot stall the caller and a
         run asking for a frame every step does not pay an HTTP round trip every step. A failure
         is kept, with whether `connect()` waits through it, until the next frame comes.
+
+        Each frame is stamped with the moment its request went out, which mediad's picture is
+        no older than (`camera_stale_after_s`), and carries where the camera pointed from the
+        trunk then, as far as the newest state frame said (`_head_at_request`).
         """
         period = 1.0 / max(0.1, self.camera_fps)
         while True:
             started = time.monotonic()
+            head = self._head_at_request()
             try:
                 frame = await self._fetch_frame()
             except Exception as e:  # a camera hiccup must not end a run
@@ -1131,9 +1146,28 @@ class JsonRpcUnixTransport:
             else:
                 if self._first_frame_size is None:
                     self._first_frame_size = frame.size
-                self._frame, self._frame_at = frame, time.monotonic()
+                if head is not None:
+                    frame.info[FRAME_HEAD_YAW_DEG] = head
+                self._frame, self._frame_at = frame, started
                 self._frame_error, self._frame_retryable = None, False
             await asyncio.sleep(max(0.0, period - (time.monotonic() - started)))
+
+    def _head_at_request(self) -> float | None:
+        """Where the camera points from the trunk, in degrees of yaw positive left, by the newest
+        state frame when it is fresh enough to believe, or None: what a frame asked for now is
+        taken through.
+
+        A flock member adds the head's yaw to a bearing the camera measured to get one from the
+        body, and it read the yaw off the state after it had looked, while a picture handed out
+        from memory can be older than a head move by a frame period and a fetch: after a `gaze`,
+        a bearing measured through the old head would be added to the new one. A frame that
+        carries the head it was taken through pairs the two at the moment of the picture, give or
+        take one state frame. Only mediad's `/frame` takes its picture after it is asked for, so
+        only its frames carry one. A coordinator flock runs on the simulator alone today, whose
+        frames are drawn as they are asked for, so this keeps a member right on any other body."""
+        if not is_mediad_frame(self.camera_url):
+            return None
+        return _head_pose(self._read().state)[0]
 
     async def get_frame(self) -> Image.Image | None:
         """The newest frame, or None when there is no camera to read.
@@ -1148,23 +1182,50 @@ class JsonRpcUnixTransport:
         if self._webrtc is not None:
             return self._webrtc.latest(max_age_s=camera_stale_after_s(self.camera_fps))
         if self._camera_task is None:  # not connected: fetch once rather than nothing
+            started = time.monotonic()  # what the frame is no older than, as the loop stamps it
             with contextlib.suppress(Exception):
                 self._frame = await self._fetch_frame()
-                self._frame_at = time.monotonic()
+                self._frame_at = started
         return None if self.frame_age_s() is None else self._frame
 
     def frame_age_s(self) -> float | None:
-        """Seconds since the newest usable frame, or None if there is none to steer on.
+        """Seconds since the newest usable frame was asked for, or None if there is none to steer
+        on.
 
         None covers both "nothing has ever arrived" and "what we have is too old to act on".
         The callers already treat a missing frame as a reason to stop — `go_to` fails on the
         next tick rather than driving at a memory — so expiry is what turns a dead camera back
-        into a stop instead of twenty seconds of blind walking.
+        into a stop instead of twenty seconds of blind walking. The age runs from the request,
+        not from the download's end (`camera_stale_after_s`).
         """
         if self._frame is None or self._frame_at is None:
             return None
         age = time.monotonic() - self._frame_at
         return None if age > camera_stale_after_s(self.camera_fps) else age
+
+    def frame_taken_at(self) -> float | None:
+        """When the frame `get_frame` hands out now was taken, at the earliest, on the clock `now()`
+        reads, or None when there is no such frame or nothing says when it was taken.
+
+        The verbs that steer on the camera read it (`quackd.transport.base.frame_taken_at_of`), to
+        act only on a frame taken after a move they made had settled: after `go_to` and
+        `search_scan` centre the head and wait out a glance, and after each of `search_scan`'s
+        turns. `get_frame` hands out the newest frame the snapshot loop holds, which was asked for
+        as much as a period of `camera_fps` and a fetch before, so the first frame either verb
+        acted on after its wait could show the head mid-glance, or still where a `gaze` had left
+        it, and one `search_scan` read after a turn could show the view from before it.
+
+        mediad's `/frame` takes its picture after the request reaches it
+        (`up.MEDIA_FRAME_ON_REQUEST`), so the moment the request went out is one the picture is no
+        older than. Any other snapshot server may hand out a picture it took before it was asked,
+        as quackd's own camera daemons do, so its frames have no such time. Nor does a WebRTC
+        frame, which arrives some unknown while after the camera took it. On those the verbs act
+        on the newest frame, as they did."""
+        if self._webrtc is not None or not is_mediad_frame(self.camera_url):
+            return None
+        if self.frame_age_s() is None or self._frame_at is None:
+            return None
+        return self._frame_at - self._t0
 
     @property
     def camera_fov_deg(self) -> float | None:

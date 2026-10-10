@@ -207,39 +207,42 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the variable and expects robotd's own socket, and it failed before this change.
 
 - **A Microduck's gaze holds against robotd's idle look-around, its state says where the camera
-  points, and `go_to` and `search_scan` no longer act on a glancing head.** Since daemon-v0.16.1
-  robotd glances around on its own once nobody has steered the duck's head for two seconds and it
-  has then stood still for two more, up to 0.6 rad of yaw, and lets go of a glance by fading it out
-  over 1.5 s. A `gaze` was one `robot.look`, so the head began to wander off it four seconds later,
-  and an `observe` after it could report bearings off by as much. `microduck:jsonrpc` now sends the
-  head a look answered with again as `robot.head` every second, as upstream's own doc for that
-  answer says to, and the state says what is held as `extras.gaze_hold`. Nothing goes out while the
-  duck reads as anything but standing or sitting, so a duck somebody holds, a limp or a fallen one
-  and one halfway through a skill get no head command, and the hold takes up again once the duck
-  stands. A head somebody turned while it waited, as a gamepad centres the head when its head mode
-  ends, is let be rather than turned back if robotd said meanwhile that somebody held the duck, or
-  that it was limp or in a skill, none of which robotd glances at, or if robotd's two-second wait
-  had not run out since the head last went out. After longer in any other state, a fall among them,
-  a glance of robotd's own cannot be told from another client's head, and the head goes out again as
-  before. There is one hold at most, the newest look's. A stop ends it before the stop itself goes
-  out, and so do the next look, a link that fails and the end of the connection, and a look still
-  waiting on robotd's answer when one of them comes starts none. When `robot.state.head` moves away
-  from the held head or stays off it, which is another client steering it, a gamepad posing the head
-  among them, the hold lets go rather than pull the head back every second, and
-  `extras.gaze_released` says `overridden`. On a robotd from API 41, the first release that glances,
-  `go_to` and `search_scan` wait 1.5 s after centring the head, with nothing sent that moves the
-  duck, before the first frame they act on. The state also says where the camera points, as
-  `extras.head_yaw_deg` and `head_pitch_deg`, positive left and up, read off `frames.camera`, or the
-  yaw off the head_yaw joint on a robotd without `frames`. A flock member adds that yaw to a camera
-  bearing to get one from the body, so on a real Microduck it now places what it sees where the head
-  was turned, where it used to take the camera for looking straight ahead. `tests/test_jsonrpc.py`
-  holds a gaze against a fake robotd and ends it each way it ends, sends two looks at once and stops
-  or closes while a look waits on its answer, pauses it for each posture that pauses it, lets go of
-  a head another client steers or holds still and of one turned while the hold waited, but not of
-  one robotd is still smoothing in or fading a glance off, nor of one after a fall too long to rule
-  a glance out, reads the camera's yaw and pitch off `frames.camera` and the yaw off the joint, and
-  times `go_to` against the fade, and `tests/test_composite.py` holds both verbs to the wait. Each
-  of them failed with its part of this change taken out.
+  points, and `go_to` and `search_scan` let a glance fade before they act on a frame.** Since
+  daemon-v0.16.1 robotd glances around on its own once nobody has steered the duck's head for two
+  seconds and it has then stood still for two more, up to 0.6 rad of yaw, and lets go of a glance by
+  fading it out over 1.5 s. A `gaze` was one `robot.look`, so the head began to wander off it four
+  seconds later, and an `observe` after it could report bearings off by as much. `microduck:jsonrpc`
+  now sends the head a look answered with again as `robot.head` every second, as upstream's own doc
+  for that answer says to, and the state says what is held as `extras.gaze_hold`. Nothing goes out
+  while the duck reads as anything but standing or sitting, so a duck somebody holds, a limp or a
+  fallen one and one halfway through a skill get no head command, and the hold takes up again once
+  the duck stands. A head somebody turned while it waited, as a gamepad centres the head when its
+  head mode ends, is let be rather than turned back if robotd said meanwhile that somebody held the
+  duck, or that it was limp or in a skill, none of which robotd glances at, or if robotd's
+  two-second wait had not run out since the head last went out. After longer in any other state, a
+  fall among them, a glance of robotd's own cannot be told from another client's head, and the head
+  goes out again as before. There is one hold at most, the newest look's. A stop ends it before the
+  stop itself goes out, and so do the next look, a link that fails and the end of the connection,
+  and a look still waiting on robotd's answer when one of them comes starts none. When
+  `robot.state.head` moves away from the held head or stays off it, which is another client steering
+  it, a gamepad posing the head among them, the hold lets go rather than pull the head back every
+  second, and `extras.gaze_released` says `overridden`. On a robotd from API 41, the first release
+  that glances, `go_to` and `search_scan` wait 1.5 s after centring the head, with nothing sent that
+  moves the duck, and on mediad's `/frame` the first frame they act on is one taken after the wait.
+  Over WebRTC it is the newest frame the stream has decoded, which the stream's own delay can put in
+  the last moments of the fade. On such a robotd `search_scan` also centres the head again after
+  each turn, since the stop that ends a turn ends the hold. The state also says where the camera
+  points, as `extras.head_yaw_deg` and `head_pitch_deg`, positive left and up, the convention the
+  simulators have always published, read off `frames.camera`, or the yaw off the head_yaw joint on a
+  robotd without `frames`. `tests/test_jsonrpc.py` holds a gaze against a fake robotd and ends it
+  each way it ends, sends two looks at once and stops or closes while a look waits on its answer,
+  pauses it for each posture that pauses it, lets go of a head another client steers or holds still
+  and of one turned while the hold waited, but not of one robotd is still smoothing in or fading a
+  glance off, nor of one after a fall too long to rule a glance out, reads the camera's yaw and
+  pitch off `frames.camera` and the yaw off the joint, and times `go_to` against the fade, and
+  `tests/test_composite.py` holds both verbs to the wait and to a first frame taken after it, and
+  `search_scan` to centring the head after each turn on a body that glances. Each of them failed
+  with its part of this change taken out.
 
 - **WebRTC frames from a Microduck come out upright, and are measured through the lens mediad
   reports.** An alpha's camera is mounted a quarter turn off upright and nothing on the robot turns
@@ -278,6 +281,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `observe` and `go_to` with mediad's reason, and finds it in `doctor`'s camera rows, and
   `tests/test_microduck_webrtc.py` checks what the WebRTC camera says. Each failed before this
   change.
+
+- **A frame from a Microduck's HTTP camera is as old as the request that asked for it, and
+  `search_scan` on mediad's `/frame` finds a target from the heading it names.** `microduck:jsonrpc`
+  started a frame's age once the last of it had arrived, while mediad takes the picture a `/frame`
+  answers with when the request reaches it, then encodes it and sends it down the tunnel. A PNG slow
+  to come was handed out as if it had just been taken, and one that trickled in for longer than the
+  2 s quackd steers on was handed out all the same, since urllib's timeout bounds each read and not
+  the request. A frame's age runs from its request now, on every HTTP camera, so one that takes
+  longer than that to come is never handed out, and a verb that wanted it stops and says why.
+  `search_scan` turned, let the view settle for a tenth of a second and looked at the newest frame
+  quackd held, which on `/frame` had been asked for as much as a frame period and a fetch earlier,
+  so a target could be found in the view from before the turn or from halfway through it and
+  reported a step late, at a bearing the duck had already turned away from. On `/frame` it now looks
+  after each turn at a frame taken once the turn had settled, since mediad's picture is taken after
+  it is asked for. Any other HTTP camera may hand out a picture it took before it was asked, and a
+  WebRTC frame arrives some unknown while after it was taken, so on those it looks at the newest
+  frame, as before. `tests/test_jsonrpc.py` serves a PNG that takes a while to come and one that
+  takes longer than the window, and tells mediad's route from another camera, and
+  `tests/test_composite.py` has `search_scan` look at each heading through a camera that hands out
+  frames taken half a second before. Each failed before this change.
 
 - **The physics simulator fetches its policies at upstream's `v7`, the set a robot on
   daemon-v0.16.1 is seeded with, and nothing in quackd says a robot stands on `alpha_stand.onnx`

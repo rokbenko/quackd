@@ -22,7 +22,13 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.perception.base import Detection, detect_off_loop, summarize_detections
-from quackd.transport.base import Intent, camera_names_of, frames_of, primary_of
+from quackd.transport.base import (
+    Intent,
+    camera_names_of,
+    frames_of,
+    frames_taken_since,
+    primary_of,
+)
 from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbResult
 
 if TYPE_CHECKING:
@@ -132,9 +138,19 @@ async def _stopped_by(
     )
 
 
-async def _look_ahead(ctx: VerbContext) -> None:
-    """Centre the head before a verb that steers on what the camera sees, and give it the time
-    to get there.
+def _head_fade_s(ctx: VerbContext) -> float:
+    """How long the body's head takes to let go of a glance of its own once a look arrives
+    (`head_fade_s`), or 0 on a body whose head moves only when it is asked to."""
+    fade = getattr(ctx.transport, "head_fade_s", 0.0)
+    if isinstance(fade, int | float) and not isinstance(fade, bool) and fade > 0:
+        return float(fade)
+    return 0.0
+
+
+async def _look_ahead(ctx: VerbContext) -> float:
+    """Centre the head before a verb that steers on what the camera sees, give it the time to
+    get there, and return the moment after which a frame shows it there: the first frame the
+    verb acts on has to have been taken no earlier (`_see`).
 
     A body whose robot turns the head on its own while it stands still says, as `head_fade_s`,
     how long that takes to wear off once a look arrives. A Microduck's robotd has glanced around
@@ -142,18 +158,33 @@ async def _look_ahead(ctx: VerbContext) -> None:
     rather than at once, so the first frame `go_to` and `search_scan` acted on, taken straight
     after the look, could come from a head still most of a glance off centre: a bearing off by
     that much, and `go_to` turning toward it at full rate. The wait comes first, with the body
-    still: nothing is sent that moves it, and the frame after it is the first one acted on. A
-    body without the attribute waits for nothing, as before.
+    still: nothing is sent that moves it. A body without the attribute waits for nothing, as
+    before.
+
+    The wait alone did not make the frame after it a frame taken after it. A body may hand out
+    a frame it took a while before, as a Microduck on mediad's `/frame` does: the newest frame
+    it holds was asked for as much as a frame period and a fetch earlier, so the first frame
+    acted on could still be from mid-glance, or from before the look, with the head where a
+    `gaze` had left it. The moment returned is when the wait ended, and on a body that says when
+    its frames were taken the first frame acted on is one taken after it. A body that does not
+    say hands out the newest frame, as before, and on the simulators that is drawn when it is
+    asked for.
     """
     await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
-    fade = getattr(ctx.transport, "head_fade_s", 0.0)
-    if isinstance(fade, int | float) and not isinstance(fade, bool) and fade > 0:
-        await ctx.transport.sleep(float(fade))
+    fade = _head_fade_s(ctx)
+    if fade > 0:
+        await ctx.transport.sleep(fade)
+    return ctx.transport.now()
 
 
 async def _see(
-    ctx: VerbContext, label: str, caption: str
+    ctx: VerbContext, label: str, caption: str, since: float | None = None
 ) -> tuple[Image.Image | None, list[Detection]]:
+    """The newest frame and what the detector finds of `label` in it, on a body that says when
+    its frames were taken one taken no earlier than `since` on the body's own clock, waited for
+    a tick at a time (`frames_taken_since`)."""
+    if since is not None:
+        await frames_taken_since(ctx.transport, since, TICK_S)
     img = await ctx.transport.get_frame()
     if img is None:
         return None, []
@@ -234,8 +265,10 @@ async def _see_holding(
     label: str,
     caption: str,
     twist: tuple[float, float, float] | None,
+    since: float | None = None,
 ) -> tuple[Image.Image | None, list[Detection]]:
-    """Fetch a frame while keeping the twist the last frame justified alive.
+    """Fetch a frame while keeping the twist the last frame justified alive, a frame taken no
+    earlier than `since` on a body that says when its frames were taken (`_see`).
 
     `_see` is a network round trip to a camera server, and `go_to` used to await it and only
     then send its next command — so the gap between two commands was `TICK_S + fetch +
@@ -260,7 +293,7 @@ async def _see_holding(
 
     A re-send the body refuses ends the wait there, with `_Refused`, and the frame still out
     is let go of: the verb is over, and nothing it would have seen in it changes that."""
-    task = asyncio.ensure_future(_see(ctx, label, caption))
+    task = asyncio.ensure_future(_see(ctx, label, caption, since))
     deadline = ctx.transport.now() + HOLD_TTL_S
     try:
         while True:
@@ -456,9 +489,14 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
         return await _gaze_sweep(ctx, p, float(limit))
     if mode == "none":
         return VerbResult.fail("search_scan needs locomotion or gaze; this robot has neither")
-    await _look_ahead(ctx)
+    since = await _look_ahead(ctx)
+    glances = _head_fade_s(ctx) > 0
     for i in range(p.max_steps + 1):
-        img, hits = await _see(ctx, p.target, f"search_scan {i}")
+        # each view is a frame taken after the turn before it had settled, at the heading the
+        # result names, on a body that says when its frames were taken: one handed out from
+        # memory after a tenth of a second of settling could show the view from before the
+        # turn, or from halfway through it, and the target found in it was reported a step late
+        img, hits = await _see(ctx, p.target, f"search_scan {i}", since)
         if img is None:
             return await _no_frame(ctx, "search_scan")
         if (failed := await detector_failed(ctx, "search_scan", "the scan stopped")) is not None:
@@ -479,7 +517,15 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             # that never turned used to report the whole sweep, the target not in it
             stopped = f"the scan stopped after {i} of {p.max_steps} turns ({i * p.step_deg:.0f}°)"
             return await _stopped_by(ctx, "search_scan", stopped, refused, steps=i)
+        if glances:
+            # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
+            # that centred the head started, so the head is nobody's again, and robotd glances
+            # once the duck has stood still long enough while it waits for its next frame.
+            # Centred again straight after the turn, when no glance can be under way since the
+            # duck was turning until then, the head is held for this view as for the first.
+            await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
         await ctx.transport.sleep(TICK_S)  # let the view settle
+        since = ctx.transport.now()
     return VerbResult.fail(
         f"{p.target} not found after {p.max_steps} steps ({p.max_steps * p.step_deg:.0f}°)"
     )
@@ -499,7 +545,8 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
 async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     if ctx.detector is None:
         return VerbResult.fail("go_to needs a detector (none configured)")
-    await _look_ahead(ctx)
+    # the first frame acted on is one taken once the head has settled (`_look_ahead`)
+    since: float | None = await _look_ahead(ctx)
     t0 = ctx.transport.now()
     lost = 0
     last_bearing = 0.0
@@ -507,7 +554,8 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     held: tuple[float, float, float] | None = None
     while ctx.transport.now() - t0 < p.timeout_s:
         tick += 1
-        img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held)
+        img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held, since)
+        since = None
         if img is None:
             return await _no_frame(ctx, "go_to")
         if (failed := await detector_failed(ctx, "go_to", "the body stopped")) is not None:

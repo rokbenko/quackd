@@ -24,7 +24,14 @@ from quackd.adapters.manifest import (
     Sensor,
     verb_spec,
 )
-from quackd.transport.base import Ack, DuckState, DuckTransport, HeartbeatError, Intent
+from quackd.transport.base import (
+    Ack,
+    DuckState,
+    DuckTransport,
+    HeartbeatError,
+    Intent,
+    frame_taken_at_of,
+)
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
 from quackd_microduck.verbs import MICRODUCK_VERBS, microduck_conditions
@@ -278,6 +285,14 @@ class MicroduckAdapter:
         backend whose head moves only when it is asked to."""
         fade = getattr(self.transport, "head_fade_s", 0.0)
         return float(fade) if isinstance(fade, int | float) and not isinstance(fade, bool) else 0.0
+
+    def frame_taken_at(self) -> float | None:
+        """When the frame `get_frame` hands out now was taken, at the earliest, on the clock `now()`
+        reads, which `go_to` and `search_scan` read off the object they were handed, this
+        adapter, to act only on a frame taken after a move of theirs had settled. On `jsonrpc`
+        from mediad's `/frame`, and None from every camera that cannot say, which the simulators
+        are among: they draw a frame when it is asked for, so every frame they hand out is new."""
+        return frame_taken_at_of(self.transport)
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)

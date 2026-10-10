@@ -796,3 +796,133 @@ def test_a_coordinator_rejects_a_bid_whose_body_cannot_do_the_role() -> None:
     now.t = 0.5
     coord._decide_roles_if_due()
     assert coord.assignments == {"kicker": "strong", "spotter": "eye"}
+
+
+# ── what a member looks at, and through which head ───────────────────────────────────────
+
+
+class _HeadTurned:
+    """A body whose head has just turned to `HEAD_NOW` degrees, the state says, and whose camera
+    hands out frames it took a while before, and says when, as a Microduck on mediad's `/frame`
+    does. Each frame is `(taken_at, comes_at, head_yaw_deg, records_head)`: the body's time it
+    was taken at and has come by, the head it was taken through, and whether the body wrote that
+    head on the frame. The ball sits `BALL_DEG` degrees left of the body, so the bearing in a
+    frame is that less the head it was taken through."""
+
+    name = "mock"
+    HEAD_NOW = 45.0
+    BALL_DEG = 50.0
+
+    def __init__(self, frames: list[tuple[float, float, float, bool]]) -> None:
+        from PIL import Image
+
+        from quackd.transport.base import FRAME_HEAD_YAW_DEG
+
+        self.t = 0.2
+        self.frames: list[Any] = []
+        for taken_at, comes_at, head, records in frames:
+            picture = Image.new("RGB", (8, 8))
+            picture.info.update(taken_at=taken_at, comes_at=comes_at, bearing=self.BALL_DEG - head)
+            if records:
+                picture.info[FRAME_HEAD_YAW_DEG] = head
+            self.frames.append(picture)
+
+    def _newest(self) -> Any:
+        return [f for f in self.frames if f.info["comes_at"] <= self.t][-1]
+
+    def frame_taken_at(self) -> float:
+        return float(self._newest().info["taken_at"])
+
+    async def get_frame(self) -> Any:
+        return self._newest()
+
+    async def get_state(self) -> Any:
+        from quackd.transport.base import DuckState
+
+        return DuckState(posture="standing", extras={"head_yaw_deg": self.HEAD_NOW})
+
+    async def send_intent(self, intent: Any) -> Any:
+        from quackd.transport.base import Ack
+
+        return Ack()
+
+    async def stop(self) -> None:
+        pass
+
+    async def heartbeat(self) -> None:
+        pass
+
+    def now(self) -> float:
+        return self.t
+
+    async def sleep(self, seconds: float) -> None:
+        self.t += seconds
+        await asyncio.sleep(0)
+
+
+class _BearingInTheFrame:
+    """A detector that reads the ball's bearing off the frame, a metre away."""
+
+    name = "bearing_in_the_frame"
+
+    def detect(self, image: Any) -> list[Any]:
+        from quackd.perception.base import Detection
+
+        bearing = float(image.info["bearing"])
+        return [
+            Detection(
+                label="ball", cx=0.5, cy=0.5, area=0.01, bearing_deg=bearing, est_distance_m=1.0
+            )
+        ]
+
+
+def _member(body: _HeadTurned, tmp_path: Path) -> Any:
+    from quackd.flock.member import FlockMember
+    from quackd.flock.messages import FlockTask
+
+    contract = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe]\n"
+        "success: [x]\n---\n# Task\nx\n"
+    ).frontmatter
+    member = FlockMember(
+        "duck-0",
+        contract,
+        body,
+        _BearingInTheFrame(),
+        InProcessBus(),
+        FlockTranscript(tmp_path, now=body.now),
+        FlockTask(task_id="t", name="n", goal="g"),
+    )
+    member.budget.start()
+    return member
+
+
+@pytest.mark.parametrize(
+    ("frames", "why"),
+    [
+        # the newest frame was taken before the head turned, and the body writes no head on
+        # it: the member waits for one taken after it looked, which the state's head is then
+        # the head of
+        ([(0.0, 0.1, 0.0, False), (0.5, 1.0, 45.0, False)], "a frame from before the head turned"),
+        # the frame after the look was taken while the head was still on its way, and the body
+        # wrote the head on it: that head, not the state's, is the one its bearing is through
+        ([(0.0, 0.1, 0.0, True), (0.5, 1.0, 30.0, True)], "a head still turning when it was taken"),
+    ],
+    ids=["fresh", "paired"],
+)
+async def test_a_member_adds_a_bearing_to_the_head_the_frame_was_taken_through(
+    tmp_path: Path, frames: list[tuple[float, float, float, bool]], why: str
+) -> None:
+    """A flock member places what it sees by adding the head's yaw to the bearing the camera
+    measured. It read the yaw off the state after it had looked, and a body that hands out a
+    frame it took a while before could hand it one from before the member's own `gaze`, so a
+    bearing through the old head was added to the new one. It looks only at a frame taken after
+    it asked, on a body that says when its frames were taken, and adds the head the body wrote
+    on the frame when it wrote one."""
+    import math
+
+    body = _HeadTurned(frames)
+    point = await _member(body, tmp_path)._look()
+    assert point is not None
+    placed = math.degrees(math.atan2(point[1], point[0]))
+    assert placed == pytest.approx(_HeadTurned.BALL_DEG), f"{why}: placed at {placed:.1f}"
