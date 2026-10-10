@@ -93,12 +93,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   message and OpenAI's the body of a 4xx or a 5xx, and a reply can quote the request it turned down,
   which is the state the record otherwise keeps as a size and a shape. So `error` now holds the type
   and the status, `RateLimitError: HTTP 429` for a rate limit at OpenAI, or the type alone where
-  there is no status, and so does the line `quackd log` prints, while a turn that ran out of the
-  stepper's own second still says `TimeoutError: no answer within 1.0 s`. Laya's `ValueError` for
-  options that overflow `head_max_len` is recorded by its type alone, so
+  there is no status, and so does the line `quackd log` prints. Two sentences are quackd's own and
+  are kept. A turn that ran out of the stepper's own second still says
+  `TimeoutError: no answer within 1.0 s`, and only such a turn: a `TimeoutError` with nothing in
+  it that a backend raised on a shorter clock of its own used to be given the same sentence, beside
+  a `latency_s` that said otherwise, and is recorded by its type now. TypeSafe's client keeps its
+  own clock above that second too, as OpenAI's does, so on every row the second is the one clock
+  that ends a turn. And a reply quackd could not read is recorded in quackd's own words, which name
+  only the type of what came back, so a page a proxy answers with is
+  `UnreadableReply: POST /v1/decisions answered str rather than a JSON object`. Laya's
+  `ValueError` for options that overflow `head_max_len` is recorded by its type alone, so
   [its page](docs/guides/decision-llms/laya.md) now asks for the turn's `labels` beside it.
   `tests/test_decision.py` and `tests/test_decisions_api.py` fail when a reply that quotes the
-  state, or carries a data URL, reaches the record.
+  state, or carries a data URL, reaches the record, when a backend's own `TimeoutError` is given
+  the stepper's sentence and when quackd's words about a reply are lost, and
+  `tests/test_decision_llms.py` fails when TypeSafe's clock sits on the stepper's second.
 
 ### Fixed
 

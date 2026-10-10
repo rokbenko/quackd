@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from quackd.agent.decision.base import NO_KEY as NO_KEY
-from quackd.agent.decision.base import TIMEOUT_S, DecisionNotInstalled
+from quackd.agent.decision.base import TIMEOUT_S, DecisionNotInstalled, client_timeout
 
 if TYPE_CHECKING:
     from quackd.agent.decision.catalogue import DecisionSpec
@@ -69,12 +69,26 @@ class SystemOneLLM:
             **({"api_key": api_key} if api_key is not None else {}),
             **({"base_url": url} if url else {}),
             **({"model": self.model} if self.model else {}),
-            # Two different clocks, and the difference is the whole reason this is spelled
-            # out. `RetryPolicy.timeout` is the budget for the retry sequence; `timeout` is
-            # how long one request may take, and its default is ten seconds. Setting only the
-            # first left a turn able to wait ten, which is a promise the docs made and the
-            # code did not keep. `Stepper.advise` bounds the turn either way.
-            timeout=TIMEOUT_S,
+            # Two different numbers, and the difference is the whole reason this is spelled out.
+            #
+            # `timeout` is a clock: the SDK hands it to httpx2 for each operation of a request,
+            # the connect and each read and write, and its default is ten seconds ("Default
+            # timeout in seconds for each HTTP operation", typesafe-sdk 0.7.2, read 2026-10-10).
+            # Leaving it there left a turn able to wait ten, which is a promise the docs made and
+            # the code did not keep. It sits above the stepper's second rather than on it
+            # (`base.client_timeout`). Set to that same second, it came due with the stepper's
+            # bound, so a slow server's turn could be recorded either way, as quackd's `no answer
+            # within 1.0 s` or as the SDK's own `TypeSafeAPITimeoutError`, whichever the event
+            # loop reached first, as the openai row's two equal clocks were seen to do against a
+            # stand-in. Above it, the stepper's bound ends every turn that runs out, one way, and
+            # this is a backstop for whoever calls `decide` with nothing around it.
+            #
+            # `RetryPolicy.timeout` is no clock at all. It is the budget a retry has to fit
+            # inside, read when an attempt fails and before the next one starts ("Stops before a
+            # retry whose delay would reach or exceed the budget", the same release), so it can
+            # fire on nothing, and at the stepper's second it keeps the SDK from sleeping
+            # towards a retry the turn would not live to send.
+            timeout=client_timeout(TIMEOUT_S),
             retry=sdk.RetryPolicy(max_retries=MAX_RETRIES, backoff_max=0.2, timeout=TIMEOUT_S),
         )
 

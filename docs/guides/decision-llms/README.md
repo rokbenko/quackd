@@ -712,9 +712,11 @@ questions over, whether or not a server ever had them, what the question spent, 
 and on the turn after a request that failed, which may have taken its connection with it. A turn
 that ended on `refused` names the questions declined, as `refused`. One that ended on `error`
 names the exception's type, and its HTTP status where it carries one, as `error`, and never its
-message, because an SDK puts the server's reply there and a reply can quote the request. One that
-ended on `interrupted` is the request a second Ctrl-C or a flock's cancel cut off, named the same
-way, and the run ended with it.
+message, because an SDK puts the server's reply there and a reply can quote the request. The only
+words kept are quackd's own: `no answer within 1.0 s` on a turn the stepper's own second ended,
+and on no other, and what quackd says about a reply it could not read, which names the type of
+what came back and nothing it said, as `UnreadableReply`. One that ended on `interrupted` is the
+request a second Ctrl-C or a flock's cancel cut off, named the same way, and the run ended with it.
 
 `decision_shadow`, in shadow mode, and in `on` for a turn that offered a `manipulate` it may not
 take, only after that step's `llm` record: what the stepper would have chosen beside what the
@@ -922,9 +924,12 @@ it declined rather than answered, and any name there hands the turn to the model
 `refused`.
 
 Raising is allowed and is not fatal. `Stepper.advise` catches every `Exception`, records the
-turn as `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps the
-exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
+turn as `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps
+the exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
 itself or on its `response`, and never its message, which can quote what the server sent back.
+The one message it keeps is an `UnreadableReply`'s, from `quackd.agent.decision.base`, which a
+plugin raises for a reply it could not read: so that message has to say what shape the reply
+had, by the type of what came back, and never what the reply said.
 
 [`tests/stub_decision_llm.py`](../../../tests/stub_decision_llm.py) is the whole contract as a
 working module, and it is short on purpose. It is what the entry-point test loads, and it is the

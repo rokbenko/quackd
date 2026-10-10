@@ -45,7 +45,9 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   model variable, and `sees` false.
 - **The SDK's generic request, so no floor moves.** `client.post("/decisions", cast_to=object,
   body=...)` hands back the decoded JSON body unchanged in 1.66.0 and in 3.22.1. A body that is
-  not a JSON object is a `ValueError`, which the record calls an error and the model takes.
+  not a JSON object is an `UnreadableReply`, a `ValueError` whose sentence is quackd's own and
+  names only the type that came back, so the record keeps it, calls the turn an error, and the
+  model takes it.
 - **The address is handed over on every build, and is the host alone.** The client is given
   `<url>/v1` whatever was typed, because left to itself the SDK follows `OPENAI_BASE_URL`, which
   quackd's own local presets read as the address of a model server. A `--decision-url` with a
@@ -88,9 +90,12 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   because the SDK's two retries would sleep three eighths to a half of a second before the first.
   The client's own timeout is twice `TIMEOUT_S` (`base.client_timeout`) rather than `TIMEOUT_S`
   itself. httpx2 applies it to each operation of a request, the connect, each read, each write,
-  rather than to the whole, and at the stepper's own second it came due with the stepper's
-  `wait_for`, so one slow server's turns were recorded some as quackd's `no answer within 1.0 s`
-  and some as `APITimeoutError`. Above it, the stepper's `wait_for` ends every turn that runs out.
+  rather than to the whole, and at the stepper's own second it came due with the stepper's bound,
+  so one slow server's turns were recorded some as quackd's `no answer within 1.0 s` and some as
+  `APITimeoutError`. Above it, the stepper's bound, an `asyncio.timeout` around `decide()`, ends
+  every turn that runs out, and the record says `no answer within 1.0 s` only where that bound is
+  what expired: a `TimeoutError` a backend raises on a clock of its own is recorded by its type.
+  TypeSafe's client keeps its own clock above the second as well, so this holds on every row.
   `decide(timeout_s=...)` bounds the whole request with a `wait_for` of its own, the SDK's clock for
   that request set above the bound, for a caller with no stepper around it.
 - **Nothing the SDK does once happens inside a turn.** Before a client's first request each release

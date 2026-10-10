@@ -81,6 +81,7 @@ from quackd.agent.decision.base import (
     DecisionError,
     DecisionMissingKey,
     DecisionNotInstalled,
+    UnreadableReply,
     client_timeout,
     state_text,
 )
@@ -623,7 +624,9 @@ def to_result(data: Mapping[str, Any], asked: Mapping[str, str]) -> dict[str, An
     `input_tokens` off a mapping, which is the field OpenAI bills by."""
     answers_in = data.get("answers")
     if not isinstance(answers_in, list):
-        raise ValueError(
+        # quackd's own words, naming the type of what came where the list belongs and nothing
+        # it said, so the record keeps them (`base.UnreadableReply`).
+        raise UnreadableReply(
             f"POST {API_PREFIX}{PATH} answered without a list of answers "
             f"({type(answers_in).__name__})"
         )
@@ -697,7 +700,7 @@ class DecisionsAPILLM:
                 api_key=key,
                 base_url=client_address(address),
                 # Above the stepper's own second rather than equal to it, so the stepper's
-                # `wait_for` is the one clock that ends a turn (`base.client_timeout`).
+                # bound is the one clock that ends a turn (`base.client_timeout`).
                 timeout=client_timeout(TIMEOUT_S),
                 max_retries=MAX_RETRIES,
                 default_headers=request_headers(bearer, at_openai=at_openai, omit=sdk.omit),
@@ -745,8 +748,9 @@ class DecisionsAPILLM:
         where it can only fire after the bound has ended the request.
 
         Without `timeout_s` nothing in here bounds the whole request, and the client's own clock,
-        per phase and above `TIMEOUT_S`, is a backstop. That is the stepper's case: its `wait_for`
-        around this call, at `TIMEOUT_S`, is the bound, and the one clock that ends its turn."""
+        per phase and above `TIMEOUT_S`, is a backstop. That is the stepper's case: its
+        `asyncio.timeout` around this call, at `TIMEOUT_S`, is the bound, and the one clock that
+        ends its turn."""
         asked = to_questions(questions)
         body = {"model": self.model, "input": to_input(state), "questions": asked}
         if timeout_s is None:
@@ -755,8 +759,10 @@ class DecisionsAPILLM:
             data = await asyncio.wait_for(self._post(body, client_timeout(timeout_s)), timeout_s)
         if not isinstance(data, Mapping):
             # The SDK hands back the body as text when it is not JSON. Not quoted: a page of
-            # somebody's HTML is not a reason a reader of the record needs to wade through.
-            raise ValueError(
+            # somebody's HTML is not a reason a reader of the record needs to wade through, and
+            # it could quote the request. Named by its type, in quackd's own words, which the
+            # record keeps (`base.UnreadableReply`).
+            raise UnreadableReply(
                 f"POST {API_PREFIX}{PATH} answered {type(data).__name__} rather than a JSON object"
             )
         return to_result(data, {question["name"]: question["type"] for question in asked})

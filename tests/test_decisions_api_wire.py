@@ -456,14 +456,17 @@ def test_a_reply_that_quotes_the_request_never_reaches_the_record(tmp_path: Path
 
 def test_a_body_that_is_not_json_costs_the_turn_and_not_the_run(tmp_path: Path) -> None:
     """The SDK hands back the text of a reply that is not JSON, the page a proxy answers with,
-    and the backend refuses it as an answer."""
+    and the backend refuses it as an answer, in quackd's own words, which name the type the real
+    SDK handed back and quote nothing of the page."""
     with FakeOpenAIDecisions(script="not-json") as stand_in:
         result = _run(stand_in, tmp_path)
     assert result.exit_code == 0, result.output
     sent = _sent(_records(tmp_path))
     assert sent and len(stand_in.posts()) == len(sent)
+    said = "UnreadableReply: POST /v1/decisions answered str rather than a JSON object"
     for turn in sent:
-        assert turn["gate"] == "error" and turn["error"] == "ValueError"
+        assert turn["gate"] == "error" and turn["error"] == said
+        assert "Bad Gateway" not in json.dumps(turn)
 
 
 TURNS = 4
@@ -476,7 +479,7 @@ async def test_a_slow_servers_turns_are_all_recorded_as_the_steppers_timeout() -
     """The client's clock used to be the stepper's own second, the two came due together, and the
     same slow server's turns were recorded some as quackd's `no answer within 1.0 s` and some as
     the SDK's bare `APITimeoutError`. The client's clock sits above the stepper's now, so the
-    stepper's `wait_for` is the one that ends a turn, and every turn says the same thing."""
+    stepper's own bound is the one that ends a turn, and every turn says the same thing."""
     slow = paced(answering(), wait_s=1.5 * TIMEOUT_S)
     with FakeOpenAIDecisions(script=[slow]) as stand_in:
         stepper = _stepper(make_decision_llm(OPENAI, url=stand_in.url))

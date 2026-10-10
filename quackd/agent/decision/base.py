@@ -22,11 +22,12 @@ A decision LLM that has not answered in a second is not worth waiting for: the p
 that it is quicker than the model, and past this the turn is cheaper spent on the model
 directly. The turn escalates and the record says the call timed out.
 
-Enforced here, at the seam, rather than left to each backend. A vendor's client has a timeout
-of its own with its own meaning -- TypeSafe's `RetryPolicy.timeout` is the budget for the whole
-retry sequence and its per-request default is ten seconds -- a model in this process has none
-at all, and a plugin has whatever its author thought of. One `wait_for` around `decide` is the
-only way the number quoted in the docs is the number that holds.
+Enforced at the seam, in `Stepper.advise`, rather than left to each backend. A vendor's client
+has a timeout of its own with its own meaning -- TypeSafe's `RetryPolicy.timeout` is the budget
+for the whole retry sequence and its client's own clock, ten seconds unless told otherwise, is on
+each operation of a request -- a model in this process has none at all, and a plugin has
+whatever its author thought of. One bound around `decide` is the only way the number quoted in
+the docs is the number that holds.
 
 A starting value, like the floors. It was chosen against Jev's published latency, and a
 CPU-only server on your own machine may well need more; `--decision-mode shadow` is how you
@@ -37,11 +38,11 @@ def client_timeout(bound_s: float) -> float:
     """The clock a decision LLM's own client is given for a request that `bound_s` already bounds
     from outside: twice it.
 
-    A second clock set to the same number as the first races it. The stepper's `wait_for` and an
-    SDK's own timeout, both at `TIMEOUT_S`, come due within moments of each other, and the event
-    loop runs the two in whichever turn it reaches them, so one request that ran out of its
-    second was recorded at random as quackd's `no answer within 1.0 s` or as the SDK's own
-    timeout type, both seen against the same slow server. A clock a whole budget later can only
+    A second clock set to the same number as the first races it. The stepper's bound and an SDK's
+    own timeout, both at `TIMEOUT_S`, come due within moments of each other, and the event loop
+    runs the two in whichever turn it reaches them, so one request that ran out of its second was
+    recorded at random as quackd's `no answer within 1.0 s` or as the SDK's own timeout type, both
+    seen against the same slow server through OpenAI's SDK. A clock a whole budget later can only
     fire on a request the bound has already ended, so the bound is the one clock that decides a
     turn, and a turn that ran out is recorded one way. Doubling keeps the number derived from the
     budget rather than invented beside it, and keeps a clock there at all, of the same order, for
@@ -93,6 +94,23 @@ class DecisionMissingKey(DecisionError):
         )
 
 
+class UnreadableReply(ValueError):
+    """A reply a backend could not read, said in quackd's own words, which the record keeps.
+
+    A turn that fails is recorded by its exception's type and HTTP status and never by its
+    message, because a message is the other side's text and a reply can quote the request it
+    turned down (`stepper._failure`). That rule would also swallow the sentences quackd writes
+    itself about the shape of a reply, which quote nothing: a page that was not JSON and a JSON
+    object with no list of answers in it would both read as a bare `ValueError`, and a reader could
+    not tell which of the two a server had sent. Raised with such a sentence, this is recorded with
+    it. So the sentence has to describe the reply by its shape, the type of what came back, and
+    never by what it said, because whatever is written here reaches the transcript.
+
+    A `ValueError`, so whatever caught a reply-shape `ValueError` before still catches this. Not a
+    `DecisionError`, which is raised while the CLI is still parsing: this is raised mid-run and is
+    a turn on the record rather than a sentence before the robot connects."""
+
+
 @runtime_checkable
 class DecisionLLM(Protocol):
     """One decision LLM, however it is reached.
@@ -122,9 +140,10 @@ class DecisionLLM(Protocol):
     Raising is allowed and is not fatal: `Stepper.advise` catches every `Exception`, records the
     turn as `gate: error` and hands it to the model. A decision LLM may never end a run. The
     record keeps the exception's type, and its HTTP status where it carries one, and never its
-    message, which can quote what the server sent back. An interrupt is not an `Exception`, and a
-    second Ctrl-C or a flock's cancel while a request is out ends the run as it would anywhere
-    else, with that turn on the record as `interrupted`.
+    message, which can quote what the server sent back, but for an `UnreadableReply`'s, which
+    says what shape a reply had in the backend's own words and is kept. An interrupt is not an
+    `Exception`, and a second Ctrl-C or a flock's cancel while a request is out ends the run as it
+    would anywhere else, with that turn on the record as `interrupted`.
     """
 
     name: str

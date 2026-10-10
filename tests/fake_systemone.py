@@ -113,6 +113,9 @@ class FakeDecisionLLM:
         self.api_key: str | None = None
         self.base_url: str | None = None
         self.retry: RetryPolicy | None = None
+        self.timeout: float | None = None
+        """The client's own clock on each operation of a request, as the constructor was handed
+        it: the one that would race the stepper's second if it sat on it."""
 
     def __call__(
         self,
@@ -121,6 +124,7 @@ class FakeDecisionLLM:
         base_url: str | None = None,
         model: str = "",
         retry: RetryPolicy | None = None,
+        timeout: float | None = None,
         **rest: Any,
     ) -> FakeDecisionLLM:
         """The SDK's own constructor shape, so `SystemOneLLM` builds this the same way."""
@@ -128,6 +132,7 @@ class FakeDecisionLLM:
         self.base_url = base_url
         self.model = model or self.model
         self.retry = retry
+        self.timeout = timeout
         return self
 
     async def system_one(self, state: Any, questions: dict[str, Any]) -> SystemOneResult:

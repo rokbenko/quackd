@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 
 from quackd.adapters.factory import ADAPTER_NAMES, _module
+from quackd.agent.decision.base import TIMEOUT_S, UnreadableReply
 from quackd.agent.decision.catalogue import PRESETS
 from quackd.agent.decision.factory import resolve_decision_price
 from quackd.agent.decision.stepper import (
@@ -1698,6 +1699,8 @@ class _StatusThatRaises(Exception):
         (_TypeSafeAPIError(PICTURE, 42), "_TypeSafeAPIError"),
         (ValueError(f"could not convert string to float: {PICTURE!r}"), "ValueError"),
         (TimeoutError(f"timed out reading {PICTURE}"), "TimeoutError"),
+        # and with nothing in it, unless the stepper's own budget is what ran out
+        (TimeoutError(), "TimeoutError"),
         (_StatusThatRaises(PICTURE), "_StatusThatRaises"),
     ],
 )
@@ -1732,6 +1735,51 @@ async def test_a_turn_that_ran_out_of_time_says_what_it_waited_and_nothing_else(
     advice, _s, _f = await _advise(Hangs(None), cleared=True)
     assert advice.gate == "error"
     assert advice.record["error"] == "TimeoutError: no answer within 0.2 s"
+
+
+@pytest.mark.parametrize("how", ["its own clock", "a bare raise"])
+async def test_a_backends_own_timeout_is_recorded_by_its_type_alone(how: str) -> None:
+    """The sentence is quackd's, and names quackd's budget, so it goes only on a turn that budget
+    ended. A backend with a shorter clock of its own raises a `TimeoutError` with nothing in it
+    too, and the record said `no answer within 1.0 s` beside a `latency_s` a twentieth of that,
+    naming a budget that was not the one that ran out."""
+
+    class GivesUp(_Fails):
+        async def decide(self, state: Any, questions: Any) -> Any:
+            if how == "a bare raise":
+                raise TimeoutError
+            async with asyncio.timeout(TIMEOUT_S / 20):
+                await asyncio.sleep(30)
+
+    advice, stepper, _f = await _advise(GivesUp(None), cleared=True)
+    assert advice.gate == "error" and advice.record["error"] == "TimeoutError"
+    assert stepper.errors == 1
+
+
+def test_quackds_own_words_about_a_reply_are_kept_and_nobody_elses() -> None:
+    """A reply quackd could not read is described in quackd's own words, by the type of what came
+    back, and those words quote nothing, so the record keeps them: a page that was not JSON and
+    an object with no list of answers read apart. They were a bare `ValueError` each, like every
+    other message the rule throws away. A plain `ValueError` with the same words is still
+    recorded by its type, because only quackd's own exception promises to quote nothing."""
+    from quackd.agent.decision.stepper import _failure
+
+    said = "POST /v1/decisions answered str rather than a JSON object"
+    assert _failure(UnreadableReply(said)) == f"UnreadableReply: {said}"
+    assert _failure(ValueError(said)) == "ValueError"
+    assert _failure(UnreadableReply()) == "UnreadableReply", "nothing said, nothing kept"
+
+
+async def test_a_reply_quackd_could_not_read_is_on_the_record_in_its_words() -> None:
+    """Through the stepper, the way a backend raises it."""
+    said = "POST /v1/decisions answered without a list of answers (NoneType)"
+
+    class Unreadable(_Fails):
+        async def decide(self, state: Any, questions: Any) -> Any:
+            raise UnreadableReply(said)
+
+    advice, _s, _f = await _advise(Unreadable(None), cleared=True)
+    assert advice.gate == "error" and advice.record["error"] == f"UnreadableReply: {said}"
 
 
 # ── how long since the last request ─────────────────────────────────────────────────────

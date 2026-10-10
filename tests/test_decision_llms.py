@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 
 from quackd.agent.decision import factory
-from quackd.agent.decision.base import TIMEOUT_S, DecisionError
+from quackd.agent.decision.base import TIMEOUT_S, DecisionError, client_timeout
 from quackd.agent.decision.catalogue import (
     DECISIONS_API,
     ENTRY_POINT_GROUP,
@@ -470,6 +470,21 @@ def test_the_address_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None
     llm = make_decision_llm(PRESETS["local"], url="http://gpu.local:9001", model="my-build")
     assert fake.base_url == "http://gpu.local:9001"
     assert llm.url == "http://gpu.local:9001" and llm.model == "my-build"
+
+
+def test_the_clients_own_clock_sits_above_the_steppers_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TypeSafe's client hands its `timeout` to httpx2 for each operation of a request, so set to
+    the stepper's second it came due together with the stepper's own bound, and one slow turn
+    could be recorded as quackd's `no answer within 1.0 s` or as the SDK's own timeout, whichever
+    the event loop reached first. Above it, the stepper's bound is the one clock that ends a
+    turn. The retry budget only decides whether a retry is started, so it stays at the second,
+    and the SDK never sleeps towards a retry the turn would not live to send."""
+    fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    make_decision_llm(PRESETS["local"], url="http://gpu.local:9001")
+    assert fake.timeout == client_timeout(TIMEOUT_S) > TIMEOUT_S
+    assert fake.retry is not None and fake.retry.timeout == TIMEOUT_S
 
 
 def test_the_row_that_exists_to_be_told_an_address_refuses_without_one(

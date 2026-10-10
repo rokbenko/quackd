@@ -103,7 +103,9 @@ Also in scope:
   dropped to fit is there as `trimmed`; the text itself is not, so a reader auditing what left the
   machine is reading a size and a shape rather than the words. That holds when a turn fails as well:
   its `error` is the exception's type, with its HTTP status where it carries one, and never the
-  message, which can quote the request back. The address is on the record too, in
+  message, which can quote the request back. The only words kept are quackd's own: that the
+  stepper's own second ran out, and what quackd says about a reply it could not read, which names
+  the type of what came back and nothing it said. The address is on the record too, in
   `run_start.decision_llm`, with a password in it or a credential-named query parameter already
   replaced by `***`, because that url can arrive through `QUACKD_DECISION_URL` where argv redaction
   would never see it. What would be a security issue: a picture reaching any of them, a credential

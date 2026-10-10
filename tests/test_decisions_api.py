@@ -38,6 +38,7 @@ from quackd.agent.decision.base import (
     DecisionError,
     DecisionMissingKey,
     DecisionNotInstalled,
+    UnreadableReply,
     client_timeout,
 )
 from quackd.agent.decision.catalogue import PRESETS
@@ -429,7 +430,9 @@ def test_usage_and_model_pass_through_untouched() -> None:
 
 
 def test_answers_that_are_not_a_list_are_an_error_rather_than_an_empty_turn() -> None:
-    with pytest.raises(ValueError, match="list of answers"):
+    """In quackd's own words, which the record keeps (`base.UnreadableReply`), naming the type
+    of what came where the list belongs."""
+    with pytest.raises(UnreadableReply, match=r"without a list of answers \(dict\)"):
         to_result({"answers": {"done": {"noul": 0.0}}}, ASKED)
 
 
@@ -437,14 +440,33 @@ async def test_a_body_that_is_not_json_is_an_error_and_is_not_quoted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The SDK hands back text when the body is not JSON. A gateway's error page is not a
-    reason the record needs to carry."""
+    reason the record needs to carry, and its type is: quackd's own sentence names it, and the
+    record keeps the sentence and not the page."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI(script=["<html>bad gateway</html>"]))
     llm = make_decision_llm(OPENAI)
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(UnreadableReply) as e:
         await llm.decide({"goal": "g"}, {})
     assert "rather than a JSON object" in str(e.value) and "html" not in str(e.value)
     assert fake.posts
+
+
+async def test_a_reply_it_could_not_read_says_which_shape_on_the_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the stepper. Both shapes were recorded as a bare `ValueError`, so a page a proxy
+    answered with and a JSON object with no answers in it read alike; each says which now, and
+    neither quotes what the server sent."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    for reply, said in (
+        ("<html>bad gateway</html>", "answered str rather than a JSON object"),
+        ({"answers": None, "model": "gpt-6-luna"}, "answered without a list of answers (NoneType)"),
+    ):
+        fake_api.install(monkeypatch, fake_api.FakeOpenAI(script=[reply]))
+        advice = await _advise(_stepper(make_decision_llm(OPENAI)))
+        assert advice.record["gate"] == "error"
+        assert advice.record["error"] == f"UnreadableReply: POST /v1/decisions {said}"
+        assert "html" not in json.dumps(advice.event())
 
 
 # ── a turn, end to end through the stepper ──────────────────────────────────────────────
@@ -604,7 +626,7 @@ def test_the_client_is_built_with_the_address_a_clock_above_the_steppers_and_no_
 ) -> None:
     """The SDK's clock at the stepper's own second raced it, and one slow server's turns were
     recorded now as quackd's `no answer within 1.0 s` and now as the SDK's `APITimeoutError`.
-    Above it, the stepper's `wait_for` is the one clock that ends a turn."""
+    Above it, the stepper's own bound is the one clock that ends a turn."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     llm, fake = _built(monkeypatch)
     assert fake.kwargs["base_url"] == f"{OPENAI.url}/v1"

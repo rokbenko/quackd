@@ -32,7 +32,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from quackd.agent.decision.base import TIMEOUT_S, state_text
+from quackd.agent.decision.base import TIMEOUT_S, UnreadableReply, state_text
 from quackd.agent.decision.catalogue import DecisionMode
 from quackd.agent.providers.base import ToolCall
 from quackd.agent.providers.catalogue import Price
@@ -631,9 +631,9 @@ def _http_status(error: BaseException) -> int | None:
     return None
 
 
-def _failure(error: BaseException) -> str:
+def _failure(error: BaseException, *, ran_out: bool = False) -> str:
     """What the record says about a turn that failed: the exception's type, and its HTTP status
-    where it carries one. Never its message.
+    where it carries one. Never its message, but for two sentences of quackd's own.
 
     A message is the other side's text, and an SDK puts the server's reply in it. OpenAI's puts
     the body of a 4xx or a 5xx after `Error code: 400 - `, or makes that body the whole message
@@ -648,9 +648,23 @@ def _failure(error: BaseException) -> str:
     and a 400 a request the API would not take, and what the server said about it is for its
     own logs or a direct call, not for a transcript.
 
-    The one sentence kept is quackd's own. `asyncio.wait_for` gives up with a `TimeoutError`
-    that carries no message at all, and what a reader wants from it is the budget it ran out
-    of, because that is the number they would change.
+    The two sentences kept are quackd's own, and each only where it is true.
+
+    A turn the stepper's own budget ended says so: `no answer within 1.0 s`, because what a
+    reader wants from it is the budget it ran out of, the number they would change. `ran_out` is
+    whether that budget is what ended this turn, which `Stepper.advise` reads off the bound itself
+    (`asyncio.Timeout.expired`), because nothing else can say it. The rule used to be a
+    `TimeoutError` with no message, and any backend with a shorter clock of its own, a plugin's
+    or one in this process, raises exactly that too: the record said `no answer within 1.0 s`
+    beside a `latency_s` of a fifth of a second, naming a budget that was not the one that ran
+    out. Such a `TimeoutError` is recorded by its type alone now, like every other exception, and
+    so are the two the SDKs raise for their own clocks, OpenAI's `APITimeoutError` and
+    TypeSafe's `TypeSafeAPITimeoutError`, which cannot come due before the stepper's second
+    anyway, because each client's clock is set above it (`base.client_timeout`).
+
+    And a `base.UnreadableReply` keeps its message, which is quackd's own sentence about the shape
+    of a reply it could not read, the type of what came back and never what it said, so that a
+    page that was not JSON and an object with no list of answers in it read apart.
 
     Nothing here may raise, because it runs inside the handler whose whole job is to keep a
     failed turn from ending the run. A status that cannot be read, a property that raises as it
@@ -660,8 +674,10 @@ def _failure(error: BaseException) -> str:
     try:
         if (status := _http_status(error)) is not None:
             return f"{name}: HTTP {status}"
-        if isinstance(error, TimeoutError) and not str(error):
+        if ran_out and isinstance(error, TimeoutError):
             return f"{name}: no answer within {TIMEOUT_S:.1f} s"
+        if isinstance(error, UnreadableReply) and (said := str(error)):
+            return f"{name}: {said}"
     except Exception:
         pass
     return name
@@ -1012,6 +1028,7 @@ class Stepper:
         # never saw the questions, and from here that cannot be told from one that took them and
         # then failed, so both are recorded as requests that went out (`_unanswered`).
         sent = 0
+        bound: asyncio.Timeout | None = None
         try:
             questions = build_questions(offered, self.what)
             sent = _question_chars(questions)
@@ -1027,8 +1044,11 @@ class Stepper:
             # there, a Ctrl-C that lands while the SDK is busy rather than while the loop is
             # waiting, left through the event loop at once and reached the handler below only
             # when the loop was being torn down. In this task it comes up through this frame, as
-            # every other exception does, on 3.11 and 3.12 alike.
-            async with asyncio.timeout(TIMEOUT_S):
+            # every other exception does, on 3.11 and 3.12 alike. And the bound can say afterwards
+            # whether it was what ended the turn (`expired`), which a `TimeoutError` cannot: one
+            # with nothing in it is what a backend's own clock raises too, and the record says
+            # quackd's `no answer within` only where quackd's own second ran out (`_failure`).
+            async with asyncio.timeout(TIMEOUT_S) as bound:
                 result = await self.llm.decide(state, questions)
         except Exception as e:
             # A turn with no answer is a turn the model takes, so it ends the run of stepper turns
@@ -1039,7 +1059,10 @@ class Stepper:
             # broken by a timeout reached its limit early, counted as if the turn the model took
             # in between had never broken it.
             self.errors += 1
-            return self._hand_back(self._unanswered(record, e, "error", started, idle, sent))
+            ran_out = bound is not None and bound.expired()
+            return self._hand_back(
+                self._unanswered(record, e, "error", started, idle, sent, ran_out=ran_out)
+            )
         except BaseException as e:
             # A second Ctrl-C, or a flock cancelling its members, arrives here while the request is
             # out, and is not an `Exception`, so the handler above never saw it. It still ends the
@@ -1208,8 +1231,11 @@ class Stepper:
         started: float,
         idle: float | None,
         sent: int,
+        *,
+        ran_out: bool = False,
     ) -> dict[str, Any]:
         """The record of a turn whose call never answered, on `gate`, and what that turn counts.
+        `ran_out` is whether the stepper's own budget is what ended it (`_failure`).
 
         Asked and timed whatever ended it, because the run waited every one of those seconds.
         Where its questions had been handed over (`sent`), it is billed as well, and keeps the
@@ -1231,7 +1257,12 @@ class Stepper:
         self.asked += 1
         took = round(ended - started, 3)
         self.latency_s += took
-        failed = {**record, "gate": gate, "error": _failure(error), "latency_s": took}
+        failed = {
+            **record,
+            "gate": gate,
+            "error": _failure(error, ran_out=ran_out),
+            "latency_s": took,
+        }
         if sent:
             failed["idle_s"] = idle
             self.last_request_ended = None
