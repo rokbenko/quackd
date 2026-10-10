@@ -451,9 +451,10 @@ class WebRtcCamera:
     def _turned(self, frame: Image.Image, rotate: int) -> Image.Image:
         """`frame` turned upright by `rotate`. Turned when it is asked for rather than as it
         decodes, since the track decodes up to thirty frames a second and `go_to` reads ten, and
-        kept, since `doctor`, the state and a verb may each ask for the same frame."""
+        kept, since `doctor`, the state and a verb may each ask for the same frame. A frame the
+        pipeline already turned is handed out as it came (`_already_upright`)."""
         turn = UPRIGHT[rotate]
-        if turn is None:
+        if turn is None or self._already_upright(frame, rotate):
             return frame
         kept = self._upright
         if kept is not None and kept[0] is frame and kept[1] == rotate:
@@ -461,6 +462,27 @@ class WebRtcCamera:
         upright = frame.transpose(turn)
         self._upright = (frame, rotate, upright)
         return upright
+
+    def _already_upright(self, frame: Image.Image, rotate: int) -> bool:
+        """Whether `frame` came off the track already turned by the quarter turn `rotate` says.
+
+        A `mediad` started with `--flip-in-pipeline` turns the pixels in its pipeline, so the
+        track it encodes is upright, and still reports the mount as `rotate` and the size the
+        camera takes as `media.video`'s width and height (mediad/src/main.rs:557-594 and
+        :614-615, `up.CAMERA_MOUNT`). Turned again here, every frame was on its side, measured
+        through the upright lens, so a ball's height in the room read as its bearing. A frame
+        that is tall where `media.video` describes a wide one, or wide where it describes a tall
+        one, is the turn already made. Its shape is compared rather than its size, since the
+        stream may be scaled. A half turn leaves the shape as it was, and a square frame has none
+        to tell by, so those are turned as `rotate` says. No board mounts its camera a half turn
+        off (`up.CAMERA_MOUNT`)."""
+        if rotate not in (90, 270):
+            return False
+        video = self.video or {}
+        width, height = video.get("width"), video.get("height")
+        if not (_positive(width) and _positive(height)) or width == height:
+            return False
+        return (frame.width < frame.height) != (width < height)
 
     def _on_control(self, data: Any) -> None:
         """One line off the control channel. Nothing on it is taken to be well formed, and

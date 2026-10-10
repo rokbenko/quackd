@@ -130,6 +130,16 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
     assert fov is not None
     said = f"its lens is {fov:.1f}°"
     assert said in page, f"the Microduck page does not say {said!r}"
+    # where a quarter turn clockwise puts the principal point, as it puts every pixel, and how far
+    # left of the axis that leaves a bearing taken from the upright frame's centre
+    height = solve["height"]
+    off_px = (height - 1) / 2 - (height - 1 - solve["cy"])
+    off_deg = math.degrees(math.atan(off_px / solve["fy"]))
+    for said in (
+        f"about {off_px:.0f} pixels left of it in a frame {height:g} wide",
+        f"about {off_deg:.0f}° to the left",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
 
 
 def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:

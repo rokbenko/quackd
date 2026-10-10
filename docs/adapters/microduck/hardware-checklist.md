@@ -164,10 +164,11 @@ installs and stops nothing on the duck. The route arrived in `daemon-v0.13.0`.
 > older than the route, or a refused connection.
 
 **WebRTC instead**, for the stream: `mediad`'s H.264 track, which quackd turns upright by the
-mount `mediad` reports and measures through `mediad`'s own calibration. It needs
-`quackd[microduck-camera]`, the same duck package with its WebRTC camera
-(`uv pip install 'quackd[microduck-camera]'`), and it takes the robot's one media session, so
-the browser console cannot be open at the same time:
+mount `mediad` reports and measures through the focal length of `mediad`'s own calibration,
+taking the principal point for the frame's centre, which on an alpha leaves every bearing about
+6° to the left ([the Microduck page](README.md)). It needs `quackd[microduck-camera]`, the same
+duck package with its WebRTC camera (`uv pip install 'quackd[microduck-camera]'`), and it takes
+the robot's one media session, so the browser console cannot be open at the same time:
 
 ```bash
 ssh -L 8443:127.0.0.1:8443 microduck@<duck>      # in another terminal

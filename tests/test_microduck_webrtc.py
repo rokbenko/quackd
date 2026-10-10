@@ -292,6 +292,32 @@ def test_every_quarter_turn_stands_a_frame_up_as_upstream_does(
         assert camera.latest() is not upright, "and a newer frame is turned anew"
 
 
+@pytest.mark.parametrize("rotate", [90, 270])
+def test_a_frame_the_pipeline_already_turned_is_handed_out_as_it_came(
+    camera: WebRtcCamera, rotate: int
+) -> None:
+    """A `mediad` started with `--flip-in-pipeline` turns the pixels before it encodes them, and
+    still reports the mount as `rotate` and the size the camera takes as `media.video`'s. Turned
+    again, every such frame came out on its side. A frame tall where `media.video` describes a
+    wide one is the turn made already and is handed out as it came, at any size the stream was
+    scaled to. One as wide as described is turned as before, and so is any frame when the size
+    described is square, which says nothing either way."""
+    camera._took_video(_video(rotate))  # 1280 by 720, as the camera takes it
+    for size in ((3, 5), (6, 10)):
+        came = _numbered(*size)
+        camera._took_frame(came)
+        handed = camera.latest()
+        assert handed is not None and handed.size == size, size
+        assert handed.tobytes() == came.tobytes(), "handed out as it came"
+    camera._took_frame(_numbered(5, 3))
+    turned = camera.latest()
+    assert turned is not None and turned.size == (3, 5), "a frame as it was sent is turned"
+    camera._took_video({**_video(rotate), "width": 720, "height": 720})
+    camera._took_frame(_numbered(3, 5))
+    square = camera.latest()
+    assert square is not None and square.size == (5, 3), "a square size cannot tell"
+
+
 async def test_no_frame_is_handed_out_before_mediad_says_how_to_turn_it(
     camera: WebRtcCamera, monkeypatch: pytest.MonkeyPatch
 ) -> None:

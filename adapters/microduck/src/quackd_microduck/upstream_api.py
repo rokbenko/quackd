@@ -608,7 +608,10 @@ MEDIA_VIDEO = UpstreamRef(
     "is 'Degrees clockwise the camera is mounted from upright', and intrinsics, absent rather "
     "than null 'when the geometry is unknown', are 'For the frame as it is sent': 'A consumer "
     "that rotates the image has to rotate these too — cx and cy swap, and so do fx and fy' "
-    "(mediad/src/camera.rs:90-93). quackd's WebRTC camera asks once, which is the one line it "
+    "(mediad/src/camera.rs:90-93). The swap is of the axes they lie along: a quarter turn "
+    "clockwise sends the principal point, as it sends every pixel, from (cx, cy) to "
+    "(height-1-cy, cx), not to (cy, cx). "
+    "quackd's WebRTC camera asks once, which is the one line it "
     "writes to the channel, and reads the answer or the push, whichever comes. It hands out no "
     "frame until one of them has said rotate, and takes the field of view of an upright frame "
     "from intrinsics.",
@@ -627,8 +630,10 @@ CAMERA_MOUNT = UpstreamRef(
     "rotate: 'A quarter turn clockwise sends source (x, y) to upright (h-1-y, x)' "
     "(uyvy/src/lib.rs:56-80). quackd's WebRTC camera turns each frame the same way. A mediad "
     "started with --flip-in-pipeline turns the pixels in its pipeline as well and still reports "
-    "the mount as rotate (mediad/src/main.rs:590-595), so quackd would turn its frames twice, as "
-    "upstream's console would.",
+    "the mount as rotate and the size the camera takes as media.video's width and height "
+    "(mediad/src/main.rs:557-594 and :614-615), so a frame that comes in tall where those "
+    "describe a wide one is one the pipeline turned, and quackd hands it out as it came rather "
+    "than turn it onto its side again.",
 )
 ALPHA_INTRINSICS = UpstreamRef(
     "the alpha family's camera calibration",
@@ -641,8 +646,10 @@ ALPHA_INTRINSICS = UpstreamRef(
     "with source family, unless the robot carries a solve of its own "
     "(mediad/src/camera.rs:221-234). Turned upright, an alpha frame is as wide as the rows it "
     "was sent with, across fy, so its lens is 2*atan(360/fy) on the solve's own frame: 37.4 "
-    "degrees. Its principal point is not the frame's centre, and quackd's detectors, which take "
-    "a bearing from the centre, do not correct for it.",
+    "degrees. Its principal point is not the frame's centre: turned upright it sits at "
+    "720-1-cy, about 115 pixels left of the centre, and quackd's detectors take a bearing from "
+    "the centre, so every bearing is about 6 degrees left of the one from the optical axis. "
+    "They do not correct for it.",
 )
 #: CameraIntrinsics::alpha() (ALPHA_INTRINSICS): the frame it was solved on, its focal lengths
 #: and its principal point, in pixels of that frame as mediad sends it, which is not turned.

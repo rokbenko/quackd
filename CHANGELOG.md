@@ -261,14 +261,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
   `quackd run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
   37.4° across an upright alpha frame by the alpha family's calibration, where both used to measure
-  through the simulator's 90°. The calibration's principal point is off the frame's centre, which
-  quackd does not correct. `camera_health()` reports the turn, the lens and the intrinsics.
+  through the simulator's 90°. The lens is the calibration's focal length alone: its principal point
+  is off the frame's centre, which on an alpha leaves every bearing taken from the centre about 6°
+  to the left, and quackd does not correct it. A mediad started with `--flip-in-pipeline` turns the
+  pixels before it encodes them and still reports the mount, so a frame that comes in tall where
+  `media.video` describes a wide one is handed out as it came rather than turned onto its side
+  again. `camera_health()` reports the turn, the lens and the intrinsics.
   `tests/test_microduck_webrtc.py` turns a frame by each of the four angles mediad can report and
   checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
-  it off the answer and off the push, and takes the lens from the intrinsics at each angle,
-  `tests/test_adapters.py` carries the lens into the manifest, and
-  `tests/test_detector_selection.py` has the colour detector `quackd run` builds before the body
-  connects measure through it once it has. Each failed before this change.
+  it off the answer and off the push, takes the lens from the intrinsics at each angle, and hands
+  out a frame the pipeline turned already as it came, `tests/test_adapters.py` carries the lens into
+  the manifest, and `tests/test_detector_selection.py` has the colour detector `quackd run` builds
+  before the body connects measure through it once it has. Each failed before this change.
 
 - **A 503 at connect no longer leaves a Microduck without a camera for the whole run, and a verb
   that finds no frame says why.** `microduck:jsonrpc` decides once, at connect, whether a run can
