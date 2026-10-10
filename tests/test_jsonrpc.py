@@ -1753,8 +1753,9 @@ async def test_a_verb_that_steers_stops_on_a_robotd_that_does_not_take_its_twist
     taken. `go_to` ran out its timeout and said it had timed out, and `search_scan` reported a
     full sweep of a duck that never turned, the ball not in it, which a pilot reads as the room
     being empty. Each stops at the first twist held back now and says what robotd showed
-    instead, which is what the hardware checklist tells the operator a pad held as an e-stop
-    ends a walk with. The turns are a quarter turn each, longer than the echo takes to judge."""
+    instead, which is what the hardware checklist tells the operator a walk ends with once a
+    pad's stops or its stick have the twist robotd shows. The turns are a quarter turn each,
+    longer than the echo takes to judge."""
     robotd.drop_moves = True
     t = _seeing(robotd)
     await t.connect()

@@ -320,20 +320,33 @@ TOF_STREAM = UpstreamRef(
 )
 TOF_FRAME = UpstreamRef("tof.frame", "VERIFIED", src(_PROTO, 953))
 PAD_INPUT = UpstreamRef(
-    "pad.input", "VERIFIED", src(_PROTO, 920), "gamepad raw tap; the pad is the authority, not us"
+    "pad.input",
+    "VERIFIED",
+    src(_PROTO, 920),
+    "The raw input stream of the pad padd drives from, which padd answers itself on SOCKET_PADD. "
+    "It exists because 'padd polls the last known stick value and keeps sending it at 50 Hz', so "
+    "a radio that stops delivering reports still looks like a live driver to robotd, and only "
+    "this stream shows the gap (lib.rs:908-919). It is a tap and ranks nothing: what the pad asks "
+    "for reaches robotd as robot.move and robot.do, the calls any client makes (PAD_DRIVES).",
 )
 PAD_DRIVES = UpstreamRef(
     "padd drives while a pad is connected",
     "VERIFIED",
     src("padd/src/main.rs", 1230),
     "From the moment a gamepad connects ('pad connected — driving', padd/src/main.rs:727), padd "
-    "sends robot.move on every tick its sticks ask for motion, and re-sends an unchanged stop "
-    "every HEARTBEAT, 100 ms, while they do not: 'without it robotd's twist would age past the "
-    "deadman while a pad sat connected and idle' (main.rs:1215-1229). robotd keeps the newest "
-    "twist from any client, so a connected pad nobody is touching tells robotd to stand still at "
-    "least ten times a second, over whatever twist quackd sends, and robot.state.move.requested "
-    "then shows the pad's (MOVE_ECHO). With the pad gone, padd sits the robot down after "
-    "PAD_LOST_SIT, 1 s (main.rs:193).",
+    "sends robot.move on every tick its sticks ask for motion, fifty a second (lib.rs:915-916), "
+    "and re-sends an unchanged stop every HEARTBEAT, 100 ms, while they do not: 'without it "
+    "robotd's twist would age past the deadman while a pad sat connected and idle' "
+    "(main.rs:1215-1229). robotd keeps one twist and ranks no client above another: robot.move "
+    "sets it whoever sent it (robotd/src/main.rs:4358-4362), and a continuous intent is "
+    "'last-writer-wins' (lib.rs:636-641, robotd/src/intents.rs:7-10). So a pad does not out-rank "
+    "quackd. While its sticks are still, its stops and quackd's re-sent twist land in turn, ten "
+    "a second each, and robot.state.move.requested shows whichever came last (MOVE_ECHO). A stick "
+    "that asks for motion is sent more often than quackd re-sends, so the pad's twist is the one "
+    "robotd holds most of the time. The buttons are robot.do requests, and a pad nobody has "
+    "configured runs sit_toggle on A (robotd-params/src/lib.rs:214 and :233). With the pad gone, "
+    "padd sends nothing, and after PAD_LOST_SIT, 1 s, it asks robotd to sit a robot that is not "
+    "sitting already (padd/src/main.rs:190-193 and :1174-1205).",
 )
 
 SKILLS = UpstreamRef(
@@ -370,9 +383,20 @@ DEADMAN = UpstreamRef(
     "robotd intent deadman",
     "VERIFIED",
     src(_ROBOTD_DOC, 561),
-    "'if intents stop arriving, the velocity goes to zero. Stop is not limp'. Our walk verb "
-    "re-sends robot.move at 10 Hz.",
+    "'if intents stop arriving, the velocity goes to zero. Stop is not limp'. robotd zeroes a "
+    "twist older than [safety] deadman_ms, 'Intent age past which the velocity is zeroed', 500 ms "
+    "by default (robotd-params/src/lib.rs:1961-1962 and :2045). Our walk verb re-sends robot.move "
+    "at 10 Hz, so robotd's twist never grows that old while a verb walks, and the deadman stops "
+    "the legs only once quackd's twists stop arriving: a link that drops, a process that dies. A "
+    "connected pad's stops reach robotd sooner than that (PAD_DRIVES).",
 )
+#: What stops a walk, in seconds: the age past which robotd's deadman zeroes a twist by default
+#: (DEADMAN), how often padd re-sends its stop while a pad's sticks are still, its HEARTBEAT, and
+#: how long after a driving pad goes padd asks robotd to sit the duck, its PAD_LOST_SIT
+#: (PAD_DRIVES). The pages that say what stops a quackd walk state each of them.
+DEADMAN_S = 0.5
+PAD_HEARTBEAT_S = 0.1
+PAD_LOST_SIT_S = 1.0
 STATE_NEEDS_SUBSCRIBE = UpstreamRef(
     "robot.state is not pushed until robot.subscribe",
     "VERIFIED",

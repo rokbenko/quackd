@@ -32,9 +32,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   robotd showed instead, with the verdict in `extras.move_echo`. Frames are counted from robotd's
   answer and not from the send, since robotd reads a connection in order, so a link that held
   quackd's lines back for a while delays the verdict instead of stopping a walk robotd then took,
-  and each walk costs a `robot.health` more than it did. A gamepad connected to the robot tells
-  robotd to stand still at least ten times a second while nobody touches it, so with one connected a
-  walk can now stop this way, where it used to go on sending twists the pad was overriding.
+  and each walk costs a `robot.health` more than it did. A gamepad connected to the robot sends
+  robotd a stop every 100 ms while nobody touches it, and robotd walks on whichever twist came last,
+  the pad's or quackd's, so with one connected a walk can now stop this way, where it used to go on
+  sending twists that robotd took in turn with the pad's stops.
   `extras.pickup_detection` says whether the robot reports `safety.picked_up`, which robotd first
   shipped in daemon-v0.15.2, and `doctor` warns when it does not, since nothing then tells quackd
   that somebody is holding the duck. `extras.robotd` also says whether the state carries `frames`,
@@ -399,18 +400,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   WebRTC is the only camera upstream offers. Between them they now say what the read found: API v41,
   a robotd from API v23 up served, and `mediad`'s `GET /frame` beside its WebRTC track. The issue
   template asks about the handshake, posture, the camera and the duck detector as they work now, and
-  `microduck-lookout` says a camera rather than a video. `docs/concepts/safety.md` said upstream
-  arbitrates authority and that releasing the sticks stops the robot through the deadman, where
-  robotd keeps the newest twist from any client and a connected pad sends one at least ten times a
-  second, the zeros of its still sticks included. `docs/concepts/learned-verbs.md` said a policy
-  slot robotd could swap over its socket was not designed yet, where `robot.loadPolicy` has done
-  that since API v18 and `robot.setSkill` has named a policy as a skill since v22, and it names the
-  slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson guide no longer calls every
-  Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011 carries a dated note on the
-  three rows the re-read overtook, and the 0.4 design note says its `GET_FRAME` ban ended with the
-  ref. `tests/test_docs.py` fails a living page, a line of quackd's or an adapter's source, a
-  `pyproject.toml`, an issue template or a bundled duck that says one of the retired things again,
-  and it failed before this change.
+  `microduck-lookout` says a camera rather than a video. `docs/concepts/safety.md`, the hardware
+  checklist, the Microduck page, the README and the FAQ said a gamepad out-ranks quackd, that
+  upstream arbitrates who drives, and that releasing the sticks stops the robot through the deadman.
+  robotd keeps one twist, the newest from any client, and ranks none above another, so a pad nobody
+  touches sends a stop every 100 ms that lands between quackd's twists, letting go of sticks nobody
+  was touching changes nothing, and robotd's deadman does not fire while quackd re-sends its twist
+  every 100 ms. Each page says so now, and what does end a quackd walk: quackd's own `stop`, a stick
+  pushed until quackd gives the walk up, the pad's sit button, and `padd` sitting the duck 1 s after
+  a pad drops out. The checklist's step 8 tests the deadman with the pad switched off, since a
+  connected pad's stop halts the legs first and would pass the step whether or not the deadman
+  works, and has `robotctl monitor` name it. Step 9 says what a pad nobody touches may do to a walk,
+  which nobody has seen, and the hardware report asks for both. `docs/concepts/learned-verbs.md`
+  said a policy slot robotd could swap over its socket was not designed yet, where
+  `robot.loadPolicy` has done that since API v18 and `robot.setSkill` has named a policy as a skill
+  since v22, and it names the slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson
+  guide no longer calls every Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011
+  carries a dated note on the three rows the re-read overtook, and the 0.4 design note says its
+  `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, a line of quackd's
+  or an adapter's source, a `pyproject.toml`, an issue template or a bundled duck that says one of
+  the retired things again, the pad's rank among them, and holds the pages that say what stops a
+  walk to the deadman's 500 ms and `padd`'s 100 ms and 1 s as `upstream_api.py` reads them, and to a
+  re-send shorter than the deadman. Each failed before this change.
 
 ## [0.17.1] — 2026-10-07
 

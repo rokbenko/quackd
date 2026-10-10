@@ -448,10 +448,11 @@ handshake (`--token`, or `QUACKD_DUCK_TOKEN` for the duck and `QUACKD_TODDLERBOT
 ToddlerBot). The duck's camera server has no authentication at
 all, so tunnel it. The daemon quackd ships for a Jetson cannot move a robot at all. It binds
 loopback too, and with a token set (`--token`, `--token-file` or `QUACKD_HOST_TOKEN`) it checks
-it on every request the same way, because what it serves is a camera and a GPU. On a
-Microduck the physical gamepad preempts remote commands; on an Open Duck it does not, because
+it on every request the same way, because what it serves is a camera and a GPU. A gamepad
+does not out-rank remote commands on either duck. On a Microduck, robotd walks on the newest
+twist from any client, the pad's or quackd's, and ranks none above another; on an Open Duck,
 quackd's daemon *replaces* the gamepad the walk loop reads, which makes the power switch the
-only thing that always wins ([concepts/safety.md](concepts/safety.md)).
+only thing that always wins there ([concepts/safety.md](concepts/safety.md)).
 
 **What stops the model itself from doing something dangerous?** The executor, not the
 model's judgment: every verb call is checked against the loaded `.duck`'s allowlist,

@@ -10,9 +10,19 @@ of its services, or needs `sudo`, unless the account you log in with is not in t
 `robot` group. Step 1 says how to tell, and putting the account in the group is marked as the
 one change to make only once whoever owns the duck has said yes.
 
-**The gamepad is the real e-stop.** Upstream is explicit that `padd` has authority and quackd
-does not arbitrate. Somebody should be holding it. quackd's `stop` is a request over a socket,
-and step 8 is where you find out what happens when that socket is not there.
+**Know what stops the duck before anything moves, because the gamepad does not out-rank
+quackd.** robotd walks on the newest twist from any client and ranks none above another. A pad
+whose sticks nobody touches sends a stop every 100 ms, and quackd re-sends its twist as often,
+so letting go of sticks you were not touching changes nothing, and a walk goes on between the
+pad's stops. Push a stick and the pad sends on every tick, more often than quackd, so it takes
+the walk over at once; quackd stops sending a walk once robotd's state no longer shows it, and
+letting go after that stops the duck until the pilot sends its next walk. What ends a quackd walk
+outright is quackd's `stop`, which Ctrl-C or `q` in the terminal running it sends, or the pad's
+sit button, A unless the robot's owner moved it (`ssh microduck@<duck> robotctl pad bindings`
+says), since quackd sends no walk to a duck that is not standing. Somebody should be holding the
+pad all the same, and should know which of these they are reaching for. quackd's `stop` is a
+request over a socket, and step 8 is where you find out what happens when that socket is not
+there.
 
 ## 0. Rehearse in the physics simulator first
 
@@ -201,17 +211,27 @@ quackd should let go of it rather than pull it back, with `extras.gaze_released`
 > Abort if the head wanders off a gaze while `extras.gaze_hold` says it is held, or if quackd
 > keeps pulling the head back from the gamepad.
 
-## 8. Pull the tunnel out, mid-walk
+## 8. Pull the tunnel out, mid-walk, with the pad switched off
 
-**Feet still off the ground.** Start a short walk, and kill the ssh tunnel while it is moving.
+**Feet still off the ground, and no pad connected.** A connected pad sends robotd a stop every
+100 ms while nobody touches it, and robotd keeps the newest twist, so with a pad on, its stop
+halts the legs 100 ms after quackd's last twist whether or not the deadman works, and this step
+would prove nothing about the deadman. Switch the pad off, and expect `padd` to ask robotd to sit
+the duck 1 s later, as it does whenever a pad that was driving goes. In an ssh session of its
+own, not the tunnel, check that `robotctl pad status` says `padd` is not driving, stand the duck
+again if it sat with `robotctl robot do sit_toggle`, the request the pad's sit button sends, and
+leave `robotctl monitor` running there: it shows what robotd was asked for beside what it applied
+and what limited it. Then start a short walk, and kill the ssh tunnel while it is moving.
 
-What should happen: `robot.move` notifications stop arriving and `robotd`'s deadman zeroes the
-velocity. quackd's heartbeat fails, says it is sending a stop, and aborts the run — and it will
-tell you if that stop could not be delivered, which is the honest outcome when the link is the
-thing that broke.
+What should happen: `robot.move` notifications stop arriving, and 0.5 s after the last one
+`robotd`'s deadman zeroes the velocity, which `robotctl monitor` should name as what limited it.
+quackd's heartbeat fails, says it is sending a stop, and aborts the run — and it will tell you if
+that stop could not be delivered, which is the honest outcome when the link is the thing that
+broke.
 
-> **Abort the whole session if the legs keep driving.** The deadman is the protection every
-> step below this one depends on. Nothing else quackd does matters if it is not there.
+> **Abort the whole session if the legs keep driving.** The deadman is what stops a walk whose
+> link dies while no pad is connected, which is every run over MCP and every run nobody holds a
+> pad for. Nothing else quackd does matters if it is not there.
 
 The command, since this step never named one. `--llm fake` answers a free-form goal with a fixed script that ignores it, so it needs a real model:
 
@@ -223,7 +243,8 @@ quackd run --goal "walk in place with small steps, do not turn, then stop" \
 
 ## 9. Feet down
 
-Now, and only now, put the duck on the floor and run a short walk. Hand on the gamepad.
+Now, and only now, put the duck on the floor and run a short walk. Switch the pad back on and
+keep it in your hand.
 
 ```bash
 quackd run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
@@ -233,13 +254,17 @@ quackd run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:987
 The camera is step 6's, through the same tunnel. Start with `--no-memory` for a clean first run,
 then `--memory-dir` so the campaign's notes stay out of your simulator's.
 
-The pad in your hand fights every walk quackd sends, even while nobody touches it: `padd` tells
-robotd to stand still at least ten times a second while a pad is connected and its sticks are
-still, and robotd keeps the newest twist from anyone. quackd checks each walk against robotd's
-own `move.requested`, so a `search_scan` or `walk_to` the pad keeps stopping should fail with
-`robotd has not taken robot.move` and robotd still saying it was asked for `[0, 0, 0]`. That is
-the pad's authority, which quackd does not arbitrate. Write down how often it happens: nobody
-has measured it.
+With the pad on and its sticks untouched, `padd` sends robotd a stop every 100 ms and quackd
+sends its twist as often, so the twist the duck walks on flips between the two, and nobody knows
+yet how a duck walks on that. quackd checks each walk against robotd's own `move.requested`, and
+once robotd's state has gone three frames without showing quackd's twist, the `search_scan` or
+`walk_to` sending it stops the duck and fails with `robotd has not taken robot.move`, robotd
+still saying it was asked for `[0, 0, 0]`. Whether that happens depends on how the pad's stops
+and quackd's twists fall between robotd's frames, so it may come on some walks and not others. A
+stick you push is sent on every tick, so it takes the walk over, and quackd's verb soon fails the
+same way, saying what the stick asked for; let go, and the duck stops until the pilot sends its
+next walk. To end the run, Ctrl-C or `q` in the terminal; to sit the duck where it stands, the
+pad's sit button.
 
 > Abort and let the gamepad take it if the duck goes over. Nothing quackd sends is known to stand
 > a fallen duck up: `stand_up` asks the policy to drive again with `robot.enable {on: true}`,
@@ -271,6 +296,10 @@ What is most worth writing down, because it is what nobody can check without a d
 - what `extras.robotd` said the robot runs, and what `extras.move_echo` said of a walk: how
   long after a twist went out robotd's state showed it, which is the number the echo window
   (three state frames) was set without
+- what step 8 showed: whether `robotctl monitor` named the deadman, and how long after the
+  tunnel went the legs stopped
+- what a pad nobody touched did to quackd's walks in step 9: whether the duck walked on, slowed
+  or stuttered, and how often a verb failed with `robotd has not taken robot.move`
 - whether `stand_up`'s `robot.enable` got a fallen duck up, and how much it moved doing it
 - whether the head held still after a `gaze`, whether `extras.head_yaw_deg` agreed with where the
   camera visibly pointed, and how long the gamepad had the head before quackd let go of it

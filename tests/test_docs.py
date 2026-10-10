@@ -191,6 +191,64 @@ def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
         assert said in page, f"the Microduck page does not say {said!r}"
 
 
+def _microduck_page(name: str) -> str:
+    """One of the Microduck's pages with its whitespace collapsed, so a sentence the guards look
+    for is found however it was wrapped."""
+    path = REPO / "docs" / "adapters" / "microduck" / name
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
+    """robotd keeps one twist, the newest from any client, and ranks none above another. `padd`
+    re-sends its stop every HEARTBEAT while a pad's sticks are still and asks robotd to sit the
+    duck PAD_LOST_SIT after a driving pad goes, and robotd's deadman zeroes a twist older than
+    its `deadman_ms` (`up.PAD_DRIVES`, `up.DEADMAN`). The pages said a gamepad out-ranked quackd,
+    that letting go of its sticks stopped the robot, and that a pad dropping out left the deadman
+    to stop a walk, which it cannot while quackd re-sends its twist every MOVE_RESEND_S. Step 8
+    of the checklist tested the deadman with the pad in hand, whose stop halts the legs first.
+
+    Two orderings carry all of it, so they are held first: quackd's re-send is shorter than the
+    deadman, which is why the deadman does not fire while a verb walks, and so is a pad's
+    heartbeat, which is why step 8 runs with the pad switched off. Then each page says the
+    numbers as `upstream_api.py` and the verbs hold them, worked out here, not written."""
+    from quackd.verbs.core import MOVE_RESEND_S
+
+    assert MOVE_RESEND_S < up.DEADMAN_S, "a walk's own re-sends would let the deadman fire"
+    assert up.PAD_HEARTBEAT_S < up.DEADMAN_S, "a pad's stops would not beat the deadman"
+
+    def ms(seconds: float) -> str:
+        return f"{seconds * 1000:g} ms"
+
+    safety = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
+    safety = " ".join(safety.split())
+    for said in (
+        "**A gamepad does not out-rank quackd.**",
+        f"sends a stop every {ms(up.PAD_HEARTBEAT_S)}, and quackd re-sends its twist every "
+        f"{ms(MOVE_RESEND_S)} while a verb walks",
+        "**robotd's deadman does not fire while quackd walks the duck.**",
+        f"It zeroes a twist older than {up.DEADMAN_S:g} s",
+        f"asks robotd to sit the duck {up.PAD_LOST_SIT_S:g} s after the pad went",
+    ):
+        assert said in safety, f"docs/concepts/safety.md does not say {said!r}"
+    checklist = _microduck_page("hardware-checklist.md")
+    for said in (
+        "## 8. Pull the tunnel out, mid-walk, with the pad switched off",
+        f"its stop halts the legs {ms(up.PAD_HEARTBEAT_S)} after quackd's last twist",
+        f"ask robotd to sit the duck {up.PAD_LOST_SIT_S:g} s later",
+        f"{up.DEADMAN_S:g} s after the last one `robotd`'s deadman zeroes the velocity",
+    ):
+        assert said in checklist, f"the hardware checklist does not say {said!r}"
+    page = _microduck_page("README.md")
+    for said in (
+        f"re-sends an unchanged stop every {ms(up.PAD_HEARTBEAT_S)}",
+        f"{up.PAD_LOST_SIT_S:g} s later asks robotd to sit a duck",
+        f"`[safety] deadman_ms`, {ms(up.DEADMAN_S)} by default",
+        f"every {ms(MOVE_RESEND_S)} while a verb walks, so the deadman does not fire during a "
+        "quackd walk",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
 #: What the pages said about a real Microduck before quackd read robotd again at daemon-v0.16.1,
 #: in the words they said it in. The re-read falsified each one, and a page reverted to any of
 #: them would read as current.
@@ -210,8 +268,20 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "a policy whose name contains `sit`",
     # falls: limp_fall, robotd's own get-up, is off by default at daemon-v0.16.1
     "recovers from falls itself",
-    # the pad: robotd keeps the newest twist from any client, and padd sends its own stops
+    # the pad: robotd keeps one twist, the newest from any client, and ranks none above another,
+    # so a gamepad does not out-rank quackd, letting go of sticks nobody touched stops nothing,
+    # and the deadman cannot stop a walk quackd goes on re-sending, whatever the pad does
     "Upstream arbitrates authority",
+    "gamepad preempts remote control",
+    "gamepad preempts remote commands",
+    "has authority and quackd does not arbitrate",
+    "keeps authority on hardware",
+    "the pad is the authority",
+    "the pad's authority",
+    "over any twist quackd sends",
+    "over whatever twist quackd sends",
+    "releasing the sticks stops the robot",
+    "leaves robotd's deadman to stop the walking",
     # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
     "hot-swapped over the socket (not designed yet)",
 )
@@ -221,13 +291,13 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     """quackd read robotd again at daemon-v0.16.1, and pages and strings across the tree still
     said what the read before it had: an account to ssh in as that was quackd's guess, API v23,
     WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
-    posture as an assumption, a robotd that gets a fallen duck up, an arbitration robotd does not
-    do, and no way to swap a policy over the socket. Each was spelled its own way, and a revert of
-    any one reads as current, so the old spellings are kept out of every living page and of
-    everything else a person reads: the CLI's and the adapters' strings, the pyproject comments,
-    the issue templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes
-    keep them, dated, as history. Whitespace is collapsed first, so a revert that was reflowed on
-    its way back is caught too."""
+    posture as an assumption, a robotd that gets a fallen duck up, a gamepad that out-ranks
+    quackd, where robotd walks on the newest twist from either, and no way to swap a policy over
+    the socket. Each was spelled its own way, and a revert of any one reads as current, so the
+    old spellings are kept out of every living page and of everything else a person reads: the
+    CLI's and the adapters' strings, the pyproject comments, the issue templates and the bundled
+    ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them, dated, as history.
+    Whitespace is collapsed first, so a revert that was reflowed on its way back is caught too."""
     sources = [
         *_living_docs(),
         REPO / "pyproject.toml",

@@ -332,6 +332,19 @@ def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
         assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
+def test_the_numbers_that_stop_a_walk_are_the_ones_read() -> None:
+    """The safety page, the hardware checklist and the Microduck page say when robotd's deadman
+    zeroes a twist, how often `padd` re-sends a still pad's stop, and how long after a driving pad
+    goes it asks robotd to sit the duck, and `tests/test_docs.py` takes each number from these
+    constants. Each has to say what the VERIFIED ref that read it says, at the pin."""
+    assert f"{upstream_api.DEADMAN_S * 1000:g} ms by default" in upstream_api.DEADMAN.note
+    heartbeat = f"HEARTBEAT, {upstream_api.PAD_HEARTBEAT_S * 1000:g} ms"
+    assert heartbeat in upstream_api.PAD_DRIVES.note
+    assert f"PAD_LOST_SIT, {upstream_api.PAD_LOST_SIT_S:g} s" in upstream_api.PAD_DRIVES.note
+    for ref in (upstream_api.DEADMAN, upstream_api.PAD_DRIVES):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
 def test_the_camera_numbers_are_the_ones_read() -> None:
     """The lens of a tall `/frame` is worked out from the IMX219's field of view, and the lens of
     an upright WebRTC frame comes from the calibration mediad sends, the alpha family's on an

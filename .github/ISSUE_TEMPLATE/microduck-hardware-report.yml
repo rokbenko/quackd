@@ -50,7 +50,7 @@ body:
         - "5 — sound"
         - "6 — video"
         - "7 — head, on a stand"
-        - "8 — deadman: tunnel pulled mid-walk"
+        - "8 — deadman: tunnel pulled mid-walk, pad off"
         - "9 — feet down"
         - "10 — a real task"
     validations:
@@ -75,13 +75,30 @@ body:
     id: deadman
     attributes:
       label: Did the deadman stop the legs when you pulled the link?
-      description: Step 8. This is the protection every later step depends on.
+      description: >-
+        Step 8, with the pad switched off. A connected pad sends robotd a stop every 100 ms, and
+        robotd keeps the newest twist, so with a pad on its stop halts the legs before the
+        deadman would, and the test says nothing about the deadman. The deadman is what stops a
+        walk whose link dies with no pad connected.
       options:
-        - "Yes — velocity went to zero"
+        - "Yes — pad off, the legs stopped and `robotctl monitor` named the deadman"
+        - "Yes — pad off and the legs stopped, but I did not watch `robotctl monitor`"
+        - "The legs stopped, but a pad was connected"
         - "No — the legs kept driving"
         - "I did not test it"
     validations:
       required: true
+  - type: textarea
+    id: pad
+    attributes:
+      label: What did a connected pad nobody touched do to quackd's walks?
+      description: >-
+        Step 9. padd sends a stop every 100 ms while a pad's sticks are still, and robotd walks
+        on whichever twist came last, so the pad's stops land between quackd's. Whether the
+        duck walked on, slowed or stuttered, and how often a verb failed with `robotd has not
+        taken robot.move`, has not been seen on a duck.
+    validations:
+      required: false
   - type: dropdown
     id: camera
     attributes:
