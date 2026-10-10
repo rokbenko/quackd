@@ -199,6 +199,52 @@ def _finite(value: Any) -> tuple[float, bool]:
     return (number, True) if math.isfinite(number) else (0.0, False)
 
 
+def _probability(value: Any) -> tuple[float, bool]:
+    """A number a gate reads, and whether it was a probability: a number from 0 to 1.
+
+    `_finite`, with the two things a gate needs it to turn away besides, read the same way for
+    every row, so what moves a servo does not depend on which backend sent the number.
+
+    A number written as text is not one. `float()` reads `"0.99"` without a word, so a confidence
+    sent as a string cleared its floor and a Noul sent as `"0"` said certainly not. Both wire
+    formats quackd speaks type these as numbers: TypeSafe's SDK declares `confidence` and `noul`
+    floats "from 0 to 1" (typesafe-sdk 0.7.0 to 0.7.2, `_schemas/models.py`, read 2026-10-10), and
+    OpenAI's reference types them as numbers. An answer that spells one as text, from a plugin, a
+    model in this process or a server read without an SDK in between, is a malformed answer rather
+    than another spelling of a number.
+
+    Nor is a number outside 0 to 1. A probability of -1 is under both Noul thresholds and a
+    confidence of 5 is over every floor, so a server that answered on a scale of its own, a
+    percentage or a log-odds, moved the body on numbers that were never probabilities. Both ends
+    are in, because a model is allowed to be certain.
+
+    The caller hands the turn back to the model whenever this says False."""
+    if isinstance(value, str | bytes | bytearray):
+        return 0.0, False
+    number, finite = _finite(value)
+    if not finite or not 0.0 <= number <= 1.0:
+        return 0.0, False
+    return number, True
+
+
+def _distribution(probabilities: Any) -> dict[str, float]:
+    """A choice's distribution as the record keeps it: each label with its probability, and no
+    number JSON has no spelling for.
+
+    Recorded and never gated on, so it is read more gently than `_probability` reads a number a
+    gate uses. A value that is no number at all still fails the turn, as it always has: an answer
+    that broken is one the router cannot read, and the record calls it an error by its type. A NaN
+    or an infinity is left out, because it is no probability either and `json.dumps` writes it as a
+    bare `NaN` or `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse, so one entry
+    made a whole line of `transcript.jsonl` one that a strict reader could not read."""
+    spread: dict[str, float] = {}
+    for label, value in (probabilities or {}).items():
+        number = float(value)
+        if math.isfinite(number):
+            spread[str(label)] = number
+    return spread
+
+
 def discrete_calls(schema: Mapping[str, Any]) -> list[Call] | None:
     """Every concrete call this tool allows, or None when it is not a choice.
 
@@ -996,10 +1042,10 @@ class Stepper:
             return self._route(result, record, offered)
         except Exception as e:
             # Reading the answer is part of the call, so it fails the way the call does. A
-            # backend that returns a confidence of "high" or a list where a mapping belongs
-            # would otherwise raise through the loop and end the run with a traceback while
-            # the arm is energised, which is the one thing this must never do. Recorded by its
-            # type alone, as a failed call is, because the message quotes the answer.
+            # backend that returns a distribution holding a word, or a list where a mapping
+            # belongs, would otherwise raise through the loop and end the run with a traceback
+            # while the arm is energised, which is the one thing this must never do. Recorded by
+            # its type alone, as a failed call is, because the message quotes the answer.
             self.errors += 1
             return self._hand_back({**record, "gate": "error", "error": _failure(e)})
 
@@ -1011,26 +1057,38 @@ class Stepper:
         else. Either of them hands the turn back: one ends a run and the other asks a person, and
         the stepper is allowed to do neither."""
         verb = _answer(result, "next_verb")
-        choice = str(_field(verb, "choice", ESCALATE))
-        confidence, finite = _finite(_field(verb, "confidence"))
-        spread = {str(k): float(v) for k, v in (_field(verb, "probabilities") or {}).items()}
+        # The choice is a label, and every label quackd offers is a string. With none, or with
+        # anything else, there is no choice to read. A missing one used to default to `ESCALATE`,
+        # so a `next_verb` that carried a confidence and no choice was taken for a confident
+        # decision to hand the turn back, and recorded as one, rather than for the answer nobody
+        # could read that it was. `ESCALATE` is still where such a turn goes.
+        picked = _field(verb, "choice")
+        chose = isinstance(picked, str)
+        choice = str(picked) if chose else ESCALATE
+        confidence, finite = _probability(_field(verb, "confidence"))
+        spread = _distribution(_field(verb, "probabilities"))
         # No default. A question a backend did not answer has to arrive here as nothing, so
         # that the guard below can tell it from an answer of zero.
-        done, done_ok = _finite(_field(_answer(result, "done"), "noul"))
-        human, human_ok = _finite(_field(_answer(result, "need_human"), "noul"))
+        done, done_ok = _probability(_field(_answer(result, "done"), "noul"))
+        human, human_ok = _probability(_field(_answer(result, "need_human"), "noul"))
         feasible = _answer(result, "feasible")
+        # Recorded and never gated on, and read as strictly as what is: a number that is no
+        # probability, NaN among them, would reach `transcript.jsonl` as something no strict JSON
+        # reader takes, and a choice that is no label is no answer to the question asked.
+        feasible_choice = _field(feasible, "choice")
+        feasible_confidence, feasible_ok = _probability(_field(feasible, "confidence"))
         record.update(
             choice=choice,
-            confidence=confidence,
+            # `null` rather than `0.0` where nothing readable was answered, because a reader of
+            # this record should be able to tell a backend that said "not done" from one that
+            # was never asked, never replied or replied with something that is no probability.
+            confidence=confidence if finite else None,
             probabilities=spread,
-            # `null` rather than `0.0` where nothing was answered, because a reader of this
-            # record should be able to tell a backend that said "not done" from one that was
-            # never asked or never replied.
             done=done if done_ok else None,
             need_human=human if human_ok else None,
             feasible={
-                "choice": _field(feasible, "choice"),
-                "confidence": _field(feasible, "confidence"),
+                "choice": feasible_choice if isinstance(feasible_choice, str) else None,
+                "confidence": feasible_confidence if feasible_ok else None,
             },
         )
         # A question the decision LLM declined is not one it answered badly, and every gate
@@ -1053,8 +1111,10 @@ class Stepper:
         # pair of answers that lets a verb through. A backend that answered only `next_verb`
         # -- a plugin under construction, a server that dropped a field, a model that does not
         # implement Nouls at all -- must hand the turn to the model rather than move the body
-        # on two questions nobody answered.
-        if not (finite and done_ok and human_ok):
+        # on two questions nobody answered. A number on some other scale, or written as text,
+        # is no probability either (`_probability`), and a `next_verb` with no choice in it is
+        # no answer to the question it was asked, whatever confidence it carries.
+        if not (chose and finite and done_ok and human_ok):
             return self._hand_back({**record, "gate": "unreadable"})
         if done >= DONE_THRESHOLD:
             return self._hand_back({**record, "gate": "done"})

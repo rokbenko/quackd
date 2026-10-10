@@ -17,8 +17,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
   question. So it is a second backend rather than a row on the System One client.
   `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
-  out and the answers back, strictly by the name each answer carries and never by its position. It
-  reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
+  out and the answers back, strictly by the name each answer carries and never by its position,
+  and by its type: an answer of a type its question was not asked as, a choice with no choice in
+  it, or two answers under one name answer nothing, which hands the turn to the model on
+  `unreadable`, and a refusal among them declines the question. It reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
   which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves, and it
   installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
   `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the
@@ -113,6 +115,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   its key and is costed at TypeSafe's rate only with no `--decision-url`, and `openai` only at
   OpenAI's own hosts. `tests/test_decision_llms.py` runs `jev` at an address with no key in the
   environment, and holds the rule to what each client actually sends.
+- **What the stepper's gates read is a probability or nothing, on every decision LLM.** The gates
+  took any number they could make a float of. A confidence written as text, `"0.99"`, cleared its
+  floor, one on a scale of its own, a percentage or a 5, cleared every floor, a `done` and a
+  `need_human` of -1 said certainly not, and each of them moved the body; a `next_verb` that
+  carried a confidence and no choice was read as a confident `escalate`. A confidence, `done` and
+  `need_human` are now each a number from 0 to 1, a choice is a string, and anything else ends the
+  turn on `unreadable`, with `null` on the record where the number was. A NaN or an infinity in a
+  distribution or in `feasible` also used to reach `transcript.jsonl` as a bare `NaN` or
+  `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse; the distribution leaves
+  such a number out and `feasible` records `null`, so every line is JSON a strict reader takes.
+  `tests/test_decision_llms.py` drives each of those through the stepper, and
+  `tests/test_decisions_api_wire.py` sends a NaN and an infinity through the real SDK and reads
+  the events file back strictly.
 
 ### Documentation
 

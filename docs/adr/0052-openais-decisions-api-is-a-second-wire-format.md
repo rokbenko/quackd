@@ -1,6 +1,6 @@
 # ADR-0052: OpenAI's Decisions API is a second wire format, built in
 
-**Status:** accepted · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+**Status:** accepted · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, and a number the gates read is a probability from 0 to 1 or the turn is `unreadable`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
 
 ## Context
 
@@ -100,15 +100,28 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 - **Translated both ways, and read by name alone.** The state goes as one JSON string, the very
   one the stepper measures as `state_chars`. Every question goes named and in order: a `noul` as a
   `predicate`, a choice's criteria as `choices` with `escalate` last, a score's as `levels`. An
-  answer is kept only under a name quackd asked, the first under a name wins, and position is
-  never used, because the schema makes the name optional and position is the one reading that
-  could attribute `need_human`'s probability to `done`. OpenAI's `confidence` is carried as the
-  confidence, field to field, as Jev's is.
+  answer is kept only under a name quackd asked, and position is never used, because the schema
+  makes the name optional and position is the one reading that could attribute `need_human`'s
+  probability to `done`. Every answer under a name is gathered before any is read: a refusal
+  among them declines the question wherever it came, two answers or more answer nothing, and one
+  answer counts only if it is the type its question went out as and carries that type's field, a
+  string `choice` on a choice. First-wins, the rule this replaced, kept an answer ahead of a
+  refusal, settled a contradiction in whichever direction came first, and let a `score` under
+  `next_verb` or a choice with no `choice` read as a confident `escalate`. OpenAI's `confidence` is
+  carried as the confidence, field to field, as Jev's is.
 - **A declined question is a gate of its own.** Any name in the answer's `refused` ends the turn
   on `refused`, read before every other gate and whichever question it was, `feasible` included,
   with the names on the record and the summary counting `refusals`. Read as anything else it
   would be misnamed: a declined `done` would end on `unreadable`, and a declined `feasible` would
   not be noticed at all. `base.DecisionLLM` documents `refused` for any backend.
+- **What a gate reads is a probability or nothing, on every row.** A server of your own that
+  speaks this format is answered through an SDK that hands its JSON back unchecked, and the
+  stepper read any number it could make a float of: a confidence written as text, or one on a
+  scale of its own, a percentage or a negative, cleared floors and moved the body. A confidence,
+  `done` and `need_human` are now each a number from 0 to 1 and nothing else
+  (`stepper._probability`), a `next_verb` without a string `choice` is no answer, and either ends
+  the turn on `unreadable`. A NaN or an infinity never reaches the record, so every line of
+  `transcript.jsonl` is JSON a strict reader takes.
 - **A failed turn keeps its exception's type and HTTP status, and never its message.** OpenAI's
   SDK puts a 4xx body in the message and TypeSafe's the reply's own, and a reply can quote the
   request, which the record otherwise keeps as a size and a shape. This holds for every row. Each

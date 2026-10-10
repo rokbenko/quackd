@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import importlib.metadata
+import json
 import sys
 import time
 import tomllib
@@ -712,6 +713,110 @@ async def test_a_confidence_spelled_as_a_boolean_clears_nothing() -> None:
         }
     )
     assert advice.record["gate"] == "unreadable" and advice.call is None
+
+
+def _takes_stop(**over: dict[str, Any]) -> dict[str, Any]:
+    """Three answers the gates would take `stop` on, with `over` in place of whichever it names."""
+    answers: dict[str, Any] = {
+        "next_verb": {"choice": "stop", "confidence": 0.99},
+        "done": {"noul": 0.0},
+        "need_human": {"noul": 0.0},
+    }
+    return {**answers, **over}
+
+
+@pytest.mark.parametrize(
+    ("question", "field", "said"),
+    [
+        ("next_verb", "confidence", "0.99"),
+        ("next_verb", "confidence", b"0.99"),
+        ("next_verb", "confidence", 5.0),
+        ("next_verb", "confidence", 60),
+        ("next_verb", "confidence", -0.5),
+        ("done", "noul", "0"),
+        ("done", "noul", -1.0),
+        ("need_human", "noul", -1.0),
+        ("need_human", "noul", 1.5),
+    ],
+)
+async def test_a_number_that_is_no_probability_is_unreadable_on_every_row(
+    question: str, field: str, said: Any
+) -> None:
+    """A gate reads a probability, a number from 0 to 1, and nothing else. `float()` used to
+    read whatever it could, so a confidence written as text cleared its floor, a percentage or a
+    5 cleared every floor, a `done` of -1 said certainly not, and each moved the body; a
+    `need_human` of 1.5 asked a person on a number no backend meant. Every one is the answer
+    nobody could read, and the record keeps `null` where it was."""
+    advice = await _advise_with(_takes_stop(**{question: {**_takes_stop()[question], field: said}}))
+    assert advice.record["gate"] == "unreadable" and advice.call is None
+    recorded = {"next_verb": "confidence", "done": "done", "need_human": "need_human"}[question]
+    assert advice.record[recorded] is None
+
+
+async def test_a_probability_may_be_certain_and_may_be_a_whole_number() -> None:
+    """Both ends of 0 to 1 are probabilities, and JSON may well send them as `0` and `1`."""
+    advice = await _advise_with(
+        _takes_stop(next_verb={"choice": "stop", "confidence": 1}, done={"noul": 0})
+    )
+    assert advice.record["gate"] == "taken" and advice.call is not None
+
+
+@pytest.mark.parametrize(
+    "next_verb",
+    [
+        {"confidence": 0.99},
+        {"choice": None, "confidence": 0.99},
+        {"choice": 3, "confidence": 0.99},
+        {"value": "stop", "confidence": 0.99},
+    ],
+    ids=["no choice", "a null choice", "a number", "the choice under another name"],
+)
+async def test_a_next_verb_with_no_choice_in_it_is_unreadable_and_never_an_escalate(
+    next_verb: dict[str, Any],
+) -> None:
+    """A missing choice used to default to `escalate`, so an answer that carried a confidence and
+    no choice was recorded as a confident decision to hand the turn back, the gate `escalate`,
+    rather than as the answer nobody could read that it was."""
+    advice = await _advise_with(_takes_stop(next_verb=next_verb))
+    assert advice.record["gate"] == "unreadable" and advice.call is None
+
+
+@pytest.mark.parametrize(
+    ("feasible", "recorded"),
+    [
+        (
+            {"choice": "feasible", "confidence": float("nan")},
+            {"choice": "feasible", "confidence": None},
+        ),
+        (
+            {"choice": "feasible", "confidence": float("inf")},
+            {"choice": "feasible", "confidence": None},
+        ),
+        ({"choice": float("nan"), "confidence": 0.9}, {"choice": None, "confidence": 0.9}),
+    ],
+    ids=["a NaN confidence", "an infinite confidence", "a NaN choice"],
+)
+async def test_the_record_holds_no_number_json_cannot_spell(
+    feasible: dict[str, Any], recorded: dict[str, Any]
+) -> None:
+    """`transcript.jsonl` is JSON, and a NaN or an infinity in a distribution, or anywhere in
+    `feasible`, which nothing gates on, reached it as a bare `NaN` or `Infinity`: Python reads
+    the line back, and `jq` and `JSON.parse` refuse it. The distribution leaves such a number
+    out, and `feasible` records `null` for a confidence that is no probability and for a choice
+    that is no label. The turn itself is read as it would have been."""
+    answers = _takes_stop(
+        next_verb={
+            "choice": "stop",
+            "confidence": 0.99,
+            "probabilities": {"stop": 0.99, "escalate": float("nan"), "other": float("-inf")},
+        },
+        feasible=feasible,
+    )
+    advice = await _advise_with(answers)
+    json.dumps(advice.event(), allow_nan=False)
+    assert advice.record["gate"] == "taken"
+    assert advice.record["probabilities"] == {"stop": 0.99}
+    assert advice.record["feasible"] == recorded
 
 
 async def test_a_backend_that_never_answers_costs_one_turn_and_not_the_run() -> None:

@@ -69,9 +69,10 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import math
 import os
 import platform
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
@@ -521,7 +522,9 @@ def _spread(entries: Any, key: str) -> dict[str, float]:
     stepper calls `.items()` on what it is given, so a list there would cost every turn as an
     error. Numbers only: an entry whose probability is not one is dropped rather than carried
     into a record that is read as a distribution, and a boolean is not a number here, for the
-    reason `stepper._finite` gives."""
+    reason `stepper._finite` gives. Nor is a NaN or an infinity, which the SDK's JSON reader
+    takes from a server as readily as a number and a record cannot hold: `json.dumps` writes it
+    as a bare `NaN` that no strict JSON reader accepts."""
     spread: dict[str, float] = {}
     if not isinstance(entries, list | tuple):
         return spread
@@ -530,6 +533,8 @@ def _spread(entries: Any, key: str) -> dict[str, float]:
             continue
         probability = entry.get("probability")
         if isinstance(probability, bool) or not isinstance(probability, int | float):
+            continue
+        if not math.isfinite(probability):
             continue
         spread[str(entry[key])] = float(probability)
     return spread
@@ -542,16 +547,56 @@ def _kept(item: Mapping[str, Any], *fields: str) -> dict[str, Any]:
     return {field: item[field] for field in fields if field in item}
 
 
-def to_result(data: Mapping[str, Any], asked: Sequence[str]) -> dict[str, Any]:
+def _one_answer(item: Mapping[str, Any], kind: str) -> dict[str, Any] | None:
+    """One answer in the shape the stepper reads, or None where it answers nothing: an answer of
+    another type than the one its question went out as, or one without the field its type
+    answers with.
+
+    Each of those used to come back as something it was not. A `score` under `next_verb` and a
+    `choice` with no `choice` in it both carried a confidence, and the stepper filled the
+    missing choice in with `escalate`, so a malformed answer was recorded as a confident
+    decision to hand the turn back. A `choice` renamed in the beta would have read that way on
+    every turn, hidden from anybody counting gates or measuring agreement in shadow mode. A
+    choice has to be a string because every value quackd offers is one: the API types its
+    values, so a `true` or a `null` is no label quackd sent."""
+    if item.get("type") != kind:
+        return None
+    if kind == "predicate":
+        return {"noul": item["probability"]} if "probability" in item else None
+    if kind == "choice":
+        if not isinstance(item.get("choice"), str):
+            return None
+        return {
+            **_kept(item, "choice", "confidence"),
+            "probabilities": _spread(item.get("probabilities"), "value"),
+        }
+    if kind == "score":
+        if "score" not in item:
+            return None
+        return {
+            **_kept(item, "score", "confidence"),
+            "probabilities": _spread(item.get("probabilities"), "label"),
+        }
+    return None
+
+
+def to_result(data: Mapping[str, Any], asked: Mapping[str, str]) -> dict[str, Any]:
     """OpenAI's answers in the shape `stepper._answer` reads: a mapping keyed by question name.
 
-    Read strictly by name and never by position. The API returns answers in the order the
+    `asked` is each question's name and the type it went out as (`to_questions`). Answers are
+    read strictly by name and never by position. The API returns answers in the order the
     questions were asked and its schema makes the name on each answer optional, and of those
-    two only the name cannot attribute `need_human`'s probability to `done`. So an answer is
-    kept only under a name quackd asked, the first answer under a name is the one kept, and an
-    answer with no name or another one is dropped. A question with nothing kept for it is a
-    question nobody answered, which the stepper already hands to the model rather than reading
-    as no.
+    two only the name cannot attribute `need_human`'s probability to `done`. So an answer with
+    no name, or a name quackd did not ask, is dropped.
+
+    Every answer under a name is gathered before any of them is read, because the first one
+    used to win and each case that rule settled was settled wrongly. A refusal among them
+    declines the question, wherever it came: kept first, an answer ahead of it hid it. Two
+    answers or more, none of them a refusal, answer nothing: OpenAI echo the unique names quackd
+    sends, so a second answer is a server that does not, and keeping the first settled a
+    contradiction, a `done` of 0.0 and then 0.99, in whichever direction came first, which could
+    be the one that lets a verb through. One answer is kept only if it is the type its question
+    went out as and carries the field that type answers with (`_one_answer`).
 
     - A `predicate` becomes `{"noul": probability}`.
     - A `choice` becomes `{"choice", "confidence", "probabilities"}`, the distribution turned
@@ -563,42 +608,31 @@ def to_result(data: Mapping[str, Any], asked: Sequence[str]) -> dict[str, Any]:
     - A `refusal` answers nothing. Its name goes in `refused`, beside the answers rather than
       among them, so a question the vendor declined can be told from one that went missing.
 
-    An answer of any other type is left unanswered. `usage` and `model` are passed through
-    untouched: `stepper._usage` already reads `input_tokens` off a mapping, which is the field
-    OpenAI bills by."""
+    What every number says is the stepper's to judge, for this row as for every other
+    (`stepper._probability`), so the numbers pass through as they came. A question with nothing
+    kept for it is a question nobody answered. Where the stepper routes on it, `next_verb`,
+    `done` or `need_human`, that hands the turn to the model on `unreadable`; `feasible` it only
+    records, so a missing `feasible` is recorded as nothing and the turn goes on, as it does on
+    every row. `usage` and `model` are passed through untouched: `stepper._usage` already reads
+    `input_tokens` off a mapping, which is the field OpenAI bills by."""
     answers_in = data.get("answers")
     if not isinstance(answers_in, list):
         raise ValueError(
             f"POST {API_PREFIX}{PATH} answered without a list of answers "
             f"({type(answers_in).__name__})"
         )
-    wanted = set(asked)
-    seen: set[str] = set()
+    under: dict[str, list[Mapping[str, Any]]] = {name: [] for name in asked}
+    for item in answers_in:
+        name = item.get("name") if isinstance(item, Mapping) else None
+        if isinstance(name, str) and name in under:
+            under[name].append(item)
     answers: dict[str, Any] = {}
     refused: list[str] = []
-    for item in answers_in:
-        if not isinstance(item, Mapping):
-            continue
-        name = item.get("name")
-        if not isinstance(name, str) or name not in wanted or name in seen:
-            continue
-        seen.add(name)
-        kind = item.get("type")
-        if kind == "refusal":
+    for name, given in under.items():
+        if any(item.get("type") == "refusal" for item in given):
             refused.append(name)
-        elif kind == "predicate":
-            if "probability" in item:
-                answers[name] = {"noul": item["probability"]}
-        elif kind == "choice":
-            answers[name] = {
-                **_kept(item, "choice", "confidence"),
-                "probabilities": _spread(item.get("probabilities"), "value"),
-            }
-        elif kind == "score":
-            answers[name] = {
-                **_kept(item, "score", "confidence"),
-                "probabilities": _spread(item.get("probabilities"), "label"),
-            }
+        elif len(given) == 1 and (answer := _one_answer(given[0], asked[name])) is not None:
+            answers[name] = answer
     return {
         "answers": answers,
         "refused": refused,
@@ -719,7 +753,7 @@ class DecisionsAPILLM:
             raise ValueError(
                 f"POST {API_PREFIX}{PATH} answered {type(data).__name__} rather than a JSON object"
             )
-        return to_result(data, [question["name"] for question in asked])
+        return to_result(data, {question["name"]: question["type"] for question in asked})
 
     async def _post(self, body: Mapping[str, Any], timeout_s: float | None) -> Any:
         """The one place a request leaves, so a test can stand where the network would be.

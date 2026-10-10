@@ -1204,8 +1204,8 @@ async def test_an_answer_the_router_cannot_read_costs_the_turn_and_not_the_run()
     "high" raised through the loop and ended the run with a traceback, mid-task, with the arm
     energised."""
     cases = [
-        # a confidence that is not a number is caught at the edge by `_finite` and reads as
-        # no confidence, which is the gentler of the two answers and still acts on nothing
+        # a confidence that is not a number is caught at the edge by `_probability` and reads
+        # as no confidence, which is the gentler of the two answers and still acts on nothing
         ({"confidence": "high"}, "unreadable"),
         # these two blow up inside the parse itself, which is what used to escape `advise`
         ({"probabilities": ["a"]}, "error"),

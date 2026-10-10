@@ -241,6 +241,15 @@ async def test_the_state_goes_out_as_the_json_the_stepper_measures(
 
 # ── what comes back ─────────────────────────────────────────────────────────────────────
 
+ASKED = {
+    question["name"]: question["type"]
+    for question in to_questions(
+        build_questions([Call(name="stop", arguments={}, label="stop")], {"stop": "the brake"})
+    )
+}
+"""The stepper's four questions by the type each goes out as, read off the translation itself so
+the answers below are held to what is really asked."""
+
 
 def test_answers_are_read_by_the_name_they_carry_and_never_by_position() -> None:
     """Shuffled, with one under a name nobody asked and one with no name at all. Read by
@@ -254,25 +263,103 @@ def test_answers_are_read_by_the_name_they_carry_and_never_by_position() -> None
             fake_api.choice("next_verb", "stop", 0.8),
         ]
     )
-    result = to_result(data, ["next_verb", "done", "need_human"])
+    result = to_result(data, ASKED)
     assert result["answers"]["done"] == {"noul": 0.1}
     assert result["answers"]["need_human"] == {"noul": 0.9}
     assert set(result["answers"]) == {"next_verb", "done", "need_human"}
 
 
-def test_the_first_answer_under_a_name_is_the_one_kept() -> None:
-    data = fake_api.decision([fake_api.predicate("done", 0.2), fake_api.predicate("done", 0.95)])
-    assert to_result(data, ["done"])["answers"]["done"] == {"noul": 0.2}
+def test_a_name_answered_twice_answers_nothing() -> None:
+    """OpenAI echo the unique names quackd sends, so two answers under one name are a server
+    that does not, and the first one used to be kept: a `done` of 0.0 and then 0.99 settled as
+    0.0, the reading that lets a verb through. Neither is kept, and the question is one nobody
+    answered."""
+    data = fake_api.decision([fake_api.predicate("done", 0.0), fake_api.predicate("done", 0.99)])
+    result = to_result(data, ASKED)
+    assert "done" not in result["answers"] and result["refused"] == []
+
+
+@pytest.mark.parametrize(
+    "given",
+    [
+        [fake_api.predicate("done", 0.0), fake_api.refusal("done")],
+        [fake_api.refusal("done"), fake_api.predicate("done", 0.0)],
+        [{"type": "predicate", "name": "done"}, fake_api.refusal("done")],
+    ],
+    ids=["after an answer", "before an answer", "after an answer with no probability"],
+)
+def test_a_refusal_under_a_name_declines_the_question_wherever_it_comes(
+    given: list[dict[str, Any]],
+) -> None:
+    """Kept first, an answer ahead of a refusal hid it: the turn was taken with nothing on the
+    record to say the vendor had declined, and with an answer that carried no probability the
+    refusal was lost and the turn called unreadable."""
+    result = to_result(fake_api.decision(given), ASKED)
+    assert result["refused"] == ["done"] and "done" not in result["answers"]
+
+
+def _without(answer: dict[str, Any], field: str) -> dict[str, Any]:
+    return {key: value for key, value in answer.items() if key != field}
+
+
+#: Answers that are not an answer to the question they name, each beside the name it is under.
+#: Every one used to be kept, and the ones under `next_verb` that carry a confidence were then
+#: read as a confident `escalate`.
+NOT_AN_ANSWER = {
+    "a score under next_verb": {
+        "type": "score",
+        "name": "next_verb",
+        "score": 0.97,
+        "confidence": 0.97,
+        "probabilities": [{"value": 0, "label": "high", "probability": 0.97}],
+    },
+    "a predicate under next_verb": fake_api.predicate("next_verb", 0.97),
+    "a choice under done": fake_api.choice("done", "yes", 0.97),
+    "a choice with no choice": _without(fake_api.choice("next_verb", "stop", 0.97), "choice"),
+    "a choice of null": {**fake_api.choice("next_verb", "stop", 0.97), "choice": None},
+    "a choice under another field": {
+        **_without(fake_api.choice("next_verb", "stop", 0.97), "choice"),
+        "value": "stop",
+    },
+    "a score with no score": {
+        "type": "score",
+        "name": "tidy",
+        "confidence": 0.97,
+        "probabilities": [{"value": 0, "label": "a", "probability": 0.97}],
+    },
+}
+
+
+@pytest.mark.parametrize("answer", list(NOT_AN_ANSWER.values()), ids=list(NOT_AN_ANSWER))
+def test_an_answer_that_does_not_answer_its_question_answers_nothing(
+    answer: dict[str, Any],
+) -> None:
+    """Kept only when it is the type its question went out as and carries the field that type
+    answers with. Anything else is a question nobody answered, which the stepper reads as
+    `unreadable` rather than as an answer."""
+    asked = {**ASKED, "tidy": "score"}
+    result = to_result(fake_api.decision([answer]), asked)
+    assert answer["name"] not in result["answers"]
 
 
 def test_a_distribution_comes_back_as_a_mapping_of_numbers() -> None:
     """The stepper calls `.items()` on it, and a boolean is no more a probability here than it
-    is a confidence in `stepper._finite`."""
+    is a confidence in `stepper._finite`. Neither is a NaN or an infinity, which the SDK's JSON
+    reader takes from a server and a record could only write as a bare `NaN`."""
     answer = fake_api.choice(
-        "next_verb", "stop", 0.7, {"report_state": 0.2, "escalate": True, "observe": "high"}
+        "next_verb",
+        "stop",
+        0.7,
+        {
+            "report_state": 0.2,
+            "escalate": True,
+            "observe": "high",
+            "gripper(open=true)": float("nan"),
+            "gripper(open=false)": float("inf"),
+        },
     )
     answer["probabilities"].append({"probability": 0.1})
-    result = to_result(fake_api.decision([answer]), ["next_verb"])
+    result = to_result(fake_api.decision([answer]), ASKED)
     assert result["answers"]["next_verb"] == {
         "choice": "stop",
         "confidence": 0.7,
@@ -285,9 +372,9 @@ def test_a_field_the_api_left_out_stays_out() -> None:
     server dropped: a choice with no confidence is unreadable, not a choice of `None`."""
     answer = fake_api.choice("next_verb", "stop")
     del answer["confidence"]
-    kept = to_result(fake_api.decision([answer]), ["next_verb"])["answers"]["next_verb"]
+    kept = to_result(fake_api.decision([answer]), ASKED)["answers"]["next_verb"]
     assert "confidence" not in kept and kept["choice"] == "stop"
-    bare = to_result(fake_api.decision([{"type": "predicate", "name": "done"}]), ["done"])
+    bare = to_result(fake_api.decision([{"type": "predicate", "name": "done"}]), ASKED)
     assert "done" not in bare["answers"]
 
 
@@ -302,7 +389,7 @@ def test_a_score_comes_back_keyed_by_level() -> None:
             {"value": 1, "label": "b", "probability": 0.7},
         ],
     }
-    result = to_result(fake_api.decision([answer]), ["tidy"])
+    result = to_result(fake_api.decision([answer]), {"tidy": "score"})
     assert result["answers"]["tidy"] == {
         "score": 1.1,
         "confidence": 0.55,
@@ -312,7 +399,7 @@ def test_a_score_comes_back_keyed_by_level() -> None:
 
 def test_a_refusal_answers_nothing_and_is_named_beside_the_answers() -> None:
     data = fake_api.decision(fake_api.turn("stop", refuse=("done",)))
-    result = to_result(data, ["next_verb", "done", "need_human", "feasible"])
+    result = to_result(data, ASKED)
     assert "done" not in result["answers"]
     assert result["refused"] == ["done"]
     assert set(result["answers"]) == {"next_verb", "need_human", "feasible"}
@@ -320,13 +407,13 @@ def test_a_refusal_answers_nothing_and_is_named_beside_the_answers() -> None:
 
 def test_usage_and_model_pass_through_untouched() -> None:
     data = fake_api.decision([])
-    result = to_result(data, [])
+    result = to_result(data, {})
     assert result["usage"] == fake_api.USAGE and result["model"] == data["model"]
 
 
 def test_answers_that_are_not_a_list_are_an_error_rather_than_an_empty_turn() -> None:
     with pytest.raises(ValueError, match="list of answers"):
-        to_result({"answers": {"done": {"noul": 0.0}}}, ["done"])
+        to_result({"answers": {"done": {"noul": 0.0}}}, ASKED)
 
 
 async def test_a_body_that_is_not_json_is_an_error_and_is_not_quoted(
@@ -379,6 +466,67 @@ async def test_a_question_openai_declined_never_moves_the_body(
     assert advice.record["gate"] == "refused"
     assert advice.record["refused"] == [declined]
     assert stepper.summary()["refusals"] == 1
+
+
+def _turn_with(*answers: dict[str, Any]) -> list[dict[str, Any]]:
+    """A turn that would take `stop`, with `answers` in place of whichever questions they name."""
+    named = {answer["name"] for answer in answers}
+    return [*answers, *(answer for answer in fake_api.turn("stop") if answer["name"] not in named)]
+
+
+#: Whole turns no gate should read as a decision, each beside the gate it has to end on. Each
+#: of the first eight was taken, or recorded as a confident `escalate`, before the answers and
+#: their numbers were read as strictly as a gate needs.
+NO_DECISION = {
+    "a score under next_verb": (_turn_with(NOT_AN_ANSWER["a score under next_verb"]), "unreadable"),
+    "a choice with no choice": (_turn_with(NOT_AN_ANSWER["a choice with no choice"]), "unreadable"),
+    "a choice of null": (_turn_with(NOT_AN_ANSWER["a choice of null"]), "unreadable"),
+    "a choice under another field": (
+        _turn_with(NOT_AN_ANSWER["a choice under another field"]),
+        "unreadable",
+    ),
+    "done answered twice": (
+        _turn_with(fake_api.predicate("done", 0.0), fake_api.predicate("done", 0.99)),
+        "unreadable",
+    ),
+    "done answered, then declined": (
+        _turn_with(fake_api.predicate("done", 0.0), fake_api.refusal("done")),
+        "refused",
+    ),
+    "both nouls below zero": (
+        _turn_with(fake_api.predicate("done", -1.0), fake_api.predicate("need_human", -1.0)),
+        "unreadable",
+    ),
+    "a confidence above one": (_turn_with(fake_api.choice("next_verb", "stop", 5.0)), "unreadable"),
+    "numbers written as text": (
+        _turn_with(
+            fake_api.choice("next_verb", "stop", "0.99"),
+            fake_api.predicate("done", "0"),
+            fake_api.predicate("need_human", "0"),
+        ),
+        "unreadable",
+    ),
+    "a percentage": (_turn_with(fake_api.choice("next_verb", "stop", 60)), "unreadable"),
+    "done declined, then answered": (
+        _turn_with(fake_api.refusal("done"), fake_api.predicate("done", 0.0)),
+        "refused",
+    ),
+}
+
+
+@pytest.mark.parametrize(("answers", "gate"), list(NO_DECISION.values()), ids=list(NO_DECISION))
+async def test_an_answer_that_is_no_decision_never_moves_the_body_or_reads_as_one(
+    answers: list[dict[str, Any]], gate: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The turn goes to the model on the gate that says what happened: `refused` where any answer
+    under a name declined it, and `unreadable` for an answer of the wrong type, a choice with no
+    choice, two answers to one question, or a number that is no probability, a percentage, a
+    negative or one written as text. Never taken, and never a confident `escalate`."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    llm, _fake = _built(monkeypatch, answers=answers)
+    advice = await _advise(_stepper(llm))
+    assert advice.call is None
+    assert advice.record["gate"] == gate
 
 
 async def test_a_request_that_fails_costs_the_turn_and_not_the_run(

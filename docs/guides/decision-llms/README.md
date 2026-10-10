@@ -610,9 +610,12 @@ anything else:
    `refused`, with the names declined on the record. Of the rows quackd names, only `openai`
    reports one, and a declined `feasible` counts too: a refusal is the vendor's policy speaking
    about this state, not its model answering a question
-2. any of the three probabilities is not a number at all -> the model's turn. NaN is not a low
-   confidence, it is no confidence, and it loses every comparison it is put through: `nan < 0.85`
-   is False, so an unguarded one would clear a floor rather than miss it
+2. any of the three probabilities is not a probability, a number from 0 to 1, or the answer names
+   no choice at all -> the model's turn, on `unreadable`. NaN is not a low confidence, it is no
+   confidence, and it loses every comparison it is put through: `nan < 0.85` is False, so an
+   unguarded one would clear a floor rather than miss it. A number written as text is no number,
+   and one outside 0 to 1, a percentage or a negative, is on a scale of somebody else's: either,
+   read as a probability, can clear a gate it was never meant to
 3. `done` >= 0.5 -> the model's turn
 4. `need_human` >= 0.5 -> the model's turn
 5. the answer is `escalate`, or is not one of the calls offered this turn -> the model's turn
@@ -621,8 +624,8 @@ anything else:
 8. confidence is below the floor for that verb's class -> the model's turn
 9. otherwise, it is taken
 
-An answer the router cannot read at all -- a confidence that is a word, a `probabilities` that is
-a list -- costs that turn and nothing more. Reading the answer is part of the call, so it fails
+An answer the router cannot read at all -- a `probabilities` that is a list, or that holds a
+word -- costs that turn and nothing more. Reading the answer is part of the call, so it fails
 the way the call does: the error is recorded and the model takes over. That tolerance is
 deliberate now that the answer can come from eight different implementations rather than one.
 
@@ -904,8 +907,10 @@ is three attributes and one method:
 
 What you hand back may be anything quackd's reader can get at: an object carrying `answers`, or a
 mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and optionally
-`probabilities`), or a bare `noul`, as attributes or as keys. A `usage` with `input_tokens` is
-used where it is there and estimated where it is not, so a backend that counts nothing costs the
+`probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the label as a string,
+and a `confidence` or a `noul` is a number from 0 to 1, never a word or a flag: anything else is
+an answer quackd cannot read, and the turn goes to the model on `unreadable`. A `usage` with
+`input_tokens` is used where it is there and estimated where it is not, so a backend that counts nothing costs the
 run an estimate rather than an error. A list of question names under `refused`, beside the
 answers and read the same way, says which questions it declined rather than answered, and any
 name there hands the turn to the model on the gate `refused`.

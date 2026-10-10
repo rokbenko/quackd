@@ -363,6 +363,39 @@ def test_each_answer_is_read_by_its_name_carried_field_to_field_and_billed_as_co
     assert all(isinstance(turn["idle_s"], float) and turn["idle_s"] >= 0 for turn in sent[1:])
 
 
+def _strict(constant: str) -> Any:
+    """What a strict JSON reader does with `NaN`, `Infinity` and `-Infinity`, which Python's
+    `json` reads without complaint."""
+    raise ValueError(f"{constant} is not JSON")
+
+
+def test_a_number_json_cannot_spell_never_reaches_the_events_file(tmp_path: Path) -> None:
+    """The SDK's JSON reader takes `NaN` and `Infinity` from a server as readily as numbers, and
+    the record carried them through to `transcript.jsonl` as bare `NaN`, which Python reads back
+    and `jq` and `JSON.parse` refuse. Here every choice's distribution ends on a NaN and
+    `feasible` comes back with an infinite confidence, and every line of the events file is
+    strict JSON."""
+
+    def unspellable(body: dict[str, Any]) -> tuple[int, Any]:
+        status, reply = answering()(body)
+        for answer in reply["answers"]:
+            if answer["type"] == "choice":
+                answer["probabilities"][-1]["probability"] = float("nan")
+            if answer["name"] == "feasible":
+                answer["confidence"] = float("inf")
+        return status, reply
+
+    with FakeOpenAIDecisions(script=[unspellable]) as stand_in:
+        result = _run(stand_in, tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "NaN" in json.dumps(stand_in.posts()[0].reply), "the stand-in sent no NaN"
+    lines = next(tmp_path.rglob("transcript.jsonl")).read_text(encoding="utf-8").splitlines()
+    for line in lines:
+        json.loads(line, parse_constant=_strict)
+    sent = _sent(_records(tmp_path))
+    assert sent and all(turn["feasible"]["confidence"] is None for turn in sent)
+
+
 def test_a_question_declined_on_every_turn_ends_each_on_refused_and_the_summary_counts_them(
     tmp_path: Path,
 ) -> None:
