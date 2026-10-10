@@ -1135,10 +1135,16 @@ def test_switching_the_stepper_on_says_it_has_never_been_measured(
             .output
         )
 
-    assert "has not been measured" in run("on")
-    assert "docs/guides/decision-llms/README.md" in run("on"), (
+    from quackd.cli import _DECISION_MODE_ON_UNMEASURED
+
+    said = run("on")
+    assert "has not been measured" in said
+    assert "docs/guides/decision-llms/README.md" in said, (
         "the notice does not say where the estimates are"
     )
+    # The whole sentence, which `tests/test_docs.py` holds to the rows the hub estimates for, so
+    # that check is a check on what a person is shown.
+    assert " ".join(_DECISION_MODE_ON_UNMEASURED.split()) in " ".join(said.split())
     assert "has not been measured" not in run("shadow"), "shadow is how it gets measured"
 
 

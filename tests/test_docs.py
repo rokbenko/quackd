@@ -1693,6 +1693,27 @@ def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     assert linked == set(PRESET_NAMES), f"the hub links {sorted(linked)}"
 
 
+def test_the_warning_decision_mode_on_prints_names_the_rows_the_hub_estimates() -> None:
+    """`--decision-mode on` tells the person switching it on that the hub's figures are estimates,
+    and for which rows. It said the hub had them for Jev and nothing at all for anything else
+    after the hub had begun costing an `openai` turn at OpenAI's published rate, and no test read
+    the sentence. A row with a published rate is one the hub works a cost out for, so the warning
+    names each of them, as `for NAME at` its maker, and no other, and says a server you run has
+    neither; the hub's section on speed and cost names the same rows. A row given a rate fails
+    here until the warning names it."""
+    from quackd.cli import _DECISION_MODE_ON_UNMEASURED as said
+
+    priced = {
+        name for name, spec in PRESETS.items() if spec.price and spec.price.source == "published"
+    }
+    assert set(re.findall(r"\bfor (\w+) at\b", said)) == priced, said
+    assert "a server you run" in said and "docs/guides/decision-llms/README.md" in said
+    hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
+    section = hub.split("\n## How much faster, and how much cheaper\n", 1)[1].split("\n### ", 1)[0]
+    for name in priced:
+        assert f"`{name}`" in section, f"the hub's estimates say nothing of {name}"
+
+
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
     """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 

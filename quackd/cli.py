@@ -2002,23 +2002,14 @@ def _run_impl(
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
         # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
-        # result. Two of the four confidence floors are the 0.5 and 0.9 TypeSafe publish and two are
-        # quackd's own, and all four were shaped around Jev and are inherited unmeasured by
-        # every other row.
+        # result, and only for the rows something is published about: speed and cost for jev at
+        # TypeSafe, cost alone for openai at OpenAI. Two of the four confidence floors are the 0.5
+        # and 0.9 TypeSafe publish and two are quackd's own, and all four were shaped around Jev
+        # and are inherited unmeasured by every other row.
         # Refusing the flag over that would be the wrong shape of gate, because the executor
         # binds a stepper-authored call exactly as it binds the model's. Saying it once, where
         # the person switching it on is looking, is the right size of one.
-        ui.console.print(
-            _warn_line(
-                "--decision-mode on has not been measured against a real robot: no latency, no "
-                "agreement rate, and the figures in docs/guides/decision-llms/README.md are "
-                "estimates for Jev and nothing at all for anything else. Two of the four "
-                "confidence floors are published by TypeSafe and two are quackd's own, all "
-                "four shaped around Jev. --decision-mode shadow records both and changes "
-                "nothing about the run."
-            ),
-            soft_wrap=True,
-        )
+        ui.console.print(_warn_line(_DECISION_MODE_ON_UNMEASURED), soft_wrap=True)
     if task_images and not pilot.supports_vision:
         # Refused rather than dropped. A pilot that cannot see would be handed "draw what is
         # in the picture" with no picture, improvise something, and the only sign of why would
@@ -2896,6 +2887,24 @@ _DECISION_MODE = typer.Option(
     "as it has always been. QUACKD_DECISION_MODE does the same.",
     rich_help_panel="Model",
 )
+_DECISION_MODE_ON_UNMEASURED = (
+    "--decision-mode on has not been measured against a real robot: no latency, no agreement "
+    "rate, and the figures in docs/guides/decision-llms/README.md are estimates, of speed and "
+    "cost for jev at TypeSafe, of cost alone for openai at OpenAI, and of neither for a server "
+    "you run. Two of the four confidence floors are published by TypeSafe and two are quackd's "
+    "own, all four shaped around Jev. --decision-mode shadow records both and changes nothing "
+    "about the run."
+)
+"""What `--decision-mode on` says once, where the person switching it on is looking.
+
+It says what the hub's section on speed and cost says, row by row, because a sentence on the
+terminal is read by people who never open the page. It once said the hub had estimates for Jev
+and nothing at all for anything else, after the hub had begun working out what an `openai` turn
+costs: no latency, since OpenAI publish only a ratio to their own Responses API, and a rate, which
+is a cost estimate. A server you run, `jev` and `openai` at an address of your own among them, is
+costed at the self-hosted $0 and has no latency anybody has measured, so neither half applies to
+it. `tests/test_docs.py` holds the sentence to the rows that carry a published rate, so the next
+row given one fails there until this names it."""
 CONTROLLERS = ("llm", "vla")
 """What `--controller` takes: the model `--llm` names, or the scripted pilot of
 `quackd.agent.providers.vla`."""

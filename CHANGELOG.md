@@ -61,7 +61,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `.env.example`, CONTRIBUTING, the architecture page, the SO-101's first run, the local-LLM guide
   and PLAN.md name it where they name the others. The hub works its rate into the cost of one
   decision, about a thousandth of the model call it replaces where Jev's is about a two-thousandth,
-  and gives it no latency, because OpenAI publish only a ratio to their own Responses API.
+  and gives it no latency, because OpenAI publish only a ratio to their own Responses API. The
+  warning `--decision-mode on` prints says the same: the hub's figures are estimates of speed and
+  cost for `jev` at TypeSafe, of cost alone for `openai` at OpenAI, and of neither for a server
+  you run, where it used to say Jev and nothing at all for anything else.
   [ADR-0052](docs/adr/0052-openais-decisions-api-is-a-second-wire-format.md) records why it is built
   in rather than a plugin, amending ADR-0043's one wire format and its one published rate and
   extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the
