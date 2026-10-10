@@ -307,6 +307,23 @@ def events() -> list[tuple[str, LogEvent]]:
                 llm_latency_s=6.9,
             ),
         ),
+        (
+            # The stepper chose nothing, because the decision LLM declined the very question
+            # that asks for a choice: the row says so by its gate and the name, never `None`.
+            "decision_shadow_refused",
+            _e(
+                "decision_shadow",
+                0.4,
+                decision_choice=None,
+                decision_confidence=None,
+                decision_gate="refused",
+                refused=["next_verb"],
+                decision_latency_s=0.31,
+                model_verb="report_state",
+                agree=False,
+                llm_latency_s=7.4,
+            ),
+        ),
         # ── enforce ──
         ("enforce", _e("enforce", 0.4, issue="no tool call", action="re-prompting once")),
         (

@@ -441,6 +441,15 @@ def policy_row(policy: Mapping[str, Any]) -> str:
     return f"{policy.get('server')}  {served}" if served else str(policy.get("server"))
 
 
+def _listed(names: Any) -> str:
+    """Names as a sentence lists them, "a", "a and b", "a, b and c", the way the loop lists the
+    joints it names to the person holding the arm, or nothing where there is no list to read. The
+    stepper's line and its shadow line both name the questions a decision LLM declined this way,
+    so a reader meets one list the same way twice."""
+    items = [str(name) for name in names] if isinstance(names, list) else []
+    return ", ".join(items[:-1]) + " and " + items[-1] if len(items) > 1 else "".join(items)
+
+
 def _ok(outcome: str) -> bool:
     return outcome == "ok"
 
@@ -698,11 +707,7 @@ def render_events(
             # vendor's policy speaking about this state rather than its model answering, and
             # that is worth a reader's attention. A record without the names, which quackd never
             # writes, still says which gate it was.
-            declined = d.get("refused")
-            names = [str(n) for n in declined] if isinstance(declined, list) else []
-            # As a sentence lists them, "a", "a and b", "a, b and c", the way the loop lists the
-            # joints it names to the person holding the arm.
-            said = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
+            said = _listed(d.get("refused"))
             chosen = LogLine(
                 "decide",
                 f"refused to answer {said}, to the model ({took})"
@@ -736,10 +741,26 @@ def render_events(
         # Shadow mode's whole point in one line: what the stepper would have done beside what
         # the model did, on the same reading. The run is unchanged, so this is its only record.
         agrees = bool(d.get("agree"))
+        picked = d.get("decision_choice")
+        sure = d.get("decision_confidence")
+        if picked is None:
+            # The stepper chose nothing: a question declined, an answer with no label in it, a
+            # call that failed, a turn with nothing on offer. Named by its gate, and by the
+            # questions declined where there were any, because the line used to print the
+            # missing choice and its missing confidence as `None 0.00`, which read as an answer
+            # of its own.
+            gate = str(d.get("decision_gate") or "no choice")
+            said = _listed(d.get("refused"))
+            stepper_said = f"refused to answer {said}" if gate == "refused" and said else gate
+        elif isinstance(sure, int | float) and not isinstance(sure, bool):
+            stepper_said = f"{picked} {float(sure):.2f}"
+        else:
+            # A label beside a confidence nobody could read, which is not a confidence of 0.00.
+            stepper_said = str(picked)
         return [
             LogLine(
                 "decide=",
-                f"{d.get('decision_choice')} {float(d.get('decision_confidence') or 0):.2f} "
+                f"{stepper_said} "
                 f"vs model {d.get('model_verb')}: {'agrees' if agrees else 'differs'} "
                 f"({float(d.get('decision_latency_s') or 0):.2f} s against "
                 f"{float(d.get('llm_latency_s') or 0):.1f} s)",

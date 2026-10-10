@@ -1558,6 +1558,66 @@ async def test_a_refused_that_names_nothing_declines_nothing(refused: Any) -> No
     assert "refused" not in advice.record and stepper.refusals == 0
 
 
+_NO_NEXT_VERB = {k: v for k, v in _answered().items() if k != "next_verb"}
+"""All four answered but `next_verb`, so the only thing missing is the choice itself."""
+
+
+@pytest.mark.parametrize(
+    ("payload", "gate", "confidence"),
+    [
+        ({"answers": _NO_NEXT_VERB}, "unreadable", None),
+        ({"answers": _NO_NEXT_VERB, "refused": ["next_verb"]}, "refused", None),
+        ({"answers": _answered(next_verb={"confidence": 0.99})}, "unreadable", 0.99),
+        (
+            {"answers": _answered(next_verb={"choice": None, "confidence": 0.99})},
+            "unreadable",
+            0.99,
+        ),
+    ],
+    ids=["never answered", "declined", "a confidence and no choice", "a choice of null"],
+)
+async def test_a_next_verb_nobody_answered_records_no_choice(
+    payload: dict[str, Any], gate: str, confidence: float | None
+) -> None:
+    """`escalate` is where such a turn is routed, and no answer anybody gave: written down as the
+    choice, a `next_verb` declined or never answered read as a decision to take the way out, and
+    every count of choices and every shadow row took it for one. The record says null, as it does
+    for a `done` or a `need_human` nobody answered, keeps a confidence only where one was sent,
+    and the shadow row says null beside the gate that explains it, with the questions declined
+    where there were any."""
+    from quackd.agent.providers.base import ToolCall
+
+    advice, stepper, _f = await _advise(_OffTheWire(payload), mode="shadow", cleared=True)
+    assert advice.gate == gate and advice.call is None
+    assert advice.record["choice"] is None
+    assert advice.record["confidence"] == confidence
+    row = stepper.shadow_event(advice, ToolCall(id="x", name="stop", arguments={}))
+    assert row["decision_choice"] is None and row["decision_gate"] == gate
+    assert row["agree"] is False and row["same_verb"] is False
+    assert row.get("refused") == (["next_verb"] if gate == "refused" else None)
+
+
+async def test_a_shadow_row_names_what_was_declined_only_where_something_was() -> None:
+    """The names ride on the shadow row of a turn that ended on `refused`, so a reader tallying
+    shadow rows sees which question the vendor would not judge without joining back to the
+    `decision` record, and on no other row, so every other row reads as it always did."""
+    from quackd.agent.providers.base import ToolCall
+
+    call = ToolCall(id="x", name="report_state", arguments={})
+    declined, stepper, _f = await _advise(
+        _OffTheWire({"answers": _answered(), "refused": ["need_human"]}),
+        mode="shadow",
+        cleared=True,
+    )
+    taken, _s, _f2 = await _advise(
+        _OffTheWire({"answers": _answered()}), mode="shadow", cleared=True
+    )
+    row = stepper.shadow_event(declined, call)
+    assert row["refused"] == ["need_human"] and row["decision_gate"] == "refused"
+    assert row["decision_choice"] == "report_state", "what was answered is still the choice"
+    assert "refused" not in stepper.shadow_event(taken, call)
+
+
 async def test_the_runs_refusals_are_what_its_own_turns_add_up_to(tmp_path: Any) -> None:
     """End to end, on the arm: a decision LLM that declines every turn leaves the whole run to
     the model, each of its turns is on the record by the name it declined, and the summary

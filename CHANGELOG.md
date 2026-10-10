@@ -139,9 +139,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `need_human` of -1 said certainly not, and each of them moved the body; a `next_verb` that
   carried a confidence and no choice was read as a confident `escalate`. A confidence, `done` and
   `need_human` are now each a number from 0 to 1, a choice is a string, and anything else ends the
-  turn on `unreadable`, with `null` on the record where the number was. A NaN or an infinity in a
-  distribution or in `feasible` also used to reach `transcript.jsonl` as a bare `NaN` or
-  `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse; the distribution leaves
+  turn on `unreadable`, with `null` on the record where the number or the choice was. A NaN or an
+  infinity in a distribution or in `feasible` also used to reach `transcript.jsonl` as a bare `NaN`
+  or `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse; the distribution leaves
   such a number out and `feasible` records `null`, so every line is JSON a strict reader takes.
   `tests/test_decision_llms.py` drives each of those through the stepper, and
   `tests/test_decisions_api_wire.py` sends a NaN and an infinity through the real SDK and reads
@@ -170,6 +170,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   through the event loop at once. `tests/test_decision.py` interrupts a turn both ways, on the
   stepper and in a run on the mock arm, and finds one record, on `interrupted`, and a summary
   that counts it.
+- **A shadow row whose stepper chose nothing says why, rather than `None 0.00`.** The `decide=`
+  line `quackd log` prints for each shadow row gave the stepper's choice and its confidence, and
+  on a turn that chose nothing, a call that failed or a body with nothing on offer, that was
+  `None 0.00`, which read as an answer of its own. A `next_verb` nobody answered was recorded,
+  and printed, as `escalate`, which is how such a turn is routed and not anything anybody chose,
+  so every count of the stepper's choices took it for one. The record now says `null` for the
+  choice of a `next_verb` declined, never answered or answered with no label, the line names the
+  gate where there is no choice, `error`, `unreadable` or `refused to answer next_verb`, and
+  leaves out a confidence nobody could read rather than print it as 0.00, and the shadow row of a
+  turn that ended on `refused` carries the names declined, as `refused`. `tests/test_decision.py`
+  and `tests/test_log.py` hold each, and the log golden gains the line.
 
 ### Documentation
 

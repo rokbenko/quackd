@@ -229,6 +229,12 @@
    "yellow"
   ]
  ],
+ "decision_shadow_refused": [
+  [
+   "decide= refused to answer next_verb vs model report_state: differs (0.31 s against 7.4 s)",
+   "yellow"
+  ]
+ ],
  "enforce": [
   [
    "enforce no tool call: re-prompting once",
@@ -805,6 +811,7 @@
   "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, ~640 tok ~$0.000027, so the model takes this turn",
   "decide= report_state 0.88 vs model report_state: agrees (0.20 s against 8.2 s)",
   "decide= stop 0.71 vs model move_joints: differs (0.30 s against 6.9 s)",
+  "decide= refused to answer next_verb vs model report_state: differs (0.31 s against 7.4 s)",
   "enforce no tool call: re-prompting once",
   "enforce no tool call: re-prompting once (You must call exactly one tool.)",
   "verb    go_to(target='ball')",

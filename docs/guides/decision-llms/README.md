@@ -704,7 +704,8 @@ Two kinds in `transcript.jsonl`, both described in
 [concepts/architecture.md](../../concepts/architecture.md#transcript-format).
 
 `decision`, one per turn the stepper was asked, **identical in both modes** so the rows can be
-read against each other: the labels it was offered, the one it chose, the whole probability
+read against each other: the labels it was offered, the one it chose, null where it chose none
+because `next_verb` was declined, never answered or answered with no label, the whole probability
 distribution, its confidence, the floor that applied, which gate fired, both Noul values, how long
 it took, how large the state was and what was trimmed to fit, and, on the turns that handed their
 questions over, whether or not a server ever had them, what the question spent, what that cost and
@@ -723,10 +724,12 @@ take, only after that step's `llm` record: what the stepper would have chosen be
 model actually chose, whether they agree, whether the stepper
 cleared its floor, and what each of them cost. Its fields are `decision_choice`,
 `decision_confidence`, `decision_gate`, `decision_latency_s` and `decision_cost_usd` beside
-`model_verb`, `llm_latency_s`, `llm_usage` and `llm_cost_usd`. Agreement is about the whole call
-rather than the verb's name, because `gripper(open=true)` and `gripper(open=false)` are opposite
-instructions that share a word, and on `arm-grip-check` that is most of what there is to compare.
-`same_verb` records the coarser reading beside it.
+`model_verb`, `llm_latency_s`, `llm_usage` and `llm_cost_usd`, with `decision_choice` null where the
+stepper chose nothing, `decision_gate` saying why, and `refused`, the questions declined, on a row
+whose gate is `refused`. `quackd log` names that gate on the row's `decide=` line where there is no
+choice. Agreement is about the whole call rather than the verb's name, because `gripper(open=true)`
+and `gripper(open=false)` are opposite instructions that share a word, and on `arm-grip-check` that
+is most of what there is to compare. `same_verb` records the coarser reading beside it.
 
 `run_start` gains two fields when a run has one: `decision_price`, the rate that run was costed
 at, and `decision_llm`, which is `{name, model, url}` -- which preset answered, which id it

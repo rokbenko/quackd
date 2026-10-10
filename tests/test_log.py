@@ -578,6 +578,31 @@ def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handove
     assert bare.body == "interrupted by an interrupt after 0.10 s"
 
 
+def test_a_shadow_row_with_no_choice_names_its_gate_rather_than_none() -> None:
+    """A shadow row whose stepper chose nothing, a question declined, a call that failed, an
+    answer with no label in it, printed the missing choice and its missing confidence as
+    `None 0.00`, which read as an answer of its own. It names the gate now, and the questions
+    declined where there were any, as the stepper's own line does. A label beside a confidence
+    nobody could read is printed without one, because a missing confidence is not 0.00."""
+
+    def body(**row: Any) -> str:
+        data = {"model_verb": "stop", "decision_latency_s": 0.31, "llm_latency_s": 2.1, **row}
+        (line,) = render_events(LogEvent("decision_shadow", 0.0, data))
+        return str(line.body)
+
+    against = "vs model stop: differs (0.31 s against 2.1 s)"
+    declined = body(decision_gate="refused", refused=["next_verb", "done"])
+    assert declined == f"refused to answer next_verb and done {against}"
+    assert body(decision_gate="error") == f"error {against}"
+    assert body(decision_gate="unreadable", decision_confidence=0.99) == f"unreadable {against}"
+    # a label nobody gave a readable confidence for, which agreed with the model all the same
+    agreed = body(decision_choice="stop", decision_gate="unreadable", agree=True)
+    assert agreed == "stop vs model stop: agrees (0.31 s against 2.1 s)"
+    # and a row with both reads as it always did
+    both = body(decision_choice="stop", decision_confidence=0.71, decision_gate="below_floor")
+    assert both == f"stop 0.71 {against}"
+
+
 def test_long_thinking_is_cut_with_a_pointer_to_the_transcript() -> None:
     event = LogEvent("llm", 0.0, {"thinking": "x" * 5000, "tool_calls": [], "usage": {}})
     out = [text for text, _ in render_lines(event, thinking_chars=100)]

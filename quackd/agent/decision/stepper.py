@@ -923,7 +923,9 @@ class Stepper:
     ) -> tuple[dict[str, str], list[str]]:
         """A named JSON object, in English, carrying only what the questions need.
 
-        Never a picture: these models read text, and quackd would rather escalate a turn that
+        Never a picture. That is quackd's rule rather than a property of the models: every row
+        is sent text and nothing else (`sees` is false on each of them), `openai` included,
+        although OpenAI's API would take an image, and quackd would rather escalate a turn that
         needs eyes than pretend otherwise. Never the system prompt either, because the
         instructions belong in the questions, and never the history, which is the distractor
         TypeSafe warn about by name."""
@@ -1118,8 +1120,9 @@ class Stepper:
         # The choice is a label, and every label quackd offers is a string. With none, or with
         # anything else, there is no choice to read. A missing one used to default to `ESCALATE`,
         # so a `next_verb` that carried a confidence and no choice was taken for a confident
-        # decision to hand the turn back, and recorded as one, rather than for the answer nobody
-        # could read that it was. `ESCALATE` is still where such a turn goes.
+        # decision to hand the turn back rather than for the answer nobody could read that it
+        # was. `ESCALATE` is still where such a turn is routed, and nothing more: the record says
+        # `null` (below), because written down it read as an answer somebody gave.
         picked = _field(verb, "choice")
         chose = isinstance(picked, str)
         choice = str(picked) if chose else ESCALATE
@@ -1136,7 +1139,11 @@ class Stepper:
         feasible_choice = _field(feasible, "choice")
         feasible_confidence, feasible_ok = _probability(_field(feasible, "confidence"))
         record.update(
-            choice=choice,
+            # The label it chose, and `null` where it chose none: a `next_verb` declined, never
+            # answered, or answered with no label in it. Recorded as the `ESCALATE` it is routed
+            # as, a `next_verb` nobody answered read as a decision to take the way out, and every
+            # count of choices and every shadow row took it for one.
+            choice=choice if chose else None,
             # `null` rather than `0.0` where nothing readable was answered, because a reader of
             # this record should be able to tell a backend that said "not done" from one that
             # was never asked, never replied or replied with something that is no probability.
@@ -1285,10 +1292,18 @@ class Stepper:
         The only record shadow mode leaves, and what turns the arithmetic in
         `docs/guides/decision-llms/README.md` into a measurement."""
         chosen = advice.record.get("choice")
+        declined = advice.record.get("refused")
         return {
+            # Null where the stepper chose nothing, a question declined among the reasons, and
+            # then the gate says why: a row that read `escalate` there was counted as a vote for
+            # the way out by anybody tallying what the stepper would have chosen.
             "decision_choice": chosen,
             "decision_confidence": advice.record.get("confidence"),
             "decision_gate": advice.gate,
+            # The questions declined, on a turn that ended on `refused`, so the shadow row says
+            # which without a join back to its `decision` record, and only there, so every
+            # other row reads as it did.
+            **({"refused": list(declined)} if declined else {}),
             "decision_latency_s": advice.record.get("latency_s"),
             "model_verb": call.name,
             "model_arguments": dict(call.arguments),
