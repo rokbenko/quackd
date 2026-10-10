@@ -10,9 +10,10 @@ By daemon-v0.16.1 upstream had dropped that design: §5.3 sends a server-side ag
 rendezvous control lane instead (`upstream_api.WEBSOCKET_GATEWAY`), which carries no pixels and
 which upstream's own relay calls not a teleop lane (`upstream_api.RENDEZVOUS_LANE`). quackd does
 not drive over it, so there is nothing for this stub to become. It is deprecated and is removed
-in 0.19.0, and until then `quackd run`, `doctor` and `serve-mcp` print one line naming
-`microduck:jsonrpc` when they connect through it (`quackd_microduck.DEPRECATED_BACKENDS`). The
-refusal below ends with the same line.
+in 0.19.0, and until then `quackd run`, `doctor`, `serve-mcp` and `robot list --probe` print one
+line on stderr naming `microduck:jsonrpc` just before they connect through it, and never for a
+robot they do not connect (`quackd_microduck.DEPRECATED_BACKENDS`). The refusal below ends with
+the same line, so a program that connects it without any of them is told too.
 """
 
 from __future__ import annotations

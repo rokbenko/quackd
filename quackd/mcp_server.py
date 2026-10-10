@@ -25,7 +25,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
@@ -90,6 +90,9 @@ from quackd.verdict import (
     missing_needs,
     own_sheet_objection,
 )
+
+if TYPE_CHECKING:  # the factory is imported inside the functions that build robots
+    from quackd.adapters.factory import RobotSpec
 
 logger = logging.getLogger("quackd.mcp")
 
@@ -732,6 +735,10 @@ class Fleet:
     static: dict[str, RobotManifest] = field(default_factory=dict)
     """What each robot says about itself before it is asked: `describe()`, from the CLI. The
     instructions are built before `connect_all` runs, so this is what they can read."""
+    before_connect: Callable[[str], None] | None = None
+    """Handed a robot's name just before `connect_all` connects it, and never for a robot whose
+    connect does not come: `serve` says there that a robot is on a backend its adapter is
+    retiring."""
 
     def described(self, name: str) -> RobotManifest | None:
         """The best manifest for this robot right now: the live one, else the static one."""
@@ -749,10 +756,16 @@ class Fleet:
         }
 
     async def connect_all(self) -> None:
-        """Sequential and fail-fast: a fleet with a hole in it is not served."""
+        """Sequential and fail-fast: a fleet with a hole in it is not served.
+
+        So a robot after the first that fails is never connected, and `before_connect` is
+        never handed it: what is said of a robot just before its connect is said only of a
+        robot whose connect comes."""
         connected: list[RobotSession] = []
-        for session in self.sessions.values():
+        for name, session in self.sessions.items():
             try:
+                if self.before_connect is not None:
+                    self.before_connect(name)
                 await session.connect()
             except BaseException:
                 for done in connected:
@@ -828,6 +841,7 @@ def build_fleet_server(
     memory_keys: Mapping[str, str] | None = None,
     log: bool = True,
     manifests: Mapping[str, RobotManifest] | None = None,
+    before_connect: Callable[[str], None] | None = None,
 ) -> tuple[MCPServer, Fleet]:
     """One MCP server over several robots, each behind its own executor.
 
@@ -838,7 +852,10 @@ def build_fleet_server(
     so two registered robots of one kind keep separate notes) behind `robot_recall` /
     `robot_remember`. With `log` on,
     each robot narrates its calls: a `log` list in every result that reached its executor,
-    and the same lines on stderr in place of the executor's own log lines."""
+    and the same lines on stderr in place of the executor's own log lines.
+
+    `before_connect` is handed each robot's name just before the server's start connects it
+    (`Fleet.connect_all`)."""
     if not robots:
         raise ValueError("a fleet needs at least one robot")
     sessions: dict[str, RobotSession] = {}
@@ -904,7 +921,12 @@ def build_fleet_server(
         )
         executor.on_frames = _stash_frames(session)
         sessions[name] = session
-    fleet = Fleet(sessions, default or _pick_default(robots), dict(manifests or {}))
+    fleet = Fleet(
+        sessions,
+        default or _pick_default(robots),
+        dict(manifests or {}),
+        before_connect=before_connect,
+    )
     if fleet.default not in sessions:
         raise ValueError(f"default robot {fleet.default!r} is not one of {list(sessions)}")
     if duckfile:
@@ -1141,6 +1163,9 @@ class FleetPlan:
     detector: Detector | None = None
     """The detector `--detector` asked for, or the board's when `--host` brings one, for the
     one robot. None leaves it to `detector_for` at connect, which is the colour detector."""
+    specs: dict[str, RobotSpec] = field(default_factory=dict)
+    """name -> the robot each body was built from, which `serve` reads just before the server
+    connects a robot, to say whether it is on a backend its adapter is retiring."""
 
 
 def fleet_from_flags(
@@ -1160,7 +1185,6 @@ def fleet_from_flags(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
-    warn: Callable[[str], None] | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1179,19 +1203,11 @@ def fleet_from_flags(
     verbs are confirm gated, so an MCP client reaches them only on a server started with
     `--yes`.
 
-    A robot on a backend its adapter is retiring (`deprecated_backend`) is said just before the
-    bodies are built, which the server's lifespan connects as it starts: once a line however
-    many robots are on the backend, through `warn`, which `quackd serve-mcp` hands the line
-    `quackd run` prints, or through this module's logger when nothing is handed. Either way it
-    is stderr, and stdout stays the wire."""
+    Nothing here connects, so nothing here says whether a robot is on a backend its adapter is
+    retiring: the plan carries each robot's spec, and `serve` says it just before the server's
+    start connects that robot."""
     from quackd.adapters.base import policy_choice, policy_hint
-    from quackd.adapters.factory import (
-        RobotSpec,
-        deprecated_backend,
-        describe,
-        make_adapter,
-        parse_robots,
-    )
+    from quackd.adapters.factory import describe, make_adapter, parse_robots
     from quackd.registry import Registry, RegistryError, Resolved, resolve_robot_ref
 
     given = (("--flock", flock), ("--robots", robots), ("--robot", robot))
@@ -1341,11 +1357,6 @@ def fleet_from_flags(
                 # on a line of its own, as `quackd run` prints a hint under its refusal
                 + (f"\n  {hint}" if hint else "")
             )
-    for line in dict.fromkeys(filter(None, (deprecated_backend(spec) for spec in specs))):
-        if warn is not None:
-            warn(line)
-        else:
-            logger.warning("%s", line)
     adapters = {}
     for (name, spec), one in zip(zip(manifests, specs, strict=True), resolved, strict=True):
         where = one.adapter_kwargs(address=address, camera_url=camera_url, token=token)
@@ -1378,7 +1389,15 @@ def fleet_from_flags(
         for name, one in zip(manifests, resolved, strict=True)
         if one.registered
     }
-    return FleetPlan(adapters, manifests, memory_keys, fleet_default, host_choice, chosen)
+    return FleetPlan(
+        adapters,
+        manifests,
+        memory_keys,
+        fleet_default,
+        host_choice,
+        chosen,
+        specs=dict(zip(manifests, specs, strict=True)),
+    )
 
 
 def serve(
@@ -1421,9 +1440,6 @@ def serve(
         policy_url=policy_url,
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
-        # how a retiring backend is said: `quackd serve-mcp` hands the line `quackd run`
-        # prints, and a caller that hands nothing gets it through the logger
-        warn=warn,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"
@@ -1441,8 +1457,41 @@ def serve(
         # the env is the switch a desktop-spawned server has (no shell, no cwd `.env`)
         log=log if log is not None else log_enabled_default(),
         detector=plan.detector,
+        # how a retiring backend is said: `quackd serve-mcp` hands the line `quackd run`
+        # prints, and a caller that hands nothing gets it through the logger
+        before_connect=_deprecations_before_connect(plan.specs, warn),
     )
     mcp.run(transport="stdio")
+
+
+def _deprecations_before_connect(
+    specs: Mapping[str, RobotSpec], warn: Callable[[str], None] | None
+) -> Callable[[str], None]:
+    """What `serve` hands its fleet as `before_connect`.
+
+    A robot on a backend its adapter is retiring (`deprecated_backend`) is said just before the
+    server's start connects it, which `Fleet.connect_all` does one robot at a time and stops at
+    the first that fails, so a robot whose connect never comes is never said. A line is said
+    once however many robots are on its backend, through `warn`, which `quackd serve-mcp` hands
+    the line `quackd run` prints, or through this module's logger when nothing is handed, so a
+    program that serves without the CLI has it in its log. Either way it is stderr, and stdout
+    stays the wire."""
+    from quackd.adapters.factory import deprecated_backend
+
+    said: set[str] = set()
+
+    def before_connect(name: str) -> None:
+        spec = specs.get(name)
+        line = deprecated_backend(spec) if spec is not None else None
+        if line is None or line in said:
+            return
+        said.add(line)
+        if warn is not None:
+            warn(line)
+        else:
+            logger.warning("%s", line)
+
+    return before_connect
 
 
 class _Probe:

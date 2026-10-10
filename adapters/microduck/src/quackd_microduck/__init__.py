@@ -51,8 +51,9 @@ DEPRECATED_BACKENDS = {
         "--camera-url http://127.0.0.1:8080/frame for mediad's camera"
     ),
 }
-"""A backend on its way out, to the one line `quackd run`, `doctor` and `serve-mcp` print when
-they connect through it (`quackd.adapters.factory.deprecated_backend`). The WebSocket stub was
+"""A backend on its way out, to the one line `quackd run`, `doctor`, `serve-mcp` and
+`robot list --probe` print on stderr just before they connect through it, and never for a robot
+they do not connect (`quackd.adapters.factory.deprecated_backend`). The WebSocket stub was
 waiting for a gateway upstream's architecture.md designed, and by daemon-v0.16.1 upstream had
 dropped it for a lane quackd will not drive over, so there is nothing for the stub to become.
 The line names what replaces it: the robot's own socket, and mediad's `/frame` for a picture,

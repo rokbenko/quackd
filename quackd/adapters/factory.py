@@ -271,9 +271,9 @@ def deprecated_backend(spec: RobotSpec | str) -> str | None:
 
     Read off the adapter module's own `DEPRECATED_BACKENDS`, which maps a backend's name to that
     line: what to use instead, and the release the backend goes in. A module that declares none
-    has none, as with `SIMULATOR_BACKENDS` above. `quackd run`, `doctor` and `serve-mcp` print it
-    when they connect through the backend, which RELEASING.md asks of a removal announced a minor
-    ahead.
+    has none, as with `SIMULATOR_BACKENDS` above. `quackd run`, `doctor`, `serve-mcp` and
+    `robot list --probe` ask this just before they connect a robot, and print the line then,
+    which is the warning at run time RELEASING.md asks of a removal announced a minor ahead.
 
     It is a mapping where `SIMULATOR_BACKENDS` is a tuple, because the line is the adapter's own
     to write. A declaration in any other shape, or a line that is not a string, raises TypeError
@@ -287,7 +287,9 @@ def deprecated_backend(spec: RobotSpec | str) -> str | None:
     can fail with more than ImportError: a top level that raises RuntimeError, or an extension
     whose DLL will not load, which is an OSError. Those are the body's failures rather than the
     notice's, and they are not raised here: a command meets them where it always did, when it
-    describes or builds the body, in whatever words that has always taken."""
+    describes or builds the body, in whatever words that has always taken. Each of those
+    commands asks only about a body it has already built, whose module imported as it was built,
+    so for them this is a guard rather than a path."""
     try:
         if isinstance(spec, str):
             spec = parse_robot_spec(spec)

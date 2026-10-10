@@ -80,21 +80,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   rendezvous control lane now, which carries no pixels and which upstream's own relay calls not a
   teleop lane: past 1200 requests a minute the service refuses the whole peer, the robot's own
   lease included. A walk under quackd re-sends its twist at a joystick's rate, so quackd will not
-  drive over it, and nothing will come for the stub to become. `quackd run`, `quackd doctor` and
-  `quackd serve-mcp` print one line on stderr when they connect through it, naming
-  `--robot microduck:jsonrpc`, with `--camera-url http://127.0.0.1:8080/frame` for mediad's
-  camera, as what to use instead. A fleet with several robots on it is told once. The stub's
+  drive over it, and nothing will come for the stub to become. `quackd run`, `quackd doctor`,
+  `quackd serve-mcp` and `quackd robot list --probe` print one line on stderr just before they
+  connect through it, naming `--robot microduck:jsonrpc`, with
+  `--camera-url http://127.0.0.1:8080/frame` for mediad's camera, as what to use instead. A fleet
+  with several robots on it is told once, wherever they come in it, and a command says nothing for
+  a robot it does not connect: the second of a task's `--robots` when the task has no flock, a run
+  refused before it connects, or a served robot after one that failed to connect. The stub's
   refusal ends with the same line, and `quackd list-adapters`, `doctor`'s adapters table and the
   status pages call the backend deprecated. An adapter declares a backend on its way out as
   `DEPRECATED_BACKENDS`, a mapping of the backend's name to that line where `SIMULATOR_BACKENDS`
   is a tuple, and `docs/adapters/writing-an-adapter.md` says how. A declaration in any other shape
   raises a TypeError naming the module rather than being read as nothing, and an adapter whose
   module fails to import has no line rather than an error from the check.
-  `tests/test_doctor_and_stub.py` runs all three commands on the stub and finds the line once in
-  each, ahead of the stub's refusal in `run` and `serve-mcp`, finds it in the log of a server
-  built without the CLI, and refuses a tuple declaration by name, each of which failed before
-  this change. It finds no line from any other backend, or from an adapter whose module raises
-  as it is imported.
+  `tests/test_doctor_and_stub.py` runs all four commands with the stub first, second or third
+  among their robots and finds the line once in each, ahead of the stub's refusal in `run` and
+  `serve-mcp`, finds it in the log of a server started without the CLI, and refuses a tuple
+  declaration by name, each of which failed before this change. It finds no line from any other
+  backend, from a robot a command never connects, or from an adapter whose module raises as it is
+  imported.
 
 ### Fixed
 

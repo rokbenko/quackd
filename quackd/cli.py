@@ -99,19 +99,31 @@ def _deprecated(msg: str) -> None:
 
 def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
     """`_deprecated`'s line for each backend these robots are on that its adapter is retiring
-    (`deprecated_backend`), once a line however many of them are on it, so a fleet of two ducks
-    on one such backend is told once.
+    (`deprecated_backend`), said once in a command however many of its robots are on the backend
+    and however many times this is asked, so a fleet of two ducks on one such backend is told
+    once.
 
-    `run` calls it as soon as it knows its robots, before it builds or connects any and before
-    its header panel, and `doctor` just before its probe connects. `serve-mcp` resolves its
-    robots inside `quackd.mcp_server` and is handed `_deprecated` to say the same lines with,
-    just before it builds the bodies its server connects as it starts. The line goes to stderr
-    in all three, so `doctor --json` and the MCP wire on `serve-mcp`'s stdout stay what they
-    were."""
+    Asked just before a command connects the robots it is handed, and never earlier, because
+    the line tells a reader that the command is connecting through the backend. A robot named
+    on the command line that the command never drives says nothing, and neither does a command
+    refused before it connects. `run` asks for its one robot once the last thing that can refuse
+    the run is behind it, just before its header panel. A pilot flock asks for every member
+    once all of them are built, the last thing that can refuse it before they connect together
+    (`run_pilot_flock`'s `before_connect`), which is after its header. A coordinator flock
+    connects nothing but `microduck:sim2d` bodies, refusing any other, and that backend is not
+    one the Microduck retires, so it has nothing to ask. `doctor` asks just before its probe
+    connects, and `robot list --probe` just before it connects each robot it probes.
+    `serve-mcp` connects its robots inside `quackd.mcp_server`, which says the line through the
+    `_deprecated` it is handed, just before its start connects each robot. The line goes to
+    stderr in all of them, so `doctor --json`, `robot list --json` and the MCP wire on
+    `serve-mcp`'s stdout stay what they were."""
     from quackd.adapters.factory import deprecated_backend
 
     for line in dict.fromkeys(filter(None, (deprecated_backend(spec) for spec in specs))):
-        _deprecated(line)
+        # a line already said in this command, for a robot connected earlier, is not said
+        # again: `robot list --probe` asks once for each robot it probes
+        if line not in _DEPRECATIONS:
+            _deprecated(line)
 
 
 def _warn_old_spellings() -> None:
@@ -1521,8 +1533,6 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
-    # every way a run names its robots has reached here, the flock's and the fleet's too
-    _deprecated_backends(specs)
     if vla and duck is not None and not duck.frontmatter.effective_policy.instructions:
         # a goal is its own one instruction, and was held to the rule for one above
         _fail(
@@ -2128,6 +2138,11 @@ def _run_impl(
         decision_price=decision_price,
         host=hello.record(board.address) if board is not None and hello is not None else None,
     )
+    # Nothing is left that can refuse the run, and the body is connected next, so this is
+    # where a backend its adapter is retiring is said, above the header as the root callback's
+    # deprecations are, and only for the one robot this run drives: a `--robots` member that a
+    # task with no flock never drives, and a run refused above, say nothing.
+    _deprecated_backends([spec])
     ui.console.print(
         ui.run_header(
             duck.name,
@@ -2379,6 +2394,10 @@ def _run_pilots_impl(
                 run_name=run_name,
                 price=price,
                 on_run_dir=ui.attach_capture,
+                # once every member is built, just before they connect: a backend its adapter
+                # is retiring is said for the members that are on it, wherever they come in
+                # the roster, and for none when the flock is refused first
+                before_connect=_deprecated_backends,
             )
         finally:
             ks.uninstall()
@@ -3849,8 +3868,9 @@ def doctor(
 
     def warn(adapter: Any) -> None:
         # A backend its adapter is retiring is said first, in the line a run prints for it,
-        # and only here, where doctor connects through it: without --address nothing connects,
-        # and the adapters table says which backends are going.
+        # and only here, just before the probe connects through it. A real body is connected
+        # only when there is an address to reach it at, typed or registered with it, so
+        # without one nothing is said, and the adapters table says which backends are going.
         if robot:
             _deprecated_backends([robot])
         # Before the connect, and only for a body that is handed to people, which is the one
@@ -3981,8 +4001,9 @@ def serve_mcp(
             policy_url=policy_url,
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
-            # the robots are resolved in there, so a retiring backend is said from there, in
-            # the line `run` and `doctor` print for it
+            # the robots are connected in there, so a retiring backend is said from there,
+            # just before the server's start connects a robot on it, in the line `run` and
+            # `doctor` print for it
             warn=_deprecated,
         )
     except (TransportError, RegistryError) as e:
@@ -4698,7 +4719,13 @@ def robot_list(
     probes: dict[str, Any] = {}
     if probe and entries:
         with ui.spinner(f"probing {_plural(len(entries), 'robot')} ({timeout:g} s each)"):
-            probes = probe_all(entries.values(), timeout_s=timeout)
+            probes = probe_all(
+                entries.values(),
+                timeout_s=timeout,
+                # a probe connects, so a robot on a backend its adapter is retiring is said
+                # just before its own connect, on stderr, once however many are on it
+                before_connect=lambda entry: _deprecated_backends([entry.robot_spec]),
+            )
     if as_json:
         for name, entry in entries.items():
             payload: dict[str, Any] = {**entry.public(), "flocks": holders[name]}

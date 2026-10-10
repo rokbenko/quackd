@@ -378,9 +378,10 @@ A backend on its way out declares itself in the same module, as a mapping rather
 `DEPRECATED_BACKENDS` maps its name to one line saying what to use instead and the release it
 goes in, and `quackd.adapters.factory.deprecated_backend(spec)` reads it. A declaration in any
 other shape, or a line that is not a string, raises a TypeError naming the module rather than
-being read as nothing. `quackd run`, `quackd doctor` and `quackd serve-mcp` print that line once
-on stderr when they connect through the backend, which is the warning at run time RELEASING.md
-asks of a removal announced a minor ahead. `microduck:websocket` is the one today.
+being read as nothing. `quackd run`, `quackd doctor`, `quackd serve-mcp` and
+`quackd robot list --probe` print that line once on stderr just before they connect through the
+backend, and never for a robot they do not connect, which is the warning at run time
+RELEASING.md asks of a removal announced a minor ahead. `microduck:websocket` is the one today.
 
 ## `upstream_api.py`: never guess a name
 
