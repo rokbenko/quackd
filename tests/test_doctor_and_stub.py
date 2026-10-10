@@ -16,6 +16,7 @@ import re
 import socket
 import sys
 import threading
+import types
 from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -173,6 +174,78 @@ def test_only_the_websocket_backend_is_announced_as_deprecated(
 
     monkeypatch.setattr(factory, "_module", absent)
     assert factory.deprecated_backend("microduck:websocket") is None
+
+
+@pytest.mark.parametrize(
+    ("module", "raised"),
+    [
+        ("quackd_broken_import", "ImportError('no module named quackd_sdk')"),
+        ("quackd_broken_missing", "ModuleNotFoundError('no module named quackd_sdk')"),
+        ("quackd_broken_runtime", "RuntimeError('the SDK does not run on this Python')"),
+        ("quackd_broken_dll", "OSError('DLL load failed while importing _native')"),
+    ],
+)
+def test_an_adapter_that_fails_to_import_has_no_line_whatever_it_raises(
+    module: str, raised: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An import can fail with more than ImportError: a top level that raises RuntimeError, or
+    an extension whose DLL will not load, which is an OSError. Whatever it raises, the adapter
+    has no line, asked for by a spec already parsed and by one typed as text, which for a third
+    party's adapter is parsed through its module, so the import happens there. Handed to the
+    CLI among other robots, it adds nothing and stops nothing, and the stub after it is still
+    said. A real module on disk rather than a stand-in for `_module`, so the import is the one
+    Python makes: a module whose top level raised is left out of sys.modules and imported again
+    on every ask."""
+    from quackd import cli
+    from quackd.adapters import factory
+
+    (tmp_path / f"{module}.py").write_text(f"raise {raised}\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    installed = factory._installed()
+    monkeypatch.setattr(factory, "_installed", lambda: {**installed, "broken": module})
+
+    assert factory.deprecated_backend(factory.RobotSpec("broken", "x")) is None
+    assert factory.deprecated_backend("broken:x") is None
+    cli._DEPRECATIONS.clear()
+    cli._deprecated_backends([factory.RobotSpec("broken", "x"), "microduck:websocket"])
+    assert cli._DEPRECATIONS == [WEBSOCKET_LINE]
+    cli._DEPRECATIONS.clear()
+
+
+@pytest.mark.parametrize(
+    ("declared", "line"),
+    [(None, None), ({}, None), ({"websocket": ""}, None), ({"websocket": "go"}, "go")],
+)
+def test_a_declaration_is_a_mapping_of_a_backend_to_its_line(
+    declared: Any, line: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """None and an empty mapping declare nothing, and so does an empty line."""
+    from quackd.adapters import factory
+
+    adapter = types.ModuleType("quackd_retiring")
+    vars(adapter)["DEPRECATED_BACKENDS"] = declared
+    monkeypatch.setattr(factory, "_module", lambda name: adapter)
+    assert factory.deprecated_backend("microduck:websocket") == line
+
+
+@pytest.mark.parametrize(
+    "declared",
+    [("websocket",), ["websocket"], "websocket", {"websocket": 42}, {"websocket": ("use", "x")}],
+)
+def test_a_declaration_quackd_cannot_read_is_refused_naming_the_module(
+    declared: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`SIMULATOR_BACKENDS` is a tuple, so a tuple is the shape an adapter's author is likeliest
+    to write here too, and read as nothing it would leave the backend they meant to retire
+    connected through with no word said. So it is refused, as is a line that is not a string,
+    with the module's name and the shape that is read."""
+    from quackd.adapters import factory
+
+    adapter = types.ModuleType("quackd_retiring")
+    vars(adapter)["DEPRECATED_BACKENDS"] = declared
+    monkeypatch.setattr(factory, "_module", lambda name: adapter)
+    with pytest.raises(TypeError, match=r"quackd_retiring\.DEPRECATED_BACKENDS"):
+        factory.deprecated_backend("microduck:websocket")
 
 
 def test_a_line_is_said_once_however_many_robots_are_on_the_backend() -> None:

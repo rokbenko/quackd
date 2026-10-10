@@ -86,11 +86,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   camera, as what to use instead. A fleet with several robots on it is told once. The stub's
   refusal ends with the same line, and `quackd list-adapters`, `doctor`'s adapters table and the
   status pages call the backend deprecated. An adapter declares a backend on its way out as
-  `DEPRECATED_BACKENDS`, beside `SIMULATOR_BACKENDS`, and `docs/adapters/writing-an-adapter.md`
-  says how. `tests/test_doctor_and_stub.py` runs all three commands on the stub and finds the line
-  once in each, ahead of the stub's refusal in `run` and `serve-mcp`, finds none from any other
-  backend, and finds it in the log of a server built without the CLI. Each failed before this
-  change.
+  `DEPRECATED_BACKENDS`, a mapping of the backend's name to that line where `SIMULATOR_BACKENDS`
+  is a tuple, and `docs/adapters/writing-an-adapter.md` says how. A declaration in any other shape
+  raises a TypeError naming the module rather than being read as nothing, and an adapter whose
+  module fails to import has no line rather than an error from the check.
+  `tests/test_doctor_and_stub.py` runs all three commands on the stub and finds the line once in
+  each, ahead of the stub's refusal in `run` and `serve-mcp`, finds it in the log of a server
+  built without the CLI, and refuses a tuple declaration by name, each of which failed before
+  this change. It finds no line from any other backend, or from an adapter whose module raises
+  as it is imported.
 
 ### Fixed
 
