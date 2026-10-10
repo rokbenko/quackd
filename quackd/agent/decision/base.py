@@ -11,6 +11,7 @@ The errors are phrased like `providers/base.py`'s, deliberately: a reader who ha
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any, Protocol, runtime_checkable
 
@@ -46,6 +47,20 @@ def client_timeout(bound_s: float) -> float:
     budget rather than invented beside it, and keeps a clock there at all, of the same order, for
     a caller who calls `decide` with nothing around it."""
     return 2 * bound_s
+
+
+def state_text(state: Mapping[str, str]) -> str:
+    """The state as one JSON object in text, the way a decision LLM is shown it, and the one
+    string every measurement of it is taken on.
+
+    Its letters as letters (`ensure_ascii=False`). JSON's default writes every character outside
+    ASCII as an escape, `ž` as `\\u017e`, which a JSON reader turns back into the letter and a
+    model shown the text does not. OpenAI's `input` is plain text the API never decodes, so a goal
+    in Slovenian reached `gpt-6-luna` as six-character escapes, and so did the dash in every `last`
+    field, while the size the stepper recorded counted every escape as six characters too.
+    Measured on this string, `state_chars` is the size of what OpenAI is sent, letter for letter,
+    and the token estimate for every other row starts from the letters rather than the escapes."""
+    return json.dumps(dict(state), ensure_ascii=False)
 
 
 NO_KEY = "local"

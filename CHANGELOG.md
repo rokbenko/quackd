@@ -20,7 +20,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   out and the answers back, strictly by the name each answer carries and never by its position,
   and by its type: an answer of a type its question was not asked as, a choice with no choice in
   it, or two answers under one name answer nothing, which hands the turn to the model on
-  `unreadable`, and a refusal among them declines the question. It reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
+  `unreadable`, and a refusal among them declines the question. The state goes as one JSON object
+  with its letters as letters, because OpenAI's `input` is text its model reads as written, and
+  the `state_chars` every row records now counts those letters rather than JSON's six-character
+  escape for each one outside ASCII. It reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
   which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves, and it
   installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
   `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the

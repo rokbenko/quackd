@@ -53,7 +53,13 @@ from tests import fake_laya, fake_systemone
 ROOT = Path(__file__).resolve().parents[1]
 
 
-async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
+async def _advise_with(
+    answers: dict[str, Any] | None,
+    llm: Any = None,
+    *,
+    goal: str = "a goal",
+    features: dict[str, Any] | None = None,
+) -> Any:
     """One turn against a backend that answers exactly what it was handed.
 
     Built bare rather than through `Stepper.build`, because what is under test is how an
@@ -67,7 +73,7 @@ async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
 
     stepper = Stepper(
         mode="on",
-        goal="a goal",
+        goal=goal,
         llm=llm or Says(),
         name="probe",
         price=resolve_decision_price(PRESETS["local"]),
@@ -76,7 +82,7 @@ async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
     stepper.classes["stop"] = "brake"
     stepper.what["stop"] = "the brake"
     stepper.early.add("stop")
-    return await stepper.advise(SimpleNamespace(features={}), cleared=True, budget="b")
+    return await stepper.advise(SimpleNamespace(features=features or {}), cleared=True, budget="b")
 
 
 # ── the table ───────────────────────────────────────────────────────────────────────────
@@ -751,6 +757,28 @@ async def test_a_number_that_is_no_probability_is_unreadable_on_every_row(
     assert advice.record["gate"] == "unreadable" and advice.call is None
     recorded = {"next_verb": "confidence", "done": "done", "need_human": "need_human"}[question]
     assert advice.record[recorded] is None
+
+
+async def test_the_state_is_measured_and_shown_with_its_letters_as_letters() -> None:
+    """A letter outside ASCII is one character, to the measure and to the model. `state_chars`
+    used to count JSON's six-character escape for it, so a goal in Slovenian measured longer than
+    the same goal in ASCII, and the flock's chatter, written into the state as JSON of its own,
+    reached the backend as escapes."""
+    shown: list[dict[str, str]] = []
+
+    class Keeps:
+        name, model, url = "probe", "p", None
+
+        async def decide(self, state: Any, questions: Any) -> Any:
+            shown.append(dict(state))
+            return {"answers": _takes_stop()}
+
+    flock = {"features": {"flock": {"duck": "žoga je pod mizo"}}}
+    slovenian = await _advise_with(None, llm=Keeps(), goal="poberi žogo", **flock)
+    ascii_only = await _advise_with(None, llm=Keeps(), goal="poberi zogo", **flock)
+    assert slovenian.record["state_chars"] == ascii_only.record["state_chars"]
+    assert shown[0]["goal"] == "poberi žogo"
+    assert "žoga je pod mizo" in shown[0]["flock"] and "\\u" not in shown[0]["flock"]
 
 
 async def test_a_probability_may_be_certain_and_may_be_a_whole_number() -> None:

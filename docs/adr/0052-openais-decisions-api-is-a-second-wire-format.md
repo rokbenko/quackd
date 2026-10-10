@@ -98,7 +98,9 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   the first turn it once took the whole second, before anything was sent. The client has the SDK's
   own function asked while it is built and is handed the answer (`warm_platform`), so no turn asks.
 - **Translated both ways, and read by name alone.** The state goes as one JSON string, the very
-  one the stepper measures as `state_chars`. Every question goes named and in order: a `noul` as a
+  one the stepper measures as `state_chars`, with its letters as letters, because `input` is text
+  the API hands its model undecoded and JSON's escapes would reach it as written. Every question
+  goes named and in order: a `noul` as a
   `predicate`, a choice's criteria as `choices` with `escalate` last, a score's as `levels`. An
   answer is kept only under a name quackd asked, and position is never used, because the schema
   makes the name optional and position is the one reading that could attribute `need_human`'s

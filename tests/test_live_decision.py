@@ -36,7 +36,6 @@ these are for is the numbers they print.
 
 from __future__ import annotations
 
-import json
 import math
 import os
 import statistics
@@ -46,7 +45,7 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.decision.base import TIMEOUT_S
+from quackd.agent.decision.base import TIMEOUT_S, state_text
 from quackd.agent.decision.catalogue import DECISIONS_API, PRESETS, DecisionSpec
 from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
 from quackd.agent.decision.stepper import FLOORS, Stepper, build_questions
@@ -296,7 +295,7 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
     over = sum(seconds > TIMEOUT_S for seconds in took)
     print(
-        f"\n{decisions_row.name} {llm.model}: {SAMPLES} requests of {len(json.dumps(state))} "
+        f"\n{decisions_row.name} {llm.model}: {SAMPLES} requests of {len(state_text(state))} "
         f"chars of state, p50 {statistics.median(took):.3f} s, p95 {p95:.3f} s, "
         f"slowest {ordered[-1]:.3f} s"
     )

@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from quackd.agent.decision.base import TIMEOUT_S
+from quackd.agent.decision.base import TIMEOUT_S, state_text
 from quackd.agent.decision.catalogue import DecisionMode
 from quackd.agent.providers.base import ToolCall
 from quackd.agent.providers.catalogue import Price
@@ -390,7 +390,7 @@ def _trimmed_state(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     state = {k: v for k, v in raw.items() if v}
     dropped: list[str] = []
     for name in TRIM_ORDER:
-        if len(json.dumps(state)) <= STATE_SOFT_CHARS:
+        if len(state_text(state)) <= STATE_SOFT_CHARS:
             break
         if state.pop(name, None) is not None:
             dropped.append(name)
@@ -398,7 +398,7 @@ def _trimmed_state(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
 
 
 def _fits(state: Mapping[str, str]) -> bool:
-    return len(json.dumps(state)) <= STATE_HARD_CHARS
+    return len(state_text(state)) <= STATE_HARD_CHARS
 
 
 def _one_line(text: str, limit: int = 240) -> str:
@@ -929,7 +929,13 @@ class Stepper:
             "recent": _one_line(" | ".join(list(stepped)[-4:]), 600),
             "tried": ", ".join(f"{name} {n}" for name, n in sorted(self.tried.items())),
             "notes": _one_line(notes or "", 400),
-            "flock": _one_line(json.dumps(features["flock"])) if features.get("flock") else "",
+            # Its letters as letters, as the state around it is sent (`base.state_text`): a
+            # flock message in another alphabet is read, not shown as escapes.
+            "flock": (
+                _one_line(json.dumps(features["flock"], ensure_ascii=False))
+                if features.get("flock")
+                else ""
+            ),
         }
         return _trimmed_state(raw)
 
@@ -957,7 +963,9 @@ class Stepper:
             return Advice(None, {**record, "gate": "not_offered", "latency_s": 0.0})
 
         state, dropped = self._build_state(obs, budget=budget, stepped=stepped, notes=notes)
-        record["state_chars"] = len(json.dumps(state))
+        # Measured on the very text a backend that takes text is sent (`base.state_text`), with
+        # its letters as letters: escaped, a letter outside ASCII counted six times over.
+        record["state_chars"] = len(state_text(state))
         record["state_tokens_est"] = record["state_chars"] // 4
         record["trimmed"] = dropped
         if not _fits(state):

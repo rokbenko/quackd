@@ -239,6 +239,23 @@ async def test_the_state_goes_out_as_the_json_the_stepper_measures(
     assert json.loads(sent)["goal"] == "a goal"
 
 
+async def test_the_state_goes_out_with_its_letters_as_letters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI's `input` is text its model reads as it is, never decoded. JSON's default escapes
+    went out as written, `\\u017e` for every ž of a goal in Slovenian, and `state_chars` counted
+    each escape as six characters. The letters go out as letters, the count is of them, and it is
+    still the size of what was sent."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    llm, fake = _built(monkeypatch)
+    stepper = _stepper(llm)
+    stepper.goal = "poberi žogo in jo prinesi k meni"
+    advice = await _advise(stepper)
+    sent = fake.posts[0]["body"]["input"]
+    assert stepper.goal in sent and "\\u" not in sent
+    assert len(sent) == advice.record["state_chars"]
+
+
 # ── what comes back ─────────────────────────────────────────────────────────────────────
 
 ASKED = {

@@ -68,7 +68,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import json
 import math
 import os
 import platform
@@ -83,6 +82,7 @@ from quackd.agent.decision.base import (
     DecisionMissingKey,
     DecisionNotInstalled,
     client_timeout,
+    state_text,
 )
 from quackd.command import readable_url, redacted_url
 
@@ -463,8 +463,13 @@ def _field(question: Any, name: str) -> Any:
 
 def to_input(state: Mapping[str, str]) -> str:
     """The state as OpenAI's `input`: the same JSON object the stepper measures as
-    `state_chars`, character for character, so that number is the size of what was sent."""
-    return json.dumps(dict(state))
+    `state_chars`, character for character, so that number is the size of what was sent.
+
+    With its letters as letters (`base.state_text`). The `input` is text the API hands its model as
+    it is and never decodes, so JSON's escapes went to `gpt-6-luna` as written, a goal in Slovenian
+    as runs of `\\u017e` and every `last` field's dash as `\\u2014`, longer to bill and stranger
+    to read than the letters the state holds."""
+    return state_text(state)
 
 
 def _options(criteria: Any, key: str, name: str) -> list[dict[str, str]]:

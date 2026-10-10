@@ -306,14 +306,18 @@ def test_the_state_and_the_questions_on_the_wire_are_the_ones_the_record_describ
 ) -> None:
     """The input is the state as one JSON string, its length the turn's `state_chars`, and the
     four questions go named, in order, translated, with the options the record says were offered
-    and `escalate` last."""
+    and `escalate` last. The string holds the state's letters as letters: the dash in every
+    `last` field went to the model as JSON's six-character `\\u2014`, because OpenAI's `input` is
+    text the API never decodes, and `state_chars` counted it so."""
     asked = build_questions([], {})
     with FakeOpenAIDecisions() as stand_in:
         result = _run(stand_in, tmp_path)
     assert result.exit_code == 0, result.output
+    assert any("—" in post.body["input"] for post in stand_in.posts()), "no turn had a dash"
     for post, turn in zip(stand_in.posts(), _sent(_records(tmp_path)), strict=True):
         sent = post.body["input"]
         assert isinstance(sent, str) and len(sent) == turn["state_chars"]
+        assert "\\u" not in sent, "the state went out as JSON's escapes"
         assert {"goal", "now"} <= set(json.loads(sent))
         questions = post.body["questions"]
         assert [q["name"] for q in questions] == list(asked)
