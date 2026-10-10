@@ -525,6 +525,16 @@ NOT_STANDING_LABELS = {
     "limp_pose": "the duck is ramping to its pose after a fall",
 }
 UNWIND_SUFFIX = ":unwind"
+#: The labels of a tick robotd does not count the duck still on, whatever else holds, so that
+#: its idle look-around cannot be waiting out IDLE_AFTER through one (IDLE_HEAD). limp_fall and
+#: limp_pose are the two halves of the limp-fall sequence (robotd/src/main.rs:3479 and :3490),
+#: which robotd's still excludes (main.rs:3072), and ground_pick, rise and skill are a scripted
+#: move under way, which the controller counts as busy (robotd/src/control.rs:382-386) and still
+#: excludes too (main.rs:3078), as it does a configured skill reporting its own name, and that
+#: name with UNWIND_SUFFIX. held is not one of them: robotd also labels held a tick on which its
+#: policy failed while it went on driving (main.rs:3527). A frame whose safety.picked_up or
+#: safety.limp is true comes from a tick robotd did not count still on either (main.rs:3757-3760).
+NOT_STILL_LABELS = ("limp_fall", "limp_pose", "ground_pick", "rise", "skill")
 
 # ── where a frame comes from ────────────────────────────────────────────────────────────
 #

@@ -334,9 +334,15 @@ class _GazeHold:
 
     head: Head
     since: float
-    """When the head was last sent this target after a gap: by the look, or by the first re-send
-    after a pause. robotd fades a glance out from about then (`head_fade_s`), so
-    `robot.state.head` is not judged on frames read before that and a hold period more."""
+    """When the head was last sent this target after a gap robotd may have glanced in: by the
+    look, or by the first re-send after a pause in which a glance could not be ruled out. robotd
+    fades a glance out from about then (`head_fade_s`), so `robot.state.head` is not judged on
+    frames read before that and a hold period more."""
+    unglanced: float | None
+    """The newest moment robotd could not have been counting the duck still at, as far as quackd
+    can vouch: when the hold last sent the head, or, while it waits, the newest frame it read
+    from a tick robotd does not count still on. None once a frame came too long after one to
+    rule a glance out, until the hold sends again (`_unglanced`)."""
     paused: str | None = None
     """Why nothing goes out just now, or None while it does."""
 
@@ -514,6 +520,29 @@ def _pickup_detection(read: StateRead) -> bool | None:
     a duck in somebody's hands is then sent walks like any other."""
     safety = read.state.get("safety") if read.fresh else None
     return ("picked_up" in safety) if isinstance(safety, dict) else None
+
+
+def _not_still(read: StateRead, skills: Sequence[str]) -> bool:
+    """Whether the newest frame comes from a tick robotd did not count the duck still on, so that
+    its idle look-around was not waiting out IDLE_AFTER through it (`up.IDLE_HEAD`): somebody
+    holds the duck (`safety.picked_up`), it is riding a fall down (`safety.limp`, and the
+    limp-fall labels), or a skill, the ground pick or the rise off the seat is under way, which
+    robotd counts as busy (`up.NOT_STILL_LABELS`).
+
+    A fallen duck is none of those. robotd's policy goes on driving one on the floor
+    (`up.FALLEN_IS_A_REPORT`), and nothing in its frame keeps robotd from counting it still. Nor
+    is a skill's name that robotd also gives a tick it may count still on, such as a skill a
+    policy set calls `walk`, since the label cannot say which of the two drove the tick."""
+    if not read.fresh:
+        return False
+    safety = read.state.get("safety")
+    if isinstance(safety, dict) and (safety.get("picked_up") or safety.get("limp")):
+        return True
+    label = read.policy
+    if label in up.NOT_STILL_LABELS or label.endswith(up.UNWIND_SUFFIX):
+        return True
+    robotds = (*up.STANDING_LABELS, *up.SITTING_LABELS, *up.NOT_STANDING_LABELS)
+    return label in skills and label not in robotds
 
 
 def default_address() -> str:
@@ -1768,7 +1797,8 @@ class JsonRpcUnixTransport:
         sending a head nobody asked for after every stop, so it is ended here all the same: that
         costs nothing, and a hold nothing can end is the one thing the hold must never be."""
         self._end_gaze("a later robot.look replaced it")
-        gaze = _GazeHold(head=head, since=time.monotonic())
+        now = time.monotonic()
+        gaze = _GazeHold(head=head, since=now, unglanced=now)
         self._gaze, self.gaze_released = gaze, None
         self._gaze_task = asyncio.create_task(self._hold_gaze(gaze), name="quackd-jsonrpc-gaze")
 
@@ -1810,6 +1840,16 @@ class JsonRpcUnixTransport:
         sends the head again once the duck stands or sits, the head being where the pilot last
         pointed it.
 
+        Unless somebody else has pointed it since. Whoever holds the duck can turn its head
+        meanwhile, padd centring it as it leaves its head mode among them, and the hold used to
+        send its own head straight back as the duck stood and judge nothing for a fade and a
+        period after, so it took the head back from whoever had turned it, and never said so.
+        While it waits, and as it takes up again, it judges what the head shows as it does while
+        it sends, for as long as no glance of robotd's own can be in it (`_unglanced`), and lets
+        go of a head somebody else turned rather than turn it back. Once a glance cannot be
+        ruled out, the head goes out again as the duck stands, and nothing is judged until a
+        glance would have faded.
+
         It ends, with `gaze_released` saying why, when `robot.state.head` shows something else
         steering the head (`_head_taken`), and when a `robot.head` cannot be written, which is
         `TransportError` from a writer that is gone and an `OSError` such as
@@ -1822,21 +1862,31 @@ class JsonRpcUnixTransport:
             while True:
                 await asyncio.sleep(self.gaze_hold_s)
                 read = self._read()
-                if read.posture not in ("standing", "sitting"):
+                waits = read.posture not in ("standing", "sitting")
+                if waits:
                     gaze.paused = read.reason or (
                         "the duck has fallen"
                         if read.posture == "fallen"
                         else f"the duck is {read.posture}"
                     )
-                    continue
-                if gaze.paused is not None:
-                    # robotd may have glanced while nothing went out, and lets go of it from the
-                    # send below, so the judging of what the head shows starts over from here
-                    gaze.paused, gaze.since = None, time.monotonic()
-                elif (taken := self._head_taken(gaze)) is not None:
+                # nothing has gone out since the hold began to wait, so while it waits, and as it
+                # takes up again, the head is judged only while no glance of robotd's can be in it
+                judged = gaze.paused is None or self._unglanced(gaze, read)
+                if judged and (taken := self._head_taken(gaze)) is not None:
                     why = f"overridden: {taken}"
                     log.warning("gaze hold released, %s", why)
                     return
+                if waits:
+                    continue
+                if gaze.paused is not None:
+                    gaze.paused = None
+                    if not judged:
+                        # robotd may have glanced while nothing went out, and lets go of it from
+                        # the send below, so the judging of what the head shows starts over here
+                        gaze.since = time.monotonic()
+                # robotd counts no duck still until IDLE_AFTER after the last head it took, and
+                # this is read before the line goes out, so it is never later than robotd takes it
+                gaze.unglanced = time.monotonic()
                 await self.notify(up.ROBOT_HEAD.name, gaze.params())
         except (TransportError, OSError) as e:
             why = f"robot.head could not be sent: {e}"
@@ -1844,6 +1894,38 @@ class JsonRpcUnixTransport:
         finally:
             if self._gaze is gaze:  # ended in here: `_end_gaze` clears it before it cancels
                 self._gaze, self._gaze_task, self.gaze_released = None, None, why
+
+    def _unglanced(self, gaze: _GazeHold, read: StateRead) -> bool:
+        """Whether the newest frame cannot show a glance of robotd's own, for the hold while it
+        waits and as it takes up again, keeping `gaze.unglanced` up to date with it.
+
+        robotd glances only once it has counted the duck still for IDLE_AFTER (`up.IDLE_HEAD`),
+        so a frame read less than IDLE_AFTER after a moment robotd was not counting the duck
+        still at cannot show a glance started since: no IDLE_AFTER of still fits in between. The
+        hold's own `robot.head` going out is one such moment, since robotd counts no duck still
+        until nobody has commanded the head for IDLE_AFTER, and a frame from a tick robotd did
+        not count still on is another (`_not_still`): a duck in somebody's hands, one riding a
+        fall down, one in a skill. Each frame like that, read in time, carries the reckoning on,
+        so a duck held for a minute with a frame read every period leaves no gap a glance fits
+        in, and a head somebody turns meanwhile is judged as soon as it shows.
+
+        Any other frame read in time is judged too, but carries nothing on. A fallen duck's is
+        one: robotd's policy goes on driving a duck on the floor, so robotd may count it still,
+        and a fall that lasts IDLE_AFTER past the last `robot.head` or frame that ruled a glance
+        out may hide one. The first frame read too late, whatever it says, the first after a
+        stream that went quiet among them, ends the reckoning until the hold sends again, and
+        the head is then not judged until a glance robotd lets go of would have faded.
+
+        Read times stand in for robotd's ticks. While it waits the hold reads a frame every
+        period, half of IDLE_AFTER, so a frame the link held back by less than a period more
+        than the next cannot hide a whole IDLE_AFTER of still between two it read."""
+        seen, last = self._last_state_at, gaze.unglanced
+        if last is None or seen is None or seen - last >= up.IDLE_AFTER_S:
+            gaze.unglanced = None
+            return False
+        if _not_still(read, self._skills()):
+            gaze.unglanced = max(last, seen)
+        return True
 
     def _head_taken(self, gaze: _GazeHold) -> str | None:
         """Why `robot.state.head` says something other than this hold is steering the head, or
@@ -1860,10 +1942,15 @@ class JsonRpcUnixTransport:
 
         So the newest two frames are compared, both read at least `head_fade_s` and a hold
         period after the head was last sent this target, by when any glance has faded. A head
-        off the held one by more than JSON's rounding, and farther off than in the frame before
-        it, is somebody else's. The hold then lets go rather than pull the head back every
-        second against whoever has it, which is the fight upstream's own wait exists to spare
-        "a client steering the head" (`up.IDLE_HEAD`)."""
+        off the held one by more than JSON's rounding that came no closer to it than in the
+        frame before is somebody else's. Only a head farther off used to be, which missed a
+        gamepad holding the head still at a pose of its own on a robotd set to pass the head
+        straight through, robotd's smoothing at 1: the pad sends its pose at least ten times a
+        second, so each re-send had the slot only until the pad's next, and long before the hold
+        looked again both frames showed the pad's pose. The hold pulled the head toward the gaze
+        every period for as long as the pad held it. It lets go now rather than pull the head
+        back every second against whoever has it, which is the fight upstream's own wait exists
+        to spare "a client steering the head" (`up.IDLE_HEAD`)."""
         if self._previous_state_at is None:
             return None
         if self._previous_state_at < gaze.since + self.head_fade_s + self.gaze_hold_s:
@@ -1873,12 +1960,17 @@ class JsonRpcUnixTransport:
         if now is None or before is None:
             return None
         off_now, off_before = _farthest(now, gaze.head), _farthest(before, gaze.head)
-        if off_now <= _ECHO_TOLERANCE or off_now <= off_before:
+        if off_now <= _ECHO_TOLERANCE or off_now < off_before:
             return None
+        held = _shown(gaze.head)
+        moved = (
+            f"went from {_shown(before)} to {_shown(now)}, away from the {held} quackd held"
+            if off_now > off_before
+            else f"came no closer to the {held} quackd held, from {_shown(before)} to {_shown(now)}"
+        )
         return (
-            f"robot.state.head went from {_shown(before)} to {_shown(now)}, away from the "
-            f"{_shown(gaze.head)} quackd held: another client is steering the head, or robotd "
-            "is not taking quackd's robot.head"
+            f"robot.state.head {moved}: another client is steering the head, or robotd is not "
+            "taking quackd's robot.head"
         )
 
     def _gaze_record(self) -> dict[str, Any] | None:

@@ -2374,14 +2374,163 @@ async def test_a_head_somebody_else_steers_is_let_go_of(robotd: FakeRobotd) -> N
     await t.close()
 
 
-async def test_a_head_still_closing_on_the_held_one_is_not_somebody_elses(
+async def test_a_head_held_still_off_the_gaze_is_somebody_elses(robotd: FakeRobotd) -> None:
+    """robotd's smoothing is a setting, and at 1 it passes every head straight through. A gamepad
+    posing the head sends its pose at least ten times a second, so quackd's re-send has the slot
+    only until the pad's next one, and long before the hold looks again the head is back on the
+    pad's pose: the two frames it reads then show the same head. The hold let go only of a head
+    moving away from the held one, so it went on pulling the head toward the gaze every period
+    for as long as the pad held it. With quackd alone robotd closes the head on the held one
+    every frame, so a head off it that comes no closer is somebody else's.
+
+    The fake's pad writes the slot before every frame, which is what the frames a robot's hold
+    reads a period after its re-send show, and it takes the slot while the hold still waits out
+    the fade after the look, so no frame the hold judges shows the head on its way anywhere."""
+    robotd.head_alpha = 1.0  # robotd passes the head slot straight through
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
+    await t.connect()
+    t.head_fade_s = 10 * HOLD_S
+    rad = math.radians(30.0)
+    assert (await t.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))).accepted
+    robotd.steering = [0.0, 0.0, math.radians(-20.0), 0.0]  # a pad holds the head to the right
+    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    extras = (await t.get_state()).extras
+    assert extras["gaze_hold"] is None
+    released = extras["gaze_released"] or ""
+    assert released.startswith("overridden: robot.state.head came no closer to"), released
+    assert "another client is steering the head" in released
+    await _nothing_more_goes_out(t, robotd)
+    await t.close()
+
+
+async def _waiting(t: JsonRpcUnixTransport, fake: FakeRobotd, change: Any) -> Any:
+    """Let the hold judge the head once, then make `change` to the duck and wait for the hold to
+    wait on it, and hand back the gaze held."""
+    gaze = t._gaze
+    assert gaze is not None
+    judged = gaze.since + t.head_fade_s + 3 * t.gaze_hold_s
+    await _eventually(lambda: time.monotonic() > judged, "the hold judging the head")
+    change(fake, True)
+    await _eventually(lambda: gaze.paused is not None, "the hold waiting")
+    return gaze
+
+
+async def _past_robotds_wait() -> None:
+    """Wait twice robotd's IDLE_AFTER, as the test has set it, from now. A frame read later than
+    that since the hold last sent the head shows no glance only if the frames the hold read in
+    between say so."""
+    waited = time.monotonic()
+    await _eventually(lambda: time.monotonic() > waited + 2 * up.IDLE_AFTER_S, "robotd's wait")
+
+
+@pytest.mark.parametrize("change", [_pick_up, _go_limp, _kick], ids=["held", "limp", "kicking"])
+async def test_a_head_turned_while_the_hold_waits_is_not_taken_back(
     robotd: FakeRobotd,
+    monkeypatch: pytest.MonkeyPatch,
+    change: Callable[[FakeRobotd, bool], None],
+) -> None:
+    """Nothing goes out while the duck is held, limp or in a skill, and the hold takes up again
+    once it stands. Somebody holding the duck can turn its head meanwhile: padd centres it with
+    one `robot.head` as it leaves its head mode, and `robotctl` turns it once. The hold sent its
+    own head straight back as the duck stood, and judged nothing for a fade and a period after,
+    so it never saw the other head. robotd does not count a duck still in any of those three,
+    and glances only at one it has counted still for IDLE_AFTER (`up.IDLE_HEAD`), so a head
+    that moved off the held one while the hold waited is somebody else's however long the wait,
+    and the hold lets it have it rather than turn it back. robotd's wait is set to twenty hold
+    periods here, and the head turns after twice that, when only the frames read while the hold
+    waits can say that robotd has not glanced."""
+    monkeypatch.setattr(up, "IDLE_AFTER_S", 20 * HOLD_S)
+    robotd.head_alpha = 0.5  # robotd smooths a new head in over several frames
+    t = await _looked(robotd, 30.0)
+    await _waiting(t, robotd, change)
+    await _past_robotds_wait()
+    sent = _heads(robotd)
+    robotd.head = [0.0, 0.0, 0.0, 0.0]  # one robot.head from another client: the head centred
+    await _until(t, lambda s: abs(s["head"][HEAD.index("head_yaw")]) < math.radians(1.0))
+    change(robotd, False)
+    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    assert _heads(robotd) == sent, "the held head went out over the other client's"
+    released = t.gaze_released or ""
+    assert released.startswith("overridden: robot.state.head"), released
+    await _nothing_more_goes_out(t, robotd)
+    await t.close()
+
+
+async def test_a_head_turned_while_the_duck_is_briefly_down_is_not_taken_back(
+    robotd: FakeRobotd, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """robotd may glance at a duck on the floor, which its policy goes on driving
+    (`up.FALLEN_IS_A_REPORT`), but only once nobody has steered the head for IDLE_AFTER and it
+    has then counted the duck still for IDLE_AFTER more (`up.IDLE_HEAD`). So no frame read
+    within IDLE_AFTER of the hold's last `robot.head` can show a glance, and a head off the held
+    one in such a frame is somebody else's, fallen duck or not. robotd's wait is set long here,
+    so that every frame of this fall is read within it on a loaded machine too."""
+    monkeypatch.setattr(up, "IDLE_AFTER_S", 200 * HOLD_S)
+    robotd.head_alpha = 0.5
+    t = await _looked(robotd, 30.0)
+    await _waiting(t, robotd, _fall)
+    sent = _heads(robotd)
+    robotd.head = [0.0, 0.0, 0.0, 0.0]  # one robot.head from another client: the head centred
+    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    assert _heads(robotd) == sent, "the held head went out over the other client's"
+    released = t.gaze_released or ""
+    assert released.startswith("overridden: robot.state.head"), released
+    _fall(robotd, False)
+    await _nothing_more_goes_out(t, robotd)
+    await t.close()
+
+
+@pytest.mark.parametrize(
+    ("change", "idle_after_s"),
+    [(_fall, 20 * HOLD_S), (_pick_up, HOLD_S / 4)],
+    ids=["fallen", "seen-too-far-apart"],
+)
+async def test_a_pause_robotd_may_have_glanced_in_is_not_judged_as_it_ends(
+    robotd: FakeRobotd,
+    monkeypatch: pytest.MonkeyPatch,
+    change: Callable[[FakeRobotd, bool], None],
+    idle_after_s: float,
+) -> None:
+    """robotd's policy goes on driving a duck on the floor (`up.FALLEN_IS_A_REPORT`), and
+    nothing in a fallen duck's frame stops robotd counting it still, so once IDLE_AFTER has
+    passed since the hold's last `robot.head` it may glance at one. Nor can frames read further
+    apart than IDLE_AFTER rule a glance out between them, whatever each says, since a whole
+    IDLE_AFTER of a still duck fits in. A head off the held one after such a pause may be
+    robotd's own, so the hold sends its head again as before and judges nothing until a glance
+    it lets go of has faded. robotd's wait is set to twenty hold periods for the fall, which the
+    head turns well after, and to less than the time between two frames for the duck held."""
+    monkeypatch.setattr(up, "IDLE_AFTER_S", idle_after_s)
+    robotd.head_alpha = 0.5
+    t = await _looked(robotd, 30.0)
+    gaze = await _waiting(t, robotd, change)
+    await _past_robotds_wait()
+    sent = _heads(robotd)
+    robotd.head = [0.0, 0.0, 0.0, 0.0]  # off the held head, as a glance puts it
+    await _until(t, lambda s: abs(s["head"][HEAD.index("head_yaw")]) < math.radians(1.0))
+    change(robotd, False)
+    await _eventually(lambda: _heads(robotd) > sent, "the held gaze going out again")
+    reads = t._frames_read
+    await _eventually(lambda: t._frames_read >= reads + 5, "five more state frames")
+    assert t._gaze is gaze and t.gaze_released is None, t.gaze_released
+    await t.close()
+
+
+@pytest.mark.parametrize("pause", [False, True], ids=["held", "held-across-a-pause"])
+async def test_a_head_still_closing_on_the_held_one_is_not_somebody_elses(
+    robotd: FakeRobotd, pause: bool
 ) -> None:
     """robotd's smoothing is a setting, and a robot set to smooth slowly shows a head that is
     not yet the held one for many frames after the look. It closes on it every frame, which no
-    other client's head does, so the hold keeps it."""
+    other client's head does, so the hold keeps it, and keeps it across a pause in which the
+    head went on closing in while nothing went out."""
     robotd.head_alpha = 0.1
     t = await _looked(robotd, 30.0)
+    if pause:
+        gaze = await _waiting(t, robotd, _pick_up)
+        reads = t._frames_read
+        await _eventually(lambda: t._frames_read >= reads + 3, "three frames while it waits")
+        _pick_up(robotd, False)
+        await _eventually(lambda: gaze.paused is None, "the hold taking up again")
     reads = t._frames_read
     await _eventually(lambda: t._frames_read >= reads + 10, "ten more state frames")
     held = dict(zip(HEAD, robotd.head, strict=True))
@@ -2575,14 +2724,17 @@ async def test_go_to_lets_a_glance_fade_before_it_steers(
 
 @pytest.mark.parametrize("after", ["the look", "a pause"])
 async def test_a_glance_fading_out_is_not_somebody_elses_head(
-    robotd: FakeRobotd, after: str
+    robotd: FakeRobotd, monkeypatch: pytest.MonkeyPatch, after: str
 ) -> None:
     """robotd fades a glance out rather than dropping it, and while it fades, the head it reports
     can swing away from the held one with the glance riding on it. So nothing is judged on frames
     read before `head_fade_s` and a hold period have passed since the head was last sent its
-    target: since the look, and since the first re-send after a pause, which is when robotd
-    starts to let go of whatever it glanced at while nothing went out. The fade is this test's,
-    and the glance the fake's, three frames swinging away."""
+    target: since the look, and since the first re-send after a pause robotd may have glanced
+    in, which is when robotd starts to let go of whatever it glanced at while nothing went out.
+    A duck that lies fallen for longer than robotd's wait is one, since robotd's policy goes on
+    driving it. The fade is this test's, and so is robotd's wait in the pause, twenty hold
+    periods, and the glance is the fake's, frames swinging away, which after a pause start
+    before the duck is back on its feet and go on after."""
     fade = 40 * HOLD_S
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
     await t.connect()
@@ -2591,14 +2743,21 @@ async def test_a_glance_fading_out_is_not_somebody_elses_head(
     gaze = t._gaze
     assert gaze is not None
     if after == "a pause":
-        # the window after the look closes first, then the duck is held and put back down
+        monkeypatch.setattr(up, "IDLE_AFTER_S", 20 * HOLD_S)
+        # the window after the look closes first, then the duck falls and lies there past
+        # robotd's wait, robotd glances at it, and the duck is righted while the glance is still
+        # under way
         looked = gaze.since
         await _eventually(lambda: time.monotonic() > looked + fade + 2 * HOLD_S, "the window")
-        _pick_up(robotd, True)
+        _fall(robotd, True)
         await _eventually(lambda: gaze.paused is not None, "the hold pausing")
-        _pick_up(robotd, False)
+        await _past_robotds_wait()
+        robotd.glance = [0.05 * k for k in range(1, 11)]
+        await _eventually(lambda: len(robotd.glance) < 8, "the glance under way")
+        _fall(robotd, False)
         await _eventually(lambda: gaze.paused is None, "the hold taking up again")
-    robotd.glance = [0.05, 0.1, 0.15]  # swinging away from the held head, frame by frame
+    else:
+        robotd.glance = [0.05, 0.1, 0.15]  # swinging away from the held head, frame by frame
     sent = time.monotonic()  # the head was sent its target a moment ago, by the look or a re-send
     await _eventually(lambda: not robotd.glance, "the glance going by")
     reads = t._frames_read

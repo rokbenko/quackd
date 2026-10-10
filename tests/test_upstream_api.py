@@ -284,6 +284,20 @@ def test_the_posture_labels_are_the_ones_robotd_names() -> None:
         assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
+def test_the_labels_robotd_never_counts_still_are_labels_it_names() -> None:
+    """The gaze hold goes on judging the head while it waits only as long as the frames it reads
+    come from ticks robotd does not count the duck still on, since only then can no glance of
+    robotd's own be in them, and it knows those ticks by their labels. A label there that
+    robotd never reports is one read wrong. One that stands or seats the duck, or `held`, which
+    robotd also gives a tick whose policy failed while it went on driving, is a tick robotd may
+    count still, and trusting it would take a glance for somebody else's head."""
+    driven, not_driven = upstream_api.POLICY_LABELS_DRIVEN, upstream_api.POLICY_LABELS_NOT_DRIVEN
+    named = {label for ref in (driven, not_driven) for label in ref.name.split(", ")}
+    never_still = set(upstream_api.NOT_STILL_LABELS)
+    assert never_still <= named, never_still - named
+    assert not never_still & {*upstream_api.STANDING_LABELS, *upstream_api.SITTING_LABELS, "held"}
+
+
 def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
     """The gaze hold sends `HEAD_PARAMS` back to robotd, the head pose finds the head_yaw joint
     by its place in `JOINT_NAMES`, and the verbs that steer on the camera wait `IDLE_FADE_S` on a
