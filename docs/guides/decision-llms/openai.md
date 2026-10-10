@@ -92,11 +92,11 @@ measurement.
   your own machine, so it is always handed one. It adds the lines of `OPENAI_CUSTOM_HEADERS` to
   every request, which is where a pilot that goes through a gateway keeps that gateway's headers,
   so none of their values goes: an authorization line, in whatever spelling, carries quackd's own
-  key or word instead, and every other line is left off. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`
-  are OpenAI's identifiers, so they go to OpenAI as the SDK sends them, a gateway's line that
-  names either header notwithstanding, and to nowhere else. That holds for every release of the
-  SDK the extra allows, and a release that would still send an authorization line of the
-  variable's stops the run and is named.
+  key or word instead, a line naming an account header leaves that header to the SDK at OpenAI,
+  and every other line is left off. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` are OpenAI's
+  identifiers, so they go to OpenAI as the SDK sends them, whatever a gateway's line says, and to
+  nowhere else. That holds for every release of the SDK the extra allows, and a release that
+  would still send an authorization line of the variable's stops the run and is named.
 - **It follows no redirect.** Followed, one would carry the account headers, and on a 307 or a 308
   the whole request with the robot's state in it, to wherever it pointed. A redirect is a turn the
   record calls an error.

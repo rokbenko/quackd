@@ -39,10 +39,10 @@ environment, and every piece of it is answered here rather than left to its defa
   That is where a gateway's own credential lives for somebody whose pilot goes through one, and
   it is that gateway's, not OpenAI's and not your server's. So every header it names is answered
   here, read the way the SDK reads it: an authorization line, in whatever spelling, with quackd's
-  own value under that very spelling, a line that names an account header below with what the
-  SDK would have sent there, and every other line with nothing. Once the client is built its
-  headers are read back, and one that would still carry an authorization quackd did not write
-  stops the build, naming the release.
+  own value under that very spelling, a line at OpenAI that names an account header below with
+  what the SDK would have sent under that name, and every other line with nothing. Once the
+  client is built its headers are read back, and one that would still carry an authorization
+  quackd did not write stops the build, naming the release.
 - `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, which it sends as headers. They are identifiers
   rather than secrets, and they are OpenAI's, so they go to OpenAI, as the SDK would send them
   there, and are omitted everywhere else.
