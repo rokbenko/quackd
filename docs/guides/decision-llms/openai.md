@@ -4,11 +4,12 @@ OpenAI's Decisions API, hosted: gpt-6-luna over POST /v1/decisions. It is made b
 ([platform.openai.com](https://platform.openai.com/)), in public beta since 2026-10-06, and the
 only interface is an API, so what quackd installs is not the model but its client: the `openai`
 SDK the pilots already use, `quackd[openai]`, which the lock carries at **3.22.1** over a floor of
-1.66. OpenAI's guide and API reference were read on 2026-10-08, against the model id
-`gpt-6-luna`, and the SDK on 2026-10-09. It is the one row on the table that does not speak System
-One, so it is the one with a client of its own,
-[`decisions_api.py`](../../../quackd/agent/decision/decisions_api.py), which translates quackd's
-questions out and the answers back. Every name quackd spells for it otherwise lives in its row in
+1.66. OpenAI's Decisions guide, its API reference and openai-python were read on 2026-10-08,
+against the model id `gpt-6-luna`, and openai-python's 1.66.0 and 3.22.1 on 2026-10-09. It is the
+one row on the table whose wire format is not System One's, so it is the one with a client that
+translates, [`decisions_api.py`](../../../quackd/agent/decision/decisions_api.py), which turns
+quackd's questions into OpenAI's shape on the way out and the answers back into quackd's. Every
+name quackd spells for it otherwise lives in its row in
 [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
 
 **Nothing here has ever answered a real robot.**
@@ -104,7 +105,7 @@ measurement.
 > `QUACKD_DECISION_PRICE` is how you say otherwise, for a paid server or for OpenAI's regional
 > premium, which OpenAI say applies and publish for no Decisions row.
 
-## VERIFIED (read from OpenAI's Decisions guide and API reference on 2026-10-08, and from openai-python 1.66.0 and 3.22.1 on 2026-10-09)
+## VERIFIED (read from OpenAI's Decisions guide, its API reference and openai-python on 2026-10-08, and from openai-python 1.66.0 and 3.22.1 on 2026-10-09)
 
 | Thing | Value | What quackd does with it |
 |---|---|---|
@@ -127,9 +128,11 @@ measurement.
 | Name | The assumption | What quackd does |
 |---|---|---|
 | `CONFIDENCE_MEANS_THE_SAME` | that OpenAI's `confidence` is comparable to the one the floors were set against. Nothing published says what it is, and nothing here has measured it | nothing automatic; `--decision-mode shadow` records what it would have chosen without letting it act, which is how a floor gets re-tuned |
-| `LATENCY_UNDER_ONE_SECOND` | that it answers a robot's state inside the turn budget. OpenAI publish a ratio and no latency, and no request from quackd has ever timed it | `TIMEOUT_S` is 1.0 s, enforced around `decide()`; a turn that runs out goes to the model and the record says how long it waited. The SDK drops a connection that has sat idle five seconds, and in shadow mode the model's own call and a verb usually take longer than that between two of the stepper's requests, so each turn also records `idle_s`, the seconds since the stepper's previous request ended, which tells a turn that paid for opening a new connection from one that reused it |
+| `CALIBRATED` | that a probability of 0.9 from it is right about nine times in ten. OpenAI claim no calibration and say to set thresholds from labelled examples of your own. Two testers on [OpenAI's forum](https://community.openai.com/t/1403877) have reported on it, on questions of their own rather than a robot's: one found that, over a coin weighted seventy to thirty, a predicate came out heads 70% of the time where a choice came out heads 98% of the time, and that the order of a choice's options moved its probabilities; the other found it slightly less well calibrated than Jev, with about three times as many confident wrong answers | nothing automatic. `next_verb` is a choice, so those are the reports that say to draw a calibration curve from your own shadow runs before trusting `on`, and a floor moves on one ([How a turn is decided](README.md#how-a-turn-is-decided)) |
+| `LATENCY_UNDER_ONE_SECOND` | that it answers a robot's state inside the turn budget. OpenAI publish a ratio and no latency, and no request from quackd has ever timed it. Two figures posted on the same forum, neither of a robot's state, are about 0.8 s for a request carrying an image over a 3 Mbps link, from a moderator there, and one tester's median turn at 1.6 s against Jev's 0.3 s in their own multi-step use | `TIMEOUT_S` is 1.0 s, enforced around `decide()`; a turn that runs out goes to the model and the record says how long it waited. The SDK drops a connection that has sat idle five seconds, and in shadow mode the model's own call and a verb usually take longer than that between two of the stepper's requests, so each turn also records `idle_s`, the seconds since the stepper's previous request ended, which tells a turn that paid for opening a new connection from one that reused it |
 | `CHOICE_BOUNDS` | the number of options a choice may carry. One reading of the reference says 2 to 255, and it could not be found again in any source | nothing; quackd always offers at least two (a call and `escalate`), and a request the API refuses is a turn the record calls an error |
 | `ANSWER_NAMES_ECHOED` | that every answer carries the name it was asked under, as the guide says | nothing to rely on: answers are read by name alone, so one without its name is a question nobody answered, and the turn goes to the model |
+| `IMAGE_TOKENS` | how a picture is counted and billed. The API takes one, and `gpt-6-luna` is in none of the vision guide's sizing or multiplier tables, so what a camera frame would cost on this endpoint is not published | nothing, because quackd sends this row text alone and its `sees` is false. A turn is billed on the `input_tokens` OpenAI report rather than on a formula of quackd's, so whatever they count is what the record says |
 | `NO_CACHE_DISCOUNT` | how cached input is billed. The guide charges nothing for cache reads or writes, and `usage` still reports `cached_tokens` | every input token is costed at the full rate, which is the higher reading |
 | `REGIONAL_RATE` | the premium on the regional hosts and the long-context multiplier, which apply and are published for no Decisions row | the published rate everywhere OpenAI is reached; `QUACKD_DECISION_PRICE` for a rate of your own |
 | `MODEL_ALIAS_MOVES` | whether `gpt-6-luna` names one fixed model or moves under a run | nothing; the record names the id quackd asked for |

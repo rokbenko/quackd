@@ -28,6 +28,13 @@ ends on `gate: shadow_only`, the model takes the turn, and a turn that offered i
 `decision_shadow` record in `on` mode as in shadow, which is the agreement rate a decision to
 promote it would need.
 
+**Amended 2026-10-10 by [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md):** a question the decision LLM declines is a gate of its own.
+OpenAI's Decisions API may refuse any one question rather than answer it, and the stepper reads
+that before any answer: the turn goes to the model on `refused`, whichever of the four was
+declined, `feasible` included, with the names on the record and the summary counting
+`refusals`. It is one more way a turn reaches the model. No floor moves and no other gate
+changes, and which turns are a choice and what a stepper may never do are as below.
+
 ## Context
 
 quackd's loop asks one question a turn — which single tool call now — and pays a frontier

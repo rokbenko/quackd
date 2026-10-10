@@ -40,21 +40,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   call and a verb usually take longer than that between two of the stepper's requests, so `idle_s`
   tells a turn that paid for opening a new connection from one that reused one. The catalogue gains
   a `sees` field, false on every row, `openai` included, because quackd sends a decision LLM text
-  and nothing else. SECURITY.md says where each decision LLM's key may go, and the row has
-  [a page of its own](docs/guides/decision-llms/openai.md). `tests/test_decisions_api.py` drives the
-  translation, the key, the headers and the address through a fake of the SDK,
-  `tests/fake_decisions_api.py`, and `tests/test_decision.py` drives the new gate and `idle_s`
-  through the stepper. Wherever the SDK is installed, `tests/test_decisions_api_wire.py` drives a
-  real `quackd run` through the real one against `tests/fake_openai_decisions.py`, a stand-in for
-  the API on 127.0.0.1, and shows on the wire that the key and OpenAI's account headers go only
-  where they are meant to, that nothing `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in,
-  and that a 429 is one request, recorded as the rate limit it is, where the SDK's own retries
-  would have slept through the turn's second and recorded a timeout. `tests/test_live_decision.py`
-  runs against `openai` as well as `jev` and waits for a key, and any other test that sends a
-  decision request through the real SDK to OpenAI's own API is stopped before it sends, and fails.
-  The honest part: nothing has answered a real robot and no request has reached
-  OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated on were
-  shaped around Jev, so shadow mode comes first.
+  and nothing else. The row has [a page of its own](docs/guides/decision-llms/openai.md),
+  SECURITY.md says where each decision LLM's key may go, and the decision-LLM hub, the README,
+  `.env.example`, CONTRIBUTING, the architecture page, the SO-101's first run, the local-LLM guide
+  and PLAN.md name it where they name the others. The hub works its rate into the cost of one
+  decision, about a thousandth of the model call it replaces where Jev's is about a two-thousandth,
+  and gives it no latency, because OpenAI publish only a ratio to their own Responses API.
+  [ADR-0052](docs/adr/0052-openais-decisions-api-is-a-second-wire-format.md) records why it is built
+  in rather than a plugin, amending ADR-0043's one wire format and its one published rate and
+  extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the
+  key, the headers and the address through a fake of the SDK, `tests/fake_decisions_api.py`, and
+  `tests/test_decision.py` drives the new gate and `idle_s` through the stepper. Wherever the SDK is
+  installed, `tests/test_decisions_api_wire.py` drives a real `quackd run` through the real one
+  against `tests/fake_openai_decisions.py`, a stand-in for the API on 127.0.0.1, and shows on the
+  wire that the key and OpenAI's account headers go only where they are meant to, that nothing
+  `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in, and that a 429 is one request, recorded
+  as the rate limit it is, where the SDK's own retries would have slept through the turn's second
+  and recorded a timeout. `tests/test_live_decision.py` runs against `openai` as well as `jev` and
+  waits for a key, and any other test that sends a decision request through the real SDK to OpenAI's
+  own API is stopped before it sends, and fails. The honest part: nothing has answered a real robot
+  and no request has reached OpenAI, OpenAI define no `confidence` and claim no calibration, and the
+  floors it is gated on were shaped around Jev, so shadow mode comes first.
 
 ### Changed
 
@@ -84,6 +90,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   tenth of a second after the duck's hello, which failed every time without the waits.
   `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
+
+### Documentation
+
+- **The decision-LLM hub covers both of OpenRouter's decision endpoints, and no longer says the
+  in-process one counts no tokens.** Its section on what is not covered named only OpenRouter's
+  alpha Decisions API, at `/api/alpha/decisions`, which the System One client's fixed path cannot
+  reach. OpenRouter also documents a System One endpoint, `POST /api/v1/systemone`, for TypeSafe's
+  own client, which appends `/v1/systemone` to whatever address it is handed, so the section now
+  says what keeps that one out instead: an address given with `--decision-url` is sent the word
+  `local`, never a key. The OpenRouter guide, which said whether OpenRouter's decision LLMs can be
+  reached from `--decision-llm` "has not been checked", points there now. The hub also said the
+  in-process one never reports a count and that "a model running in this process reports no count
+  at all", which ADR-0043 had already corrected: `laya` reports the tokens its encoder read, and
+  quackd takes that as a measurement. PLAN.md's open item on the stepper pointed at a break-even the
+  hub no longer works out, and points at its speed and cost figures now.
 
 ## [0.17.1] — 2026-10-07
 

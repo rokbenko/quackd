@@ -88,7 +88,10 @@ Each preset kept its own port, and the 19874 went to the daemon alone.
 > **A decision LLM is not one of these, and this is the page where that is easiest to get
 > wrong.** A decision LLM answers typed questions about a state and generates no text at all,
 > so it cannot pilot a robot: `--llm` does not take one, and naming one there, `--llm kev`
-> say, is refused as an unknown provider. Several of them are servers you run on your own
+> say, is refused as an unknown provider. Two names are in both lists, and the flag says which is
+> meant: `--llm local` is a model server of your own flying the robot and `--decision-llm local` a
+> System One server of your own in front of it, as `--llm openai` is OpenAI's chat models and
+> `--decision-llm openai` their Decisions API. Several decision LLMs are servers you run on your own
 > machine, exactly like the four presets above, and each one has a page of its own under
 > [the hub's table](decision-llms/README.md#the-ones-quackd-names). They are still not the same kind
 > of thing: a System One server speaks `POST /v1/systemone` rather than

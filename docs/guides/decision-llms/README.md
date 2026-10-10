@@ -209,10 +209,18 @@ missing row. Someone who wants it can wrap it in a System One shim and reach tha
 `--decision-llm local`, or write a plugin; either way the work is the adapter, and quackd needs no
 change for either.
 
-**OpenRouter's Decisions API** is a different path. It answers at `/api/alpha/decisions`, and the
-System One client's path is a fixed constant rather than something `--decision-url` can reach
-into. A row for it would be a second transport, not a second address. Nor is it
-`--llm openrouter`, which reaches OpenRouter's chat models as a pilot
+**OpenRouter's two decision endpoints** are not rows either, for two different reasons. Its System
+One endpoint, `POST /api/v1/systemone`, is documented for TypeSafe's own client and for System One
+models such as Jev, and that client appends `/v1/systemone` to whatever address it is handed, so the
+path is not what keeps it out. The key is what does: an address given with `--decision-url` is a
+server you run as far as quackd is concerned, so it is sent the word `local` rather than a key, and
+reaching OpenRouter there would take a row of its own that sends OpenRouter's key to OpenRouter and
+nowhere else, the way `openai` sends OpenAI's. Its alpha Decisions API is a different path: it
+answers at `/api/alpha/decisions`, and the System One client's path is a fixed constant rather than
+something `--decision-url` can reach into, so a row for it would need a transport of its own, not a
+second address. The Luna it serves there, `openai/gpt-6-luna-decisions`, is OpenAI's own Decisions
+API underneath, which quackd reaches at OpenAI as the [`openai`](openai.md) row. Nor is either of
+them `--llm openrouter`, which reaches OpenRouter's chat models as a pilot
 ([../openrouter.md](../openrouter.md)).
 
 **Ollama** runs chat models. None of the architectures above runs in it, and its OpenAI-compatible
@@ -261,7 +269,8 @@ flag you also have to remember. The three modes:
 | `on` | it takes the turns it is confident about, and hands back the rest. Switching it on prints one line saying it has never been measured against a robot, because that is still true |
 
 `QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL` and `QUACKD_DECISION_MODE` do the same when the flag
-is absent; the flag wins.
+is absent; the flag wins. `QUACKD_DECISION_URL` is read only for a row that wants no key, so a line
+left in a `.env` after an afternoon with a server of your own never moves `jev` or `openai`.
 
 **Asking for a decision LLM that cannot run does not stop the run.** The stepper is an
 optimisation and the model is the pilot either way, so a script that always names one still drives
@@ -439,14 +448,15 @@ broken, and the log says `not_offered` for it without a request being made at al
 
 > [!IMPORTANT]
 > **Everything in this section is an estimate, and nobody has run any decision LLM against a
-> quackd robot.** It combines two measured things with one published one: quackd's own timings
-> from the SO-101 run on 2026-09-15, the size of the request quackd actually builds (measured
-> against the mock arm), and TypeSafe's published per-call latency and price. Every input is named
-> below so you can disagree with any of them. It rests on the `jev` row because that is the only
-> row with a published latency as well as a rate: `openai` publishes a rate and, for speed, only a
-> ratio to OpenAI's own Responses API, and the servers you run yourself have no rate card and no
-> latency anybody here has measured. `--decision-mode shadow` replaces the whole section with
-> measurements from your own bench, and a number from there is worth more than this arithmetic.
+> quackd robot.** It combines two measured things with published ones: quackd's own timings from
+> the SO-101 run on 2026-09-15 and the size of the request quackd actually builds (measured against
+> the mock arm), with TypeSafe's published per-call latency and price, and OpenAI's published rate
+> for the one paragraph about `openai`. Every input is named below so you can disagree with any of
+> them. It rests on the `jev` row because that is the only row with a published latency as well
+> as a rate: `openai` publishes a rate and, for speed, only a ratio to OpenAI's own Responses API,
+> and the servers you run yourself have no rate card and no latency anybody here has measured.
+> `--decision-mode shadow` replaces the whole section with measurements from your own bench, and a
+> number from there is worth more than this arithmetic.
 
 ### The inputs, and where each one comes from
 
@@ -462,6 +472,7 @@ million input tokens ([its page](openai.md)).
 | **0.114 s** per call | [typesafe.ai](https://typesafe.ai/), their worked example ([jev](jev.md)) |
 | **$0.042 per million input tokens**, output not charged | [their models page](https://docs.typesafe.ai/models) ([jev](jev.md)) |
 | **238x lower input price** than a frontier model | [typesafe.ai](https://typesafe.ai/), against Claude Fable 5.1 |
+| **$0.10 per million input tokens**, output not charged, on `openai` | [OpenAI's Decisions guide](https://developers.openai.com/api/docs/guides/decisions) ([openai](openai.md)) |
 | **$0** per question on every row you run yourself | a server you run bills you in electricity ([pricing](../../../quackd/agent/providers/pricing.py)) |
 
 And what quackd brings to it, all measured:
@@ -492,6 +503,14 @@ prices it at $10 per million input tokens, the same input rate as Claude Fable 5
 comparison holds for the model that actually did the driving. The token counts on both sides are
 measured and both rates are the vendors' own, but a rate read off a page by hand on one day is not
 an invoice: substitute yours where it differs.
+
+At `openai`'s published $0.10 per million input tokens a token costs a hundredth of what the
+model's does rather than a 238th, since `gpt-6-astra`'s input is $10, so the same 527 tokens come
+to **about a thousandth of the cost of the call they replace**. OpenAI count those tokens with a
+tokeniser of their own, and their count is what an `openai` turn records and is costed on, so a
+real run's request will not come to 527 exactly. The time half cannot be worked out for that row
+at all: OpenAI publish no latency for it, only that it is about ten times faster than their own
+Responses API, and nothing here repeats that ratio as a quackd measurement.
 
 On a server you run yourself the money half of this collapses entirely. There is no rate card,
 quackd costs those turns at the self-hosted $0 it already uses for a model on your own machine,
@@ -574,8 +593,11 @@ is nearly free:
 | `feasible` | Choice | can this body do this task at all -- **recorded and never acted on**, see below |
 
 They go as plain dicts in the System One shape, `{"type": ..., "instructions": ..., "criteria":
-...}`, built once and sent unchanged to a hosted API, to a server on this machine and to a model
-in this process. That is the whole reason a new backend is a row rather than a rewrite.
+...}`, built once and handed unchanged to every backend: a hosted API, a server on this machine
+and a model in this process. That is the whole reason a new System One server is a row rather
+than a rewrite. The one backend whose wire format is another shape, `openai`'s, translates them on
+its own side, a `noul` into a `predicate` and a choice's criteria into a list of options, and
+translates the answers back by name, so the stepper reads them the way it reads everybody's.
 
 `escalate` is always on the list. Without it a Choice always returns *something*, and the
 confidence floor would be the only thing between "none of these is right" and a servo.
@@ -767,25 +789,28 @@ Then, per run directory:
 **quackd prices a stepper turn now, and marks the ones it had to guess at.** TypeSafe publish Jev
 at **$0.042 per million input tokens, with output not charged**
 ([models](https://docs.typesafe.ai/models), re-read 2026-09-21), and that is the rate a `jev` turn
-is costed at unless `QUACKD_DECISION_PRICE` says otherwise. A server you run yourself is costed at
-the self-hosted **$0**, with `self-hosted` recorded as the source, which is a claim about where
-the money went rather than a missing figure: it billed you in electricity. The turns that never
-reach the network at all, `not_offered` and `state_too_large`, are charged nothing and carry no
-figure whatsoever.
+is costed at unless `QUACKD_DECISION_PRICE` says otherwise. OpenAI publish their Decisions API at
+**$0.10 per million input tokens, with nothing charged for output**
+([their guide](https://developers.openai.com/api/docs/guides/decisions), read 2026-10-08), and
+that is the rate an `openai` turn at OpenAI's own address is costed at, with the same exception. A
+server you run yourself is costed at the self-hosted **$0**, `openai` at an address of your own
+included, with `self-hosted` recorded as the source, which is a claim about where the money went
+rather than a missing figure: it billed you in electricity. The turns that never reach the network
+at all, `not_offered` and `state_too_large`, are charged nothing and carry no figure whatsoever.
 
 Which half of that is measured and which half is arithmetic is never left to be inferred. The rate
 is the vendor's, or quackd's own self-hosted zero. The token count under it is measured only where
-the backend reports one: where it does not -- and the in-process one never does -- quackd
-estimates the request as the state plus the questions at four characters to the token, and flags
-the estimate three times over, with `usage_estimated` on the turn, `cost_estimated` on the run's
-`decision` block, and a `~` in front of both the tokens and the money on the log line and in front
-of the run's cost on the verdict panel.
+the backend reports one: where it does not, quackd estimates the request as the state plus the
+questions at four characters to the token, and flags the estimate three times over, with
+`usage_estimated` on the turn, `cost_estimated` on the run's `decision` block, and a `~` in front
+of both the tokens and the money on the log line and in front of the run's cost on the verdict
+panel. `openai` reports the input tokens OpenAI counted and `laya` the tokens its encoder read,
+and both are taken as a measurement.
 
 That path is not a hypothetical. The SDK types both counts on `SystemOneResponse.usage` as `int |
-None`, documented as "when the API did not report it"; a model running in this process reports no
-count at all; and a call that raised after its request had already left the machine reports
-nothing while quite possibly still being billed. quackd charges all three at the estimate rather
-than at nothing.
+None`, documented as "when the API did not report it", and a call that raised after its request
+had already left the machine reports nothing while quite possibly still being billed. quackd
+charges both at the estimate rather than at nothing.
 
 Here is the estimated reading, on the mock arm with a fake in the server's place and no count
 coming back from it. The `~` is the whole of the difference, and it sits on both numbers:
@@ -900,7 +925,7 @@ Three flags and four variables. The flag always beats the variable.
 | What | Flag | Variable | Default |
 |---|---|---|---|
 | Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
-| Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one |
+| Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
 | What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run |
 
@@ -919,7 +944,10 @@ And the rest:
 | Model | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 
 `TYPESAFE_BASE_URL` is not read by quackd at all: it belongs to the SDK, and `--decision-url` is
-how you tell quackd where a server is. `TYPESAFE_DEFAULT_MODEL` is honoured for the one row that
+how you tell quackd where a server is. On `openai` what OpenAI's SDK would read for itself is
+answered instead: `OPENAI_BASE_URL` never moves the address, because the client is always handed
+one, nothing `OPENAI_CUSTOM_HEADERS` sets is sent, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go
+to OpenAI alone ([openai](openai.md)). `TYPESAFE_DEFAULT_MODEL` is honoured for the one row that
 declares it, `jev`, as a fallback when the spec names no model -- but naming it in the spec is the
 way to say it, because that is the form every other row takes and the only one that reaches the
 record as a choice somebody made.
@@ -970,10 +998,15 @@ fan-out](https://docs.typesafe.ai/patterns/fan-out) · [confidence-gated
 routing](https://docs.typesafe.ai/patterns/confidence-routing) · [the smart-home
 demo](https://docs.typesafe.ai/demos/smart-home)
 
+OpenAI: [the Decisions guide](https://developers.openai.com/api/docs/guides/decisions), and what
+was read from it on [its page here](openai.md)
+
 The open ones, each with a page here: [kev](kev.md) · [von](von.md) · [openjev](openjev.md) ·
 [opendecision](opendecision.md) · [laya](laya.md), and
 [TheoLeeCJ/SemIf](https://github.com/TheoLeeCJ/SemIf) (and why it is not a row, above)
 
 quackd: [architecture](../../concepts/architecture.md) · [safety](../../concepts/safety.md) ·
 [local LLMs](../local-llms.md) · [the LeRobot arm](../../adapters/lerobot/README.md) ·
-[ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-model.md)
+[ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-model.md) ·
+[ADR-0043](../../adr/0043-decision-llms-are-a-wire-format-and-a-data-row.md) ·
+[ADR-0052](../../adr/0052-openais-decisions-api-is-a-second-wire-format.md)

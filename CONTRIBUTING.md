@@ -282,10 +282,12 @@ Four things the log depends on, none of them optional:
 the optional models that answer typed questions about a state and generate no text at all
 ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). None of them can pilot
 a robot, so they are deliberately absent from `CATALOGUE`, from `PROVIDER_NAMES` and from `--llm`,
-they have their own section in `quackd doctor` rather than rows in the providers table, and their
-extras, `quackd[decision]` and `quackd[laya]`, are not part of `quackd[all]`. If you are adding
-something that answers a question rather than writing an answer, none of the six entries above
-apply to it.
+they have their own section in `quackd doctor` rather than rows in the providers table, and the
+extras that exist only for them, `quackd[decision]` and `quackd[laya]`, are not part of
+`quackd[all]`. Two words are in both lists, `local` and `openai`, and the flag says which is meant:
+`--llm openai` is OpenAI's chat models and `--decision-llm openai` their Decisions API, whose row
+reuses the pilot's own `quackd[openai]` rather than adding an extra. If you are adding something
+that answers a question rather than writing an answer, none of the six entries above apply to it.
 
 **And a decision LLM is usually a row rather than a module.** Most of them share a wire format,
 `POST /v1/systemone`, rather than a vendor, so one that speaks it is one `DecisionSpec` in

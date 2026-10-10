@@ -299,13 +299,14 @@ few keywords in a goal.
 > There is a third thing you can put in the loop and it is not a pilot. `--decision-llm` adds an
 > optional non-generative stepper in front of whichever model you picked, for the turns whose
 > answer is a choice among calls this arm already has. It is off unless you name one, it needs
-> `quackd[decision]` (or `quackd[laya]`) and, for the hosted
-> [`jev`](../../guides/decision-llms/jev.md), a key of its own, and it never authors a joint angle.
-> Leave it off until the arm has waved: the first run is about proving the arm, the port and the
-> camera, and one more moving part between you and the arm is the opposite of what a first run
-> wants. [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) is how to add one
-> afterwards, and [guides/decision-llms/README.md](../../guides/decision-llms/README.md) is where
-> they live, one page each.
+> `quackd[decision]` (or `quackd[laya]`, or for [`openai`](../../guides/decision-llms/openai.md)
+> the `quackd[openai]` an OpenAI pilot already has) and, for the hosted
+> [`jev`](../../guides/decision-llms/jev.md) and `openai`, a key of its own, and it never authors a
+> joint angle. Leave it off until the arm has waved: the first run is about proving the arm, the
+> port and the camera, and one more moving part between you and the arm is the opposite of what a
+> first run wants. [Section 15](#15-optional-put-a-decision-llm-in-front-of-the-model) is how to
+> add one afterwards, and [guides/decision-llms/README.md](../../guides/decision-llms/README.md) is
+> where they live, one page each.
 
 <br>
 
@@ -1503,13 +1504,14 @@ Two extras, and neither is part of `quackd[all]`, because a stepper nobody asked
 arrive with everything else:
 
 ```bash
-uv pip install "quackd[decision]"   # every decision LLM that is a server, hosted or your own
+uv pip install "quackd[decision]"   # every System One server, hosted or your own
 uv pip install "quackd[laya]"       # the one that loads into this process instead (pulls torch)
 ```
 
-`quackd doctor` then prints a row per decision LLM with the extra, the key it wants and where it
-listens, the same way it does for pilots. On a machine with neither extra every row says
-`missing`, which is the expected state and not a problem.
+The `openai` row needs neither: its client is the `openai` SDK that `--llm openai` already uses,
+`quackd[openai]`. `quackd doctor` then prints a row per decision LLM with the extra, the key it
+wants and where it listens, the same way it does for pilots. On a machine with none of those
+extras every row says `missing`, which is the expected state and not a problem.
 
 #### Shadow first, on this arm
 
@@ -1592,12 +1594,14 @@ is the per-verb table.
 
 #### Which one to point it at
 
-Seven are named, and [the table](../../guides/decision-llms/README.md#the-ones-quackd-names) links a
+Eight are named, and [the table](../../guides/decision-llms/README.md#the-ones-quackd-names) links a
 page each with its install line, its address, what was read from its source and what quackd assumes
 about it. For a first look from this page:
 
-- [`jev`](../../guides/decision-llms/jev.md) is hosted, wants `TYPESAFE_API_KEY`, and is the only
-  one with a published rate, so it is the one that costs a fraction of a cent rather than a GPU.
+- [`jev`](../../guides/decision-llms/jev.md) and [`openai`](../../guides/decision-llms/openai.md)
+  are hosted, want `TYPESAFE_API_KEY` and `OPENAI_API_KEY`, and are the two with a published rate,
+  so they are the ones that cost a fraction of a cent rather than a GPU. `openai` is OpenAI's
+  Decisions API, on the key an OpenAI pilot already uses.
 - [`laya`](../../guides/decision-llms/laya.md) needs no server and no key at all, so it is the one
   to try if you would rather nothing left the machine. It downloads its weights on first use.
 - [`kev`](../../guides/decision-llms/kev.md), [`von`](../../guides/decision-llms/von.md),

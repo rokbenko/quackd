@@ -1681,7 +1681,7 @@ def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
 
 
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
-    """Seven is `len(PRESET_NAMES)`, and the README says it in a status cell.
+    """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 
     The same shape as the cloud-provider guard above, and for the same reason: a count in
     prose is a fact about the code that nothing else would notice going stale."""

@@ -212,9 +212,11 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
 
 OpenRouter also serves decision LLMs such as Jev, which answer typed questions about a state
 rather than pilot anything. Those are the other side of quackd entirely, `--decision-llm`
-([decision-llms/README.md](decision-llms/README.md)), and whether any of them can be reached
-through OpenRouter from there has not been checked. `--llm openrouter` is OpenRouter's chat
-models as the pilot, and nothing on this page touches the stepper.
+([decision-llms/README.md](decision-llms/README.md)), and reaching one of them through OpenRouter
+from there has never been tried here. Why neither of OpenRouter's two decision endpoints is a row
+of its own is in [What is not covered](decision-llms/README.md#what-is-not-covered-and-why).
+`--llm openrouter` is OpenRouter's chat models as the pilot, and nothing on this page touches the
+stepper.
 
 ## VERIFIED (read from OpenRouter's documentation on 2026-10-06, and measured the same day)
 

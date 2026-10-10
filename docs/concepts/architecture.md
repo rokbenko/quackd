@@ -380,10 +380,11 @@ deliberate: pricing a scripted run is how the whole cost path gets exercised end
 key and no bill. `fake` and the local presets are free by what they are rather than by any
 table, and a paid OpenAI-compatible endpoint behind `--llm local --base-url` is the case
 `--price` is there for. The discrete stepper bills separately at its own rate, which is
-TypeSafe's published one for `jev` and the self-hosted `$0` for every server you run
-yourself, because a machine of your own bills you in electricity rather than in tokens.
-`QUACKD_DECISION_PRICE` overrides it in the same syntax, and a paid endpoint behind
-`--decision-llm local` is the case that needs it
+TypeSafe's published one for `jev`, OpenAI's for `openai` at OpenAI's own address, and the
+self-hosted `$0` for every server you run yourself, because a machine of your own bills you in
+electricity rather than in tokens. `QUACKD_DECISION_PRICE` overrides it in the same syntax, and a
+paid endpoint behind `--decision-llm local` is the case that needs it, as is one of OpenAI's
+regional hosts, whose premium OpenAI publish for no Decisions row
 ([guides/decision-llms/README.md](../guides/decision-llms/README.md)).
 
 > [!NOTE]
