@@ -167,10 +167,10 @@ READER_LIMIT = 2**20
 #: A walk ends where a stop is answered, since robotd zeroes its twist as it reads the stop and
 #: writes the stop's answer before another frame (`up.LINES_IN_ORDER`): the frames read before
 #: that answer are the only ones that can show the twists sent before it. Each of
-#: `search_scan`'s turns is such a walk, ended by the scan's own stop. A short turn holds fewer
-#: frames than a verdict takes, and on a slow link the verdict on a longer one came after the
-#: turn's last twist, so the turn's stop, which used to write off every twist before it, left
-#: each turn of a scan robotd never took unjudged. A verb's walks are counted together now,
+#: `search_scan`'s turns is such a walk, ended by the scan's own stop, which used to lift the
+#: hold and write off every twist before it. A short turn holds fewer frames than a verdict
+#: takes, so it was never judged, and on a slow link the verdict on a longer one came after the
+#: turn's last twist, and the turn's stop undid it. A verb's walks are counted together now,
 #: until it ends (`_missed`): each walk's frames read after robotd answered a call made after it,
 #: less the first of them, which can be one built before the twist was stored, and
 #: `MOVE_ECHO_FRAMES` less that one in all is the verdict, which is what three frames in one walk
@@ -1778,9 +1778,10 @@ class JsonRpcUnixTransport:
         Ended rather than written off, which is what a stop used to do to every twist before
         it. A frame read after the answer was built after robotd zeroed its twist, the first of
         them perhaps aside, so it cannot count against a twist the stop ended, but the frames
-        read before it can, and on a slow link they had not all arrived when the turn of
-        `search_scan`'s that sent the twists ended, so nothing judged a turn robotd never took.
-        Each verb whose walk the stop ended asks robotd again as its next one starts."""
+        read before it can. Written off at the stop, a turn of `search_scan`'s too short for a
+        verdict of its own was never judged at all, and the scan's next turn went out as if
+        robotd had taken it. Each verb whose walk the stop ended asks robotd again as its next
+        one starts."""
         asked = _twist_of((self._last_state or {}).get("move"))
         close = _Closed(line, self._frames_read, self._last_state_at, asked)
         for sent in self._unshown:
@@ -1878,11 +1879,11 @@ class JsonRpcUnixTransport:
         Every walk since the newest twist a frame showed is counted, each less its first frame,
         and `MOVE_ECHO_FRAMES` less one in all is the verdict, the three frames one walk always
         needed. Counted one walk at a time, as it was, a walk shorter than that was reported on
-        what it sent alone, and so was every turn of a `search_scan`, each ended by the scan's
-        own stop, which on a slow link came before the frames that would have judged it: a scan
-        of a robotd that took none of its twists turned all the way round, as far as anyone
-        could tell, and found nothing. A walk still too short on its own, with no walk before
-        it in the same run of unshown twists, is still reported on what it sent.
+        what it sent alone, and so was a turn of a `search_scan` too short for a verdict of its
+        own, which the scan's stop then wrote off: a scan of a robotd that took none of its
+        twists in such turns turned all the way round, as far as anyone could tell, and found
+        nothing. A walk still too short on its own, with no walk before it in the same run of
+        unshown twists, is still reported on what it sent.
 
         Two things look alike here, and the words name both. A robotd that could not parse the
         twist answers nothing and goes on showing what it had. One that took it shows the next

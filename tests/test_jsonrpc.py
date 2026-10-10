@@ -1956,8 +1956,8 @@ class _DelayingLink:
 #: subscribes at. The echo's verdict on a walk comes a round trip and `MOVE_ECHO_FRAMES` frame
 #: periods after its first twist, so over the first a verdict can land inside one of
 #: `search_scan`'s turns through an alpha's lens, and over the others only after the turn's last
-#: twist, which is what the turn's own stop used to write off: the scan then turned through
-#: every step of a robotd that took none of them and said the target was not there.
+#: twist, where the turn's own stop used to undo it: the scan then turned through every step of
+#: a robotd that took none of them and said the target was not there.
 SLOW_LINKS = (1.0, 2.5, 4.0)
 
 
