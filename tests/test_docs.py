@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import os
 import re
 from pathlib import Path
 
@@ -20,6 +21,16 @@ REPO = Path(__file__).resolve().parents[1]
 README = (REPO / "README.md").read_text(encoding="utf-8")
 
 
+def _as_rendered(markdown: str) -> str:
+    """A page's text with every pipe a backslash escapes read as the pipe GitHub shows.
+
+    Inside a table a name such as `ground_pick | kick_left` has to be written with its pipes
+    escaped, or GitHub splits the row on them and drops what follows
+    (`test_every_table_row_has_as_many_cells_as_its_header`). A guard that looks for that name
+    on the page is looking for what a reader sees, so it reads the escaped pipe as a pipe."""
+    return markdown.replace("\\|", "|")
+
+
 def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.
@@ -31,6 +42,7 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     from quackd_microduck.sim3d import upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    doc = _as_rendered(doc)
     missing = [ref.name for ref in up.all_refs() if ref.name not in doc]
     assert not missing, f"docs/adapters/microduck/README.md is missing: {missing}"
     unverified = [
@@ -408,6 +420,7 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
     doc = (REPO / "docs" / "adapters" / adapter / "README.md").read_text(encoding="utf-8")
+    doc = _as_rendered(doc)
     missing = [ref.name for ref in api.all_refs() if ref.name not in doc]
     assert not missing, f"docs/adapters/{adapter}/README.md is missing: {missing}"
     assert api.PIN[:7] in doc and "never" in doc.lower()  # the honesty label
@@ -1023,6 +1036,116 @@ def _living_docs() -> list[Path]:
         for path in sorted(REPO.glob("*.md")) + sorted((REPO / "docs").rglob("*.md"))
         if path.name not in ("CHANGELOG.md", "PLAN.md") and not {"design", "adr"} & set(path.parts)
     ]
+
+
+def _markdown_files() -> list[Path]:
+    """Every Markdown file in the repository, the dated ones among them, since a table GitHub
+    cuts short is cut short in an ADR as much as on a living page.
+
+    Walked rather than globbed, so the virtual environments are never entered. A hidden
+    directory is not the repository's own, `.github` aside: `.pytest_cache` writes a README of
+    its own, and a virtual environment carries its packages' files."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(REPO):
+        dirs[:] = [
+            d for d in dirs if (d == ".github" or not d.startswith(".")) and d != "node_modules"
+        ]
+        found += [Path(root) / name for name in files if name.endswith(".md")]
+    return sorted(found)
+
+
+#: A table's delimiter row, the line under its header: cells of dashes, each with an optional
+#: colon at either end, between optional outer pipes.
+_TABLE_DELIMITER = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+_FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def _cells(row: str) -> int:
+    """How many cells GitHub makes of a table row. It takes off one leading and one trailing
+    pipe and splits on every other pipe a backslash does not escape, inside a code span as much
+    as outside one, and a backslash escapes whatever follows it, a backslash included."""
+    inner = row.strip()
+    inner = inner.removeprefix("|")
+    if inner.endswith("|") and not inner.endswith("\\|"):
+        inner = inner[:-1]
+    cells, escaped = 1, False
+    for char in inner:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "|":
+            cells += 1
+    return cells
+
+
+def _misshapen_table_rows(markdown: str) -> list[tuple[int, int, int]]:
+    """`(line, cells, header's cells)` for each row of a table, outside a code fence, whose
+    count of cells is not its header's. A table is a header row with a delimiter row under it,
+    and runs to the first line that is blank or has no pipe. GitHub takes it for one only when
+    the delimiter row has the header's count of cells, and renders it as plain text otherwise,
+    so a delimiter row with a pipe in it and another count is reported as a row of its own; one
+    with no pipe at all is the underline of a heading."""
+    lines = markdown.split("\n")
+    wrong: list[tuple[int, int, int]] = []
+    fenced, i = False, 0
+    while i < len(lines):
+        if _FENCE.match(lines[i]):
+            fenced = not fenced
+        elif (
+            not fenced
+            and "|" in lines[i]
+            and i + 1 < len(lines)
+            and _TABLE_DELIMITER.match(lines[i + 1])
+        ):
+            header = _cells(lines[i])
+            if _cells(lines[i + 1]) != header:
+                if "|" in lines[i + 1]:
+                    wrong.append((i + 2, _cells(lines[i + 1]), header))
+                i += 1
+                continue
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and "|" in lines[j]:
+                if (cells := _cells(lines[j])) != header:
+                    wrong.append((j + 1, cells, header))
+                j += 1
+            i = j
+            continue
+        i += 1
+    return wrong
+
+
+def test_every_table_row_has_as_many_cells_as_its_header() -> None:
+    """GitHub splits a table row on every pipe a backslash does not escape, inside a code span as
+    much as outside one, and drops every cell past the header's count without a word, so the
+    source looks whole and the page does not. The Microduck page's `robot.do` and `robot.sound`
+    rows wrote `ground_pick | kick_left` and `alarm | greet` in code spans and lost every name
+    after the first, and what quackd uses them for. Rows on the XLeRobot and Kev pages, in the
+    README and in ADR-0011 lost their ends the same way, and a row the re-read added put what it
+    is used for in a fourth cell of a table with three. A row with fewer cells than its header is
+    padded rather than cut, and none here means to be short, so it is counted too."""
+    wrong = [
+        f"{path.relative_to(REPO).as_posix()}:{line}: {cells} cells under a header of {header}"
+        for path in _markdown_files()
+        for line, cells, header in _misshapen_table_rows(path.read_text(encoding="utf-8"))
+    ]
+    assert not wrong, "these rows do not have their table's cells: " + "; ".join(wrong)
+
+
+def test_the_cell_count_reads_a_row_as_github_does() -> None:
+    """The count above is only as good as its reading of a row, so it is held to the rows that
+    went wrong and to the escapes that put them right."""
+    assert _cells("| `robot.do` | `ground_pick | kick_left` | `kick` |") == 4
+    assert _cells("| `robot.do` | `ground_pick \\| kick_left` | `kick` |") == 3
+    assert _cells("Thing | Value") == 2  # outer pipes are optional
+    assert _cells("| a \\\\| b |") == 2  # an escaped backslash leaves the pipe after it bare
+    table = "| A | B |\n|---|:-:|\n| 1 | 2 |\n| 1 | 2 | 3 |\n\n| C |\n|---|\n| 4 |"
+    assert _misshapen_table_rows(table) == [(4, 3, 2)]
+    assert _misshapen_table_rows("```\n| A | B |\n|---|---|\n| 1 | 2 | 3 |\n```") == []
+    # a header its own pipes split wider than the delimiter is no table at all to GitHub
+    assert _misshapen_table_rows("| `A | B` | C |\n|---|---|\n| 1 | 2 |") == [(2, 2, 3)]
+    # and a line with a pipe over a bare underline is a heading, not a table
+    assert _misshapen_table_rows("Either | or\n---\n\ntext") == []
 
 
 @pytest.mark.parametrize(

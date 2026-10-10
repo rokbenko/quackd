@@ -427,6 +427,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   stops a walk to the deadman's 500 ms and `padd`'s 100 ms and 1 s as `upstream_api.py` reads them,
   and to a re-send shorter than the deadman. Each failed before this change.
 
+- **Six table rows that lost their last cells to a `|` show them whole.** GitHub splits a table row
+  on every `|` that no backslash escapes, inside code spans too, and drops the cells past the
+  header's count. The Microduck page's `robot.do` and `robot.sound` rows kept two names of each
+  list, the second where what quackd uses the call for belongs, and lost the rest. The XLeRobot
+  page's arm step clamp lost what it means, Kev's confidence row lost the floors quackd compares a
+  confidence with, the README's `quackd log` row lost everything after `--thinking all`, and
+  ADR-0011's `gaze` row lost its note. Each pipe is escaped now, and the guards that look for an
+  upstream name on an adapter's page read an escaped pipe as the pipe it renders as.
+  `tests/test_docs.py` counts every table row's cells the way GitHub does, in every Markdown file in
+  the repository, and failed on all six.
+
 ## [0.17.1] — 2026-10-07
 
 0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and

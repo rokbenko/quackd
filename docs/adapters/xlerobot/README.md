@@ -212,7 +212,7 @@ port can drive the robot. Bind it to loopback and reach it through an ssh tunnel
 | Gripper units | `MotorNormMode.RANGE_0_100` | 0..100 whatever `use_degrees` says |
 | Speed tiers | `[{xy: 0.1, theta: 30}, {xy: 0.2, theta: 60}, {xy: 0.3, theta: 90}]` | the ceiling, and the slow tier to open at |
 | Wheel cap | `max_raw: int = 3000` | all three scale down proportionally past it |
-| Arm step clamp | `max_relative_target: int | None = None` | there is none unless the owner sets one |
+| Arm step clamp | `max_relative_target: int \| None = None` | there is none unless the owner sets one |
 | Camera config | `xlerobot_cameras_config` | every entry commented out: a stock cart is blind |
 | Device clash | `/dev/video2` | two commented entries name the same device |
 | Frame encoding | `cv2.IMWRITE_JPEG_QUALITY, 90` | base64 JPEG inside the same JSON object |

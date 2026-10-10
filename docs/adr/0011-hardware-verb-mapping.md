@@ -35,7 +35,7 @@ unsafe or dishonest.
 | `sit` / `stand` | `do sit_toggle` | `robot.do` | Toggle, so the verb reads posture first. Posture-from-`robot.state.policy` is **UNVERIFIED**. |
 | `stand_up` | `enable on=true` | `robot.enable` | No stand-up RPC exists (UNVERIFIED note); robotd recovers from falls itself. |
 | `quack(text)` | `sound{tag, text}` | `robot.sound{tag}` | Upstream has 7 tags and no TTS. `text` is mapped to a tag by a small heuristic and logged. |
-| `gaze(direction | bearing_deg)` | `look{x,y,z}` | `robot.look` | Trunk-frame unit vector; robotd runs the gaze IK and reports clamping. |
+| `gaze(direction \| bearing_deg)` | `look{x,y,z}` | `robot.look` | Trunk-frame unit vector; robotd runs the gaze IK and reports clamping. |
 | `get_frame` | — | **no socket method** (UNVERIFIED) | `jsonrpc` transport returns `None` unless `--camera-url` (HTTP snapshot) is given. |
 
 Heartbeat on hardware = `robot.health` every 500 ms; `healthy == false` or a transport
