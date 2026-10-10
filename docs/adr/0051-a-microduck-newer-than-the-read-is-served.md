@@ -50,13 +50,17 @@ without a word, and quackd recorded the walk as taken.
   robotd was last asked for, as it was asked (`robot.state.move.requested`, `up.MOVE_ECHO`). A
   twist the state has not shown three frames after it went out (0.3 s at the 10 Hz quackd
   subscribes at) is judged on the frames read after robotd answered a call quackd made after it,
-  since robotd reads a connection's lines in order (`up.LINES_IN_ORDER`), and three of those
-  that still do not show it hold `robot.move` back until the verb that sent it stops, which is
-  the hold a duck that stops standing already gets. quackd asks robotd a `robot.health` as each
-  walk starts, and again when a twist has gone the window unshown with no answer yet. Every
-  verb that walks fails at the first twist held back, saying what the state showed instead,
-  and `extras.move_echo` keeps the last verdict, and on a walk robotd took, how long after it
-  went out the twist showed.
+  since robotd reads a connection's lines in order (`up.LINES_IN_ORDER`), and on none read after
+  robotd answered the stop that ended its walk, since robotd zeroes its twist as it reads a stop
+  and writes no frame between the stop and its answer. The first of those frames in each walk
+  can be one built before the twist was stored and is left out, and two more that still do not
+  show it, in one walk or across the walks of the verbs still running, hold `robot.move` back
+  until the verb that sent it ends, which is the hold a duck that stops standing already gets,
+  and which no stop lifts. quackd asks robotd a `robot.health` as each walk starts, and again
+  when a twist has gone the window unshown with no answer yet. Every verb that walks fails at
+  the first twist held back, saying what the state showed instead, `search_scan` counts the
+  turns it says it made by the ones the state showed robotd took, and `extras.move_echo` keeps
+  the last verdict, and on a walk robotd took, how long after it went out the twist showed.
 - **What the version cannot say is read off the robot.** `extras.pickup_detection` says
   whether the robot's frames carry `safety.picked_up` at all, and `doctor` warns when they do
   not, beside the advice it gives for a robot that detects no falls: nothing then tells quackd
@@ -83,9 +87,10 @@ without a word, and quackd recorded the walk as taken.
 - **Trusting notifications.** A `robot.move` robotd could not parse is a walk quackd reported
   and the duck never took. The echo costs a `robot.health` a walk on the wire, and the frames
   already arrive.
-- **Judging the echo on the first frame after a twist.** robotd reports a twist in the next
-  frame it publishes, but that frame still has to come back down the ssh tunnel, and a window
-  of one frame would hold back walks robotd took. Three leave two for the round trip.
+- **Judging the echo on the first frame after robotd's answer.** robotd reports a twist in the
+  next frame it builds, but the first frame read after its answer can be one built just before
+  the twist was stored (`up.LINES_IN_ORDER`), so a window of one frame would hold back walks
+  robotd took. That frame is left out of every walk, and two more make the verdict.
 - **Judging the echo from the send.** A frame robotd built before the twist reached it can be
   read well after the twist went out: when quackd's own process stalls with the frame still in
   its socket, and every frame robotd sends while a link holds quackd's own lines back, as one
@@ -94,6 +99,13 @@ without a word, and quackd recorded the walk as taken.
   twist in the order sent once the stall cleared. The frames counted are the ones read after
   robotd answered a call made after the twist, which a stall holds back with the twists, so a
   stall delays the verdict rather than inventing one.
+- **Ending the hold, and the walk's judgement, at the verb's own stop.** That is the end of a
+  `move` and of a `go_to`, but not of a `search_scan`, which stops after every turn to look and
+  then turns again. On a link slow enough that a turn's verdict came after its last twist, the
+  turn's stop lifted the hold and wrote off the twists the verdict was about, and a scan of a
+  robotd that took none of them turned through every step, as far as anyone could tell, and
+  said the target was not there. The executor runs every verb as a task of its own, so the end
+  of that task is the end of the verb, and a stop ends only the walk before it.
 
 ## Consequences
 
@@ -105,9 +117,15 @@ without a word, and quackd recorded the walk as taken.
   refused by nothing upstream either: an `IntentResult` with no `accepted` quackd can read is
   taken for a refusal that names what came back, never for a yes.
 - The echo judges a twist only once three frames have been read since it went out and three
-  frame periods have passed, so a walk shorter than that is reported on what it sent, as every
-  walk was. Past that it waits on robotd's answer, so a link that holds quackd's lines back
-  delays the verdict by as long, and one that holds them past a call's timeout, which the
+  frame periods have passed, and a walk only on the frames robotd sent before it answered the
+  stop that ended it, so a verb whose walks hold fewer frames than a verdict takes is not
+  stopped by it, and neither is one whose verdict comes after its last twist, since the hold
+  then meets no twist. A `move` of either kind says it walked, on what it sent, as every walk
+  did, and a `search_scan` ends not finding its target and says how many of its turns robotd's
+  state confirmed, none on a robotd that took none of them. A stop robotd never answers leaves
+  the walk before it unjudged, since nothing then says which frames came before robotd zeroed
+  its twist. Past that the echo waits on robotd's answer, so a link that holds quackd's lines
+  back delays the verdict by as long, and one that holds them past a call's timeout, which the
   heartbeat gives up on too, holds the walk back as one robotd could not be shown to take.
   Nobody has measured the round trip on a real tunnel, and `extras.move_echo` records how long
   each twist a frame showed took to show.

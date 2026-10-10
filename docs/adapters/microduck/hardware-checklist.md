@@ -258,15 +258,22 @@ then `--memory-dir` so the campaign's notes stay out of your simulator's.
 
 With the pad on and its sticks untouched, `padd` sends robotd a stop every 100 ms and quackd
 sends its twist as often, so the twist the duck walks on flips between the two, and nobody knows
-yet how a duck walks on that. quackd checks each walk against robotd's own `move.requested`, and
-once robotd's state has gone three frames without showing quackd's twist, the `search_scan` or
-`walk_to` sending it stops the duck and fails with `robotd has not taken robot.move`, robotd
-still saying it was asked for `[0, 0, 0]`. Whether that happens depends on how the pad's stops
-and quackd's twists fall between robotd's frames, so it may come on some walks and not others. A
-stick you push is sent on every tick, so it takes the walk over, and quackd's verb soon fails the
-same way, saying what the stick asked for; let go, and the duck stops until the pilot sends its
-next walk. To end the run, Ctrl-C or `q` in the terminal; to sit the duck where it stands, the
-pad's sit button.
+yet how a duck walks on that. quackd checks each walk against robotd's own `move.requested`,
+counting the frames robotd sends after it has answered a call of quackd's, and a `search_scan`
+counts its turns together, since the scan's own stop ends each one. Once robotd's state has gone
+three frames in a walk without showing quackd's twist, or two past the first of each turn across
+a scan's turns, the `search_scan` or `walk_to` sending it stops the duck at its next twist and
+fails with `robotd has not taken robot.move`, robotd still saying it was asked for `[0, 0, 0]`.
+A `search_scan` that stops says how many of its turns robotd's state showed it took, or that it
+showed none, rather than how many quackd sent. Whether that happens depends on how the pad's
+stops and quackd's twists fall between robotd's frames, so it may come on some walks and not
+others. A scan stops only at a turn it sends after the verdict, so one whose last turn brings the
+verdict, or whose turns are too short to, ends not finding what it looked for, and says how many
+of its turns robotd's state confirmed: a turn it did not confirm is a view the duck may never have
+turned to. A stick you push is sent on every tick, so it takes the walk over, and quackd's verb
+soon fails the same way, saying what the stick asked for; let go, and the duck stops until the
+pilot sends its next walk. To end the run, Ctrl-C or `q` in the terminal; to sit the duck where it
+stands, the pad's sit button.
 
 > Abort and let the gamepad take it if the duck goes over. Nothing quackd sends is known to stand
 > a fallen duck up: `stand_up` asks the policy to drive again with `robot.enable {on: true}`,

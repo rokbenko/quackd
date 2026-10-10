@@ -519,6 +519,118 @@ async def test_search_scan_says_how_far_it_turned_when_a_turn_is_refused(
     assert body.refused == 1 and body.intents[-1].kind == "stop"
 
 
+class _Confirming(_Refusing):
+    """A body whose twists go out unanswered and whose own state says afterwards which it took,
+    as a Microduck's robotd does (`twist_shown_since`): it takes the twists of its first `takes`
+    turns, each turn ended by a stop, and none after, and refuses as `_Refusing` does."""
+
+    def __init__(self, refuses: Callable[[_Refusing], bool], takes: int) -> None:
+        super().__init__(refuses)
+        self.takes = takes
+        self.shown: list[float] = []
+        """When each twist the body took was sent, on its own clock."""
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        ack = await super().send_intent(intent)
+        if intent.kind == "move" and ack.accepted and self.stops < self.takes:
+            self.shown.append(self.now())
+        return ack
+
+    def twist_shown_since(self, since: float) -> bool:
+        return any(at >= since for at in self.shown)
+
+
+@pytest.mark.parametrize(
+    ("takes", "said", "steps"),
+    [
+        (2, "the scan stopped after 2 of 4 turns (180°)", 2),
+        (
+            1,
+            "the scan stopped after 1 of 4 turns (90°) the robot's own state confirmed, of the 2 "
+            "sent to it",
+            1,
+        ),
+        (
+            0,
+            "the scan stopped, and the robot's own state confirmed none of the 2 turns sent to "
+            "it, so it may not have turned at all",
+            0,
+        ),
+    ],
+    ids=["took-both", "took-one", "took-none"],
+)
+async def test_search_scan_counts_the_turns_the_body_says_it_took_when_a_turn_is_refused(
+    registry: VerbRegistry, takes: int, said: str, steps: int
+) -> None:
+    """A Microduck's robotd answers no twist, so a scan of one that took none of them, stopped at
+    last by a refused twist, said it had turned as far as it had sent. On a body whose own state
+    says which twists it took, the turns counted are the ones it confirmed, and a body that
+    confirmed none is said to have confirmed none, where the turns used to be counted as sent."""
+    body = _Confirming(lambda b: b.stops >= 2, takes)  # two turns go out; the third is refused
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
+    assert not result.ok
+    assert result.summary == f"search_scan: a twist was refused, so {said}: {REFUSED}"
+    assert result.data["steps"] == steps
+
+
+@pytest.mark.parametrize(
+    ("takes", "said"),
+    [
+        (4, "ball not found after 4 steps (360°)"),
+        (
+            1,
+            "ball not found, but the robot's own state confirmed only 1 of the 4 turns sent to "
+            "it (90°), so the scan did not see all the 360° it was meant to",
+        ),
+        (
+            0,
+            "ball not found, but the robot's own state confirmed none of the 4 turns sent to it, "
+            "so it may not have turned at all and every look may have been at the same view",
+        ),
+    ],
+    ids=["took-all", "took-one", "took-none"],
+)
+async def test_search_scan_says_not_found_only_of_the_turns_the_body_says_it_took(
+    registry: VerbRegistry, takes: int, said: str
+) -> None:
+    """A scan too short for the body to refuse any of its twists ends looking, and said it had
+    not found the target after the whole sweep it had sent, which a pilot reads as the target not
+    being in the room. On a body whose own state says which twists it took, a sweep it did not
+    confirm is not reported as one."""
+    body = _Confirming(lambda b: False, takes)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
+    assert not result.ok and result.summary == said, result.summary
+
+
+async def test_search_scan_says_which_turns_before_a_find_the_body_took(
+    registry: VerbRegistry,
+) -> None:
+    """A target found after turns the body's own state did not confirm was found from a heading
+    nobody can vouch for, and the result says so, with the turns it confirmed as its steps."""
+
+    class _ThirdLook:
+        name = "third_look"
+
+        def __init__(self) -> None:
+            self.looks = 0
+
+        def detect(self, image: Image.Image) -> list[Detection]:
+            self.looks += 1
+            if self.looks < 3:
+                return []
+            return [Detection(label="ball", cx=0.5, cy=0.5, area=0.01, bearing_deg=0.0)]
+
+    body = _Confirming(lambda b: False, takes=1)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_ThirdLook())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
+    assert result.ok and result.summary.endswith(
+        "(after 2 turn steps, of which the robot's own state confirmed 1)"
+    ), result.summary
+    assert result.data["steps"] == 1
+
+
 async def test_a_twist_refused_while_go_to_waits_for_a_frame_ends_it(
     registry: VerbRegistry,
 ) -> None:

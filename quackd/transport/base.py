@@ -303,6 +303,21 @@ async def frames_taken_since(transport: Any, since: float, poll_s: float) -> Non
         await transport.sleep(poll_s)
 
 
+def twist_shown_since_of(transport: Any, since: float) -> bool | None:
+    """Whether the body's own state has shown that it took a twist the calling verb sent no
+    earlier than `since`, on the clock `transport.now()` reads, or None when the body does not
+    say.
+
+    Most bodies answer a twist they cannot take with a refusal, so a twist they accepted is one
+    they took, and they say nothing here. A body whose twists go out with no answer, as a
+    Microduck's `robot.move` does, can say only afterwards, from what its state shows it was
+    asked for, and offers `twist_shown_since(since)`, which `search_scan` reads to count the
+    turns it made by what the body took rather than by what it sent. Asked from inside the
+    verb, so the body can tell the calling verb's twists from another call's."""
+    shown = getattr(transport, "twist_shown_since", None)
+    return bool(shown(since)) if callable(shown) else None
+
+
 def frame_head_yaw_of(image: Image.Image | None) -> float | None:
     """Where the camera pointed from the trunk when `image` was taken, in degrees of yaw positive
     left, when the body recorded it on the frame (`FRAME_HEAD_YAW_DEG`), or None."""

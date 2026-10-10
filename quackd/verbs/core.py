@@ -29,6 +29,7 @@ from quackd.transport.base import (
     frames_of,
     frames_taken_since,
     primary_of,
+    twist_shown_since_of,
 )
 from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbResult
 
@@ -537,7 +538,38 @@ async def _gaze_sweep(
     )
 
 
+def _turns_taken(ctx: VerbContext, starts: list[float]) -> int | None:
+    """How many of the turns `search_scan` began at `starts`, on the body's clock, the body's own
+    state showed it took, or None on a body that does not say (`twist_shown_since_of`).
+
+    The turns are counted in order and the first not shown ends the count, since a state that
+    shows a later turn's twist shows that every one before it was taken too."""
+    taken = 0
+    for start in starts:
+        shown = twist_shown_since_of(ctx.transport, start)
+        if shown is None:
+            return None
+        if not shown:
+            break
+        taken += 1
+    return taken
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
 async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
+    """Turn in steps, or sweep the head, looking for the target after each step.
+
+    The turns it says it made are the turns the body took. On most bodies that is every turn
+    it sent, since a body that cannot take a twist refuses it. A Microduck's robotd answers no
+    twist, so a scan of one that took none of them used to say it had turned all the way round
+    and found nothing, which a pilot reads as the target not being in the room, and, once a
+    refused twist stopped it, that it had turned as far as it had sent. On a body whose own
+    state says which twists it took (`twist_shown_since_of`), a turn counts only once that state
+    has shown it, and a result whose turns the state did not show says so, in place of the sweep
+    it would otherwise claim."""
     if ctx.detector is None:
         return VerbResult.fail("search_scan needs a detector (none configured)")
     mode = scan_mode(ctx.manifest)
@@ -551,6 +583,7 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
         return VerbResult.fail("search_scan needs locomotion or gaze; this robot has neither")
     since = await _look_ahead(ctx)
     glances = _head_fade_s(ctx) > 0
+    starts: list[float] = []  # when each turn that ended began, on the body's clock
     for i in range(steps + 1):
         # each view is a frame taken after the turn before it had settled, at the heading the
         # result names, on a body that says when its frames were taken: one handed out from
@@ -563,20 +596,26 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             return failed
         if hits:
             best = hits[0]
+            taken = _turns_taken(ctx, starts)
+            after = f"after {i} turn steps"
+            if taken is not None and taken < i:
+                after += f", of which the robot's own state confirmed {taken}"
             return VerbResult.success(
-                f"{p.target} found: {best.summary()} (after {i} turn steps)",
+                f"{p.target} found: {best.summary()} ({after})",
                 detections=[d.model_dump() for d in hits],
-                steps=i,
+                steps=i if taken is None else taken,
             )
         if i == steps:
             break
+        begun = ctx.transport.now()
         try:
             await _turn(ctx, math.radians(step))
         except _Refused as refused:
             # how far it really turned, the turn it was refused in not counted: a scan of a duck
             # that never turned used to report the whole sweep, the target not in it
-            stopped = f"the scan stopped after {i} of {steps} turns ({i * step:.0f}°)"
-            return await _stopped_by(ctx, "search_scan", stopped, refused, steps=i)
+            stopped, taken = _scan_stopped(ctx, starts, steps, step)
+            return await _stopped_by(ctx, "search_scan", stopped, refused, steps=taken)
+        starts.append(begun)
         if glances:
             # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
             # that centred the head started, so the head is nobody's again, and robotd glances
@@ -586,7 +625,48 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
         await ctx.transport.sleep(TICK_S)  # let the view settle
         since = ctx.transport.now()
-    return VerbResult.fail(f"{p.target} not found after {steps} steps ({steps * step:.0f}°)")
+    taken = _turns_taken(ctx, starts)
+    if taken is None or taken == steps:
+        return VerbResult.fail(f"{p.target} not found after {steps} steps ({steps * step:.0f}°)")
+    if taken == 0:
+        return VerbResult.fail(
+            f"{p.target} not found, but the robot's own state confirmed none of the "
+            f"{_plural(steps, 'turn', 'turns')} sent to it, so it may not have turned at all and "
+            "every look may have been at the same view",
+            steps=0,
+        )
+    return VerbResult.fail(
+        f"{p.target} not found, but the robot's own state confirmed only {taken} of the "
+        f"{steps} turns sent to it ({taken * step:.0f}°), so the scan did not see all the "
+        f"{steps * step:.0f}° it was meant to",
+        steps=taken,
+    )
+
+
+def _scan_stopped(
+    ctx: VerbContext, starts: list[float], steps: int, step: float
+) -> tuple[str, int]:
+    """How far `search_scan` had turned when a twist was refused, in the words its result says
+    it in, and the count of turns it reports as `steps`: the turns that ended before the one
+    refused, or, on a body whose own state says which twists it took, the ones it confirmed,
+    which are none at all on a robot that took no twist and said nothing."""
+    made = len(starts)
+    taken = _turns_taken(ctx, starts)
+    if taken is None or taken == made:
+        turned = made if taken is None else taken
+        return f"the scan stopped after {turned} of {steps} turns ({turned * step:.0f}°)", turned
+    if taken == 0:
+        sent = _plural(made, "turn", "turns")
+        return (
+            f"the scan stopped, and the robot's own state confirmed none of the {sent} sent to "
+            "it, so it may not have turned at all",
+            0,
+        )
+    return (
+        f"the scan stopped after {taken} of {steps} turns ({taken * step:.0f}°) the robot's own "
+        f"state confirmed, of the {made} sent to it",
+        taken,
+    )
 
 
 async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:

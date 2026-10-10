@@ -126,7 +126,11 @@ LINES_IN_ORDER = UpstreamRef(
     "has read and stored that twist, which is when MOVE_ECHO can first show it. State frames "
     "reach the connection from a broadcast the control loop publishes into, decimated to the "
     "rate asked for (main.rs:4254-4266), so one built just before the twist was stored can still "
-    "go out after that answer, and none built after it can be held back past the next.",
+    "go out after that answer, and none built after it can be held back past the next. The same "
+    "task writes the frames and the answers, a line at a time, and writes a request's answer "
+    "straight after it handles the request, so every frame written before the answer to a "
+    "robot.stop was built before the stop zeroed the twist (MOVE_ECHO), and the twists before "
+    "the stop show in those frames or in none.",
 )
 OTHER_DAEMONS_ANSWER_HELLO = UpstreamRef(
     "updaterd answers hello too",
@@ -287,10 +291,13 @@ MOVE_ECHO = UpstreamRef(
     "The twist robotd was last asked for, as it was asked. robot.move stores [vx, vy, vyaw] "
     "untouched (robotd/src/main.rs:4361) and every state frame reports it as requested, beside "
     "applied, the twist after the deadman and the limits, and robotd's own test holds it to "
-    "that: 'what the client asked for must survive to the stream' (main.rs:7419). robot.move is "
-    "a notification, so robotd answers nothing when it cannot parse one, and this is the only "
-    "place quackd can see whether a twist was taken. Once the state has gone a few frames "
-    "without showing one it sent, quackd sends no robot.move until the verb that sent it stops.",
+    "that: 'what the client asked for must survive to the stream' (main.rs:7419), so the "
+    "deadman does not zero it. robot.stop does, and is answered at once (main.rs:5311-5314, "
+    "robotd/src/intents.rs:320-323). robot.move is a notification, so robotd answers nothing "
+    "when it cannot parse one, and this is the only place quackd can see whether a twist was "
+    "taken. Once the state has gone a few frames without showing one it sent, counted over the "
+    "walks of a verb up to each stop, quackd sends no robot.move until the verb that sent it "
+    "ends.",
 )
 ROBOT_HEALTH = UpstreamRef(
     "robot.health",
