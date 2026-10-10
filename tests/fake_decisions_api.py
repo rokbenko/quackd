@@ -15,7 +15,7 @@ model: the answers are whatever the test scripted, which is the point.
 
 What this cannot prove is what the real SDK does with the headers it is handed. That is a
 property of the SDK rather than of quackd, and a test that drives the real one is the only
-thing that can show it.
+thing that can show it: `tests/test_decisions_api_wire.py`, wherever the SDK is installed.
 """
 
 from __future__ import annotations
@@ -186,6 +186,21 @@ class FakeOpenAI:
     def headers(self) -> dict[str, Any]:
         """The `default_headers` the client was built with."""
         return dict(self.kwargs.get("default_headers") or {})
+
+
+class SDKLookalike(FakeOpenAI):
+    """The fake under the real SDK's module name and with the real client's `base_url`, which
+    is how the suite's guard (`tests/conftest.py`, `openai_address`) knows a real client when it
+    sees one. Proving that guard fires takes a client it mistakes for the real one, on a machine
+    without the SDK, and one that still never leaves the process if the guard does not fire."""
+
+    @property
+    def base_url(self) -> str:
+        """As the SDK gives it: the address it was built with, ending in a slash."""
+        return str(self.kwargs.get("base_url") or "").rstrip("/") + "/"
+
+
+SDKLookalike.__module__ = "openai"
 
 
 def install(monkeypatch: Any, fake: FakeOpenAI) -> FakeOpenAI:

@@ -141,7 +141,13 @@ measurement.
 It has never answered a real robot, and this page says so until somebody reports that it has. In
 the suite the client is exercised against a fake of the SDK
 ([`tests/fake_decisions_api.py`](../../../tests/fake_decisions_api.py)) rather than against OpenAI,
-which proves quackd's half of the conversation and not OpenAI's. Without the extra, `quackd doctor`
+and wherever the SDK is installed the real one drives a real `quackd run` against a stand-in for the
+API on 127.0.0.1 ([`tests/fake_openai_decisions.py`](../../../tests/fake_openai_decisions.py),
+[`tests/test_decisions_api_wire.py`](../../../tests/test_decisions_api_wire.py)), which shows the
+headers the SDK actually sends where the key is meant to go and where it is not. Both prove quackd's
+half of the conversation and not OpenAI's. No request from quackd has reached OpenAI: the tests that
+would, [`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and
+any other test that tries is stopped before it sends, and fails. Without the extra, `quackd doctor`
 prints this row as `missing (quackd[openai])`, `OPENAI_API_KEY unset`, `gpt-6-luna` and
 `https://api.openai.com`, and a run that names it says so once before it connects and carries on
 without the stepper:

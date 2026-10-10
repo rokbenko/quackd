@@ -44,7 +44,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [a page of its own](docs/guides/decision-llms/openai.md). `tests/test_decisions_api.py` drives the
   translation, the key, the headers and the address through a fake of the SDK,
   `tests/fake_decisions_api.py`, and `tests/test_decision.py` drives the new gate and `idle_s`
-  through the stepper. The honest part: nothing has answered a real robot and no request has reached
+  through the stepper. Wherever the SDK is installed, `tests/test_decisions_api_wire.py` drives a
+  real `quackd run` through the real one against `tests/fake_openai_decisions.py`, a stand-in for
+  the API on 127.0.0.1, and shows on the wire that the key and OpenAI's account headers go only
+  where they are meant to, that nothing `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in,
+  and that a 429 is one request, recorded as the rate limit it is, where the SDK's own retries
+  would have slept through the turn's second and recorded a timeout. `tests/test_live_decision.py`
+  runs against `openai` as well as `jev` and waits for a key, and any other test that sends a
+  decision request through the real SDK to OpenAI's own API is stopped before it sends, and fails.
+  The honest part: nothing has answered a real robot and no request has reached
   OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated on were
   shaped around Jev, so shadow mode comes first.
 
