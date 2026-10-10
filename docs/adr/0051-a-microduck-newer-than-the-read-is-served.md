@@ -133,14 +133,17 @@ without a word, and quackd recorded the walk as taken.
   hold's, the head a `robot.look` answered with, sent again every second, and the hold lets go
   once `robot.state.head` moves off it, which is also what a robotd that does not take it shows
   when it glances around again. Nothing sends a pose.
-- robotd keeps the newest twist from any client, and a connected gamepad sends one at least ten
-  times a second, a stop while nobody touches its sticks (`up.PAD_DRIVES`). With a pad
-  connected every walk quackd sends is fought by it, as it was at the previous read too, and the
-  frames show the pad's stop as well as quackd's twist, so the echo holds a walk back whenever
-  three frames after robotd's answer show only the pad's. That is the pad's authority, which
-  quackd does not arbitrate, made visible: the walk stops and says what robotd showed instead.
-  The hardware checklist asks for that same pad in hand as the e-stop, so the first run on a
-  robot is where it shows how often.
+- robotd keeps the newest twist from any client and ranks none above another
+  (`up.PAD_DRIVES`). A connected gamepad's `padd` sends a stop every 100 ms while nobody touches
+  its sticks, so with a pad connected every walk quackd sends lands between the pad's stops, as
+  it did at the previous read too, and the frames show the pad's stop as well as quackd's twist.
+  The echo holds a walk back whenever enough frames after robotd's answer show only the pad's,
+  and the walk stops and says what robotd showed instead. Neither out-ranks the other, and
+  quackd does not try to. With a pad that was driving gone, `padd` sends nothing and asks robotd
+  to sit the duck about 1 s later. The hardware checklist's step 8 tests the deadman with the pad
+  switched off, since a connected pad's stop would halt the legs before the deadman could, and
+  step 9 runs with the pad on, so the first run on a robot is where it shows how often a pad's
+  stops hold a walk back.
 - The reader takes a line of up to a mebibyte from robotd, sixteen times robotd's own limit for
   a line it reads, and skips a longer one rather than ending the link, because nothing bounds
   what robotd writes and a newer robot's state can only grow. No other line ends the link

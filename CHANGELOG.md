@@ -439,10 +439,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   guide no longer calls every Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011
   carries a dated note on the three rows the re-read overtook, and the 0.4 design note says its
   `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, NOTICE, a line of
-  quackd's or an adapter's source, a `pyproject.toml`, an issue template or a bundled duck that says
-  one of the retired things again, the pad's rank among them, and holds the pages that say what
-  stops a walk to the deadman's 500 ms and `padd`'s 100 ms and 1 s as `upstream_api.py` reads them,
-  and to a re-send shorter than the deadman. Each failed before this change.
+  quackd's or an adapter's source, a `pyproject.toml`, an issue template, a bundled duck or an ADR
+  dated since the re-read that says one of the retired things again, the pad's rank and the pad as
+  the e-stop among them, and holds the pages that say what stops a walk to the deadman's 500 ms and
+  `padd`'s 100 ms and 1 s as `upstream_api.py` reads them, and to a re-send shorter than the
+  deadman. Each failed before this change.
 
 - **Six table rows that lost their last cells to a `|` show them whole.** GitHub splits a table row
   on every `|` that no backslash escapes, inside code spans too, and drops the cells past the

@@ -338,6 +338,10 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "over whatever twist quackd sends",
     "releasing the sticks stops the robot",
     "leaves robotd's deadman to stop the walking",
+    # the pad as the e-stop: its stops land between quackd's twists, not over them, and step 8
+    # of the checklist tests the deadman with the pad switched off
+    "gamepad is the real e-stop",
+    "pad in hand as the e-stop",
     # the simulator's walk: every robotd from daemon-v0.13.0 walks on velstand.onnx, and the
     # simulator runs alpha_walking.onnx, the policy Pollen trained before it
     "on its own walking policy",
@@ -383,6 +387,40 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     assert not stale, (
         "these still describe a real Microduck the way quackd's read before daemon-v0.16.1 did "
         f"(docs/adapters/microduck/README.md has the read): {stale}"
+    )
+
+
+def _adrs_dated_from(day: str) -> list[Path]:
+    """The ADRs whose `**Date:**` is `day` or later, an ISO date compared as one."""
+    found: list[Path] = []
+    for path in sorted((REPO / "docs" / "adr").glob("*.md")):
+        dated = re.search(r"\*\*Date:\*\* (\d{4}-\d{2}-\d{2})", path.read_text(encoding="utf-8"))
+        assert dated, f"docs/adr/{path.name} carries no **Date:**"
+        if dated.group(1) >= day:
+            found.append(path)
+    return found
+
+
+def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() -> None:
+    """The guard above leaves the ADRs out, since each keeps what was true on the day it is dated
+    and correcting it would falsify that. An ADR dated on or after the re-read was written knowing
+    what it found, so it has none of the read before to keep, and is held to the same claims.
+    ADR-0051, which the re-read added, called the echo's hold on a walk the pad's authority and
+    said the hardware checklist asks for the pad in hand as the e-stop, after the checklist had
+    moved step 8 to a pad switched off and every living page had stopped saying the pad out-ranks
+    quackd, and the guard did not look at it. Older ADRs are not read here, so their history
+    stands."""
+    adrs = _adrs_dated_from(up.READ_ON)
+    assert adrs, f"no ADR is dated on or after the re-read of {up.READ_ON}, ADR-0051 among them"
+    stale = [
+        f"docs/adr/{path.name}: {claim!r}"
+        for path in adrs
+        for claim in _RETIRED_MICRODUCK_CLAIMS
+        if claim in " ".join(path.read_text(encoding="utf-8").split())
+    ]
+    assert not stale, (
+        "these ADRs, dated since quackd read robotd at daemon-v0.16.1, still describe a real "
+        f"Microduck the way the read before it did: {stale}"
     )
 
 
