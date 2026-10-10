@@ -119,10 +119,12 @@ class DecisionLLM(Protocol):
     Any name there hands the turn to the model on the gate `refused`, and is never read as a
     low probability or as a question that merely went missing (`stepper._refused`).
 
-    Raising is allowed and is not fatal: `Stepper.advise` catches everything, records the turn
-    as `gate: error` and hands it to the model. A decision LLM may never end a run. The record
-    keeps the exception's type, and its HTTP status where it carries one, and never its
-    message, which can quote what the server sent back.
+    Raising is allowed and is not fatal: `Stepper.advise` catches every `Exception`, records the
+    turn as `gate: error` and hands it to the model. A decision LLM may never end a run. The
+    record keeps the exception's type, and its HTTP status where it carries one, and never its
+    message, which can quote what the server sent back. An interrupt is not an `Exception`, and a
+    second Ctrl-C or a flock's cancel while a request is out ends the run as it would anywhere
+    else, with that turn on the record as `interrupted`.
     """
 
     name: str

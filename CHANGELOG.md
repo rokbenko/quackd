@@ -55,8 +55,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   request ended. OpenAI's SDK and TypeSafe's both drop a connection idle for five seconds, and in
   shadow mode the model's own call and a verb usually take longer than that between two of the
   stepper's requests, so `idle_s` tells a turn that paid for opening a new connection from one that
-  reused one. The catalogue gains a `sees` field, false on every row, `openai` included, because
-  quackd sends a decision LLM text and nothing else. The row has
+  reused one. It is null on the first turn, and on the turn after a request that failed, which
+  may have taken its connection with it or never had one, so no number there claims a connection
+  that was kept warm. The catalogue gains a `sees` field, false on every row, `openai` included,
+  because quackd sends a decision LLM text and nothing else. The row has
   [a page of its own](docs/guides/decision-llms/openai.md), SECURITY.md says where each decision
   LLM's key may go, and the decision-LLM hub, the README, `.env.example`, CONTRIBUTING, the
   architecture page, the SO-101's first run, the local-LLM guide and PLAN.md name it where they name
@@ -135,6 +137,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_decision_llms.py` drives each of those through the stepper, and
   `tests/test_decisions_api_wire.py` sends a NaN and an infinity through the real SDK and reads
   the events file back strictly.
+- **A turn the model takes ends the stepper's run of turns, however it came to be the model's.**
+  The stepper never answers twice running with the same call, nor more turns in a row than its
+  limit, and a turn the model takes starts both counts again. A turn whose call failed, a timeout
+  or a refused connection, went back to the model without doing that, and so did a turn whose
+  state was too large to send and one with nothing on offer. So after a `stop` the stepper took
+  and a turn that timed out, which the model then took, the same confident `stop` was refused as
+  a repeat, and a run of stepper turns broken by a failure reached its limit early. Each of them
+  now ends the stepper's run as every other handover does. None of it moved the body, since it
+  only ever gave the model more turns, but it skewed the gates shadow mode counts.
+  `tests/test_decision.py` has the model take a turn each of those three ways between two
+  identical answers, and breaks a run of two with a failed turn.
+- **A run interrupted while the stepper's request was out has that request on the record.** A
+  second Ctrl-C, or a flock cancelling a member, is not an exception the stepper caught, so the
+  request it cut off, already handed to the decision LLM, was missing from the stepper's count,
+  its seconds and its bill, the loop wrote no `decision` record for it, and the summary written
+  on the way out left it out too. The stepper now counts, times and bills that request as it
+  does one that failed, on a gate of its own, `interrupted`, which `quackd log` draws in yellow
+  with what cut it off, and not among `errors`, because nothing failed and the run ends there.
+  The loop writes the record before the interrupt goes on, as it already did for the model's own
+  call. The stepper also waits for its decision LLM in its own task now, because on Python 3.11
+  `asyncio.wait_for` ran the request in a task of its own, and a Ctrl-C that landed in there left
+  through the event loop at once. `tests/test_decision.py` interrupts a turn both ways, on the
+  stepper and in a run on the mock arm, and finds one record, on `interrupted`, and a summary
+  that counts it.
 
 ### Documentation
 

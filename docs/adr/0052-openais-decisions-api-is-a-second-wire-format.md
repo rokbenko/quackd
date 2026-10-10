@@ -127,9 +127,11 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 - **A failed turn keeps its exception's type and HTTP status, and never its message.** OpenAI's
   SDK puts a 4xx body in the message and TypeSafe's the reply's own, and a reply can quote the
   request, which the record otherwise keeps as a size and a shape. This holds for every row. Each
-  turn that sends a request also records `idle_s`, the seconds since the stepper's previous
-  request ended, because both SDKs drop a connection idle for five seconds and a shadow turn
-  usually waits longer than that between two of the stepper's.
+  turn that hands its questions over also records `idle_s`, the seconds since the stepper's
+  previous request ended, because both SDKs drop a connection idle for five seconds and a shadow
+  turn usually waits longer than that between two of the stepper's. It is null on the first turn
+  and on the one after a request that failed, which may have taken its connection with it, so it
+  never claims a connection was kept warm that may be gone.
 - **The floors do not move.** OpenAI define no `confidence` and claim no calibration, so this row
   inherits all four floors unmeasured, like every other, and shadow mode comes first.
 - **One word, two seams.** `--llm openai` is OpenAI's chat models flying the robot and

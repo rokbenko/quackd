@@ -692,9 +692,11 @@ hold whichever decision LLM answered.
   binds the model, because it binds the executor and both of them go through it.
 
 And one more that is worth saying out loud: **a decision LLM may never end a run by failing.**
-Everything `decide` raises is caught, recorded as a turn with `gate: error`, and handed to the
-model. A server that is not listening, a plugin that throws on import, a timeout at one second:
-all of them cost that turn and none of them costs the run.
+Every `Exception` `decide` raises is caught, recorded as a turn with `gate: error`, and handed to
+the model. A server that is not listening, a plugin that throws on import, a timeout at one
+second: all of them cost that turn and none of them costs the run. An interrupt is not a failure,
+and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
+on the record as `interrupted`.
 
 ## What the record says
 
@@ -704,12 +706,15 @@ Two kinds in `transcript.jsonl`, both described in
 `decision`, one per turn the stepper was asked, **identical in both modes** so the rows can be
 read against each other: the labels it was offered, the one it chose, the whole probability
 distribution, its confidence, the floor that applied, which gate fired, both Noul values, how long
-it took, how large the state was and what was trimmed to fit, and, on the turns that actually
-reached the network, what the question spent, what that cost and `idle_s`, how long since the
-stepper's previous request ended. A turn that ended on `refused` names the questions declined, as
-`refused`. One that ended on `error` names the exception's type, and its HTTP status where it
-carries one, as `error`, and never its message, because an SDK puts the server's reply there and
-a reply can quote the request.
+it took, how large the state was and what was trimmed to fit, and, on the turns that handed their
+questions over, whether or not a server ever had them, what the question spent, what that cost and
+`idle_s`, how long since the stepper's previous request ended. `idle_s` is null on the first turn,
+and on the turn after a request that failed, which may have taken its connection with it. A turn
+that ended on `refused` names the questions declined, as `refused`. One that ended on `error`
+names the exception's type, and its HTTP status where it carries one, as `error`, and never its
+message, because an SDK puts the server's reply there and a reply can quote the request. One that
+ended on `interrupted` is the request a second Ctrl-C or a flock's cancel cut off, named the same
+way, and the run ended with it.
 
 `decision_shadow`, in shadow mode, and in `on` for a turn that offered a `manipulate` it may not
 take, only after that step's `llm` record: what the stepper would have chosen beside what the
@@ -777,7 +782,7 @@ Then, per run directory:
 
 | What | Read | From |
 |---|---|---|
-| **Its real latency** against a robot's state, rather than TypeSafe's own 0.114 s on TypeSafe's own task | mean and max of `latency_s`, with the turns whose `idle_s` is over five seconds read apart from the rest: OpenAI's SDK and TypeSafe's both drop a connection idle that long, so those turns paid for opening a new one | every `{"kind":"decision"}` |
+| **Its real latency** against a robot's state, rather than TypeSafe's own 0.114 s on TypeSafe's own task | mean and max of `latency_s`, with the turns whose `idle_s` is over five seconds read apart from the rest: OpenAI's SDK and TypeSafe's both drop a connection idle that long, so those turns paid for opening a new one. Read the turns whose `idle_s` is null apart too, the first and every one after a request that failed, since each of them may have opened one as well | every `{"kind":"decision"}` |
 | **State size** | `state_chars`, `state_tokens_est`, `trimmed` | every `{"kind":"decision"}` |
 | **Coverage** | how many `gate` values are `taken`, out of all of them | every `{"kind":"decision"}` |
 | **Agreement** | how often `agree` is true, and separately among rows where `would_have_acted` is true | every `{"kind":"decision_shadow"}` |
@@ -916,8 +921,8 @@ of question names under `refused`, beside the answers and read the same way, say
 it declined rather than answered, and any name there hands the turn to the model on the gate
 `refused`.
 
-Raising is allowed and is not fatal. `Stepper.advise` catches everything, records the turn as
-`gate: error`, and hands it to the model. A plugin may never end a run. The record keeps the
+Raising is allowed and is not fatal. `Stepper.advise` catches every `Exception`, records the
+turn as `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps the
 exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
 itself or on its `response`, and never its message, which can quote what the server sent back.
 

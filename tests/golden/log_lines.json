@@ -185,6 +185,12 @@
    "red"
   ]
  ],
+ "decision_interrupted": [
+  [
+   "decide  interrupted by KeyboardInterrupt after 0.37 s, ~640 tok ~$0.000027",
+   "yellow"
+  ]
+ ],
  "decision_billed": [
   [
    "decide  gripper(open=false) 0.93 >= 0.85 (0.11 s, 527 tok $0.000022)",
@@ -791,6 +797,7 @@
   "decide  escalate, to the model (0.19 s)",
   "decide  done, to the model (0.20 s)",
   "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, so the model takes this turn",
+  "decide  interrupted by KeyboardInterrupt after 0.37 s, ~640 tok ~$0.000027",
   "decide  gripper(open=false) 0.93 >= 0.85 (0.11 s, 527 tok $0.000022)",
   "decide? stop 0.04",
   "decide  place 0.62 < 0.85, to the model (0.44 s, ~612 tok ~$0.000026)",

@@ -204,6 +204,24 @@ def events() -> list[tuple[str, LogEvent]]:
             "decision_error",
             _e("decision", 0.3, mode="shadow", latency_s=1.0, error="TypeSafeAPITimeoutError"),
         ),
+        (
+            # The run ended in the middle of the request, which the record names where an
+            # error's type would be. Not an error's line: nothing failed and nobody takes the
+            # turn, and the request had gone out, so its bill rides beside the seconds.
+            "decision_interrupted",
+            _e(
+                "decision",
+                0.3,
+                mode="shadow",
+                latency_s=0.37,
+                idle_s=6.2,
+                gate="interrupted",
+                error="KeyboardInterrupt",
+                usage={"input_tokens": 640, "output_tokens": 0},
+                usage_estimated=True,
+                cost_usd=0.000027,
+            ),
+        ),
         # ── decision: what the question cost, measured and guessed ──
         (
             # The whole argument for a stepper is the ratio between this and the model call it

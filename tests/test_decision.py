@@ -18,7 +18,9 @@ silently, and this is the test that makes somebody say which.
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import itertools
 import json
 import pathlib
 import re
@@ -1789,20 +1791,21 @@ async def test_each_request_says_how_long_since_the_last_one_ended(
     assert second.record["idle_s"] == 7.0, "not measured from when the last request ended"
 
 
-async def test_a_request_that_failed_is_the_last_one_and_a_turn_that_sent_none_is_not(
+async def test_a_failed_request_leaves_no_warm_connection_and_an_unsent_turn_moves_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A request that failed still went out and still left a connection behind it, or closed
-    one, so the next turn is measured from it. A turn that never sent anything, whether its
-    state was too large or its questions could not be built, made no request, carries no
-    `idle_s`, and moves nothing the next one is measured from."""
+    """A request that went out and failed may have taken its connection with it, or never had
+    one: one the stepper's clock cut off is closed unread, and one refused never opened. So the
+    turn after it says `idle_s` null, as the first turn does, rather than a number that reads as
+    a connection kept warm for it, and the turn after that is measured from the request that
+    answered. The failed turn keeps the `idle_s` it started with. A turn that never sent
+    anything, whether its state was too large or its questions could not be built, made no
+    request, carries no `idle_s`, and moves nothing the next one is measured from."""
     clock = _clocked(monkeypatch)
     llm = _Takes(clock, 1.0, {"answers": _answered()})
     stepper, adapter, _m = await _arm(llm=llm)
     obs = await _observation(adapter)
-    llm.fails = True
-    failed = await stepper.advise(obs, cleared=True, budget=BUDGET)
-    llm.fails = False
+    first = await stepper.advise(obs, cleared=True, budget=BUDGET)
     clock.now += 2.0
     goal, stepper.goal = stepper.goal, "x" * 40_000
     too_large = await stepper.advise(obs, cleared=True, budget=BUDGET)
@@ -1812,8 +1815,190 @@ async def test_a_request_that_failed_is_the_last_one_and_a_turn_that_sent_none_i
     stepper.what["report_state"] = described
     clock.now += 3.0
     answered = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    clock.now += 4.0
+    llm.fails = True
+    failed = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    llm.fails = False
+    clock.now += 0.5
+    after = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    clock.now += 6.0
+    again = await stepper.advise(obs, cleared=True, budget=BUDGET)
     await adapter.disconnect()
-    assert failed.gate == "error" and failed.record["idle_s"] is None
+    assert first.record["idle_s"] is None
     assert too_large.gate == "state_too_large" and "idle_s" not in too_large.record
     assert unsent.gate == "error" and "idle_s" not in unsent.record
     assert answered.record["idle_s"] == 5.0, "a turn that sent nothing moved the clock"
+    assert failed.gate == "error" and failed.record["idle_s"] == 4.0
+    assert after.record["idle_s"] is None, "a request that failed was counted as left warm"
+    assert again.record["idle_s"] == 6.0, "not measured from the request that answered"
+
+
+# ── a turn the model takes, and a turn an interrupt cut off ─────────────────────────────
+
+
+class _Answering(_OffTheWire):
+    """Answers each of `choices` in turn, confidently, with every other question answered well
+    enough to take it, and fails while `fails` is set, as a server that hung up does."""
+
+    def __init__(self, *choices: str) -> None:
+        super().__init__({})
+        self.choices = itertools.cycle(choices)
+        self.fails = False
+
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        self.calls.append((dict(state), dict(questions)))
+        if self.fails:
+            raise ConnectionResetError("the server hung up")
+        choice = next(self.choices)
+        return {"answers": _answered(next_verb={"choice": choice, "confidence": 0.99})}
+
+
+@pytest.mark.parametrize("how", ["error", "state_too_large", "not_offered"])
+async def test_a_turn_the_model_took_ends_the_steppers_streak_however_it_came_to_it(
+    how: str,
+) -> None:
+    """The repeat gate refuses the call the stepper made last turn, and a turn the model takes is
+    a turn the stepper made no call on. A failed call used to be one way back to the model that
+    left the stepper's last call standing, so after a `gripper(open=true)` it took and a turn that
+    failed, which the model then took, the same confident answer was refused as a repeat of a
+    call two turns old. The two turns that never ask, a state too large to send and a body with
+    nothing on offer, left it standing the same way."""
+    llm = _Answering("gripper(open=true)")
+    stepper, adapter, _m = await _arm(llm=llm, allow=["gripper"])
+    obs = await _observation(adapter)
+    first = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    assert first.gate == "taken" and stepper.last_call == "gripper(open=true)"
+    if how == "error":
+        llm.fails = True
+        middle = await stepper.advise(obs, cleared=True, budget=BUDGET)
+        llm.fails = False
+    elif how == "state_too_large":
+        goal, stepper.goal = stepper.goal, "x" * 40_000
+        middle = await stepper.advise(obs, cleared=True, budget=BUDGET)
+        stepper.goal = goal
+    else:
+        # before a verdict the gripper is not on offer, and on this allowlist nothing else is
+        middle = await stepper.advise(obs, cleared=False, budget=BUDGET)
+    assert middle.gate == how and middle.call is None
+    assert stepper.last_call is None and stepper.in_a_row == 0
+    again = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    await adapter.disconnect()
+    assert again.gate == "taken", "the call before the model's turn still counted as the last one"
+
+
+async def test_a_run_of_stepper_turns_broken_by_a_failed_one_counts_again_from_nothing() -> None:
+    """The streak limit hands the run back after so many stepper turns in a row, and a failed
+    turn breaks the row: the model takes it. On a budget of four the limit is two, so two turns
+    taken, one failed and one more taken is a stepper that has taken one turn running, not
+    three, and the fourth is not a handover."""
+    llm = _Answering("gripper(open=true)", "gripper(open=false)")
+    stepper, adapter, _m = await _arm(llm=llm, allow=["gripper"])
+    stepper.max_steps = 4
+    assert stepper.streak_limit == 2, "this test is about a limit of two"
+    obs = await _observation(adapter)
+    gates = []
+    for fails in (False, False, True, False):
+        llm.fails = fails
+        gates.append((await stepper.advise(obs, cleared=True, budget=BUDGET)).gate)
+    await adapter.disconnect()
+    assert gates == ["taken", "taken", "error", "taken"]
+    assert stepper.in_a_row == 1
+
+
+class _Interrupted(_OffTheWire):
+    """A decision LLM whose request is out when the run is interrupted. It answers its first
+    `answers` requests, and on the next one it is handed the questions and then either a second
+    Ctrl-C lands (`KeyboardInterrupt`, raised where it is, as the default handler raises it) or
+    the flock cancels the member, and it waits until it is cancelled."""
+
+    def __init__(self, press: type[BaseException], answers: int = 0) -> None:
+        super().__init__({"answers": _answered()})
+        self.press = press
+        self.answers = answers
+        self.handed = asyncio.Event()
+
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        self.calls.append((dict(state), dict(questions)))
+        if self.answers:
+            self.answers -= 1
+            return self.payload
+        self.handed.set()
+        if self.press is KeyboardInterrupt:
+            raise KeyboardInterrupt
+        await asyncio.sleep(30)
+        raise AssertionError("never cancelled")
+
+
+async def _interrupt(press: type[BaseException], llm: _Interrupted, asking: Any) -> None:
+    """Await `asking` until `press` ends it. A Ctrl-C is awaited in this task, because one raised
+    in a task of its own leaves through the event loop and ends the test session; a cancel is a
+    real one, of the task the request is out in, as a flock cancels a member."""
+    if press is KeyboardInterrupt:
+        with pytest.raises(KeyboardInterrupt):
+            await asking
+        return
+    task = asyncio.ensure_future(asking)
+    await asyncio.wait_for(llm.handed.wait(), 30)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.parametrize("press", [KeyboardInterrupt, asyncio.CancelledError])
+async def test_a_turn_an_interrupt_cut_off_is_counted_billed_and_kept_for_the_record(
+    press: type[BaseException],
+) -> None:
+    """A second Ctrl-C or a flock's cancel is not an `Exception`, so it went past every handler a
+    failed call has, and the request it cut off, already handed over, was neither counted, timed
+    nor billed, and left nothing to write down. It is counted and billed now, as a failed one
+    is, on a gate of its own because nothing failed and nobody takes the turn, and not among the
+    errors. The record waits on `cut_off` for the loop, the interrupt goes on as it came, and the
+    request after it claims no connection kept warm."""
+    llm = _Interrupted(press, answers=1)
+    stepper, adapter, _m = await _arm(llm=llm)
+    obs = await _observation(adapter)
+    first = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    assert first.gate == "taken" and stepper.cut_off is None
+    await _interrupt(press, llm, stepper.advise(obs, cleared=True, budget=BUDGET))
+    await adapter.disconnect()
+    cut = stepper.cut_off
+    assert cut is not None and cut.call is None
+    assert cut.gate == "interrupted" and cut.record["error"] == press.__name__
+    assert isinstance(cut.record["idle_s"], float) and cut.record["latency_s"] >= 0
+    assert cut.record["usage_estimated"] is True and cut.record["cost_usd"] > 0
+    block = stepper.summary()
+    assert (block["asked"], block["taken"], block["errors"]) == (2, 1, 0)
+    assert block["cost_usd"] == round(first.record["cost_usd"] + cut.record["cost_usd"], 6)
+    assert stepper.last_request_ended is None
+
+
+def _the_one_run(runs: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The summary and the transcript of the one run under `runs`, for a run that raised rather
+    than returning a result that names its directory."""
+    from quackd.agent.transcript import Transcript
+
+    (written,) = pathlib.Path(runs).rglob("summary.json")
+    summary = json.loads(written.read_text(encoding="utf-8"))
+    return summary, Transcript.read(written.parent / "transcript.jsonl")
+
+
+@pytest.mark.parametrize("press", [KeyboardInterrupt, asyncio.CancelledError])
+async def test_a_run_interrupted_while_the_stepper_waits_has_that_turn_on_the_record(
+    tmp_path: Any, press: type[BaseException]
+) -> None:
+    """End to end, on the arm. The loop wrote the `decision` record only once `advise` returned,
+    so a run a person ended, or a flock cancelled, while the stepper's request was out left no
+    record of that request, and its summary, written on the way out, counted none either. Now
+    there is one record, on `interrupted`, and the summary's decision block is that turn."""
+    llm = _Interrupted(press)
+    await _interrupt(press, llm, _on_run(tmp_path, llm))
+    summary, events = _the_one_run(tmp_path)
+    decisions = [e for e in events if e["kind"] == "decision"]
+    assert len(decisions) == 1, decisions
+    (turn,) = decisions
+    assert turn["gate"] == "interrupted" and turn["error"] == press.__name__
+    block = summary["decision"]
+    assert (block["asked"], block["errors"]) == (1, 0)
+    assert block["cost_usd"] == round(turn["cost_usd"], 6) and block["cost_usd"] > 0
+    assert block["latency_s"] == round(turn["latency_s"], 3)
+    assert summary["outcome"] == "aborted"

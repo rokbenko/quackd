@@ -22,6 +22,7 @@ and `catalogue.py`'s table. Nothing here imports a backend at all.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import json
 import math
@@ -716,8 +717,20 @@ class Stepper:
     the things a shadow run is for."""
     latency_s: float = 0.0
     last_request_ended: float | None = field(default=None, init=False, repr=False)
-    """When this stepper's previous request ended, answered or failed, on `time.perf_counter`'s
-    clock, or None before its first. What each turn's `idle_s` is measured from."""
+    """When this stepper's previous request ended with an answer, on `time.perf_counter`'s clock,
+    or None where no connection can be said to be waiting: before its first request, and after
+    one that went out and failed (`_unanswered` says why). What each turn's `idle_s` is measured
+    from."""
+    cut_off: Advice | None = field(default=None, init=False, repr=False)
+    """The record of the turn an interrupt cut off in the middle of its request, or None.
+
+    A second Ctrl-C or a flock's cancel is not an `Exception`, so it passes through every handler
+    `advise` has for a failed call and ends the run. The request it cut off had been handed over
+    by then, though, and `advise` has already counted it, timed it and billed it, so the summary
+    would count a turn the transcript had no record of. It cannot return that record, because the
+    interrupt has to go on, so it leaves it here, and the loop writes it down on its way out
+    (`loop.py`), as it writes down the model's own call when an interrupt cuts that off. Cleared
+    at the start of every turn, so what is here is never an earlier turn's."""
     price: Price = SELF_HOSTED
     """What a question costs: the preset's published rate, `QUACKD_DECISION_PRICE`, or the
     self-hosted `$0` of a server you run. Always resolved by `factory`; the default here is
@@ -949,6 +962,7 @@ class Stepper:
         notes: str | None = None,
     ) -> Advice:
         """Ask this turn's questions, and say whether the answer is good enough to act on."""
+        self.cut_off = None
         offered = self.labels_for(cleared=cleared)
         record: dict[str, Any] = {
             "mode": self.mode,
@@ -959,8 +973,9 @@ class Stepper:
         if not offered:
             # Nothing on this body is a choice right now, so there is no question to ask and
             # nothing to pay for. A duck whose whole allowlist is continuous never reaches the
-            # network at all.
-            return Advice(None, {**record, "gate": "not_offered", "latency_s": 0.0})
+            # network at all. The model takes the turn, so the stepper's streak ends here, as it
+            # does on every turn the model takes (`_hand_back`).
+            return self._hand_back({**record, "gate": "not_offered", "latency_s": 0.0})
 
         state, dropped = self._build_state(obs, budget=budget, stepped=stepped, notes=notes)
         # Measured on the very text a backend that takes text is sent (`base.state_text`), with
@@ -969,7 +984,7 @@ class Stepper:
         record["state_tokens_est"] = record["state_chars"] // 4
         record["trimmed"] = dropped
         if not _fits(state):
-            return Advice(None, {**record, "gate": "state_too_large", "latency_s": 0.0})
+            return self._hand_back({**record, "gate": "state_too_large", "latency_s": 0.0})
 
         started = time.perf_counter()
         # How long since this stepper's previous request ended, which is how long a connection
@@ -981,17 +996,21 @@ class Stepper:
         # request there usually starts on a new connection and pays for opening it inside the
         # one second it has. That is the difference between a cold turn and a warm one, and
         # `latency_s` alone cannot show it. None on the first request, which has no earlier one
-        # whose connection it could reuse.
+        # whose connection it could reuse, and on the first after a request that failed, whose
+        # connection may have gone with it (`_unanswered`).
         idle = (
             None if self.last_request_ended is None else round(started - self.last_request_ended, 3)
         )
-        # Characters of questions that actually went out, and 0 while nothing has: a turn that
-        # could not build its questions owes nobody anything, and one that timed out after the
-        # request left probably does. The client itself was built before the robot connected, and
-        # so was the answer to the one question OpenAI's SDK would otherwise stop to ask before its
-        # first request, which platform it runs on (`decisions_api.warm_platform`): asked in here
-        # it once took the whole second and the turn with it, before anything was sent. So the
-        # second below is spent on the request rather than on getting ready to send one.
+        # Characters of questions handed to the decision LLM, and 0 while none have been: a turn
+        # that could not build its questions owes nobody anything, and one that timed out after
+        # they were handed over probably does. The client itself was built before the robot
+        # connected, and so was the answer to the one question OpenAI's SDK would otherwise stop to
+        # ask before its first request, which platform it runs on (`decisions_api.warm_platform`):
+        # asked in here it once took the whole second and the turn with it, before anything was
+        # sent. So the second below is spent on the request rather than on getting ready to send
+        # one. Handed over is still not the same as reached: a server that refused the connection
+        # never saw the questions, and from here that cannot be told from one that took them and
+        # then failed, so both are recorded as requests that went out (`_unanswered`).
         sent = 0
         try:
             questions = build_questions(offered, self.what)
@@ -1002,33 +1021,41 @@ class Stepper:
             # timeout with its own meaning, a model in this process has none, and a plugin has
             # whatever its author thought of. A turn that runs out escalates like any other
             # failure, and the record says which.
-            result = await asyncio.wait_for(self.llm.decide(state, questions), TIMEOUT_S)
+            #
+            # In this task, with `asyncio.timeout`, rather than with `asyncio.wait_for`, which on
+            # Python 3.11 runs what it waits on as a task of its own. An interrupt raised in
+            # there, a Ctrl-C that lands while the SDK is busy rather than while the loop is
+            # waiting, left through the event loop at once and reached the handler below only
+            # when the loop was being torn down. In this task it comes up through this frame, as
+            # every other exception does, on 3.11 and 3.12 alike.
+            async with asyncio.timeout(TIMEOUT_S):
+                result = await self.llm.decide(state, questions)
         except Exception as e:
-            ended = time.perf_counter()
+            # A turn with no answer is a turn the model takes, so it ends the run of stepper turns
+            # the way every other handover does (`_hand_back`). It used to return from here
+            # without that, which left the call before it standing as the stepper's last: after a
+            # `stop` the stepper took and a turn that timed out, which the model then took, the
+            # very same confident `stop` was refused as a repeat, and a run of stepper turns
+            # broken by a timeout reached its limit early, counted as if the turn the model took
+            # in between had never broken it.
             self.errors += 1
-            self.asked += 1
-            took = round(ended - started, 3)
-            self.latency_s += took
-            failed = {
-                **record,
-                "gate": "error",
-                "error": _failure(e),
-                "latency_s": took,
-            }
-            if sent:
-                # The request went out, so it is the one the next turn's `idle_s` is measured
-                # from, however it ended. On either SDK one that the timeout above cut off takes
-                # its connection with it, because httpcore2 closes a connection whose answer was
-                # never read to the end (2.12.0, read 2026-10-09), so the request after a timeout
-                # starts on a new one whatever its `idle_s` says.
-                failed["idle_s"] = idle
-                self.last_request_ended = ended
-                # The questions were built and handed over, so the turn is counted as billed.
-                # Nobody publishes whether a call that failed on their side is charged, and
-                # between an estimate that is slightly high and a bill that silently is not
-                # there, the high one is the one nobody is hurt by.
-                failed.update(self._bill(None, record["state_chars"], sent))
-            return Advice(None, failed)
+            return self._hand_back(self._unanswered(record, e, "error", started, idle, sent))
+        except BaseException as e:
+            # A second Ctrl-C, or a flock cancelling its members, arrives here while the request is
+            # out, and is not an `Exception`, so the handler above never saw it. It still ends the
+            # run, and nothing here may stop it, but the request it cut off was as real as any
+            # other: counted, timed and billed like a turn that failed, on a gate of its own,
+            # `interrupted`, since nothing failed and nobody takes the turn. Not among `errors`
+            # either, which count what went wrong with the decision LLM, and a person ending a
+            # run is not that. The record is left on `cut_off` for the loop to write down, as the
+            # loop does for the model's own call (`loop.py`). Building it may not replace the
+            # interrupt with a traceback of its own, so a failure there costs the record and
+            # nothing else, and the interrupt goes on as it came.
+            with contextlib.suppress(Exception):
+                self.cut_off = Advice(
+                    None, self._unanswered(record, e, "interrupted", started, idle, sent)
+                )
+            raise
         ended = time.perf_counter()
         self.last_request_ended = ended
         self.asked += 1
@@ -1172,6 +1199,44 @@ class Stepper:
         self.last_call = None
         self.in_a_row = 0
         return Advice(None, record)
+
+    def _unanswered(
+        self,
+        record: dict[str, Any],
+        error: BaseException,
+        gate: str,
+        started: float,
+        idle: float | None,
+        sent: int,
+    ) -> dict[str, Any]:
+        """The record of a turn whose call never answered, on `gate`, and what that turn counts.
+
+        Asked and timed whatever ended it, because the run waited every one of those seconds.
+        Where its questions had been handed over (`sent`), it is billed as well, and keeps the
+        `idle_s` it started with. Nobody publishes whether a call that failed on their side is
+        charged, and between an estimate that is slightly high and a bill that silently is not
+        there, the high one is the one nobody is hurt by.
+
+        And the request after it claims no connection was waiting for it: `last_request_ended`
+        goes back to None, so the next turn's `idle_s` is null, as the first turn's is. A request
+        that went out and failed may have taken its connection with it or never had one, and from
+        here which it was cannot be told. On either SDK, one that the stepper's own clock cut off
+        takes its connection with it, because httpcore2 closes a connection whose answer was never
+        read to the end (2.12.0, read 2026-10-09), and one refused or reset had none to leave.
+        Counted as the previous request, the turn after a timeout would say how long a connection
+        had sat idle that was already gone, and the hub's reading of `idle_s`, a short one for a
+        reused connection, would take that turn's cost of opening a new one for a warm turn's. A
+        null reads apart from both."""
+        ended = time.perf_counter()
+        self.asked += 1
+        took = round(ended - started, 3)
+        self.latency_s += took
+        failed = {**record, "gate": gate, "error": _failure(error), "latency_s": took}
+        if sent:
+            failed["idle_s"] = idle
+            self.last_request_ended = None
+            failed.update(self._bill(None, record["state_chars"], sent))
+        return failed
 
     def compares(self, advice: Advice) -> bool:
         """Whether the model's answer to this turn is recorded beside the stepper's in

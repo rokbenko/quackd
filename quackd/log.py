@@ -655,6 +655,20 @@ def render_events(
             took += f", {mark}{asked.get('input_tokens', 0)} tok"
             if d.get("cost_usd") is not None:
                 took += f" {mark}{fmt_usd(d['cost_usd'])}"
+        if d.get("gate") == "interrupted":
+            # The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
+            # cancel, which the record names where an error would be named. Read before the
+            # error line, because nobody takes this turn and nothing failed: it is the request
+            # the run was waiting on when it stopped, with what it had cost by then. Yellow with
+            # a warning's mark rather than an error's red, as a declined question is.
+            return [
+                LogLine(
+                    "decide",
+                    f"interrupted by {d.get('error') or 'an interrupt'} after {took}",
+                    "yellow",
+                    mark="warn",
+                )
+            ]
         if d.get("error"):
             return [
                 LogLine(

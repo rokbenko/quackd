@@ -1924,13 +1924,25 @@ class AgentLoop:
                 advice: Advice | None = None
                 stepper_call: ToolCall | None = None
                 if stepper is not None:
-                    advice = await stepper.advise(
-                        obs,
-                        cleared=self.executor.cleared,
-                        budget=self.budget.status(),
-                        stepped=self.stepped,
-                        notes=memory_text,
-                    )
+                    try:
+                        advice = await stepper.advise(
+                            obs,
+                            cleared=self.executor.cleared,
+                            budget=self.budget.status(),
+                            stepped=self.stepped,
+                            notes=memory_text,
+                        )
+                    except BaseException:
+                        # BaseException, as for the model's own call below. The second Ctrl-C
+                        # and a flock's cancel land here too while the stepper's request is out,
+                        # and the stepper has counted, timed and billed that request before
+                        # letting the interrupt go on, so without this record the summary written
+                        # on the way out would count a turn the transcript never mentions. One
+                        # record, on the gate `interrupted`, and then the run ends as it would
+                        # have (`Stepper.cut_off`).
+                        if (cut := stepper.cut_off) is not None:
+                            self._emit("decision", step=self.budget.steps, **cut.event())
+                        raise
                     self._emit("decision", step=self.budget.steps, **advice.event())
                     if cfg.decision == "on":
                         stepper_call = advice.call

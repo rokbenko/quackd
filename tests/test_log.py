@@ -556,6 +556,28 @@ def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() 
     assert bare.body == "refused, to the model (0.40 s)" and bare.mark == "warn"
 
 
+def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handover() -> None:
+    """The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
+    cancel, which the record names where an error's type would be. Nothing failed and nobody
+    takes the turn, so the line says neither: not the red `ERROR` of a failed call and not its
+    `so the model takes this turn`, but what cut it off, after how long, and the bill of a
+    request that had gone out."""
+    data = {
+        "gate": "interrupted",
+        "error": "KeyboardInterrupt",
+        "latency_s": 0.4,
+        "usage": {"input_tokens": 42, "output_tokens": 0},
+        "usage_estimated": True,
+        "cost_usd": 0.0000042,
+    }
+    (line,) = render_events(LogEvent("decision", 0.0, data))
+    assert line.label == "decide" and line.style == "yellow" and line.mark == "warn"
+    assert line.body == "interrupted by KeyboardInterrupt after 0.40 s, ~42 tok ~$0.000004"
+    # a record without the name, which quackd never writes, still says what happened
+    (bare,) = render_events(LogEvent("decision", 0.0, {"gate": "interrupted", "latency_s": 0.1}))
+    assert bare.body == "interrupted by an interrupt after 0.10 s"
+
+
 def test_long_thinking_is_cut_with_a_pointer_to_the_transcript() -> None:
     event = LogEvent("llm", 0.0, {"thinking": "x" * 5000, "tool_calls": [], "usage": {}})
     out = [text for text, _ in render_lines(event, thinking_chars=100)]
