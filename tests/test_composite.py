@@ -581,7 +581,7 @@ async def test_search_scan_counts_the_turns_the_body_says_it_took_when_a_turn_is
         (
             1,
             "ball not found, but the robot's own state confirmed only 1 of the 4 turns sent to "
-            "it (90°), so the scan did not see all the 360° it was meant to",
+            "it (90°), so the scan may not have seen all the 360° it was meant to",
         ),
         (
             0,
@@ -602,6 +602,30 @@ async def test_search_scan_says_not_found_only_of_the_turns_the_body_says_it_too
     ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert not result.ok and result.summary == said, result.summary
+
+
+async def test_a_scan_names_the_one_turn_its_body_did_not_confirm(
+    registry: VerbRegistry,
+) -> None:
+    """One turn is what a slow link's verdict usually lets out before it stops a scan, so the
+    sentence for a body that confirmed none of a single turn is the one a pilot meets most, and
+    it read "confirmed none of the 1 turn sent to it". It names the turn now, whether a refused
+    twist stopped the scan or the scan ran out of turns."""
+    stopped = _Confirming(lambda b: b.stops >= 1, takes=0)  # one turn goes out; the next is refused
+    ex = Executor(registry, stopped, contract=DUCK.frontmatter, detector=_Empty())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
+    assert result.summary == (
+        "search_scan: a twist was refused, so the scan stopped, and the robot's own state did not "
+        f"confirm the turn sent to it, so it may not have turned at all: {REFUSED}"
+    ), result.summary
+    assert result.data["steps"] == 0
+    looked = _Confirming(lambda b: False, takes=0)
+    ex = Executor(registry, looked, contract=DUCK.frontmatter, detector=_Empty())
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 1})
+    assert result.summary == (
+        "ball not found, but the robot's own state did not confirm the turn sent to it, so it may "
+        "not have turned at all and every look may have been at the same view"
+    ), result.summary
 
 
 async def test_search_scan_says_which_turns_before_a_find_the_body_took(

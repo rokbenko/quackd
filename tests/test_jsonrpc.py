@@ -2074,7 +2074,10 @@ async def test_a_scan_over_a_slow_link_stops_when_robotd_takes_no_turn(
     assert summary.startswith("search_scan: a twist was refused, so the scan stopped"), summary
     assert "robotd has not taken robot.move" in summary, summary
     assert result.data["steps"] == 0, "the scan claimed turns robotd never took"
-    claimed = re.search(r"after 0 of|confirmed none of the \d+ turns? sent to it", summary)
+    claimed = re.search(
+        r"after 0 of|confirmed none of the \d+ turns sent to it|did not confirm the turn sent",
+        summary,
+    )
     assert claimed, summary
     step, _ = scan_steps(SearchScanParams(target="ball"), _alpha_lens())
     assert _moves(fake) <= _turn_ticks(step), "a turn went out after the verdict on the first"

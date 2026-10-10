@@ -555,8 +555,14 @@ def _turns_taken(ctx: VerbContext, starts: list[float]) -> int | None:
     return taken
 
 
-def _plural(n: int, one: str, many: str) -> str:
-    return f"{n} {one if n == 1 else many}"
+def _none_confirmed(sent: int) -> str:
+    """Says that a body's own state showed none of the `sent` turns a scan sent it. One turn is
+    named, not counted: the count read "none of the 1 turn sent to it", and one turn is what a slow
+    link's verdict usually lets out before it stops a scan, so that is the sentence a pilot meets
+    most often."""
+    if sent == 1:
+        return "the robot's own state did not confirm the turn sent to it"
+    return f"the robot's own state confirmed none of the {sent} turns sent to it"
 
 
 async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
@@ -630,14 +636,15 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
         return VerbResult.fail(f"{p.target} not found after {steps} steps ({steps * step:.0f}°)")
     if taken == 0:
         return VerbResult.fail(
-            f"{p.target} not found, but the robot's own state confirmed none of the "
-            f"{_plural(steps, 'turn', 'turns')} sent to it, so it may not have turned at all and "
-            "every look may have been at the same view",
+            f"{p.target} not found, but {_none_confirmed(steps)}, so it may not have turned at all "
+            "and every look may have been at the same view",
             steps=0,
         )
+    # "may not have", as for a scan it confirmed none of: a turn the state did not show can still
+    # have been partly made, when robotd held its twist for less than one frame before the stop
     return VerbResult.fail(
         f"{p.target} not found, but the robot's own state confirmed only {taken} of the "
-        f"{steps} turns sent to it ({taken * step:.0f}°), so the scan did not see all the "
+        f"{steps} turns sent to it ({taken * step:.0f}°), so the scan may not have seen all the "
         f"{steps * step:.0f}° it was meant to",
         steps=taken,
     )
@@ -656,10 +663,8 @@ def _scan_stopped(
         turned = made if taken is None else taken
         return f"the scan stopped after {turned} of {steps} turns ({turned * step:.0f}°)", turned
     if taken == 0:
-        sent = _plural(made, "turn", "turns")
         return (
-            f"the scan stopped, and the robot's own state confirmed none of the {sent} sent to "
-            "it, so it may not have turned at all",
+            f"the scan stopped, and {_none_confirmed(made)}, so it may not have turned at all",
             0,
         )
     return (
