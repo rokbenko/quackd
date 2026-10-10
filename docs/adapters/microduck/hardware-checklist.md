@@ -199,14 +199,16 @@ whether it clamped.
 > Abort if the head moves somewhere you did not ask for. The IK is upstream's, and a clamp is
 > expected — an unexpected direction is not.
 
-A robot on `daemon-v0.16.1` or later glances around on its own once it has stood still for two
-seconds with nobody steering its head. After a `gaze`, quackd sends the head where the gaze put it
-again every second, so the head should stay where it was pointed for as long as you watch, and
-`report_state` should show what is held in `extras.gaze_hold`, and about the bearing you asked for
-in `extras.head_yaw_deg`. A `stop` ends the hold, and two seconds later the head may start to look
-around: that is robotd's, not a fault. Pose the head with the gamepad while a gaze is held, and
-quackd should let go of it rather than pull it back, with `extras.gaze_released` saying
-`overridden`.
+A robot on `daemon-v0.16.1` or later glances around on its own once nobody has steered its head
+for two seconds and it has then stood still for two more, about four seconds after the last head
+command, and each spell of glancing fades in rather than jumping. After a `gaze`, quackd sends the
+head where the gaze put it again every second, so the head should stay where it was pointed for as
+long as you watch, and `report_state` should show what is held in `extras.gaze_hold`, and about
+the bearing you asked for in `extras.head_yaw_deg`. A `stop` ends the hold, at most a second after
+the head last went out, so from 3 to 4 s after the stop the head may start to look around, at its
+full size 1.5 s later: that is robotd's, not a fault. Pose the head with the gamepad while a gaze
+is held, and quackd should let go of it rather than pull it back, with `extras.gaze_released`
+saying `overridden`.
 
 > Abort if the head wanders off a gaze while `extras.gaze_hold` says it is held, or if quackd
 > keeps pulling the head back from the gamepad.

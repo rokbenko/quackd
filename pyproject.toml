@@ -84,8 +84,9 @@ all = ["anthropic>=1.0,<2", "openai>=1.66,<4", "google-genai>=1.0,<3"]
 yolo = ["ultralytics>=8.2"]
 live = ["pygame>=2.5"]
 # The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
-# onnxruntime is what runs the robot's own walking policy; the Microduck's meshes and that
-# policy are fetched at run time and never shipped here (docs/reference/licenses.md).
+# onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
+# velstand a stock robot runs; the Microduck's meshes and those policies are fetched at run time
+# and never shipped here (docs/reference/licenses.md).
 mujoco = ["quackd-microduck[mujoco]>=0.17.1,<0.18"]
 microduck = ["quackd-microduck>=0.17.1,<0.18"]
 # Every robot quackd publishes, each with the SDK its real backend needs. The honest "all":

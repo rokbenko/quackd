@@ -171,14 +171,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   WebSocket gateway `microduck:websocket` would talk to is gone from upstream's design, and the
   stub's refusal says so instead of pointing at it. The Microduck page's upstream tables are
   rewritten at the new commit with what robotd has added since: the camera routes `mediad` serves
-  (`GET :8080/frame`, `media.frame`), the idle look-around that moves the head once the duck has
-  been still for two seconds, the pick-up detector, and the `velstand.onnx` walk. The fake robotd in
-  `tests/test_jsonrpc.py` answers as daemon-v0.16.1 does, with its hello, its subscribe answer, its
-  state frame and params that refuse a member robotd does not know, and a run of every verb that
-  reaches the socket leaves it with nothing refused. The tests that hold the page to the commit and
-  the release, the posture labels to the source they are read from, the assumptions to what
-  `upstream_api.py` calls unverified, and the datasheet and `stand_up` to promising no recovery each
-  failed before this change.
+  (`GET :8080/frame`, `media.frame`), the idle look-around that moves the head once nobody has
+  steered it for two seconds and the duck has then stood still for two more, the pick-up detector,
+  and the `velstand.onnx` walk. The fake robotd in `tests/test_jsonrpc.py` answers as daemon-v0.16.1
+  does, with its hello, its subscribe answer, its state frame and params that refuse a member robotd
+  does not know, and a run of every verb that reaches the socket leaves it with nothing refused. The
+  tests that hold the page to the commit and the release, the posture labels to the source they are
+  read from, the assumptions to what `upstream_api.py` calls unverified, and the datasheet and
+  `stand_up` to promising no recovery each failed before this change.
 
 - **A `robot.state` line longer than 64 KiB no longer cuts `microduck:jsonrpc` off from the robot
   without a word.** The reader took asyncio's default line limit, 64 KiB, and a longer line raised
@@ -357,25 +357,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   keeping the old one, keeps a step and a count the caller gave, and finds a ball standing where the
   old step left a wedge, which a scan with the old step does not.
 
-- **The physics simulator fetches its policies at upstream's `v7`, the set a robot on
-  daemon-v0.16.1 is seeded with, and nothing in quackd says a robot stands on `alpha_stand.onnx`
-  any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx` and their
-  manifest from a revision of `pollen-robotics/microduck-policies` older than upstream's `v5`.
-  `v5` added `velstand.onnx`, one network that walks and stands, which every robotd from
-  daemon-v0.13.0 loads with no standing network, so the licences page's nine policies were one
-  short of what a Microduck ships with, and `sim3d/upstream_api.py` said the daemon runs
-  `alpha_stand.onnx` while the twist is small. quackd now fetches at `v7`'s revision, `6677ec0`.
-  The walking and standing files are the same bytes there, so the simulator walks exactly as it
-  did and only the manifest's pinned hash moved. The cache is named after the revision, so the
-  first `microduck:mujoco` run after upgrading fetches the two policies again, 1.6 MB, without
-  being asked. The model stays at `2b25a48`: `microduck_rl`'s `develop` is 36 commits on, and
-  every file quackd fetches from it is the same bytes there. The browser demo fetches from the
-  same revision. The Microduck page names the new read, the licences page counts ten, the
-  hardware checklist's rehearsal says a robot walks on another network than the simulator's, and
-  ADR-0030 carries a dated note beside the nine it was written with. `tests/test_docs.py` holds
-  the physics section to the revisions the simulator fetches, and the licences page to the set it
-  pins, counted off a list in `sim3d/upstream_api.py`. Each failed with its part of this change
-  taken out.
+- **The physics simulator fetches its policies at upstream's `v7`, the set a robot on daemon-v0.16.1
+  is seeded with, and nothing in quackd says a robot walks on `alpha_walking.onnx` or stands on
+  `alpha_stand.onnx` any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx`
+  and their manifest from a revision of `pollen-robotics/microduck-policies` older than upstream's
+  `v5`. `v5` added `velstand.onnx`, one network that walks and stands, which every robotd from
+  daemon-v0.13.0 loads with no standing network, so the licences page's nine policies were one short
+  of what a Microduck ships with, and `sim3d/upstream_api.py` said the daemon runs
+  `alpha_stand.onnx` while the twist is small. quackd now fetches at `v7`'s revision, `6677ec0`. The
+  walking and standing files are the same bytes there, so the simulator walks exactly as it did and
+  only the manifest's pinned hash moved. The cache is named after the revision, so the first
+  `microduck:mujoco` run after upgrading fetches the two policies again, 1.6 MB, without being
+  asked. The model stays at `2b25a48`: `microduck_rl`'s `develop` is 36 commits on, and every file
+  quackd fetches from it is the same bytes there. The browser demo fetches from the same revision.
+  The Microduck page names the new read, the licences page counts ten, the hardware checklist's
+  rehearsal says a robot walks on another network than the simulator's, and ADR-0030 carries a dated
+  note beside the nine it was written with. The README, the FAQ, the MCP guide, the Microduck page,
+  the page on reading robots, the licences page, NOTICE, both `pyproject.toml` comments and the
+  simulator's own docstring called its walk the robot's own, or the one the robot ships with, and
+  name `alpha_walking.onnx` now, which Pollen trained before `velstand.onnx`. `tests/test_docs.py`
+  holds the physics section to the revisions the simulator fetches, and the licences page to the set
+  it pins, counted off a list in `sim3d/upstream_api.py`, and keeps the old words for the
+  simulator's walk out of every living page, NOTICE and the sources it already reads. Each failed
+  with its part of this change taken out.
 
 ### Documentation
 
@@ -417,11 +421,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   since v22, and it names the slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson
   guide no longer calls every Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011
   carries a dated note on the three rows the re-read overtook, and the 0.4 design note says its
-  `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, a line of quackd's
-  or an adapter's source, a `pyproject.toml`, an issue template or a bundled duck that says one of
-  the retired things again, the pad's rank among them, and holds the pages that say what stops a
-  walk to the deadman's 500 ms and `padd`'s 100 ms and 1 s as `upstream_api.py` reads them, and to a
-  re-send shorter than the deadman. Each failed before this change.
+  `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, NOTICE, a line of
+  quackd's or an adapter's source, a `pyproject.toml`, an issue template or a bundled duck that says
+  one of the retired things again, the pad's rank among them, and holds the pages that say what
+  stops a walk to the deadman's 500 ms and `padd`'s 100 ms and 1 s as `upstream_api.py` reads them,
+  and to a re-send shorter than the deadman. Each failed before this change.
 
 ## [0.17.1] — 2026-10-07
 

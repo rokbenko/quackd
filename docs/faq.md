@@ -8,9 +8,10 @@ still the default. `sim2d` starts in a second, needs no network, runs anywhere, 
 three other bodies that have a simulator and every CI sweep use. It tests the *agent loop* —
 search, approach, act, verify — and it will never tell you whether a gait works, because it has no joints
 ([ADR-0007](adr/0007-sim2d-cartoon.md)). `--robot microduck:mujoco` is upstream's own Microduck
-model in MuJoCo, walking on `alpha_walking.onnx`, the policy Pollen trained, at 50 Hz on the
-CPU. The ball rolls, the duck undershoots what you asked for, and a pilot that works there has
-met a robot that does not do what it is told. Same arena, same seeded layout for the duck and
+model in MuJoCo, walking on `alpha_walking.onnx`, a policy Pollen trained before the
+`velstand.onnx` a robot on a current release walks on, at 50 Hz on the CPU. The ball rolls, the
+duck undershoots what you asked for, and a pilot that works there has met a robot that does not
+do what it is told. Same arena, same seeded layout for the duck and
 the ball, same verbs, so a `.duck` written for one runs on the other
 ([ADR-0030](adr/0030-mujoco-physics-backend.md)). One exception, and it is the only one: the
 cartoon stands a person in its arena and the physics world does not, so `follow-me`, whose

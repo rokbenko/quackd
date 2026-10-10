@@ -198,6 +198,33 @@ def _microduck_page(name: str) -> str:
     return " ".join(path.read_text(encoding="utf-8").split())
 
 
+def test_the_microduck_pages_say_when_robotd_glances() -> None:
+    """robotd counts the duck still only once nobody has steered its head for IDLE_AFTER, glances
+    only once it has counted it still for IDLE_AFTER more, and fades a glance in over FADE
+    (`up.IDLE_HEAD`). The Microduck page and the hardware checklist said the first glance came
+    IDLE_AFTER after the last head command, half the real wait, so a tester at step 7 was told to
+    expect one two seconds after a stop, and an `observe` after a stop was said to be exposed
+    sooner than it is. A stop ends the gaze hold no more than GAZE_HOLD_S after the head last went
+    out, so the first glance comes from twice IDLE_AFTER less GAZE_HOLD_S to twice IDLE_AFTER
+    after it, and each of those numbers is worked out here from the ones the code holds."""
+    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+
+    first = 2 * up.IDLE_AFTER_S
+    after_stop = f"from {first - GAZE_HOLD_S:g} to {first:g} s after"
+    page, checklist = _microduck_page("README.md"), _microduck_page("hardware-checklist.md")
+    for said in (
+        f"about {first:g} s after the last `robot.look` or `robot.head`",
+        f"reaching its full size {up.IDLE_FADE_S:g} s later",
+        f"{after_stop} a stop, which ends the hold at most {GAZE_HOLD_S:g} s after the head",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+    for said in (
+        f"{after_stop} the stop the head may start to look around",
+        f"at its full size {up.IDLE_FADE_S:g} s later",
+    ):
+        assert said in checklist, f"the hardware checklist does not say {said!r}"
+
+
 def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
     """robotd keeps one twist, the newest from any client, and ranks none above another. `padd`
     re-sends its stop every HEARTBEAT while a pad's sticks are still and asks robotd to sit the
@@ -249,6 +276,22 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
         assert said in page, f"the Microduck page does not say {said!r}"
 
 
+def test_the_microduck_page_names_each_field_it_reads_that_the_floor_lacks() -> None:
+    """quackd reads two of the fields robotd added after `up.API_FLOOR`: `safety.picked_up`, for
+    whether somebody holds the duck, and `frames`, for where the camera points. The page said it
+    read one, `safety.picked_up`, a sentence written before the gaze hold began reading `frames`,
+    so a reader learned that only pick-up detection rests on a field a robotd at the floor lacks,
+    when `extras.head_yaw_deg` and `head_pitch_deg` do too. The fields are the refs' own names,
+    and the floor's ref names both."""
+    fields = (up.SAFETY_PICKED_UP.name, up.STATE_FRAMES.name.rsplit(".", 1)[1])
+    page = _microduck_page("README.md")
+    intro = page.split(" ## Upstream API ", 1)[1].split(" ### ", 1)[0]
+    said = f"of which quackd reads {_NUMBER_WORDS[len(fields)]}: `{fields[0]}`"
+    assert said in intro, f"the Microduck page's Upstream API section does not say {said!r}"
+    assert f"and `{fields[1]}`, where the camera points" in intro
+    assert all(field in up.API_FLOOR.note for field in fields), up.API_FLOOR.note
+
+
 #: What the pages said about a real Microduck before quackd read robotd again at daemon-v0.16.1,
 #: in the words they said it in. The re-read falsified each one, and a page reverted to any of
 #: them would read as current.
@@ -282,6 +325,14 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "over whatever twist quackd sends",
     "releasing the sticks stops the robot",
     "leaves robotd's deadman to stop the walking",
+    # the simulator's walk: every robotd from daemon-v0.13.0 walks on velstand.onnx, and the
+    # simulator runs alpha_walking.onnx, the policy Pollen trained before it
+    "on its own walking policy",
+    "the walking policy the robot ships with",
+    "the walking policy Pollen trained for it",
+    "the robot's own walking policy",
+    "what runs the robot's own policy",
+    "the Microduck's own model and walking policy",
     # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
     "hot-swapped over the socket (not designed yet)",
 )
@@ -292,14 +343,17 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     said what the read before it had: an account to ssh in as that was quackd's guess, API v23,
     WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
     posture as an assumption, a robotd that gets a fallen duck up, a gamepad that out-ranks
-    quackd, where robotd walks on the newest twist from either, and no way to swap a policy over
-    the socket. Each was spelled its own way, and a revert of any one reads as current, so the
-    old spellings are kept out of every living page and of everything else a person reads: the
-    CLI's and the adapters' strings, the pyproject comments, the issue templates and the bundled
-    ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them, dated, as history.
-    Whitespace is collapsed first, so a revert that was reflowed on its way back is caught too."""
+    quackd, where robotd walks on the newest twist from either, a simulator walking on the
+    robot's own policy, which every robotd from daemon-v0.13.0 replaced, and no way to swap a
+    policy over the socket. Each was spelled its own way, and a revert of any one reads as
+    current, so the old spellings are kept out of every living page and of everything else a
+    person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
+    templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
+    dated, as history. Whitespace is collapsed first, so a revert that was reflowed on its way
+    back is caught too."""
     sources = [
         *_living_docs(),
+        REPO / "NOTICE",
         REPO / "pyproject.toml",
         *sorted((REPO / "adapters").glob("*/pyproject.toml")),
         *sorted((REPO / "quackd").rglob("*.py")),
