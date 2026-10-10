@@ -2145,11 +2145,12 @@ async def _nothing_more_goes_out(t: JsonRpcUnixTransport, fake: FakeRobotd) -> N
 async def test_a_gaze_is_sent_again_until_something_ends_it(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:
-    """Since daemon-v0.16.1 robotd glances around on its own two seconds after anybody last
-    steered the head (`up.IDLE_HEAD`), so one `robot.look` no longer holds a gaze, and a pilot's
-    `observe` after its `gaze` could be taken from a head looking somewhere else. The head the
-    look answered with goes back as `robot.head`, as upstream says to, at half robotd's wait,
-    and the state says what is held."""
+    """Since daemon-v0.16.1 robotd glances around on its own once two seconds have passed since
+    anybody last steered the head and it has then counted the duck still for two more
+    (`up.IDLE_HEAD`), so one `robot.look` no longer holds a gaze, and a pilot's `observe` after
+    its `gaze` could be taken from a head looking somewhere else. The head the look answered with
+    goes back as `robot.head`, as upstream says to, at half robotd's wait, and the state says
+    what is held."""
     assert JsonRpcUnixTransport().gaze_hold_s == GAZE_HOLD_S == up.IDLE_AFTER_S / 2
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
     await t.connect()

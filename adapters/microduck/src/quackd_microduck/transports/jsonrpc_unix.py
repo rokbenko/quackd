@@ -47,7 +47,8 @@ is at the other end of an ssh tunnel:
   that reads them.
 - **A gaze is held until something says to let go, and never against anyone.** Since
   daemon-v0.16.1 robotd glances around on its own once nobody has steered the head for two
-  seconds (`up.IDLE_HEAD`), so a `robot.look` no longer keeps the camera where it pointed it.
+  seconds and it has then counted the duck still for two more (`up.IDLE_HEAD`), so a
+  `robot.look` no longer keeps the camera where it pointed it.
   The head a look answered with goes out again every `GAZE_HOLD_S`, as upstream says to, and
   nothing goes out while the duck is not standing or sitting. There is one hold at most, the
   newest look's. It ends on a stop, on the next look, on a link that fails, and on
@@ -249,9 +250,10 @@ def _id_of(value: Any) -> int | None:
 
 
 #: How often a held gaze goes out again (`_hold_gaze`): half of robotd's IDLE_AFTER, the wait
-#: since the last head command after which it starts to glance (`up.IDLE_HEAD`), so a re-send
-#: that a tunnel holds up for as long again as a whole period still lands before robotd decides
-#: that nobody is steering the head.
+#: since the last head command after which it counts the duck still (`up.IDLE_HEAD`), so a
+#: re-send that a tunnel holds up for as long again as a whole period still lands before robotd
+#: decides that nobody is steering the head. It glances only once it has counted the duck still
+#: for IDLE_AFTER more, so a late re-send has that much more again before the head moves.
 GAZE_HOLD_S = up.IDLE_AFTER_S / 2
 
 Head = tuple[float, float, float, float]
@@ -1829,9 +1831,10 @@ class JsonRpcUnixTransport:
         `LookResult.head` is "What was handed to the same path `robot.head` feeds — resend these
         to hold the gaze" (`up.ROBOT_LOOK`), and since daemon-v0.16.1 that is no longer a
         nicety: robotd glances around on its own once nobody has commanded the head for two
-        seconds (`up.IDLE_HEAD`). A gaze used to be one look, so a pilot's `observe` a few
-        seconds after `gaze` could be taken from a head glancing up to 0.6 rad of yaw away from
-        where it was pointed, and report bearings off by as much.
+        seconds and it has then counted the duck still for two more (`up.IDLE_HEAD`). A gaze
+        used to be one look, so a pilot's `observe` a few seconds after `gaze` could be taken
+        from a head glancing up to 0.6 rad of yaw away from where it was pointed, and report
+        bearings off by as much.
 
         Nothing goes out while the duck reads as anything but standing or sitting: in somebody's
         hands, limp, fallen, halfway through a skill, on a label quackd has not read, or with no

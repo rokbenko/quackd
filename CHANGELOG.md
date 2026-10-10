@@ -208,34 +208,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **A Microduck's gaze holds against robotd's idle look-around, its state says where the camera
   points, and `go_to` and `search_scan` no longer act on a glancing head.** Since daemon-v0.16.1
-  robotd glances around on its own once the duck has stood still for two seconds with nobody
-  steering its head, up to 0.6 rad of yaw, and lets go of a glance by fading it out over 1.5 s. A
-  `gaze` was one `robot.look`, so the head wandered off it two seconds later, and an `observe` after
-  it could report bearings off by as much. `microduck:jsonrpc` now sends the head a look answered
-  with again as `robot.head` every second, as upstream's own doc for that answer says to, and the
-  state says what is held as `extras.gaze_hold`. Nothing goes out while the duck reads as anything
-  but standing or sitting, so a duck somebody holds, a limp or a fallen one and one halfway through
-  a skill get no head command, and the hold takes up again once the duck stands. A head somebody
-  turned while it waited, as a gamepad centres the head when its head mode ends, is let be rather
-  than turned back, unless the duck lay fallen for longer than robotd's two-second wait, after which
-  a glance of robotd's own cannot be told from it. There is one hold at most, the newest look's. A
-  stop ends it before the stop itself goes out, and so do the next look, a link that fails and the
-  end of the connection, and a look still waiting on robotd's answer when one of them comes starts
-  none. When `robot.state.head` moves away from the held head or stays off it, which is another
-  client steering it, a gamepad posing the head among them, the hold lets go rather than pull the
-  head back every second, and `extras.gaze_released` says `overridden`. On a robotd from API 41, the
-  first release that glances, `go_to` and `search_scan` wait 1.5 s after centring the head, with
-  nothing sent that moves the duck, before the first frame they act on. The state also says where
-  the camera points, as `extras.head_yaw_deg` and `head_pitch_deg`, positive left and up, read off
-  `frames.camera`, or the yaw off the head_yaw joint on a robotd without `frames`. A flock member
-  adds that yaw to a camera bearing to get one from the body, so on a real Microduck it now places
-  what it sees where the head was turned, where it used to take the camera for looking straight
-  ahead. `tests/test_jsonrpc.py` holds a gaze against a fake robotd and ends it each way it ends,
-  sends two looks at once and stops or closes while a look waits on its answer, pauses it for each
-  posture that pauses it, lets go of a head another client steers or holds still and of one turned
-  while the hold waited, but not of one robotd is still smoothing in or fading a glance off, nor of
-  one after a fall too long to rule a glance out, reads the camera's yaw and pitch off
-  `frames.camera` and the yaw off the joint, and times `go_to` against the fade, and
+  robotd glances around on its own once nobody has steered the duck's head for two seconds and it
+  has then stood still for two more, up to 0.6 rad of yaw, and lets go of a glance by fading it out
+  over 1.5 s. A `gaze` was one `robot.look`, so the head began to wander off it four seconds later,
+  and an `observe` after it could report bearings off by as much. `microduck:jsonrpc` now sends the
+  head a look answered with again as `robot.head` every second, as upstream's own doc for that
+  answer says to, and the state says what is held as `extras.gaze_hold`. Nothing goes out while the
+  duck reads as anything but standing or sitting, so a duck somebody holds, a limp or a fallen one
+  and one halfway through a skill get no head command, and the hold takes up again once the duck
+  stands. A head somebody turned while it waited, as a gamepad centres the head when its head mode
+  ends, is let be rather than turned back, unless the duck lay fallen for longer than robotd's
+  two-second wait, after which a glance of robotd's own cannot be told from it. There is one hold at
+  most, the newest look's. A stop ends it before the stop itself goes out, and so do the next look,
+  a link that fails and the end of the connection, and a look still waiting on robotd's answer when
+  one of them comes starts none. When `robot.state.head` moves away from the held head or stays off
+  it, which is another client steering it, a gamepad posing the head among them, the hold lets go
+  rather than pull the head back every second, and `extras.gaze_released` says `overridden`. On a
+  robotd from API 41, the first release that glances, `go_to` and `search_scan` wait 1.5 s after
+  centring the head, with nothing sent that moves the duck, before the first frame they act on. The
+  state also says where the camera points, as `extras.head_yaw_deg` and `head_pitch_deg`, positive
+  left and up, read off `frames.camera`, or the yaw off the head_yaw joint on a robotd without
+  `frames`. A flock member adds that yaw to a camera bearing to get one from the body, so on a real
+  Microduck it now places what it sees where the head was turned, where it used to take the camera
+  for looking straight ahead. `tests/test_jsonrpc.py` holds a gaze against a fake robotd and ends it
+  each way it ends, sends two looks at once and stops or closes while a look waits on its answer,
+  pauses it for each posture that pauses it, lets go of a head another client steers or holds still
+  and of one turned while the hold waited, but not of one robotd is still smoothing in or fading a
+  glance off, nor of one after a fall too long to rule a glance out, reads the camera's yaw and
+  pitch off `frames.camera` and the yaw off the joint, and times `go_to` against the fade, and
   `tests/test_composite.py` holds both verbs to the wait. Each of them failed with its part of this
   change taken out.
 

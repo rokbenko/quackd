@@ -34,8 +34,9 @@ Upstream's own rule for the number is "A bump promises nothing in either directi
 robotd has also changed what it does without changing a shape. A stock robot walks and stands
 on one network, `velstand.onnx` (VELSTAND), and with no standing network to hand a fall back
 to, `limp_fall` is off, so a fall changes nothing in robotd. The duck looks around on its own
-once it is still and nobody has steered its head for two seconds (IDLE_HEAD), and a pick-up
-detector pauses the policy while somebody holds it (SAFETY_PICKED_UP).
+once nobody has steered its head for two seconds and it has then stood still for two more
+(IDLE_HEAD), and a pick-up detector pauses the policy while somebody holds it
+(SAFETY_PICKED_UP).
 
 Nothing here has been run against a physical Microduck.
 """
@@ -440,22 +441,25 @@ IDLE_HEAD = UpstreamRef(
     "VERIFIED",
     src("robotd/src/idle_head.rs", 26),
     "New in daemon-v0.16.1, the first release with it, on API 41; daemon-v0.16.0, on API 39, "
-    "has none, and the commit that brought it to upstream's main was still on API 39. Once the "
-    "policy has the robot, nothing asks it to move, nobody has commanded the head for "
-    "IDLE_AFTER (2 s), and it is not falling, held, singing or running a skill "
-    "(robotd/src/main.rs:3071-3078), robotd glances around on top of the commanded head, up to "
-    "0.6 rad of yaw and 0.2 rad of pitch, fading in and out over FADE (1.5 s) 'so it never "
-    "jumps' (idle_head.rs:16-17). A robot.look or robot.head from anyone resets the wait, 'so a "
-    "client steering the head is never fought' (robotd/src/intents.rs:247-248), and only for "
-    "as long as it keeps steering. So quackd holds a gaze: after a robot.look it sends "
-    "LookResult.head again as robot.head every GAZE_HOLD_S, half of IDLE_AFTER, until a stop, "
-    "the next look, another client steering the head, a link that fails or the end of the "
-    "connection. And go_to and search_scan wait FADE after centring the head, before the first "
-    "frame they steer on, since a glance that was under way when the look arrived takes that "
-    "long to fade out.",
+    "has none, and the commit that brought it to upstream's main was still on API 39. robotd "
+    "counts the duck still once the policy has the robot, nothing asks it to move, nobody has "
+    "commanded the head for IDLE_AFTER (2 s), and it is not falling, held, singing or running a "
+    "skill (robotd/src/main.rs:3071-3078), and once it has counted it still for IDLE_AFTER more "
+    "(idle_head.rs:118-120), so no sooner than twice IDLE_AFTER after the last head command, it "
+    "glances around on top of the commanded head, up to 0.6 rad of yaw and 0.2 rad of pitch, "
+    "fading in and out over FADE (1.5 s) 'so it never jumps' (idle_head.rs:16-17). A robot.look or "
+    "robot.head from anyone resets the wait, 'so a client steering the head is never fought' "
+    "(robotd/src/intents.rs:247-248), and only for as long as it keeps steering. So quackd holds a "
+    "gaze: after a robot.look it sends LookResult.head again as robot.head every GAZE_HOLD_S, half "
+    "of IDLE_AFTER, until a stop, the next look, another client steering the head, a link that "
+    "fails or the end of the connection. And go_to and search_scan wait FADE after centring the "
+    "head, before the first frame they steer on, since a glance that was under way when the look "
+    "arrived takes that long to fade out.",
 )
-#: The idle look-around in numbers (IDLE_HEAD): robotd starts it once nobody has commanded the
-#: head for IDLE_AFTER (robotd/src/idle_head.rs:26), and fades it in or out over FADE (:29).
+#: The idle look-around in numbers (IDLE_HEAD): robotd counts the duck still only once nobody
+#: has commanded the head for IDLE_AFTER (robotd/src/main.rs:3076), starts the look-around once
+#: it has counted it still for IDLE_AFTER more (robotd/src/idle_head.rs:26 and :118-120), and
+#: fades it in or out over FADE (:29).
 IDLE_AFTER_S = 2.0
 IDLE_FADE_S = 1.5
 #: The API version the first release with the idle look-around reports, daemon-v0.16.1's. A
