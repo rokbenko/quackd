@@ -227,7 +227,8 @@ def test_the_microduck_pages_say_when_robotd_glances() -> None:
     for said in (
         f"about {first:g} s after the last `robot.look` or `robot.head`",
         f"reaching its full size {up.IDLE_FADE_S:g} s later",
-        f"{after_stop} a stop, which ends the hold at most {GAZE_HOLD_S:g} s after the head",
+        f"once {first - GAZE_HOLD_S:g} to {first:g} s have passed since a stop, which ends the "
+        f"hold at most {GAZE_HOLD_S:g} s after the head",
     ):
         assert said in page, f"the Microduck page does not say {said!r}"
     for said in (
@@ -272,7 +273,7 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
     checklist = _microduck_page("hardware-checklist.md")
     for said in (
         "## 8. Pull the tunnel out, mid-walk, with the pad switched off",
-        f"its stop halts the legs {ms(up.PAD_HEARTBEAT_S)} after quackd's last twist",
+        f"its stop halts the legs within {ms(up.PAD_HEARTBEAT_S)} of quackd's last twist",
         f"ask robotd to sit the duck {up.PAD_LOST_SIT_S:g} s later",
         f"{up.DEADMAN_S:g} s after the last one `robotd`'s deadman zeroes the velocity",
     ):

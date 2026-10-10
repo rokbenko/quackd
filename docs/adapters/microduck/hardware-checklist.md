@@ -217,7 +217,7 @@ saying `overridden`.
 
 **Feet still off the ground, and no pad connected.** A connected pad sends robotd a stop every
 100 ms while nobody touches it, and robotd keeps the newest twist, so with a pad on, its stop
-halts the legs 100 ms after quackd's last twist whether or not the deadman works, and this step
+halts the legs within 100 ms of quackd's last twist whether or not the deadman works, and this step
 would prove nothing about the deadman. Switch the pad off, and expect `padd` to ask robotd to sit
 the duck 1 s later, as it does whenever a pad that was driving goes. In an ssh session of its
 own, not the tunnel, check that `robotctl pad status` says `padd` is not driving, stand the duck
