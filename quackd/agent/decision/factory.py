@@ -230,6 +230,38 @@ def resolve_decision_model(spec: DecisionSpec, model: str | None = None) -> str 
     return spec.model
 
 
+def sends_key(spec: DecisionSpec, url: str | None = None) -> bool:
+    """Whether a run of this row at this address sends its vendor's key, which is the one rule
+    behind two answers: whether the key is wanted (`decision_llm_is_available`) and whether a
+    turn is costed at the vendor's rate (`resolve_decision_price`). Each client decides what it
+    sends for itself, and this says what each decides, so that neither answer can drift from
+    what actually leaves the machine.
+
+    - A row with no key variable sends none, anywhere.
+    - `openai` sends `OPENAI_API_KEY` to OpenAI's own API and nowhere else
+      (`decisions_api.is_openai_host`), so at any other address it is a server of your own.
+    - A keyed System One row sends its key only to the address its SDK owns, which is the row
+      reached with no address at all: `systemone.SystemOneLLM` hands one it was given an address
+      the word instead, because `--decision-llm jev --decision-url http://127.0.0.1:8009` is
+      Jev's model id at a server you run, and a company's key has no business there.
+    - A plugin's key variable is taken at its word, because what a plugin's client sends is its
+      own affair, and it is wanted wherever the run is.
+
+    `url` is the address the run was given, read the way every other rule here reads it
+    (`resolve_decision_url`), so `QUACKD_DECISION_URL` moves none of these rows: they are the
+    ones it is never read for."""
+    if spec.key_env is None:
+        return False
+    address = resolve_decision_url(spec, url)
+    if spec.backend == DECISIONS_API:
+        from quackd.agent.decision.decisions_api import is_openai_host
+
+        return is_openai_host(address or "")
+    if spec.backend == SYSTEM_ONE:
+        return not address
+    return True
+
+
 def resolve_decision_price(spec: DecisionSpec, url: str | None = None) -> Price:
     """What one question is costed at: `QUACKD_DECISION_PRICE`, then the row's published rate,
     then the self-hosted rate.
@@ -239,21 +271,19 @@ def resolve_decision_price(spec: DecisionSpec, url: str | None = None) -> Price:
     for "there is a rate and nobody here knows it". A paid endpoint behind `local` is the
     exception, and `QUACKD_DECISION_PRICE` is how you say so.
 
-    `url` is the address the run was given, and it matters for one row. `openai` at an address
-    that is not OpenAI's is a server of your own that speaks the same format, sent the word
-    rather than the key, and a server of your own is costed as one rather than at OpenAI's
-    rate. At OpenAI's regional hosts it is OpenAI's rate, because that is the only one they
-    publish for this endpoint.
+    `url` is the address the run was given, and it matters for the two rows with a published
+    rate. Each is its vendor's only where its vendor's key goes (`sends_key`). Anywhere else it
+    is a server of your own answering the same format, sent the word rather than the key: `jev`
+    at a `--decision-url`, and `openai` at an address that is not OpenAI's. A server of your own
+    is costed as one rather than at a rate it never bills. At OpenAI's regional hosts it is
+    OpenAI's rate, because that is the only one they publish for this endpoint.
     """
     text = os.environ.get(PRICE_ENV)
     if text is not None and text.strip():
         return parse_price(text, source=PRICE_ENV)
-    if spec.backend == DECISIONS_API:
-        from quackd.agent.decision.decisions_api import is_openai_host
-
-        if not is_openai_host(resolve_decision_url(spec, url) or ""):
-            return SELF_HOSTED
-    return spec.price if spec.price is not None else SELF_HOSTED
+    if spec.price is None or not sends_key(spec, url):
+        return SELF_HOSTED
+    return spec.price
 
 
 def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tuple[bool, str]:
@@ -264,12 +294,12 @@ def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tup
     the pilot either way. What is not asked here is whether a server is actually listening --
     that is a turn's problem, and a turn that cannot reach one escalates.
 
-    `url` is the address the run was given, and it matters for one row. `openai` wants
-    `OPENAI_API_KEY` only where the key would be sent, which is OpenAI's own API: at a server of
-    your own it is sent the word instead, and a run there must not be switched off for want of
-    a key it was never going to send. It is also the row whose SDK can be installed and still
-    lack the client, so that is asked too (`decisions_api.client_problem`), and comes out as the
-    same sentence as a missing one rather than as a traceback.
+    `url` is the address the run was given, and it matters for the keyed rows: a key is wanted
+    only where it would be sent (`sends_key`). At a server of your own a keyed row is sent the
+    word instead, and a run there must not be switched off for want of a key it was never going
+    to send. `openai` is also the row whose SDK can be installed and still lack the client, so
+    that is asked too (`decisions_api.client_problem`), and comes out as the same sentence as a
+    missing one rather than as a traceback.
     """
     if spec.sdk is not None:
         try:
@@ -277,15 +307,11 @@ def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tup
         except Exception:
             return False, str(DecisionNotInstalled(spec.name, spec.extra or spec.name))
     if spec.backend == DECISIONS_API:
-        from quackd.agent.decision.decisions_api import client_problem, is_openai_host
+        from quackd.agent.decision.decisions_api import client_problem
 
         if (problem := client_problem(spec)) is not None:
             return False, problem
-        address = resolve_decision_url(spec, url) or ""
-        if spec.key_env and is_openai_host(address) and not os.environ.get(spec.key_env):
-            return False, str(DecisionMissingKey(spec.name, spec.key_env))
-        return True, ""
-    if spec.key_env and not os.environ.get(spec.key_env):
+    if spec.key_env and sends_key(spec, url) and not os.environ.get(spec.key_env):
         return False, str(DecisionMissingKey(spec.name, spec.key_env))
     return True, ""
 

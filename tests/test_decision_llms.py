@@ -754,6 +754,97 @@ def test_a_hosted_row_at_an_address_you_typed_is_a_server_you_run(
     assert fake.api_key == "local"
 
 
+def test_a_hosted_row_at_an_address_you_typed_needs_no_key_and_is_costed_as_yours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sent the word rather than `TYPESAFE_API_KEY` at a `--decision-url` (the test above), so a
+    run there was switched off for want of a key it would never send, and with the key set its
+    turns were costed at TypeSafe's rate for a server on the bench. The rule `openai` keeps at an
+    address that is not OpenAI's, now kept by both, because one rule (`factory.sends_key`)
+    answers both questions for every row."""
+    fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    jev, url = PRESETS["jev"], "http://127.0.0.1:8009"
+    assert decision_llm_is_available(jev, url=url) == (True, "")
+    price = resolve_decision_price(jev, url=url)
+    assert (price.input, price.output, price.source) == (0.0, 0.0, "self-hosted")
+    ok, why = decision_llm_is_available(jev)
+    assert not ok and "TYPESAFE_API_KEY" in why, "with no address it is TypeSafe's, and wants it"
+    assert resolve_decision_price(jev) == jev.price
+
+
+def test_a_run_of_jev_at_an_address_you_typed_keeps_its_stepper_without_the_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command line's end of the rule above. No TypeSafe key here, `--decision-url` on the
+    line, and the run used to say "running without it: --decision-llm jev needs
+    TYPESAFE_API_KEY" and drop the stepper. It keeps it now, sends the word, and records the
+    self-hosted rate. Empty rather than deleted, because an empty variable survives the `.env`
+    the CLI loads."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    fake = fake_systemone.install(
+        monkeypatch, fake_systemone.FakeDecisionLLM(answers=fake_systemone.turn("stop"))
+    )
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "lerobot-lookout",
+            "--robot",
+            "lerobot:mock",
+            "--llm",
+            "fake",
+            "--decision-llm",
+            "jev",
+            "--decision-url",
+            "http://127.0.0.1:9",
+            "--decision-mode",
+            "shadow",
+            "--no-log",
+            "--runs-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "running without it" not in result.output
+    assert fake.api_key == "local" and fake.calls, "the stepper was not asked"
+    (run_dir,) = tmp_path.iterdir()
+    records = [
+        json.loads(line)
+        for line in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    start = next(r for r in records if r.get("kind") == "run_start")
+    assert start["decision_price"]["source"] == "self-hosted"
+
+
+@pytest.mark.parametrize("url", [None, "http://127.0.0.1:8009"], ids=["no address", "an address"])
+@pytest.mark.parametrize("name", ["jev", "kev", "laya"])
+def test_the_rule_for_the_key_is_what_the_client_sends(
+    name: str, url: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`factory.sends_key` answers before any client exists, for the availability check and the
+    price, and each client decides what it sends for itself. Held to each other here, so the two
+    cannot drift: a System One client that sends its key hands the SDK nothing and lets it read
+    the variable, and one that does not hands it the word. `openai`'s half is in
+    `tests/test_decisions_api.py`, beside the hosts."""
+    fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    fake_laya.install(monkeypatch, fake_laya.FakeRouter())
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-hosted-and-private")
+    monkeypatch.setenv(factory.ENV_URL, "")
+    spec = PRESETS[name]
+    make_decision_llm(spec, url=url)
+    if spec.backend == SYSTEM_ONE:
+        assert (fake.api_key is None) is factory.sends_key(spec, url)
+    else:
+        assert factory.sends_key(spec, url) is False, "nothing in this process takes a key"
+
+
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_a_blank_address_is_a_shell_saying_unset(
     blank: str, monkeypatch: pytest.MonkeyPatch

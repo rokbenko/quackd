@@ -77,10 +77,13 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
   behind the probability, and say the right thresholds are domain-specific.
 
 > [!WARNING]
-> **`--decision-url` on this row changes what is sent as well as where it goes.** A keyed row
-> reached at an address somebody typed is no longer the hosted service, so `systemone.py` sends
-> the word `local` instead of the key: posting a company's API key to whatever is listening on
-> `http://127.0.0.1:8009` is the thing `SECURITY.md` says must not happen.
+> **`--decision-url` on this row changes what is sent and what it costs as well as where it
+> goes.** A keyed row reached at an address somebody typed is no longer the hosted service, so
+> `systemone.py` sends the word `local` instead of the key: posting a company's API key to
+> whatever is listening on `http://127.0.0.1:8009` is the thing `SECURITY.md` says must not
+> happen. So a run there wants no `TYPESAFE_API_KEY` and keeps its stepper without one, and its
+> turns are costed at the self-hosted $0 rather than TypeSafe's rate, the same rule `openai`
+> keeps at an address that is not OpenAI's. `QUACKD_DECISION_PRICE` is how you say otherwise.
 
 ## VERIFIED (read from its README and source on 2026-09-22, typesafe-sdk 0.7.1)
 

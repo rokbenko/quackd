@@ -789,13 +789,14 @@ Then, per run directory:
 **quackd prices a stepper turn now, and marks the ones it had to guess at.** TypeSafe publish Jev
 at **$0.042 per million input tokens, with output not charged**
 ([models](https://docs.typesafe.ai/models), re-read 2026-09-21), and that is the rate a `jev` turn
-is costed at unless `QUACKD_DECISION_PRICE` says otherwise. OpenAI publish their Decisions API at
-**$0.10 per million input tokens, with nothing charged for output**
+with no `--decision-url` is costed at unless `QUACKD_DECISION_PRICE` says otherwise. OpenAI
+publish their Decisions API at **$0.10 per million input tokens, with nothing charged for output**
 ([their guide](https://developers.openai.com/api/docs/guides/decisions), read 2026-10-08), and
 that is the rate an `openai` turn at OpenAI's own address is costed at, with the same exception. A
-server you run yourself is costed at the self-hosted **$0**, `openai` at an address of your own
-included, with `self-hosted` recorded as the source, which is a claim about where the money went
-rather than a missing figure: it billed you in electricity. The turns that never reach the network
+server you run yourself is costed at the self-hosted **$0**, `jev` at a `--decision-url` and
+`openai` at an address of your own included, because neither is sent its vendor's key there, with
+`self-hosted` recorded as the source, which is a claim about where the money went rather than a
+missing figure: it billed you in electricity. The turns that never reach the network
 at all, `not_offered` and `state_too_large`, are charged nothing and carry no figure whatsoever.
 
 Which half of that is measured and which half is arithmetic is never left to be inferred. The rate
@@ -927,7 +928,7 @@ Three flags and four variables. The flag always beats the variable.
 | Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
 | Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
-| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run |
+| What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
 
 `QUACKD_DECISION_PRICE` takes the same form `--price` does for the model, and it is quackd's own
 variable rather than any SDK's, which is why it is not spelled `TYPESAFE_*`: everything with that
@@ -939,7 +940,7 @@ And the rest:
 
 | What | How |
 |---|---|
-| Key | `TYPESAFE_API_KEY` for `jev` and `OPENAI_API_KEY` for `openai`, in the environment or a `.env`, the second sent to OpenAI's own API and nowhere else. Every other row needs none, and is sent the word `local` instead, as `openai` is at any other address |
+| Key | `TYPESAFE_API_KEY` for `jev` and `OPENAI_API_KEY` for `openai`, in the environment or a `.env`, the first sent by TypeSafe's own client only when no `--decision-url` is given and the second to OpenAI's own API and nowhere else. Every other row needs none, and is sent the word `local` instead, as `jev` is at a `--decision-url` and `openai` at any other address, where neither wants its key |
 | Install | `quackd[decision]` for every System One row, `quackd[openai]` for `openai` and `quackd[laya]` for the in-process one. Only `quackd[openai]`, the pilot's own, is in `quackd[all]` |
 | Model | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 

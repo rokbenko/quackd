@@ -90,6 +90,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   tenth of a second after the duck's hello, which failed every time without the waits.
   `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
+- **`--decision-llm jev` at a `--decision-url` no longer wants `TYPESAFE_API_KEY`, and is costed
+  as the server you run that it is.** An address typed for `jev` is a server you run, and quackd
+  has always sent it the word `local` rather than the key. The run still asked for the key before
+  it built the stepper, though, so a machine without one printed
+  `running without it: --decision-llm jev needs TYPESAFE_API_KEY` and ran without a stepper that
+  would never have sent the key, and a machine with one costed every turn at TypeSafe's $0.042 per
+  million input tokens for a server on the bench. One rule now answers both questions for every
+  row, the rule each client already keeps about what it sends (`factory.sends_key`): `jev` wants
+  its key and is costed at TypeSafe's rate only with no `--decision-url`, and `openai` only at
+  OpenAI's own hosts. `tests/test_decision_llms.py` runs `jev` at an address with no key in the
+  environment, and holds the rule to what each client actually sends.
 
 ### Documentation
 

@@ -60,6 +60,10 @@ class SystemOneLLM:
         # sending a company's API key to whatever is listening on that port is precisely what
         # `SECURITY.md` lists as a thing that must not happen. An explicit address makes it a
         # server you run, and a server you run gets the word.
+        #
+        # `factory.sends_key` states this same rule for the two questions asked before any
+        # client exists, whether the key is wanted and what a turn costs, and
+        # `tests/test_decision_llms.py` holds the two to each other.
         api_key = None if (spec.key_env and not url) else NO_KEY
         self._client: Any = sdk.AsyncTypeSafeClient(
             **({"api_key": api_key} if api_key is not None else {}),
