@@ -131,7 +131,9 @@ Run it in shadow mode on your own bench and report what came back: [measuring it
 yourself](README.md#measuring-it-yourself) has the commands. The numbers worth sending
 are the agreement rate against what the model chose, the latency per turn on the hardware you ran
 it on, and the answers that surprised you. Say which checkpoint you asked for, whether it ran on
-`cuda`, `mps` or `cpu`, and whether a turn came back as `gate: error` with the `head_max_len`
-message, which is a function of how many calls your body put on offer. If a floor looks wrong,
+`cuda`, `mps` or `cpu`, and whether a turn came back as `gate: error` with `ValueError` as its
+`error`, which is what options that overflow `head_max_len` raise. The record keeps an error's
+type and never its message, so send that turn's `labels` with it: how many calls your body put
+on offer, and how long they are, is what decides whether they fit. If a floor looks wrong,
 [how a turn is decided](README.md#how-a-turn-is-decided) has them, and a shadow record
 moves one.

@@ -18,8 +18,12 @@ silently, and this is the test that makes somebody say which.
 
 from __future__ import annotations
 
+import base64
+import json
 import pathlib
+import re
 from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1465,3 +1469,345 @@ async def test_the_runs_decision_block_is_what_its_own_turns_add_up_to(tmp_path:
     assert block["cost_usd"] == round(sum(r["cost_usd"] for r in billed), 6)
     assert block["usage"]["input_tokens"] == sum(r["usage"]["input_tokens"] for r in billed)
     assert block["cost_estimated"] is False, "a turn the API counted was billed as a guess"
+
+
+# ── a question the decision LLM declined ────────────────────────────────────────────────
+
+
+def _answered(**over: Any) -> dict[str, Any]:
+    """All four questions answered, off the wire, well enough to take `report_state`: a turn
+    every gate after `refused` lets through. `over` replaces whichever answers it names."""
+    answers: dict[str, Any] = {
+        "next_verb": {"choice": "report_state", "confidence": 0.99},
+        "done": {"noul": 0.0},
+        "need_human": {"noul": 0.0},
+        "feasible": {"choice": "feasible", "confidence": 0.9},
+    }
+    return {**answers, **over}
+
+
+class _Scripted(_OffTheWire):
+    """`_OffTheWire` answering one scripted payload a turn, and the last one for good."""
+
+    def __init__(self, *payloads: dict[str, Any]) -> None:
+        super().__init__(payloads[-1])
+        self.script = list(payloads)
+
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        self.calls.append((dict(state), dict(questions)))
+        return self.script.pop(0) if len(self.script) > 1 else self.script[0]
+
+
+@pytest.mark.parametrize("declined", ["next_verb", "done", "need_human", "feasible"])
+async def test_a_declined_question_ends_the_turn_on_its_own_gate_before_anything_is_read(
+    declined: str,
+) -> None:
+    """OpenAI's API may decline any one question rather than answer it, and the question comes
+    back answering nothing. Read as anything else, it was misnamed: a missing `next_verb`,
+    `done` or `need_human` ended on `unreadable`, which says the backend sent something nobody
+    could read, and a missing `feasible` went unnoticed, because nothing acts on it, so the
+    stepper took the turn on a state its decision LLM had declined to judge."""
+    answers = _answered()
+    del answers[declined]
+    advice, stepper, _f = await _advise(
+        _OffTheWire({"answers": answers, "refused": [declined]}), cleared=True
+    )
+    assert advice.gate == "refused" and advice.call is None
+    assert advice.record["refused"] == [declined]
+    assert stepper.refusals == 1 and stepper.errors == 0 and stepper.taken == 0
+
+
+async def test_a_refusal_hands_the_turn_back_however_good_every_answer_beside_it() -> None:
+    """The refusal alone decides it. Every answer on the second turn clears its gate, and the
+    record keeps them beside the name that was declined; the run of stepper turns ends there, as
+    it does on every handover, and the refusal is read before the repeat it would otherwise be."""
+    taken = {"answers": _answered()}
+    declined = {"answers": _answered(), "refused": ["done", 3]}
+    stepper, adapter, _m = await _arm(llm=_Scripted(taken, declined))
+    obs = await _observation(adapter)
+    first = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    assert first.gate == "taken" and stepper.last_call == "report_state"
+    second = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    await adapter.disconnect()
+    assert second.gate == "refused" and second.call is None
+    assert second.record["refused"] == ["done"], "a name that is not a string is not a name"
+    assert second.record["choice"] == "report_state" and second.record["done"] == 0.0
+    assert stepper.last_call is None and stepper.in_a_row == 0
+    block = stepper.summary()
+    assert (block["asked"], block["taken"], block["refusals"], block["errors"]) == (2, 1, 1, 0)
+
+
+@pytest.mark.parametrize("refused", [None, [], (), "done", [3, None]])
+async def test_a_refused_that_names_nothing_declines_nothing(refused: Any) -> None:
+    """Only a list of names is a refusal, so a missing one, an empty one or one holding no
+    string declines nothing and the turn is read as its answers say. Nor is a bare string read
+    as a name: iterated, `"done"` is four questions nobody asked."""
+    advice, stepper, _f = await _advise(
+        _OffTheWire({"answers": _answered(), "refused": refused}), cleared=True
+    )
+    assert advice.gate == "taken"
+    assert "refused" not in advice.record and stepper.refusals == 0
+
+
+async def test_the_runs_refusals_are_what_its_own_turns_add_up_to(tmp_path: Any) -> None:
+    """End to end, on the arm: a decision LLM that declines every turn leaves the whole run to
+    the model, each of its turns is on the record by the name it declined, and the summary
+    counts every one of them."""
+    result, _rec = await _on_run(
+        tmp_path, _OffTheWire({"answers": _answered(), "refused": ["need_human"]})
+    )
+    decisions = _records(result, "decision")
+    assert decisions, "the stepper was never asked, so this proves nothing"
+    assert all(r["gate"] == "refused" and r["refused"] == ["need_human"] for r in decisions)
+    assert result.summary["decision"]["refusals"] == len(decisions)
+    assert not any(r["source"] == "decision" for r in _records(result, "verb_start"))
+    assert result.outcome == "success"
+
+
+# ── what a failed turn records ──────────────────────────────────────────────────────────
+
+
+SECRET_WORD = "zebra"
+"""A word put in the goal and nowhere else, so finding it in a record means the state got there."""
+
+PICTURE = "data:image/jpeg;base64," + base64.b64encode(bytes(range(256)) * 3).decode()
+"""A data URL with a base64 run long enough to find: what a reply could quote back from a run
+that sent a picture."""
+
+BASE64_RUN = re.compile(r"[A-Za-z0-9+/=]{100,}")
+
+
+def _leaks(event: dict[str, Any]) -> list[str]:
+    """What of a request or a reply reached this record, by name. Nothing, on a good one."""
+    blob = json.dumps(event)
+    found = []
+    if SECRET_WORD in blob:
+        found.append("the state")
+    if "data:" in blob:
+        found.append("a data URL")
+    if BASE64_RUN.search(blob):
+        found.append("a base64 run")
+    return found
+
+
+class _Rejected(Exception):
+    """A 400 the way an SDK raises one: the status on the exception and the reply in the message,
+    `Error code: 400 - ` and then the body, as OpenAI's writes it, the body quoting the request
+    it turned down and a picture besides."""
+
+    def __init__(self, state: Any) -> None:
+        body = {
+            "error": {
+                "message": f"Invalid 'input': {json.dumps(dict(state))}",
+                "type": "invalid_request_error",
+                "param": PICTURE,
+            }
+        }
+        super().__init__(f"Error code: 400 - {body}")
+        self.status_code = 400
+        self.body = body
+
+
+class _Fails:
+    """A decision LLM whose every request fails with what `error(state)` builds."""
+
+    name = JEV.name
+    url = None
+
+    def __init__(self, error: Any) -> None:
+        self.error = error
+        self.model = JEV.model or ""
+
+    async def decide(self, state: Any, questions: Any) -> Any:
+        raise self.error(state)
+
+
+async def test_a_failed_turn_records_the_type_and_the_status_and_never_the_reply() -> None:
+    """An SDK puts the server's reply in its exception's message, and a reply can quote the
+    request it turned down. The record used to carry the message whole, which put the state, and
+    any data URL the reply held, into a transcript that otherwise keeps the state as a size and
+    a shape. The type and the status say which failure it was."""
+    advice, stepper, _f = await _advise(
+        _Fails(_Rejected), cleared=True, goal=f"Say whether the {SECRET_WORD} mug is held"
+    )
+    assert advice.gate == "error" and advice.call is None
+    assert advice.record["error"] == "_Rejected: HTTP 400"
+    assert _leaks(advice.event()) == []
+    assert stepper.errors == 1
+
+
+async def test_an_answer_the_router_cannot_read_is_recorded_without_quoting_it() -> None:
+    """The router's own failures quote the answer that broke them, `float()` of a probability
+    that is not a number for one, and an answer is the other side's text as much as a reply is."""
+    broken = _answered(
+        next_verb={"choice": "stop", "confidence": 0.99, "probabilities": {"stop": PICTURE}}
+    )
+    advice, stepper, _f = await _advise(_OffTheWire({"answers": broken}), cleared=True)
+    assert advice.gate == "error" and advice.record["error"] == "ValueError"
+    assert _leaks(advice.event()) == []
+    assert stepper.errors == 1
+
+
+class _Response:
+    def __init__(self, status_code: Any) -> None:
+        self.status_code = status_code
+
+
+class _HTTPStatusError(Exception):
+    """httpx's shape: the status is on the response the exception holds."""
+
+    def __init__(self, message: str, status_code: Any) -> None:
+        super().__init__(message)
+        self.response = _Response(status_code)
+
+
+class _TypeSafeAPIError(Exception):
+    """TypeSafe's shape, which every System One row raises: the status is the exception's own
+    `status`, and the message is that status and then the reply's own message
+    (`TypeSafeAPIError`, typesafe-sdk 0.7.2)."""
+
+    def __init__(self, message: str, status: Any) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class _StatusThatRaises(Exception):
+    """A status read that fails, which must cost the record its status and nothing else."""
+
+    @property
+    def status_code(self) -> int:
+        raise RuntimeError("the response was closed before it was read")
+
+
+@pytest.mark.parametrize(
+    ("error", "recorded"),
+    [
+        (_HTTPStatusError(f"Server error for {PICTURE}", 503), "_HTTPStatusError: HTTP 503"),
+        (_TypeSafeAPIError(f"429 {PICTURE}", 429), "_TypeSafeAPIError: HTTP 429"),
+        # a field by that name which is not a status is not mistaken for one
+        (_TypeSafeAPIError(PICTURE, True), "_TypeSafeAPIError"),
+        (_TypeSafeAPIError(PICTURE, "429"), "_TypeSafeAPIError"),
+        (_TypeSafeAPIError(PICTURE, 42), "_TypeSafeAPIError"),
+        (ValueError(f"could not convert string to float: {PICTURE!r}"), "ValueError"),
+        (TimeoutError(f"timed out reading {PICTURE}"), "TimeoutError"),
+        (_StatusThatRaises(PICTURE), "_StatusThatRaises"),
+    ],
+)
+def test_a_failure_is_recorded_by_its_type_and_status_alone(
+    error: Exception, recorded: str
+) -> None:
+    """The status is read wherever the client keeps it, OpenAI's on the exception, TypeSafe's
+    as `status` and httpx's on the response, and the message is never read, whoever wrote it. A
+    field by that name that is not a status is not taken for one, and a read that raises costs
+    the record its status and nothing else."""
+    from quackd.agent.decision.stepper import _failure
+
+    assert _failure(error) == recorded
+
+
+async def test_a_turn_that_ran_out_of_time_says_what_it_waited_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one sentence a failed turn keeps is quackd's own: the stepper's timeout gives up with
+    a `TimeoutError` that says nothing at all, and the budget is the number a reader would
+    change. Shortened here so the test does not wait out the real one."""
+    import asyncio
+
+    from quackd.agent.decision import stepper as module
+
+    monkeypatch.setattr(module, "TIMEOUT_S", 0.2)
+
+    class Hangs(_Fails):
+        async def decide(self, state: Any, questions: Any) -> Any:
+            await asyncio.sleep(30)
+
+    advice, _s, _f = await _advise(Hangs(None), cleared=True)
+    assert advice.gate == "error"
+    assert advice.record["error"] == "TimeoutError: no answer within 0.2 s"
+
+
+# ── how long since the last request ─────────────────────────────────────────────────────
+
+
+class _Clock:
+    """`time.perf_counter` for the stepper alone, moved by hand: by a backend for the seconds
+    its request takes, and by a test for the seconds between turns."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def perf_counter(self) -> float:
+        return self.now
+
+
+class _Takes(_OffTheWire):
+    """`_OffTheWire` whose every request takes `seconds` on `clock`, and fails while `fails`."""
+
+    def __init__(self, clock: _Clock, seconds: float, payload: dict[str, Any]) -> None:
+        super().__init__(payload)
+        self.clock = clock
+        self.seconds = seconds
+        self.fails = False
+
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        self.clock.now += self.seconds
+        if self.fails:
+            raise ConnectionResetError("the server hung up")
+        return await super().decide(state, questions)
+
+
+def _clocked(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    from quackd.agent.decision import stepper as module
+
+    clock = _Clock()
+    monkeypatch.setattr(module, "time", SimpleNamespace(perf_counter=clock.perf_counter))
+    return clock
+
+
+async def test_each_request_says_how_long_since_the_last_one_ended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI's SDK and TypeSafe's both drop a connection that has been idle five seconds, and in
+    shadow mode the model's own call comes between two of the stepper's, so a turn's `latency_s`
+    may or may not include opening a new one. `idle_s` tells the two apart: from the end of the
+    last request, which is when its connection went idle, to the start of this one, and null on
+    the first, which has nothing to reuse."""
+    clock = _clocked(monkeypatch)
+    stepper, adapter, _m = await _arm(llm=_Takes(clock, 0.25, {"answers": _answered()}))
+    obs = await _observation(adapter)
+    first = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    clock.now += 7.0  # the model's turn, and a verb
+    second = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    await adapter.disconnect()
+    assert first.record["idle_s"] is None and first.record["latency_s"] == 0.25
+    assert second.record["idle_s"] == 7.0, "not measured from when the last request ended"
+
+
+async def test_a_request_that_failed_is_the_last_one_and_a_turn_that_sent_none_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request that failed still went out and still left a connection behind it, or closed
+    one, so the next turn is measured from it. A turn that never sent anything, whether its
+    state was too large or its questions could not be built, made no request, carries no
+    `idle_s`, and moves nothing the next one is measured from."""
+    clock = _clocked(monkeypatch)
+    llm = _Takes(clock, 1.0, {"answers": _answered()})
+    stepper, adapter, _m = await _arm(llm=llm)
+    obs = await _observation(adapter)
+    llm.fails = True
+    failed = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    llm.fails = False
+    clock.now += 2.0
+    goal, stepper.goal = stepper.goal, "x" * 40_000
+    too_large = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    stepper.goal = goal
+    described = stepper.what.pop("report_state")
+    unsent = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    stepper.what["report_state"] = described
+    clock.now += 3.0
+    answered = await stepper.advise(obs, cleared=True, budget=BUDGET)
+    await adapter.disconnect()
+    assert failed.gate == "error" and failed.record["idle_s"] is None
+    assert too_large.gate == "state_too_large" and "idle_s" not in too_large.record
+    assert unsent.gate == "error" and "idle_s" not in unsent.record
+    assert answered.record["idle_s"] == 5.0, "a turn that sent nothing moved the clock"

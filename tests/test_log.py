@@ -523,6 +523,39 @@ def test_the_stepper_line_carries_its_tokens_and_its_fraction_of_a_cent() -> Non
     assert line(gate="not_offered") == "decide  not_offered, to the model (0.11 s)"
 
 
+def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() -> None:
+    """A question the decision LLM declined is neither a failure nor one of the quiet handovers:
+    its vendor's policy would not judge this state, and a reader watching a shadow run wants to
+    see how often that happens and on which question. So the line names what was declined, in
+    yellow, with the mark a missed floor has, and keeps the bill a request that went out has."""
+
+    def lines(**extra: Any) -> list[Any]:
+        data = {
+            "gate": "refused",
+            "choice": "stop",
+            "confidence": 0.97,
+            "probabilities": {"stop": 0.97, "escalate": 0.02},
+            "latency_s": 0.4,
+            **extra,
+        }
+        return render_events(LogEvent("decision", 0.0, data))
+
+    billed = {"usage": {"input_tokens": 42, "output_tokens": 0}, "cost_usd": 0.0000042}
+    first, runners_up = lines(refused=["done"], **billed)
+    assert first.label == "decide" and first.style == "yellow" and first.mark == "warn"
+    assert first.body == "refused to answer done, to the model (0.40 s, 42 tok $0.000004)"
+    # what it did answer is still worth reading beside it
+    assert runners_up.label == "decide?" and runners_up.body == "escalate 0.02"
+    (two, _rest) = lines(refused=["next_verb", "need_human"])
+    assert two.body == "refused to answer next_verb and need_human, to the model (0.40 s)"
+    # and more than two as a sentence lists them, not "a and b and c"
+    (three, _rest) = lines(refused=["next_verb", "done", "need_human"])
+    assert three.body == "refused to answer next_verb, done and need_human, to the model (0.40 s)"
+    # a record without the names, which quackd never writes, still says which gate it was
+    (bare, _rest) = lines()
+    assert bare.body == "refused, to the model (0.40 s)" and bare.mark == "warn"
+
+
 def test_long_thinking_is_cut_with_a_pointer_to_the_transcript() -> None:
     event = LogEvent("llm", 0.0, {"thinking": "x" * 5000, "tool_calls": [], "usage": {}})
     out = [text for text, _ in render_lines(event, thinking_chars=100)]

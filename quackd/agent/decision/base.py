@@ -79,8 +79,15 @@ class DecisionLLM(Protocol):
     `input_tokens` is used where it is there and estimated where it is not, so a backend that
     counts nothing costs the run an estimate rather than an error.
 
+    It may also carry `refused` beside `answers`, the same way: a list of the names of the
+    questions it declined to answer rather than answered, each of which then answers nothing.
+    Any name there hands the turn to the model on the gate `refused`, and is never read as a
+    low probability or as a question that merely went missing (`stepper._refused`).
+
     Raising is allowed and is not fatal: `Stepper.advise` catches everything, records the turn
-    as `gate: error` and hands it to the model. A decision LLM may never end a run.
+    as `gate: error` and hands it to the model. A decision LLM may never end a run. The record
+    keeps the exception's type, and its HTTP status where it carries one, and never its
+    message, which can quote what the server sent back.
     """
 
     name: str

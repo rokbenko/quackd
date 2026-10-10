@@ -94,7 +94,9 @@ Also in scope:
   that vendor's address. How much was sent is on the record, as `state_chars` and `state_tokens_est`
   on each `decision` event, and which fields were dropped to fit is there as `trimmed`; the text
   itself is not, so a reader auditing what left the machine is reading a size and a shape rather
-  than the words. The address is on the record too, in `run_start.decision_llm`, with a password in
+  than the words. That holds when a turn fails as well: its `error` is the exception's type, with
+  its HTTP status where it carries one, and never the message, which can quote the request back.
+  The address is on the record too, in `run_start.decision_llm`, with a password in
   it or a credential-named query parameter already replaced by `***`, because that url can arrive
   through `QUACKD_DECISION_URL` where argv redaction would never see it. What would be a security
   issue: a picture reaching any of them, a credential reaching any of them but its own vendor at its

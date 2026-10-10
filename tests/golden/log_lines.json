@@ -157,6 +157,16 @@
    "dim"
   ]
  ],
+ "decision_refused": [
+  [
+   "decide  refused to answer need_human, to the model (0.31 s, 612 tok $0.000061)",
+   "yellow"
+  ],
+  [
+   "decide? stop 0.03",
+   "dim"
+  ]
+ ],
  "decision_escalate": [
   [
    "decide  escalate, to the model (0.19 s)",
@@ -776,6 +786,8 @@
   "decide? place 0.04, stop 0.02",
   "decide  place 0.62 < 0.85, to the model (0.44 s)",
   "decide? gripper(open=true) 0.30",
+  "decide  refused to answer need_human, to the model (0.31 s, 612 tok $0.000061)",
+  "decide? stop 0.03",
   "decide  escalate, to the model (0.19 s)",
   "decide  done, to the model (0.20 s)",
   "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, so the model takes this turn",

@@ -12,8 +12,10 @@ client builds `tests/fake_decisions_api.py` in its place. Nothing here reaches t
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -313,17 +315,21 @@ async def test_a_turn_it_answers_is_taken_and_billed_at_what_openai_counted(
     )
 
 
-@pytest.mark.parametrize("declined", ["next_verb", "done", "need_human"])
+@pytest.mark.parametrize("declined", ["next_verb", "done", "need_human", "feasible"])
 async def test_a_question_openai_declined_never_moves_the_body(
     declined: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refusal is no answer at all, and a question nobody answered hands the turn to the
-    model rather than reading as a confident no."""
+    """A refusal is no answer at all, so the turn goes to the model on the gate that says so,
+    naming the question, `feasible` included, though beside a declined `feasible` the other
+    three answers would have taken `stop`."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     llm, _fake = _built(monkeypatch, answers=fake_api.turn("stop", refuse=(declined,)))
-    advice = await _advise(_stepper(llm))
+    stepper = _stepper(llm)
+    advice = await _advise(stepper)
     assert advice.call is None
-    assert advice.record["gate"] != "taken"
+    assert advice.record["gate"] == "refused"
+    assert advice.record["refused"] == [declined]
+    assert stepper.summary()["refusals"] == 1
 
 
 async def test_a_request_that_fails_costs_the_turn_and_not_the_run(
@@ -332,11 +338,48 @@ async def test_a_request_that_fails_costs_the_turn_and_not_the_run(
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     fake_api.install(
         monkeypatch,
-        fake_api.FakeOpenAI(raises=fake_api.RateLimitError("slow down", status_code=429)),
+        fake_api.FakeOpenAI(
+            raises=fake_api.status_error(
+                fake_api.RateLimitError, 429, {"error": {"message": "slow down"}}
+            )
+        ),
     )
     advice = await _advise(_stepper(make_decision_llm(OPENAI)))
     assert advice.call is None and advice.record["gate"] == "error"
-    assert advice.record["error"].startswith("RateLimitError")
+    assert advice.record["error"] == "RateLimitError: HTTP 429"
+
+
+async def test_an_error_that_quotes_the_request_reaches_the_record_as_its_type_and_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK writes a 4xx as `Error code: 400 - ` and the body it was sent back, and a body
+    can quote the request it turned down: here the whole `input` the stepper sent, and a data
+    URL besides. None of it reaches the record."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    picture = "data:image/jpeg;base64," + base64.b64encode(bytes(range(256)) * 3).decode()
+
+    def turned_down(body: Any) -> Exception:
+        reply = {
+            "error": {
+                "message": f"Invalid value for 'input': {body['input']}",
+                "type": "invalid_request_error",
+                "param": "input",
+                "image_url": picture,
+            }
+        }
+        return fake_api.status_error(fake_api.BadRequestError, 400, reply)
+
+    fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI(raises=turned_down))
+    stepper = _stepper(make_decision_llm(OPENAI))
+    stepper.goal = "fetch the zebra mug"
+    advice = await _advise(stepper)
+    assert "zebra" in fake.posts[0]["body"]["input"], "the request did not carry the goal"
+    assert advice.record["gate"] == "error"
+    assert advice.record["error"] == "BadRequestError: HTTP 400"
+    recorded = json.dumps(advice.event())
+    assert "zebra" not in recorded, "the state reached the record"
+    assert "data:" not in recorded, "a data URL reached the record"
+    assert re.search(r"[A-Za-z0-9+/=]{100,}", recorded) is None, "a base64 run reached it"
 
 
 # ── the client, and where the key goes ──────────────────────────────────────────────────

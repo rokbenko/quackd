@@ -91,9 +91,11 @@ measurement.
   first retry sleeps three eighths to a half of a second before it starts. The client is built
   with `TIMEOUT_S` and none, and the stepper's own one-second bound holds whatever the client says,
   so a 429 or a 5xx is a turn the record calls an error.
-- **A question it declines is a question nobody answered.** The API may refuse any one question
-  rather than answer it. A refused `next_verb`, `done` or `need_human` hands the turn to the model,
-  as an unanswered one always has.
+- **A question it declines ends the turn on a gate of its own.** The API may refuse any one
+  question rather than answer it, and the stepper reads that before any answer: the turn goes to
+  the model on the gate `refused`, whichever of the four was declined, `feasible` included, with
+  the names on the turn's record and the run's summary counting such turns as `refusals`. A
+  refusal is never read as an answer that went missing or as a low probability.
 
 > [!WARNING]
 > **`--decision-url` on this row changes what is sent and what it costs as well as where it goes.**
@@ -110,7 +112,7 @@ measurement.
 | The request | exactly `model`, `input`, `questions` and an optional `safety_identifier`; `input` is a string or a list of user messages | `model`, `input` and `questions` and nothing else. `input` is the state as one JSON string, the very string the stepper measures as `state_chars` |
 | Questions | `predicate` (`instructions`, `name`), `choice` (`choices: [{value, description}]`, values typed, so the string `"true"` and the boolean `true` are different values) and `score` (`levels: [{label, description}]`, whose indices start at 0). The name is optional, and the guide says to give every question a unique one, which the API echoes | every question is named; a `noul` goes as a `predicate`, a choice's criteria as `choices` with every label a string and `escalate` last, and a score's as `levels` in the order they were written |
 | Answers | `{answers, model, usage}`, the answers in question order, each naming its question or `null`: a `predicate` carries `probability`, a `choice` `choice`, `confidence` and `probabilities: [{value, probability}]`, a `score` `score`, `confidence` and `probabilities: [{value, label, probability}]` | read by name and never by position: an answer under a name quackd did not ask, or under none, is dropped, and the first under a name is the one kept. A `probability` becomes the `noul` the stepper reads, and a list of probabilities a mapping |
-| Refusals | `{type: "refusal", name}` in place of one question's answer: *"The host may decline one question without disclosing its refusal score"* | the question is left unanswered, and its name is handed back beside the answers as `refused` |
+| Refusals | `{type: "refusal", name}` in place of one question's answer: *"The host may decline one question without disclosing its refusal score"* | the question is left unanswered, and its name is handed back beside the answers as `refused`, which ends the turn on the stepper's gate of that name and hands it to the model |
 | `confidence` | not defined; the guide's examples have it below the top probability | carried as the stepper's confidence, field to field, and gated on the floors like any other row's, with the distribution recorded beside it |
 | Usage | `input_tokens`, `input_tokens_details` (`cached_tokens`, `cache_write_tokens`), `output_tokens`, `output_tokens_details` (`reasoning_tokens`), `total_tokens` | passed through, so a turn is billed on the `input_tokens` OpenAI counted rather than on an estimate |
 | Price | $0.10 per million input tokens, no output, cache-read or cache-write charges, and *"regional processing premiums and long-context input pricing multipliers apply"*, neither published for this endpoint ([the guide](https://developers.openai.com/api/docs/guides/decisions)) | `Price(input=0.10, output=0.0)`, dated 2026-10-08 on the record; a regional host is costed at this rate too, and `QUACKD_DECISION_PRICE` is how to say otherwise |
@@ -125,7 +127,7 @@ measurement.
 | Name | The assumption | What quackd does |
 |---|---|---|
 | `CONFIDENCE_MEANS_THE_SAME` | that OpenAI's `confidence` is comparable to the one the floors were set against. Nothing published says what it is, and nothing here has measured it | nothing automatic; `--decision-mode shadow` records what it would have chosen without letting it act, which is how a floor gets re-tuned |
-| `LATENCY_UNDER_ONE_SECOND` | that it answers a robot's state inside the turn budget. OpenAI publish a ratio and no latency, and no request from quackd has ever timed it | `TIMEOUT_S` is 1.0 s, enforced around `decide()`; a turn that runs out goes to the model and the record says how long it waited |
+| `LATENCY_UNDER_ONE_SECOND` | that it answers a robot's state inside the turn budget. OpenAI publish a ratio and no latency, and no request from quackd has ever timed it | `TIMEOUT_S` is 1.0 s, enforced around `decide()`; a turn that runs out goes to the model and the record says how long it waited. The SDK drops a connection that has sat idle five seconds, and in shadow mode the model's own call and a verb usually take longer than that between two of the stepper's requests, so each turn also records `idle_s`, the seconds since the stepper's previous request ended, which tells a turn that paid for opening a new connection from one that reused it |
 | `CHOICE_BOUNDS` | the number of options a choice may carry. One reading of the reference says 2 to 255, and it could not be found again in any source | nothing; quackd always offers at least two (a call and `escalate`), and a request the API refuses is a turn the record calls an error |
 | `ANSWER_NAMES_ECHOED` | that every answer carries the name it was asked under, as the guide says | nothing to rely on: answers are read by name alone, so one without its name is a question nobody answered, and the turn goes to the model |
 | `NO_CACHE_DISCOUNT` | how cached input is billed. The guide charges nothing for cache reads or writes, and `usage` still reports `cached_tokens` | every input token is costed at the full rate, which is the higher reading |

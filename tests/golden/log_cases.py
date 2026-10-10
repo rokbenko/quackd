@@ -174,6 +174,30 @@ def events() -> list[tuple[str, LogEvent]]:
                 probabilities={"place": 0.62, "gripper(open=true)": 0.30},
             ),
         ),
+        (
+            # A question the decision LLM declined, named, with what it did answer under it.
+            # `idle_s` is on the record and not the line, and is here so that a renderer which
+            # started printing it would have to change this file to do it.
+            "decision_refused",
+            _e(
+                "decision",
+                0.3,
+                mode="shadow",
+                llm="openai",
+                model="gpt-6-luna",
+                latency_s=0.31,
+                idle_s=7.5,
+                gate="refused",
+                refused=["need_human"],
+                choice="report_state",
+                confidence=0.91,
+                probabilities={"report_state": 0.94, "stop": 0.03},
+                done=0.02,
+                need_human=None,
+                usage={"input_tokens": 612, "output_tokens": 0},
+                cost_usd=0.0000612,
+            ),
+        ),
         ("decision_escalate", _e("decision", 0.3, mode="on", latency_s=0.19, gate="escalate")),
         ("decision_done", _e("decision", 0.3, mode="on", latency_s=0.2, gate="done", done=0.91)),
         (

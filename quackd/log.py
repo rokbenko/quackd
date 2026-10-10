@@ -678,10 +678,29 @@ def render_events(
                 "yellow",
                 mark="warn",
             )
+        elif gate == "refused":
+            # A question the decision LLM declined rather than answered, by name. Yellow like a
+            # missed floor and not dim like the gates below: nothing failed, but it is the
+            # vendor's policy speaking about this state rather than its model answering, and
+            # that is worth a reader's attention. A record without the names, which quackd never
+            # writes, still says which gate it was.
+            declined = d.get("refused")
+            names = [str(n) for n in declined] if isinstance(declined, list) else []
+            # As a sentence lists them, "a", "a and b", "a, b and c", the way the loop lists the
+            # joints it names to the person holding the arm.
+            said = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
+            chosen = LogLine(
+                "decide",
+                f"refused to answer {said}, to the model ({took})"
+                if said
+                else f"refused, to the model ({took})",
+                "yellow",
+                mark="warn",
+            )
         else:
-            # `escalate`, `done`, `need_human`, `not_offered`, `state_too_large`: nothing
-            # happened and the model takes the turn, so this is dim like the request line
-            # it comes just before
+            # `escalate`, `repeat`, `handover`, `shadow_only`, `unreadable`, `done`,
+            # `need_human`, `not_offered`, `state_too_large`: nothing happened and the model
+            # takes the turn, so this is dim like the request line it comes just before
             chosen = LogLine("decide", f"{gate}, to the model ({took})", "dim")
         stepper = [chosen]
         # The runners-up, because a 0.93 beside a 0.91 is a different decision from a 0.93

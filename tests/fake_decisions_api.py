@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import sys
 import types
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 
@@ -37,15 +37,28 @@ class Omit:
 
 
 class APIStatusError(Exception):
-    """An HTTP error the way the SDK raises one, for the tests that want a call to fail."""
+    """An HTTP error the way the SDK raises one, for the tests that want a call to fail: the
+    status on the exception, and the body the server sent back on it as well."""
 
-    def __init__(self, message: str, *, status_code: int) -> None:
+    def __init__(self, message: str, *, status_code: int, body: Any = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.body = body
+
+
+class BadRequestError(APIStatusError):
+    pass
 
 
 class RateLimitError(APIStatusError):
     pass
+
+
+def status_error(cls: type[APIStatusError], status: int, body: Any) -> APIStatusError:
+    """`cls` the way the SDK builds one from a response it was sent back: the decoded body goes
+    in the message after the status, `Error code: 400 - {body}` (`openai/_base_client.py`,
+    `_make_status_error_from_response`, 3.22.1), so whatever the body says, the message says."""
+    return cls(f"Error code: {status} - {body}", status_code=status, body=body)
 
 
 USAGE: dict[str, Any] = {
@@ -121,7 +134,9 @@ class FakeOpenAI:
 
     `answers` is what every request returns unless `script` has a whole response left, which is
     how a test says "answer this first and that next". `raises` makes a request fail, which is
-    the path that has to cost a turn rather than a run.
+    the path that has to cost a turn rather than a run: an exception, raised as it is, or a
+    function of the request's body that builds one, for a server whose error quotes the
+    request back.
     """
 
     def __init__(
@@ -129,7 +144,7 @@ class FakeOpenAI:
         *,
         answers: Iterable[Mapping[str, Any]] = (),
         script: Iterable[Any] = (),
-        raises: Exception | None = None,
+        raises: Exception | Callable[[Any], Exception] | None = None,
         usage: Mapping[str, Any] | None = USAGE,
     ) -> None:
         self.answers = [dict(a) for a in answers]
@@ -159,8 +174,10 @@ class FakeOpenAI:
         self.posts.append(
             {"path": path, "cast_to": cast_to, "body": body, "options": dict(options or {})}
         )
-        if self.raises is not None:
+        if isinstance(self.raises, BaseException):
             raise self.raises
+        if self.raises is not None:
+            raise self.raises(body)
         if self.script:
             return self.script.pop(0)
         return decision(self.answers, usage=self.usage)
@@ -177,6 +194,7 @@ def install(monkeypatch: Any, fake: FakeOpenAI) -> FakeOpenAI:
     module.AsyncOpenAI = fake  # type: ignore[attr-defined]
     module.Omit = Omit  # type: ignore[attr-defined]
     module.APIStatusError = APIStatusError  # type: ignore[attr-defined]
+    module.BadRequestError = BadRequestError  # type: ignore[attr-defined]
     module.RateLimitError = RateLimitError  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", module)
     return fake

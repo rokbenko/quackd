@@ -580,19 +580,24 @@ in this process. That is the whole reason a new backend is a row rather than a r
 `escalate` is always on the list. Without it a Choice always returns *something*, and the
 confidence floor would be the only thing between "none of these is right" and a servo.
 
-The gates are read in this order, and the two Nouls come first so a stepper that thinks the job is
-finished never moves anything else:
+The gates are read in this order. A question the decision LLM declined comes before any answer,
+and the two Nouls before the choice, so a stepper that thinks the job is finished never moves
+anything else:
 
-1. any of the three probabilities is not a number at all -> the model's turn. NaN is not a low
+1. any of the four questions was declined rather than answered -> the model's turn, on the gate
+   `refused`, with the names declined on the record. Of the rows quackd names, only `openai`
+   reports one, and a declined `feasible` counts too: a refusal is the vendor's policy speaking
+   about this state, not its model answering a question
+2. any of the three probabilities is not a number at all -> the model's turn. NaN is not a low
    confidence, it is no confidence, and it loses every comparison it is put through: `nan < 0.85`
    is False, so an unguarded one would clear a floor rather than miss it
-2. `done` >= 0.5 -> the model's turn
-3. `need_human` >= 0.5 -> the model's turn
-4. the answer is `escalate`, or is not one of the calls offered this turn -> the model's turn
-5. the answer repeats the call the stepper made last turn -> the model's turn
-6. the stepper has answered 8 turns running -> the model's turn
-7. confidence is below the floor for that verb's class -> the model's turn
-8. otherwise, it is taken
+3. `done` >= 0.5 -> the model's turn
+4. `need_human` >= 0.5 -> the model's turn
+5. the answer is `escalate`, or is not one of the calls offered this turn -> the model's turn
+6. the answer repeats the call the stepper made last turn -> the model's turn
+7. the stepper has answered 8 turns running -> the model's turn
+8. confidence is below the floor for that verb's class -> the model's turn
+9. otherwise, it is taken
 
 An answer the router cannot read at all -- a confidence that is a word, a `probabilities` that is
 a list -- costs that turn and nothing more. Reading the answer is part of the call, so it fails
@@ -603,7 +608,7 @@ A Noul carries no confidence, so 0.5 on the two of them is a raw probability mea
 than not". Escalating when the job is not in fact done costs one model call; not escalating when
 it is costs a robot that carries on working after the task is over.
 
-**Rules 4 and 5 are why a run always reaches the model.** Only the model can record a verdict,
+**Rules 6 and 7 are why a run always reaches the model.** Only the model can record a verdict,
 declare an outcome or write a note, so a run that never reaches it can only end on a budget --
 which is exactly what happened the first time this was tried: a stepper answering `report_state`
 at 0.99 took all twelve turns of `lerobot-lookout` and the run died with nothing declared. A
@@ -675,7 +680,11 @@ Two kinds in `transcript.jsonl`, both described in
 read against each other: the labels it was offered, the one it chose, the whole probability
 distribution, its confidence, the floor that applied, which gate fired, both Noul values, how long
 it took, how large the state was and what was trimmed to fit, and, on the turns that actually
-reached the network, what the question spent and what that cost.
+reached the network, what the question spent, what that cost and `idle_s`, how long since the
+stepper's previous request ended. A turn that ended on `refused` names the questions declined, as
+`refused`. One that ended on `error` names the exception's type, and its HTTP status where it
+carries one, as `error`, and never its message, because an SDK puts the server's reply there and
+a reply can quote the request.
 
 `decision_shadow`, in shadow mode, and in `on` for a turn that offered a `manipulate` it may not
 take, only after that step's `llm` record: what the stepper would have chosen beside what the
@@ -698,8 +707,8 @@ could not tell a reader which of them answered.
 mints are prefixed `decision-`.
 
 `summary.json` grows a `decision` block when there was a stepper, and nothing when there was not:
-`mode`, `llm`, `model`, `url`, `asked`, `taken`, `errors`, `latency_s`, `usage`, `cost_usd`,
-`cost_estimated` and `price`.
+`mode`, `llm`, `model`, `url`, `asked`, `taken`, `errors`, `refusals`, `latency_s`, `usage`,
+`cost_usd`, `cost_estimated` and `price`.
 
 The budget line in every observation grows one clause once the stepper has answered:
 
@@ -743,7 +752,7 @@ Then, per run directory:
 
 | What | Read | From |
 |---|---|---|
-| **Its real latency** against a robot's state, rather than TypeSafe's own 0.114 s on TypeSafe's own task | mean and max of `latency_s` | every `{"kind":"decision"}` |
+| **Its real latency** against a robot's state, rather than TypeSafe's own 0.114 s on TypeSafe's own task | mean and max of `latency_s`, with the turns whose `idle_s` is over five seconds read apart from the rest: OpenAI's SDK and TypeSafe's both drop a connection idle that long, so those turns paid for opening a new one | every `{"kind":"decision"}` |
 | **State size** | `state_chars`, `state_tokens_est`, `trimmed` | every `{"kind":"decision"}` |
 | **Coverage** | how many `gate` values are `taken`, out of all of them | every `{"kind":"decision"}` |
 | **Agreement** | how often `agree` is true, and separately among rows where `would_have_acted` is true | every `{"kind":"decision_shadow"}` |
@@ -871,10 +880,14 @@ What you hand back may be anything quackd's reader can get at: an object carryin
 mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and optionally
 `probabilities`), or a bare `noul`, as attributes or as keys. A `usage` with `input_tokens` is
 used where it is there and estimated where it is not, so a backend that counts nothing costs the
-run an estimate rather than an error.
+run an estimate rather than an error. A list of question names under `refused`, beside the
+answers and read the same way, says which questions it declined rather than answered, and any
+name there hands the turn to the model on the gate `refused`.
 
 Raising is allowed and is not fatal. `Stepper.advise` catches everything, records the turn as
-`gate: error`, and hands it to the model. A plugin may never end a run.
+`gate: error`, and hands it to the model. A plugin may never end a run. The record keeps the
+exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
+itself or on its `response`, and never its message, which can quote what the server sent back.
 
 [`tests/stub_decision_llm.py`](../../../tests/stub_decision_llm.py) is the whole contract as a
 working module, and it is short on purpose. It is what the entry-point test loads, and it is the

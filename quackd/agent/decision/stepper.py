@@ -545,6 +545,81 @@ def _field(answer: Any, name: str, default: Any = None) -> Any:
     return getattr(answer, name, default)
 
 
+def _refused(result: Any) -> list[str]:
+    """The questions this answer says were declined rather than answered, by name.
+
+    A backend says so in a `refused` beside its `answers`, as an attribute or as a key, read the
+    way `_answer` reads the answers themselves. OpenAI's Decisions API is the backend that does:
+    it may refuse a question "without disclosing its refusal score", and that question comes
+    back answering nothing (`decisions_api.to_result`). Only a list or a tuple counts, as
+    `base.DecisionLLM` documents it, and only the names in it that are strings. A bare string
+    is not read as one name, because iterating it would read `"done"` as four questions called
+    `d`, `o`, `n` and `e`."""
+    refused = getattr(result, "refused", None)
+    if refused is None and isinstance(result, Mapping):
+        refused = result.get("refused")
+    if not isinstance(refused, list | tuple):
+        return []
+    return [name for name in refused if isinstance(name, str)]
+
+
+def _http_status(error: BaseException) -> int | None:
+    """The HTTP status a failed call carries, or None where it carries none.
+
+    Read where the clients behind the decision LLMs keep one: `status_code` on the exception
+    itself, which is where OpenAI's SDK puts it on every 4xx and 5xx (`APIStatusError`, 3.22.1),
+    `status`, which is TypeSafe's spelling for every System One row (`TypeSafeAPIError`,
+    typesafe-sdk 0.7.2), and either of them on the response an exception holds, which is where
+    an httpx `HTTPStatusError` from a plugin keeps it. Only a whole number in the range a status
+    can take counts, so a field that happens to share the name and holds a word, or a flag, is not
+    mistaken for one: `True` is an `int` to Python, and 1 is no status. A read that raises is
+    `_failure`'s to catch."""
+    for holder in (error, getattr(error, "response", None)):
+        if holder is None:
+            continue
+        for name in ("status_code", "status"):
+            value = getattr(holder, name, None)
+            if isinstance(value, int) and 100 <= value <= 599:
+                return int(value)
+    return None
+
+
+def _failure(error: BaseException) -> str:
+    """What the record says about a turn that failed: the exception's type, and its HTTP status
+    where it carries one. Never its message.
+
+    A message is the other side's text, and an SDK puts the server's reply in it. OpenAI's puts
+    the body of a 4xx or a 5xx after `Error code: 400 - `, or makes that body the whole message
+    when it is not JSON (`openai/_base_client.py`, 3.22.1), and TypeSafe's puts the reply's own
+    message after the status, or the first 200 characters of the body where the reply names
+    none (`typesafe_sdk/_core/errors.py`, 0.7.2), both read 2026-10-10. A reply can quote the
+    request it turned down, and the request is the state, which the record otherwise keeps as a
+    size and a shape rather than as the words; a reply to a request that carried a picture could
+    quote that too, as a data URL. So no message is written down, whoever wrote it: an answer
+    the router could not read fails with a message quoting that answer, and is recorded by its
+    type alone too. The type and the status say which failure it was, a 429 being a rate limit
+    and a 400 a request the API would not take, and what the server said about it is for its
+    own logs or a direct call, not for a transcript.
+
+    The one sentence kept is quackd's own. `asyncio.wait_for` gives up with a `TimeoutError`
+    that carries no message at all, and what a reader wants from it is the budget it ran out
+    of, because that is the number they would change.
+
+    Nothing here may raise, because it runs inside the handler whose whole job is to keep a
+    failed turn from ending the run. A status that cannot be read, a property that raises as it
+    is asked, or an exception that cannot be made a string leaves the type alone, which no
+    exception can fail to have."""
+    name = type(error).__name__
+    try:
+        if (status := _http_status(error)) is not None:
+            return f"{name}: HTTP {status}"
+        if isinstance(error, TimeoutError) and not str(error):
+            return f"{name}: no answer within {TIMEOUT_S:.1f} s"
+    except Exception:
+        pass
+    return name
+
+
 @dataclass
 class Stepper:
     """The turns that are a choice, on this body, under this contract.
@@ -588,7 +663,15 @@ class Stepper:
     asked: int = 0
     taken: int = 0
     errors: int = 0
+    refusals: int = 0
+    """Turns that ended on the `refused` gate, because the decision LLM declined a question
+    rather than answered it. Not among `errors`, since nothing failed: the vendor's own policy
+    answered in place of its model, and whether that happens on a robot's state at all is one of
+    the things a shadow run is for."""
     latency_s: float = 0.0
+    last_request_ended: float | None = field(default=None, init=False, repr=False)
+    """When this stepper's previous request ended, answered or failed, on `time.perf_counter`'s
+    clock, or None before its first. What each turn's `idle_s` is measured from."""
     price: Price = SELF_HOSTED
     """What a question costs: the preset's published rate, `QUACKD_DECISION_PRICE`, or the
     self-hosted `$0` of a server you run. Always resolved by `factory`; the default here is
@@ -707,6 +790,7 @@ class Stepper:
             "asked": self.asked,
             "taken": self.taken,
             "errors": self.errors,
+            "refusals": self.refusals,
             "latency_s": round(self.latency_s, 3),
             # What the stepper asked for and what that cost, kept apart from the model's own
             # `usage` and `cost_usd` at the top of the summary rather than folded into them:
@@ -834,6 +918,19 @@ class Stepper:
             return Advice(None, {**record, "gate": "state_too_large", "latency_s": 0.0})
 
         started = time.perf_counter()
+        # How long since this stepper's previous request ended, which is how long a connection
+        # its client kept from that request has been sitting idle. Both SDKs here pool their
+        # connections in httpx2, whose default drops one that has been idle five seconds, and
+        # neither changes it (httpx2 2.12.0, openai 3.22.1 and typesafe-sdk 0.7.2, read
+        # 2026-10-10). In shadow mode the stepper is asked once a turn, with the model's own call
+        # and a verb in between, which on a frontier model is usually longer than that, so a
+        # request there usually starts on a new connection and pays for opening it inside the
+        # one second it has. That is the difference between a cold turn and a warm one, and
+        # `latency_s` alone cannot show it. None on the first request, which has no earlier one
+        # whose connection it could reuse.
+        idle = (
+            None if self.last_request_ended is None else round(started - self.last_request_ended, 3)
+        )
         # Characters of questions that actually went out, and 0 while nothing has: a turn that
         # could not build its questions owes nobody anything, and one that timed out after the
         # request left probably does. The client itself was built before the robot connected,
@@ -850,32 +947,38 @@ class Stepper:
             # failure, and the record says which.
             result = await asyncio.wait_for(self.llm.decide(state, questions), TIMEOUT_S)
         except Exception as e:
+            ended = time.perf_counter()
             self.errors += 1
             self.asked += 1
-            # A bare `TimeoutError` stringifies to nothing, and `error:` with nothing after it
-            # tells a reader less than the gate already did. The one thing they want to know
-            # is how long it waited, because that is the number they would change.
-            if isinstance(e, TimeoutError) and not str(e):
-                e = TimeoutError(f"no answer within {TIMEOUT_S:.1f} s")
-            took = round(time.perf_counter() - started, 3)
+            took = round(ended - started, 3)
             self.latency_s += took
             failed = {
                 **record,
                 "gate": "error",
-                "error": f"{type(e).__name__}: {e}",
+                "error": _failure(e),
                 "latency_s": took,
             }
             if sent:
+                # The request went out, so it is the one the next turn's `idle_s` is measured
+                # from, however it ended. On either SDK one that the timeout above cut off takes
+                # its connection with it, because httpcore2 closes a connection whose answer was
+                # never read to the end (2.12.0, read 2026-10-09), so the request after a timeout
+                # starts on a new one whatever its `idle_s` says.
+                failed["idle_s"] = idle
+                self.last_request_ended = ended
                 # The questions were built and handed over, so the turn is counted as billed.
                 # Nobody publishes whether a call that failed on their side is charged, and
                 # between an estimate that is slightly high and a bill that silently is not
                 # there, the high one is the one nobody is hurt by.
                 failed.update(self._bill(None, record["state_chars"], sent))
             return Advice(None, failed)
+        ended = time.perf_counter()
+        self.last_request_ended = ended
         self.asked += 1
-        took = round(time.perf_counter() - started, 3)
+        took = round(ended - started, 3)
         self.latency_s += took
         record["latency_s"] = took
+        record["idle_s"] = idle
         record["questions"] = len(questions)
         try:
             record.update(self._bill(result, record["state_chars"], sent))
@@ -892,16 +995,18 @@ class Stepper:
             # Reading the answer is part of the call, so it fails the way the call does. A
             # backend that returns a confidence of "high" or a list where a mapping belongs
             # would otherwise raise through the loop and end the run with a traceback while
-            # the arm is energised, which is the one thing this must never do.
+            # the arm is energised, which is the one thing this must never do. Recorded by its
+            # type alone, as a failed call is, because the message quotes the answer.
             self.errors += 1
-            return self._hand_back({**record, "gate": "error", "error": f"{type(e).__name__}: {e}"})
+            return self._hand_back({**record, "gate": "error", "error": _failure(e)})
 
     def _route(self, result: Any, record: dict[str, Any], offered: Sequence[Call]) -> Advice:
         """What one fan-out means, in the order the gates have to be read.
 
-        The Nouls come first, so a stepper that thinks the job is finished never moves
-        anything else. Either of them hands the turn back: one ends a run and the other asks a
-        person, and the stepper is allowed to do neither."""
+        A question the decision LLM declined comes first, before any gate reads an answer. The
+        Nouls come next, so a stepper that thinks the job is finished never moves anything
+        else. Either of them hands the turn back: one ends a run and the other asks a person, and
+        the stepper is allowed to do neither."""
         verb = _answer(result, "next_verb")
         choice = str(_field(verb, "choice", ESCALATE))
         confidence, finite = _finite(_field(verb, "confidence"))
@@ -925,6 +1030,18 @@ class Stepper:
                 "confidence": _field(feasible, "confidence"),
             },
         )
+        # A question the decision LLM declined is not one it answered badly, and every gate
+        # below would misname it. A declined `next_verb`, `done` or `need_human` arrives as a
+        # question nobody answered and would end on `unreadable`, which says the backend sent
+        # something nobody could read; a declined `feasible` would not be noticed at all,
+        # because nothing acts on it, and the turn could be taken. So it is read first, and any
+        # declined question hands the turn back, `feasible` included: a refusal is the vendor's
+        # policy speaking about this state rather than its model answering a question, and the
+        # model, which is shown the whole turn, is the one to take a turn like that. The record
+        # keeps whatever was answered beside the names that were not.
+        if declined := _refused(result):
+            self.refusals += 1
+            return self._hand_back({**record, "gate": "refused", "refused": declined})
         # An answer that cannot be read is not a permissive answer. NaN is no confidence
         # rather than a low one and loses every comparison it is put through, so an unguarded
         # one would clear the motion floor, the done gate and the need_human gate at once and

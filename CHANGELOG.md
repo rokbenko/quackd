@@ -17,11 +17,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
   question. So it is a second backend rather than a row on the System One client.
   `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
-  out and the answers back, strictly by the name each answer carries and never by its position, and
-  a question the API declines is left unanswered and named in a `refused` list beside the answers.
-  It reaches the API through the `openai` SDK's generic request rather than its `decisions`
-  resource, which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves,
-  and it installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
+  out and the answers back, strictly by the name each answer carries and never by its position. It
+  reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
+  which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves, and it
+  installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
   `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or its `us.`, `eu.`
   and `ae.` regional hosts, over https with no user in the address: any other `--decision-url` is a
   server of your own that answers the same format, sent the word `local` and costed at the
@@ -31,14 +30,38 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `--decision-url` with a path, a query or a fragment stops the run before anything connects, on
   every machine, with or without the SDK and the key, and a run at a server of your own needs no
   key. The client waits one second and never retries, and a turn is billed at the published $0.10
-  per million input tokens, output not charged, on the count OpenAI reports. The catalogue gains a
-  `sees` field, false on every row, `openai` included, because quackd sends a decision LLM text and
-  nothing else. SECURITY.md says where each decision LLM's key may go, and the row has
+  per million input tokens, output not charged, on the count OpenAI reports. A question the API
+  declines is no answer at all, so the stepper reads that before any answer and hands the turn to
+  the model on a gate of its own, `refused`, whichever of the four was declined, `feasible`
+  included. The turn's record names the questions declined, the run's `decision` summary counts
+  `refusals`, and `quackd log` prints the names in yellow. Every stepper turn that sends a request
+  now records `idle_s` as well, the seconds since the stepper's previous request ended. OpenAI's SDK
+  and TypeSafe's both drop a connection idle for five seconds, and in shadow mode the model's own
+  call and a verb usually take longer than that between two of the stepper's requests, so `idle_s`
+  tells a turn that paid for opening a new connection from one that reused one. The catalogue gains
+  a `sees` field, false on every row, `openai` included, because quackd sends a decision LLM text
+  and nothing else. SECURITY.md says where each decision LLM's key may go, and the row has
   [a page of its own](docs/guides/decision-llms/openai.md). `tests/test_decisions_api.py` drives the
   translation, the key, the headers and the address through a fake of the SDK,
-  `tests/fake_decisions_api.py`. The honest part: nothing has answered a real robot and no request
-  has reached OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is
-  gated on were shaped around Jev, so shadow mode comes first.
+  `tests/fake_decisions_api.py`, and `tests/test_decision.py` drives the new gate and `idle_s`
+  through the stepper. The honest part: nothing has answered a real robot and no request has reached
+  OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated on were
+  shaped around Jev, so shadow mode comes first.
+
+### Changed
+
+- **A stepper turn that failed records the exception's type and HTTP status, never its message.**
+  The turn is still `gate: error` and still the model's, and its `error` used to carry the
+  exception's message whole. An SDK puts the server's reply there, TypeSafe's the reply's own
+  message and OpenAI's the body of a 4xx or a 5xx, and a reply can quote the request it turned down,
+  which is the state the record otherwise keeps as a size and a shape. So `error` now holds the type
+  and the status, `RateLimitError: HTTP 429` for a rate limit at OpenAI, or the type alone where
+  there is no status, and so does the line `quackd log` prints, while a turn that ran out of the
+  stepper's own second still says `TimeoutError: no answer within 1.0 s`. Laya's `ValueError` for
+  options that overflow `head_max_len` is recorded by its type alone, so
+  [its page](docs/guides/decision-llms/laya.md) now asks for the turn's `labels` beside it.
+  `tests/test_decision.py` and `tests/test_decisions_api.py` fail when a reply that quotes the
+  state, or carries a data URL, reaches the record.
 
 ### Fixed
 
