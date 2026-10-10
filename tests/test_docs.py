@@ -1660,6 +1660,19 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
         assert "--decision-url" in page and "/v1/systemone" in page
 
 
+@pytest.mark.parametrize("page", ["docs/guides/decision-llms/openai.md", "SECURITY.md"])
+def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page: str) -> None:
+    """`decisions_api.OPENAI_HOSTS` is every host `OPENAI_API_KEY` may be sent to, and these two
+    pages name them host by host, which is a list easy to leave behind: the code and the pages
+    once named four where OpenAI document eleven for this endpoint. So every host of OpenAI's API a
+    page names is one the key goes to, and every one the key goes to is named."""
+    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+
+    text = (REPO / page).read_text(encoding="utf-8")
+    named = set(re.findall(r"\b(?:[a-z]{2}\.)?api\.openai\.com\b", text))
+    assert named == set(OPENAI_HOSTS), f"{page}: {sorted(named ^ set(OPENAI_HOSTS))}"
+
+
 def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     """The table is the way in, so it carries the links, in the order `doctor` prints.
 

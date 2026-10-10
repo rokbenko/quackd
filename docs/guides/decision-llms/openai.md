@@ -77,17 +77,29 @@ measurement.
   https://api.openai.com, because quackd adds /v1/decisions itself
   ```
 
-- **The key goes to OpenAI's own API alone**: `https://api.openai.com` or its regional hosts
-  `us.api.openai.com`, `eu.api.openai.com` and `ae.api.openai.com`, over https, on port 443 or
-  none, with no user named in the address. Every other `--decision-url` is a server of your own
-  that answers the same format, and is sent the word `local`, as every server you run is.
-  `QUACKD_DECISION_URL` is never read for this row, because it is a row that sends a key.
+- **The key goes to OpenAI's own API alone**: `https://api.openai.com`, or one of the regional
+  hosts OpenAI's [data controls page](https://developers.openai.com/api/docs/guides/your-data)
+  lists for this endpoint, `us.api.openai.com`, `eu.api.openai.com`, `au.api.openai.com`,
+  `ca.api.openai.com`, `jp.api.openai.com`, `in.api.openai.com`, `sg.api.openai.com`,
+  `kr.api.openai.com`, `gb.api.openai.com` and `ae.api.openai.com`, over https. The address's
+  authority has to be one of those hosts and nothing more, or the host and `:443`, so a user, a
+  port of somebody's own or a host that only looks like one of them is somebody else's. Every
+  other `--decision-url` is a server of your own that answers the same format, and is sent the
+  word `local`, as every server you run is. `QUACKD_DECISION_URL` is never read for this row,
+  because it is a row that sends a key.
 - **What the SDK reads for itself is decided here instead.** Handed no address it would follow
-  `OPENAI_BASE_URL`, which a reader sets for a model on their own machine, so it is always handed
-  one. It adds the lines of `OPENAI_CUSTOM_HEADERS` to every request, which is where a pilot that
-  goes through a gateway keeps that gateway's headers, so every one is left off. `OPENAI_ORG_ID` and
-  `OPENAI_PROJECT_ID` are OpenAI's identifiers, so they go to OpenAI as the SDK sends them and to
-  nowhere else.
+  `OPENAI_BASE_URL`, which quackd's own local presets read as the address of a model server on
+  your own machine, so it is always handed one. It adds the lines of `OPENAI_CUSTOM_HEADERS` to
+  every request, which is where a pilot that goes through a gateway keeps that gateway's headers,
+  so none of their values goes: an authorization line, in whatever spelling, carries quackd's own
+  key or word instead, and every other line is left off. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`
+  are OpenAI's identifiers, so they go to OpenAI as the SDK sends them, a gateway's line that
+  names either header notwithstanding, and to nowhere else. That holds for every release of the
+  SDK the extra allows, and a release that would still send an authorization line of the
+  variable's stops the run and is named.
+- **It follows no redirect.** Followed, one would carry the account headers, and on a 307 or a 308
+  the whole request with the robot's state in it, to wherever it pointed. A redirect is a turn the
+  record calls an error.
 - **One second and no retries.** The SDK's own defaults are ten minutes and two retries, and its
   first retry sleeps three eighths to a half of a second before it starts. The client is built
   with `TIMEOUT_S` and none, and the stepper's own one-second bound holds whatever the client says,
@@ -105,7 +117,7 @@ measurement.
 > `QUACKD_DECISION_PRICE` is how you say otherwise, for a paid server or for OpenAI's regional
 > premium, which OpenAI say applies and publish for no Decisions row.
 
-## VERIFIED (read from OpenAI's Decisions guide, its API reference and openai-python on 2026-10-08, and from openai-python 1.66.0 and 3.22.1 on 2026-10-09)
+## VERIFIED (read from OpenAI's Decisions guide, its API reference and openai-python on 2026-10-08, from openai-python 1.66.0 and 3.22.1 on 2026-10-09, and from OpenAI's data controls page and the openai-python releases between 1.66.0 and 3.22.1 that uv had cached on 2026-10-10)
 
 | Thing | Value | What quackd does with it |
 |---|---|---|
@@ -119,8 +131,10 @@ measurement.
 | Price | $0.10 per million input tokens, no output, cache-read or cache-write charges, and *"regional processing premiums and long-context input pricing multipliers apply"*, neither published for this endpoint ([the guide](https://developers.openai.com/api/docs/guides/decisions)) | `Price(input=0.10, output=0.0)`, dated 2026-10-08 on the record; a regional host is costed at this rate too, and `QUACKD_DECISION_PRICE` is how to say otherwise |
 | Data | not used for training, kept 30 days in abuse-monitoring logs, eligible for zero data retention | nothing to do; [SECURITY.md](../../../SECURITY.md) says what a run sends |
 | The SDK's resource | `client.decisions` arrived in openai 3.26.0, on 2026-10-06; the lock carries 3.22.1, which has none | not used. The client makes the SDK's generic request, `post(path, cast_to=object, body=..., options=...)`, which hands back the decoded JSON body unchanged in 1.66.0 and in 3.22.1, so no floor moves |
-| The SDK's address | given none, it reads `OPENAI_BASE_URL`, else `https://api.openai.com/v1`, and it appends a request's path after making sure the address ends in a slash. Its own regional choice, in 3.22.1, names four hosts: `api`, `us.api`, `eu.api` and `ae.api.openai.com` | handed `<url>/v1` on every build, built from the parts the key was decided on; the key goes to those four hosts alone |
-| The SDK's headers | it adds `OpenAI-Organization` and `OpenAI-Project` from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`; 3.22.1 also adds every line of `OPENAI_CUSTOM_HEADERS`, split on newlines with the name before the first colon, and drops that variable's `Authorization` line only when the caller names one; an `Omit` in place of a value drops the header | names `Authorization` outright, omits every other name `OPENAI_CUSTOM_HEADERS` carries, read the same way, and omits the two account headers at any address that is not OpenAI's |
+| The SDK's address | given none, it reads `OPENAI_BASE_URL`, else `https://api.openai.com/v1`, and it appends a request's path after making sure the address ends in a slash. Its own regional choice, in 3.22.1, names four hosts: `api`, `us.api`, `eu.api` and `ae.api.openai.com` | handed `<url>/v1` on every build, built from the scheme and the authority the key was decided on |
+| Regional hosts | the data controls page lists ten regions, each with a host, `us`, `eu`, `au`, `ca`, `jp`, `in`, `sg`, `kr`, `gb` and `ae` in front of `.api.openai.com`, and `/v1/decisions` among the endpoints each stores in its region; it says *"The Decisions API is available in all supported API regions"*, that a project with data residency adds its region's prefix to every request, and that *"Availability in a region does not imply that inference is performed in that region"*, while the Decisions guide says *"Data residency and regional processing are supported in the United States and Europe (EEA + Switzerland)"* | the key goes to `api.openai.com` and to each of those ten, and to no host OpenAI have not named, however much it looks like theirs (`decisions_api.OPENAI_HOSTS`) |
+| The SDK's headers | it adds `OpenAI-Organization` and `OpenAI-Project` from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, and an `Omit` in place of a value drops a header. What it does with `OPENAI_CUSTOM_HEADERS` depends on the release: 1.66.0 and 1.83.0 do not read it; 3.1.0 adds every line, split on newlines with the name before the first colon, and lets a header the caller names replace a line only when both are spelled alike; the releases read from 3.6.0 to 3.19.0 also drop the variable's authorization lines when the caller names one in any spelling; 3.22.1 also merges every name without regard to case | an authorization line of the variable, in any spelling, carries quackd's own value under that spelling, with `Authorization` itself omitted first when there is one; at OpenAI a line naming an account header in the SDK's own spelling carries the variable's value, and so does any other spelling of it beside that one; every other name is omitted, and so are both account headers at any address that is not OpenAI's. The built client's headers are read back, and an authorization value quackd did not write refuses the build, naming the release. Each of the eleven releases in that range that uv had cached was driven against a socket on 127.0.0.1 with the variable's authorization line spelled three ways, and sent one authorization line every time, quackd's |
+| Redirects | the SDK follows them, because the HTTP client it builds for itself does; 1.66.0 has no per-request option to say otherwise, and a release that does not know an option drops it without a word | the client is built on `DefaultAsyncHttpxClient(follow_redirects=False)`, which every release reads, so a 3xx is an error and nothing follows it |
 | The SDK's clocks | 600 s a request (5 s to connect) and two retries, the first after three eighths to a half of a second, or as long as a `Retry-After` asks up to two minutes | `timeout=TIMEOUT_S` and `max_retries=0`, with `asyncio.wait_for` around `decide()` in the stepper as the bound that holds |
 
 ## UNVERIFIED, and what quackd does about each

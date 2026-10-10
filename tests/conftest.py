@@ -190,7 +190,7 @@ def openai_address(client: object) -> str | None:
     by this guard's own rule rather than by `decisions_api.is_openai_host`, which a test may
     replace to treat a stand-in on 127.0.0.1 as OpenAI's and see what the key does there
     (`tests/test_decisions_api_wire.py` does), and a guard that replacement could talk round
-    would guard nothing. The rule is wider than the four hosts quackd sends a key to, on purpose:
+    would guard nothing. The rule is wider than the hosts quackd sends a key to, on purpose:
     openai.com or any host under it, lowercased and with a trailing dot taken off."""
     if type(client).__module__.partition(".")[0] != "openai":
         return None

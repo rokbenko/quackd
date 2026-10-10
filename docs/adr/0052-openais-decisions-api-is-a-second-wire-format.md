@@ -53,15 +53,37 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   (`factory.resolve_decision_address`), so a copied `https://api.openai.com/v1` stops the run on
   every machine rather than only on one with the SDK and the key.
 - **The key goes to OpenAI's own API and nowhere else.** `OPENAI_API_KEY` is sent only to
-  `https://api.openai.com` or its `us.`, `eu.` and `ae.` hosts, the four the SDK itself names, on
-  port 443 or none and with no user in the address, because a user in it is where `urlsplit` and
-  the HTTP client can disagree about the host. The four live in `decisions_api.py` rather than in
-  the row, whose address is only a default that `--decision-url` replaces. Every other address is
-  sent `NO_KEY`, which moves to `base.py`, and is costed at the self-hosted rate unless
-  `QUACKD_DECISION_PRICE` says otherwise. `QUACKD_DECISION_URL` is never read for this row.
-  `Authorization` is named outright, every header `OPENAI_CUSTOM_HEADERS` names is omitted, read
-  the way the SDK reads it, and `OpenAI-Organization` and `OpenAI-Project` are omitted at any
-  address that is not OpenAI's.
+  `https://api.openai.com` or one of the regional hosts OpenAI's data controls page lists for
+  `/v1/decisions`, `us.`, `eu.`, `au.`, `ca.`, `jp.`, `in.`, `sg.`, `kr.`, `gb.` and `ae.` in front
+  of `api.openai.com`: the SDK's own regional choice names four of them, and a project with data
+  residency in any of the others is told to add its region's prefix to every request. The rule
+  reads the address's authority whole, which has to be one of those hosts, alone or with `:443`,
+  over https, rather than `urlsplit`'s reading of the host, because the authority is what the
+  client is handed, and a user in the address, or brackets on a Python older than 3.11.4, are
+  where `urlsplit` and the HTTP client disagree about the host. The hosts live in
+  `decisions_api.py` rather than in the row, whose address is only a default that
+  `--decision-url` replaces. Every other address is sent `NO_KEY`, which moves to `base.py`, and
+  is costed at the self-hosted rate unless `QUACKD_DECISION_PRICE` says otherwise, the key and the
+  price decided by one rule on one string (`factory.sends_key`, which decides `jev`'s too).
+  `QUACKD_DECISION_URL` is never read for this row.
+- **What the SDK would add by itself is answered, in every release the extra allows.** The
+  releases between the floor and the lock treat `OPENAI_CUSTOM_HEADERS` four ways: not read at
+  all, every line added and merged by exact spelling, the authorization lines dropped when the
+  caller names one, and every name merged without regard to case. So the rule rests on none of
+  them. An authorization line of the variable, in any spelling, carries quackd's own value under
+  that spelling, with `Authorization` itself omitted first when there is one, so whichever way a
+  release merges, one line goes and it is quackd's. Every other name the variable carries is
+  omitted, read the way the SDK reads it. The built client's headers are read back, and a release
+  that would still send an authorization quackd did not write refuses the build, naming itself.
+  `OpenAI-Organization` and `OpenAI-Project` go to OpenAI as the SDK fills them, a line of the
+  variable that names either in the SDK's own spelling carrying the variable's value rather than
+  taking the SDK's entry away, and are omitted at any address that is not OpenAI's. Omitting every
+  name the variable carries, the obvious rule, breaks 3.22.1, which merges without regard to case:
+  an omitted `authorization` takes quackd's own away with it.
+- **No redirect is followed.** The client is built on the SDK's `DefaultAsyncHttpxClient`, told
+  to follow none, because a redirect would carry the account headers, and on a 307 or a 308 the
+  request with the state in it, to wherever it pointed, and 1.66.0 has no per-request way to say
+  so. A redirect is a turn the record calls an error.
 - **One second and no retries.** `timeout=TIMEOUT_S` and `max_retries=0`. The SDK's two retries
   would sleep three eighths to a half of a second before the first, and the stepper's `wait_for`
   stays the bound that holds.

@@ -45,9 +45,14 @@ Also in scope:
   LLM quackd names wants a key at all: the rest are servers you run yourself or a checkpoint in this
   process, and quackd hands those a placeholder in the key field rather than whatever hosted key
   happens to be sitting in the same `.env`. The `openai` preset sends `OPENAI_API_KEY` to OpenAI's
-  own API alone, `https://api.openai.com` or its `us.`, `eu.` and `ae.` regional hosts, gives any
-  other `--decision-url` the same placeholder, and sends nothing `OPENAI_CUSTOM_HEADERS` sets to
-  any address at all.
+  own API alone, `https://api.openai.com` or one of the regional hosts OpenAI list for the
+  endpoint (`us.api.openai.com`, `eu.api.openai.com`, `au.api.openai.com`, `ca.api.openai.com`,
+  `jp.api.openai.com`, `in.api.openai.com`, `sg.api.openai.com`, `kr.api.openai.com`,
+  `gb.api.openai.com` and `ae.api.openai.com`), decided on the address's whole authority, so a
+  user, a port or a host that only resembles one of those is never sent it. It gives any other
+  `--decision-url` the same placeholder, sends nothing `OPENAI_CUSTOM_HEADERS` sets to any address
+  at all, whichever release of the SDK is installed, and follows no redirect, which would carry
+  the account headers and the request itself somewhere else.
 - **The command line, which the run record now holds.** A solo run writes down what it was
   started with, in three places: `command` in the transcript's `run_start`, `command` in
   `summary.json`, and the first line of `terminal.txt`. A flock root has no `run_start`, so

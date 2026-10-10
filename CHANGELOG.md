@@ -21,16 +21,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
   which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves, and it
   installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
-  `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or its `us.`, `eu.`
-  and `ae.` regional hosts, over https with no user in the address: any other `--decision-url` is a
-  server of your own that answers the same format, sent the word `local` and costed at the
-  self-hosted rate unless `QUACKD_DECISION_PRICE` says otherwise. What the SDK reads for itself is
-  answered too. `OPENAI_BASE_URL` never moves the address, nothing `OPENAI_CUSTOM_HEADERS` sets is
-  ever sent, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI and nowhere else. A
-  `--decision-url` with a path, a query or a fragment stops the run before anything connects, on
-  every machine, with or without the SDK and the key, and a run at a server of your own needs no
-  key. The client waits one second and never retries, and a turn is billed at the published $0.10
-  per million input tokens, output not charged, on the count OpenAI reports. A question the API
+  `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the
+  regional hosts OpenAI's data controls page lists for it, `us.`, `eu.`, `au.`, `ca.`, `jp.`, `in.`,
+  `sg.`, `kr.`, `gb.` and `ae.` in front of `api.openai.com`, over https, with nothing else in the
+  address's authority but the port https uses anyway: any other `--decision-url` is a server of
+  your own that answers the same format, sent the word `local` and costed at the self-hosted rate
+  unless `QUACKD_DECISION_PRICE` says otherwise. What the SDK reads for itself is answered too, in
+  every release of it the extra allows rather than only the one the lock carries. `OPENAI_BASE_URL`
+  never moves the address, nothing `OPENAI_CUSTOM_HEADERS` sets is ever sent, an authorization
+  line of it in any spelling carrying quackd's own key or word instead, and a release that would
+  still send one stops the run and is named. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI,
+  whatever a gateway's line of that variable names, and nowhere else, and the client follows no
+  redirect, which would have carried them and the request somewhere else. A `--decision-url` with
+  a path, a query or a fragment stops the run before anything connects, on every machine, with or
+  without the SDK and the key, and a run at a server of your own needs no key. The client waits one
+  second and never retries, and a turn is billed at the published $0.10 per million input tokens,
+  output not charged, on the count OpenAI reports. A question the API
   declines is no answer at all, so the stepper reads that before any answer and hands the turn to
   the model on a gate of its own, `refused`, whichever of the four was declined, `feasible`
   included. The turn's record names the questions declined, the run's `decision` summary counts
@@ -54,11 +60,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   installed, `tests/test_decisions_api_wire.py` drives a real `quackd run` through the real one
   against `tests/fake_openai_decisions.py`, a stand-in for the API on 127.0.0.1, and shows on the
   wire that the key and OpenAI's account headers go only where they are meant to, that nothing
-  `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in, and that a 429 is one request, recorded
-  as the rate limit it is, where the SDK's own retries would have slept through the turn's second
-  and recorded a timeout. `tests/test_live_decision.py` runs against `openai` as well as `jev` and
-  waits for a key, and any other test that sends a decision request through the real SDK to OpenAI's
-  own API is stopped before it sends, and fails. The honest part: nothing has answered a real robot
+  `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in, in whatever spelling, that a redirect
+  is never followed, and that a 429 is one request, recorded as the rate limit it is, where the
+  SDK's own retries would have slept through the turn's second and recorded a timeout.
+  `tests/test_live_decision.py` runs against `openai` as well as `jev` and waits for a key, and any
+  other test that sends a decision request through the real SDK to OpenAI's own API is stopped
+  before it sends, and fails. The honest part: nothing has answered a real robot
   and no request has reached OpenAI, OpenAI define no `confidence` and claim no calibration, and the
   floors it is gated on were shaped around Jev, so shadow mode comes first.
 
