@@ -93,37 +93,37 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   and some as `APITimeoutError`. Above it, the stepper's `wait_for` ends every turn that runs out.
   `decide(timeout_s=...)` bounds the whole request with a `wait_for` of its own, the SDK's clock for
   that request set above the bound, for a caller with no stepper around it.
-- **Nothing the SDK does once happens inside a turn.** Before a client's first request every release
-  asks which platform it is on, in a worker thread, and on Windows that starts a subprocess: inside
-  the first turn it once took the whole second, before anything was sent. The client has the SDK's
-  own function asked while it is built and is handed the answer (`warm_platform`), so no turn asks.
+- **Nothing the SDK does once happens inside a turn.** Before a client's first request each release
+  read, the eleven from 1.66.0 to 3.22.1 in the uv cache, asks which platform it is on, in a worker
+  thread, and on Windows that is a WMI query or, on Python 3.11, a subprocess: inside the first turn
+  it once took the whole second, before anything was sent. The client has the SDK's own function
+  asked while it is built and is handed the answer (`warm_platform`), so no turn asks.
 - **Translated both ways, and read by name alone.** The state goes as one JSON string, the very
   one the stepper measures as `state_chars`, with its letters as letters, because `input` is text
   the API hands its model undecoded and JSON's escapes would reach it as written. Every question
-  goes named and in order: a `noul` as a
-  `predicate`, a choice's criteria as `choices` with `escalate` last, a score's as `levels`. An
-  answer is kept only under a name quackd asked, and position is never used, because the schema
-  makes the name optional and position is the one reading that could attribute `need_human`'s
-  probability to `done`. Every answer under a name is gathered before any is read: a refusal
-  among them declines the question wherever it came, two answers or more answer nothing, and one
-  answer counts only if it is the type its question went out as and carries that type's field, a
-  string `choice` on a choice. First-wins, the rule this replaced, kept an answer ahead of a
-  refusal, settled a contradiction in whichever direction came first, and let a `score` under
-  `next_verb` or a choice with no `choice` read as a confident `escalate`. OpenAI's `confidence` is
-  carried as the confidence, field to field, as Jev's is.
+  goes named and in order: a `noul` as a `predicate`, a choice's criteria as `choices` with
+  `escalate` last, a score's as `levels`. An answer is kept only under a name quackd asked, and
+  position is never used, because the schema makes the name optional and position is the one reading
+  that could attribute `need_human`'s probability to `done`. Every answer under a name is gathered
+  before any is read: a refusal among them declines the question wherever it came, two answers or
+  more answer nothing, and one answer counts only if it is the type its question went out as and
+  carries that type's field, a string `choice` on a choice. First-wins, the rule this replaced, kept
+  an answer ahead of a refusal, settled a contradiction in whichever direction came first, and let a
+  `score` under `next_verb` or a choice with no `choice` read as a confident `escalate`. OpenAI's
+  `confidence` is carried as the confidence, field to field, as Jev's is.
 - **A declined question is a gate of its own.** Any name in the answer's `refused` ends the turn
   on `refused`, read before every other gate and whichever question it was, `feasible` included,
   with the names on the record and the summary counting `refusals`. Read as anything else it
   would be misnamed: a declined `done` would end on `unreadable`, and a declined `feasible` would
   not be noticed at all. `base.DecisionLLM` documents `refused` for any backend.
-- **What a gate reads is a probability or nothing, on every row.** A server of your own that
-  speaks this format is answered through an SDK that hands its JSON back unchecked, and the
-  stepper read any number it could make a float of: a confidence written as text, or one on a
-  scale of its own, a percentage or a negative, cleared floors and moved the body. A confidence,
-  `done` and `need_human` are now each a number from 0 to 1 and nothing else
-  (`stepper._probability`), a `next_verb` without a string `choice` is no answer, and either ends
-  the turn on `unreadable`. A NaN or an infinity never reaches the record, so every line of
-  `transcript.jsonl` is JSON a strict reader takes.
+- **What a gate reads is a probability or nothing, on every row.** A server of your own that speaks
+  this format is answered through an SDK that hands its JSON back unchecked, and the stepper read
+  any number it could make a float of: a confidence written as text, or one on a scale of its own, a
+  percentage or a 5, cleared its floor, a `done` or a `need_human` of -1 cleared its gate, and each
+  moved the body. A confidence, `done` and `need_human` are now each a number from 0 to 1 and
+  nothing else (`stepper._probability`), a `next_verb` without a string `choice` is no answer, and
+  either ends the turn on `unreadable`. A NaN or an infinity never reaches the record, so every line
+  of `transcript.jsonl` is JSON a strict reader takes.
 - **A failed turn keeps its exception's type and HTTP status, and never its message.** OpenAI's
   SDK puts a 4xx body in the message and TypeSafe's the reply's own, and a reply can quote the
   request, which the record otherwise keeps as a size and a shape. This holds for every row. Each

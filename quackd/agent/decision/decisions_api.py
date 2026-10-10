@@ -413,17 +413,18 @@ _UNSET = object()
 def warm_platform(client: Any) -> None:
     """Ask now the one question the SDK asks before its first request: which platform it is on.
 
-    Every release the extra allows starts a client's first request with `self._platform = await
-    asyncify(get_platform)()` while it has no answer, in a worker thread (`openai/_base_client.py`,
-    each of the eleven releases from 1.66.0 to 3.22.1 that uv had cached, read 2026-10-10).
-    `get_platform` reads `platform.system()` and `platform.platform()`, and on Linux the
-    distribution's own file, and on Windows `platform.platform()` starts `cmd /c ver` in a
-    subprocess. CPython keeps the answer for the life of the process, so it is paid once, and it
-    was paid inside the first stepper turn and against that turn's second: on a loaded machine
-    most of the second, and now and then all of it, when the turn was cancelled before anything
-    was sent and was recorded and billed as a request that had left. Reading the built client's
-    headers back, as `DecisionsAPILLM` does, happens to ask it as well, through `default_headers`,
-    but leaves the client without the answer, so its first request still stopped to ask again.
+    Each release of the SDK read for this starts a client's first request with
+    `self._platform = await asyncify(get_platform)()` while it has no answer, in a worker thread
+    (`openai/_base_client.py`, the eleven releases from 1.66.0 to 3.22.1 that uv had cached, read
+    2026-10-10). `get_platform` reads `platform.system()` and `platform.platform()`, and on Linux
+    the distribution's own file. On Windows `platform.platform()` asks the system for its version,
+    by a WMI query from Python 3.12 and by `cmd /c ver` in a subprocess on 3.11, and CPython keeps
+    the answer for the life of the process, so it is paid once, and it was paid inside the first
+    stepper turn and against that turn's second: on a loaded machine most of the second, and now and
+    then all of it, when the turn was cancelled before anything was sent and was recorded and billed
+    as a request that had left. Reading the built client's headers back, as `DecisionsAPILLM` does,
+    happens to ask it as well, through `default_headers`, but leaves the client without the answer,
+    so its first request still stopped to ask again.
 
     So it is asked here, on purpose, while the client is built and the robot is not yet connected,
     where a slow answer costs a moment of start-up and nothing else. The SDK's own `get_platform` is

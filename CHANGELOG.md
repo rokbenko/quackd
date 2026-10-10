@@ -17,15 +17,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
   question. So it is a second backend rather than a row on the System One client.
   `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
-  out and the answers back, strictly by the name each answer carries and never by its position,
-  and by its type: an answer of a type its question was not asked as, a choice with no choice in
-  it, or two answers under one name answer nothing, which hands the turn to the model on
-  `unreadable`, and a refusal among them declines the question. The state goes as one JSON object
-  with its letters as letters, because OpenAI's `input` is text its model reads as written, and
-  the `state_chars` every row records now counts those letters rather than JSON's six-character
-  escape for each one outside ASCII. It reaches the API through the `openai` SDK's generic request rather than its `decisions` resource,
-  which arrived in 3.26.0, so the 3.22.1 the lock carries serves it and no floor moves, and it
-  installs with `quackd[openai]`, the pilot's own extra, which `quackd[all]` already carries.
+  out and the answers back, strictly by the name each answer carries and never by its position, and
+  by its type: an answer of a type its question was not asked as, a choice with no choice in it, or
+  two answers under one name answer nothing, which for a question the gates read hands the turn to
+  the model on `unreadable`, and a refusal among them declines the question. The state goes as one
+  JSON object with its letters as letters, because OpenAI's `input` is text its model reads as
+  written, and the `state_chars` every row records now counts those letters rather than JSON's
+  six-character escape for each one outside ASCII. It reaches the API through the `openai` SDK's
+  generic request rather than its `decisions` resource, which arrived in 3.26.0, so the 3.22.1 the
+  lock carries serves it and no floor moves, and it installs with `quackd[openai]`, the pilot's own
+  extra, which `quackd[all]` already carries.
   `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the
   regional hosts OpenAI's data controls page lists for it, `us.`, `eu.`, `au.`, `ca.`, `jp.`, `in.`,
   `sg.`, `kr.`, `gb.` and `ae.` in front of `api.openai.com`, over https, with nothing else in the
@@ -40,31 +41,31 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   redirect, which would have carried them and the request somewhere else. A `--decision-url` with
   a path, a query or a fragment stops the run before anything connects, on every machine, with or
   without the SDK and the key, and a run at a server of your own needs no key. The client never
-  retries, and its own clock sits above the stepper's second, so that second is what ends a turn
-  and one that runs out of it is recorded one way, as `TimeoutError: no answer within 1.0 s`;
+  retries, and its own clock sits above the stepper's second, so that second is what ends a turn and
+  one that runs out of it is recorded one way, as `TimeoutError: no answer within 1.0 s`;
   `decide(timeout_s=...)` bounds a whole request for a caller with no stepper around it. The SDK
-  asks which platform it is on before its first request, which on a cold Windows machine starts a
-  subprocess, so that is asked while the client is built and no turn waits for it. A turn is billed
-  at the published $0.10 per million input tokens, output not charged, on the count OpenAI
-  reports. A question the API
-  declines is no answer at all, so the stepper reads that before any answer and hands the turn to
-  the model on a gate of its own, `refused`, whichever of the four was declined, `feasible`
-  included. The turn's record names the questions declined, the run's `decision` summary counts
-  `refusals`, and `quackd log` prints the names in yellow. Every stepper turn that sends a request
-  now records `idle_s` as well, the seconds since the stepper's previous request ended. OpenAI's SDK
-  and TypeSafe's both drop a connection idle for five seconds, and in shadow mode the model's own
-  call and a verb usually take longer than that between two of the stepper's requests, so `idle_s`
-  tells a turn that paid for opening a new connection from one that reused one. The catalogue gains
-  a `sees` field, false on every row, `openai` included, because quackd sends a decision LLM text
-  and nothing else. The row has [a page of its own](docs/guides/decision-llms/openai.md),
-  SECURITY.md says where each decision LLM's key may go, and the decision-LLM hub, the README,
-  `.env.example`, CONTRIBUTING, the architecture page, the SO-101's first run, the local-LLM guide
-  and PLAN.md name it where they name the others. The hub works its rate into the cost of one
-  decision, about a thousandth of the model call it replaces where Jev's is about a two-thousandth,
-  and gives it no latency, because OpenAI publish only a ratio to their own Responses API. The
-  warning `--decision-mode on` prints says the same: the hub's figures are estimates of speed and
-  cost for `jev` at TypeSafe, of cost alone for `openai` at OpenAI, and of neither for a server
-  you run, where it used to say Jev and nothing at all for anything else.
+  asks which platform it is on before its first request, which on a cold Windows machine means a WMI
+  query or a subprocess, so that is asked while the client is built and no turn waits for it. A turn
+  is billed at the published $0.10 per million input tokens, output not charged, on the count OpenAI
+  reports. A question the API declines is no answer at all, so the stepper reads that before any
+  answer and hands the turn to the model on a gate of its own, `refused`, whichever of the four was
+  declined, `feasible` included. The turn's record names the questions declined, the run's
+  `decision` summary counts `refusals`, and `quackd log` prints the names in yellow. Every stepper
+  turn that sends a request now records `idle_s` as well, the seconds since the stepper's previous
+  request ended. OpenAI's SDK and TypeSafe's both drop a connection idle for five seconds, and in
+  shadow mode the model's own call and a verb usually take longer than that between two of the
+  stepper's requests, so `idle_s` tells a turn that paid for opening a new connection from one that
+  reused one. The catalogue gains a `sees` field, false on every row, `openai` included, because
+  quackd sends a decision LLM text and nothing else. The row has
+  [a page of its own](docs/guides/decision-llms/openai.md), SECURITY.md says where each decision
+  LLM's key may go, and the decision-LLM hub, the README, `.env.example`, CONTRIBUTING, the
+  architecture page, the SO-101's first run, the local-LLM guide and PLAN.md name it where they name
+  the others. The hub works its rate into the cost of one decision, about a thousandth of the model
+  call it replaces where Jev's is about a two-thousandth, and gives it no latency, because OpenAI
+  publish only a ratio to their own Responses API. The warning `--decision-mode on` prints says the
+  same: the hub's figures are estimates of speed and cost for `jev` at TypeSafe, of cost alone for
+  `openai` at OpenAI, and of neither for a server you run, where it used to say Jev and nothing at
+  all for anything else.
   [ADR-0052](docs/adr/0052-openais-decisions-api-is-a-second-wire-format.md) records why it is built
   in rather than a plugin, amending ADR-0043's one wire format and its one published rate and
   extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the

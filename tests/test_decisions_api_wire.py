@@ -509,12 +509,12 @@ async def test_a_bound_handed_to_decide_ends_a_request_answered_a_piece_at_a_tim
 async def test_no_turn_stops_to_ask_which_platform_the_sdk_is_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Before a client's first request every release asks which platform it is on, in a worker
-    thread, and on a cold Windows machine that starts a subprocess. Asked inside the first stepper
-    turn it could outlast the turn's second, which ended the turn as a timeout before anything was
-    sent, and the record called it a request that went out and billed it. Made slower here than a
-    whole turn, it is asked while the client is built, the client is handed the answer, and no
-    turn asks it again."""
+    """Before a client's first request each release of the SDK read asks which platform it is on, in
+    a worker thread, and on a cold Windows machine that is a WMI query or a subprocess. Asked inside
+    the first stepper turn it could outlast the turn's second, which ended the turn as a timeout
+    before anything was sent, and the record called it a request that went out and billed it. Made
+    slower here than a whole turn, it is asked while the client is built, the client is handed the
+    answer, and no turn asks it again."""
     import openai._base_client as sdk_base
 
     real = sdk_base.get_platform

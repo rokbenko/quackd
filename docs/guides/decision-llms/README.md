@@ -908,12 +908,13 @@ is three attributes and one method:
 What you hand back may be anything quackd's reader can get at: an object carrying `answers`, or a
 mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and optionally
 `probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the label as a string,
-and a `confidence` or a `noul` is a number from 0 to 1, never a word or a flag: anything else is
-an answer quackd cannot read, and the turn goes to the model on `unreadable`. A `usage` with
-`input_tokens` is used where it is there and estimated where it is not, so a backend that counts nothing costs the
-run an estimate rather than an error. A list of question names under `refused`, beside the
-answers and read the same way, says which questions it declined rather than answered, and any
-name there hands the turn to the model on the gate `refused`.
+and a `confidence` or a `noul` is a number from 0 to 1, never a word or a flag: anything else, in
+`next_verb`, `done` or `need_human`, is an answer quackd cannot read, and the turn goes to the
+model on `unreadable`. A `usage` with `input_tokens` is used where it is there and estimated where
+it is not, so a backend that counts nothing costs the run an estimate rather than an error. A list
+of question names under `refused`, beside the answers and read the same way, says which questions
+it declined rather than answered, and any name there hands the turn to the model on the gate
+`refused`.
 
 Raising is allowed and is not fatal. `Stepper.advise` catches everything, records the turn as
 `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps the

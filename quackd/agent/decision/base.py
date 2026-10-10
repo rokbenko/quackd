@@ -105,14 +105,14 @@ class DecisionLLM(Protocol):
     wire format is another shape translates them itself, both ways, and hands back answers in
     this one (`decisions_api.py`), so the stepper never learns which it was talking to.
 
-    What comes back may be anything `stepper._answer` can read: an object carrying `answers`,
-    or a mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and
+    What comes back may be anything `stepper._answer` can read: an object carrying `answers`, or
+    a mapping with an `"answers"` key, whose members carry `choice` and `confidence` (and
     optionally `probabilities`), or a bare `noul`, as attributes or as keys. A `choice` is the
     label as a string, and a `confidence` or a `noul` a number from 0 to 1, never a word or a
-    flag: anything else is an answer the stepper cannot read, and it hands the turn to the model
-    on `unreadable` (`stepper._probability`). A `usage` with `input_tokens` is used where it is
-    there and estimated where it is not, so a backend that counts nothing costs the run an
-    estimate rather than an error.
+    flag: anything else, in `next_verb`, `done` or `need_human`, is an answer the stepper cannot
+    read, and it hands the turn to the model on `unreadable` (`stepper._probability`). A `usage`
+    with `input_tokens` is used where it is there and estimated where it is not, so a backend
+    that counts nothing costs the run an estimate rather than an error.
 
     It may also carry `refused` beside `answers`, the same way: a list of the names of the
     questions it declined to answer rather than answered, each of which then answers nothing.

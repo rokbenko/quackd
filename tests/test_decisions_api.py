@@ -643,11 +643,11 @@ def _sdks_platform_function(monkeypatch: pytest.MonkeyPatch, probe: Any) -> None
 def test_the_sdks_look_at_its_platform_is_taken_while_the_client_is_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every release asks which platform it is on before its first request, in a worker thread,
-    and on Windows that starts a subprocess, which inside the first stepper turn could take the
-    whole of its second and the turn with it, before anything was sent. Asked while the client is
-    built, by the SDK's own function, and handed to the client, it leaves the first request
-    nothing to ask."""
+    """Each release of the SDK read asks which platform it is on before its first request, in a
+    worker thread, and on Windows that is a WMI query or a subprocess, which inside the first
+    stepper turn could take the whole of its second and the turn with it, before anything was sent.
+    Asked while the client is built, by the SDK's own function, and handed to the client, it leaves
+    the first request nothing to ask."""
     asked: list[str] = []
 
     def get_platform() -> str:

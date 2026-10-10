@@ -243,18 +243,17 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     `PATIENCE_S` rather than the stepper's second, so the slow ones are measured rather than cut
     off. The row's page lists what this answers as unverified.
 
-    `LATENCY_UNDER_ONE_SECOND`: the median, the 95th percentile and the slowest, how many would
-    have run out of the stepper's `TIMEOUT_S` and gone to the model, and the first request apart
-    from the rest, because it opens the connection the others reuse, which is most of the
-    difference between a turn in shadow mode and a turn in a streak. It is also this client's first
-    request, and does once what no later one does, so it reads a little high for a shadow turn in
-    a run that has asked before: the SDK's look at its platform, the costly part, is taken while
-    the client is built (`decisions_api.warm_platform`), and the rest is in the figure, which says
-    so. `ANSWER_NAMES_ECHOED`: every answer
-    back under the name its question was asked by, in the order asked, which is asserted rather
-    than printed, because quackd reads answers by name and nothing else. `CONFIDENCE_MEANS_THE_SAME`
-    and `NO_CACHE_DISCOUNT`, printed for a person to read: the confidence beside the top
-    probability on each answer, and the usage block as OpenAI sent it."""
+    `LATENCY_UNDER_ONE_SECOND`: the median, the 95th percentile and the slowest, how many would have
+    run out of the stepper's `TIMEOUT_S` and gone to the model, and the first request apart from the
+    rest, because it opens the connection the others reuse, which is most of the difference between
+    a turn in shadow mode and a turn in a streak. It is also this client's first request, and does
+    once what no later one does, so it reads a little high for a shadow turn in a run that has asked
+    before: the SDK's look at its platform, the costly part, is taken while the client is built
+    (`decisions_api.warm_platform`), and the rest is in the figure, which says so.
+    `ANSWER_NAMES_ECHOED`: every answer back under the name its question was asked by, in the order
+    asked, which is asserted rather than printed, because quackd reads answers by name and nothing
+    else. `CONFIDENCE_MEANS_THE_SAME` and `NO_CACHE_DISCOUNT`, printed for a person to read: the
+    confidence beside the top probability on each answer, and the usage block as OpenAI sent it."""
     stepper, obs = await _arm_stepper(decisions_row, "Read the arm back and say what it reports")
     llm: Any = stepper.llm
     state, _trimmed = stepper._build_state(obs, budget=BUDGET, stepped=(), notes=None)
