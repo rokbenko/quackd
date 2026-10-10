@@ -30,6 +30,7 @@ from quackd.transport.base import (
     DuckTransport,
     HeartbeatError,
     Intent,
+    frame_period_of,
     frame_taken_at_of,
 )
 from quackd.verbs.core import CORE
@@ -293,6 +294,14 @@ class MicroduckAdapter:
         from mediad's `/frame`, and None from every camera that cannot say, which the simulators
         are among: they draw a frame when it is asked for, so every frame they hand out is new."""
         return frame_taken_at_of(self.transport)
+
+    @property
+    def frame_period_s(self) -> float | None:
+        """How long one frame of the camera takes to follow the last, which `go_to` reads off the
+        object it was handed, this adapter, to tell whether its steering law keeps up with the
+        camera: on `jsonrpc` from mediad's `/frame`, and None from every camera that does not
+        say, the simulators' among them."""
+        return frame_period_of(self.transport)
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)

@@ -16,6 +16,7 @@ from quackd.safety import Executor
 from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
 from quackd.transport.sim2d import Sim2DTransport
+from quackd.verbs.core import LOST_TICKS, LOST_WZ, STEER_TURN_S, TICK_S
 from quackd.verbs.registry import VerbRegistry
 
 DUCK = parse_duck_text(
@@ -138,7 +139,7 @@ class _Kept(MockTransport):
     """A body that hands out frames it took a while before, and says when, as a Microduck on
     mediad's `/frame` does. Its camera asks for a picture every `period` of the body's clock, or
     as soon as the last one came when that took longer, takes it as it asks, and has it `fetch`
-    later, and `get_frame` hands out the newest that has come. The body turns at the rate of the
+    later, and `get_frame` hands out the newest that has come. The body walks and turns at the
     last twist it was sent until a stop, or until twists stop coming for a deadman window, and
     each frame carries the time it was taken and the heading it was taken at, in degrees."""
 
@@ -147,8 +148,8 @@ class _Kept(MockTransport):
         self.head_fade_s = head_fade_s
         self.fetch = fetch
         self.every = max(period, fetch)
-        self.yaw_deg = 0.0
-        self.wz = 0.0
+        self.x = self.y = self.yaw_deg = 0.0
+        self.vx = self.wz = 0.0
         self.twisted_at = 0.0
         self.handed_out: list[Image.Image] = []
         # one frame has come already, as one has once a real camera connects, and the camera
@@ -167,8 +168,10 @@ class _Kept(MockTransport):
         for _ in range(slices):
             self._t += seconds / slices
             if self._t - self.twisted_at > KEPT_DEADMAN_S:
-                self.wz = 0.0
+                self.vx = self.wz = 0.0
             self.yaw_deg += math.degrees(self.wz * seconds / slices)
+            self.x += self.vx * math.cos(math.radians(self.yaw_deg)) * seconds / slices
+            self.y += self.vx * math.sin(math.radians(self.yaw_deg)) * seconds / slices
             while self.next_ask <= self._t:
                 self.coming.append((self.next_ask + self.fetch, self._picture(self.next_ask)))
                 self.next_ask += self.every
@@ -184,11 +187,12 @@ class _Kept(MockTransport):
 
     async def send_intent(self, intent: Intent) -> Ack:
         if intent.kind == "move":
-            self.wz, self.twisted_at = float(intent.params.get("wz", 0.0)), self._t
+            self.vx, self.wz = float(intent.params["vx"]), float(intent.params["wz"])
+            self.twisted_at = self._t
         return await super().send_intent(intent)
 
     async def stop(self) -> None:
-        self.wz = 0.0
+        self.vx = self.wz = 0.0
         await super().stop()
 
     async def sleep(self, seconds: float) -> None:
@@ -254,6 +258,134 @@ async def test_search_scan_claims_the_head_again_after_each_turn_on_a_body_that_
     for at in stops:
         assert kinds[at + 1 : at + 1 + len(after_each_turn)] == after_each_turn, kinds
     assert kinds.count("look") == 1 + len(after_each_turn) * len(stops), kinds
+
+
+# ── go_to on a camera too slow for its steering law ─────────────────────────────────────
+
+#: A narrow lens, of the width a Microduck's upright frame has, for `_SeesTheBall`.
+NARROW_LENS_DEG = 40.0
+
+
+class _KeptBall(_Kept):
+    """`_Kept` on a floor with a ball on it, `ball_m` away and `ball_deg` to the left of where it
+    starts out facing. It walks forward at the speed of the last twist as well as turning, and
+    each frame carries the ball's bearing and distance from where the body stood and pointed when
+    the frame was taken. Its camera says how often a frame comes, `frame_period_s`, unless told
+    not to, and then `go_to` steers on it by the law as it always did."""
+
+    def __init__(
+        self,
+        *,
+        period: float,
+        fetch: float,
+        ball_deg: float,
+        ball_m: float,
+        says_period: bool = True,
+    ) -> None:
+        self.ball = (
+            ball_m * math.cos(math.radians(ball_deg)),
+            ball_m * math.sin(math.radians(ball_deg)),
+        )
+        self.says_period = says_period
+        super().__init__(period=period, fetch=fetch)
+
+    @property
+    def frame_period_s(self) -> float | None:
+        return self.every if self.says_period else None
+
+    def _picture(self, taken_at: float) -> Image.Image:
+        picture = super()._picture(taken_at)
+        dx, dy = self.ball[0] - self.x, self.ball[1] - self.y
+        bearing = math.degrees(math.atan2(dy, dx)) - self.yaw_deg
+        picture.info.update(bearing=(bearing + 180.0) % 360.0 - 180.0, dist=math.hypot(dx, dy))
+        return picture
+
+
+class _SeesTheBall:
+    """A detector that finds the ball where the frame says it was, when that is inside a lens
+    `lens_deg` wide, and nothing otherwise."""
+
+    name = "sees_the_ball"
+
+    def __init__(self, lens_deg: float) -> None:
+        self.lens_deg = lens_deg
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        bearing, dist = float(image.info["bearing"]), float(image.info["dist"])
+        if abs(bearing) > self.lens_deg / 2:
+            return []
+        return [
+            Detection(
+                label="ball", cx=0.5, cy=0.5, area=0.01, bearing_deg=bearing, est_distance_m=dist
+            )
+        ]
+
+
+async def _go_to_twists(
+    registry: VerbRegistry, *, period: float, fetch: float, says_period: bool
+) -> list[dict[str, float]]:
+    """The twists `go_to` sends toward a ball a little off to the left, on `_KeptBall`."""
+    body = _KeptBall(period=period, fetch=fetch, ball_deg=12.0, ball_m=1.5, says_period=says_period)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
+    assert result.ok, result.summary
+    return [dict(intent.params) for intent in body.intents if intent.kind == "move"]
+
+
+async def test_go_to_on_a_camera_too_slow_for_its_law_turns_no_further_than_it_measured(
+    registry: VerbRegistry,
+) -> None:
+    """`go_to` turns STEER_GAIN radians a second for every degree of bearing, and measured again
+    every tick on the newest frame, which through mediad's `/frame` was the same frame for half a
+    second or more. Held that long, one measurement turned the duck past the ball, the next,
+    taken before that turn, said to go on, and on a narrow lens the ball left the picture and
+    the verb gave up on it. Here frames come every half second and take 0.6 s to come. On a
+    camera this slow `go_to` turns no further than each frame measured and looks again only at a
+    frame taken once the turn had settled, so the ball never leaves the picture and is reached
+    dead ahead."""
+    body = _KeptBall(period=0.5, fetch=0.6, ball_deg=12.0, ball_m=1.5)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
+    assert result.ok, result.summary
+    seen = [abs(frame.info["bearing"]) for frame in body.handed_out]
+    assert max(seen) <= NARROW_LENS_DEG / 2, f"the ball got {max(seen):.1f}° off the axis"
+    assert abs(result.data["bearing_deg"]) < 1.0, result.summary
+
+
+@pytest.mark.parametrize(
+    ("period", "measures_first"),
+    [(STEER_TURN_S / 2 * 0.9, False), (STEER_TURN_S / 2 * 1.1, True)],
+    ids=["keeps-up", "too-slow"],
+)
+async def test_go_to_measures_first_only_where_two_frame_periods_outlast_its_turn(
+    registry: VerbRegistry, period: float, measures_first: bool
+) -> None:
+    """The law covers a whole bearing in STEER_TURN_S of holding one measurement's turn, and a
+    frame can steer for two periods, its own and the fetch of the next, so where two periods are
+    longer than that one measurement can carry the duck past what it measured. On a camera
+    whose two periods fit inside it, `go_to` sends exactly the twists it sends a body that says
+    no period at all, and on one whose do not, it sends others."""
+    said = await _go_to_twists(registry, period=period, fetch=period, says_period=True)
+    unsaid = await _go_to_twists(registry, period=period, fetch=period, says_period=False)
+    assert (said != unsaid) is measures_first
+
+
+@pytest.mark.parametrize("says_period", [False, True], ids=["keeps-up", "too-slow"])
+async def test_go_to_looks_for_a_lost_target_as_far_whether_or_not_it_measures_first(
+    registry: VerbRegistry, says_period: bool
+) -> None:
+    """A target never seen, or lost, is looked for by turning toward the side it was last seen on
+    for LOST_TICKS ticks of the lost turn before `go_to` gives up. Measuring first, each look
+    turns for as long as the law takes to cover a bearing rather than for a tick, and counts for
+    that many ticks, so the duck turns as far before it gives up, give or take one look's turn,
+    where counting looks would have spun it round more than once."""
+    body = _KeptBall(period=0.5, fetch=0.5, ball_deg=-90.0, ball_m=1.5, says_period=says_period)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
+    assert not result.ok and "lost the ball" in result.summary, result.summary
+    as_far = math.degrees(LOST_TICKS * TICK_S * LOST_WZ)
+    one_look = math.degrees(STEER_TURN_S * LOST_WZ)
+    assert as_far - one_look <= body.yaw_deg <= as_far + 1e-6, body.yaw_deg
 
 
 # ── a twist the body refuses ends the verb that steers ──────────────────────────────────

@@ -3131,6 +3131,34 @@ async def test_only_mediads_frame_says_when_and_through_which_head_it_was_taken(
     assert MicroduckAdapter(MockTransport()).frame_taken_at() is None
 
 
+async def test_mediads_frame_says_how_long_one_frame_takes_to_follow_the_last(
+    robotd: FakeRobotd,
+) -> None:
+    """`go_to` tells from the camera's period whether its steering law keeps up with it, and the
+    snapshot loop asks mediad again a period after it last asked, or once the last fetch is done
+    when that took longer. So the period is the rate's own while frames come quickly, and the
+    slow fetch's once one is slow. A camera whose frames say nothing of when they were taken
+    says no period, and nor does a body that hands out no such frames, through the adapter."""
+    slow = 1.0
+    with SnapshotServer((200, _png(720, 1280)), (200, _png(720, 1280), slow)) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        await t.connect()
+        try:
+            assert t.frame_period_s == 1 / MEDIAD_FRAME_FPS
+            first = t._frame
+            await _eventually(lambda: t._frame is not first, "a frame that took a while to come")
+            tick = time.get_clock_info("monotonic").resolution
+            assert t.frame_period_s is not None and t.frame_period_s >= slow - tick
+            assert MicroduckAdapter(t).frame_period_s == t.frame_period_s
+        finally:
+            await t.close()
+    for other in ("http://127.0.0.1:1/snapshot.png", "webrtc://127.0.0.1:8443"):
+        assert JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=other).frame_period_s is None
+    assert MicroduckAdapter(MockTransport()).frame_period_s is None
+
+
 def test_camera_error_says_why_get_frame_has_nothing() -> None:
     """Nothing yet, the newest fetch's failure, or a frame too old to steer on, and None while a
     frame is there to hand out. No `--camera-url` is None too: `observe` says that itself."""

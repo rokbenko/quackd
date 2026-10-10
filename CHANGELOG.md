@@ -302,6 +302,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `tests/test_composite.py` has `search_scan` look at each heading through a camera that hands out
   frames taken half a second before. Each failed before this change.
 
+- **`go_to` on a Microduck's `/frame` turns no further than each frame measured, so it no longer
+  swings past a target and loses it.** `go_to` turns toward what it sees at a rate set by the
+  bearing, holds that turn for a tick and measures again on the newest frame, which was sized for a
+  camera with a new frame most ticks. mediad's `/frame`, asked at 2 frames a second, hands out the
+  same frame for half a second or more, so one measurement's turn was held long enough to carry the
+  duck past the target, the next measurement, taken before that turn, said to go on turning, the
+  target left the alpha's 37° view, and the search for it turned away from it. In a model of the
+  duck a ball 12° off was lost that way when a fetch took 0.6 s, and with fetches of a few tenths of
+  a second it was lost or reached several degrees off the beak's line, depending on how fast the
+  body answered a turn. A camera now says how long one frame takes to follow the last, and where two
+  of those outlast the third of a second the turn takes to cover a whole bearing, `go_to` measures,
+  then moves: it turns no further than each frame measured, walks on straight while the turn
+  settles, and steers again only on a frame taken after it. That is every `/frame` camera, so
+  `go_to` closes on a target more slowly there. The simulators, WebRTC and any other HTTP camera say
+  no period and are steered as before, and a target lost from view is looked for as far as before.
+  `tests/test_composite.py` steers at a ball through a camera that hands out a frame every half
+  second and takes 0.6 s to fetch one, which lost the ball, holds the change to two frame periods
+  against the turn's third of a second from both sides, and the search for a lost target to turning
+  as far either way, and `tests/test_jsonrpc.py` reads the period off mediad's route while its
+  frames come quickly and once one comes slowly. Each failed with its part of this change taken out.
+
 - **The physics simulator fetches its policies at upstream's `v7`, the set a robot on
   daemon-v0.16.1 is seeded with, and nothing in quackd says a robot stands on `alpha_stand.onnx`
   any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx` and their

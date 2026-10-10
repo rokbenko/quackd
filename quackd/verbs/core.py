@@ -25,6 +25,7 @@ from quackd.perception.base import Detection, detect_off_loop, summarize_detecti
 from quackd.transport.base import (
     Intent,
     camera_names_of,
+    frame_period_of,
     frames_of,
     frames_taken_since,
     primary_of,
@@ -44,6 +45,18 @@ MAX_WZ = 1.5
 TICK_S = 0.1
 TURN_RATE = 1.0  # rad/s used for scanning
 DEFAULT_GAZE_LIMIT_DEG = 60.0
+#: How hard `go_to` turns toward a target it sees: radians a second of turn for every degree the
+#: target is off the camera's axis, held until the next frame is measured, and the fastest turn.
+STEER_GAIN = 0.05
+STEER_MAX_WZ = 1.0
+#: How long `go_to`'s turn takes to cover a whole bearing it is held for: STEER_GAIN radians a
+#: second for every degree, so a degree's radians over the gain, about a third of a second, for
+#: every bearing the turn is not clamped on (`_measures_first`).
+STEER_TURN_S = math.radians(1.0) / STEER_GAIN
+#: How fast `go_to` turns toward the side a target it has lost was last seen on, and how many
+#: ticks of that turn it gives the target to come back into view before it gives up.
+LOST_WZ = 0.8
+LOST_TICKS = 30
 
 # ── parameters ──────────────────────────────────────────────────────────────────────────
 
@@ -542,13 +555,70 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         return await _stopped_by(ctx, "go_to", "the body stopped", refused)
 
 
+def _measures_first(ctx: VerbContext) -> bool:
+    """Whether `go_to` measures, then moves, on this body's camera, because its frames come too
+    seldom for the steering law.
+
+    The law turns STEER_GAIN radians a second for every degree of bearing and holds that turn
+    until the next tick, when it measures again, on the newest frame. It was sized for a camera
+    with a new frame most ticks. On a slower one the same frame is measured tick after tick and
+    the same turn held, and a frame steers from the moment it was taken until a newer one
+    replaces it, which on a camera whose fetch can take as long as its period is up to two
+    periods. The law covers a whole bearing in STEER_TURN_S of holding one, so where two periods
+    are longer than that, one measurement turns the duck past what it measured, and the next,
+    taken before the turn, says to go on turning. On mediad's `/frame`, asked at two frames a
+    second, a model of the duck turned a ball out of an alpha's 37° view that way, and the lost
+    branch then turned away from it. On such a camera `go_to` turns no further than each
+    measurement calls for, and measures again only on a frame taken once the turn had settled.
+
+    A body that does not say how often its frames come keeps the law as it was: the simulators,
+    which draw a frame when it is asked for, and a stream, which comes faster than a tick."""
+    period = frame_period_of(ctx.transport)
+    return period is not None and 2 * period > STEER_TURN_S
+
+
+async def _hold(ctx: VerbContext, twist: tuple[float, float, float], seconds: float) -> None:
+    """Hold `twist` for `seconds`, sent again every MOVE_RESEND_S so the deadman stays fed. A
+    twist the body refuses ends it with `_Refused`, as every twist here does."""
+    slices = max(1, round(seconds / MOVE_RESEND_S))
+    for _ in range(slices):
+        await _twist(ctx, *twist)
+        await ctx.transport.sleep(seconds / slices)
+
+
+async def _settle(ctx: VerbContext, vx: float) -> tuple[float, tuple[float, float, float] | None]:
+    """End a turn of `go_to`'s: walk on straight at `vx`, or stand, for a tick while the turn
+    dies down, and return the moment after which a frame shows where the turn left the duck,
+    with the twist to hold while that frame comes, which `_see_holding` holds for no more than
+    a deadman window."""
+    straight = _clamped(ctx, vx, 0.0, 0.0)
+    await _twist(ctx, *straight)
+    await ctx.transport.sleep(TICK_S)
+    return ctx.transport.now(), (straight if straight[0] else None)
+
+
 async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
+    """Steer toward the target on what the camera sees until it is close enough.
+
+    On a camera that keeps up with the steering law a frame is measured every tick and the turn
+    it calls for held for that tick (STEER_GAIN). On a slower one (`_measures_first`) each turn
+    is held only for as long as it takes to cover the bearing the frame measured, then the duck
+    walks on straight and the next frame acted on is one taken once the turn had settled, so no
+    measurement turns it past what it measured, and none taken before a turn steers after it.
+
+    A target lost from view is looked for by turning toward the side it was last seen on, as
+    before. Measured first, no turn goes further than the bearing that called for it, so that
+    side is still where the target should be, as it is on a camera that keeps up with the law.
+    It was the law's overshoot on a slow camera that sent the duck the wrong way. Measuring
+    first, the lost branch too turns only between frames taken once its last turn had settled,
+    each turn lasting STEER_TURN_S and counting for as many ticks, so it turns as far before it
+    gives up as on a camera that keeps up."""
     if ctx.detector is None:
         return VerbResult.fail("go_to needs a detector (none configured)")
     # the first frame acted on is one taken once the head has settled (`_look_ahead`)
     since: float | None = await _look_ahead(ctx)
     t0 = ctx.transport.now()
-    lost = 0
+    lost = 0.0  # ticks' worth of the lost branch's turn since the target was last seen
     last_bearing = 0.0
     tick = 0
     held: tuple[float, float, float] | None = None
@@ -560,39 +630,48 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
             return await _no_frame(ctx, "go_to")
         if (failed := await detector_failed(ctx, "go_to", "the body stopped")) is not None:
             return failed
+        measures_first = _measures_first(ctx)
         if not hits:
-            lost += 1
-            if lost > 30:
+            hold = STEER_TURN_S if measures_first else TICK_S
+            lost += hold / TICK_S
+            if lost > LOST_TICKS:
                 await ctx.transport.stop()
                 return VerbResult.fail(f"lost the {p.target}; try search_scan")
             # turn toward where it was last seen
-            wz = 0.8 if last_bearing >= 0 else -0.8
-            held = _clamped(ctx, 0.0, 0.0, wz)
+            held = _clamped(ctx, 0.0, 0.0, LOST_WZ if last_bearing >= 0 else -LOST_WZ)
+        else:
+            lost = 0.0
+            d = hits[0]
+            bearing = d.bearing_deg or 0.0
+            dist = d.est_distance_m
+            last_bearing = bearing
+            if dist is not None and dist <= p.stop_distance:
+                held = None
+                await ctx.transport.stop()
+                await ctx.transport.sleep(TICK_S)
+                return VerbResult.success(
+                    f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°",
+                    distance_m=dist,
+                    bearing_deg=bearing,
+                    ticks=tick,
+                )
+            wz = max(-STEER_MAX_WZ, min(STEER_MAX_WZ, bearing * STEER_GAIN))
+            vx = 0.2 if abs(bearing) < 25 else 0.05
+            if dist is not None and dist < p.stop_distance + 0.15:
+                vx = min(vx, 0.1)  # creep in
+            held = _clamped(ctx, vx, 0.0, wz)
+            # measuring first, the turn is held for as long as it takes to cover the bearing this
+            # frame measured and no longer, or, with no turn to make, for as long as the law takes
+            # to cover one
+            hold = TICK_S
+            if measures_first:
+                hold = abs(math.radians(bearing) / held[2]) if held[2] else STEER_TURN_S
+        if measures_first:
+            await _hold(ctx, held, hold)
+            since, held = await _settle(ctx, held[0])
+        else:
             await _twist(ctx, *held)
             await ctx.transport.sleep(TICK_S)
-            continue
-        lost = 0
-        d = hits[0]
-        bearing = d.bearing_deg or 0.0
-        dist = d.est_distance_m
-        last_bearing = bearing
-        if dist is not None and dist <= p.stop_distance:
-            held = None
-            await ctx.transport.stop()
-            await ctx.transport.sleep(TICK_S)
-            return VerbResult.success(
-                f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°",
-                distance_m=dist,
-                bearing_deg=bearing,
-                ticks=tick,
-            )
-        wz = max(-1.0, min(1.0, bearing * 0.05))
-        vx = 0.2 if abs(bearing) < 25 else 0.05
-        if dist is not None and dist < p.stop_distance + 0.15:
-            vx = min(vx, 0.1)  # creep in
-        held = _clamped(ctx, vx, 0.0, wz)
-        await _twist(ctx, *held)
-        await ctx.transport.sleep(TICK_S)
     await ctx.transport.stop()
     return VerbResult.fail(
         f"go_to timed out after {p.timeout_s:g}s without reaching the {p.target}"

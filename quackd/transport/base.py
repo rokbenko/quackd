@@ -183,10 +183,11 @@ class DuckTransport(Protocol):
     nothing this time, because that flag is what the detector reads.
 
     A transport that hands out frames taken ahead of being asked for, and knows when each was
-    taken, may offer `frame_taken_at() -> float | None` as well. `frame_taken_at_of()` is how
-    callers ask, and a transport without it keeps every verb as it was. One that offers it must
-    stop handing out a frame once it is too old to steer on, since that is what ends a wait for
-    a newer one that never comes (`frames_taken_since`)."""
+    taken, may offer `frame_taken_at() -> float | None` as well, and `frame_period_s`, how long
+    one frame takes to follow the last. `frame_taken_at_of()` and `frame_period_of()` are how
+    callers ask, and a transport without them keeps every verb as it was. One that offers
+    `frame_taken_at` must stop handing out a frame once it is too old to steer on, since that
+    is what ends a wait for a newer one that never comes (`frames_taken_since`)."""
 
     name: str
 
@@ -275,6 +276,18 @@ def frame_taken_at_of(transport: Any) -> float | None:
     and knows when, offers `frame_taken_at()`: a Microduck on mediad's `/frame` does."""
     taken_at = getattr(transport, "frame_taken_at", None)
     return _finite(taken_at()) if callable(taken_at) else None
+
+
+def frame_period_of(transport: Any) -> float | None:
+    """How long one frame of the body's camera takes to follow the last, as it runs now, in
+    seconds, or None when the body does not say.
+
+    A body that draws its frame when it is asked for has no period, and one that streams its
+    frames faster than a verb looks at them has none worth saying. A body that hands out frames
+    at a pace of its own, and says when each was taken (`frame_taken_at_of`), offers
+    `frame_period_s`, which `go_to` reads to tell whether its steering law keeps up."""
+    period = _finite(getattr(transport, "frame_period_s", None))
+    return period if period is not None and period > 0 else None
 
 
 async def frames_taken_since(transport: Any, since: float, poll_s: float) -> None:

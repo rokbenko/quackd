@@ -362,7 +362,8 @@ CAMERA_FPS = 5.0
 #: the docs start with. Every request has the duck encode a PNG of its whole picture, with no
 #: downscale, and what that costs a robot has not been measured, so mediad is asked for fewer
 #: frames than any other HTTP camera. It still hands `go_to` a frame inside the window
-#: `camera_stale_after_s` gives it.
+#: `camera_stale_after_s` gives it, but not one a tick, which its steering law was sized for, so
+#: on this camera `go_to` measures, then moves (`frame_period_s`).
 MEDIAD_FRAME_FPS = 2.0
 
 #: How long one snapshot may take before it counts as failed. mediad gives up on a frame from
@@ -644,6 +645,9 @@ class JsonRpcUnixTransport:
         self._first_frame_size: tuple[int, int] | None = None
         """The first HTTP frame's width and height, which the lens of `/frame` is taken from
         (`_assumed_fov_deg`)."""
+        self._fetch_s = 0.0
+        """How long the newest HTTP fetch took, answered or not, which the snapshot loop waits out
+        before it asks again (`frame_period_s`)."""
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -1150,7 +1154,8 @@ class JsonRpcUnixTransport:
                     frame.info[FRAME_HEAD_YAW_DEG] = head
                 self._frame, self._frame_at = frame, started
                 self._frame_error, self._frame_retryable = None, False
-            await asyncio.sleep(max(0.0, period - (time.monotonic() - started)))
+            self._fetch_s = time.monotonic() - started
+            await asyncio.sleep(max(0.0, period - self._fetch_s))
 
     def _head_at_request(self) -> float | None:
         """Where the camera points from the trunk, in degrees of yaw positive left, by the newest
@@ -1209,8 +1214,9 @@ class JsonRpcUnixTransport:
 
         The verbs that steer on the camera read it (`quackd.transport.base.frame_taken_at_of`), to
         act only on a frame taken after a move they made had settled: after `go_to` and
-        `search_scan` centre the head and wait out a glance, and after each of `search_scan`'s
-        turns. `get_frame` hands out the newest frame the snapshot loop holds, which was asked for
+        `search_scan` centre the head and wait out a glance, after each of `search_scan`'s turns,
+        and after each of `go_to`'s on a camera too slow for its steering law (`frame_period_s`).
+        `get_frame` hands out the newest frame the snapshot loop holds, which was asked for
         as much as a period of `camera_fps` and a fetch before, so the first frame either verb
         acted on after its wait could show the head mid-glance, or still where a `gaze` had left
         it, and one `search_scan` read after a turn could show the view from before it.
@@ -1226,6 +1232,22 @@ class JsonRpcUnixTransport:
         if self.frame_age_s() is None or self._frame_at is None:
             return None
         return self._frame_at - self._t0
+
+    @property
+    def frame_period_s(self) -> float | None:
+        """How long one frame of mediad's `/frame` takes to follow the last, as the camera runs
+        now, or None from a camera whose frames say nothing of when they were taken.
+
+        The snapshot loop asks again a period after it last asked, `1 / camera_fps`, or as soon
+        as the last fetch is done when that took longer, so the period is whichever of the two is
+        longer. `go_to` reads it to tell whether its steering law keeps up with the camera, and
+        on one it does not, turns no further than each frame measured and waits for a frame taken
+        once the turn had settled (`quackd.verbs.core._measures_first`). A frame that says nothing
+        of when it was taken could not be waited for, so such a camera says no period either, and
+        `go_to` steers on it by the law as it did."""
+        if self._webrtc is not None or not is_mediad_frame(self.camera_url):
+            return None
+        return max(1.0 / max(0.1, self.camera_fps), self._fetch_s)
 
     @property
     def camera_fov_deg(self) -> float | None:
