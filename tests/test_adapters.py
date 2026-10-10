@@ -9,6 +9,7 @@ import pytest
 import quackd.safety
 from quackd.adapters.base import RobotAdapter, adapter_name, backend_name
 from quackd.duckfile.parser import parse_duck_text
+from quackd.perception import ASSUMED_LENS
 from quackd.perception.base import Detection
 from quackd.safety import Executor
 from quackd.transport.base import DuckState, Intent, Posture
@@ -57,6 +58,12 @@ async def test_the_lens_a_microducks_camera_reports_goes_in_its_manifest() -> No
     assert "camera_fov_deg" not in microduck_manifest("jsonrpc").limits
     blind = microduck_manifest("jsonrpc", camera=False, camera_fov_deg=41.5)
     assert "camera_fov_deg" not in blind.limits, "a lens without a camera is no lens"
+    # a lens nobody measured carries the words of its assumption, which the detector reads
+    said = "the module's design"
+    assumed = microduck_manifest("jsonrpc", camera_fov_deg=41.5, camera_fov_assumed=said)
+    assert assumed.extras[ASSUMED_LENS] == said
+    assert ASSUMED_LENS not in microduck_manifest("jsonrpc", camera_fov_deg=41.5).extras
+    assert ASSUMED_LENS not in microduck_manifest("jsonrpc", camera_fov_assumed=said).extras
 
     reporting = MockTransport()
     reporting.camera_fov_deg = 41.5  # type: ignore[attr-defined]

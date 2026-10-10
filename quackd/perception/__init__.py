@@ -9,13 +9,23 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Container
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from quackd.adapters.manifest import RobotManifest
     from quackd.host import HostClient, HostHello
     from quackd.perception.base import Detector
 
-__all__ = ["DETECTOR_CHOICES", "detector_for", "explicit_detector", "is_simulated", "lens"]
+__all__ = [
+    "ASSUMED_LENS",
+    "DETECTOR_CHOICES",
+    "detector_for",
+    "explicit_detector",
+    "is_simulated",
+    "lens",
+    "lens_of",
+    "tell_lens",
+]
 
 logger = logging.getLogger("quackd.perception")
 
@@ -34,15 +44,43 @@ DETECTOR_CHOICES = ("color", "host", "yolo")
 `--host` names a daemon that can detect, else the colour detector on this machine."""
 
 
-def lens(fov_deg: float | None, backend: str | None, *, guess: float) -> tuple[float, bool]:
+#: The key in a manifest's `extras` under which a body names the assumption its
+#: `limits.camera_fov_deg` rests on, when nobody measured that lens (`lens_of`).
+ASSUMED_LENS = "camera_fov_assumed"
+
+
+def lens_of(manifest: RobotManifest, given: float | None) -> tuple[float | None, str | None]:
+    """The lens a detector measures through once the body has connected, and the assumption it
+    rests on, or None: `--fov-deg` when it was given, which rests on none, else the body's own
+    `camera_fov_deg`, with the words of the assumption the body named under `ASSUMED_LENS` when
+    it named one.
+
+    A Microduck on mediad's `/frame` takes its lens from the first frame's shape, which is the
+    camera module's design and not anybody's measurement. A lens like that was taken for a
+    measured one: every detection through it said it was calibrated, and the warning to pass
+    `--fov-deg` never came. The assumption travels with the lens now, so it is neither."""
+    if given:
+        return float(given), None
+    fov = manifest.limits.get("camera_fov_deg")
+    if fov is None:
+        return None, None
+    assumed = manifest.extras.get(ASSUMED_LENS)
+    return float(fov), (assumed if isinstance(assumed, str) and assumed else None)
+
+
+def lens(
+    fov_deg: float | None, backend: str | None, *, guess: float, assumed: str | None = None
+) -> tuple[float, bool]:
     """(field of view, calibrated) for a detector that measures through a lens.
 
-    A field of view somebody gave is the lens, and calibrated. With none, a simulator's camera
-    is still known, because it is the one `color_blob.DEFAULT_FOV_DEG` describes. A real
+    A field of view somebody gave is the lens, and calibrated, unless the body that reported it
+    said it was assumed (`assumed`, the words of the assumption, `lens_of`): that one is the
+    lens, uncalibrated, so every detection says its size rests on it. With none, a simulator's
+    camera is still known, because it is the one `color_blob.DEFAULT_FOV_DEG` describes. A real
     body with none gets `guess`, uncalibrated, so every detection says its size is a guess
     rather than looking measured."""
     if fov_deg is not None:
-        return float(fov_deg), True
+        return float(fov_deg), assumed is None
     if is_simulated(backend):
         from quackd.perception.color_blob import DEFAULT_FOV_DEG
 
@@ -50,8 +88,32 @@ def lens(fov_deg: float | None, backend: str | None, *, guess: float) -> tuple[f
     return guess, False
 
 
+def tell_lens(detector: Any, backend: str | None, guessed: str, *, assumed: str | None) -> None:
+    """Warn that `detector` measures through a lens nobody measured, once for each thing there
+    is to say: `guessed`, the detector's own words for a lens it fell back on, or, for a lens the
+    body assumed, words naming the assumption and `--fov-deg`. Nothing on a calibrated lens.
+
+    A detector built before the body connects is told its lens again once it has, so the same
+    words are not said twice, and different words are said once more: a lens nobody gave before
+    connect that the body then reports as assumed is a different thing to know."""
+    if detector.calibrated:
+        return
+    said = (
+        f"the {backend} camera's field of view is assumed, not measured ({assumed}), so "
+        f"detections measure through its {detector.fov_deg:.1f} degrees and say they are "
+        "uncalibrated. Pass --fov-deg once you know yours."
+        if assumed is not None
+        else guessed
+    )
+    if said != getattr(detector, "_told_lens", None):
+        detector._told_lens = said
+        logger.warning("%s", said)
+
+
 class _Calibrates(Protocol):
-    def calibrate(self, fov_deg: float | None, *, backend: str | None) -> None: ...
+    def calibrate(
+        self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
+    ) -> None: ...
 
 
 def _lens_if_known(
@@ -148,6 +210,7 @@ def detector_for(
     *,
     fov_deg: float | None = None,
     backend: str | None = None,
+    assumed: str | None = None,
 ) -> Detector | None:
     """A robot with a camera needs something to look at its frames with. Any robot.
 
@@ -168,24 +231,30 @@ def detector_for(
     duck is still half a metre out — outside `open-duck-scout`'s own success criterion, so
     the run reports success and the ground truth says it failed. There was no flag, env var
     or manifest key to correct it; `docs/faq.md` said to edit quackd's source.
+
+    `assumed` names the assumption a body's own lens rests on (`lens_of`), and a lens it names is
+    measured through uncalibrated. The detector built here is marked `lens_at_connect`, so the
+    loop and the MCP server set its lens again once the body has said what it has: `quackd run`
+    builds it from the body's description, before it connects, and a body that learns its lens
+    at connect, a Microduck from its camera, was measured through the simulator's 90 degrees for
+    the whole run, the lens its camera reported unread.
+
+    It says nothing about the lens itself. Every caller that builds one for a body with a camera
+    tells it the lens again at connect, through `ColorBlobDetector.calibrate`, and that is where
+    a lens nobody measured is warned about, once the body has said what it has. Warned about
+    here, before connect, a lens the camera then reported was called a guess at the start of a
+    run that went on to measure through it, and somebody reading that would pass a `--fov-deg`
+    that replaced the camera's own.
     """
     if current is not None or "camera" not in sensors:
         return current
     from quackd.perception.color_blob import DEFAULT_FOV_DEG, ColorBlobDetector
 
-    simulated = backend is None or backend in _SIMULATED
-    if fov_deg is not None:
-        return ColorBlobDetector(fov_deg=fov_deg)
-    if simulated:
-        return ColorBlobDetector()
-    # A real lens, and nobody said which. The geometry still works — the target is in the
-    # right direction — but the numbers are the wrong size, and saying so beats a confident
-    # measurement nobody can act on.
-    logger.warning(
-        "no camera field of view given for a %s camera, so detections use the simulator's "
-        "%.0f degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera "
-        "Module 2 is about 62) once you know yours.",
-        backend,
-        DEFAULT_FOV_DEG,
+    # A real lens nobody named keeps the simulator's field of view, uncalibrated: the target is
+    # still in the right direction, but the numbers are the wrong size, and saying so at connect
+    # beats a confident measurement nobody can act on (`ColorBlobDetector.calibrate`).
+    detector = ColorBlobDetector(lens_at_connect=True)
+    detector.fov_deg, detector.calibrated = lens(
+        fov_deg, backend, guess=DEFAULT_FOV_DEG, assumed=assumed
     )
-    return ColorBlobDetector(calibrated=False)
+    return detector

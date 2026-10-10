@@ -59,8 +59,10 @@ is at the other end of an ssh tunnel:
   on every tick, so a camera that died with the ball in shot would otherwise show the ball
   in shot forever while the duck walked at it.
 - **A lens nobody measured is named as assumed.** `mediad`'s PNG carries no lens, so the one
-  quackd takes from the first frame's shape is listed in `extras.assumptions` for as long as
-  the detector measures through it (`up.ALPHA_UPRIGHT_FOV`).
+  quackd takes from the first frame's shape goes in the manifest with the assumption named, so
+  that the detector calls its detections uncalibrated, and is listed in `extras.assumptions`
+  for as long as the detector measures through it, which ends when `--fov-deg` gives another
+  (`up.ALPHA_UPRIGHT_FOV`).
 
 Addresses: `unix:///run/robotd.sock` (on the robot, POSIX only) or `tcp://host:port`
 (e.g. after `ssh -L 9870:/run/robotd.sock robot`, which also works from Windows).
@@ -648,6 +650,9 @@ class JsonRpcUnixTransport:
         self._fetch_s = 0.0
         """How long the newest HTTP fetch took, answered or not, which the snapshot loop waits out
         before it asks again (`frame_period_s`)."""
+        self.fov_given: float | None = None
+        """The field of view `--fov-deg` gave, which the detector measures through in place of
+        the camera's own or the one assumed from the first frame (`lens_given`), or None."""
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -1249,6 +1254,29 @@ class JsonRpcUnixTransport:
             return None
         return max(1.0 / max(0.1, self.camera_fps), self._fetch_s)
 
+    def lens_given(self, fov_deg: float) -> None:
+        """Learn the field of view `--fov-deg` gave, which the detector measures through from now.
+
+        `quackd run` gives the flag to the detector alone, and the transport went on reporting
+        the lens it had assumed: every state listed `up.ALPHA_UPRIGHT_FOV` in `extras.assumptions`
+        and `extras.camera` showed the assumed degrees, so a pilot was told to discount bearings
+        for an assumption that was not in use. The loop hands the flag on at connect now."""
+        self.fov_given = float(fov_deg)
+
+    @property
+    def camera_fov_assumed(self) -> str | None:
+        """The words of the assumption `camera_fov_deg` rests on, when it rests on one: the lens of
+        a tall `/frame` (`up.ALPHA_UPRIGHT_FOV`), which `MicroduckAdapter.connect` puts in the
+        manifest beside the lens, so that the detector measures through it uncalibrated and says
+        to pass `--fov-deg` (`quackd.perception.lens_of`). None for a lens the camera reported,
+        and for none."""
+        return None if self._assumed_fov_deg() is None else up.ALPHA_UPRIGHT_FOV.name
+
+    def _lens_assumed(self) -> bool:
+        """Whether the detector measures through the lens assumed from the first frame's shape:
+        one was assumed, and `--fov-deg` gave no other."""
+        return self._assumed_fov_deg() is not None and self.fov_given is None
+
     @property
     def camera_fov_deg(self) -> float | None:
         """How wide the frames `get_frame` hands out are, in degrees, when the camera says, or
@@ -1316,10 +1344,14 @@ class JsonRpcUnixTransport:
         the camera's row."""
         if not self.camera_url:
             return {"configured": False}
+        given = self.fov_given
         if self._webrtc is not None:
-            return self._webrtc.health()
+            health = self._webrtc.health()
+            if given is not None:
+                health["fov_deg"] = round(given, 1)
+            return {**health, "fov_given": given is not None}
         age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
-        fov = self._assumed_fov_deg()
+        fov = self._assumed_fov_deg() if given is None else given
         return {
             "configured": True,
             "url": self.camera_url,
@@ -1327,8 +1359,11 @@ class JsonRpcUnixTransport:
             "age_s": age,
             "size": list(self._frame.size) if self._frame is not None else None,
             "fps": self.camera_fps,
+            # the lens the detector measures through, as far as the transport knows: the one
+            # --fov-deg gave, else the one assumed from the first frame, and which it is
             "fov_deg": None if fov is None else round(fov, 1),
-            "fov_assumed": None if fov is None else up.ALPHA_UPRIGHT_FOV.name,
+            "fov_assumed": up.ALPHA_UPRIGHT_FOV.name if self._lens_assumed() else None,
+            "fov_given": given is not None,
             "error": self._frame_error,
         }
 
@@ -1457,9 +1492,10 @@ class JsonRpcUnixTransport:
 
     def _assumptions(self) -> list[str]:
         """`extras.assumptions`: `stand_up`'s `robot.enable` always, and the lens of `mediad`'s
-        `/frame` while the detector measures through the one assumed from the first frame."""
+        `/frame` while the detector measures through the one assumed from the first frame, which
+        it stops doing once `--fov-deg` gives another (`lens_given`)."""
         listed = [up.STAND_UP_RPC.name]
-        if self._assumed_fov_deg() is not None:
+        if self._lens_assumed():
             listed.append(up.ALPHA_UPRIGHT_FOV.name)
         return listed
 

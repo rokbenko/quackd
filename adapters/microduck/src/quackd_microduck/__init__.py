@@ -24,6 +24,7 @@ from quackd.adapters.manifest import (
     Sensor,
     verb_spec,
 )
+from quackd.perception import ASSUMED_LENS
 from quackd.transport.base import (
     Ack,
     DuckState,
@@ -106,6 +107,7 @@ def microduck_manifest(
     *,
     camera: bool = True,
     camera_fov_deg: float | None = None,
+    camera_fov_assumed: str | None = None,
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
 
@@ -118,6 +120,10 @@ def microduck_manifest(
     out, when it reported one. It goes in the limits, where `quackd run` takes the lens its
     detector measures through when no `--fov-deg` names one, and where `serve-mcp`, which has
     no `--fov-deg`, always takes it, as the LeRobot arm's camera does.
+
+    `camera_fov_assumed` is the words of the assumption that lens rests on, when nobody measured
+    it, which go in the extras under `quackd.perception.ASSUMED_LENS`: the detector then
+    measures through the lens uncalibrated, and says to pass `--fov-deg`.
     """
     core = [
         verb_spec(CORE["report_state"], core=True),
@@ -154,8 +160,11 @@ def microduck_manifest(
     if camera:
         preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
     limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5}
+    extras: dict[str, Any] = {}
     if camera and camera_fov_deg is not None:
         limits["camera_fov_deg"] = float(camera_fov_deg)
+        if camera_fov_assumed:
+            extras[ASSUMED_LENS] = camera_fov_assumed
     return RobotManifest(
         id=robot_id,
         vendor="pollen-robotics",
@@ -172,6 +181,7 @@ def microduck_manifest(
         backend=backend,
         blurb=BLURB,
         datasheet=DATASHEET,
+        extras=extras,
     )
 
 
@@ -216,11 +226,13 @@ class MicroduckAdapter:
             camera = getattr(self.transport, "camera_url", True) is not None
         # The lens the camera reported, read once a frame has arrived, which is where the
         # transport learns it. The simulators report none: the detector knows their lens.
+        assumed = getattr(self.transport, "camera_fov_assumed", None)
         self.manifest = microduck_manifest(
             self.backend,
             self.robot_id,
             camera=camera,
             camera_fov_deg=_lens(getattr(self.transport, "camera_fov_deg", None)),
+            camera_fov_assumed=assumed if isinstance(assumed, str) else None,
         )
         return self.manifest
 
@@ -302,6 +314,14 @@ class MicroduckAdapter:
         camera: on `jsonrpc` from mediad's `/frame`, and None from every camera that does not
         say, the simulators' among them."""
         return frame_period_of(self.transport)
+
+    def lens_given(self, fov_deg: float) -> None:
+        """Hand the field of view `--fov-deg` gave to the transport, when it keeps a record of
+        the lens, so that the state says what the detector measures through: on `jsonrpc` it
+        stops listing the lens it assumed. The simulators keep none."""
+        given = getattr(self.transport, "lens_given", None)
+        if callable(given):
+            given(fov_deg)
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)

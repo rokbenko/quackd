@@ -62,10 +62,35 @@ class ColorBlobDetector:
     targets: tuple[Target, ...] = DEFAULT_TARGETS
     fov_deg: float = DEFAULT_FOV_DEG
     calibrated: bool = True
-    """False when `fov_deg` is the simulator default on a real lens."""
+    """False when `fov_deg` is the simulator default on a real lens, or a lens the body
+    assumed rather than measured."""
     min_area_px: int = 12
     max_per_label: int = 1
     extra: dict[str, int] = field(default_factory=dict)
+    lens_at_connect: bool = False
+    """True on one `detector_for` built, which may be before the body connected, whose lens the
+    loop and the MCP server set again from what the body reported. One built anywhere else, such
+    as one handed to a run from Python, keeps the lens it was built with."""
+    _told_lens: str | None = field(default=None, init=False, repr=False, compare=False)
+
+    def calibrate(
+        self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
+    ) -> None:
+        """Set the lens from what is known about the camera in front of the run, by the rule
+        the other detectors follow (`perception.lens`), and say once when nobody measured it."""
+        from quackd.perception import lens, tell_lens
+
+        self.fov_deg, self.calibrated = lens(
+            fov_deg, backend, guess=DEFAULT_FOV_DEG, assumed=assumed
+        )
+        tell_lens(
+            self,
+            backend,
+            f"no camera field of view given for a {backend} camera, so detections use the "
+            f"simulator's {self.fov_deg:.0f} degrees. Distances will be out by tens of percent: "
+            "pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.",
+            assumed=assumed,
+        )
 
     def detect(self, image: Image.Image) -> list[Detection]:
         rgb = np.asarray(image.convert("RGB"))

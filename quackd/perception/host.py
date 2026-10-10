@@ -135,7 +135,7 @@ class HostDetector:
         self.calibrated = calibrated
         self.conf = conf
         self.error: str | None = None
-        self._told_lens = False
+        self._told_lens: str | None = None
         # `detect` runs in a worker thread and `take_timing` on the event loop's
         self._timing_lock = threading.Lock()
         self._tally = _Tally()
@@ -148,28 +148,31 @@ class HostDetector:
         """The board this detector asks, as `host:port`."""
         return self.client.address
 
-    def calibrate(self, fov_deg: float | None, *, backend: str | None) -> None:
+    def calibrate(
+        self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
+    ) -> None:
         """Set the lens from what is known about the camera in front of the run.
 
         `fov_deg` is the field of view somebody gave (`--fov-deg`, the body's own
         `camera_fov_deg`, or the one the board's daemon was started with when its camera is the
         primary view). With none on a simulator, the simulator's own camera is known and the
-        detections are calibrated. With none on a real body, the lens is a guess: the
-        detections still point the right way, carry `calibrated=False`, and this says so once,
-        in the words `detector_for` uses for the colour detector."""
-        from quackd.perception import lens
+        detections are calibrated. With none on a real body, the lens is a guess, and with one
+        the body assumed (`assumed`) it is that one: the detections still point the right way,
+        carry `calibrated=False`, and this says so once, as the colour detector does."""
+        from quackd.perception import lens, tell_lens
 
-        self.fov_deg, self.calibrated = lens(fov_deg, backend, guess=GUESSED_FOV_DEG)
-        if not self.calibrated and not self._told_lens:
-            self._told_lens = True
-            logger.warning(
-                "no camera field of view given for a %s camera, so the host detector at %s "
-                "uses %.0f degrees. Distances will be out by tens of percent: pass --fov-deg "
-                "(a Pi Camera Module 2 is about 62) once you know yours.",
-                backend,
-                self.client.address,
-                self.fov_deg,
-            )
+        self.fov_deg, self.calibrated = lens(
+            fov_deg, backend, guess=GUESSED_FOV_DEG, assumed=assumed
+        )
+        tell_lens(
+            self,
+            backend,
+            f"no camera field of view given for a {backend} camera, so the host detector at "
+            f"{self.client.address} uses {self.fov_deg:.0f} degrees. Distances will be out by "
+            "tens of percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know "
+            "yours.",
+            assumed=assumed,
+        )
 
     def detect(self, image: Image.Image) -> list[Detection]:
         """The board's YOLO on this frame, as quackd's detections, or none when the board did

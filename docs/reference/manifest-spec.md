@@ -33,7 +33,7 @@ manifest on exactly the same terms ([concepts/architecture.md](../concepts/archi
 | `backend` | string | informational: which backend produced this |
 | `blurb` | string | the prompt's one-line intro: "a small biped duck robot (25 cm, 800 g)" |
 | `datasheet` | `Datasheet` or absent | the body as numbers, each with how sure quackd is and who says so, plus what it cannot do whatever the task says (see below) |
-| `extras` | object | adapter-specific facts (`speech: tones`, `camera_calibrated: false`, `policy: true`) |
+| `extras` | object | adapter-specific facts (`speech: tones`, `camera_calibrated: false`, `policy: true`). One key the core reads: `camera_fov_assumed`, the words of the assumption `limits.camera_fov_deg` rests on when nobody measured that lens, which makes every detection through it say it is uncalibrated and the log say to pass `--fov-deg` |
 
 A `VerbSpec`: `name` (canonical, never an alias), `core` (the same verb on every robot
 that has it), `description` (LLM-facing; empty means the implementation's default),

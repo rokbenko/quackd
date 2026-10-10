@@ -739,8 +739,10 @@ ALPHA_UPRIGHT_FOV = UpstreamRef(
     "upstream's scripts/duck-sim renders its twin's camera rolled like an alpha's, at MuJoCo's 45 "
     "degrees across the frame as sent (mediad/src/main.rs:245-248, mediad/src/camera.rs:236-256), "
     "so a tall /frame from a twin is 45 degrees wide and this is wrong there. The first frame of "
-    "a working /frame camera sets the manifest's camera_fov_deg from it, --fov-deg overrides it "
-    "on quackd run, and every state lists it in extras.assumptions while it is in use.",
+    "a working /frame camera sets the manifest's camera_fov_deg from it and names this "
+    "assumption beside it, so detections through it say they are uncalibrated and the log says "
+    "to pass --fov-deg, which overrides it on quackd run, and every state lists it in "
+    "extras.assumptions while it is in use.",
 )
 
 

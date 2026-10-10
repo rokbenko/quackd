@@ -65,7 +65,7 @@ from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
 from quackd.log import A_PERSON, EventLog, Sink, a_person_was_asked, fmt_params, who_answered
 from quackd.memory import RobotMemory
-from quackd.perception import detector_for
+from quackd.perception import detector_for, lens_of
 from quackd.perception.base import Detection, Detector, detect_off_loop, detect_times
 from quackd.safety import (
     Aborted,
@@ -1665,17 +1665,19 @@ class AgentLoop:
                     self.executor.registry = self.registry
                 self.executor.manifest = manifest
                 # the CLI guessed from the description; this is what the robot actually has.
-                # A detector the run was given is kept. One `explicit_detector` built before
-                # connect learns the lens the body reported (the board's, when the board's
-                # camera is the only one this body has). One handed in from Python is not
-                # touched: it keeps the lens it was built with, and `Detector` asks for no
-                # `calibrate`, so one of its own may mean something else.
-                lens_fov = cfg.fov_deg or manifest.limits.get("camera_fov_deg")
+                # A detector the run was given is kept. One `explicit_detector` or
+                # `detector_for` built before connect learns the lens the body reported (the
+                # board's, when the board's camera is the only one this body has). One handed
+                # in from Python is not touched: it keeps the lens it was built with, and
+                # `Detector` asks for no `calibrate`, so one of its own may mean something else.
+                # --fov-deg, else the body's own lens and the assumption it rests on, if any
+                lens_fov, assumed = lens_of(manifest, cfg.fov_deg)
                 cfg.detector = detector_for(
                     manifest.sensors,
                     cfg.detector,
                     fov_deg=lens_fov,
                     backend=backend_name(cfg.transport),
+                    assumed=assumed,
                 )
                 calibrate = getattr(cfg.detector, "calibrate", None)
                 # only a body with a camera has a lens to learn; one without keeps a detector
@@ -1686,7 +1688,13 @@ class AgentLoop:
                     and callable(calibrate)
                     and "camera" in manifest.sensors
                 ):
-                    calibrate(lens_fov, backend=backend_name(cfg.transport))
+                    calibrate(lens_fov, backend=backend_name(cfg.transport), assumed=assumed)
+                if cfg.fov_deg and "camera" in manifest.sensors:
+                    # the body keeps a record of its lens too, which the pilot reads in every
+                    # state, and it should not go on naming one the detector no longer uses
+                    lens_given = getattr(cfg.transport, "lens_given", None)
+                    if callable(lens_given):
+                        lens_given(float(cfg.fov_deg))
                 self.executor.detector = cfg.detector
             registry = self.registry
             allow = self.fm.verbs.allow

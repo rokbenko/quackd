@@ -30,6 +30,7 @@ import pytest
 from PIL import Image
 
 from quackd.duckfile.parser import parse_duck_text
+from quackd.perception import ASSUMED_LENS
 from quackd.perception.base import Detection
 from quackd.safety import Executor
 from quackd.transport.base import HeartbeatError, Intent, TransportError, frame_head_yaw_of
@@ -53,6 +54,7 @@ from quackd_microduck.transports.jsonrpc_unix import (
     parse_address,
     state_stale_after_s,
 )
+from quackd_microduck.webrtc import WebRtcCamera
 
 DUCK = parse_duck_text(
     "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
@@ -2992,8 +2994,10 @@ async def test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens(
         try:
             assert t.camera_working
             extras = (await t.get_state()).extras
+            assert extras["camera"]["fov_given"] is False
             if not assumed:
                 assert t.camera_fov_deg is None and "camera_fov_deg" not in manifest.limits
+                assert ASSUMED_LENS not in manifest.extras
                 assert extras["assumptions"] == [up.STAND_UP_RPC.name]
                 assert extras["camera"]["fov_deg"] is None
                 return
@@ -3002,6 +3006,8 @@ async def test_a_tall_first_frame_from_mediad_is_taken_for_an_alphas_lens(
             lens = math.degrees(2 * math.atan(math.tan(half) * width / height))
             assert t.camera_fov_deg == pytest.approx(lens)
             assert manifest.limits["camera_fov_deg"] == pytest.approx(lens)
+            # named beside the lens, so the detector measures through it uncalibrated
+            assert manifest.extras[ASSUMED_LENS] == up.ALPHA_UPRIGHT_FOV.name
             assert extras["assumptions"] == [up.STAND_UP_RPC.name, up.ALPHA_UPRIGHT_FOV.name]
             assert extras["camera"]["fov_deg"] == round(lens, 1)
             assert extras["camera"]["fov_assumed"] == up.ALPHA_UPRIGHT_FOV.name
@@ -3157,6 +3163,40 @@ async def test_mediads_frame_says_how_long_one_frame_takes_to_follow_the_last(
     for other in ("http://127.0.0.1:1/snapshot.png", "webrtc://127.0.0.1:8443"):
         assert JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=other).frame_period_s is None
     assert MicroduckAdapter(MockTransport()).frame_period_s is None
+
+
+async def test_fov_deg_takes_the_assumed_lens_off_the_state(robotd: FakeRobotd) -> None:
+    """`--fov-deg` replaced the lens the detector measures through and nothing else, so every
+    state went on listing the lens assumed from a tall `/frame` and showing its degrees as the
+    camera's. The loop hands the flag to the body, through the adapter, and from then on the state
+    lists no such assumption and `extras.camera` shows the lens given, over WebRTC as well."""
+    with SnapshotServer((200, _png(720, 1280))) as camera:
+        t = JsonRpcUnixTransport(
+            f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(), camera_wait_s=60.0
+        )
+        adapter = MicroduckAdapter(t)
+        await adapter.connect()
+        try:
+            extras = (await t.get_state()).extras
+            assert up.ALPHA_UPRIGHT_FOV.name in extras["assumptions"]
+            assert extras["camera"]["fov_assumed"] == up.ALPHA_UPRIGHT_FOV.name
+            adapter.lens_given(50.0)
+            extras = (await t.get_state()).extras
+            assert extras["assumptions"] == [up.STAND_UP_RPC.name]
+            said = extras["camera"]
+            assert (said["fov_deg"], said["fov_assumed"], said["fov_given"]) == (50.0, None, True)
+        finally:
+            await adapter.disconnect()
+    webrtc = JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url="webrtc://127.0.0.1:8443")
+    webrtc._webrtc = WebRtcCamera("webrtc://127.0.0.1:8443")
+    webrtc._webrtc._took_video(
+        {"width": 1280, "height": 720, "rotate": 90, "intrinsics": dict(up.ALPHA_SOLVE)}
+    )
+    assert webrtc.camera_health()["fov_given"] is False
+    webrtc.lens_given(50.0)
+    health = webrtc.camera_health()
+    assert (health["fov_deg"], health["fov_given"]) == (50.0, True)
+    MicroduckAdapter(MockTransport()).lens_given(50.0)  # a body that keeps no record of its lens
 
 
 def test_camera_error_says_why_get_frame_has_nothing() -> None:

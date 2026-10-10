@@ -50,23 +50,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   this change.
 
 - **A Microduck's camera is mediad's own `GET /frame` now, which `microduck:jsonrpc` pulls at 2
-  frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck
-  page starts with `--camera-url http://127.0.0.1:8080/frame` through
+  frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck page
+  starts with `--camera-url http://127.0.0.1:8080/frame` through
   `ssh -L 8080:127.0.0.1:8080 microduck@<duck>`, the upright PNG mediad has served since
   daemon-v0.13.0, with no extra installed and nothing stopped on the duck, where it used to offer
   WebRTC or a snapshot server of your own with mediad stopped. Every request has the duck encode a
   PNG of its whole picture, and nobody has measured what that costs a robot, so quackd pulls
-  mediad's route at 2 frames a second, where every other HTTP camera is still pulled at 5. The
-  PNG carries no lens, so a first frame taller than wide, which on a stock robot only an alpha's
-  camera gives, is taken for the IMX219's 62° running down the picture: 37.3° across the 720 by
-  1280 frame of the default 720p. That goes in the manifest as `camera_fov_deg`, which `serve-mcp`
-  measures through for want of a `--fov-deg`, and every state lists the assumption in
-  `extras.assumptions`, since it is the module's design rather than a calibration, and wrong on a
-  duck in upstream's own simulator, whose camera is 45° wide. A wide frame and every other camera
-  get no lens, as before. `tests/test_jsonrpc.py` asks mediad's route at its rate and every other
-  camera at theirs, takes the lens from a tall first frame of mediad's and from no other, and
-  keeps it when a later frame is wide, and `tests/test_docs.py` holds the page to the numbers in
-  the code. Each failed before this change.
+  mediad's route at 2 frames a second, where every other HTTP camera is still pulled at 5. The PNG
+  carries no lens, so a first frame taller than wide, which on a stock robot only an alpha's camera
+  gives, is taken for the IMX219's 62° running down the picture: 37.3° across the 720 by 1280 frame
+  of the default 720p. That goes in the manifest as `camera_fov_deg`, beside the words of the
+  assumption, which `quackd run` and `serve-mcp` measure through when no `--fov-deg` names a lens,
+  with detections that say they are uncalibrated and a word in the log to pass `--fov-deg`, since it
+  is the module's design rather than a calibration, and wrong on a duck in upstream's own simulator,
+  whose camera is 45° wide. Every state lists the assumption in `extras.assumptions` until
+  `--fov-deg` gives `quackd run` a lens of its own, when `extras.camera` says the lens was given. A
+  wide frame and every other camera get no lens, as before. `tests/test_jsonrpc.py` asks mediad's
+  route at its rate and every other camera at theirs, takes the lens from a tall first frame of
+  mediad's and from no other, names the assumption beside it, keeps it when a later frame is wide,
+  and takes it off the state once `--fov-deg` gives a lens, `tests/test_detector_selection.py`
+  measures through it uncalibrated on a run and over MCP and hands the flag's lens to the body, and
+  `tests/test_docs.py` holds the page to the numbers in the code. Each failed before this change.
 
 ### Deprecated
 
@@ -247,22 +251,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **WebRTC frames from a Microduck come out upright, and are measured through the lens mediad
   reports.** An alpha's camera is mounted a quarter turn off upright and nothing on the robot turns
   the pixels back, so `--camera-url webrtc://` handed `observe`, `go_to` and `search_scan` frames
-  lying on their side, where how far across the picture a ball sat said how high it was in the
-  room, not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and
-  quackd never read it. It asks now, once, which is the one line it writes to the control channel,
-  reads the answer or the push mediad sends when the channel opens, and turns every frame clockwise
-  by that much, the way upstream's own code does. No frame goes out until mediad has said, so a
-  mediad that never says leaves the run with no camera and `camera_health()` saying why, rather
-  than one that steers on a picture on its side. The same answer carries the lens, for the frame as
-  it is sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
+  lying on their side, where how far across the picture a ball sat said how high it was in the room,
+  not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and quackd
+  never read it. It asks now, once, which is the one line it writes to the control channel, reads
+  the answer or the push mediad sends when the channel opens, and turns every frame clockwise by
+  that much, the way upstream's own code does. No frame goes out until mediad has said, so a mediad
+  that never says leaves the run with no camera and `camera_health()` saying why, rather than one
+  that steers on a picture on its side. The same answer carries the lens, for the frame as it is
+  sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
   `quackd run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
   37.4° across an upright alpha frame by the alpha family's calibration, where both used to measure
   through the simulator's 90°. The calibration's principal point is off the frame's centre, which
   quackd does not correct. `camera_health()` reports the turn, the lens and the intrinsics.
   `tests/test_microduck_webrtc.py` turns a frame by each of the four angles mediad can report and
   checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
-  it off the answer and off the push, and takes the lens from the intrinsics at each angle, and
-  `tests/test_adapters.py` carries the lens into the manifest. Each failed before this change.
+  it off the answer and off the push, and takes the lens from the intrinsics at each angle,
+  `tests/test_adapters.py` carries the lens into the manifest, and
+  `tests/test_detector_selection.py` has the colour detector `quackd run` builds before the body
+  connects measure through it once it has. Each failed before this change.
 
 - **A 503 at connect no longer leaves a Microduck without a camera for the whole run, and a verb
   that finds no frame says why.** `microduck:jsonrpc` decides once, at connect, whether a run can

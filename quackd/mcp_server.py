@@ -54,7 +54,7 @@ from quackd.log import (
     unless_capturing,
 )
 from quackd.memory import RobotMemory
-from quackd.perception import detector_for, explicit_detector
+from quackd.perception import detector_for, explicit_detector, lens_of
 from quackd.perception.base import Detector
 from quackd.safety import (
     Aborted,
@@ -922,12 +922,13 @@ def build_fleet_server(
                 # before connect learns the lens the body reported: the board's, when the
                 # board's camera is the only one it has. One handed to `build_fleet_server`
                 # from Python keeps the lens it was built with, as `run_duck` keeps it.
-                lens_fov = live.limits.get("camera_fov_deg")
+                lens_fov, assumed = lens_of(live, None)
                 session.detector = detector_for(
                     live.sensors,
                     session.detector,
                     fov_deg=lens_fov,
                     backend=live.backend,
+                    assumed=assumed,
                 )
                 calibrate = getattr(session.detector, "calibrate", None)
                 # only a body with a camera has a lens to learn; one without keeps a detector
@@ -938,7 +939,7 @@ def build_fleet_server(
                     and callable(calibrate)
                     and "camera" in live.sensors
                 ):
-                    calibrate(lens_fov, backend=live.backend)
+                    calibrate(lens_fov, backend=live.backend, assumed=assumed)
                 session.executor.detector = session.detector
             logger.info(
                 "quackd MCP server up: robot=%s transport=%s dry_run=%s detector=%s",
