@@ -21,6 +21,8 @@ import re
 import subprocess
 import sys
 import types
+import urllib.parse
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -37,6 +39,7 @@ from quackd.agent.decision.base import (
 )
 from quackd.agent.decision.catalogue import PRESETS
 from quackd.agent.decision.decisions_api import (
+    OPENAI_HOSTS,
     DecisionsAPILLM,
     ambient_headers,
     is_openai_host,
@@ -402,9 +405,21 @@ def test_the_client_is_built_with_the_address_one_second_and_no_retries(
     assert (llm.name, llm.model, llm.url) == ("openai", OPENAI.model, OPENAI.url)
 
 
+def test_the_client_follows_no_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Followed, a redirect would carry the account headers, and on a 307 or a 308 the state, to
+    wherever it pointed. Told on the HTTP client the SDK is built on, which every release the
+    extra allows reads, rather than per request, which 1.66.0 drops without a word."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    _llm, fake = _built(monkeypatch)
+    http_client = fake.kwargs["http_client"]
+    assert isinstance(http_client, fake_api.DefaultAsyncHttpxClient)
+    assert http_client.follow_redirects is False
+
+
 def test_the_sdks_own_address_variable_never_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Given no address, the SDK follows `OPENAI_BASE_URL`, which `.env.example` tells a reader
-    to set for a model on their own machine. The hosted key would follow it there."""
+    """Given no address, the SDK follows `OPENAI_BASE_URL`, which quackd's own local presets read
+    as the address of a model server on your own machine (`providers/local.py`), so it may well
+    be set where this row runs. The hosted key would follow it there."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
     _llm, fake = _built(monkeypatch)
@@ -425,8 +440,16 @@ def test_quackds_own_address_variable_never_moves_it_either(
     ("url", "keyed"),
     [
         ("https://api.openai.com", True),
+        # every regional host OpenAI's data-controls page lists for /v1/decisions (2026-10-10)
         ("https://us.api.openai.com", True),
         ("https://eu.api.openai.com", True),
+        ("https://au.api.openai.com", True),
+        ("https://ca.api.openai.com", True),
+        ("https://jp.api.openai.com", True),
+        ("https://in.api.openai.com", True),
+        ("https://sg.api.openai.com", True),
+        ("https://kr.api.openai.com", True),
+        ("https://gb.api.openai.com", True),
         ("https://ae.api.openai.com", True),
         ("https://api.openai.com:443", True),
         # a host is case-insensitive, and `/` alone is the address with a slash on the end
@@ -434,6 +457,10 @@ def test_quackds_own_address_variable_never_moves_it_either(
         ("http://127.0.0.1:8765", False),
         ("http://api.openai.com", False),
         ("https://api.openai.com:8443", False),
+        # the same port to `urlsplit`, and not an authority OpenAI publish
+        ("https://api.openai.com:0443", False),
+        # a region OpenAI never named, however much it looks like the ones they did
+        ("https://fr.api.openai.com", False),
         # the trailing dot names the same machine in DNS, and is still not a host quackd named
         ("https://api.openai.com.", False),
         ("https://api.openai.com.evil.example", False),
@@ -446,14 +473,80 @@ def test_the_key_goes_to_openais_own_api_and_nowhere_else(
     url: str, keyed: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every other address is a server somebody runs, and is sent the word every server you run
-    is sent. The client is built from the same parts the decision was made on."""
+    is sent. The client is built from the same parts the decision was made on, and the price is
+    decided by the same rule, so a turn is costed at OpenAI's rate exactly where the key went."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     _llm, fake = _built(monkeypatch, url=url)
     sent = KEY if keyed else "local"
     assert fake.kwargs["api_key"] == sent
     assert fake.headers["Authorization"] == f"Bearer {sent}"
     assert is_openai_host(url) is keyed
+    assert factory.sends_key(OPENAI, url) is keyed
+    priced = resolve_decision_price(OPENAI, url=url).source
+    assert priced == ("published" if keyed else "self-hosted")
     assert fake.kwargs["base_url"] == url.rstrip("/") + "/v1"
+
+
+def test_the_hosts_are_the_ones_openai_document_for_this_endpoint_and_no_others() -> None:
+    """The global API, which the Decisions guide's own examples call, and every regional host
+    OpenAI's data-controls page lists with `/v1/decisions` among its endpoints, read 2026-10-10.
+    A change here is a change to where a company's key goes, so it is spelled out rather than
+    derived: a region OpenAI add is a host somebody has read about, not one that fits."""
+    regions = ("us", "eu", "au", "ca", "jp", "in", "sg", "kr", "gb", "ae")
+    assert {"api.openai.com", *(f"{region}.api.openai.com" for region in regions)} == OPENAI_HOSTS
+
+
+@pytest.fixture
+def _urlsplit_before_3_11_4(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """`urlsplit` as Python 3.11.0 to 3.11.3 had it, which `requires-python` allows: one that
+    never checks what stands around and between `[` and `]`. 3.11.4 added `_check_bracketed_host`
+    for what stands between (gh-103848), and later releases `_check_bracketed_netloc` for what
+    stands before, which calls the first, so switching off whichever of the two this Python has
+    is the older function. Its cache is emptied on the way in and out, because `urlsplit`
+    remembers what it answered and an answer only the old one gives must not outlive the test.
+    A Python whose `urlsplit` keeps no cache has nothing to empty."""
+    forget = getattr(urllib.parse.urlsplit, "cache_clear", lambda: None)
+    forget()
+    for check in ("_check_bracketed_netloc", "_check_bracketed_host"):
+        monkeypatch.setattr(urllib.parse, check, lambda text: None, raising=False)
+    yield
+    forget()
+
+
+@pytest.mark.usefixtures("_urlsplit_before_3_11_4")
+def test_an_address_an_older_python_reads_as_openais_is_not_sent_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """To the older `urlsplit`, `evil.example[api.openai.com]` is the host `api.openai.com`, and
+    the rule that read that host sent the key and priced the run at OpenAI's rate, while the
+    client was handed the authority whole. The rule reads the authority whole now, as the client
+    does."""
+    url = "https://evil.example[api.openai.com]"
+    assert urllib.parse.urlsplit(url).hostname == "api.openai.com", "this is not the old reading"
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    _llm, fake = _built(monkeypatch, url=url)
+    assert fake.kwargs["api_key"] == "local"
+    assert is_openai_host(url) is False and factory.sends_key(OPENAI, url) is False
+    assert resolve_decision_price(OPENAI, url=url).source == "self-hosted"
+
+
+def test_an_address_with_whitespace_around_it_is_one_address_to_the_key_and_the_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI takes the whitespace off before anything reads the address, and a library caller
+    building the client directly need not. Read as given, `"https://api.openai.com "` was no host
+    of OpenAI's to the key rule, so the word went, to a host with a space in its name, while the
+    price, which takes the whitespace off, called it OpenAI's and costed every failed turn at
+    OpenAI's rate. Both read the same string now."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI())
+    url = "https://api.openai.com "
+    llm = DecisionsAPILLM(OPENAI, url=url)
+    assert fake.kwargs["api_key"] == KEY
+    assert fake.kwargs["base_url"] == f"{OPENAI.url}/v1"
+    assert llm.url == OPENAI.url
+    assert is_openai_host(url) and factory.sends_key(OPENAI, url)
+    assert resolve_decision_price(OPENAI, url=url) == OPENAI.price
 
 
 def test_a_missing_key_at_openai_is_a_sentence_naming_the_variable(
@@ -497,14 +590,84 @@ def test_headers_from_the_sdks_own_variable_never_ride_along(
     assert not any(isinstance(v, str) for k, v in headers.items() if k != "Authorization")
 
 
-def test_an_ambient_authorization_line_in_any_case_never_takes_out_the_one_sent(
+@pytest.mark.parametrize("release", fake_api.RELEASES)
+@pytest.mark.parametrize("spelling", ["Authorization", "authorization", "AUTHORIZATION"])
+@pytest.mark.parametrize("url", ["https://api.openai.com", "http://127.0.0.1:8765"])
+def test_an_authorization_line_of_the_sdks_variable_never_leaves_under_any_release(
+    url: str, spelling: str, release: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One authorization line goes, and it is quackd's, whichever way the release merges.
+
+    The rule used to lean on the locked release: name `Authorization`, and the SDK drops the
+    variable's own authorization line in any spelling and merges the rest without regard to
+    case. 3.1.0 does neither, and the extra allows it, so a gateway's `authorization` line went
+    out beside quackd's own, to OpenAI or to whatever the address was."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", f"{spelling}: Bearer sk-ambient\nX-Gw: gk-secret")
+    fake = fake_api.install(monkeypatch, fake_api.FakeOpenAI(release=release))
+    make_decision_llm(OPENAI, url=url)
+    sent = fake_api.sent(fake, release)
+    word = KEY if url.startswith("https") else "local"
+    assert [value for name, value in sent if name.lower() == "authorization"] == [f"Bearer {word}"]
+    assert not [name for name, _ in sent if name.lower() == "x-gw"]
+
+
+def test_a_release_that_would_still_send_the_variables_authorization_is_refused_by_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The SDK merges headers without regard to case, so an omitted `authorization` would remove
-    the `Authorization` quackd sends, and the request would leave with no key at all."""
+    """The backstop for a release nobody has read: once the client is built its own headers are
+    read back, and an authorization quackd did not write stops the build, naming the release and
+    the variable and never the value, which is the credential this exists to keep at home."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "authorization: Bearer sk-ambient")
-    _llm, fake = _built(monkeypatch, url="http://127.0.0.1:8765")
-    assert [k for k in fake.headers if k.lower() == "authorization"] == ["Authorization"]
+    fake_api.install(monkeypatch, fake_api.FakeOpenAI(release="backwards"))
+    with pytest.raises(DecisionError) as e:
+        make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
+    said = str(e.value)
+    assert f"openai {fake_api.__version__}" in said and "OPENAI_CUSTOM_HEADERS" in said
+    assert "sk-ambient" not in said
+
+
+@pytest.mark.parametrize("unset", [False, True], ids=["variables set", "variables unset"])
+def test_a_line_spelled_as_an_account_header_carries_what_the_sdk_would_send_at_openai(
+    unset: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Handed to the SDK under the very name it fills from `OPENAI_ORG_ID`, an omitted line took
+    the place of the SDK's own entry, so the request reached OpenAI without the organisation and
+    was billed to whatever the key's default is, all for the spelling of a gateway's header. The
+    line carries the SDK's own value instead, and nothing where the variable is unset. In
+    another spelling it is a header of its own, omitted, and the SDK's entry is left alone. Away
+    from OpenAI every spelling is omitted."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "OpenAI-Organization: GW\nopenai-project: GW")
+    if unset:
+        monkeypatch.delenv("OPENAI_ORG_ID")
+        monkeypatch.delenv("OPENAI_PROJECT_ID")
+    else:
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-x")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "proj-y")
+    _llm, at_openai = _built(monkeypatch)
+    if unset:
+        assert isinstance(at_openai.headers["OpenAI-Organization"], fake_api.Omit)
+    else:
+        assert at_openai.headers["OpenAI-Organization"] == "org-x"
+    assert isinstance(at_openai.headers["openai-project"], fake_api.Omit)
+    assert "OpenAI-Project" not in at_openai.headers, "the SDK's own entry was touched"
+    _llm, at_yours = _built(monkeypatch, url="http://127.0.0.1:8765")
+    for name in ("OpenAI-Organization", "OpenAI-Project", "openai-project"):
+        assert isinstance(at_yours.headers[name], fake_api.Omit), name
+
+
+def test_an_account_header_named_in_two_spellings_carries_the_sdks_value_in_both(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3.22.1 merges without regard to case and keeps whichever spelling comes last. With the
+    SDK's own spelling named first, an omitted second spelling would take the organisation off
+    the request after all, so beside the SDK's own spelling every other one carries its value."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    monkeypatch.setenv("OPENAI_ORG_ID", "org-x")
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "OpenAI-Organization: GW\nopenai-organization: GW")
+    _llm, fake = _built(monkeypatch)
+    assert fake.headers["OpenAI-Organization"] == fake.headers["openai-organization"] == "org-x"
 
 
 def test_the_account_headers_go_to_openai_and_nowhere_else(

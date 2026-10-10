@@ -2,10 +2,11 @@
 
 Installed into `sys.modules` as `openai`, it is the module `decisions_api.py` imports lazily and
 would otherwise find in whatever state a developer's machine happens to be in, and not at all
-on CI, which installs no provider SDK: two different suites. It stands in for exactly the three
-things the backend touches -- the client class, the client's generic `post`, and the `Omit`
-marker -- and records what each was handed, so a test can say what the client was built with,
-which header was omitted and what went out in the body.
+on CI, which installs no provider SDK: two different suites. It stands in for exactly the things
+the backend touches -- the client class, the client's generic `post` and the headers it reads
+back, the `Omit` marker, the HTTP client the SDK is handed and the release it calls itself --
+and records what each was handed, so a test can say what the client was built with, which
+header was omitted and what went out in the body.
 
 The answers are in the shapes OpenAI's API reference publishes for `POST /v1/decisions`, read
 2026-10-08: a decision is `{answers, model, usage}`, every answer names the question it
@@ -13,17 +14,25 @@ answers, a `predicate` carries a `probability`, a `choice` its `choice`, `confid
 of `{value, probability}`, and a `refusal` carries its name and nothing else. Nothing here is a
 model: the answers are whatever the test scripted, which is the point.
 
-What this cannot prove is what the real SDK does with the headers it is handed. That is a
-property of the SDK rather than of quackd, and a test that drives the real one is the only
-thing that can show it: `tests/test_decisions_api_wire.py`, wherever the SDK is installed.
+What one installed SDK does with the headers it is handed is a property of that SDK rather than
+of quackd, and only a test that drives the real one can show it:
+`tests/test_decisions_api_wire.py`, wherever the SDK is installed, which is the locked release
+and no other. So this fake also carries a model of how each kind of release the extra allows
+merges the headers quackd hands it with the lines of `OPENAI_CUSTOM_HEADERS` (`RELEASES`), read
+from the releases themselves, so that CI can hold quackd's rule to all of them and not only to
+the one a developer happens to have.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
+
+__version__ = "0.0.0+fake"
+"""What the module says its release is, which a refusal that names the release quotes."""
 
 
 class Omit:
@@ -34,6 +43,88 @@ class Omit:
 
     def __repr__(self) -> str:
         return "Omit()"
+
+
+class DefaultAsyncHttpxClient:
+    """The HTTP client the SDK offers with its own defaults, as far as the backend uses it:
+    built with whatever it was handed, which a test reads back. The real one follows redirects
+    unless it is told not to."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.follow_redirects = bool(kwargs.get("follow_redirects", True))
+
+
+# ── how a release merges the headers it is handed ───────────────────────────────────────
+#
+# Read from the releases in the uv cache on 2026-10-10 (`openai/_client.py` and
+# `openai/_base_client.py` in each). Every release that reads `OPENAI_CUSTOM_HEADERS` parses it
+# the same way, and they differ in what they do next, which is all a model here has to say.
+
+
+def variable() -> dict[str, str] | None:
+    """`OPENAI_CUSTOM_HEADERS` as every release that reads it parses it: split on newlines, the
+    name before the first colon and the value after it, both trimmed, a later line with the same
+    name replacing an earlier one. None when the variable is unset, which every release reads as
+    no lines at all."""
+    raw = os.environ.get("OPENAI_CUSTOM_HEADERS")
+    if raw is None:
+        return None
+    parsed: dict[str, str] = {}
+    for line in raw.split("\n"):
+        colon = line.find(":")
+        if colon >= 0:
+            parsed[line[:colon].strip()] = line[colon + 1 :].strip()
+    return parsed
+
+
+def _without_authorization(parsed: Mapping[str, str], handed: Mapping[str, Any]) -> dict[str, str]:
+    """3.6.0 and later: a caller who names an authorization header, in any spelling and whatever
+    its value, makes the release drop every authorization line of the variable."""
+    if any(name.lower() == "authorization" for name in handed):
+        return {name: value for name, value in parsed.items() if name.lower() != "authorization"}
+    return dict(parsed)
+
+
+def _custom(release: str, handed: Mapping[str, Any]) -> dict[str, Any]:
+    """The custom headers a release keeps: the variable's lines, then the caller's over them."""
+    parsed = variable()
+    if release == "1.66" or parsed is None:
+        return dict(handed)
+    if release == "backwards":
+        return {**handed, **parsed}
+    if release != "3.1":
+        parsed = _without_authorization(parsed, handed)
+    return {**parsed, **handed}
+
+
+RELEASES = ("1.66", "3.1", "3.6", "3.22")
+"""Four kinds of release inside the extra's range, by the first cached release of each.
+`1.66`, and 1.83.0 with it, never reads the variable. `3.1` adds every line of it and lets a
+header the caller names replace a line only when the two are spelled exactly alike. `3.6`, and
+every cached release up to 3.19.0, also drops the variable's authorization lines when the caller
+names one. `3.22`, the locked release, merges every name without regard to case besides, the
+last spelling winning. A fifth, `backwards`, is no release at all: the variable's lines over the
+caller's, which is the SDK a backstop exists for."""
+
+
+def sent(fake: FakeOpenAI, release: str) -> list[tuple[str, str]]:
+    """The header lines `release` would put on a request from this client, in order, a name
+    sent twice in two spellings showing twice. The SDK's own `Authorization` from the key comes
+    first, its default headers after it, and an `Omit` takes out what it names: by exact name in
+    every release but `3.22`, which merges without regard to case."""
+    own: dict[str, Any] = {"Authorization": f"Bearer {fake.kwargs.get('api_key')}"}
+    custom = _custom(release, fake.headers)
+    if release != "3.22":
+        merged = {**own, **custom}
+        return [(name, value) for name, value in merged.items() if not isinstance(value, Omit)]
+    lines: dict[str, tuple[str, str]] = {}
+    for name, value in [*own.items(), *custom.items()]:
+        if isinstance(value, Omit):
+            lines.pop(name.lower(), None)
+        else:
+            lines[name.lower()] = (name, value)
+    return list(lines.values())
 
 
 class APIStatusError(Exception):
@@ -136,7 +227,8 @@ class FakeOpenAI:
     how a test says "answer this first and that next". `raises` makes a request fail, which is
     the path that has to cost a turn rather than a run: an exception, raised as it is, or a
     function of the request's body that builds one, for a server whose error quotes the
-    request back.
+    request back. `release` is which of `RELEASES` its headers are merged like, and None, the
+    default, keeps exactly what it was handed.
     """
 
     def __init__(
@@ -146,11 +238,13 @@ class FakeOpenAI:
         script: Iterable[Any] = (),
         raises: Exception | Callable[[Any], Exception] | None = None,
         usage: Mapping[str, Any] | None = USAGE,
+        release: str | None = None,
     ) -> None:
         self.answers = [dict(a) for a in answers]
         self.script = list(script)
         self.raises = raises
         self.usage = usage
+        self.release = release
         self.kwargs: dict[str, Any] = {}
         """What the client class was called with, as the SDK's constructor would have been."""
         self.posts: list[dict[str, Any]] = []
@@ -187,6 +281,14 @@ class FakeOpenAI:
         """The `default_headers` the client was built with."""
         return dict(self.kwargs.get("default_headers") or {})
 
+    @property
+    def default_headers(self) -> dict[str, Any]:
+        """What the real client's own `default_headers` holds once it is built: what it was
+        handed, merged with the variable's lines the way `release` merges them."""
+        if self.release is None:
+            return self.headers
+        return _custom(self.release, self.headers)
+
 
 class SDKLookalike(FakeOpenAI):
     """The fake under the real SDK's module name and with the real client's `base_url`, which
@@ -206,8 +308,10 @@ SDKLookalike.__module__ = "openai"
 def install(monkeypatch: Any, fake: FakeOpenAI) -> FakeOpenAI:
     """Put `fake` where `importlib.import_module("openai")` will find it, for one test."""
     module = types.ModuleType("openai")
+    module.__version__ = __version__  # type: ignore[attr-defined]
     module.AsyncOpenAI = fake  # type: ignore[attr-defined]
     module.Omit = Omit  # type: ignore[attr-defined]
+    module.DefaultAsyncHttpxClient = DefaultAsyncHttpxClient  # type: ignore[attr-defined]
     module.APIStatusError = APIStatusError  # type: ignore[attr-defined]
     module.BadRequestError = BadRequestError  # type: ignore[attr-defined]
     module.RateLimitError = RateLimitError  # type: ignore[attr-defined]

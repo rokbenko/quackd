@@ -134,9 +134,10 @@ PRESETS: dict[str, DecisionSpec] = {
         install="quackd[openai] and OPENAI_API_KEY (platform.openai.com)",
         # An address, unlike `jev`'s `None`, and the backend hands the SDK `<url>/v1` on every
         # build whatever was typed. Left to itself the SDK reads `OPENAI_BASE_URL` when it is
-        # given no address, and `.env.example` tells a reader to set exactly that for a model on
-        # their own machine, so the hosted key would follow it there. Holding the address here
-        # is also what lets `doctor` print where the key goes.
+        # given no address, and quackd's own local presets read that variable as the address of
+        # a model server on your own machine (`providers/local.py`), so it may well be set where
+        # this row runs, and the hosted key would follow it there. Holding the address here is
+        # also what lets `doctor` print where the key goes.
         url="https://api.openai.com",
         key_env="OPENAI_API_KEY",
         # The only model the endpoint serves, by OpenAI's own Decisions guide, read 2026-10-08.
@@ -148,8 +149,9 @@ PRESETS: dict[str, DecisionSpec] = {
         # `checked` is spelled out because a published rate without one is stamped with the day
         # the pilots' catalogue was read, which is not the day this one was. The guide adds that
         # regional processing premiums and long-context multipliers apply and publishes neither
-        # for this endpoint, so a run at `eu.api.openai.com` is costed at this rate, and
-        # `QUACKD_DECISION_PRICE` is how you say otherwise.
+        # for this endpoint, so a run at any of OpenAI's regional hosts
+        # (`decisions_api.OPENAI_HOSTS`) is costed at this rate, and `QUACKD_DECISION_PRICE` is
+        # how you say otherwise.
         price=Price(input=0.10, output=0.0, source="published", checked="2026-10-08"),
         extra="openai",
         sdk="openai",

@@ -321,6 +321,20 @@ def text(body: str = "<html><body>502 Bad Gateway</body></html>", status: int = 
     return lambda request: (status, body)
 
 
+@dataclass(frozen=True)
+class Moved:
+    """What a redirect sends instead of a body: where the client is told to go."""
+
+    location: str
+
+
+def redirecting(location: str, status: int = 307) -> Reply:
+    """A redirect to `location`, with no body. A 307 is the one that tells a client to send the
+    same request again, body and all, to the new place, which is the worst a client that follows
+    one could do with a request carrying the robot's state."""
+    return lambda body: (status, Moved(location))
+
+
 SCRIPTS: dict[str, list[Reply]] = {
     "answer": [answering()],
     "refuse": [answering(refuse=("need_human",))],
@@ -339,11 +353,20 @@ class Recorded:
     path: str
     """As sent, query and all, so a request that carried one shows it."""
     headers: dict[str, str]
-    """Every header, its name lowercased."""
+    """Every header, its name lowercased. A name sent twice keeps only its last value here,
+    which is why `lines` exists."""
     body: Any
     status: int
     reply: Any
-    """What the stand-in sent back: the decoded JSON, or the text."""
+    """What the stand-in sent back: the decoded JSON, or the text, or where a redirect
+    pointed."""
+    lines: list[tuple[str, str]] = field(default_factory=list)
+    """Every header line in the order it arrived, its name lowercased, a name sent twice
+    appearing twice: the one place a second `Authorization` beside the first would show."""
+
+    def every(self, name: str) -> list[str]:
+        """Every value sent under `name`, in any spelling, in the order sent."""
+        return [value for sent, value in self.lines if sent == name.lower()]
 
 
 @dataclass
@@ -402,18 +425,24 @@ class FakeOpenAIDecisions:
                     {k.lower(): v for k, v in self.headers.items()},
                     body,
                     status,
-                    reply,
+                    {"location": reply.location} if isinstance(reply, Moved) else reply,
+                    [(k.lower(), v) for k, v in self.headers.items()],
                 )
                 with stand_in._lock:
                     stand_in.requests.append(seen)
                     if stand_in.record is not None:
                         with stand_in.record.open("a", encoding="utf-8") as f:
                             f.write(json.dumps(seen.__dict__) + "\n")
+                self.send_response(status)
+                if isinstance(reply, Moved):
+                    self.send_header("Location", reply.location)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if isinstance(reply, str):
                     payload, kind = reply.encode("utf-8"), "text/html; charset=utf-8"
                 else:
                     payload, kind = json.dumps(reply).encode("utf-8"), "application/json"
-                self.send_response(status)
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()

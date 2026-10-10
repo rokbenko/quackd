@@ -38,7 +38,13 @@ from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
 from tests.conftest import ReachedOpenAI, openai_address, plain_text
-from tests.fake_openai_decisions import CONFIDENCE, PATH, FakeOpenAIDecisions, answering
+from tests.fake_openai_decisions import (
+    CONFIDENCE,
+    PATH,
+    FakeOpenAIDecisions,
+    answering,
+    redirecting,
+)
 
 runner = CliRunner()
 OPENAI = PRESETS["openai"]
@@ -116,6 +122,25 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
     return summary
 
 
+def _as_openai(monkeypatch: pytest.MonkeyPatch, stand_in: FakeOpenAIDecisions) -> None:
+    """Tell quackd's own rule that the stand-in is OpenAI's API, so the key and the account
+    headers go to it as they would to OpenAI. The suite's guard keeps a rule of its own, sees
+    127.0.0.1 and lets the request through."""
+    real = decisions_api.is_openai_host
+    monkeypatch.setattr(
+        decisions_api,
+        "is_openai_host",
+        lambda url: url.strip().rstrip("/") == stand_in.url or real(url),
+    )
+
+
+async def _decide_once(url: str) -> Any:
+    """One request through the real client, built the way a run builds it."""
+    return await make_decision_llm(OPENAI, url=url).decide(
+        {"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}}
+    )
+
+
 def _plain_words(text: str, count: int = 5) -> str:
     """The first `count` words in a row of `text` that are letters alone. Those come through
     every quoting a reply or an exception message can put them through unchanged, so a search
@@ -188,6 +213,70 @@ def test_at_openais_own_address_the_key_and_the_account_headers_go_and_the_gatew
     assert _start(records)["decision_price"] == rate.record()
     for turn in _sent(records):
         assert turn["cost_usd"] > 0 and turn["cost_usd"] == cost_usd(turn["usage"], rate)
+
+
+@pytest.mark.parametrize("at_openai", [False, True], ids=["a server you run", "openai"])
+@pytest.mark.parametrize("spelling", ["Authorization", "authorization", "AUTHORIZATION"])
+async def test_one_authorization_line_leaves_and_it_is_quackds_whatever_the_gateway_spelled(
+    spelling: str, at_openai: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every line of the request read as it arrived, so a second authorization beside the
+    first would show. The gateway's line in each spelling, and the key or the word is the one
+    value that goes. `tests/test_decisions_api.py` holds the same rule to each kind of release
+    the extra allows; this is the locked one, for real."""
+    monkeypatch.setenv(
+        "OPENAI_CUSTOM_HEADERS", f"{spelling}: Bearer {AMBIENT}\nX-Gateway-Key: {GATEWAY}"
+    )
+    with FakeOpenAIDecisions() as stand_in:
+        if at_openai:
+            _as_openai(monkeypatch, stand_in)
+        await _decide_once(stand_in.url)
+    (post,) = stand_in.posts()
+    assert post.every("authorization") == [f"Bearer {KEY if at_openai else 'local'}"]
+    assert post.every("x-gateway-key") == []
+
+
+@pytest.mark.parametrize("at_openai", [False, True], ids=["a server you run", "openai"])
+@pytest.mark.parametrize(
+    "lines",
+    ["OpenAI-Organization: gw-org\nOpenAI-Project: gw-proj", "openai-organization: gw-org"],
+    ids=["the sdk's own spelling", "another spelling"],
+)
+async def test_the_account_headers_carry_the_variables_at_openai_whatever_the_gateway_names(
+    lines: str, at_openai: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gateway's line named in the SDK's own spelling used to take the place of the entry the
+    SDK fills from `OPENAI_ORG_ID`, so the request reached OpenAI with no organisation at all and
+    was billed to the key's default. At OpenAI the variables' values go, once each, whatever the
+    gateway's line says; anywhere else neither goes."""
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
+    with FakeOpenAIDecisions() as stand_in:
+        if at_openai:
+            _as_openai(monkeypatch, stand_in)
+        await _decide_once(stand_in.url)
+    (post,) = stand_in.posts()
+    assert post.every("openai-organization") == (["org-x"] if at_openai else [])
+    assert post.every("openai-project") == (["proj-y"] if at_openai else [])
+
+
+async def test_a_redirect_is_never_followed_so_nothing_reaches_where_it_points(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK follows a redirect unless it is told not to, and a 307 tells it to send the same
+    request again, the key aside: the account headers, and the body with the state in it, to
+    wherever the redirect points, another port here and anybody's host in the world. So the
+    stand-in that is treated as OpenAI's answers 307 to a second one on another port, and exactly
+    one request arrives anywhere: the turn is an error, as any answer that is not an answer is."""
+    import openai
+
+    with FakeOpenAIDecisions() as elsewhere:
+        with FakeOpenAIDecisions(script=[redirecting(f"{elsewhere.url}{PATH}")]) as stand_in:
+            _as_openai(monkeypatch, stand_in)
+            with pytest.raises(openai.APIStatusError) as e:
+                await _decide_once(stand_in.url)
+        assert e.value.status_code == 307
+        assert len(stand_in.requests) == 1
+        assert elsewhere.requests == [], "the redirect was followed"
 
 
 def test_the_state_and_the_questions_on_the_wire_are_the_ones_the_record_describes(

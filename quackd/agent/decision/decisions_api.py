@@ -16,28 +16,42 @@ rather than its `decisions` resource. That resource arrived in openai 3.26.0 and
 carries 3.22.1, so reaching it would mean raising the floor in every extra that installs the
 SDK, and making everybody who pilots with an OpenAI-shaped vendor upgrade for a stepper they may
 never name. `cast_to=object` hands back the decoded JSON body untouched, which is what a
-translator wants anyway. That request, that pass-through and the `Omit` marker the headers below
-rely on are all in 1.66.0, the floor, as well as in 3.22.1 (both read 2026-10-09).
+translator wants anyway. That request, that pass-through, the `Omit` marker and the
+`DefaultAsyncHttpxClient` the client is built on are all in 1.66.0, the floor, as well as in
+3.22.1 (read 2026-10-09 and 2026-10-10). What a release does with the headers it is handed is
+another matter, and is not the same across that range, so nothing below rests on any one
+release's way of doing it (`request_headers` says how they differ).
 
 Where the key goes is decided by `is_openai_host` and by nothing else. `OPENAI_API_KEY` is sent
-to OpenAI's own API at one of the four hosts the SDK itself names, over https, and every other
-address is sent `NO_KEY`, the word every server you run is sent: `--decision-url
-http://127.0.0.1:8765` is a server that speaks this format on your own machine, and a company's
-key has no business there. The SDK reads more than the key out of the environment, and every
-piece of it is answered here rather than left to its defaults:
+to OpenAI's own API, at one of the hosts OpenAI document as serving this endpoint, over https,
+and every other address is sent `NO_KEY`, the word every server you run is sent:
+`--decision-url http://127.0.0.1:8765` is a server that speaks this format on your own machine,
+and a company's key has no business there. The SDK reads more than the key out of the
+environment, and every piece of it is answered here rather than left to its defaults:
 
-- `OPENAI_BASE_URL`, which it follows whenever it is handed no address, and which `.env.example`
-  tells a reader to set for a model on their own machine. So an address is handed over on every
-  build, the one the row or the flag says, with `/v1` on the end because the SDK appends paths
-  to it.
-- `OPENAI_CUSTOM_HEADERS`, whose lines it adds to every request it makes. That is where a
-  gateway's own credential lives for somebody whose pilot goes through one, and it is that
-  gateway's, not OpenAI's and not your server's. So every header it names is omitted here, read
-  the way the SDK reads it, except `Authorization`, which is named outright instead, because
-  that alone makes the SDK drop that variable's own `Authorization` line for this one.
+- `OPENAI_BASE_URL`, which it follows whenever it is handed no address. quackd's own local
+  presets read the same variable as the address of a model server on your own machine
+  (`providers/local.py`, and the address order in `docs/guides/local-llms.md`), so it may well
+  be set on the very machine that names this row, and the hosted key would follow it there. So
+  an address is handed over on every build, the one the row or the flag says, with `/v1` on the
+  end because the SDK appends paths to it.
+- `OPENAI_CUSTOM_HEADERS`, whose lines it adds to every request, in the releases that read it.
+  That is where a gateway's own credential lives for somebody whose pilot goes through one, and
+  it is that gateway's, not OpenAI's and not your server's. So every header it names is answered
+  here, read the way the SDK reads it: an authorization line, in whatever spelling, with quackd's
+  own value under that very spelling, a line that names an account header below with what the
+  SDK would have sent there, and every other line with nothing. Once the client is built its
+  headers are read back, and one that would still carry an authorization quackd did not write
+  stops the build, naming the release.
 - `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, which it sends as headers. They are identifiers
-  rather than secrets, and they are OpenAI's, so they go to OpenAI and are omitted everywhere
-  else.
+  rather than secrets, and they are OpenAI's, so they go to OpenAI, as the SDK would send them
+  there, and are omitted everywhere else.
+
+And one thing it does with no variable at all: it follows redirects. Followed, a redirect from
+anything that answers for the address would carry the account headers, and on a 307 or a 308
+the whole request with the robot's state in it, to wherever it pointed, plain http included.
+No answer OpenAI document for `POST /v1/decisions` is a redirect, so the client is built to
+follow none, and a redirect is a turn that failed.
 
 Imported only when a run has named this row. Nothing at module scope touches the SDK, and the
 address rules are the standard library alone, so `factory` asks them on a machine without it.
@@ -48,8 +62,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
 from quackd.agent.decision.base import (
@@ -78,13 +92,47 @@ PATH = "/decisions"
 in the releases that have one."""
 
 OPENAI_HOSTS = frozenset(
-    {"api.openai.com", "us.api.openai.com", "eu.api.openai.com", "ae.api.openai.com"}
+    {
+        "api.openai.com",
+        "us.api.openai.com",
+        "eu.api.openai.com",
+        "au.api.openai.com",
+        "ca.api.openai.com",
+        "jp.api.openai.com",
+        "in.api.openai.com",
+        "sg.api.openai.com",
+        "kr.api.openai.com",
+        "gb.api.openai.com",
+        "ae.api.openai.com",
+    }
 )
-"""Where `OPENAI_API_KEY` may go: OpenAI's global API and its three regional ones, exactly the
-four the SDK itself names for its `data_residency` choice (`openai/_data_residency.py`, read
-2026-10-09). A host is compared after `urlsplit` has lowercased it, and as a whole, so
+"""Where `OPENAI_API_KEY` may go: OpenAI's global API, which the Decisions guide's own examples
+call, and the regional hosts OpenAI's data-controls page lists
+(https://developers.openai.com/api/docs/guides/your-data, read 2026-10-10). That page's table of
+data-residency regions names each of these hosts and lists `/v1/decisions` among the endpoints
+each of them stores in its region, the page says "The Decisions API is available in all
+supported API regions", and it tells anyone whose project has data residency configured to add
+that region's prefix to every request. So a host left out here is a project that could never
+use this row, and a host is here only because OpenAI name it, never because it fits the pattern
+the others share.
+
+The SDK's own `data_residency` choice names four of them (`openai/_data_residency.py`, 3.22.1,
+read 2026-10-09), and OpenAI say inference runs in the region only in the United States and
+Europe: "Data residency and regional processing are supported in the United States and Europe
+(EEA + Switzerland)", says the guide, and "Availability in a region does not imply that
+inference is performed in that region", says the data-controls page. That is where OpenAI run
+the model, which is theirs to decide. Where the key goes is quackd's, and every host here is
+OpenAI's own.
+
+A host is matched whole and in lower case (`OPENAI_AUTHORITIES`), so
 `api.openai.com.evil.example` is not one and neither is `api.openai.com.` with its trailing
 dot."""
+
+OPENAI_AUTHORITIES = frozenset({*OPENAI_HOSTS, *(f"{host}:443" for host in OPENAI_HOSTS)})
+"""Every way an address's authority may spell one of `OPENAI_HOSTS`: the host alone, or with
+the port https uses anyway. `is_openai_host` compares the whole authority with these, and
+anything else in it, a user, another port or a character the host has no place for, makes it
+somebody else's."""
 
 MAX_RETRIES = 0
 """None. The SDK's default is two, and the first of them sleeps between three eighths and a
@@ -95,36 +143,56 @@ as a turn the record calls an error than as a retry that cannot finish."""
 CUSTOM_HEADERS_ENV = "OPENAI_CUSTOM_HEADERS"
 """The SDK's own variable for headers to add to every request, one `Name: value` per line."""
 
-ACCOUNT_HEADERS = ("OpenAI-Organization", "OpenAI-Project")
+ACCOUNT_HEADERS = {"OpenAI-Organization": "OPENAI_ORG_ID", "OpenAI-Project": "OPENAI_PROJECT_ID"}
 """The headers the SDK fills from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, spelled as it spells
-them, so that omitting one here replaces that very entry."""
+them, each beside the variable it is filled from. Spelled exactly, because a header handed to
+the SDK under one of these names replaces that very entry, which is the point away from OpenAI
+and the danger at it (`request_headers`)."""
+
+_ACCOUNT_SPELLING = {name.lower(): name for name in ACCOUNT_HEADERS}
+"""Each account header by its lower-case name, to find it under whatever spelling a line of
+`OPENAI_CUSTOM_HEADERS` gives it."""
 
 
 def is_openai_host(url: str) -> bool:
     """Whether `url` is OpenAI's own API, the only place `OPENAI_API_KEY` is ever sent.
 
-    All four conditions, and each is a case that would otherwise send the key somewhere else.
-    `https`, because the key is a bearer token and plain HTTP shows it to the path between. One
-    of `OPENAI_HOSTS`, whole. Port 443 or none, because `api.openai.com:8443` is no address
-    OpenAI publish and may be somebody's tunnel. And no userinfo at all, which is less
-    obvious and load-bearing: `urlsplit` and the HTTP client do not have to agree on where a
-    host starts, and `https://evil.example\\@api.openai.com` is read here as `api.openai.com`
-    with a user called `evil.example\\`, while a client that follows the WHATWG URL standard
-    reads a backslash as the end of the host and goes to `evil.example`. A URL with an `@` in
-    its authority is never OpenAI's, whatever is after the `@`, so the two readings never have
-    to agree."""
+    Decided on the address's authority, the whole of what stands between `//` and the path,
+    because that string is what the client is handed (`client_address`) and so it is where the
+    request goes. It has to be one of `OPENAI_AUTHORITIES`, compared whole and in lower case, and
+    the scheme `https`, because the key is a bearer token and plain HTTP shows it to the path
+    between.
+
+    Not on `urlsplit`'s `hostname`, which is that function's own reading of the authority and
+    need not be the HTTP client's, and every way the two readings differ is a way to send the key
+    somewhere else. Two are known. A user in the address: `https://evil.example\\@api.openai.com`
+    is `api.openai.com` with a user called `evil.example\\` to `urlsplit`, and `evil.example` to
+    a client that follows the WHATWG URL standard, which ends the host at a backslash. And
+    brackets, on Python 3.11.0 to 3.11.3, which `requires-python` allows: before 3.11.4
+    (gh-103848) `urlsplit` never checked what stands between `[` and `]`, and read
+    `https://evil.example[api.openai.com]` as the host `api.openai.com`, while the client is
+    handed the authority whole. An authority that is exactly one of OpenAI's hosts leaves two
+    readings nothing to disagree about. A port other than 443 is refused by the same comparison,
+    because `api.openai.com:8443` is no address OpenAI publish and may be somebody's tunnel.
+
+    The whitespace around the address is taken off first, as the CLI takes it off and as
+    `client_address` does, so a library caller's `"https://api.openai.com "` is OpenAI's here, in
+    `factory`'s price and in the key the client is built with alike, rather than OpenAI's to the
+    price and somebody else's to the key."""
     try:
-        parts = urlsplit(url)
-        port = parts.port
+        parts = urlsplit(url.strip())
     except ValueError:
         return False
-    return (
-        parts.scheme == "https"
-        and parts.username is None
-        and parts.password is None
-        and port in (None, 443)
-        and (parts.hostname or "") in OPENAI_HOSTS
-    )
+    return parts.scheme == "https" and parts.netloc.lower() in OPENAI_AUTHORITIES
+
+
+def client_address(url: str) -> str:
+    """The address the client is handed: `url`'s scheme and authority, exactly as
+    `is_openai_host` read them, with `API_PREFIX` on the end. Built from those parts rather than
+    from the string as typed, so the host the key was decided for is the host the client is
+    given."""
+    parts = urlsplit(url.strip())
+    return urlunsplit((parts.scheme, parts.netloc, API_PREFIX, "", ""))
 
 
 def check_address(url: str) -> None:
@@ -180,8 +248,22 @@ def check_address(url: str) -> None:
         )
 
 
-def _sdk_parts(spec: DecisionSpec) -> tuple[Any, Any]:
-    """The SDK's client class and its `Omit` marker, or the sentence that says why not.
+class _SDK(NamedTuple):
+    """The four things this backend takes from the SDK."""
+
+    client: Any
+    """`AsyncOpenAI`, the class."""
+    omit: Any
+    """`Omit`, the class whose instance under a header's name sends no header by that name."""
+    http_client: Any
+    """`DefaultAsyncHttpxClient`, the HTTP client with the SDK's own defaults, which is how the
+    client is told to follow no redirect in every release the extra allows."""
+    version: str
+    """The release, for a refusal that has to say which one."""
+
+
+def _sdk_parts(spec: DecisionSpec) -> _SDK:
+    """What this backend takes from the SDK, or the sentence that says why not.
 
     A missing SDK and one too old to have these are the same sentence, because the same install
     fixes both: before 1.0 the package had no `AsyncOpenAI` at all, and the extra's floor is
@@ -195,9 +277,15 @@ def _sdk_parts(spec: DecisionSpec) -> tuple[Any, Any]:
         raise DecisionNotInstalled(spec.name, extra) from e
     client = getattr(sdk, "AsyncOpenAI", None)
     omit = getattr(sdk, "Omit", None)
-    if client is None or omit is None or not callable(getattr(client, "post", None)):
+    http_client = getattr(sdk, "DefaultAsyncHttpxClient", None)
+    if (
+        client is None
+        or omit is None
+        or http_client is None
+        or not callable(getattr(client, "post", None))
+    ):
         raise DecisionNotInstalled(spec.name, extra)
-    return client, omit
+    return _SDK(client, omit, http_client, str(getattr(sdk, "__version__", "of no known release")))
 
 
 def client_problem(spec: DecisionSpec) -> str | None:
@@ -229,6 +317,82 @@ def ambient_headers(raw: str | None) -> list[str]:
         if colon >= 0:
             names.append(line[:colon].strip())
     return names
+
+
+def request_headers(bearer: str, *, at_openai: bool, omit: Callable[[], Any]) -> dict[str, Any]:
+    """The `default_headers` the client is built with: quackd's own authorization, and an answer
+    for every header the SDK would otherwise add by itself.
+
+    The releases the extra allows treat `OPENAI_CUSTOM_HEADERS` four ways, and each rule here
+    holds under all four rather than under the locked one alone. Read on 2026-10-10 in the
+    eleven releases the uv cache held, from 1.66.0 to 3.22.1; the releases between those were
+    not read:
+
+    - 1.66.0 and 1.83.0 do not read the variable at all.
+    - 3.1.0 adds every line of it, and lets a header the caller hands it replace a line only when
+      the two are spelled exactly alike, so `authorization` and `Authorization` are two headers
+      and both go.
+    - 3.6.0, and every release read after it, drops every authorization line of the variable
+      when the caller hands it an authorization header in any spelling.
+    - 3.22.1 also merges every name without regard to case, the last spelling winning.
+
+    So, for every line of the variable, read as the SDK reads it (`ambient_headers`):
+
+    - A name that lower-cases to `authorization` carries quackd's own value, under that very
+      spelling, so that whichever way a release merges, the value left is quackd's. With such a
+      spelling there, `Authorization` itself is omitted, and first, so that a release that keeps
+      both spellings sends one line rather than two, and a release that merges them ends on
+      quackd's value. With none, `Authorization` carries the value, and naming it is also what
+      makes 3.6.0 and the releases read after it drop the variable's own line.
+    - At OpenAI, a name spelled exactly as the SDK spells an account header would replace the
+      entry the SDK fills from `OPENAI_ORG_ID` or `OPENAI_PROJECT_ID` (`ACCOUNT_HEADERS`), and
+      the request would be billed to whatever the key's default account is. So it carries that
+      variable's value instead, the one the SDK would have sent, and is omitted only where the
+      variable is unset, as the SDK omits it. Named only in another spelling, the header is a
+      header of its own, omitted like any other, and the SDK's entry is left to say what it says.
+      Named in both, every spelling carries the SDK's value, because a release that merges
+      without regard to case lets whichever comes last win, and that may be either.
+    - Every other name is omitted.
+
+    Away from OpenAI both account headers are omitted as well, whatever the variable says.
+
+    A value is the same under every spelling it is sent in, so a release that keeps two
+    spellings sends the same value twice, which is the worst a variable that names one header
+    twice can do here. What a release does that this cannot foresee, `DecisionsAPILLM` reads
+    back off the client it built."""
+    named = ambient_headers(os.environ.get(CUSTOM_HEADERS_ENV))
+    spellings = [n for n in named if n.lower() == "authorization" and n != "Authorization"]
+    headers: dict[str, Any] = {"Authorization": omit() if spellings else bearer}
+    for name in spellings:
+        headers[name] = bearer
+    # The account headers whose own entry a line of the variable would replace, at OpenAI.
+    replaced = {name for name in named if name in ACCOUNT_HEADERS} if at_openai else set()
+    for name in named:
+        if name.lower() == "authorization":
+            continue
+        account = _ACCOUNT_SPELLING.get(name.lower())
+        value = None
+        if account is not None and account in replaced:
+            value = os.environ.get(ACCOUNT_HEADERS[account])
+        headers[name] = value if value is not None else omit()
+    if not at_openai:
+        for name in ACCOUNT_HEADERS:
+            headers[name] = omit()
+    return headers
+
+
+def foreign_authorization(headers: Mapping[str, Any], bearer: str, omit_type: Any) -> bool:
+    """Whether `headers`, a built client's own `default_headers`, would still send an
+    authorization quackd did not write: any value under a name that lower-cases to
+    `authorization` that is neither quackd's own nor an `Omit`. A value nobody can compare
+    counts as foreign, because this is the last thing between a gateway's credential and the
+    address the run was given."""
+    for name, value in headers.items():
+        if str(name).lower() != "authorization" or isinstance(value, omit_type):
+            continue
+        if value != bearer:
+            return True
+    return False
 
 
 # ── the translation ─────────────────────────────────────────────────────────────────────
@@ -411,8 +575,11 @@ class DecisionsAPILLM:
             raise DecisionError(
                 f"--decision-llm {spec.name} names no model: say which, as {spec.name}:MODEL"
             )
-        address = url or spec.url
-        if address is None:
+        # The whitespace around it taken off, as the CLI takes it off, and blank read as unset,
+        # as `factory.resolve_decision_url` reads it: the address every rule below decides on
+        # is then the one string the price and the key are both decided on.
+        address = (url or "").strip() or (spec.url or "").strip()
+        if not address:
             # The row always has one, and `factory` always resolves it. Refused rather than
             # guessed for somebody building this directly from a spec of their own.
             raise DecisionError(
@@ -421,7 +588,7 @@ class DecisionsAPILLM:
             )
         check_address(address)
         self.url: str | None = address
-        client, omit = _sdk_parts(spec)
+        sdk = _sdk_parts(spec)
         at_openai = is_openai_host(address)
         if at_openai:
             key = os.environ.get(spec.key_env) if spec.key_env else None
@@ -429,30 +596,20 @@ class DecisionsAPILLM:
                 raise DecisionMissingKey(spec.name, spec.key_env or "OPENAI_API_KEY")
         else:
             key = NO_KEY
-        # Named outright, and the reason is the SDK's rule rather than tidiness: it drops the
-        # `Authorization` line of `OPENAI_CUSTOM_HEADERS` only when the caller names one, and
-        # left in, that line would replace the word on its way to a server you run.
-        headers: dict[str, Any] = {"Authorization": f"Bearer {key}"}
-        for name in ambient_headers(os.environ.get(CUSTOM_HEADERS_ENV)):
-            # Not an omitted `Authorization`, in any case: the SDK merges headers without
-            # regard to case, so that would take out the line above, and the SDK has already
-            # dropped the variable's own.
-            if name.lower() != "authorization":
-                headers[name] = omit()
-        if not at_openai:
-            for name in ACCOUNT_HEADERS:
-                headers[name] = omit()
-        parts = urlsplit(address)
+        bearer = f"Bearer {key}"
         try:
-            self._client: Any = client(
+            self._client: Any = sdk.client(
                 api_key=key,
-                # Built from the parts `is_openai_host` read rather than from the string as
-                # typed, so the host the key was decided for is the host the client is given.
-                base_url=urlunsplit((parts.scheme, parts.netloc, API_PREFIX, "", "")),
+                base_url=client_address(address),
                 timeout=TIMEOUT_S,
                 max_retries=MAX_RETRIES,
-                default_headers=headers,
+                default_headers=request_headers(bearer, at_openai=at_openai, omit=sdk.omit),
+                # Told here rather than per request, because the request option that says it
+                # is not in every release the extra allows (1.66.0 has none) and a release
+                # without it drops it silently. Every release reads the HTTP client's own.
+                http_client=sdk.http_client(follow_redirects=False),
             )
+            built = dict(self._client.default_headers)
         except Exception as e:
             # The type and not the message: the message may quote the address, and this one
             # can carry a password the redacted spelling beside it has already taken out.
@@ -460,6 +617,16 @@ class DecisionsAPILLM:
                 f"--decision-llm {spec.name} could not build its client for "
                 f"{redacted_url(address)}: {type(e).__name__}"
             ) from e
+        if foreign_authorization(built, bearer, sdk.omit):
+            # Read back rather than trusted, because `request_headers` answers the releases
+            # somebody read, and the extra allows ones nobody has. The value is never quoted:
+            # it is the credential this exists to keep at home.
+            raise DecisionError(
+                f"--decision-llm {spec.name} would send an authorization header from "
+                f"{CUSTOM_HEADERS_ENV} beside its own with openai {sdk.version}, so it is not "
+                f"built: take that line out of {CUSTOM_HEADERS_ENV} for this run, or upgrade the "
+                'SDK (uv pip install -U "quackd[openai]")'
+            )
 
     async def decide(
         self,
