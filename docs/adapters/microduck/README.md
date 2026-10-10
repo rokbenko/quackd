@@ -176,7 +176,9 @@ sees 62° along its long side and is turned upright for the PNG, so across a 720
 the default 720p turned upright, quackd measures through 37.3°. That goes in the manifest as
 `camera_fov_deg`, so an MCP session measures through it too, and every state lists the assumption
 in `extras.assumptions` (the UNVERIFIED row above). `--fov-deg` overrides it on `quackd run`. A
-frame wider than tall, which is a beta's, gets no lens: pass `--fov-deg` there.
+frame wider than tall, which is a beta's, gets no lens: pass `--fov-deg` there. Through a lens
+narrower than 45°, `search_scan` turns in steps smaller than its usual 45°, so that each view
+overlaps the next.
 
 **WebRTC** is the stream. Signalling is gst-plugins-rs `net/webrtc`, read from
 `mediad/webclient/index.html` at the pin: the producer offers and quackd answers.

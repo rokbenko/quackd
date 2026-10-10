@@ -80,13 +80,26 @@ class SayParams(BaseModel):
     text: str = Field(..., min_length=1, max_length=200, description="What to say.")
 
 
+#: The most steps one `search_scan` takes, the bound its `max_steps` is held to.
+MAX_SCAN_STEPS = 16
+
+
 class SearchScanParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: str = Field(default="ball", description="Label to look for (e.g. ball, person).")
-    step_deg: float = Field(default=45.0, ge=15, le=120, description="Rotation per step.")
+    step_deg: float = Field(
+        default=45.0,
+        ge=15,
+        le=120,
+        description="Rotation per step. Left out, 45, or less through a lens narrower than that, "
+        "so that each view overlaps the next.",
+    )
     max_steps: int = Field(
-        default=8, ge=1, le=16, description="Steps before giving up (8 x 45° = full turn)."
+        default=8,
+        ge=1,
+        le=MAX_SCAN_STEPS,
+        description="Steps before giving up. Left out, as many as make a full turn, 8 at 45°.",
     )
 
 
@@ -464,10 +477,42 @@ def gaze_sweep_yaws(
     return yaws
 
 
-async def _gaze_sweep(ctx: VerbContext, p: SearchScanParams, limit_deg: float) -> VerbResult:
+def _lens_deg(ctx: VerbContext) -> float | None:
+    """How wide the view the detector measures bearings through is, in degrees, when it says:
+    the lens `--fov-deg` gave, the body's own, or the guess a detector falls back on."""
+    fov = getattr(ctx.detector, "fov_deg", None)
+    if isinstance(fov, int | float) and not isinstance(fov, bool) and 0 < fov < 360:
+        return float(fov)
+    return None
+
+
+def scan_steps(p: SearchScanParams, lens_deg: float | None) -> tuple[float, int]:
+    """The step `search_scan` turns by and how many it takes, for a lens `lens_deg` wide.
+
+    The step a caller leaves out was 45°, which through a lens narrower than that leaves a wedge
+    between each view and the next that no view sees: on an alpha's upright `/frame`, 37° wide,
+    a sixth of every turn, and a target standing in one of them was not there as far as the
+    scan could say. With the lens known, a step left out is the widest that turns a whole circle
+    in whole steps with each view overlapping the next, a circle over one more step than the lens
+    fits into it, and never wider than 45°, so a lens 45° or wider scans as it always did, and
+    so does a body whose detector names no lens. A count of steps left out is then as many as
+    make the circle, as 8 does at 45°, up to `MAX_SCAN_STEPS`. A step or a count the caller gave
+    is kept as given."""
+    if lens_deg is None or "step_deg" in p.model_fields_set:
+        return p.step_deg, p.max_steps
+    per_turn = math.floor(360.0 / lens_deg) + 1
+    if 360.0 / per_turn >= p.step_deg:
+        return p.step_deg, p.max_steps
+    steps = p.max_steps if "max_steps" in p.model_fields_set else min(MAX_SCAN_STEPS, per_turn)
+    return 360.0 / per_turn, steps
+
+
+async def _gaze_sweep(
+    ctx: VerbContext, p: SearchScanParams, limit_deg: float, step: float, steps: int
+) -> VerbResult:
     state = await ctx.transport.get_state()
     centre = float(state.extras.get("head_yaw_deg") or 0.0)
-    yaws = gaze_sweep_yaws(centre, p.step_deg, p.max_steps, limit_deg)
+    yaws = gaze_sweep_yaws(centre, step, steps, limit_deg)
     for i, yaw in enumerate(yaws):
         rad = math.radians(yaw)
         await ctx.transport.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))
@@ -485,7 +530,7 @@ async def _gaze_sweep(ctx: VerbContext, p: SearchScanParams, limit_deg: float) -
                 steps=i,
                 gaze_yaw_deg=yaw,
             )
-    span = (len(yaws) - 1) * p.step_deg
+    span = (len(yaws) - 1) * step
     return VerbResult.fail(
         f"{p.target} not found in a gaze sweep of {len(yaws)} looks ({span:.0f}°)"
     )
@@ -495,16 +540,17 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
     if ctx.detector is None:
         return VerbResult.fail("search_scan needs a detector (none configured)")
     mode = scan_mode(ctx.manifest)
+    step, steps = scan_steps(p, _lens_deg(ctx))
     if mode == "gaze":
         limit = (ctx.manifest.limits.get("gaze_yaw_deg") if ctx.manifest else None) or (
             DEFAULT_GAZE_LIMIT_DEG
         )
-        return await _gaze_sweep(ctx, p, float(limit))
+        return await _gaze_sweep(ctx, p, float(limit), step, steps)
     if mode == "none":
         return VerbResult.fail("search_scan needs locomotion or gaze; this robot has neither")
     since = await _look_ahead(ctx)
     glances = _head_fade_s(ctx) > 0
-    for i in range(p.max_steps + 1):
+    for i in range(steps + 1):
         # each view is a frame taken after the turn before it had settled, at the heading the
         # result names, on a body that says when its frames were taken: one handed out from
         # memory after a tenth of a second of settling could show the view from before the
@@ -521,14 +567,14 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
                 detections=[d.model_dump() for d in hits],
                 steps=i,
             )
-        if i == p.max_steps:
+        if i == steps:
             break
         try:
-            await _turn(ctx, math.radians(p.step_deg))
+            await _turn(ctx, math.radians(step))
         except _Refused as refused:
             # how far it really turned, the turn it was refused in not counted: a scan of a duck
             # that never turned used to report the whole sweep, the target not in it
-            stopped = f"the scan stopped after {i} of {p.max_steps} turns ({i * p.step_deg:.0f}°)"
+            stopped = f"the scan stopped after {i} of {steps} turns ({i * step:.0f}°)"
             return await _stopped_by(ctx, "search_scan", stopped, refused, steps=i)
         if glances:
             # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
@@ -539,9 +585,7 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
         await ctx.transport.sleep(TICK_S)  # let the view settle
         since = ctx.transport.now()
-    return VerbResult.fail(
-        f"{p.target} not found after {p.max_steps} steps ({p.max_steps * p.step_deg:.0f}°)"
-    )
+    return VerbResult.fail(f"{p.target} not found after {steps} steps ({steps * step:.0f}°)")
 
 
 async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:

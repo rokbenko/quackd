@@ -16,7 +16,15 @@ from quackd.safety import Executor
 from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
 from quackd.transport.sim2d import Sim2DTransport
-from quackd.verbs.core import LOST_TICKS, LOST_WZ, STEER_TURN_S, TICK_S
+from quackd.verbs.core import (
+    LOST_TICKS,
+    LOST_WZ,
+    MAX_SCAN_STEPS,
+    STEER_TURN_S,
+    TICK_S,
+    SearchScanParams,
+    scan_steps,
+)
 from quackd.verbs.registry import VerbRegistry
 
 DUCK = parse_duck_text(
@@ -303,12 +311,12 @@ class _KeptBall(_Kept):
 
 class _SeesTheBall:
     """A detector that finds the ball where the frame says it was, when that is inside a lens
-    `lens_deg` wide, and nothing otherwise."""
+    `lens_deg` wide, and nothing otherwise, and says that lens is the one it measures through."""
 
     name = "sees_the_ball"
 
     def __init__(self, lens_deg: float) -> None:
-        self.lens_deg = lens_deg
+        self.lens_deg = self.fov_deg = lens_deg
 
     def detect(self, image: Image.Image) -> list[Detection]:
         bearing, dist = float(image.info["bearing"]), float(image.info["dist"])
@@ -386,6 +394,48 @@ async def test_go_to_looks_for_a_lost_target_as_far_whether_or_not_it_measures_f
     as_far = math.degrees(LOST_TICKS * TICK_S * LOST_WZ)
     one_look = math.degrees(STEER_TURN_S * LOST_WZ)
     assert as_far - one_look <= body.yaw_deg <= as_far + 1e-6, body.yaw_deg
+
+
+# ── search_scan's step, from the lens ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "lens_deg", [10.0, 22.5, 30.0, 37.3, 40.0, 44.9, 45.0, 46.0, 62.0, 90.0, 120.0]
+)
+def test_a_scan_left_to_its_step_overlaps_each_view_with_the_next(lens_deg: float) -> None:
+    """A step the caller leaves out is the widest that turns a whole circle in whole steps with
+    each view overlapping the next, and never wider than the 45° it always was. So a lens 45°
+    wide or wider scans as before, a narrower one leaves no wedge between two views unseen, and
+    a count of steps left out makes the circle, as far as the bound on steps allows."""
+    step, steps = scan_steps(SearchScanParams(), lens_deg)
+    assert step < lens_deg, "each view overlaps the next"
+    assert step <= 45.0
+    if lens_deg > 45.0:
+        assert (step, steps) == (45.0, 8), "a wide lens scans as it always did"
+    if steps < MAX_SCAN_STEPS:
+        assert steps * step == pytest.approx(360.0), "a whole circle"
+
+
+def test_a_scan_keeps_the_step_and_the_count_it_was_given() -> None:
+    """A step or a count the caller gave is the caller's, and a detector that names no lens
+    leaves the scan as it always was."""
+    assert scan_steps(SearchScanParams(step_deg=45.0), 37.3) == (45.0, 8)
+    step, steps = scan_steps(SearchScanParams(max_steps=3), 37.3)
+    assert steps == 3 and step < 37.3
+    assert scan_steps(SearchScanParams(), None) == (45.0, 8)
+
+
+async def test_search_scan_finds_a_target_where_its_old_step_left_a_wedge_unseen(
+    registry: VerbRegistry,
+) -> None:
+    """Through a 40° lens, 45° steps see from 20° right of the start to 20° left of it, then from
+    25° to 65° left, and a ball 22° to the left stands in the wedge between the two, which a
+    whole turn of the old step never looked into. The step comes from the lens the detector
+    measures through now, so one view overlaps the next and the scan finds the ball."""
+    body = _KeptBall(period=0.5, fetch=0.5, ball_deg=22.0, ball_m=1.5)
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    result = await ex.run_verb("search_scan", {"target": "ball"})
+    assert result.ok, result.summary
 
 
 # ── a twist the body refuses ends the verb that steers ──────────────────────────────────
