@@ -92,7 +92,7 @@ class SearchScanParams(BaseModel):
         default=45.0,
         ge=15,
         le=120,
-        description="Rotation per step. Left out, 45, or less through a lens narrower than that, "
+        description="Rotation per step. Left out, 45, or less through a lens no wider than that, "
         "so that each view overlaps the next.",
     )
     max_steps: int = Field(
@@ -494,10 +494,11 @@ def scan_steps(p: SearchScanParams, lens_deg: float | None) -> tuple[float, int]
     a sixth of every turn, and a target standing in one of them was not there as far as the
     scan could say. With the lens known, a step left out is the widest that turns a whole circle
     in whole steps with each view overlapping the next, a circle over one more step than the lens
-    fits into it, and never wider than 45°, so a lens 45° or wider scans as it always did, and
-    so does a body whose detector names no lens. A count of steps left out is then as many as
-    make the circle, as 8 does at 45°, up to `MAX_SCAN_STEPS`. A step or a count the caller gave
-    is kept as given."""
+    fits into it, and never wider than 45°. So a lens wider than 45° scans as it always did, and
+    so does a body whose detector names no lens, while one exactly 45° wide, whose views 45°
+    apart would only meet edge to edge, turns 40° at a time. A count of steps left out is then
+    as many as make the circle, as 8 does at 45°, up to `MAX_SCAN_STEPS`. A step or a count the
+    caller gave is kept as given."""
     if lens_deg is None or "step_deg" in p.model_fields_set:
         return p.step_deg, p.max_steps
     per_turn = math.floor(360.0 / lens_deg) + 1

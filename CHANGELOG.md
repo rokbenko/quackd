@@ -333,17 +333,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   as far either way, and `tests/test_jsonrpc.py` reads the period off mediad's route while its
   frames come quickly and once one comes slowly. Each failed with its part of this change taken out.
 
-- **`search_scan` turns in steps whose views overlap through a lens narrower than 45°, so no wedge
+- **`search_scan` turns in steps whose views overlap through a lens no wider than 45°, so no wedge
   of the room goes unseen.** A scan left to its own step turned 45° at a time, and through a
   narrower lens each view ended before the next began: through an alpha's 37° view on a Microduck
   the wedges between came to a sixth of every turn, and a target standing in one was reported not
   found after a whole turn. A step the caller leaves out is now the widest that turns a whole circle
   in whole steps with each view overlapping the next, through the lens the detector measures
   bearings through, and never wider than 45°, and a count of steps left out is as many as make the
-  circle, up to the 16 a scan may take: through 37°, ten steps of 36°. A lens 45° wide or wider
-  scans as it always did, the simulators' among them, and so does a body whose detector names no
-  lens, and a step or a count the caller gives is kept. A robot that sweeps its head instead of
-  turning steps its gaze the same way, and the tool's own words for both parameters say so.
+  circle, up to the 16 a scan may take: through 37°, ten steps of 36°. A lens wider than 45° scans
+  as it always did, the simulators' among them, and so does a body whose detector names no lens, and
+  a step or a count the caller gives is kept. A robot that sweeps its head instead of turning steps
+  its gaze the same way, and the tool's own words for both parameters say so.
   `tests/test_composite.py` works out the step for lenses from 10° to 120°, those wider than 45°
   keeping the old one, keeps a step and a count the caller gave, and finds a ball standing where the
   old step left a wedge, which a scan with the old step does not.

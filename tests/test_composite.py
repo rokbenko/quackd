@@ -404,14 +404,17 @@ async def test_go_to_looks_for_a_lost_target_as_far_whether_or_not_it_measures_f
 )
 def test_a_scan_left_to_its_step_overlaps_each_view_with_the_next(lens_deg: float) -> None:
     """A step the caller leaves out is the widest that turns a whole circle in whole steps with
-    each view overlapping the next, and never wider than the 45° it always was. So a lens 45°
-    wide or wider scans as before, a narrower one leaves no wedge between two views unseen, and
-    a count of steps left out makes the circle, as far as the bound on steps allows."""
+    each view overlapping the next, and never wider than the 45° it always was. So a lens wider
+    than 45° scans as before, one exactly 45° wide overlaps its views where 45° steps would only
+    have met them, a narrower one leaves no wedge between two views unseen, and a count of steps
+    left out makes the circle, as far as the bound on steps allows."""
     step, steps = scan_steps(SearchScanParams(), lens_deg)
     assert step < lens_deg, "each view overlaps the next"
     assert step <= 45.0
     if lens_deg > 45.0:
         assert (step, steps) == (45.0, 8), "a wide lens scans as it always did"
+    if lens_deg == 45.0:
+        assert (step, steps) == (40.0, 9), "views that would meet edge to edge overlap"
     if steps < MAX_SCAN_STEPS:
         assert steps * step == pytest.approx(360.0), "a whole circle"
 

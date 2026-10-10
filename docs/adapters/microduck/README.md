@@ -178,7 +178,7 @@ the default 720p turned upright, quackd measures through 37.3°. That goes in th
 it, their detections say they are uncalibrated, and the log says to pass `--fov-deg`. Every state
 lists the assumption in `extras.assumptions` (the UNVERIFIED row above) until `--fov-deg`
 overrides the lens on `quackd run`, after which it lists it no more. A frame wider than tall,
-which is a beta's, gets no lens: pass `--fov-deg` there. Through a lens narrower than 45°,
+which is a beta's, gets no lens: pass `--fov-deg` there. Through a lens no wider than 45°,
 `search_scan` turns in steps smaller than its usual 45°, so that each view overlaps the next.
 
 **WebRTC** is the stream. Signalling is gst-plugins-rs `net/webrtc`, read from
