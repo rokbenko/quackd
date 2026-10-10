@@ -933,8 +933,11 @@ class Stepper:
         )
         # Characters of questions that actually went out, and 0 while nothing has: a turn that
         # could not build its questions owes nobody anything, and one that timed out after the
-        # request left probably does. The client itself was built before the robot connected,
-        # so nothing in here can fail without the request being real.
+        # request left probably does. The client itself was built before the robot connected, and
+        # so was the answer to the one question OpenAI's SDK would otherwise stop to ask before its
+        # first request, which platform it runs on (`decisions_api.warm_platform`): asked in here
+        # it once took the whole second and the turn with it, before anything was sent. So the
+        # second below is spent on the request rather than on getting ready to send one.
         sent = 0
         try:
             questions = build_questions(offered, self.what)

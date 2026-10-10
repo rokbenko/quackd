@@ -53,15 +53,24 @@ the whole request with the robot's state in it, to wherever it pointed, plain ht
 No answer OpenAI document for `POST /v1/decisions` is a redirect, so the client is built to
 follow none, and a redirect is a turn that failed.
 
+Two more are a matter of time rather than of where things go. The SDK's own timeout is a limit
+on each phase of a request rather than on the whole of it, so the clock that ends a stepper turn
+is the stepper's, and the client's sits above it (`base.client_timeout`). And before its first
+request the SDK asks the operating system which platform it is running on, which can take a
+good part of a second; the client asks it while it is built instead (`warm_platform`), so no
+turn ever waits for it.
+
 Imported only when a run has named this row. Nothing at module scope touches the SDK, and the
 address rules are the standard library alone, so `factory` asks them on a machine without it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import os
+import platform
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
@@ -72,6 +81,7 @@ from quackd.agent.decision.base import (
     DecisionError,
     DecisionMissingKey,
     DecisionNotInstalled,
+    client_timeout,
 )
 from quackd.command import readable_url, redacted_url
 
@@ -395,6 +405,50 @@ def foreign_authorization(headers: Mapping[str, Any], bearer: str, omit_type: An
     return False
 
 
+_UNSET = object()
+"""What `getattr` hands back for an attribute a client does not have, which no answer can be."""
+
+
+def warm_platform(client: Any) -> None:
+    """Ask now the one question the SDK asks before its first request: which platform it is on.
+
+    Every release the extra allows starts a client's first request with `self._platform = await
+    asyncify(get_platform)()` while it has no answer, in a worker thread (`openai/_base_client.py`,
+    each of the eleven releases from 1.66.0 to 3.22.1 that uv had cached, read 2026-10-10).
+    `get_platform` reads `platform.system()` and `platform.platform()`, and on Linux the
+    distribution's own file, and on Windows `platform.platform()` starts `cmd /c ver` in a
+    subprocess. CPython keeps the answer for the life of the process, so it is paid once, and it
+    was paid inside the first stepper turn and against that turn's second: on a loaded machine
+    most of the second, and now and then all of it, when the turn was cancelled before anything
+    was sent and was recorded and billed as a request that had left. Reading the built client's
+    headers back, as `DecisionsAPILLM` does, happens to ask it as well, through `default_headers`,
+    but leaves the client without the answer, so its first request still stopped to ask again.
+
+    So it is asked here, on purpose, while the client is built and the robot is not yet connected,
+    where a slow answer costs a moment of start-up and nothing else. The SDK's own `get_platform` is
+    asked rather than the standard library's functions alone, so whatever a release reads gets
+    read, and its answer is handed to the client where the client keeps one, which spares the
+    first request even the worker thread it would have started to ask again; under a release
+    that kept it elsewhere the caches are warm all the same. Where the SDK has no such function,
+    the standard library's two are asked instead, which is most of the cost on every platform.
+    Nothing here may stop the build, because this only saves a turn some time: a client left to
+    ask for itself is the client as it was."""
+    try:
+        probe = getattr(importlib.import_module(f"{SDK}._base_client"), "get_platform", None)
+    except Exception:
+        probe = None
+    try:
+        if not callable(probe):
+            platform.system()
+            platform.platform()
+            return
+        found = probe()
+        if getattr(client, "_platform", _UNSET) is None:
+            client._platform = found
+    except Exception:
+        return
+
+
 # ── the translation ─────────────────────────────────────────────────────────────────────
 
 
@@ -563,7 +617,8 @@ class DecisionsAPILLM:
     Built while the CLI is still parsing rather than on the first turn, as `SystemOneLLM` is:
     constructing a client can fail, and that is a sentence before the robot connects rather than
     a phantom cost on a turn that never left the machine. The address and the key are settled
-    here, once, so nothing a turn does can move either.
+    here, once, so nothing a turn does can move either, and so is the one thing the SDK would
+    otherwise do on the first turn before sending anything (`warm_platform`).
     """
 
     def __init__(
@@ -601,7 +656,9 @@ class DecisionsAPILLM:
             self._client: Any = sdk.client(
                 api_key=key,
                 base_url=client_address(address),
-                timeout=TIMEOUT_S,
+                # Above the stepper's own second rather than equal to it, so the stepper's
+                # `wait_for` is the one clock that ends a turn (`base.client_timeout`).
+                timeout=client_timeout(TIMEOUT_S),
                 max_retries=MAX_RETRIES,
                 default_headers=request_headers(bearer, at_openai=at_openai, omit=sdk.omit),
                 # Told here rather than per request, because the request option that says it
@@ -627,6 +684,7 @@ class DecisionsAPILLM:
                 f"built: take that line out of {CUSTOM_HEADERS_ENV} for this run, or upgrade the "
                 'SDK (uv pip install -U "quackd[openai]")'
             )
+        warm_platform(self._client)
 
     async def decide(
         self,
@@ -637,12 +695,24 @@ class DecisionsAPILLM:
     ) -> Any:
         """One request carrying every question, translated out and the answers translated back.
 
-        `timeout_s` bounds this one request where it is given and the client's `TIMEOUT_S`
-        bounds it where it is not, which is the stepper's case: its own `wait_for` around this
-        call is the bound that holds whatever the client says."""
+        `timeout_s`, where it is given, bounds the whole request, connecting, sending and every
+        byte of the answer, with a `wait_for` of its own, and a request that runs out raises
+        `TimeoutError`. The SDK's timeout could not be that bound: httpx2 applies it to each phase
+        of a request on its own, the connect, each read, each write, the wait for a pooled
+        connection, so a server that sends its answer a piece at a time, each piece inside the
+        limit, or a slow connect followed by a slow first byte, holds a request open well past it.
+        So the SDK's clock for that one request is set above the bound (`base.client_timeout`),
+        where it can only fire after the bound has ended the request.
+
+        Without `timeout_s` nothing in here bounds the whole request, and the client's own clock,
+        per phase and above `TIMEOUT_S`, is a backstop. That is the stepper's case: its `wait_for`
+        around this call, at `TIMEOUT_S`, is the bound, and the one clock that ends its turn."""
         asked = to_questions(questions)
         body = {"model": self.model, "input": to_input(state), "questions": asked}
-        data = await self._post(body, timeout_s)
+        if timeout_s is None:
+            data = await self._post(body, None)
+        else:
+            data = await asyncio.wait_for(self._post(body, client_timeout(timeout_s)), timeout_s)
         if not isinstance(data, Mapping):
             # The SDK hands back the body as text when it is not JSON. Not quoted: a page of
             # somebody's HTML is not a reason a reader of the record needs to wade through.
@@ -652,6 +722,10 @@ class DecisionsAPILLM:
         return to_result(data, [question["name"] for question in asked])
 
     async def _post(self, body: Mapping[str, Any], timeout_s: float | None) -> Any:
-        """The one place a request leaves, so a test can stand where the network would be."""
+        """The one place a request leaves, so a test can stand where the network would be.
+
+        `timeout_s` is the SDK's own clock for this one request, per phase as the SDK keeps it,
+        or None for the one the client was built with. `decide` hands it the clock above its
+        bound, never the bound itself."""
         options: dict[str, Any] = {} if timeout_s is None else {"timeout": timeout_s}
         return await self._client.post(PATH, cast_to=object, body=body, options=options)

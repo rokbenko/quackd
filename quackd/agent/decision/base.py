@@ -31,6 +31,23 @@ A starting value, like the floors. It was chosen against Jev's published latency
 CPU-only server on your own machine may well need more; `--decision-mode shadow` is how you
 find that out before it matters."""
 
+
+def client_timeout(bound_s: float) -> float:
+    """The clock a decision LLM's own client is given for a request that `bound_s` already bounds
+    from outside: twice it.
+
+    A second clock set to the same number as the first races it. The stepper's `wait_for` and an
+    SDK's own timeout, both at `TIMEOUT_S`, come due within moments of each other, and the event
+    loop runs the two in whichever turn it reaches them, so one request that ran out of its
+    second was recorded at random as quackd's `no answer within 1.0 s` or as the SDK's own
+    timeout type, both seen against the same slow server. A clock a whole budget later can only
+    fire on a request the bound has already ended, so the bound is the one clock that decides a
+    turn, and a turn that ran out is recorded one way. Doubling keeps the number derived from the
+    budget rather than invented beside it, and keeps a clock there at all, of the same order, for
+    a caller who calls `decide` with nothing around it."""
+    return 2 * bound_s
+
+
 NO_KEY = "local"
 """What goes in the key field for a server that wants none, and for a keyed row reached at an
 address that is not its vendor's. A word rather than nothing, because either SDK handed no key

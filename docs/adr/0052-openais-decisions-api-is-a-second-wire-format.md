@@ -84,9 +84,19 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   to follow none, because a redirect would carry the account headers, and on a 307 or a 308 the
   request with the state in it, to wherever it pointed, and 1.66.0 has no per-request way to say
   so. A redirect is a turn the record calls an error.
-- **One second and no retries.** `timeout=TIMEOUT_S` and `max_retries=0`. The SDK's two retries
-  would sleep three eighths to a half of a second before the first, and the stepper's `wait_for`
-  stays the bound that holds.
+- **The stepper's second is the one clock that ends a turn, and no retries.** `max_retries=0`,
+  because the SDK's two retries would sleep three eighths to a half of a second before the first.
+  The client's own timeout is twice `TIMEOUT_S` (`base.client_timeout`) rather than `TIMEOUT_S`
+  itself. httpx2 applies it to each operation of a request, the connect, each read, each write,
+  rather than to the whole, and at the stepper's own second it came due with the stepper's
+  `wait_for`, so one slow server's turns were recorded some as quackd's `no answer within 1.0 s`
+  and some as `APITimeoutError`. Above it, the stepper's `wait_for` ends every turn that runs out.
+  `decide(timeout_s=...)` bounds the whole request with a `wait_for` of its own, the SDK's clock for
+  that request set above the bound, for a caller with no stepper around it.
+- **Nothing the SDK does once happens inside a turn.** Before a client's first request every release
+  asks which platform it is on, in a worker thread, and on Windows that starts a subprocess: inside
+  the first turn it once took the whole second, before anything was sent. The client has the SDK's
+  own function asked while it is built and is handed the answer (`warm_platform`), so no turn asks.
 - **Translated both ways, and read by name alone.** The state goes as one JSON string, the very
   one the stepper measures as `state_chars`. Every question goes named and in order: a `noul` as a
   `predicate`, a choice's criteria as `choices` with `escalate` last, a score's as `levels`. An

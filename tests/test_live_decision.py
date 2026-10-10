@@ -246,8 +246,12 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
 
     `LATENCY_UNDER_ONE_SECOND`: the median, the 95th percentile and the slowest, how many would
     have run out of the stepper's `TIMEOUT_S` and gone to the model, and the first request apart
-    from the rest, because it opens the connection the others reuse, which is the difference
-    between a turn in shadow mode and a turn in a streak. `ANSWER_NAMES_ECHOED`: every answer
+    from the rest, because it opens the connection the others reuse, which is most of the
+    difference between a turn in shadow mode and a turn in a streak. It is also this client's first
+    request, and does once what no later one does, so it reads a little high for a shadow turn in
+    a run that has asked before: the SDK's look at its platform, the costly part, is taken while
+    the client is built (`decisions_api.warm_platform`), and the rest is in the figure, which says
+    so. `ANSWER_NAMES_ECHOED`: every answer
     back under the name its question was asked by, in the order asked, which is asserted rather
     than printed, because quackd reads answers by name and nothing else. `CONFIDENCE_MEANS_THE_SAME`
     and `NO_CACHE_DISCOUNT`, printed for a person to read: the confidence beside the top
@@ -297,8 +301,8 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
         f"slowest {ordered[-1]:.3f} s"
     )
     print(
-        f"  the first, on a new connection: {took[0]:.3f} s; the other {SAMPLES - 1}, on the "
-        f"same one: p50 {statistics.median(took[1:]):.3f} s"
+        f"  the first, on a new connection and the client's first use: {took[0]:.3f} s; the "
+        f"other {SAMPLES - 1}, on the same one: p50 {statistics.median(took[1:]):.3f} s"
     )
     print(f"  {over} of {SAMPLES} took longer than the stepper's {TIMEOUT_S} s")
     print(f"  usage, as OpenAI sent it for the first: {usage}")

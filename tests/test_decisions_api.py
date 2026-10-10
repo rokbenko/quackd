@@ -13,10 +13,12 @@ last section proves the guard that makes sure of it (`tests/conftest.py`) fires.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import dataclasses
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -36,6 +38,7 @@ from quackd.agent.decision.base import (
     DecisionError,
     DecisionMissingKey,
     DecisionNotInstalled,
+    client_timeout,
 )
 from quackd.agent.decision.catalogue import PRESETS
 from quackd.agent.decision.decisions_api import (
@@ -174,14 +177,53 @@ async def test_one_request_goes_to_decisions_with_the_three_fields_the_api_takes
     assert post["options"] == {}, "no per-request timeout unless one is asked for"
 
 
-async def test_a_timeout_handed_to_decide_bounds_that_request_alone(
+async def test_a_timeout_handed_to_decide_sets_that_requests_own_clock_above_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The SDK's clock for that one request sits above the bound, where it cannot fire first, and
+    a request with no bound keeps the clock the client was built with."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     llm, fake = _built(monkeypatch)
     await llm.decide({"goal": "g"}, {}, timeout_s=1.5)
     await llm.decide({"goal": "g"}, {})
-    assert [p["options"] for p in fake.posts] == [{"timeout": 1.5}, {}]
+    assert [p["options"] for p in fake.posts] == [{"timeout": client_timeout(1.5)}, {}]
+    assert client_timeout(1.5) > 1.5
+
+
+class _Trickles(fake_api.FakeOpenAI):
+    """A server that answers in its own time: every byte inside the SDK's limit for one phase of
+    a request, the whole of it long after. The real SDK times each phase on its own, so this is a
+    request its own clock never ends, which is the one a caller's bound is for."""
+
+    def __init__(self, takes_s: float, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.takes_s = takes_s
+        self.finished = False
+
+    async def post(self, path: str, **kwargs: Any) -> Any:
+        answer = await super().post(path, **kwargs)
+        await asyncio.sleep(self.takes_s)
+        self.finished = True
+        return answer
+
+
+async def test_a_timeout_handed_to_decide_bounds_the_whole_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`decide(timeout_s=...)` said it bounded the request, and handed the number to the SDK,
+    which bounds each phase of one: a server that answered a piece at a time held it open several
+    times as long. It raises `TimeoutError` at the bound now, whatever the server is doing."""
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    bound = TIMEOUT_S / 10
+    fake = fake_api.install(
+        monkeypatch, _Trickles(takes_s=20 * bound, answers=fake_api.turn("stop"))
+    )
+    llm = make_decision_llm(OPENAI)
+    with pytest.raises(TimeoutError):
+        await llm.decide(
+            {"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}}, timeout_s=bound
+        )
+    assert fake.posts and not fake.finished, "the request ran to its end past the bound"
 
 
 async def test_the_state_goes_out_as_the_json_the_stepper_measures(
@@ -392,13 +434,16 @@ async def test_an_error_that_quotes_the_request_reaches_the_record_as_its_type_a
 # ── the client, and where the key goes ──────────────────────────────────────────────────
 
 
-def test_the_client_is_built_with_the_address_one_second_and_no_retries(
+def test_the_client_is_built_with_the_address_a_clock_above_the_steppers_and_no_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The SDK's clock at the stepper's own second raced it, and one slow server's turns were
+    recorded now as quackd's `no answer within 1.0 s` and now as the SDK's `APITimeoutError`.
+    Above it, the stepper's `wait_for` is the one clock that ends a turn."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     llm, fake = _built(monkeypatch)
     assert fake.kwargs["base_url"] == f"{OPENAI.url}/v1"
-    assert fake.kwargs["timeout"] == TIMEOUT_S
+    assert fake.kwargs["timeout"] == client_timeout(TIMEOUT_S) > TIMEOUT_S
     assert fake.kwargs["max_retries"] == 0
     assert fake.kwargs["api_key"] == KEY
     assert fake.headers["Authorization"] == f"Bearer {KEY}"
@@ -414,6 +459,78 @@ def test_the_client_follows_no_redirect(monkeypatch: pytest.MonkeyPatch) -> None
     http_client = fake.kwargs["http_client"]
     assert isinstance(http_client, fake_api.DefaultAsyncHttpxClient)
     assert http_client.follow_redirects is False
+
+
+class _KeepsItsPlatform(fake_api.FakeOpenAI):
+    """The fake with the attribute every release of the SDK keeps that answer in, empty until
+    something asks, as it is in a client that has just been built."""
+
+    _platform: Any = None
+
+
+def _sdks_platform_function(monkeypatch: pytest.MonkeyPatch, probe: Any) -> None:
+    """`probe` where the SDK keeps its `get_platform`, `openai._base_client`, for one test."""
+    module = types.ModuleType("openai._base_client")
+    module.get_platform = probe  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openai._base_client", module)
+
+
+def test_the_sdks_look_at_its_platform_is_taken_while_the_client_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every release asks which platform it is on before its first request, in a worker thread,
+    and on Windows that starts a subprocess, which inside the first stepper turn could take the
+    whole of its second and the turn with it, before anything was sent. Asked while the client is
+    built, by the SDK's own function, and handed to the client, it leaves the first request
+    nothing to ask."""
+    asked: list[str] = []
+
+    def get_platform() -> str:
+        asked.append("get_platform")
+        return "Windows"
+
+    _sdks_platform_function(monkeypatch, get_platform)
+    client = _KeepsItsPlatform(answers=fake_api.turn("stop"))
+    fake_api.install(monkeypatch, client)
+    make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
+    assert asked == ["get_platform"], "the SDK was left to ask on the first turn"
+    assert client._platform == "Windows", "the client would ask again on its first request"
+
+
+def test_without_the_sdks_own_function_the_standard_library_is_asked_while_building(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that keeps it somewhere else, and the fakes on a machine without the SDK, still
+    have the costly half asked before the robot connects: CPython keeps `platform.platform()`'s
+    answer for the life of the process, so whatever asks it later finds it waiting."""
+    monkeypatch.setitem(sys.modules, "openai._base_client", None)
+    real = platform.platform
+    asked: list[str] = []
+
+    def recorded(*args: Any, **kwargs: Any) -> str:
+        asked.append("platform")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(platform, "platform", recorded)
+    fake_api.install(monkeypatch, fake_api.FakeOpenAI(answers=fake_api.turn("stop")))
+    make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
+    assert asked == ["platform"]
+
+
+def test_a_look_at_the_platform_that_fails_never_stops_the_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It only saves the first turn some time, so a release whose look fails leaves the client
+    to ask for itself, the way it always did, and the run goes ahead."""
+
+    def get_platform() -> str:
+        raise OSError("ver would not start")
+
+    _sdks_platform_function(monkeypatch, get_platform)
+    client = _KeepsItsPlatform(answers=fake_api.turn("stop"))
+    fake_api.install(monkeypatch, client)
+    llm = make_decision_llm(OPENAI, url="http://127.0.0.1:8765")
+    assert client._platform is None and llm.name == "openai"
 
 
 def test_the_sdks_own_address_variable_never_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:

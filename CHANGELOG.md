@@ -34,9 +34,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   whatever a gateway's line of that variable names, and nowhere else, and the client follows no
   redirect, which would have carried them and the request somewhere else. A `--decision-url` with
   a path, a query or a fragment stops the run before anything connects, on every machine, with or
-  without the SDK and the key, and a run at a server of your own needs no key. The client waits one
-  second and never retries, and a turn is billed at the published $0.10 per million input tokens,
-  output not charged, on the count OpenAI reports. A question the API
+  without the SDK and the key, and a run at a server of your own needs no key. The client never
+  retries, and its own clock sits above the stepper's second, so that second is what ends a turn
+  and one that runs out of it is recorded one way, as `TimeoutError: no answer within 1.0 s`;
+  `decide(timeout_s=...)` bounds a whole request for a caller with no stepper around it. The SDK
+  asks which platform it is on before its first request, which on a cold Windows machine starts a
+  subprocess, so that is asked while the client is built and no turn waits for it. A turn is billed
+  at the published $0.10 per million input tokens, output not charged, on the count OpenAI
+  reports. A question the API
   declines is no answer at all, so the stepper reads that before any answer and hands the turn to
   the model on a gate of its own, `refused`, whichever of the four was declined, `feasible`
   included. The turn's record names the questions declined, the run's `decision` summary counts

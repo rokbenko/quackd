@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -31,9 +33,10 @@ pytest.importorskip("openai")
 from typer.testing import CliRunner
 
 from quackd.agent.decision import decisions_api
+from quackd.agent.decision.base import TIMEOUT_S
 from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.factory import make_decision_llm
-from quackd.agent.decision.stepper import build_questions
+from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
+from quackd.agent.decision.stepper import Call, Stepper, build_questions
 from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
@@ -43,6 +46,7 @@ from tests.fake_openai_decisions import (
     PATH,
     FakeOpenAIDecisions,
     answering,
+    paced,
     redirecting,
 )
 
@@ -134,11 +138,29 @@ def _as_openai(monkeypatch: pytest.MonkeyPatch, stand_in: FakeOpenAIDecisions) -
     )
 
 
-async def _decide_once(url: str) -> Any:
+async def _decide_once(url: str, **kwargs: Any) -> Any:
     """One request through the real client, built the way a run builds it."""
     return await make_decision_llm(OPENAI, url=url).decide(
-        {"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}}
+        {"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}}, **kwargs
     )
+
+
+def _stepper(llm: Any) -> Stepper:
+    """A stepper offered the brake and nothing else, built bare, for the tests that want a turn
+    without a run around it."""
+    stepper = Stepper(
+        mode="shadow",
+        goal="a goal",
+        llm=llm,
+        name=llm.name,
+        model=llm.model,
+        price=resolve_decision_price(OPENAI, url=llm.url),
+    )
+    stepper.calls["stop"] = Call(name="stop", arguments={}, label="stop")
+    stepper.classes["stop"] = "brake"
+    stepper.what["stop"] = "the brake"
+    stepper.early.add("stop")
+    return stepper
 
 
 def _plain_words(text: str, count: int = 5) -> str:
@@ -405,6 +427,81 @@ def test_a_body_that_is_not_json_costs_the_turn_and_not_the_run(tmp_path: Path) 
     assert sent and len(stand_in.posts()) == len(sent)
     for turn in sent:
         assert turn["gate"] == "error" and turn["error"] == "ValueError"
+
+
+TURNS = 4
+"""How many turns the test of a slow server asks. On the old clocks each turn's label was close
+to a coin toss, so four of them all coming out right by chance is unlikely, and four seconds of
+turns is what the suite pays for asking."""
+
+
+async def test_a_slow_servers_turns_are_all_recorded_as_the_steppers_timeout() -> None:
+    """The client's clock used to be the stepper's own second, the two came due together, and the
+    same slow server's turns were recorded some as quackd's `no answer within 1.0 s` and some as
+    the SDK's bare `APITimeoutError`. The client's clock sits above the stepper's now, so the
+    stepper's `wait_for` is the one that ends a turn, and every turn says the same thing."""
+    slow = paced(answering(), wait_s=1.5 * TIMEOUT_S)
+    with FakeOpenAIDecisions(script=[slow]) as stand_in:
+        stepper = _stepper(make_decision_llm(OPENAI, url=stand_in.url))
+        records = [
+            (await stepper.advise(SimpleNamespace(features={}), cleared=True, budget="b")).record
+            for _ in range(TURNS)
+        ]
+    said = f"TimeoutError: no answer within {TIMEOUT_S:.1f} s"
+    assert [record.get("error") for record in records] == [said] * TURNS
+
+
+async def test_a_bound_handed_to_decide_ends_a_request_answered_a_piece_at_a_time() -> None:
+    """The SDK's own timeout is a limit on each phase of a request, and `decide(timeout_s=...)`
+    used to hand it the bound, so a server that answered in pieces, each inside the limit, held
+    the request until its last piece. Every piece here comes well inside the bound and the whole
+    answer well after it, and the request ends at the bound with `TimeoutError`."""
+    bound = TIMEOUT_S / 2
+    pieces = 6
+    trickle = paced(answering(), pieces=pieces, gap_s=bound / 2)
+    whole = (pieces - 1) * bound / 2
+    with FakeOpenAIDecisions(script=[trickle]) as stand_in:
+        started = time.perf_counter()
+        with pytest.raises(TimeoutError):
+            await _decide_once(stand_in.url, timeout_s=bound)
+        took = time.perf_counter() - started
+    assert len(stand_in.posts()) == 1
+    assert took < whole, f"waited {took:.2f} s, for the whole answer rather than the bound"
+
+
+async def test_no_turn_stops_to_ask_which_platform_the_sdk_is_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before a client's first request every release asks which platform it is on, in a worker
+    thread, and on a cold Windows machine that starts a subprocess. Asked inside the first stepper
+    turn it could outlast the turn's second, which ended the turn as a timeout before anything was
+    sent, and the record called it a request that went out and billed it. Made slower here than a
+    whole turn, it is asked while the client is built, the client is handed the answer, and no
+    turn asks it again."""
+    import openai._base_client as sdk_base
+
+    real = sdk_base.get_platform
+    looks: list[float] = []
+
+    def slow_look() -> Any:
+        if not looks:
+            time.sleep(1.5 * TIMEOUT_S)
+        looks.append(time.perf_counter())
+        return real()
+
+    monkeypatch.setattr(sdk_base, "get_platform", slow_look)
+    with FakeOpenAIDecisions() as stand_in:
+        stepper = _stepper(make_decision_llm(OPENAI, url=stand_in.url))
+        built = len(looks)
+        records = [
+            (await stepper.advise(SimpleNamespace(features={}), cleared=True, budget="b")).record
+            for _ in range(2)
+        ]
+        posts = len(stand_in.posts())
+    assert built, "nothing looked while the client was built, so this proves nothing"
+    assert len(looks) == built, "a turn stopped to ask which platform the SDK is on"
+    assert [record.get("error") for record in records] == [None, None]
+    assert posts == len(records), "a turn recorded a request that never left"
 
 
 def test_an_address_with_a_path_stops_the_run_before_the_sdk_sends_anything(

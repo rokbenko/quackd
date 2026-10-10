@@ -28,6 +28,7 @@ import argparse
 import contextlib
 import json
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -335,6 +336,31 @@ def redirecting(location: str, status: int = 307) -> Reply:
     return lambda body: (status, Moved(location))
 
 
+@dataclass(frozen=True)
+class Paced:
+    """An answer the stand-in takes its time over: `wait_s` before the status line, and then
+    the body in `pieces`, `gap_s` apart, every piece after the headers that give its whole
+    length."""
+
+    reply: Any
+    wait_s: float = 0.0
+    pieces: int = 1
+    gap_s: float = 0.0
+
+
+def paced(reply: Reply, *, wait_s: float = 0.0, pieces: int = 1, gap_s: float = 0.0) -> Reply:
+    """`reply`, sent slowly. A wait is a server that is slow to start answering. Pieces are one
+    that answers a little at a time, each piece inside a client's limit for one read and the
+    whole of it long past, which is the request a clock per phase never ends and only a bound on
+    the whole request does."""
+
+    def slow(body: dict[str, Any]) -> tuple[int, Any]:
+        status, answer = reply(body)
+        return status, Paced(answer, wait_s=wait_s, pieces=pieces, gap_s=gap_s)
+
+    return slow
+
+
 SCRIPTS: dict[str, list[Reply]] = {
     "answer": [answering()],
     "refuse": [answering(refuse=("need_human",))],
@@ -419,6 +445,8 @@ class FakeOpenAIDecisions:
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     body = raw.decode("utf-8", "replace")
                 status, reply = stand_in._answer(self.command, self.path, body)
+                pace = reply if isinstance(reply, Paced) else Paced(reply)
+                reply = pace.reply
                 seen = Recorded(
                     self.command,
                     self.path,
@@ -433,6 +461,7 @@ class FakeOpenAIDecisions:
                     if stand_in.record is not None:
                         with stand_in.record.open("a", encoding="utf-8") as f:
                             f.write(json.dumps(seen.__dict__) + "\n")
+                time.sleep(pace.wait_s)
                 self.send_response(status)
                 if isinstance(reply, Moved):
                     self.send_header("Location", reply.location)
@@ -445,8 +474,18 @@ class FakeOpenAIDecisions:
                     payload, kind = json.dumps(reply).encode("utf-8"), "application/json"
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
+                step = max(1, -(-len(payload) // max(1, pace.pieces)))
+                try:
+                    self.end_headers()
+                    for start in range(0, len(payload), step):
+                        if start:
+                            time.sleep(pace.gap_s)
+                        self.wfile.write(payload[start : start + step])
+                except OSError:
+                    # A client that gave up on a slow answer has closed the connection, which is
+                    # what a test of the client's bound wants to happen, and not the stand-in's
+                    # error to report.
+                    return
 
             do_GET = do_POST = _serve
 
