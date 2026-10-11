@@ -173,6 +173,14 @@ to `0.0.0.0:11434` in its service's environment (`sudo systemctl edit ollama`, t
 `--host jetson.local` then reaches it with no tunnel, and so does everybody else on that
 network.
 
+Every turn a run asks Ollama carries one `Authorization`, the local key, and nothing the
+`openai` package reads out of the environment for itself: `OPENAI_CUSTOM_HEADERS`,
+`OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI's own API and never to a board. The local key
+is `--api-key` or `LOCAL_API_KEY`, and with neither set it is `OPENAI_API_KEY` when that is in
+your environment, before the word `not-needed`. Without the tunnel that key crosses the network
+in the clear, so set `LOCAL_API_KEY=not-needed` on a laptop that keeps a hosted key
+([guides/local-llms.md](local-llms.md#knobs)).
+
 ### quackd's host daemon
 
 The daemon is one file, `bridge/jetson/quackd_jetson_hostd.py`, run by systemd under the

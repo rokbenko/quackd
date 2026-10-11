@@ -400,6 +400,35 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   simulator's walk out of every living page, NOTICE and the sources it already reads. Each failed
   with its part of this change taken out.
 
+### Security
+
+- **A pilot built on OpenAI's SDK sends a gateway's credential, its other headers and OpenAI's
+  account headers to OpenAI's own API alone, and the vendor's key is the one authorization on every
+  request.** The `openai` package reads `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
+  `OPENAI_PROJECT_ID` for itself and adds them to every request wherever the client points, and
+  quackd built its clients with no answer to any of them, so `--llm openai` and every vendor and
+  local preset that speaks OpenAI's API sent them to its own address: OpenRouter, Grok, a model
+  server on a Jetson over plain HTTP. In 3.22.1, the release the lock carries, an `Authorization`
+  line of the variable, in any spelling, replaced the vendor's key on every request. In every
+  earlier release tried that reads the variable, from 3.1.0, `Authorization` did the same and any
+  other spelling went beside the key, and every release tried, from 1.66.0, sent
+  `OpenAI-Organization` and `OpenAI-Project` everywhere. Every such client is now built with the
+  vendor's key named as its one authorization, under every spelling the variable gives one, and at
+  any address that is not OpenAI's own API over https, with every other line of the variable and
+  both account headers omitted. At OpenAI's own API the variable's other lines go as the SDK sends
+  them and the account headers carry the two variables' values. The rule is decided on the address
+  the client is handed, which `--llm openai` now finds for itself, `OPENAI_BASE_URL` included, so a
+  blank `OPENAI_BASE_URL=` reads as unset where the SDK took it for an address. The client follows
+  no redirect, so a turn answered with one fails instead of sending the request on to wherever it
+  points, and a client whose own headers would still carry another authorization, or whose address
+  reads on the other side of the rule, is refused before the robot connects, naming the SDK's
+  release and never the value. The rule is `quackd/agent/providers/openai_headers.py`.
+  `tests/test_openai_headers.py` holds every preset to it under a model of each of the four ways the
+  releases merge headers, and `tests/test_openai_headers_wire.py` captures what each preset sends
+  through the real SDK with the network shut, for each spelling of the authorization and both
+  account headers, holds the model to the installed release, and has run against 3.22.1, 3.1.0 and
+  1.66.0. Each failed with its part of this change taken out.
+
 ### Documentation
 
 - **The Microduck's pages log in as `microduck`, the account upstream's own tools use, and say it

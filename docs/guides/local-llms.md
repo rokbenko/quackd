@@ -213,13 +213,23 @@ parts, and a text only model is still a text only model with it on.
 | `--base-url` / `QUACKD_BASE_URL` | `http://host:port/v1` | the preset's address |
 | `--host` / `QUACKD_HOST` | `HOST` or `HOST:PORT`, the machine quackd's daemon runs on ([guides/jetson.md](jetson.md)). Moves a preset's `localhost` there, port kept, at the rung shown above | no host, the preset's own `localhost` |
 | `--host-token` / `QUACKD_HOST_TOKEN` | the token that daemon was started with, sent to the daemon and never to the model server | no token |
-| `--api-key` / `LOCAL_API_KEY` | any string | `not-needed` (servers ignore it) |
+| `--api-key` / `LOCAL_API_KEY` | any string | `OPENAI_API_KEY` when that is set, and `not-needed` otherwise (servers ignore it) |
 | `QUACKD_TOOL_CHOICE` | `auto`, `required`, `none` | `auto` (`none` omits the field for servers that reject it) |
 | `--vision` / `QUACKD_VISION` | on, off | off |
 | `--extra-body` / `QUACKD_EXTRA_BODY` | one JSON object, merged into the top of every request body | nothing extra is sent |
 
 `parallel_tool_calls` is never sent to local servers, because some reject unknown fields, and
 nothing else is added unless `--extra-body` asks for it.
+
+Beside the body, a request carries the key above as its one `Authorization`, and the headers the
+`openai` package sends about itself and the platform it runs on. Nothing that package reads out
+of the environment for itself goes with them: the lines of `OPENAI_CUSTOM_HEADERS`, and
+`OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, are for OpenAI's own API, and quackd sends them there and
+to no server of yours ([SECURITY.md](../../SECURITY.md)). The key goes as it is to wherever the
+server is, so on a board reached over plain HTTP it crosses that network in the clear: with an
+`OPENAI_API_KEY` in your environment, set `LOCAL_API_KEY=not-needed`, or pass
+`--api-key not-needed`, unless the server is one you would hand that key to. A server that
+answers a turn with a redirect fails that turn, because the client follows none.
 
 `--extra-body` works on every provider that speaks OpenAI's API, which is ten of the twelve
 cloud vendors and all five local presets, and on Chat Completions and Responses alike, so it

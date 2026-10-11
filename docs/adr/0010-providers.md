@@ -2,6 +2,28 @@
 
 **Status:** accepted · **Date:** 2026-08-28 · Amended by [ADR-0029](0029-tracing.md) (0.8: the Anthropic request now carries `thinking: {"type": "adaptive", "display": "summarized"}`, because without the display the thinking blocks come back empty and the trace has nothing to show. Read "no `thinking` param" below as what 0.2 sent. `QUACKD_THINKING_DISPLAY=omitted` opts out, and a model that rejects the parameter gets one retry without it) · Amended by [ADR-0031](0031-model-catalogue.md) (0.9: the default model ids in the table below are what the first release shipped, and the verification the three "(verify)" marks promised never happened — all three ids are wrong by 2026-09-12. `--model` for a cloud vendor now takes an id from `catalogue.py` and an unlisted one is refused before a key is read; seven more OpenAI-compatible vendors join the matrix, each one subclass as Grok is; and `serve-mcp` selects no model at all, because the client's own model is the pilot) · Amended by [ADR-0050](0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md) (on OpenRouter one call per turn is asked for without `parallel_tool_calls`, which almost none of its models list, and the loop keeps the first call when several come back)
 
+**Amended 2026-10-11:** a client built on a vendor's SDK is handed what that SDK would otherwise
+add to a request by itself, and for OpenAI's SDK that is three variables. It reads
+`OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` out of the environment and adds
+them to every request wherever the client points, and quackd built its clients with no answer to
+any of them, so `--llm openai` and every vendor and local preset that speaks OpenAI's API sent a
+gateway's lines and OpenAI's account headers to its own address, and in 3.22.1, the locked
+release, an `Authorization` line of the first replaced the vendor's key on every request. Every
+such client is now built through `quackd/agent/providers/openai_headers.py`. The provider's key is
+named as `Authorization`, and carried under every spelling the variable gives an authorization
+line, because the releases the extras allow merge headers four ways and only that leaves one
+value, quackd's, under all four: omitting the variable's line instead takes quackd's own away in
+3.22.1, which merges without regard to case. At OpenAI's own API, decided on the whole authority
+of the address the client is handed and over https, the variable's other lines go as the SDK
+sends them and the account headers carry the two variables' values. At any other address none of
+it goes. The address is found before the client is built, `OPENAI_BASE_URL` included for
+`--llm openai`, and handed over, so the headers are decided on where the requests go. The client
+follows no redirect, which is said on the SDK's HTTP client because 1.66.0 has no request option
+for it, and a built client whose headers would still carry another authorization, or whose
+address reads on the other side of the rule, is refused before the robot connects, naming the
+SDK's release. The same module is written to be imported by any other client quackd builds on
+the SDK.
+
 ## Context
 
 "Any LLM" is the promise. Every vendor has its own tool-call wire format and its own idea
