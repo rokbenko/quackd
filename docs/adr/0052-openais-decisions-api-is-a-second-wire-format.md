@@ -191,9 +191,10 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 - The generic request rests on two of the SDK's internals: `cast_to=object` passing the body
   through, and a body that is not JSON coming back as text. The reader checks that it got a JSON
   object, and the wire test runs against the locked 3.22.1.
-- **Nothing here has answered a real robot, and no request from quackd has reached OpenAI.** In
-  CI the client runs against a fake of the SDK. Wherever the SDK is installed, a real
-  `quackd run` goes through it to a stand-in on 127.0.0.1 (`tests/fake_openai_decisions.py`),
-  which shows on the wire where the key and the account headers go, and any test without the
-  `live_decision` marker that sends a decision request through the real SDK to OpenAI's own hosts
-  is stopped before it sends, and fails. The live tests wait for a key.
+- **Nothing here has answered a real robot, and no request from quackd has reached OpenAI.** In CI
+  the client runs against a fake of the SDK. Wherever the SDK is installed, a real `quackd run` goes
+  through it to a stand-in on 127.0.0.1 (`tests/fake_openai_decisions.py`), which shows on the wire
+  where the key and the account headers go, and any test without the `live_decision` or `live_llm`
+  marker that sends a request through the real SDK to a host under openai.com is stopped before it
+  is sent, and fails, and a process such a test starts inherits an empty `OPENAI_API_KEY`. The live
+  tests wait for a key.

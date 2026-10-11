@@ -61,7 +61,7 @@ from quackd.agent.decision.factory import (
 from quackd.agent.decision.stepper import ESCALATE, Call, Stepper, build_questions, labels
 from quackd.agent.providers.pricing import cost_usd
 from tests import fake_decisions_api as fake_api
-from tests.conftest import REPO, plain_text
+from tests.conftest import REPO, guard_openai_sdk, openai_address, plain_text
 from tests.fake_openai_decisions import PATH as STAND_IN_PATH
 from tests.fake_openai_decisions import FakeOpenAIDecisions
 
@@ -1273,64 +1273,147 @@ def test_the_stand_in_keeps_every_value_of_a_header_sent_twice(
 # ── the suite's own guard ───────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("url", [None, "https://eu.api.openai.com"])
-async def test_the_suites_guard_stops_a_request_to_openai_before_the_client_has_it(
-    url: str | None, monkeypatch: pytest.MonkeyPatch, _no_decision_request_reaches_openai: list[str]
+@pytest.mark.parametrize(
+    "url",
+    [
+        None,
+        "https://eu.api.openai.com",
+        # Hosts of OpenAI's that quackd sends no key to. The request carries the word `local`
+        # there, and the robot's state all the same, so the guard stops it as well.
+        "https://chatgpt.openai.com",
+        "https://openai.com",
+    ],
+)
+async def test_the_suites_guard_stops_a_request_to_openai_before_it_is_sent(
+    url: str | None, monkeypatch: pytest.MonkeyPatch, _no_request_reaches_openai: list[str]
 ) -> None:
-    """`tests/conftest.py` stops any decision request a test sends to OpenAI's own API through the
-    real SDK. The lookalike wears the SDK's name, so the guard takes it for the real client: the
-    turn is the error the stepper makes of any exception, the client was never handed the
-    request, and the guard wrote down where it was going. Taken back at the end, or this test
-    would fail in teardown, which is what the test after next shows happening."""
+    """`tests/conftest.py` stands in front of the SDK's `BaseClient._build_request`, where every
+    request the SDK sends is built, and here it stands in front of the fake's own, because this
+    machine may have no SDK. The turn is the error the stepper makes of any exception, the request
+    was built and never sent, and the guard wrote down where it was going. Taken back at the end,
+    or this test would fail in teardown, which is what the session further down shows happening."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    guard_openai_sdk(monkeypatch, fake_api.base_module(), _no_request_reaches_openai)
     fake = fake_api.install(monkeypatch, fake_api.SDKLookalike(answers=fake_api.turn("stop")))
     advice = await _advise(_stepper(make_decision_llm(OPENAI, url=url)))
     assert advice.record["gate"] == "error" and advice.record["error"] == "ReachedOpenAI"
-    assert fake.posts == [], "the request reached the client"
-    assert _no_decision_request_reaches_openai == [f"POST {url or OPENAI.url}/v1/decisions"]
-    _no_decision_request_reaches_openai.clear()
-
-
-class _Undressed(fake_api.SDKLookalike):
-    """The lookalike under a module of the suite's own: the same client, and not the SDK's."""
-
-
-_Undressed.__module__ = __name__
+    assert fake.posts == [], "the request was sent"
+    assert _no_request_reaches_openai == [f"POST {url or OPENAI.url}/v1/decisions"]
+    _no_request_reaches_openai.clear()
 
 
 @pytest.mark.parametrize(
     ("client", "url"),
-    [(fake_api.SDKLookalike, "http://127.0.0.1:8765"), (_Undressed, None)],
-    ids=["a server you run", "a fake at openais address"],
+    [
+        (fake_api.SDKLookalike, "http://127.0.0.1:8765"),
+        (fake_api.SDKLookalike, "https://api.openai.com.evil.example"),
+        (fake_api.FakeOpenAI, None),
+    ],
+    ids=["a server you run", "a host that starts with openais name", "a fake at openais address"],
 )
 async def test_the_suites_guard_lets_through_what_cannot_reach_openai(
     client: type[fake_api.FakeOpenAI],
     url: str | None,
     monkeypatch: pytest.MonkeyPatch,
-    _no_decision_request_reaches_openai: list[str],
+    _no_request_reaches_openai: list[str],
 ) -> None:
-    """Two things go through untouched. A request to a server you run, because the stand-in on
-    127.0.0.1 is what the wire tests point the real SDK at. And any client that is not the SDK's
-    own, wherever it says it is going, because it answers in this process: every fake in this
-    directory, the one that keeps OpenAI's address included."""
+    """Two kinds of request go through untouched. One built for a host that is not OpenAI's,
+    because the stand-in on 127.0.0.1 is what the wire tests point the real SDK at, and a host
+    whose name only begins like OpenAI's is somebody else's. And one that no client of the SDK
+    builds, wherever it says it is going, because only the SDK's clients send anything: every fake
+    in this directory answers in this process, the one that keeps OpenAI's address included."""
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    guard_openai_sdk(monkeypatch, fake_api.base_module(), _no_request_reaches_openai)
     fake = fake_api.install(monkeypatch, client(answers=fake_api.turn("stop")))
     advice = await _advise(_stepper(make_decision_llm(OPENAI, url=url)))
     assert advice.record["gate"] == "taken" and len(fake.posts) == 1
-    assert _no_decision_request_reaches_openai == []
+    assert _no_request_reaches_openai == []
+
+
+OPENAIS = (
+    "https://api.openai.com/v1/decisions",
+    "https://eu.api.openai.com/v1/decisions",
+    # a region OpenAI never named, which quackd sends no key to and the guard stops all the same
+    "https://fr.api.openai.com/v1/decisions",
+    "https://chatgpt.openai.com/v1/decisions",
+    "https://openai.com/v1/decisions",
+    # a host in capitals with the trailing dot DNS allows, another port, plain http and a user
+    "https://API.OPENAI.COM./v1/decisions",
+    "https://api.openai.com:8443/v1/decisions",
+    "http://api.openai.com/v1/decisions",
+    "https://user:pw@api.openai.com/v1/decisions",
+)
+"""Requests the guard stops: OpenAI's own domain and every host under it, wider than the hosts
+quackd sends a key to on purpose (`openai_address`). A rule narrowed to those hosts would let
+`fr.api.openai.com`, `chatgpt.openai.com` and `openai.com` through, so those three are what hold
+it wide."""
+
+NOT_OPENAIS = (
+    "http://127.0.0.1:8765/v1/decisions",
+    "https://api.openai.com.evil.example/v1/decisions",
+    "https://openai.com.evil.example/v1/decisions",
+    "https://notopenai.com/v1/decisions",
+    "https://evil.example/api.openai.com/v1/decisions",
+    "https://evil.example/v1/decisions?host=api.openai.com",
+)
+"""Requests the guard lets go: hosts that are not OpenAI's, however much of OpenAI's name they
+carry, before the host's own dot, after it, or in the path or the query."""
+
+
+@pytest.mark.parametrize("url", OPENAIS)
+def test_the_guards_rule_takes_openai_com_and_every_host_under_it(url: str) -> None:
+    assert openai_address(url) == url
+
+
+@pytest.mark.parametrize("url", NOT_OPENAIS)
+def test_the_guards_rule_lets_every_other_host_go(url: str) -> None:
+    assert openai_address(url) is None
+
+
+class _ClientsURL:
+    """A URL as an HTTP client keeps one: its own reading of the host beside the text."""
+
+    def __init__(self, text: str, host: str) -> None:
+        self.text = text
+        self.host = host
+
+    def __str__(self) -> str:
+        return self.text
+
+
+def test_the_guard_reads_the_host_the_way_the_http_client_reads_it() -> None:
+    """The request goes to the host the HTTP client read, so that is the reading the guard takes
+    where the URL is the client's own, whatever `urlsplit` would make of its text."""
+    url = _ClientsURL("https://elsewhere.example/v1/decisions", host="api.openai.com")
+    assert openai_address(url) == "https://elsewhere.example/v1/decisions"
+    assert openai_address(_ClientsURL("https://api.openai.com/v1", host="127.0.0.1")) is None
 
 
 GUARDED = '''
+import os
+import sys
+
 import pytest
+from dotenv import load_dotenv
 
 from quackd.agent.decision.catalogue import PRESETS
 from quackd.agent.decision.factory import make_decision_llm
 from tests import fake_decisions_api as fake_api
 
+# Where the SDK keeps `BaseClient`, put there before any fixture runs, so the suite's guard
+# stands on the fake's own, with or without the SDK installed.
+sys.modules["openai._base_client"] = fake_api.base_module()
 
-async def _ask_openai(monkeypatch):
-    """One request to OpenAI's own address through the lookalike, whatever comes back
-    swallowed, as the stepper swallows it."""
+SHELL = "sk-from-the-shell-not-a-real-key"
+
+
+async def _ask_openai(monkeypatch, tmp_path):
+    """The key this test has, after a `.env` with one in it is loaded the way the CLI loads one,
+    and one request to OpenAI's own address through the lookalike, whatever comes back swallowed,
+    as the stepper swallows it."""
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-from-a-dotenv-not-a-real-key")
+    load_dotenv(tmp_path / ".env")
+    key = os.environ.get("OPENAI_API_KEY")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
     fake = fake_api.install(monkeypatch, fake_api.SDKLookalike(answers=fake_api.turn("stop")))
     try:
@@ -1339,31 +1422,43 @@ async def _ask_openai(monkeypatch):
         )
     except AssertionError:
         pass
-    return fake
+    return key, fake
 
 
-async def test_unmarked(monkeypatch):
-    fake = await _ask_openai(monkeypatch)
-    assert fake.posts == []
+async def test_unmarked(monkeypatch, tmp_path):
+    key, fake = await _ask_openai(monkeypatch, tmp_path)
+    assert key == "" and fake.posts == []
 
 
 @pytest.mark.live_decision
-async def test_marked(monkeypatch):
-    fake = await _ask_openai(monkeypatch)
-    assert len(fake.posts) == 1
+async def test_marked_live_decision(monkeypatch, tmp_path):
+    key, fake = await _ask_openai(monkeypatch, tmp_path)
+    assert key == SHELL and len(fake.posts) == 1
+
+
+@pytest.mark.live_llm
+async def test_marked_live_llm(monkeypatch, tmp_path):
+    key, fake = await _ask_openai(monkeypatch, tmp_path)
+    assert key == SHELL and len(fake.posts) == 1
 '''
-"""Two tests that make the same request, for the session below to run."""
+"""Three tests that make the same request, for the session below to run."""
 
 
 def test_the_suites_guard_fails_the_test_that_reached_for_openai_and_spares_a_live_one(
     tmp_path: Path,
 ) -> None:
     """End to end, in a pytest session of its own, because a test failing in its teardown is
-    something only the session around it can see. Both tests ask OpenAI's address through the
-    lookalike and swallow what comes back. The one without the marker passes, and then fails in
-    teardown naming the request; the one marked `live_decision` passes, its request having
-    reached the client. The suite's conftest is loaded as a plugin, because the file is not under
-    `tests/` where it would be found."""
+    something only the session around it can see, and the key a test's process starts with is
+    something only a process can show. The session is started with a key, as a developer's shell
+    has one.
+
+    All three tests ask OpenAI's address through the lookalike and swallow what comes back. The
+    one without a live marker finds its key empty, a `.env` with a key in it notwithstanding, so
+    a process it started would have none to send; its request never reaches the client; and it
+    passes, and then fails in teardown naming the request. The two marked `live_decision` and
+    `live_llm` keep the session's key and pass, their requests having reached the client. The
+    suite's conftest is loaded as a plugin, because the file is not under `tests/` where it would
+    be found."""
     inner = tmp_path / "test_reaching_openai.py"
     inner.write_text(GUARDED, encoding="utf-8")
     report = tmp_path / "report.xml"
@@ -1389,16 +1484,26 @@ def test_the_suites_guard_fails_the_test_that_reached_for_openai_and_spares_a_li
         text=True,
         encoding="utf-8",
         errors="replace",
-        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        env={
+            **os.environ,
+            "PYTHONIOENCODING": "utf-8",
+            "OPENAI_API_KEY": "sk-from-the-shell-not-a-real-key",
+        },
         timeout=600,
     )
     said = done.stdout + done.stderr
     assert report.exists(), said
-    cases = {case.get("name"): case for case in ElementTree.parse(report).iter("testcase")}
-    assert set(cases) == {"test_unmarked", "test_marked"}, said
-    outcomes = [(child.tag, child.get("message") or "") for child in cases["test_unmarked"]]
-    assert [tag for tag, _ in outcomes] == ["error"], said
-    assert outcomes[0][1].startswith("failed on teardown"), said
-    assert f"POST {OPENAI.url}/v1/decisions" in outcomes[0][1]
-    assert list(cases["test_marked"]) == [], said
+    # Every testcase under its name, because a test that fails and then fails again in teardown
+    # is written as two of them, and keeping one a name kept the teardown's alone: a failure in
+    # the test itself was invisible here.
+    cases: dict[str, list[ElementTree.Element]] = {}
+    for case in ElementTree.parse(report).iter("testcase"):
+        cases.setdefault(case.get("name") or "", []).append(case)
+    assert set(cases) == {"test_unmarked", "test_marked_live_decision", "test_marked_live_llm"}
+    assert [[child.tag for child in case] for case in cases["test_unmarked"]] == [["error"]], said
+    message = cases["test_unmarked"][0][0].get("message") or ""
+    assert message.startswith("failed on teardown"), said
+    assert f"POST {OPENAI.url}/v1/decisions" in message
+    for name in ("test_marked_live_decision", "test_marked_live_llm"):
+        assert [list(case) for case in cases[name]] == [[]], said
     assert done.returncode == 1, said

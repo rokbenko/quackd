@@ -170,10 +170,10 @@ API on 127.0.0.1 ([`tests/fake_openai_decisions.py`](../../../tests/fake_openai_
 headers the SDK actually sends where the key is meant to go and where it is not. Both prove quackd's
 half of the conversation and not OpenAI's. No request from quackd has reached OpenAI: the tests that
 would, [`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and
-any other test that tries is stopped before it sends, and fails. Without the extra, `quackd doctor`
-prints this row as `missing (quackd[openai])`, `OPENAI_API_KEY unset`, `gpt-6-luna` and
-`https://api.openai.com`, and a run that names it says so once before it connects and carries on
-without the stepper:
+any other test that sends a request through the SDK to a host under openai.com is stopped before it
+is sent, and fails. Without the extra, `quackd doctor` prints this row as
+`missing (quackd[openai])`, `OPENAI_API_KEY unset`, `gpt-6-luna` and `https://api.openai.com`, and a
+run that names it says so once before it connects and carries on without the stepper:
 
 ```
 $ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm openai --decision-mode shadow --no-memory

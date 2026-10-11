@@ -294,8 +294,9 @@ markers = [
     # The same bargain for the stepper, and the only tests that can measure how long a real
     # decision LLM takes: four of the eight publish a figure for their own hardware and their
     # own task, OpenAI only a ratio to its own Responses API, and none of those is a measurement
-    # of answering a robot through quackd. The marker is also what tests/conftest.py reads before
-    # it lets a decision request through the real SDK reach OpenAI's own API: any other test fails.
+    # of answering a robot through quackd. This marker and live_llm are what tests/conftest.py
+    # reads before it lets a request through the real openai SDK reach a host under openai.com, or
+    # leaves a test its OPENAI_API_KEY: any other test that tries fails.
     """live_decision: calls a real decision LLM over the network (needs that preset's key, \
 TYPESAFE_API_KEY for jev or OPENAI_API_KEY for openai, and QUACKD_LIVE_DECISION=1)""",
 ]

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import faulthandler
+import functools
+import importlib
+import importlib.util
 import re
 import shutil
 import sys
@@ -177,75 +180,142 @@ def _no_openrouter_listing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class ReachedOpenAI(AssertionError):
-    """What the guard below raises in place of a decision request to OpenAI's own API. The
-    stepper takes it for a failed turn, which is why it is not what fails the test."""
+    """What the guard below raises in place of a request to OpenAI. The stepper takes it for a
+    failed turn, and a pilot for a failed call, which is why it is not what fails the test."""
 
 
-def openai_address(client: object) -> str | None:
-    """The address `client` sends to, when it is the real `openai` SDK's client and that address
-    is OpenAI's own API, and None otherwise.
+OPENAI_DOMAIN = "openai.com"
+"""Whose requests the guard stops: OpenAI's, at this domain or any host under it."""
 
-    The real client is known by its module: the fakes in this directory live under `tests` and
-    answer in this process, so only the SDK's own class can reach anything. OpenAI's API is known
-    by this guard's own rule rather than by `decisions_api.is_openai_host`, which a test may
-    replace to treat a stand-in on 127.0.0.1 as OpenAI's and see what the key does there
+LIVE = ("live_decision", "live_llm")
+"""The markers of the tests that mean to pay OpenAI for a real answer: the decision LLM's and
+the pilot's. Every other test is held to the guard."""
+
+
+def openai_address(url: object) -> str | None:
+    """`url`, whole, when the host it names is OpenAI's, openai.com or any host under it, and
+    None otherwise.
+
+    The host is the HTTP client's own reading of it where `url` is one of that client's own
+    (`httpx` and `httpx2` both keep it as `host`, in lower case), because that is the host the
+    request is about to go to, and `urlsplit`'s reading otherwise. A trailing dot names the same
+    machine in DNS, so it comes off.
+
+    Wider than the hosts quackd sends a key to (`decisions_api.OPENAI_HOSTS`), on purpose, and
+    a rule of the guard's own rather than `decisions_api.is_openai_host`: a test may replace
+    that one to have a stand-in on 127.0.0.1 treated as OpenAI's and see what the key does there
     (`tests/test_decisions_api_wire.py` does), and a guard that replacement could talk round
-    would guard nothing. The rule is wider than the hosts quackd sends a key to, on purpose:
-    openai.com or any host under it, lowercased and with a trailing dot taken off."""
-    if type(client).__module__.partition(".")[0] != "openai":
-        return None
-    address = str(getattr(client, "base_url", "") or "")
-    host = (urlsplit(address).hostname or "").rstrip(".")
-    if host == "openai.com" or host.endswith(".openai.com"):
-        return address
+    would guard nothing. The key is not all that is at stake either. A request quackd sends a
+    host of OpenAI's it has no key for, at a `--decision-url` of `https://chatgpt.openai.com` or
+    a region OpenAI never named, carries the word `local` rather than the key and the robot's
+    state all the same, and that state is what must not reach OpenAI from a test."""
+    host = getattr(url, "host", None)
+    if not isinstance(host, str):
+        try:
+            host = urlsplit(str(url)).hostname
+        except ValueError:
+            host = None
+    host = (host or "").lower().rstrip(".")
+    if host == OPENAI_DOMAIN or host.endswith(f".{OPENAI_DOMAIN}"):
+        return str(url)
     return None
 
 
+def guard_openai_sdk(monkeypatch: pytest.MonkeyPatch, base: Any, reached: list[str]) -> None:
+    """Stand in front of `base.BaseClient._build_request`, so a request any of the SDK's clients
+    builds for an OpenAI host (`openai_address`) is written down in `reached` and stopped with
+    `ReachedOpenAI` before it is sent.
+
+    `base` is the SDK's `openai._base_client`, where the method is, in every release from 1.66.0
+    to 3.22.1 that uv had cached, read 2026-10-11, with the same signature, and where it builds
+    every request any client of the SDK sends, sync or async, the generic `post` and every
+    resource method alike, the pilot's chat completions as much as the stepper's decisions. The
+    request it hands back is about to go, with its address merged and final, so the guard reads
+    the very address the request would have gone to, and nothing has been sent yet."""
+    build = base.BaseClient._build_request
+
+    def guarded(self: Any, options: Any, *args: Any, **kwargs: Any) -> Any:
+        built = build(self, options, *args, **kwargs)
+        if (address := openai_address(built.url)) is not None:
+            reached.append(f"{built.method} {address}")
+            raise ReachedOpenAI(f"stopped {built.method} {address} before it was sent")
+        return built
+
+    monkeypatch.setattr(base.BaseClient, "_build_request", guarded)
+
+
+@functools.cache
+def _openai_base() -> Any:
+    """The SDK's `openai._base_client`, or None where the SDK is not installed, as on CI, or
+    will not import.
+
+    Imported here rather than left for a test to import, because the guard stands on the class,
+    and a module first imported in the middle of a test would bring a class nobody had guarded.
+    A module already in `sys.modules` under that name is taken as it is, which is how a session
+    of the suite's own that has put the fake there (`tests/fake_decisions_api.py`,
+    `base_module`) sees the guard fire with no SDK installed. Asked once a session, because
+    looking for a package that is not there walks every entry of the path, and the guard asks
+    before every test."""
+    base = sys.modules.get("openai._base_client")
+    if base is None:
+        try:
+            if importlib.util.find_spec("openai") is None:
+                return None
+            base = importlib.import_module("openai._base_client")
+        except Exception:
+            # A package that is only half there may raise anything while it is imported, as
+            # `decisions_api._sdk_parts` says, and one that cannot be imported cannot send.
+            return None
+    build = getattr(getattr(base, "BaseClient", None), "_build_request", None)
+    return base if callable(build) else None
+
+
 @pytest.fixture(autouse=True)
-def _no_decision_request_reaches_openai(
+def _no_request_reaches_openai(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[list[str]]:
-    """No test but a `live_decision` one may send a decision request to OpenAI's own API, and a
-    test that tries fails.
+    """No test but a live one may send a request to OpenAI, and a test that tries fails.
 
     The danger is a developer's machine rather than CI. Somebody who pilots with OpenAI has the
     SDK installed and `OPENAI_API_KEY` in a `.env`, which the CLI loads, so a test that names
-    `--decision-llm openai` at its default address would build the real client with the real
-    key, pay for an answer about a mock arm and leave that arm's state in OpenAI's logs. So the
-    request is stopped where it leaves, `DecisionsAPILLM._post`, before the SDK is handed it, and
-    what it was going to is written down here.
+    `--decision-llm openai` at its default address, or `--llm openai` without a fake, would build
+    the real client with the real key, pay for an answer about a mock arm and leave that arm's
+    state in OpenAI's logs. So two things hold for every test without a `LIVE` marker.
+
+    In this process, every request the SDK builds for an OpenAI host is stopped before it is
+    sent (`guard_openai_sdk`), whichever client built it and whatever host under openai.com it
+    names, and what it was going to is written down here. It used to stand in front of
+    `DecisionsAPILLM._post` alone, which left the pilot, and any call to the SDK that did not go
+    through the stepper's backend, free to reach OpenAI.
+
+    And `OPENAI_API_KEY` is empty, so a process a test starts inherits an empty key, which
+    `load_dotenv` does not replace, and has none to send: both the stepper's client and the
+    pilot's refuse to build without one at OpenAI's own API. Neither reaches a process that the
+    test starting it hands a key of its own. The one test here that does is the guard's own
+    proof in `tests/test_decisions_api.py`, whose session loads this file as a plugin and sends
+    nothing anywhere but to a fake.
 
     The list fails the test, at teardown, and the raise that stopped the request does not. A
     decision LLM's exception is a failed turn by design: the stepper catches everything one
     raises and records the turn as `gate: error`, which is the rule that keeps a failed turn from
     ending a run, and here it would have kept a test that reached for OpenAI passing.
 
-    Only the real client is held to it, and only at OpenAI's own hosts (`openai_address`): the
-    fakes answer in this process, and the stand-in on 127.0.0.1 is the whole point of the wire
-    tests. It holds in this process alone, so a test that ran quackd in a process of its own
-    with a decision LLM named would be outside it, and none does. The fixture's value is the
-    list, for the tests that prove the guard fires: those take back what it recorded, or their
-    own teardown would fail."""
+    The fakes never build a request, so they answer in this process, and the stand-in on
+    127.0.0.1 is the whole point of the wire tests. The fixture's value is the list, for the
+    tests that prove the guard fires: those take back what it recorded, or their own teardown
+    would fail."""
     reached: list[str] = []
-    if request.node.get_closest_marker("live_decision") is None:
-        from quackd.agent.decision import decisions_api
-
-        send = decisions_api.DecisionsAPILLM._post
-
-        async def guarded(self: Any, body: Any, timeout_s: float | None) -> Any:
-            if (address := openai_address(self._client)) is not None:
-                reached.append(f"POST {address.rstrip('/')}{decisions_api.PATH}")
-                raise ReachedOpenAI(f"stopped a decision request to OpenAI's own API, {address}")
-            return await send(self, body, timeout_s)
-
-        monkeypatch.setattr(decisions_api.DecisionsAPILLM, "_post", guarded)
+    if not any(request.node.get_closest_marker(marker) for marker in LIVE):
+        monkeypatch.setenv("OPENAI_API_KEY", "")
+        if (base := _openai_base()) is not None:
+            guard_openai_sdk(monkeypatch, base, reached)
     yield reached
     assert not reached, (
-        "this test tried to send a decision request through the real openai SDK to OpenAI's own "
-        f"API ({'; '.join(reached)}), and the guard stopped it before it left. Point the run at "
-        "the stand-in with --decision-url (tests/fake_openai_decisions.py), install the fake SDK "
-        "(tests/fake_decisions_api.py), or, for a test that means to pay for a real answer, mark "
-        "it live_decision"
+        f"this test tried to send a request through the real openai SDK to OpenAI "
+        f"({'; '.join(reached)}), and the guard stopped it before it left. Point a decision LLM "
+        "at the stand-in with --decision-url (tests/fake_openai_decisions.py), install the fake "
+        "SDK (tests/fake_decisions_api.py) or hand the pilot a client of its own, or, for a test "
+        "that means to pay for a real answer, mark it live_decision or live_llm"
     )
 
 

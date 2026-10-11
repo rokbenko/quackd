@@ -11,7 +11,9 @@ header was omitted and what went out in the body.
 Because CI runs this and never the SDK, the fake refuses every call to `post` that a release
 the extra allows would refuse, rather than taking whatever it is handed: otherwise a call the
 real client turns down passes every test on CI, and on a real run each stepper turn ends on
-`gate: error` while the run exits 0.
+`gate: error` while the run exits 0. And it carries the one piece of the SDK's own machinery the
+suite's guard reaches into (`BaseClient`, `base_module`), so the guard can be shown firing on a
+machine without the SDK.
 
 The answers are in the shapes OpenAI's API reference publishes for `POST /v1/decisions`, read
 2026-10-08: a decision is `{answers, model, usage}`, every answer names the question it
@@ -34,8 +36,10 @@ import os
 import sys
 import types
 from collections.abc import Callable, Iterable, Mapping
-from types import MappingProxyType
+from dataclasses import dataclass
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 __version__ = "0.0.0+fake"
 """What the module says its release is, which a refusal that names the release quotes."""
@@ -385,19 +389,60 @@ class FakeOpenAI:
         return _custom(self.release, self.headers)
 
 
-class SDKLookalike(FakeOpenAI):
-    """The fake under the real SDK's module name and with the real client's `base_url`, which
-    is how the suite's guard (`tests/conftest.py`, `openai_address`) knows a real client when it
-    sees one. Proving that guard fires takes a client it mistakes for the real one, on a machine
-    without the SDK, and one that still never leaves the process if the guard does not fire."""
+# ── where the suite's guard stands ──────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class BuiltRequest:
+    """A request as `BaseClient._build_request` hands it back, as far as the guard reads one:
+    its method and the whole address it is about to go to."""
+
+    method: str
+    url: str
+
+
+class BaseClient:
+    """The SDK's own base class, as far as the suite's guard reaches into it
+    (`tests/conftest.py`, `guard_openai_sdk`).
+
+    In each of the eleven releases from 1.66.0 to 3.22.1 that uv had cached,
+    `BaseClient._build_request` turns the options a request was made with into the request about
+    to be sent, for every client the SDK has, sync or async, and for every call any of them
+    makes, the generic `post` and every resource method alike; nothing is sent until it has. So
+    that is where the guard stands, and this is the same method on a class of the fake's own,
+    which merges a relative path onto `base_url` the way the SDK's `_prepare_url` does."""
+
+    base_url: Any = ""
+
+    def _build_request(self, options: Any, *, retries_taken: int = 0) -> BuiltRequest:
+        url = str(options.url)
+        if not urlsplit(url).scheme:
+            url = str(self.base_url).rstrip("/") + "/" + url.lstrip("/")
+        return BuiltRequest(str(options.method).upper(), url)
+
+
+def base_module() -> types.ModuleType:
+    """A module standing where `openai._base_client` stands, holding the fake's `BaseClient`, for
+    a test or a session that puts the suite's guard on it."""
+    module = types.ModuleType("openai._base_client")
+    module.BaseClient = BaseClient  # type: ignore[attr-defined]
+    return module
+
+
+class SDKLookalike(BaseClient, FakeOpenAI):
+    """The fake built the way the SDK's clients are: on a `BaseClient`, whose `_build_request`
+    builds each request after `post` has checked it and before anything is sent. Proving the
+    suite's guard fires takes a client it stands in front of, on a machine without the SDK, and
+    one that still answers in this process if the guard does not fire."""
 
     @property
     def base_url(self) -> str:
         """As the SDK gives it: the address it was built with, ending in a slash."""
         return str(self.kwargs.get("base_url") or "").rstrip("/") + "/"
 
-
-SDKLookalike.__module__ = "openai"
+    async def _send(self, path: str, cast_to: Any, body: Any, options: dict[str, Any]) -> Any:
+        self._build_request(SimpleNamespace(method="post", url=path))
+        return await super()._send(path, cast_to, body, options)
 
 
 def install(monkeypatch: Any, fake: FakeOpenAI) -> FakeOpenAI:

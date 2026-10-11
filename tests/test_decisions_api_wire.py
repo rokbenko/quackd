@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,7 +42,7 @@ from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
 from tests import fake_decisions_api as fake_api
-from tests.conftest import ReachedOpenAI, openai_address, plain_text
+from tests.conftest import ReachedOpenAI, _openai_base, plain_text
 from tests.fake_openai_decisions import (
     CONFIDENCE,
     PATH,
@@ -580,29 +581,56 @@ async def test_the_real_sdk_refuses_every_request_the_fake_refuses_on_its_behalf
 # ── the suite's own guard, on the real client ───────────────────────────────────────────
 
 
-async def test_the_suites_guard_knows_the_real_client_and_stops_it_at_openais_address(
-    monkeypatch: pytest.MonkeyPatch, _no_decision_request_reaches_openai: list[str]
+@pytest.fixture
+def _nothing_leaves_the_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every lookup of a name and every connection made the standard library's way fails, so a
+    request that got past the guard would end here rather than reach anybody."""
+
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("this test lets nothing leave the machine")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+
+
+@pytest.mark.usefixtures("_nothing_leaves_the_machine")
+@pytest.mark.parametrize(
+    "url", [None, "https://chatgpt.openai.com"], ids=["openais api", "another openai host"]
+)
+async def test_the_suites_guard_stops_the_real_clients_request_before_it_is_sent(
+    url: str | None, _no_request_reaches_openai: list[str]
 ) -> None:
-    """`tests/conftest.py` knows the real client by its module and where it sends by its
-    `base_url`, both the SDK's own, so this is the test that notices the SDK moving either.
-    `tests/test_decisions_api.py` proves the guard fires and fails a test where the SDK is not
-    installed; here the client is the SDK's own, built at OpenAI's address with a key that is
-    not one. Its `post` is replaced on the class with one that answers in this process, so that
-    nothing could leave the machine even if the guard did not fire."""
-    import openai
+    """`tests/conftest.py` stands in front of the SDK's own `BaseClient._build_request`, where
+    every request any of its clients sends is built, and this is the test that notices the SDK
+    moving it: the guard is on the very module the client comes from, and the client, built at
+    OpenAI's API with the key and at another host under openai.com with the word, has its
+    request stopped there, built and never sent. `tests/test_decisions_api.py` shows the same
+    guard firing where the SDK is not installed, on the fake's own `BaseClient`."""
+    import openai._base_client as sdk_base
 
-    handed: list[str] = []
-
-    async def post(self: Any, path: str, **kwargs: Any) -> Any:
-        handed.append(path)
-        return {"answers": [], "model": OPENAI.model, "usage": None}
-
-    monkeypatch.setattr(openai.AsyncOpenAI, "post", post)
-    llm: Any = make_decision_llm(OPENAI)
-    assert type(llm._client) is openai.AsyncOpenAI
-    assert openai_address(llm._client) == f"{OPENAI.url}/v1/"
+    assert _openai_base() is sdk_base, "the guard stands somewhere other than the SDK"
+    llm: Any = make_decision_llm(OPENAI, url=url)
     with pytest.raises(ReachedOpenAI):
         await llm.decide({"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}})
-    assert handed == [], "the request reached the client"
-    assert _no_decision_request_reaches_openai == [f"POST {OPENAI.url}/v1/decisions"]
-    _no_decision_request_reaches_openai.clear()
+    assert _no_request_reaches_openai == [f"POST {url or OPENAI.url}/v1/decisions"]
+    _no_request_reaches_openai.clear()
+
+
+@pytest.mark.usefixtures("_nothing_leaves_the_machine")
+async def test_the_suites_guard_stops_the_pilots_request_as_well(
+    monkeypatch: pytest.MonkeyPatch, _no_request_reaches_openai: list[str]
+) -> None:
+    """The pilot reaches OpenAI through the same SDK, and the guard used to stand in front of the
+    stepper's backend alone, so a test that built the real pilot with a key was free to pay OpenAI
+    for a turn. Its request is stopped where every other one is, and the pilot reports the call
+    failed, as it reports any call that does."""
+    from quackd.agent.providers.base import ProviderError
+    from quackd.agent.providers.openai import OpenAIProvider
+
+    # the pilot is handed no address, so the SDK's own variable would otherwise be its address
+    monkeypatch.delenv("OPENAI_BASE_URL")
+    pilot = OpenAIProvider(api_key=KEY, api="chat")
+    with pytest.raises(ProviderError, match="ReachedOpenAI"):
+        await pilot.step("You fly a mock arm.", [], [])
+    assert _no_request_reaches_openai == [f"POST {OPENAI.url}/v1/chat/completions"]
+    _no_request_reaches_openai.clear()
