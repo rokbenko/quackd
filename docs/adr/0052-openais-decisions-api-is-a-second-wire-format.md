@@ -1,6 +1,6 @@
 # ADR-0052: OpenAI's Decisions API is a second wire format, built in
 
-**Status:** accepted · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, and a number the gates read is a probability from 0 to 1 or the turn is `unreadable`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+**Status:** accepted · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
 
 ## Context
 
@@ -137,6 +137,12 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   turn usually waits longer than that between two of the stepper's. It is null on the first turn
   and on the one after a request that failed, which may have taken its connection with it, so it
   never claims a connection was kept warm that may be gone.
+- **A request an interrupt cuts off is on the record.** A second Ctrl-C, or a flock cancelling a
+  member, is not an `Exception`, so it went past the stepper's handler with the request it cut off
+  already handed over, and that request was missing from the stepper's count, its seconds, its bill
+  and the transcript. It is counted, timed and billed now as a failed turn is, on a gate of its own,
+  `interrupted`, and not among `errors`, because nothing failed and nobody takes the turn: the loop
+  writes it down, and the interrupt goes on and ends the run as it always did.
 - **The floors do not move.** OpenAI define no `confidence` and claim no calibration, so this row
   inherits all four floors unmeasured, like every other, and shadow mode comes first.
 - **One word, two seams.** `--llm openai` is OpenAI's chat models flying the robot and
@@ -179,15 +185,17 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
 
 - Two wire formats, two hosted rows, and two rows with a published rate. The catalogue tests
   loosen to say so: a row's backend is one of three, a key and a price belong to `jev` and
-  `openai`, and the model variable to `jev` alone.
+  `openai`, and the model variable to `jev` alone. A turn of either that fails after its request
+  went out is billed on quackd's estimate at its rate, so a `~` in front of a stepper cost above
+  `$0` can be `openai`'s as well as `jev`'s, and ADR-0041 carries a note that says so.
 - A run that names `openai` sends the state's text to OpenAI, whose data controls say it is not
   used for training and is kept in abuse-monitoring logs for 30 days
   ([SECURITY.md](../../SECURITY.md)). Nothing else goes: `sees` is false on every row, and whether
   a camera frame should ever reach a decision LLM is a separate decision, which would need a flag
   of its own.
-- The record grows the `refused` gate and its names, `refusals` in the summary, and `idle_s` on
-  each turn that sent a request, and every row's `error` is now a type, with a status where there
-  is one.
+- The record grows the `refused` gate and its names, `refusals` in the summary, the `interrupted`
+  gate, and `idle_s` on each turn that sent a request, and every row's `error` is now a type,
+  followed by its status where there is one or by one of quackd's own two sentences.
 - The generic request rests on two of the SDK's internals: `cast_to=object` passing the body
   through, and a body that is not JSON coming back as text. The reader checks that it got a JSON
   object, and the wire tests have run against 3.22.1, which the lock carries, against 3.1.0 and

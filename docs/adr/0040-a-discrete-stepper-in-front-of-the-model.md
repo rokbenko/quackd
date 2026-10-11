@@ -35,8 +35,10 @@ declined, `feasible` included, with the names on the record and the summary coun
 `refusals`. It is one more way a turn reaches the model. `unreadable` also takes in more than it
 did: a confidence or a Noul that is not a number from 0 to 1, a number written as text or one on
 a scale of its own, and a `next_verb` with no choice in it, which used to read as a confident
-`escalate`. No floor moves and no other gate changes, and which turns are a choice and what a
-stepper may never do are as below.
+`escalate`. And a request a second Ctrl-C or a flock's cancel cuts off ends on a gate of its own,
+`interrupted`, counted, timed and billed as a failed turn is, and the run ends with it rather
+than handing the turn to anybody. No floor moves and no other gate changes, and which turns are
+a choice and what a stepper may never do are as below.
 
 ## Context
 

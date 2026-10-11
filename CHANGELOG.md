@@ -47,7 +47,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   asks which platform it is on before its first request, which on a cold Windows machine means a WMI
   query or a subprocess, so that is asked while the client is built and no turn waits for it. A turn
   is billed at the published $0.10 per million input tokens, output not charged, on the count OpenAI
-  reports. A question the API declines is no answer at all, so the stepper reads that before any
+  reports, and a turn whose request went out and then failed on quackd's own estimate, which wears
+  a `~`. A question the API declines is no answer at all, so the stepper reads that before any
   answer and hands the turn to the model on a gate of its own, `refused`, whichever of the four was
   declined, `feasible` included. The turn's record names the questions declined, the run's
   `decision` summary counts `refusals`, and `quackd log` prints the names in yellow. Every stepper
@@ -69,7 +70,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `openai` at OpenAI, and of neither for a server you run, where it used to say Jev and nothing at
   all for anything else.
   [ADR-0052](docs/adr/0052-openais-decisions-api-is-a-second-wire-format.md) records why it is built
-  in rather than a plugin, amending ADR-0043's one wire format and its one published rate and
+  in rather than a plugin, amending ADR-0043's one wire format and its one published rate, and
+  ADR-0041's note that an estimated cost and its `~` came only with a rate, Jev's alone, and
   extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the
   key, the headers and the address through a fake of the SDK, `tests/fake_decisions_api.py`, and
   `tests/test_decision.py` drives the new gate and `idle_s` through the stepper. Wherever the SDK is

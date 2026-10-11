@@ -1714,6 +1714,74 @@ def test_the_warning_decision_mode_on_prints_names_the_rows_the_hub_estimates() 
         assert f"`{name}`" in section, f"the hub's estimates say nothing of {name}"
 
 
+ADR = REPO / "docs" / "adr"
+"""Where the decisions live, each in a file named for its number."""
+
+
+def _adr(number: str) -> str:
+    """ADR `number`, whole, read from the one file whose name starts with it."""
+    (path,) = ADR.glob(f"{number}-*.md")
+    return path.read_text(encoding="utf-8")
+
+
+def _notes(number: str) -> str:
+    """What sits above ADR `number`'s first section: its header line and the dated notes that
+    amend it, which is the part of an ADR still read as true today. The body below is what was
+    believed on the day it was accepted, and is left alone."""
+    return _adr(number).split("\n## ", 1)[0]
+
+
+def test_adr_0041_names_every_row_with_a_rate_and_says_an_estimate_needs_none() -> None:
+    """ADR-0043's note on ADR-0041 ended "the estimate and its `~` exist only where a non-zero
+    rate does, which today is Jev alone". ADR-0052 gave `openai` a published rate and left that
+    note standing, and its first half had never held: a turn whose count quackd worked out for
+    itself wears the `~` on its log line whatever the rate, so a server you run prints `~$0`
+    there. ADR-0052 amends ADR-0041 for both and says so in its header.
+
+    So ADR-0041's notes, read without the sentences they quote in order to overturn them, name
+    every row the catalogue gives a published rate, and a row given one fails here until a note
+    names it too. And they say what a server you run prints on such a turn, which is drawn here
+    by `quackd log`'s own renderer rather than taken on trust: a note that quoted a line the
+    renderer no longer draws would fail as well."""
+    from quackd.log import LogEvent, render_lines
+
+    said = re.sub(r'"[^"]*"', "", _notes("0041"))
+    priced = {
+        name for name, spec in PRESETS.items() if spec.price and spec.price.source == "published"
+    }
+    unnamed = sorted(name for name in priced if f"`{name}`" not in said)
+    assert not unnamed, f"ADR-0041's notes never name {unnamed}, which carry a published rate"
+    estimated = {
+        "gate": "error",
+        "error": "TimeoutError: no answer within 1.0 s",
+        "latency_s": 1.0,
+        "usage": {"input_tokens": 400, "output_tokens": 0},
+        "usage_estimated": True,
+        "cost_usd": 0.0,
+    }
+    drawn = " ".join(text for text, _ in render_lines(LogEvent("decision", 0.0, estimated)))
+    assert "~$0," in drawn, f"quackd log no longer draws an estimated $0 turn as ~$0: {drawn}"
+    assert "`~$0`" in said, "ADR-0041's notes do not say a server you run prints ~$0"
+    amends = _notes("0052").split(" Amends ", 1)[1].split(" extends ", 1)[0]
+    assert "](0041-" in amends, "ADR-0052's header does not say it amends ADR-0041"
+
+
+def test_adr_0040_names_every_gate_adr_0052_says_it_added() -> None:
+    """ADR-0052 extends ADR-0040's stepper with gates of its own, says which in its header, and
+    leaves ADR-0040 a note by it. That note said no other gate changed after the same work had
+    added `interrupted`, for a request a second Ctrl-C or a flock's cancel cuts off. So every
+    gate the header names is one the stepper writes, and ADR-0040's note by ADR-0052 names each
+    of them, so a gate added to one fails here until the other has it."""
+    extends = _notes("0052").split("extends [ADR-0040]", 1)[1].split(" · ", 1)[0]
+    added = set(re.findall(r"`(\w+)`", extends))
+    stepper = (REPO / "quackd" / "agent" / "decision" / "stepper.py").read_text(encoding="utf-8")
+    unwritten = sorted(gate for gate in added if f'"{gate}"' not in stepper)
+    assert added and not unwritten, f"ADR-0052 names gates the stepper never writes: {unwritten}"
+    note = _notes("0040").split("**Amended 2026-10-10 by [ADR-0052]", 1)[1].split("\n\n", 1)[0]
+    missing = sorted(gate for gate in added if f"`{gate}`" not in note)
+    assert not missing, f"ADR-0040's note by ADR-0052 does not name {missing}"
+
+
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
     """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 
