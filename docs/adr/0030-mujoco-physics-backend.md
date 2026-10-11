@@ -34,7 +34,9 @@ than it read.
   policy has never needed a GPU.
 - **The policies are public and permissive.** The nine ONNX policies a Microduck ships with
   are on the Hugging Face Hub as `pollen-robotics/microduck-policies` under Apache-2.0. Only
-  the 3D model files are CC BY-NC-SA.
+  the 3D model files are CC BY-NC-SA. *Amended 2026-10-09 (0.18):* ten since upstream's set
+  `v5` added `velstand.onnx`, the walk every robotd from daemon-v0.13.0 loads, and all ten are
+  Apache-2.0. quackd pins `v7`, the set daemon-v0.16.1 seeds a robot with.
 - **"We will not vendor" is not "we cannot use".** `docs/licenses.md` has said since 0.1
   that a future MuJoCo backend "fetches them from upstream at runtime into a user cache,
   prints the license, and stays optional". That is a design, and it works.

@@ -45,7 +45,7 @@ say what you can see.
 - `search_scan` is not in your allowlist on purpose. It turns the whole body, and this is the
   task you run before you trust the duck to move its feet.
 - You may have no camera. Upstream serves no frames over the control socket, so `observe`
-  exists only when someone pointed quackd at the robot's video. If you have no `observe`, say
+  exists only when someone pointed quackd at the robot's camera. If you have no `observe`, say
   what `report_state` tells you and stop. That is a complete answer.
 - `gaze` points the head at a place, and the robot runs its own gaze IK to get there. It may
   answer that it clamped, which means it went as far as it can rather than where you asked.

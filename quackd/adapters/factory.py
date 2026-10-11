@@ -266,6 +266,57 @@ def is_simulator(spec: RobotSpec | str) -> bool:
     return spec.backend in tuple(backends)
 
 
+def deprecated_backend(spec: RobotSpec | str) -> str | None:
+    """The one line a backend on its way out is announced with, or None for any other.
+
+    Read off the adapter module's own `DEPRECATED_BACKENDS`, which maps a backend's name to that
+    line: what to use instead, and the release the backend goes in. A module that declares none
+    has none, as with `SIMULATOR_BACKENDS` above. `quackd run`, `doctor`, `serve-mcp` and
+    `robot list --probe` ask this just before they connect a robot, and print the line then,
+    which is the warning at run time RELEASING.md asks of a removal announced a minor ahead.
+
+    It is a mapping where `SIMULATOR_BACKENDS` is a tuple, because the line is the adapter's own
+    to write. A declaration in any other shape, or a line that is not a string, raises TypeError
+    naming the module, rather than being read as nothing: a backend its author meant to retire
+    would then be connected through with no word said, which is the one failure this exists to
+    prevent, and the author meets the error the first time one of those commands asks about a
+    robot on any backend of theirs.
+
+    A spec that does not parse, an adapter that is not installed, and an adapter whose module
+    fails to import in any way have no line, and this returns None rather than raise. An import
+    can fail with more than ImportError: a top level that raises RuntimeError, or an extension
+    whose DLL will not load, which is an OSError. Those are the body's failures rather than the
+    notice's, and they are not raised here: a command meets them where it always did, when it
+    describes or builds the body, in whatever words that has always taken. Each of those
+    commands asks only about a body it has already built, whose module imported as it was built,
+    so for them this is a guard rather than a path."""
+    try:
+        if isinstance(spec, str):
+            spec = parse_robot_spec(spec)
+        module = _module(spec.adapter)
+    except Exception:
+        return None
+    declared = getattr(module, "DEPRECATED_BACKENDS", None)
+    if declared is None:
+        return None
+    where = getattr(module, "__name__", spec.adapter)
+    if not isinstance(declared, Mapping):
+        raise TypeError(
+            f"{where}.DEPRECATED_BACKENDS is a {type(declared).__name__}, and quackd reads it "
+            "as a mapping of a backend's name to the one line that announces it, such as "
+            "{'old': 'adapter:old is deprecated and is removed in X.Y.0: use adapter:new'}"
+        )
+    line = declared.get(spec.backend)
+    if line is None:
+        return None
+    if not isinstance(line, str):
+        raise TypeError(
+            f"{where}.DEPRECATED_BACKENDS[{spec.backend!r}] is a {type(line).__name__}, and "
+            "quackd prints it as the one line that announces the backend, so it is a string"
+        )
+    return line or None
+
+
 def registry_for(spec: RobotSpec, manifest: RobotManifest | None = None) -> VerbRegistry:
     """The vocabulary of a robot that is not connected (`list-verbs --robot`, `--goal`).
 

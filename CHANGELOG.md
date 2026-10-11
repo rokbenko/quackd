@@ -9,6 +9,113 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **A Microduck on any robotd from API 23 up is served, and quackd says so when its version is not
+  the 41 it read.** `microduck:jsonrpc` refused a robotd whose `hello` named any version but the one
+  quackd read, which is how every robotd release from daemon-v0.12.0 on came to be refused, and how
+  the next would have been after any re-read, since robotd ships a release every few days. No robotd
+  refuses a peer over the number: upstream's rule is that a bump promises nothing, and that a call
+  whose shape moved refuses itself by name. quackd follows it now. A robotd older than API 23, the
+  oldest quackd has read end to end, is still refused at connect, and so is one whose `hello` names
+  no version, which used to be let through. Any other is served, and when its version is not 41 the
+  log, `quackd doctor` and every state's `extras.robotd` say so, beside the release and the revision
+  the robot answered with, which `doctor` also prints as a `robotd` row. A call robotd refuses with
+  `METHOD_NOT_FOUND` or `INVALID_PARAMS` fails the verb naming the call and both versions, a socket
+  with no `hello` is called not robotd's, and so is one that answers `hello` but has no
+  `robot.subscribe`, as updaterd's does. An answer to `robot.do`, `robot.sound` or `robot.enable`
+  that carries no `accepted` quackd can read is a refusal that names what came back, where it read
+  as a yes. `robot.move` is a notification, which robotd answers with nothing, so every twist is now
+  checked against robotd's own state: one that `move.requested` has not shown three state frames
+  after robotd answered a call quackd made after it holds `robot.move` back until the verb that was
+  walking ends, the hold a duck that stops standing already gets, and the verb fails saying what
+  robotd showed instead, with the verdict in `extras.move_echo`. Frames are counted from robotd's
+  answer and not from the send, since robotd reads a connection in order, so a link that held
+  quackd's lines back for a while delays the verdict instead of stopping a walk robotd then took,
+  and each walk costs a `robot.health` more than it did. They are counted only up to robotd's
+  answer to the stop that ends a walk, since robotd zeroes its twist as it reads a stop, and the
+  walks of the verbs still running are counted together, so the frames of every turn of a
+  `search_scan` count toward the verdict, over a slow ssh tunnel as on the robot, and the stop
+  after a turn neither lifts the hold nor writes off what they said. `search_scan` counts the
+  turns it says it made by the ones robotd's state showed it took, and says so when that was none,
+  where a scan of a robotd that took none of its twists said it had turned all the way round and
+  that the target was not there. A scan stops only at a turn it sends after the verdict, so one
+  whose last turn brings it, or whose turns are too short for one, ends not finding the target and
+  says how many of its turns robotd's state confirmed. A gamepad connected to the robot sends
+  robotd a stop every 100 ms while nobody touches it, and robotd walks on whichever twist came last,
+  the pad's or quackd's, so with one connected a walk can now stop this way, where it used to go on
+  sending twists that robotd took in turn with the pad's stops.
+  `extras.pickup_detection` says whether the robot reports `safety.picked_up`, which robotd first
+  shipped in daemon-v0.15.2, and `doctor` warns when it does not, since nothing then tells quackd
+  that somebody is holding the duck. `extras.robotd` also says whether the state carries `frames`,
+  and whether mediad's `GET /frame` answered when `--camera-url` asked it, since the floor serves
+  releases with neither. [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md)
+  records the rule. `tests/test_jsonrpc.py` serves a robotd one version newer than the read and one
+  at the floor, refuses two below it and five kinds of `hello` with no integer version, fails a verb
+  whose call the robot lacks with both versions named, holds a walk back on a robotd that drops
+  `robot.move` and on one that refuses its params by name until the verb that walked ends, through
+  its own stops, but not on frames read late after a stall, nor on a link that held quackd's lines
+  back for longer than the window, stops a `search_scan` on a robotd that takes no twist over links
+  that hold every byte back one to four frame periods each way, and in fifteen-degree turns over a
+  quick one, judges a verb's walks together on the frames before each stop and on none after,
+  calls a socket with no `robot.subscribe` not robotd's, takes a kick answered with no `accepted`
+  for a refusal, and probes the robot through `doctor` for the new row and both warnings, and
+  `tests/test_composite.py` counts a scan's turns by the ones the body's own state confirmed. Each
+  of them failed before this change. Over the same slow links `go_to` stops on a robotd that takes
+  no twist, and both verbs reach their end on one that takes every twist, and a stop robotd never
+  answers leaves the walk before it unjudged.
+
+- **A Microduck's camera is mediad's own `GET /frame` now, which `microduck:jsonrpc` pulls at 2
+  frames a second, and a tall first frame from it is taken for an alpha's lens.** The Microduck page
+  starts with `--camera-url http://127.0.0.1:8080/frame` through
+  `ssh -L 8080:127.0.0.1:8080 microduck@<duck>`, the upright PNG mediad has served since
+  daemon-v0.13.0, with no extra installed and nothing stopped on the duck, where it used to offer
+  WebRTC or a snapshot server of your own with mediad stopped. Every request has the duck encode a
+  PNG of its whole picture, and nobody has measured what that costs a robot, so quackd pulls
+  mediad's route at 2 frames a second, where every other HTTP camera is still pulled at 5. The PNG
+  carries no lens, so a first frame taller than wide, which on a stock robot only an alpha's camera
+  gives, is taken for the IMX219's 62° running down the picture: 37.3° across the 720 by 1280 frame
+  of the default 720p. That goes in the manifest as `camera_fov_deg`, beside the words of the
+  assumption, which `quackd run` and `serve-mcp` measure through when no `--fov-deg` names a lens,
+  with detections that say they are uncalibrated and a word in the log to pass `--fov-deg`, since it
+  is the module's design rather than a calibration, and wrong on a duck in upstream's own simulator,
+  whose camera is 45° wide. Every state lists the assumption in `extras.assumptions` until
+  `--fov-deg` gives `quackd run` a lens of its own, when `extras.camera` says the lens was given. A
+  wide frame and every other camera get no lens, as before. `tests/test_jsonrpc.py` asks mediad's
+  route at its rate and every other camera at theirs, takes the lens from a tall first frame of
+  mediad's and from no other, names the assumption beside it, keeps it when a later frame is wide,
+  and takes it off the state once `--fov-deg` gives a lens, `tests/test_detector_selection.py`
+  measures through it uncalibrated on a run and over MCP and hands the flag's lens to the body, and
+  `tests/test_docs.py` holds the page to the numbers in the code. Each failed before this change.
+
+### Deprecated
+
+- **`microduck:websocket` is deprecated, and is removed in 0.19.0.** It was a stub that refused to
+  connect while it waited for the WebSocket agent gateway upstream's architecture.md designed, and
+  by daemon-v0.16.1 upstream had dropped that design. A server-side agent goes over upstream's
+  rendezvous control lane now, which carries no pixels and which upstream's own relay calls not a
+  teleop lane: past 1200 requests a minute the service refuses the whole peer, the robot's own
+  lease included. A walk under quackd re-sends its twist at a joystick's rate, so quackd will not
+  drive over it, and nothing will come for the stub to become. `quackd run`, `quackd doctor`,
+  `quackd serve-mcp` and `quackd robot list --probe` print one line on stderr just before they
+  connect through it, naming `--robot microduck:jsonrpc`, with
+  `--camera-url http://127.0.0.1:8080/frame` for mediad's camera, as what to use instead. A fleet
+  with several robots on it is told once, wherever they come in it, and a command says nothing for
+  a robot it does not connect: the second of a task's `--robots` when the task has no flock, a run
+  refused before it connects, or a served robot after one that failed to connect. The stub's
+  refusal ends with the same line, and `quackd list-adapters`, `doctor`'s adapters table and the
+  status pages call the backend deprecated. An adapter declares a backend on its way out as
+  `DEPRECATED_BACKENDS`, a mapping of the backend's name to that line where `SIMULATOR_BACKENDS`
+  is a tuple, and `docs/adapters/writing-an-adapter.md` says how. A declaration in any other shape
+  raises a TypeError naming the module rather than being read as nothing, and an adapter whose
+  module fails to import has no line rather than an error from the check.
+  `tests/test_doctor_and_stub.py` runs all four commands with the stub first, second or third
+  among their robots and finds the line once in each, ahead of the stub's refusal in `run` and
+  `serve-mcp`, finds it in the log of a server started without the CLI, and refuses a tuple
+  declaration by name, each of which failed before this change. It finds no line from any other
+  backend, from a robot a command never connects, or from an adapter whose module raises as it is
+  imported.
+
 ### Fixed
 
 - **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
@@ -22,6 +129,334 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   tenth of a second after the duck's hello, which failed every time without the waits.
   `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
+
+- **A Microduck that is not standing is no longer sent a walk, and one picked up during a `go_to` no
+  longer walks off when it is put down.** `microduck:jsonrpc` read the duck as sitting when its
+  policy label contained `sit`, and as standing for every other label unless `safety.fallen` said it
+  was down. robotd's label names what drove the tick, not where the duck is, and most of its labels
+  are not a duck ready to walk: `held` while no network drives, which on a robotd with the pick-up
+  detector is also a duck somebody is holding, `homing`, `rise` off the seat, `ground_pick`, a skill
+  such as a kick, and whatever label a newer robotd adds. Each could be sent a walk, and `go_to`,
+  `search_scan` and `approach_and` checked no posture at all. Posture is an allowlist now. `walk`
+  and `stand` read as standing and `sit`, matched exactly, as sitting. Every other label reads as
+  `unknown`, and so do a duck somebody holds (`safety.picked_up`), even one that also reads fallen,
+  and a limp one (`safety.limp`) that does not, with `extras.posture_reason` saying which. `move`,
+  `kick`, `grab`, `go_to`, `search_scan` and `approach_and` refuse a duck whose posture is
+  `unknown`, where they used to go ahead, and the last three need the duck standing on every
+  backend, so on the simulators they now refuse a seated or fallen duck they used to steer while its
+  legs ignored every twist. A duck somebody holds is read before a fallen one, so the refusal says
+  so instead of pointing at `stand_up`, and `gaze`, `sit` and `stand` refuse it as well. `stand_up`
+  reads the duck before it sends `robot.enable`: it refuses a duck somebody holds or that nothing
+  reports on, and one on a robotd that cannot say whether it is held, which used to read as nobody
+  holding it, says a standing duck is already upright, points a seated one at `stand`, and calls the
+  duck upright afterwards only if it reads standing. Underneath all of these, `microduck:jsonrpc`
+  sends no `robot.move` unless the newest state reads standing, and once the duck stops standing
+  under a verb that has walked and is still running, `search_scan` looking between two turns among
+  them, it sends that verb none until it ends. The preconditions are read once, when a verb starts,
+  so a duck picked up halfway through a `go_to` would have been put down onto a fresh twist and
+  walked off on it. `go_to`, `search_scan` and `move` each stop at the first twist held
+  back and say why, on every backend, where `go_to` steered on without one until its timeout and
+  said it had timed out, and `search_scan` reported a full sweep of a duck that never turned and
+  said the target was not there. The hold is each verb's own and lasts until it ends, so no stop
+  sets walking again a verb still running, a stop from another call, the pilot's `stop` among them,
+  and the stop between two of `search_scan`'s own turns alike, and while it stands the state reads
+  `unknown` and `extras.move_hold` says why, which `doctor` prints as a `move_hold` row too, `none`
+  on the connection it opens itself. A verb refused for posture says why, and the answer is to wait
+  for the duck to stand, or to run the `stand` or `stand_up` it names.
+  `tests/test_jsonrpc.py` runs every label robotd reports through a fake robotd, picks the duck up
+  halfway through a `go_to` and puts it back down, once while another call stops the duck and once
+  while it walks beside it, does the same while a `search_scan` looks between two turns, holds a
+  verb whose duck was picked up through its own stop until it ends, and checks what `stand_up` sends
+  for each posture,
+  `tests/test_composite.py` holds `go_to` and `search_scan` to the first twist a body refuses, and
+  `tests/test_adapters.py` holds the three camera verbs to `standing` and an `unknown` posture to a
+  refusal. Each of them failed before this change.
+
+- **`microduck:jsonrpc` connects to a robot on robotd's current release, daemon-v0.16.1, which it
+  refused.** quackd read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake
+  refused a robotd that answered with any other number. Upstream's releases reached API 27 with
+  daemon-v0.12.0, and every release since was refused at connect, daemon-v0.16.1 on API 41 among
+  them. quackd now reads robotd at daemon-v0.16.1 (`d818af5`), every reference in `upstream_api.py`
+  is anchored there, and quackd's hello names API 41. Everything quackd sends reads the same at both
+  commits, and so does everything it reads but for fields added to `robot.state` and `robot.health`,
+  so nothing else on the wire changes. Which other versions the handshake serves now is under
+  Changed. The re-read also changes what the pilot is told. The policy labels posture is sorted by
+  are read in robotd's source now rather than assumed, so `extras.assumptions` lists `stand_up`'s
+  in posture's place, the assumption that asking the policy to drive gets a fallen duck up, which
+  upstream does not promise. robotd's own stand-up after a fall was `limp_fall`, and on
+  daemon-v0.16.1 that is off by default and a fall changes nothing in robotd, so the Microduck's
+  datasheet no longer says the duck can get itself upright, `stand_up`'s description says it may not
+  manage, and a duck still down after it is no longer told an onboard recovery has not finished. The
+  WebSocket gateway `microduck:websocket` would talk to is gone from upstream's design, and the
+  stub's refusal says so instead of pointing at it. The Microduck page's upstream tables are
+  rewritten at the new commit with what robotd has added since: the camera routes `mediad` serves
+  (`GET :8080/frame`, `media.frame`), the idle look-around that moves the head once nobody has
+  steered it for two seconds and the duck has then stood still for two more, the pick-up detector,
+  and the `velstand.onnx` walk. The fake robotd in `tests/test_jsonrpc.py` answers as daemon-v0.16.1
+  does, with its hello, its subscribe answer, its state frame and params that refuse a member robotd
+  does not know, and a run of every verb that reaches the socket leaves it with nothing refused. The
+  tests that hold the page to the commit and the release, the posture labels to the source they are
+  read from, the assumptions to what `upstream_api.py` calls unverified, and the datasheet and
+  `stand_up` to promising no recovery each failed before this change.
+
+- **A `robot.state` line longer than 64 KiB no longer cuts `microduck:jsonrpc` off from the robot
+  without a word.** The reader took asyncio's default line limit, 64 KiB, and a longer line raised
+  out of the task that reads robotd's socket, which died silently. Every request after it waited out
+  its timeout, the heartbeat's among them, which ended the run. A state frame is a few kilobytes at
+  daemon-v0.16.1, but robotd bounds nothing it writes, its state frame gained the camera's pose, an
+  IMU, the whole skeleton and the joints' velocities and currents between API 24 and 36, and a
+  robotd newer than quackd's read is served now. The reader takes a line of up to a mebibyte,
+  sixteen times the most robotd takes in a line it reads, and skips a longer one rather than ending
+  the link. `tests/test_jsonrpc.py` sends a frame between the two limits, which is read, and two
+  past the new one, after which the link still answers. Both failed before this change.
+
+- **A Microduck link that fails, or a line from robotd that quackd cannot match, ends no more than
+  the call it meets, and says so.** Two kinds of line still ended the task that reads robotd's
+  socket the way an over-long one did: an answer whose `id` is a word or a list rather than a number
+  quackd gave a call, and an answer to a waiting call whose `error` is not an object, such as the
+  null a JSON-RPC 1.0 peer writes beside every result. Each is skipped now, or fails the call it
+  answers. A socket that dropped let its own `ConnectionResetError` out of `microduck:jsonrpc`: out
+  of the heartbeat, which promises `HeartbeatError`, out of `get_state` and `send_intent`, and out
+  of `stop`, which promises never to raise, and a verb's stop raised it from inside the executor's
+  handler for the verb's failure, so the call raised instead of answering. Each fails with the
+  transport's own error now, `stop` raises nothing, every call made after robotd closed the socket
+  fails at once where the first stop waited out its two seconds, and the state reads the duck as
+  `unknown` from then on. On every body, the executor no longer lets a stop that fails out of the
+  handlers that send one, and says it failed. `tests/test_jsonrpc.py` sends answers with a string
+  and a list for an `id`, a null `error` beside a result and a string for one, drops the socket
+  under the transport and hangs up from the fake robotd, and `tests/test_executor.py` ends a verb
+  that raises, one that times out and one an abort ends on a stop that raises. Each failed before
+  this change.
+
+- **`microduck:jsonrpc` with no `--address` looks for robotd's socket where robotd makes it,
+  whatever `DUCK_RUNTIME_DIR` says.** It looked for `$DUCK_RUNTIME_DIR/robotd.sock` whenever that
+  variable was set where quackd ran. Upstream's `DUCK_RUNTIME_DIR` moves only the directory its
+  daemons publish their identity files in, for upstream's own tests and for a daemon run by hand,
+  and robotd's socket is a literal `--socket` default that no variable moves, so with the variable
+  set the default named a socket no robotd creates. The default is `unix:///run/robotd.sock` now,
+  and quackd does not read the variable. A robotd anywhere else, such as each duck upstream's
+  `scripts/duck-sim` starts, is reached with `--address`. A test in `tests/test_jsonrpc.py` sets
+  the variable and expects robotd's own socket, and it failed before this change.
+
+- **A Microduck's gaze holds against robotd's idle look-around, its state says where the camera
+  points, and `go_to` and `search_scan` let a glance fade before they act on a frame.** Since
+  daemon-v0.16.1 robotd glances around on its own once nobody has steered the duck's head for two
+  seconds and it has then stood still for two more, up to 0.6 rad of yaw, and lets go of a glance by
+  fading it out over 1.5 s. A `gaze` was one `robot.look`, so the head began to wander off it four
+  seconds later, and an `observe` after it could report bearings off by as much. `microduck:jsonrpc`
+  now sends the head a look answered with again as `robot.head` every second, as upstream's own doc
+  for that answer says to, and the state says what is held as `extras.gaze_hold`. Nothing goes out
+  while the duck reads as anything but standing or sitting, so a duck somebody holds, a limp or a
+  fallen one and one halfway through a skill get no head command, and the hold takes up again once
+  the duck stands. A head somebody turned while it waited, as a gamepad centres the head when its
+  head mode ends, is let be rather than turned back if robotd said meanwhile that somebody held the
+  duck, or that it was limp or in a skill, none of which robotd glances at, or if robotd's
+  two-second wait had not run out since the head last went out. After longer in any other state, a
+  fall among them, a glance of robotd's own cannot be told from another client's head, and the head
+  goes out again as before. There is one hold at most, the newest look's. A stop ends it before the
+  stop itself goes out, and so do the next look, a link that fails and the end of the connection,
+  and a look still waiting on robotd's answer when one of them comes starts none. When
+  `robot.state.head` moves away from the held head or stays off it, which is another client steering
+  it, a gamepad posing the head among them, the hold lets go rather than pull the head back every
+  second, and `extras.gaze_released` says `overridden`. On a robotd from API 41, the first release
+  that glances, `go_to` and `search_scan` wait 1.5 s after centring the head, with nothing sent that
+  moves the duck, and on mediad's `/frame` the first frame they act on is one taken after the wait.
+  Over WebRTC it is the newest frame the stream has decoded, which the stream's own delay can put in
+  the last moments of the fade. On such a robotd `search_scan` also centres the head again after
+  each turn, since the stop that ends a turn ends the hold. The state also says where the camera
+  points, as `extras.head_yaw_deg` and `head_pitch_deg`, positive left and up, the convention the
+  simulators have always published, read off `frames.camera`, or the yaw off the head_yaw joint on a
+  robotd without `frames`. `tests/test_jsonrpc.py` holds a gaze against a fake robotd and ends it
+  each way it ends, sends two looks at once and stops or closes while a look waits on its answer,
+  pauses it for each posture that pauses it, lets go of a head another client steers or holds still
+  and of one turned while the hold waited, but not of one robotd is still smoothing in or fading a
+  glance off, nor of one after a fall too long to rule a glance out, reads the camera's yaw and
+  pitch off `frames.camera` and the yaw off the joint, and times `go_to` against the fade, and
+  `tests/test_composite.py` holds both verbs to the wait and to a first frame taken after it, and
+  `search_scan` to centring the head after each turn on a body that glances. Each of them failed
+  with its part of this change taken out.
+
+- **WebRTC frames from a Microduck come out upright, and are measured through the lens mediad
+  reports.** An alpha's camera is mounted a quarter turn off upright and nothing on the robot turns
+  the pixels back, so `--camera-url webrtc://` handed `observe`, `go_to` and `search_scan` frames
+  lying on their side, where how far across the picture a ball sat said how high it was in the room,
+  not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and quackd
+  never read it. It asks now, once, which is the one line it writes to the control channel, reads
+  the answer or the push mediad sends when the channel opens, and turns every frame clockwise by
+  that much, the way upstream's own code does. No frame goes out until mediad has said, so a mediad
+  that never says leaves the run with no camera and `camera_health()` saying why, rather than one
+  that steers on a picture on its side. The same answer carries the lens, for the frame as it is
+  sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
+  `quackd run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
+  37.4° across an upright alpha frame by the alpha family's calibration, where both used to measure
+  through the simulator's 90°. The lens is the calibration's focal length alone: its principal point
+  is off the frame's centre, which on an alpha leaves every bearing taken from the centre about 6°
+  to the left, and quackd does not correct it. A mediad started with `--flip-in-pipeline` turns the
+  pixels before it encodes them and still reports the mount, so a frame that comes in tall where
+  `media.video` describes a wide one is handed out as it came rather than turned onto its side
+  again. `camera_health()` reports the turn, the lens and the intrinsics.
+  `tests/test_microduck_webrtc.py` turns a frame by each of the four angles mediad can report and
+  checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
+  it off the answer and off the push, takes the lens from the intrinsics at each angle, and hands
+  out a frame the pipeline turned already as it came, `tests/test_adapters.py` carries the lens into
+  the manifest, and `tests/test_detector_selection.py` has the colour detector `quackd run` builds
+  before the body connects measure through it once it has. Each failed before this change.
+
+- **A 503 at connect no longer leaves a Microduck without a camera for the whole run, and a verb
+  that finds no frame says why.** `microduck:jsonrpc` decides once, at connect, whether a run can
+  see, and it stopped waiting for an HTTP camera's first frame at the first failure of any kind.
+  mediad's `/frame` answers 503 while it cannot hand a frame out, and says to retry, so one of
+  those at connect took `observe`, `go_to`, `search_scan` and `approach_and` away for the run.
+  quackd now waits up to 5 s through 503s and through requests that run out of time, and gives up
+  at once on anything else, such as a refused connection or the 404 of a robot older than the
+  route. Whatever came last is in `camera_health()`, with mediad's own reason where it gave one,
+  and `quackd doctor` prints it under the camera's row. `observe`, `go_to` and `search_scan` quote
+  a body's `camera_error` when no frame comes, and `microduck:jsonrpc` had none, so they said only
+  that no frame came. It says now: the last failure, a frame too old to steer on, or, over WebRTC,
+  a mount mediad has not said. `tests/test_jsonrpc.py` waits through two 503s to a frame, gives up
+  on a camera still unavailable when the wait runs out with mediad's reason in hand, gives up at
+  once on a 404 and on a refused connection, waits through both forms of a timeout, fails
+  `observe` and `go_to` with mediad's reason, and finds it in `doctor`'s camera rows, and
+  `tests/test_microduck_webrtc.py` checks what the WebRTC camera says. Each failed before this
+  change.
+
+- **A frame from a Microduck's HTTP camera is as old as the request that asked for it, and
+  `search_scan` on mediad's `/frame` finds a target from the heading it names.** `microduck:jsonrpc`
+  started a frame's age once the last of it had arrived, while mediad takes the picture a `/frame`
+  answers with when the request reaches it, then encodes it and sends it down the tunnel. A PNG slow
+  to come was handed out as if it had just been taken, and one that trickled in for longer than the
+  2 s quackd steers on was handed out all the same, since urllib's timeout bounds each read and not
+  the request. A frame's age runs from its request now, on every HTTP camera, so one that takes
+  longer than that to come is never handed out, and a verb that wanted it stops and says why.
+  `search_scan` turned, let the view settle for a tenth of a second and looked at the newest frame
+  quackd held, which on `/frame` had been asked for as much as a frame period and a fetch earlier,
+  so a target could be found in the view from before the turn or from halfway through it and
+  reported a step late, at a bearing the duck had already turned away from. On `/frame` it now looks
+  after each turn at a frame taken once the turn had settled, since mediad's picture is taken after
+  it is asked for. Any other HTTP camera may hand out a picture it took before it was asked, and a
+  WebRTC frame arrives some unknown while after it was taken, so on those it looks at the newest
+  frame, as before. `tests/test_jsonrpc.py` serves a PNG that takes a while to come and one that
+  takes longer than the window, and tells mediad's route from another camera, and
+  `tests/test_composite.py` has `search_scan` look at each heading through a camera that hands out
+  frames taken half a second before. Each failed before this change.
+
+- **`go_to` on a Microduck's `/frame` turns no further than each frame measured, so it no longer
+  swings past a target and loses it.** `go_to` turns toward what it sees at a rate set by the
+  bearing, holds that turn for a tick and measures again on the newest frame, which was sized for a
+  camera with a new frame most ticks. mediad's `/frame`, asked at 2 frames a second, hands out the
+  same frame for half a second or more, so one measurement's turn was held long enough to carry the
+  duck past the target, the next measurement, taken before that turn, said to go on turning, the
+  target left the alpha's 37° view, and the search for it turned away from it. In a model of the
+  duck a ball 12° off was lost that way when a fetch took 0.6 s, and with fetches of a few tenths of
+  a second it was lost or reached several degrees off the beak's line, depending on how fast the
+  body answered a turn. A camera now says how long one frame takes to follow the last, and where two
+  of those outlast the third of a second the turn takes to cover a whole bearing, `go_to` measures,
+  then moves: it turns no further than each frame measured, walks on straight while the turn
+  settles, and steers again only on a frame taken after it. That is every `/frame` camera, so
+  `go_to` closes on a target more slowly there. The simulators, WebRTC and any other HTTP camera say
+  no period and are steered as before, and a target lost from view is looked for as far as before.
+  `tests/test_composite.py` steers at a ball through a camera that hands out a frame every half
+  second and takes 0.6 s to fetch one, which lost the ball, holds the change to two frame periods
+  against the turn's third of a second from both sides, and the search for a lost target to turning
+  as far either way, and `tests/test_jsonrpc.py` reads the period off mediad's route while its
+  frames come quickly and once one comes slowly. Each failed with its part of this change taken out.
+
+- **`search_scan` turns in steps whose views overlap through a lens no wider than 45°, so no wedge
+  of the room goes unseen.** A scan left to its own step turned 45° at a time, and through a
+  narrower lens each view ended before the next began: through an alpha's 37° view on a Microduck
+  the wedges between came to a sixth of every turn, and a target standing in one was reported not
+  found after a whole turn. A step the caller leaves out is now the widest that turns a whole circle
+  in whole steps with each view overlapping the next, through the lens the detector measures
+  bearings through, and never wider than 45°, and a count of steps left out is as many as make the
+  circle, up to the 16 a scan may take: through 37°, ten steps of 36°. A lens wider than 45° scans
+  as it always did, the simulators' among them, and so does a body whose detector names no lens, and
+  a step or a count the caller gives is kept. A robot that sweeps its head instead of turning steps
+  its gaze the same way, and the tool's own words for both parameters say so.
+  `tests/test_composite.py` works out the step for lenses from 10° to 120°, those wider than 45°
+  keeping the old one, keeps a step and a count the caller gave, and finds a ball standing where the
+  old step left a wedge, which a scan with the old step does not.
+
+- **The physics simulator fetches its policies at upstream's `v7`, the set a robot on daemon-v0.16.1
+  is seeded with, and nothing in quackd says a robot walks on `alpha_walking.onnx` or stands on
+  `alpha_stand.onnx` any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx`
+  and their manifest from a revision of `pollen-robotics/microduck-policies` older than upstream's
+  `v5`. `v5` added `velstand.onnx`, one network that walks and stands, which every robotd from
+  daemon-v0.13.0 loads with no standing network, so the licences page's nine policies were one short
+  of what a Microduck ships with, and `sim3d/upstream_api.py` said the daemon runs
+  `alpha_stand.onnx` while the twist is small. quackd now fetches at `v7`'s revision, `6677ec0`. The
+  walking and standing files are the same bytes there, so the simulator walks exactly as it did and
+  only the manifest's pinned hash moved. The cache is named after the revision, so the first
+  `microduck:mujoco` run after upgrading fetches the two policies again, 1.6 MB, without being
+  asked. The model stays at `2b25a48`: `microduck_rl`'s `develop` is 36 commits on, and every file
+  quackd fetches from it is the same bytes there. The browser demo fetches from the same revision.
+  The Microduck page names the new read, the licences page counts ten, the hardware checklist's
+  rehearsal says a robot walks on another network than the simulator's, and ADR-0030 carries a dated
+  note beside the nine it was written with. The README, the FAQ, the MCP guide, the Microduck page,
+  the page on reading robots, the licences page, NOTICE, both `pyproject.toml` comments and the
+  simulator's own docstring called its walk the robot's own, or the one the robot ships with, and
+  name `alpha_walking.onnx` now, which Pollen trained before `velstand.onnx`. `tests/test_docs.py`
+  holds the physics section to the revisions the simulator fetches, and the licences page to the set
+  it pins, counted off a list in `sim3d/upstream_api.py`, and keeps the old words for the
+  simulator's walk out of every living page, NOTICE and the sources it already reads. Each failed
+  with its part of this change taken out.
+
+### Documentation
+
+- **The Microduck's pages log in as `microduck`, the account upstream's own tools use, and say it
+  has to be in the robot's `robot` group.** The hardware checklist tunnelled to the duck as `radxa`,
+  which was quackd's guess. robotd's socket is `root:robot`, mode 0660, and robotd checks nothing
+  else about who connects. Upstream's group file creates the group with nobody in it and its
+  provisioning scripts add only whoever ran them with `sudo`, which is `microduck` on a board
+  provisioned the way upstream's own example does it, so the account has to be checked rather than
+  assumed. Step 1 of the checklist checks for the group with `ssh microduck@<duck> id -nG` and marks
+  adding the account as a change to make only with the owner's yes, and the README's real-robot row,
+  the Microduck page's sockets row, the status page and the issue template say so too. Step 6 starts
+  with `mediad`'s `GET /frame` and keeps WebRTC for the stream, without the snapshot server that
+  needed `mediad` stopped, step 9 runs on `/frame`, its fall note no longer leaves the recovery to
+  robotd, and step 10 asks for what the re-read could not settle, the policy labels on a real duck
+  and what `/frame` costs it among them.
+
+- **The pages and strings that still described the Microduck at quackd's previous read describe it
+  at daemon-v0.16.1.** The FAQ and the Open Duck page said quackd reads API v23, LAUNCH.md's draft
+  to Pollen said so too and that there is no socket-level camera snapshot, PLAN.md that the read was
+  API v23 and the camera WebRTC, and the `--camera-url` help and both `pyproject.toml` comments that
+  WebRTC is the only camera upstream offers. Between them they now say what the read found: API v41,
+  a robotd from API v23 up served, and `mediad`'s `GET /frame` beside its WebRTC track. The issue
+  template asks about the handshake, posture, the camera and the duck detector as they work now, and
+  `microduck-lookout` says a camera rather than a video. `docs/concepts/safety.md`, the hardware
+  checklist, the Microduck page, the README and the FAQ said a gamepad out-ranks quackd, that
+  upstream arbitrates who drives, and that releasing the sticks stops the robot through the deadman.
+  robotd keeps one twist, the newest from any client, and ranks none above another, so a pad nobody
+  touches sends a stop every 100 ms that lands between quackd's twists, letting go of sticks nobody
+  was touching changes nothing, and robotd's deadman does not fire while quackd re-sends its twist
+  every 100 ms. Each page says so now, and what does end a quackd walk: quackd's own `stop`, a stick
+  pushed until quackd gives the walk up, the pad's sit button, and `padd` sitting the duck 1 s after
+  a pad drops out. The checklist's step 8 tests the deadman with the pad switched off, since a
+  connected pad's stop halts the legs first and would pass the step whether or not the deadman
+  works, and has `robotctl monitor` name it. Step 9 says what a pad nobody touches may do to a walk,
+  which nobody has seen, and the hardware report asks for both. `docs/concepts/learned-verbs.md`
+  said a policy slot robotd could swap over its socket was not designed yet, where
+  `robot.loadPolicy` has done that since API v18 and `robot.setSkill` has named a policy as a skill
+  since v22, and it names the slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson
+  guide no longer calls every Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011
+  carries a dated note on the three rows the re-read overtook, and the 0.4 design note says its
+  `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, NOTICE, a line of
+  quackd's or an adapter's source, a `pyproject.toml`, an issue template, a bundled duck or an ADR
+  dated since the re-read that says one of the retired things again, the pad's rank and the pad as
+  the e-stop among them, and holds the pages that say what stops a walk to the deadman's 500 ms and
+  `padd`'s 100 ms and 1 s as `upstream_api.py` reads them, and to a re-send shorter than the
+  deadman. Each failed before this change.
+
+- **Six table rows that lost their last cells to a `|` show them whole.** GitHub splits a table row
+  on every `|` that no backslash escapes, inside code spans too, and drops the cells past the
+  header's count. The Microduck page's `robot.do` and `robot.sound` rows kept two names of each
+  list, the second where what quackd uses the call for belongs, and lost the rest. The XLeRobot
+  page's arm step clamp lost what it means, Kev's confidence row lost the floors quackd compares a
+  confidence with, the README's `quackd log` row lost everything after `--thinking all`, and
+  ADR-0011's `gaze` row lost its note. Each pipe is escaped now, and the guards that look for an
+  upstream name on an adapter's page read an escaped pipe as the pipe it renders as.
+  `tests/test_docs.py` counts every table row's cells the way GitHub does, in every Markdown file in
+  the repository, and failed on all six.
 
 ## [0.17.1] — 2026-10-07
 

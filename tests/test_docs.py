@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
+import os
 import re
 from pathlib import Path
 
@@ -19,6 +21,16 @@ REPO = Path(__file__).resolve().parents[1]
 README = (REPO / "README.md").read_text(encoding="utf-8")
 
 
+def _as_rendered(markdown: str) -> str:
+    """A page's text with every pipe a backslash escapes read as the pipe GitHub shows.
+
+    Inside a table a name such as `ground_pick | kick_left` has to be written with its pipes
+    escaped, or GitHub splits the row on them and drops what follows
+    (`test_every_table_row_has_as_many_cells_as_its_header`). A guard that looks for that name
+    on the page is looking for what a reader sees, so it reads the escaped pipe as a pipe."""
+    return markdown.replace("\\|", "|")
+
+
 def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.
@@ -30,12 +42,385 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     from quackd_microduck.sim3d import upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    doc = _as_rendered(doc)
     missing = [ref.name for ref in up.all_refs() if ref.name not in doc]
     assert not missing, f"docs/adapters/microduck/README.md is missing: {missing}"
     unverified = [
         ref.name for ref in microduck_rl.refs_by_status("UNVERIFIED") if ref.name not in doc
     ]
     assert not unverified, f"the Microduck's page is missing microduck_rl assumptions: {unverified}"
+
+
+def test_the_microduck_page_says_which_read_it_is() -> None:
+    """The page names the commit it read, the release that commit is and the day, and links the
+    robot's repository at that commit and no other.
+
+    The guard above holds the page to every name in `upstream_api.py`, and the names barely move
+    between releases, so a page still describing an older read passes it: this one carried
+    `bc41fb5` and API v23 until the re-read at daemon-v0.16.1. The pin, the release, the day and
+    the links are what a re-pin changes."""
+    doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    section = doc.split("\n## Upstream API\n", 1)[1].split("\n## ", 1)[0]
+    # the read line itself, since the prose below it names the previous read's commit and day
+    tree = f"https://github.com/pollen-robotics/microduck/tree/{up.PIN}"
+    assert f"Read: {up.READ_ON}, pinned at [`{up.PIN[:7]}`]({tree})" in section
+    assert f"(`{up.RELEASE}`" in section and f"**API v{up.API_VERSION.name}**" in section
+    linked = set(re.findall(r"github\.com/pollen-robotics/microduck/(?:blob|tree)/(\w+)", doc))
+    assert linked == {up.PIN}, f"the page links the robot's repository at {sorted(linked)}"
+
+
+def test_the_microduck_page_says_which_physics_read_it_is() -> None:
+    """The physics section names the day `sim3d/upstream_api.py` was read, and links the model
+    and the policies at the revisions the simulator fetches and at no others.
+
+    The robot's read has the guard above, and nothing held this one: a re-pin that moved the
+    simulator's policies and left the page would go on sending somebody checking the licence to
+    a revision quackd no longer fetches. The re-read on 2026-10-09 moved the policies from
+    `088524a`, older than upstream's `v5`, to `v7`."""
+    from quackd_microduck.sim3d import upstream_api as microduck_rl
+
+    doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    section = doc.split("\n## The duck's physics upstreams\n", 1)[1].split("\n## ", 1)[0]
+    section = " ".join(section.split())
+    model = f"{microduck_rl.REPO}/tree/{microduck_rl.PIN}"
+    policies = f"{microduck_rl.POLICIES_REPO}/tree/{microduck_rl.POLICIES_PIN}"
+    assert f"Read: {microduck_rl.READ_ON}, pinned at [`{microduck_rl.PIN[:7]}`]({model})" in section
+    assert f"policies at [`{microduck_rl.POLICIES_PIN[:7]}`]({policies})" in section
+    linked = {
+        "microduck_rl": set(
+            re.findall(r"github\.com/pollen-robotics/microduck_rl/(?:blob|tree)/(\w+)", doc)
+        ),
+        "microduck-policies": set(
+            re.findall(
+                r"huggingface\.co/pollen-robotics/microduck-policies/(?:blob|tree|resolve)/(\w+)",
+                doc,
+            )
+        ),
+    }
+    pinned = {"microduck_rl": {microduck_rl.PIN}, "microduck-policies": {microduck_rl.POLICIES_PIN}}
+    assert linked == pinned, f"the page links the simulator's upstreams at {linked}"
+
+
+def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
+    """The page says how long robotd's state has to show a `robot.move` before quackd holds the
+    walk back, in frames and in seconds at the rate quackd subscribes at. All three are numbers
+    in `jsonrpc_unix.py`, and the page is where somebody on a slow tunnel reads why a walk that
+    robotd took was stopped."""
+    from quackd_microduck.transports.jsonrpc_unix import (
+        MOVE_ECHO_FRAMES,
+        STATE_HZ,
+        move_echo_after_s,
+    )
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    said = (
+        f"{_NUMBER_WORDS[MOVE_ECHO_FRAMES]} frames after it went out "
+        f"({move_echo_after_s(STATE_HZ):g} s at the {STATE_HZ} Hz quackd subscribes at)"
+    )
+    assert said in " ".join(page.split()), f"the Microduck page does not say {said!r}"
+
+
+def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> None:
+    """The page gives the alpha family's calibration and the lens it makes of an upright alpha
+    frame, which is what an alpha over WebRTC reports as `camera_fov_deg`. Both are worked out
+    here from the solve `upstream_api.py` carries, so the page cannot keep a number the solve
+    no longer gives."""
+    from quackd_microduck.webrtc import upright_fov_deg
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    solve = up.ALPHA_SOLVE
+    shown = ", ".join(f"`{k}` {solve[k]:.1f}" for k in ("fx", "fy", "cx", "cy"))
+    assert shown in page, f"the Microduck page does not give the alpha solve as {shown!r}"
+    video = {
+        "width": solve["width"],
+        "height": solve["height"],
+        "rotate": 90,  # the Zero 3W's mount (up.CAMERA_MOUNT)
+        "intrinsics": dict(solve),
+    }
+    fov = upright_fov_deg(video)
+    assert fov is not None
+    said = f"its lens is {fov:.1f}°"
+    assert said in page, f"the Microduck page does not say {said!r}"
+    # where a quarter turn clockwise puts the principal point, as it puts every pixel, and how far
+    # left of the axis that leaves a bearing taken from the upright frame's centre
+    height = solve["height"]
+    off_px = (height - 1) / 2 - (height - 1 - solve["cy"])
+    off_deg = math.degrees(math.atan(off_px / solve["fy"]))
+    for said in (
+        f"about {off_px:.0f} pixels left of it in a frame {height:g} wide",
+        f"about {off_deg:.0f}° to the left",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
+def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
+    """The page says how often quackd asks mediad's `/frame` for a frame against any other
+    camera, how old a frame may get, how long connect waits for the first, and the lens a tall
+    first frame is taken for. Each is a number in the code or in upstream's source, and the page
+    is where somebody with a duck at the other end of a tunnel reads why a run saw what it saw."""
+    from quackd_microduck.transports.jsonrpc_unix import (
+        CAMERA_FPS,
+        FIRST_FRAME_WAIT_S,
+        MEDIAD_FRAME_FPS,
+        camera_stale_after_s,
+    )
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    half = up.IMX219_FOV_DEG / 2
+    width, height = 720, 1280  # the default 720p, turned upright on an alpha
+    lens = math.degrees(2 * math.atan(math.tan(math.radians(half)) * width / height))
+    for said in (
+        f"| How often | {MEDIAD_FRAME_FPS:g} frames a second |",
+        f"quackd asks mediad for {MEDIAD_FRAME_FPS:g} frames a second, where any other HTTP "
+        f"camera is asked for {CAMERA_FPS:g}",
+        f"a frame older than {camera_stale_after_s(MEDIAD_FRAME_FPS):g} s is not handed out",
+        f"waits up to {FIRST_FRAME_WAIT_S:g} s for the first frame",
+        f"sees {up.IMX219_FOV_DEG:g}° along its long side",
+        f"across a {width} by {height} frame, the default 720p turned upright, quackd measures "
+        f"through {lens:.1f}°",
+        f"2·atan(tan {half:g}° · w/h)",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
+def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
+    """The page says how often a held gaze goes out again, against how long robotd waits before
+    it glances, and how long `go_to` and `search_scan` wait for a glance to fade. Each is a number
+    in the code, and the page is where somebody watching a real head reads whether what it does
+    is quackd's or robotd's."""
+    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+
+    page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    page = " ".join(page.split())
+    for said in (
+        f"goes out again every {GAZE_HOLD_S:g} s (`GAZE_HOLD_S`, half of robotd's "
+        f"{up.IDLE_AFTER_S:g} s wait",
+        f"wait {up.IDLE_FADE_S:g} s after centring the head",
+        f"from API v{up.IDLE_HEAD_SINCE_API} up",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
+def _microduck_page(name: str) -> str:
+    """One of the Microduck's pages with its whitespace collapsed, so a sentence the guards look
+    for is found however it was wrapped."""
+    path = REPO / "docs" / "adapters" / "microduck" / name
+    return " ".join(path.read_text(encoding="utf-8").split())
+
+
+def test_the_microduck_pages_say_when_robotd_glances() -> None:
+    """robotd counts the duck still only once nobody has steered its head for IDLE_AFTER, glances
+    only once it has counted it still for IDLE_AFTER more, and fades a glance in over FADE
+    (`up.IDLE_HEAD`). The Microduck page and the hardware checklist said the first glance came
+    IDLE_AFTER after the last head command, half the real wait, so a tester at step 7 was told to
+    expect one two seconds after a stop, and an `observe` after a stop was said to be exposed
+    sooner than it is. A stop ends the gaze hold no more than GAZE_HOLD_S after the head last went
+    out, so the first glance comes from twice IDLE_AFTER less GAZE_HOLD_S to twice IDLE_AFTER
+    after it, and each of those numbers is worked out here from the ones the code holds."""
+    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+
+    first = 2 * up.IDLE_AFTER_S
+    after_stop = f"from {first - GAZE_HOLD_S:g} to {first:g} s after"
+    page, checklist = _microduck_page("README.md"), _microduck_page("hardware-checklist.md")
+    for said in (
+        f"about {first:g} s after the last `robot.look` or `robot.head`",
+        f"reaching its full size {up.IDLE_FADE_S:g} s later",
+        f"once {first - GAZE_HOLD_S:g} to {first:g} s have passed since a stop, which ends the "
+        f"hold at most {GAZE_HOLD_S:g} s after the head",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+    for said in (
+        f"{after_stop} the stop the head may start to look around",
+        f"at its full size {up.IDLE_FADE_S:g} s later",
+    ):
+        assert said in checklist, f"the hardware checklist does not say {said!r}"
+
+
+def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
+    """robotd keeps one twist, the newest from any client, and ranks none above another. `padd`
+    re-sends its stop every HEARTBEAT while a pad's sticks are still and asks robotd to sit the
+    duck PAD_LOST_SIT after a driving pad goes, and robotd's deadman zeroes a twist older than
+    its `deadman_ms` (`up.PAD_DRIVES`, `up.DEADMAN`). The pages said a gamepad out-ranked quackd,
+    that letting go of its sticks stopped the robot, and that a pad dropping out left the deadman
+    to stop a walk, which it cannot while quackd re-sends its twist every MOVE_RESEND_S. Step 8
+    of the checklist tested the deadman with the pad in hand, whose stop halts the legs first.
+
+    Two orderings carry all of it, so they are held first: quackd's re-send is shorter than the
+    deadman, which is why the deadman does not fire while a verb walks, and so is a pad's
+    heartbeat, which is why step 8 runs with the pad switched off. Then each page says the
+    numbers as `upstream_api.py` and the verbs hold them, worked out here, not written."""
+    from quackd.verbs.core import MOVE_RESEND_S
+
+    assert MOVE_RESEND_S < up.DEADMAN_S, "a walk's own re-sends would let the deadman fire"
+    assert up.PAD_HEARTBEAT_S < up.DEADMAN_S, "a pad's stops would not beat the deadman"
+
+    def ms(seconds: float) -> str:
+        return f"{seconds * 1000:g} ms"
+
+    safety = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
+    safety = " ".join(safety.split())
+    for said in (
+        "**A gamepad does not out-rank quackd.**",
+        f"sends a stop every {ms(up.PAD_HEARTBEAT_S)}, and quackd re-sends its twist every "
+        f"{ms(MOVE_RESEND_S)} while a verb walks",
+        "**robotd's deadman does not fire while quackd walks the duck.**",
+        f"It zeroes a twist older than {up.DEADMAN_S:g} s",
+        f"asks robotd to sit the duck {up.PAD_LOST_SIT_S:g} s after the pad went",
+    ):
+        assert said in safety, f"docs/concepts/safety.md does not say {said!r}"
+    checklist = _microduck_page("hardware-checklist.md")
+    for said in (
+        "## 8. Pull the tunnel out, mid-walk, with the pad switched off",
+        f"its stop halts the legs within {ms(up.PAD_HEARTBEAT_S)} of quackd's last twist",
+        f"ask robotd to sit the duck {up.PAD_LOST_SIT_S:g} s later",
+        f"{up.DEADMAN_S:g} s after the last one `robotd`'s deadman zeroes the velocity",
+    ):
+        assert said in checklist, f"the hardware checklist does not say {said!r}"
+    page = _microduck_page("README.md")
+    for said in (
+        f"re-sends an unchanged stop every {ms(up.PAD_HEARTBEAT_S)}",
+        f"{up.PAD_LOST_SIT_S:g} s later asks robotd to sit a duck",
+        f"`[safety] deadman_ms`, {ms(up.DEADMAN_S)} by default",
+        f"every {ms(MOVE_RESEND_S)} while a verb walks, so the deadman does not fire during a "
+        "quackd walk",
+    ):
+        assert said in page, f"the Microduck page does not say {said!r}"
+
+
+def test_the_microduck_page_names_each_field_it_reads_that_the_floor_lacks() -> None:
+    """quackd reads two of the fields robotd added after `up.API_FLOOR`: `safety.picked_up`, for
+    whether somebody holds the duck, and `frames`, for where the camera points. The page said it
+    read one, `safety.picked_up`, a sentence written before the gaze hold began reading `frames`,
+    so a reader learned that only pick-up detection rests on a field a robotd at the floor lacks,
+    when `extras.head_yaw_deg` and `head_pitch_deg` do too. The fields are the refs' own names,
+    and the floor's ref names both."""
+    fields = (up.SAFETY_PICKED_UP.name, up.STATE_FRAMES.name.rsplit(".", 1)[1])
+    page = _microduck_page("README.md")
+    intro = page.split(" ## Upstream API ", 1)[1].split(" ### ", 1)[0]
+    said = f"of which quackd reads {_NUMBER_WORDS[len(fields)]}: `{fields[0]}`"
+    assert said in intro, f"the Microduck page's Upstream API section does not say {said!r}"
+    assert f"and `{fields[1]}`, where the camera points" in intro
+    assert all(field in up.API_FLOOR.note for field in fields), up.API_FLOOR.note
+
+
+#: What the pages said about a real Microduck before quackd read robotd again at daemon-v0.16.1,
+#: in the words they said it in. The re-read falsified each one, and a page reverted to any of
+#: them would read as current.
+_RETIRED_MICRODUCK_CLAIMS = (
+    # the login: upstream's own tools log in as `microduck`, and `radxa` was quackd's guess
+    "radxa@",
+    # the version: quackd reads API v41, and serves a robotd from API v23 up
+    "`duck-ipc-proto` v23",
+    "API v23, pinned",
+    # the camera: mediad serves GET /frame and media.frame as well as its WebRTC track
+    "the only camera upstream offers",
+    "the only path upstream",
+    "no snapshot endpoint",
+    "no socket-level camera snapshot",
+    "systemctl stop mediad",
+    # posture: the labels are read in robotd's source, and `sit` is matched exactly
+    "a policy whose name contains `sit`",
+    # falls: limp_fall, robotd's own get-up, is off by default at daemon-v0.16.1
+    "recovers from falls itself",
+    # the pad: robotd keeps one twist, the newest from any client, and ranks none above another,
+    # so a gamepad does not out-rank quackd, letting go of sticks nobody touched stops nothing,
+    # and the deadman cannot stop a walk quackd goes on re-sending, whatever the pad does
+    "Upstream arbitrates authority",
+    "gamepad preempts remote control",
+    "gamepad preempts remote commands",
+    "has authority and quackd does not arbitrate",
+    "keeps authority on hardware",
+    "the pad is the authority",
+    "the pad's authority",
+    "over any twist quackd sends",
+    "over whatever twist quackd sends",
+    "releasing the sticks stops the robot",
+    "leaves robotd's deadman to stop the walking",
+    # the pad as the e-stop: its stops land between quackd's twists, not over them, and step 8
+    # of the checklist tests the deadman with the pad switched off
+    "gamepad is the real e-stop",
+    "pad in hand as the e-stop",
+    # the simulator's walk: every robotd from daemon-v0.13.0 walks on velstand.onnx, and the
+    # simulator runs alpha_walking.onnx, the policy Pollen trained before it
+    "on its own walking policy",
+    "the walking policy the robot ships with",
+    "the walking policy Pollen trained for it",
+    "the robot's own walking policy",
+    "what runs the robot's own policy",
+    "the Microduck's own model and walking policy",
+    # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
+    "hot-swapped over the socket (not designed yet)",
+)
+
+
+def test_no_living_document_still_describes_the_microduck_before_the_re_read() -> None:
+    """quackd read robotd again at daemon-v0.16.1, and pages and strings across the tree still
+    said what the read before it had: an account to ssh in as that was quackd's guess, API v23,
+    WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
+    posture as an assumption, a robotd that gets a fallen duck up, a gamepad that out-ranks
+    quackd, where robotd walks on the newest twist from either, a simulator walking on the
+    robot's own policy, which every robotd from daemon-v0.13.0 replaced, and no way to swap a
+    policy over the socket. Each was spelled its own way, and a revert of any one reads as
+    current, so the old spellings are kept out of every living page and of everything else a
+    person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
+    templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
+    dated, as history. Whitespace is collapsed first, so a revert that was reflowed on its way
+    back is caught too."""
+    sources = [
+        *_living_docs(),
+        REPO / "NOTICE",
+        REPO / "pyproject.toml",
+        *sorted((REPO / "adapters").glob("*/pyproject.toml")),
+        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "adapters").rglob("*.py")),
+        *sorted((REPO / ".github" / "ISSUE_TEMPLATE").glob("*.yml")),
+        *sorted((REPO / "ducks").glob("*.duck")),
+    ]
+    stale: list[str] = []
+    for path in sources:  # each file read once, not once a claim: the tree has hundreds
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        where = path.relative_to(REPO).as_posix()
+        stale += [f"{where}: {claim!r}" for claim in _RETIRED_MICRODUCK_CLAIMS if claim in text]
+    assert not stale, (
+        "these still describe a real Microduck the way quackd's read before daemon-v0.16.1 did "
+        f"(docs/adapters/microduck/README.md has the read): {stale}"
+    )
+
+
+def _adrs_dated_from(day: str) -> list[Path]:
+    """The ADRs whose `**Date:**` is `day` or later, an ISO date compared as one."""
+    found: list[Path] = []
+    for path in sorted((REPO / "docs" / "adr").glob("*.md")):
+        dated = re.search(r"\*\*Date:\*\* (\d{4}-\d{2}-\d{2})", path.read_text(encoding="utf-8"))
+        assert dated, f"docs/adr/{path.name} carries no **Date:**"
+        if dated.group(1) >= day:
+            found.append(path)
+    return found
+
+
+def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() -> None:
+    """The guard above leaves the ADRs out, since each keeps what was true on the day it is dated
+    and correcting it would falsify that. An ADR dated on or after the re-read was written knowing
+    what it found, so it has none of the read before to keep, and is held to the same claims.
+    ADR-0051, which the re-read added, called the echo's hold on a walk the pad's authority and
+    said the hardware checklist asks for the pad in hand as the e-stop, after the checklist had
+    moved step 8 to a pad switched off and every living page had stopped saying the pad out-ranks
+    quackd, and the guard did not look at it. Older ADRs are not read here, so their history
+    stands."""
+    adrs = _adrs_dated_from(up.READ_ON)
+    assert adrs, f"no ADR is dated on or after the re-read of {up.READ_ON}, ADR-0051 among them"
+    stale = [
+        f"docs/adr/{path.name}: {claim!r}"
+        for path in adrs
+        for claim in _RETIRED_MICRODUCK_CLAIMS
+        if claim in " ".join(path.read_text(encoding="utf-8").split())
+    ]
+    assert not stale, (
+        "these ADRs, dated since quackd read robotd at daemon-v0.16.1, still describe a real "
+        f"Microduck the way the read before it did: {stale}"
+    )
 
 
 def test_adapter_status_lists_every_backend() -> None:
@@ -73,6 +458,7 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
     doc = (REPO / "docs" / "adapters" / adapter / "README.md").read_text(encoding="utf-8")
+    doc = _as_rendered(doc)
     missing = [ref.name for ref in api.all_refs() if ref.name not in doc]
     assert not missing, f"docs/adapters/{adapter}/README.md is missing: {missing}"
     assert api.PIN[:7] in doc and "never" in doc.lower()  # the honesty label
@@ -690,6 +1076,116 @@ def _living_docs() -> list[Path]:
     ]
 
 
+def _markdown_files() -> list[Path]:
+    """Every Markdown file in the repository, the dated ones among them, since a table GitHub
+    cuts short is cut short in an ADR as much as on a living page.
+
+    Walked rather than globbed, so the virtual environments are never entered. A hidden
+    directory is not the repository's own, `.github` aside: `.pytest_cache` writes a README of
+    its own, and a virtual environment carries its packages' files."""
+    found: list[Path] = []
+    for root, dirs, files in os.walk(REPO):
+        dirs[:] = [
+            d for d in dirs if (d == ".github" or not d.startswith(".")) and d != "node_modules"
+        ]
+        found += [Path(root) / name for name in files if name.endswith(".md")]
+    return sorted(found)
+
+
+#: A table's delimiter row, the line under its header: cells of dashes, each with an optional
+#: colon at either end, between optional outer pipes.
+_TABLE_DELIMITER = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+_FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def _cells(row: str) -> int:
+    """How many cells GitHub makes of a table row. It takes off one leading and one trailing
+    pipe and splits on every other pipe a backslash does not escape, inside a code span as much
+    as outside one, and a backslash escapes whatever follows it, a backslash included."""
+    inner = row.strip()
+    inner = inner.removeprefix("|")
+    if inner.endswith("|") and not inner.endswith("\\|"):
+        inner = inner[:-1]
+    cells, escaped = 1, False
+    for char in inner:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "|":
+            cells += 1
+    return cells
+
+
+def _misshapen_table_rows(markdown: str) -> list[tuple[int, int, int]]:
+    """`(line, cells, header's cells)` for each row of a table, outside a code fence, whose
+    count of cells is not its header's. A table is a header row with a delimiter row under it,
+    and runs to the first line that is blank or has no pipe. GitHub takes it for one only when
+    the delimiter row has the header's count of cells, and renders it as plain text otherwise,
+    so a delimiter row with a pipe in it and another count is reported as a row of its own; one
+    with no pipe at all is the underline of a heading."""
+    lines = markdown.split("\n")
+    wrong: list[tuple[int, int, int]] = []
+    fenced, i = False, 0
+    while i < len(lines):
+        if _FENCE.match(lines[i]):
+            fenced = not fenced
+        elif (
+            not fenced
+            and "|" in lines[i]
+            and i + 1 < len(lines)
+            and _TABLE_DELIMITER.match(lines[i + 1])
+        ):
+            header = _cells(lines[i])
+            if _cells(lines[i + 1]) != header:
+                if "|" in lines[i + 1]:
+                    wrong.append((i + 2, _cells(lines[i + 1]), header))
+                i += 1
+                continue
+            j = i + 1
+            while j < len(lines) and lines[j].strip() and "|" in lines[j]:
+                if (cells := _cells(lines[j])) != header:
+                    wrong.append((j + 1, cells, header))
+                j += 1
+            i = j
+            continue
+        i += 1
+    return wrong
+
+
+def test_every_table_row_has_as_many_cells_as_its_header() -> None:
+    """GitHub splits a table row on every pipe a backslash does not escape, inside a code span as
+    much as outside one, and drops every cell past the header's count without a word, so the
+    source looks whole and the page does not. The Microduck page's `robot.do` and `robot.sound`
+    rows wrote `ground_pick | kick_left` and `alarm | greet` in code spans and lost every name
+    after the first, and what quackd uses them for. Rows on the XLeRobot and Kev pages, in the
+    README and in ADR-0011 lost their ends the same way, and a row the re-read added put what it
+    is used for in a fourth cell of a table with three. A row with fewer cells than its header is
+    padded rather than cut, and none here means to be short, so it is counted too."""
+    wrong = [
+        f"{path.relative_to(REPO).as_posix()}:{line}: {cells} cells under a header of {header}"
+        for path in _markdown_files()
+        for line, cells, header in _misshapen_table_rows(path.read_text(encoding="utf-8"))
+    ]
+    assert not wrong, "these rows do not have their table's cells: " + "; ".join(wrong)
+
+
+def test_the_cell_count_reads_a_row_as_github_does() -> None:
+    """The count above is only as good as its reading of a row, so it is held to the rows that
+    went wrong and to the escapes that put them right."""
+    assert _cells("| `robot.do` | `ground_pick | kick_left` | `kick` |") == 4
+    assert _cells("| `robot.do` | `ground_pick \\| kick_left` | `kick` |") == 3
+    assert _cells("Thing | Value") == 2  # outer pipes are optional
+    assert _cells("| a \\\\| b |") == 2  # an escaped backslash leaves the pipe after it bare
+    table = "| A | B |\n|---|:-:|\n| 1 | 2 |\n| 1 | 2 | 3 |\n\n| C |\n|---|\n| 4 |"
+    assert _misshapen_table_rows(table) == [(4, 3, 2)]
+    assert _misshapen_table_rows("```\n| A | B |\n|---|---|\n| 1 | 2 | 3 |\n```") == []
+    # a header its own pipes split wider than the delimiter is no table at all to GitHub
+    assert _misshapen_table_rows("| `A | B` | C |\n|---|---|\n| 1 | 2 |") == [(2, 2, 3)]
+    # and a line with a pipe over a bare underline is a heading, not a table
+    assert _misshapen_table_rows("Either | or\n---\n\ntext") == []
+
+
 @pytest.mark.parametrize(
     "name", ["README.md", "docs/adapters/writing-an-adapter.md", "docs/faq.md", "LAUNCH.md"]
 )
@@ -738,6 +1234,43 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
                 assert claim not in prose, (
                     f"{path.name} says {claim!r}; quackd has {right} ({', '.join(CLOUD_NAMES)})"
                 )
+
+
+def test_the_licences_page_counts_the_policies_the_simulator_pins() -> None:
+    """`docs/reference/licenses.md` says how many policies a Microduck ships with, and the
+    number is the set `sim3d/upstream_api.py` pins, counted off its list rather than written here.
+
+    The page said nine until the re-read on 2026-10-09, though upstream's set had been ten since
+    `v5` added `velstand.onnx` on 2026-09-14: quackd's pin was older than `v5`, and nothing
+    compared the two. The ADRs keep the count they were written with, so only the living pages
+    are held to it. The list is also where every policy file quackd names has to be: the two the
+    simulator fetches, the four it stands in for, and the walk a stock robotd loads."""
+    from quackd_microduck.sim3d import upstream_api as microduck_rl
+
+    files = microduck_rl.POLICY_FILES
+    right = _NUMBER_WORDS[len(files)]
+    licences = REPO / "docs" / "reference" / "licenses.md"
+    said = f"the {right} ONNX policies a Microduck ships with"
+    assert said in " ".join(licences.read_text(encoding="utf-8").split()), (
+        f"docs/reference/licenses.md does not say {said!r}"
+    )
+    # only the claim about the set: SECURITY.md's "two ONNX policies" are the two quackd fetches
+    for path in _living_docs():
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).lower().split())
+        for count, word in _NUMBER_WORDS.items():
+            claim = f"{word} onnx policies a microduck ships with"
+            assert count == len(files) or claim not in prose, (
+                f"{path.name} says {claim!r}; the simulator pins {right}"
+            )
+    named = {
+        microduck_rl.WALK_POLICY.name,
+        microduck_rl.STAND_POLICY.name,
+        *microduck_rl.KICK_STANDIN.name.split(", "),
+        up.VELSTAND.name,
+    }
+    assert named <= set(files), (
+        f"not in the policy set the simulator pins: {sorted(named - set(files))}"
+    )
 
 
 # ── OpenRouter's page, and the code it quotes ───────────────────────────────────────────

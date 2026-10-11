@@ -26,10 +26,12 @@ before.
 - ⏸ **A Microduck.** Run `--robot microduck:jsonrpc` against a real `robotd` and work through
   [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), whose step 0
   now rehearses the whole pilot in the physics simulator first. The path is built and audited:
-  pinned at a commit and bumped to API v23 (it was v16 against a moving link, so the handshake
-  would have refused), state actually subscribed to, and video over `webrtc://` because
-  upstream serves no frames on the socket. Pre-orders opened 2026-08-27, earliest arrivals
-  estimated around Christmas 2026 and later orders four to six months out.
+  read at daemon-v0.16.1 on API v41, a `robotd` on any version from API v23 up served with a
+  warning when it is not v41 (the handshake used to refuse every release from daemon-v0.12.0 on),
+  posture failing closed on every label but `walk`, `stand` and `sit`, state actually subscribed
+  to, and frames from `mediad`'s `GET /frame` or its WebRTC track, since `robotd`'s socket
+  carries none. Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026
+  and later orders four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
   through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really

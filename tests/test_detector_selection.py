@@ -33,11 +33,12 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.host import HOST_ENV, HostClient, HostHello
 from quackd.log import LogEvent, render_lines
 from quackd.mcp_server import build_fleet_server, fleet_from_flags
-from quackd.perception import detector_for, explicit_detector
+from quackd.perception import detector_for, explicit_detector, lens
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.perception.host import HostDetector
 from quackd.perception.yolo import YoloDetector
 from quackd.registry import Registry, RobotEntry
+from quackd.transport.mock import MockTransport
 from quackd_toddlerbot import ToddlerBotAdapter
 from quackd_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FakeHostd, dead_address
@@ -818,3 +819,160 @@ async def test_a_detector_with_a_calibrate_of_its_own_is_not_called_at_connect(
             (session,) = fleet.sessions.values()
             assert session.detector is own
     assert own.calls == 0
+
+
+# ── a lens the body assumed, and one it reports only once it has connected ──────────────
+
+#: The words a body gives the assumption its lens rests on, for the tests below.
+ASSUMED = "a tall frame is taken for the camera module's own design"
+
+
+class _ReportsItsLens(MockTransport):
+    """A real body's camera that names its lens only once it has connected, as a Microduck's on
+    `microduck:jsonrpc` does, and says whether it assumed that lens. It keeps the lens
+    `--fov-deg` gave it, as that transport does."""
+
+    name = "jsonrpc"
+    camera_url = "http://127.0.0.1:8080/frame"
+    camera_working = True
+
+    def __init__(self, fov_deg: float, assumed: str | None) -> None:
+        super().__init__()
+        self.camera_fov_deg = fov_deg
+        self.camera_fov_assumed = assumed
+        self.given: list[float] = []
+
+    def lens_given(self, fov_deg: float) -> None:
+        self.given.append(fov_deg)
+
+
+async def _run_looking(
+    detector: Any, body: Any, tmp_path: Path, *, fov_deg: float | None = None
+) -> Any:
+    """`_run_with`, with the `--fov-deg` a run was given."""
+    duck = parse_duck_text(
+        "---\nduck: 1\nname: look\ndescription: d\nrequires: [observe]\n"
+        "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
+    )
+    script = [
+        ToolCall(name="observe", arguments={}),
+        ToolCall(name="declare_success", arguments={"reason": "looked"}),
+    ]
+    return await run_duck(
+        RunConfig(
+            duck=duck,
+            provider=FakeProvider(script=script),
+            transport=body,
+            detector=detector,
+            runs_dir=tmp_path,
+            fov_deg=fov_deg,
+        )
+    )
+
+
+def test_a_lens_the_body_assumed_is_measured_through_and_called_uncalibrated(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A lens a body reports is the lens, calibrated, unless the body says it assumed it, as a
+    Microduck does of the lens it takes from a tall `/frame`. Then the detections through it say
+    they are uncalibrated, and the log names the assumption and `--fov-deg`, once, where the
+    lens used to pass for a measured one and the advice never came."""
+    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    assert lens(37.3, "jsonrpc", guess=90.0) == (37.3, True)
+    assert lens(37.3, "jsonrpc", guess=90.0, assumed=ASSUMED) == (37.3, False)
+    detector = detector_for(["camera"], None, fov_deg=37.3, backend="jsonrpc", assumed=ASSUMED)
+    assert isinstance(detector, ColorBlobDetector)
+    assert (detector.fov_deg, detector.calibrated) == (37.3, False)
+    assert _lens_warnings(caplog) == [], "said once the body has connected, not before"
+    for _ in range(2):  # as the loop and the server tell it its lens at connect
+        detector.calibrate(37.3, backend="jsonrpc", assumed=ASSUMED)
+    (told,) = _lens_warnings(caplog)
+    assert ASSUMED in told and "--fov-deg" in told, told
+
+
+def test_yolo_and_the_boards_detector_take_an_assumed_lens_as_uncalibrated(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The detectors that learn the lens at connect learn whether it was assumed too."""
+    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    yolo = _yolo_70(monkeypatch)
+    board = HostDetector(HostClient("127.0.0.1:1"), fov_deg=62.0)
+    for detector in (yolo, board):
+        detector.calibrate(37.3, backend="jsonrpc", assumed=ASSUMED)
+        assert (detector.fov_deg, detector.calibrated) == (37.3, False)
+    told = _lens_warnings(caplog)
+    assert len(told) == 2 and all(ASSUMED in said for said in told), told
+
+
+@pytest.mark.parametrize(
+    ("assumed", "calibrated"), [(None, True), (ASSUMED, False)], ids=["reported", "assumed"]
+)
+async def test_a_run_measures_through_the_lens_its_body_reports_when_it_connects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    assumed: str | None,
+    calibrated: bool,
+) -> None:
+    """`quackd run` builds its colour detector before the body connects, from the body's own
+    description, and a Microduck describes a camera with no lens, which its camera reports only
+    once a frame has come. The detector kept the simulator's 90 degrees for the whole run, the
+    lens the camera reported unread, while the YOLO and board detectors learned it at connect.
+    The colour detector learns it then too: calibrated when the camera reported it, and
+    uncalibrated, with the assumption named, when the camera assumed it. Nothing calls the lens
+    a guess before connect, when the camera had not yet said it."""
+    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    loops = _loops(monkeypatch)
+    from quackd_microduck import MicroduckAdapter, describe
+
+    built = detector_for(describe("jsonrpc").sensors, None, fov_deg=None, backend="jsonrpc")
+    assert isinstance(built, ColorBlobDetector) and (built.fov_deg, built.calibrated) == (
+        90.0,
+        False,
+    ), "what quackd run builds before the body connects"
+    result = await _run_looking(built, MicroduckAdapter(_ReportsItsLens(37.3, assumed)), tmp_path)
+    assert result.outcome == "success", result.reason
+    (loop,) = loops
+    assert loop.cfg.detector is built
+    assert (built.fov_deg, built.calibrated) == (37.3, calibrated)
+    told = _lens_warnings(caplog)
+    if assumed is None:
+        assert told == [], "a lens the camera reported is no guess, before connect or after"
+    else:
+        (said,) = told
+        assert ASSUMED in said, said
+
+
+async def test_fov_deg_reaches_the_body_so_its_state_names_the_lens_the_detector_uses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`--fov-deg` went to the detector alone, and a Microduck went on listing the lens it had
+    assumed in every state, so the pilot was told to discount bearings for a lens nobody was
+    measuring through. The loop hands the flag on to the body at connect, which says so."""
+    loops = _loops(monkeypatch)
+    from quackd_microduck import MicroduckAdapter
+
+    body = _ReportsItsLens(37.3, ASSUMED)
+    result = await _run_looking(None, MicroduckAdapter(body), tmp_path, fov_deg=50.0)
+    assert result.outcome == "success", result.reason
+    (loop,) = loops
+    assert (loop.cfg.detector.fov_deg, loop.cfg.detector.calibrated) == (50.0, True)
+    assert body.given == [50.0]
+
+
+async def test_serve_mcp_measures_through_an_assumed_lens_uncalibrated(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`serve-mcp` has no `--fov-deg`, so a body's lens is all it has, and one the body assumed
+    is measured through uncalibrated, with the advice to pass a lens in the log."""
+    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    from quackd_microduck import MicroduckAdapter
+
+    async with connected({"duck": MicroduckAdapter(_ReportsItsLens(37.3, ASSUMED))}) as (
+        _client,
+        fleet,
+    ):
+        (session,) = fleet.sessions.values()
+        assert isinstance(session.detector, ColorBlobDetector)
+        assert (session.detector.fov_deg, session.detector.calibrated) == (37.3, False)
+    assert any(ASSUMED in said for said in _lens_warnings(caplog))

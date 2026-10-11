@@ -465,9 +465,25 @@ write says nothing about what that write did.
 
 - **Run on the floor, not a table.** A 25 cm biped and a table edge do not mix.
 - **Keep pets and kids clear of `kick`** (and `grab`, and `roulade`).
-- **The gamepad preempts remote control.** Upstream arbitrates authority; there is no
-  stop button because releasing the sticks stops the robot via the deadman. quackd does not
-  try to out-rank the pad.
+- **A gamepad does not out-rank quackd.** robotd keeps one twist, the newest from any client,
+  and ranks no client above another (`padd drives while a pad is connected` on the
+  [Microduck page](../adapters/microduck/README.md)). A connected pad whose sticks nobody touches
+  sends a stop every 100 ms, and quackd re-sends its twist every 100 ms while a verb walks, so
+  the twist the duck walks on flips between the two, and letting go of sticks nobody was
+  touching changes nothing. A stick that asks for motion goes out on every tick of the pad,
+  more often than quackd's twist, so robotd holds the pad's most of the time. Once robotd's
+  state has gone three frames without showing quackd's twist, quackd holds the walk back and
+  the verb fails with `robotd has not taken robot.move`, and letting go of the stick after that
+  leaves the pad's stop as the newest twist until the pilot sends its next walk. What ends a
+  quackd walk outright is quackd's own `stop`, from Ctrl-C or `q` at the terminal, or the pad
+  button that sits the duck, `sit_toggle` on A unless the robot's owner moved it, since quackd
+  sends no walk to a duck that is not standing. Nobody has tried any of this on a duck.
+- **robotd's deadman does not fire while quackd walks the duck.** It zeroes a twist older than
+  0.5 s, and quackd re-sends its twist every 100 ms for as long as a verb walks, so the deadman
+  stops the legs only once quackd's twists stop arriving: a tunnel pulled out, a laptop asleep,
+  a process killed. A pad that drops out mid-walk is none of those. The walk goes on, and
+  `padd` asks robotd to sit the duck 1 s after the pad went, after which quackd sends no walk
+  to a duck that is not standing.
 - quackd never sends `robot.relax` (torque off — the robot collapses) or `robot.init`
   (moves every joint). Use `robotctl` for those, with the robot on its stand.
 - A good first contract: `allow: [quack, gaze, stop]`, then add walking.

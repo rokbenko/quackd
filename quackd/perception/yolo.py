@@ -99,9 +99,11 @@ class YoloDetector:
         # False when `fov_deg` is a default rather than this lens's, as `ColorBlobDetector`
         # carries it: the detections still point the right way and say their size is a guess
         self.calibrated = calibrated
-        self._told_lens = False
+        self._told_lens: str | None = None
 
-    def calibrate(self, fov_deg: float | None, *, backend: str | None) -> None:
+    def calibrate(
+        self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
+    ) -> None:
         """Set the lens from what is known about the camera in front of the run, by the rule
         `HostDetector.calibrate` follows (`perception.lens`).
 
@@ -109,19 +111,21 @@ class YoloDetector:
         loop calls this again with what the body reported: a body described without a camera
         may report one of its own then, or have only a `--host` board's, and the lens is
         whichever one the primary view comes through. With none given on a real body the lens
-        is a guess, the detections carry `calibrated=False`, and this says so once."""
-        from quackd.perception import lens
+        is a guess, and with one the body assumed (`assumed`) it is that one: the detections carry
+        `calibrated=False` either way, and this says so once."""
+        from quackd.perception import lens, tell_lens
 
-        self.fov_deg, self.calibrated = lens(fov_deg, backend, guess=GUESSED_FOV_DEG)
-        if not self.calibrated and not self._told_lens:
-            self._told_lens = True
-            logger.warning(
-                "no camera field of view given for a %s camera, so YOLO's detections use %.0f "
-                "degrees. Distances will be out by tens of percent: pass --fov-deg (a Pi Camera "
-                "Module 2 is about 62) once you know yours.",
-                backend,
-                self.fov_deg,
-            )
+        self.fov_deg, self.calibrated = lens(
+            fov_deg, backend, guess=GUESSED_FOV_DEG, assumed=assumed
+        )
+        tell_lens(
+            self,
+            backend,
+            f"no camera field of view given for a {backend} camera, so YOLO's detections use "
+            f"{self.fov_deg:.0f} degrees. Distances will be out by tens of percent: pass --fov-deg "
+            "(a Pi Camera Module 2 is about 62) once you know yours.",
+            assumed=assumed,
+        )
 
     def detect(self, image: Image.Image) -> list[Detection]:
         w, h = image.size

@@ -7,10 +7,24 @@ proves UNVERIFIED names are only reachable from the `mujoco` backend.
 
 Two upstreams meet here. The robot's MuJoCo model and its meshes come from
 https://github.com/pollen-robotics/microduck_rl at commit
-2b25a48b08f1f17bc38c90bb03144c81fbd9ed07 (`develop`, the default branch, 2026-09-06; read
-2026-09-07). The policies it trains are published to the Hugging Face Hub as
+2b25a48b08f1f17bc38c90bb03144c81fbd9ed07 (`develop`, the default branch, 2026-09-06). The
+policies it trains are published to the Hugging Face Hub as
 https://huggingface.co/pollen-robotics/microduck-policies, read at revision
-088524a64e2557dc453256b6071dbb9d23888802 (`main`, 2026-09-07).
+6677ec007142bbaf05123a468f6ae58d13808786 (tag `v7`, 2026-10-05).
+
+Both were first read on 2026-09-07 and read again on 2026-10-09. The re-read moved the policies
+from 088524a64e2557dc453256b6071dbb9d23888802, an untagged revision between `v4` and `v5`, to
+`v7`, the set daemon-v0.16.1 seeds a robot with. `alpha_walking.onnx` and `alpha_stand.onnx` are
+the same bytes at both, so neither hash below moved. `v5` added `velstand.onnx`, the one network
+every robotd from daemon-v0.13.0 walks and stands on, `v6` replaced `alpha_sitstand.onnx`, and
+`manifest.json` gained velstand's entry, so the manifest's hash is the one that changed.
+`microduck_rl`'s `develop` had moved 36 commits on, to 273afe0b31c4ab365b9ff806a927b63ac92b5ddd
+(2026-10-05), and every file quackd fetches from it, `robot_walk.xml` and its 38 meshes, is the
+same bytes there. Of the other files the refs below cite, `LICENSE`, `export.py` and the velocity
+task's config did not change, and `README.md` and `scripts/infer_policy.py` only gained lines,
+the licence sentence and every fact of the control loop reading as they did. So the commit
+stays: moving it would rename the cache and nothing else, and send every user to fetch the same
+10 MB again.
 
 quackd never imports `microduck_rl`: it requires Python 3.12 exactly, pulls torch, warp
 and mjlab, and needs a CUDA GPU to train. What quackd needs from it is three files' worth
@@ -27,10 +41,10 @@ from quackd.upstream import UpstreamRef
 
 REPO = "https://github.com/pollen-robotics/microduck_rl"
 PIN = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"  # develop, 2026-09-06
-READ_ON = "2026-09-07"
+READ_ON = "2026-10-09"
 
 POLICIES_REPO = "https://huggingface.co/pollen-robotics/microduck-policies"
-POLICIES_PIN = "088524a64e2557dc453256b6071dbb9d23888802"  # main, 2026-09-07
+POLICIES_PIN = "6677ec007142bbaf05123a468f6ae58d13808786"  # v7, 2026-10-05
 
 
 def src(path: str, line: int | None = None) -> str:
@@ -198,7 +212,11 @@ STAND_POLICY = UpstreamRef(
     "alpha_stand.onnx",
     "VERIFIED",
     policy_url("alpha_stand.onnx"),
-    "same shape; what the daemon and the browser run while the twist is below 0.05",
+    "same shape; what the simulator and the browser run while the twist is below 0.05 "
+    "(STAND_SWITCH). Not what a stock robot runs: every robotd from daemon-v0.13.0 walks and "
+    "stands on velstand.onnx with no standing network, and keeps this file and "
+    "alpha_walking.onnx in the set 'for a board that loads them back by hand' "
+    "(robotd-params/src/lib.rs:1858-1859 at daemon-v0.16.1)",
 )
 STAND_POLICY_SHA256 = "1569268713e40deea795dd2922dba50d3621e15a872855408b6b1b125b1c094b"
 POLICY_MANIFEST = UpstreamRef(
@@ -208,7 +226,29 @@ POLICY_MANIFEST = UpstreamRef(
     "schema 2: obs_len 61, action_len 14, control_hz 50, one entry per policy with its "
     "kind (perpetual, scripted, episodic) and command encoding",
 )
-POLICY_MANIFEST_SHA256 = "d0c36e7b71129dd617339c63bcb1d704eab282c8617ebf14c2013a01abfb2dda"
+POLICY_MANIFEST_SHA256 = "5c6a73f95f388f131aaef570f6113f0d36b84a72d5755662cd57e67adf7fd24c"
+#: Every policy `manifest.json` lists at the revision, in its order, which is also every `.onnx`
+#: file in the revision's tree. `docs/reference/licenses.md` counts them.
+POLICY_FILES: tuple[str, ...] = (
+    "alpha_walking.onnx",
+    "velstand.onnx",
+    "alpha_stand.onnx",
+    "roller.onnx",
+    "alpha_sitstand.onnx",
+    "alpha_ground_pick.onnx",
+    "roller_crouch.onnx",
+    "roulade.onnx",
+    "ball_kick_left.onnx",
+    "ball_kick_right.onnx",
+)
+POLICY_SET = UpstreamRef(
+    ", ".join(POLICY_FILES),
+    "VERIFIED",
+    f"{POLICIES_REPO}/tree/{POLICIES_PIN}",
+    "the set a Microduck ships with: daemon-v0.16.1's scripts/seed-policies.sh seeds a robot from "
+    "v7, and velstand.onnx is the walk its robotd loads. quackd fetches two of them (WALK_POLICY, "
+    "STAND_POLICY), stands in for four (KICK_STANDIN) and runs none of the rest",
+)
 POLICY_METADATA = UpstreamRef(
     "joint_names, default_joint_pos, action_scale, observation_names, command_names",
     "VERIFIED",
@@ -318,10 +358,13 @@ KICK_STANDIN = UpstreamRef(
     "ball_kick_left.onnx, ball_kick_right.onnx, alpha_ground_pick.onnx, alpha_sitstand.onnx",
     "UNVERIFIED",
     policy_url("manifest.json"),
-    "episodic policies quackd has not wired: kick and scoop use the cartoon's contact "
-    "rules (a velocity on the ball inside 0.30 m and ±35°, a 60 % scoop inside 0.18 m), sit "
-    "is refused, and a fall is recovered by resetting the pose. Each is listed in the "
-    "state's `assumptions` so the pilot and the transcript know",
+    "the episodic and scripted policies quackd has not wired: kick and scoop use the cartoon's "
+    "contact rules (a velocity on the ball inside 0.30 m and ±35°, a 60 % scoop inside 0.18 m), "
+    "sit is refused, and a fall is recovered by resetting the pose. Each is listed in the "
+    "state's `assumptions` so the pilot and the transcript know. The kicks and the scoop are the "
+    "files quackd tried. alpha_sitstand.onnx is v6's, which upstream says 'no longer tips over "
+    "backward when the head moves abruptly while seated', and the one quackd tried was the file "
+    "before it",
 )
 
 

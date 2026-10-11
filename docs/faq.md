@@ -8,9 +8,10 @@ still the default. `sim2d` starts in a second, needs no network, runs anywhere, 
 three other bodies that have a simulator and every CI sweep use. It tests the *agent loop* —
 search, approach, act, verify — and it will never tell you whether a gait works, because it has no joints
 ([ADR-0007](adr/0007-sim2d-cartoon.md)). `--robot microduck:mujoco` is upstream's own Microduck
-model in MuJoCo, walking on `alpha_walking.onnx`, the policy Pollen trained, at 50 Hz on the
-CPU. The ball rolls, the duck undershoots what you asked for, and a pilot that works there has
-met a robot that does not do what it is told. Same arena, same seeded layout for the duck and
+model in MuJoCo, walking on `alpha_walking.onnx`, a policy Pollen trained before the
+`velstand.onnx` a robot on a current release walks on, at 50 Hz on the CPU. The ball rolls, the
+duck undershoots what you asked for, and a pilot that works there has met a robot that does not
+do what it is told. Same arena, same seeded layout for the duck and
 the ball, same verbs, so a `.duck` written for one runs on the other
 ([ADR-0030](adr/0030-mujoco-physics-backend.md)). One exception, and it is the only one: the
 cartoon stands a person in its arena and the physics world does not, so `follow-me`, whose
@@ -394,8 +395,9 @@ rather than left unpriced, so a sim run honestly reads `cost $0`.
 is POSIX-only; forward it with `ssh -L 9870:/run/robotd.sock <robot>` and use
 `--address tcp://127.0.0.1:9870`.
 
-**Can I run it on my Microduck today?** `--robot microduck:jsonrpc` speaks the verified
-`duck-ipc-proto` v23 vocabulary but has never touched hardware. Start with `--dry-run`,
+**Can I run it on my Microduck today?** `--robot microduck:jsonrpc` speaks `duck-ipc-proto` as
+quackd read it at daemon-v0.16.1, API v41, serves a robot on any version from API v23 up with a
+warning when it is not v41, and has never touched hardware. Start with `--dry-run`,
 read [adapters/microduck/README.md](adapters/microduck/README.md), and tell us what happened.
 
 ## Driving it from somewhere else
@@ -447,10 +449,11 @@ handshake (`--token`, or `QUACKD_DUCK_TOKEN` for the duck and `QUACKD_TODDLERBOT
 ToddlerBot). The duck's camera server has no authentication at
 all, so tunnel it. The daemon quackd ships for a Jetson cannot move a robot at all. It binds
 loopback too, and with a token set (`--token`, `--token-file` or `QUACKD_HOST_TOKEN`) it checks
-it on every request the same way, because what it serves is a camera and a GPU. On a
-Microduck the physical gamepad preempts remote commands; on an Open Duck it does not, because
+it on every request the same way, because what it serves is a camera and a GPU. A gamepad
+does not out-rank remote commands on either duck. On a Microduck, robotd walks on the newest
+twist from any client, the pad's or quackd's, and ranks none above another; on an Open Duck,
 quackd's daemon *replaces* the gamepad the walk loop reads, which makes the power switch the
-only thing that always wins ([concepts/safety.md](concepts/safety.md)).
+only thing that always wins there ([concepts/safety.md](concepts/safety.md)).
 
 **What stops the model itself from doing something dangerous?** The executor, not the
 model's judgment: every verb call is checked against the loaded `.duck`'s allowlist,

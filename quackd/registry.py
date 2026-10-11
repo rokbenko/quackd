@@ -27,7 +27,7 @@ import contextlib
 import json
 import os
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -891,8 +891,17 @@ class ProbeResult:
     elapsed_s: float
 
 
-async def probe_entry(entry: RobotEntry, *, timeout_s: float = PROBE_TIMEOUT_S) -> ProbeResult:
-    """Connect, ask how it is, and close. Never raises: an unreachable robot is an answer."""
+async def probe_entry(
+    entry: RobotEntry,
+    *,
+    timeout_s: float = PROBE_TIMEOUT_S,
+    before_connect: Callable[[RobotEntry], None] | None = None,
+) -> ProbeResult:
+    """Connect, ask how it is, and close. Never raises: an unreachable robot is an answer.
+
+    `before_connect` is handed the entry once its body is built and just before it connects,
+    which a robot the probe skips, or one whose body cannot be built, never reaches: `quackd
+    robot list --probe` says there that a robot is on a backend its adapter is retiring."""
     import asyncio
     import time
 
@@ -918,6 +927,8 @@ async def probe_entry(entry: RobotEntry, *, timeout_s: float = PROBE_TIMEOUT_S) 
             # registered with is what decides whether torque may drop at the end
             rest_pose=entry.rest_pose,
         )
+        if before_connect is not None:
+            before_connect(entry)
         await asyncio.wait_for(adapter.connect(), timeout=timeout_s)
         health = await asyncio.wait_for(adapter.health(), timeout=timeout_s)
         detail = health.reason or "ok"
@@ -965,15 +976,23 @@ def _torque_phrase(note: str) -> str:
 
 
 def probe_all(
-    entries: Iterable[RobotEntry], *, timeout_s: float = PROBE_TIMEOUT_S
+    entries: Iterable[RobotEntry],
+    *,
+    timeout_s: float = PROBE_TIMEOUT_S,
+    before_connect: Callable[[RobotEntry], None] | None = None,
 ) -> dict[str, ProbeResult]:
-    """Every robot at once, because they are separate machines and waiting serially is rude."""
+    """Every robot at once, because they are separate machines and waiting serially is rude.
+    `before_connect` goes to each robot's `probe_entry`."""
     import asyncio
 
     rows = list(entries)
 
     async def run() -> list[ProbeResult]:
-        return list(await asyncio.gather(*(probe_entry(e, timeout_s=timeout_s) for e in rows)))
+        return list(
+            await asyncio.gather(
+                *(probe_entry(e, timeout_s=timeout_s, before_connect=before_connect) for e in rows)
+            )
+        )
 
     return dict(zip((e.name for e in rows), asyncio.run(run()), strict=True))
 

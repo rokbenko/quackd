@@ -217,8 +217,16 @@ async def run_pilot_flock(
     flock_name: str | None = None,
     run_name: str | None = None,
     price: str | None = None,
+    before_connect: Callable[[Sequence[RobotSpec]], None] | None = None,
 ) -> PilotFlockResult:
-    """One pilot per member, all at once, until every one of them has ended."""
+    """One pilot per member, all at once, until every one of them has ended.
+
+    `before_connect` is handed every member's robot, in roster order, once all of them are
+    built. Building is the last thing that can refuse the flock before its members connect, and
+    they all start to connect together, so whatever a caller says there is said of bodies that
+    are about to connect, every one of them: `quackd run` says there which members are on a
+    backend their adapter is retiring (`cli._deprecated_backends`). A flock refused before then,
+    by its contract or by a body that could not be built, never calls it."""
     members = list(roster)
     if not MIN_MEMBERS <= len(members) <= MAX_MEMBERS:
         raise ValueError(
@@ -247,6 +255,8 @@ async def run_pilot_flock(
         )
         for name, entry in roster.items()
     }
+    if before_connect is not None:
+        before_connect([roster[name].robot_spec for name in members])
 
     stem = duck.name if duck.name.startswith("flock") else f"flock-{duck.name}"
     run_dir = new_run_dir(runs_dir, stem, run_label(run_name) if run_name else None)

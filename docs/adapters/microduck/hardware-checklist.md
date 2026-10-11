@@ -6,12 +6,23 @@ abort condition, and they are ordered so that the duck's feet do not touch the g
 step 9.
 
 **This is a robot you are probably borrowing.** Nothing here installs anything on it, stops any
-of its services, or needs `sudo`. Step 6 has an alternative that does, and it is marked, and it
-is the one to skip unless whoever owns the duck has said yes.
+of its services, or needs `sudo`, unless the account you log in with is not in the robot's
+`robot` group. Step 1 says how to tell, and putting the account in the group is marked as the
+one change to make only once whoever owns the duck has said yes.
 
-**The gamepad is the real e-stop.** Upstream is explicit that `padd` has authority and quackd
-does not arbitrate. Somebody should be holding it. quackd's `stop` is a request over a socket,
-and step 8 is where you find out what happens when that socket is not there.
+**Know what stops the duck before anything moves, because the gamepad does not out-rank
+quackd.** robotd walks on the newest twist from any client and ranks none above another. A pad
+whose sticks nobody touches sends a stop every 100 ms, and quackd re-sends its twist as often,
+so letting go of sticks you were not touching changes nothing, and a walk goes on between the
+pad's stops. Push a stick and the pad sends on every tick, more often than quackd, so it takes
+the walk over at once; quackd stops sending a walk once robotd's state no longer shows it, and
+letting go after that stops the duck until the pilot sends its next walk. What ends a quackd walk
+outright is quackd's `stop`, which Ctrl-C or `q` in the terminal running it sends, or the pad's
+sit button, A unless the robot's owner moved it (`ssh microduck@<duck> robotctl pad bindings`
+says), since quackd sends no walk to a duck that is not standing. Somebody should be holding the
+pad all the same, and should know which of these they are reaching for. quackd's `stop` is a
+request over a socket, and step 8 is where you find out what happens when that socket is not
+there.
 
 ## 0. Rehearse in the physics simulator first
 
@@ -38,20 +49,40 @@ no camera transport and no deadman. Four skills there are quackd's own stand-ins
 robot's, and say so in `state.extras.assumptions`: `kick` and `grab` use the cartoon's contact
 rules, `sit` is refused, and a fall is recovered by resetting the model. The gait floor in the
 simulator was measured on one machine with the XML's own actuators, and upstream deploys a
-different actuator model, so the speeds that walk there are not the speeds that will walk here.
+different actuator model and, from daemon-v0.13.0, a different network too: a robot walks and
+stands on `velstand.onnx`, where the simulator runs `alpha_walking.onnx` and `alpha_stand.onnx`.
+So the speeds that walk there are not the speeds that will walk here.
 
 ## 1. Reach the daemon at all
 
-`robotd` listens on a unix socket, not a port, so from a laptop it is an ssh forward:
+`robotd` listens on a unix socket, not a port, so from a laptop it is an ssh forward, as
+`microduck`, the account upstream's own tools log in with:
 
 ```bash
-ssh -L 9870:/run/robotd.sock radxa@<duck>
+ssh -L 9870:/run/robotd.sock microduck@<duck>
 ```
 
-Windows cannot open a unix socket at all, so this is not optional there — quackd says so and
-names this command if you try.
+`<duck>` is the robot's address on your network, which upstream's `duckctl ip` prints off the
+robot's Bluetooth advertisement. Windows cannot open a unix socket at all, so this is not
+optional there — quackd says so and names this command if you try.
 
-> Abort if ssh does not come up. Everything below is this tunnel.
+The socket is `root:robot`, mode 0660, and robotd checks nothing else about who connects, so
+the forward works only for an account in the `robot` group, or for root. Check it before
+anything else:
+
+```bash
+ssh microduck@<duck> id -nG
+```
+
+Upstream's group file creates the group with nobody in it, and its provisioning scripts add only
+whoever ran them with `sudo`. A board provisioned as `microduck`, which is how upstream's own
+example runs `scripts/provision-board.sh`, has it in the group, and one set up any other way may
+not.
+
+> Abort if ssh does not come up, or if `robot` is not among the groups it prints. Everything
+> below is this tunnel, and without the group the socket refuses it. **Only with permission:**
+> `sudo usermod -aG robot microduck` on the duck adds the account, from its next ssh login on.
+> That is a change to somebody else's robot, so ask whoever owns it first.
 
 ## 2. What the robot says it is
 
@@ -59,13 +90,23 @@ names this command if you try.
 quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870
 ```
 
-Read three things: that the handshake passed, what `robot.health` said, and the verb list.
+Read three things: that the handshake passed, what `robot.health` said, and the verb list. The
+`robotd` row under health should name the release, the API version and the revision the robot
+answered with.
 
-> **Abort on an API version mismatch.** quackd refuses rather than guessing, and it prints
-> both numbers. quackd is written against the version in
-> [`docs/adapters/microduck/README.md`](README.md); a prototype can be ahead of public `main` as
-> easily as behind it. If they differ, read the robot's own `duck-ipc-proto` before going on —
-> the field shapes matter more than the number.
+> **Abort if the handshake is refused.** quackd refuses a robotd older than API v23, the oldest
+> it has read end to end, and one whose `hello` names no version, and it prints why. A robot on
+> any other version is served, and when that version is not the one in
+> [`docs/adapters/microduck/README.md`](README.md), `doctor`'s advice says so. If it says the
+> robot is newer than what quackd read, go through the robot's own `duck-ipc-proto` version
+> notes, above `API_VERSION` in its `lib.rs`, for anything touching the calls quackd makes before
+> going on. The field shapes matter more than the number, and a call whose shape moved fails the
+> verb that sends it, naming the call.
+
+> Read the `pickup_detection` row too. `False` means this robotd is older than its pick-up
+> detector, so nothing tells quackd when somebody is holding the duck: stop it before you pick it
+> up, every time. `stand_up` refuses to run on such a robot, so a duck that falls is yours to
+> stand up.
 
 > Abort if `healthy` is false, or if the battery is low. A duck that browns out mid-walk
 > teaches you nothing.
@@ -79,9 +120,13 @@ quackd run microduck-lookout --robot microduck:jsonrpc --address tcp://127.0.0.1
 
 Then read `report_state` in the transcript. **`posture` must not be `unknown`.**
 
-`unknown` means no `robot.state` frames are arriving, and everything that decides whether the
-duck may walk is reading nothing: `fallen` is `false` because nobody is looking, not because
-the duck is upright. quackd refuses to walk in that state on purpose.
+`unknown` means quackd cannot vouch for the duck's posture, and `extras.posture_reason` says
+why. If it says no `robot.state` frame has arrived, that the newest one is old, or that it
+carries no safety block, everything that decides whether the duck may walk is reading nothing:
+`fallen` is `false` because nobody is looking, not because the duck is upright. Otherwise
+robotd is reporting a policy label other than `walk`, `stand` or `sit`, a limp duck, or a duck
+somebody is holding, and the reason names which. quackd refuses to walk in either case on
+purpose.
 
 > Abort if posture is `unknown`. Check that `robot.subscribe` was accepted — `report_state`
 > carries its answer in `extras.subscribed`, including the robot's real skill list.
@@ -106,29 +151,45 @@ quackd run microduck-lookout --robot microduck:jsonrpc --address tcp://127.0.0.1
 
 ## 6. Video
 
-Frames are the reason most people are doing this, and upstream serves none over `robotd`'s
-socket. The camera is an H.264 WebRTC track from `mediad` and nothing else.
+Frames are the reason most people are doing this, and `robotd`'s socket carries none. `mediad`
+serves them, and the camera to start with is its own snapshot route, `GET /frame` on its console
+port, one upright PNG per request:
 
 ```bash
-ssh -L 8443:127.0.0.1:8443 radxa@<duck>          # in another terminal
+ssh -L 8080:127.0.0.1:8080 microduck@<duck>      # in another terminal
+quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
+  --camera-url http://127.0.0.1:8080/frame
+```
+
+`doctor` fetches a frame and prints its size. On an alpha, expect a picture taller than wide,
+720 by 1280 at `mediad`'s default quality: quackd takes that shape for an alpha's camera and
+measures through the lens it assumes for one, which every state then lists in
+`extras.assumptions` ([the Microduck page](README.md#getting-a-picture-off-a-real-microduck)).
+On a beta, expect a wide one, which gets no lens. It needs no extra, takes no media session, and
+installs and stops nothing on the duck. The route arrived in `daemon-v0.13.0`.
+
+> Abort if no frame arrives. quackd waits 5 s for the first one, through the `503` that `mediad`
+> answers while it cannot hand a frame out, and `doctor` prints the last failure under the
+> camera's row: `mediad`'s own reason when its `503` never cleared, a `404`, which is a robot
+> older than the route, or a refused connection.
+
+**WebRTC instead**, for the stream: `mediad`'s H.264 track, which quackd turns upright by the
+mount `mediad` reports and measures through the focal length of `mediad`'s own calibration,
+taking the principal point for the frame's centre, which on an alpha leaves every bearing about
+6° to the left ([the Microduck page](README.md)). It needs `quackd[microduck-camera]`, the same
+duck package with its WebRTC camera (`uv pip install 'quackd[microduck-camera]'`), and it takes
+the robot's one media session, so the browser console cannot be open at the same time:
+
+```bash
+ssh -L 8443:127.0.0.1:8443 microduck@<duck>      # in another terminal
 quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
   --camera-url webrtc://127.0.0.1:8443
 ```
 
-`doctor` fetches a frame and prints its size. Needs `quackd[microduck-camera]`, which is the
-same duck package with its WebRTC camera: `uv pip install 'quackd[microduck-camera]'`.
-
-This takes the robot's one media session, so the browser console cannot be open at the same
-time. It installs nothing on the duck.
-
 > Abort if no frame arrives. Check `mediad` registered a producer — if its pipeline never
-> reached PLAYING there is nothing to connect to, and quackd says so rather than hanging.
-> ICE on a shared office network is the next thing to suspect.
-
-**The alternative, only with permission:** a snapshot server on the duck itself needs
-`sudo systemctl stop mediad` first, because `mediad` holds `/dev/video0` for the life of its
-process. That stops their console and their WebRTC. Do not do this to a borrowed robot without
-asking.
+> reached PLAYING there is nothing to connect to, and quackd says so rather than hanging. A
+> `mediad` that never says how its camera is mounted gets no frame handed out, and quackd says
+> that too. ICE on a shared office network is the next thing to suspect.
 
 ## 7. The head, on a stand
 
@@ -138,17 +199,41 @@ whether it clamped.
 > Abort if the head moves somewhere you did not ask for. The IK is upstream's, and a clamp is
 > expected — an unexpected direction is not.
 
-## 8. Pull the tunnel out, mid-walk
+A robot on `daemon-v0.16.1` or later glances around on its own once nobody has steered its head
+for two seconds and it has then stood still for two more, about four seconds after the last head
+command, and each spell of glancing fades in rather than jumping. After a `gaze`, quackd sends the
+head where the gaze put it again every second, so the head should stay where it was pointed for as
+long as you watch, and `report_state` should show what is held in `extras.gaze_hold`, and about
+the bearing you asked for in `extras.head_yaw_deg`. A `stop` ends the hold, at most a second after
+the head last went out, so from 3 to 4 s after the stop the head may start to look around, at its
+full size 1.5 s later: that is robotd's, not a fault. Pose the head with the gamepad while a gaze
+is held, and quackd should let go of it rather than pull it back, with `extras.gaze_released`
+saying `overridden`.
 
-**Feet still off the ground.** Start a short walk, and kill the ssh tunnel while it is moving.
+> Abort if the head wanders off a gaze while `extras.gaze_hold` says it is held, or if quackd
+> keeps pulling the head back from the gamepad.
 
-What should happen: `robot.move` notifications stop arriving and `robotd`'s deadman zeroes the
-velocity. quackd's heartbeat fails, says it is sending a stop, and aborts the run — and it will
-tell you if that stop could not be delivered, which is the honest outcome when the link is the
-thing that broke.
+## 8. Pull the tunnel out, mid-walk, with the pad switched off
 
-> **Abort the whole session if the legs keep driving.** The deadman is the protection every
-> step below this one depends on. Nothing else quackd does matters if it is not there.
+**Feet still off the ground, and no pad connected.** A connected pad sends robotd a stop every
+100 ms while nobody touches it, and robotd keeps the newest twist, so with a pad on, its stop
+halts the legs within 100 ms of quackd's last twist whether or not the deadman works, and this step
+would prove nothing about the deadman. Switch the pad off, and expect `padd` to ask robotd to sit
+the duck 1 s later, as it does whenever a pad that was driving goes. In an ssh session of its
+own, not the tunnel, check that `robotctl pad status` says `padd` is not driving, stand the duck
+again if it sat with `robotctl robot do sit_toggle`, the request the pad's sit button sends, and
+leave `robotctl monitor` running there: it shows what robotd was asked for beside what it applied
+and what limited it. Then start a short walk, and kill the ssh tunnel while it is moving.
+
+What should happen: `robot.move` notifications stop arriving, and 0.5 s after the last one
+`robotd`'s deadman zeroes the velocity, which `robotctl monitor` should name as what limited it.
+quackd's heartbeat fails, says it is sending a stop, and aborts the run — and it will tell you if
+that stop could not be delivered, which is the honest outcome when the link is the thing that
+broke.
+
+> **Abort the whole session if the legs keep driving.** The deadman is what stops a walk whose
+> link dies while no pad is connected, which is every run over MCP and every run nobody holds a
+> pad for. Nothing else quackd does matters if it is not there.
 
 The command, since this step never named one. `--llm fake` answers a free-form goal with a fixed script that ignores it, so it needs a real model:
 
@@ -160,19 +245,41 @@ quackd run --goal "walk in place with small steps, do not turn, then stop" \
 
 ## 9. Feet down
 
-Now, and only now, put the duck on the floor and run a short walk. Hand on the gamepad.
+Now, and only now, put the duck on the floor and run a short walk. Switch the pad back on and
+keep it in your hand.
 
 ```bash
 quackd run find-and-kick --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 \
-  --camera-url webrtc://127.0.0.1:8443 --llm anthropic --memory-dir ./duck-day
+  --camera-url http://127.0.0.1:8080/frame --llm anthropic --memory-dir ./duck-day
 ```
 
-Start with `--no-memory` for a clean first run, then `--memory-dir` so the campaign's notes stay
-out of your simulator's.
+The camera is step 6's, through the same tunnel. Start with `--no-memory` for a clean first run,
+then `--memory-dir` so the campaign's notes stay out of your simulator's.
 
-> Abort and let the gamepad take it if the duck goes over. Nothing quackd sends stands a fallen
-> duck up on its own: `stand_up` is `robot.enable {on: true}` and it checks `safety.fallen`
-> afterwards rather than claiming upright, so the recovery is `robotd`'s or it is the owner's.
+With the pad on and its sticks untouched, `padd` sends robotd a stop every 100 ms and quackd
+sends its twist as often, so the twist the duck walks on flips between the two, and nobody knows
+yet how a duck walks on that. quackd checks each walk against robotd's own `move.requested`,
+counting the frames robotd sends after it has answered a call of quackd's, and a `search_scan`
+counts its turns together, since the scan's own stop ends each one. Once robotd's state has gone
+three frames in a walk without showing quackd's twist, or two past the first of each turn across
+a scan's turns, the `search_scan` or `walk_to` sending it stops the duck at its next twist and
+fails with `robotd has not taken robot.move`, robotd still saying it was asked for `[0, 0, 0]`.
+A `search_scan` that stops says how many of its turns robotd's state showed it took, or that it
+showed none, rather than how many quackd sent. Whether that happens depends on how the pad's
+stops and quackd's twists fall between robotd's frames, so it may come on some walks and not
+others. A scan stops only at a turn it sends after the verdict, so one whose last turn brings the
+verdict, or whose turns are too short to, ends not finding what it looked for, and says how many
+of its turns robotd's state confirmed: a turn it did not confirm is a view the duck may never have
+turned to. A stick you push is sent on every tick, so it takes the walk over, and quackd's verb
+soon fails the same way, saying what the stick asked for; let go, and the duck stops until the
+pilot sends its next walk. To end the run, Ctrl-C or `q` in the terminal; to sit the duck where it
+stands, the pad's sit button.
+
+> Abort and let the gamepad take it if the duck goes over. Nothing quackd sends is known to stand
+> a fallen duck up: `stand_up` asks the policy to drive again with `robot.enable {on: true}`,
+> only for a duck nobody holds, and calls it upright only if it then reads standing. A robot on
+> `daemon-v0.16.1` does nothing about a fall but report it, since its own get-up, `limp_fall`, is
+> off by default, so the recovery is the owner's.
 
 ## 10. Tell everyone
 
@@ -190,9 +297,27 @@ and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURI
 
 What is most worth writing down, because it is what nobody can check without a duck:
 
-- whether `posture` tracked the real robot, and whether `policy` said `sit` when it sat
-  (quackd assumes it does, and says so in `extras.assumptions`)
-- whether `robot.enable` brought a limp robot up, and how much it moved doing it
-- whether `media.detections` arrived on the control datachannel — upstream's source says it
-  does and upstream's design doc says it does not, and one of them is out of date
+- whether `posture` tracked the real robot: whether `policy` said `sit` when it sat, `rise` on
+  the way up, and `held` with `safety.picked_up` true while somebody held it, and whether a walk
+  was refused then. quackd read those labels in robotd's source, and nobody has seen them on a
+  robot
+- whether the `microduck` account was in the `robot` group out of the box (step 1)
+- what `extras.robotd` said the robot runs, and what `extras.move_echo` said of a walk: how
+  long after a twist went out robotd's state showed it, which is the number the echo window
+  (three state frames) was set without
+- what step 8 showed: whether `robotctl monitor` named the deadman, and how long after the
+  tunnel went the legs stopped
+- what a pad nobody touched did to quackd's walks in step 9: whether the duck walked on, slowed
+  or stuttered, and how often a verb failed with `robotd has not taken robot.move`
+- whether `stand_up`'s `robot.enable` got a fallen duck up, and how much it moved doing it
+- whether the head held still after a `gaze`, whether `extras.head_yaw_deg` agreed with where the
+  camera visibly pointed, and how long the gamepad had the head before quackd let go of it
+- what pulling `/frame` cost the duck: how old `extras.camera` said the newest frame was, and the
+  `cpu_temp_c` and `cpu_throttle` that `extras.health` carried while it ran. Nobody has measured
+  either, and 2 frames a second is a guess at what a duck can afford
+- whether a WebRTC frame came out upright beside a `/frame` one, and the `rotate` that `mediad`
+  gave, which `extras.camera` carries
+- whether `media.detections` arrived on the control datachannel, on a robot whose duck detector
+  was turned on, since it is off by default: upstream's source says it does, and nobody has seen
+  one
 - what `robot.subscribe` listed in `skills`, which is where a robot's real skill set lives now

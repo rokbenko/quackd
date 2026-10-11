@@ -220,6 +220,74 @@ async def test_buggy_verb_stops_the_duck(mock_transport: MockTransport) -> None:
     assert mock_transport.stops == 1
 
 
+class _DroppedLink(MockTransport):
+    """A body whose link has dropped under a transport that lets the socket's own error out:
+    every intent and every stop raises it."""
+
+    async def send_intent(self, intent: Intent) -> Any:
+        raise ConnectionResetError("Connection lost")
+
+    async def stop(self) -> None:
+        self.stops += 1
+        raise ConnectionResetError("Connection lost")
+
+
+#: What `_DroppedLink`'s stop says once the executor has caught it.
+DROPPED = "the stop sent after it failed: ConnectionResetError: Connection lost"
+
+
+async def test_a_stop_that_raises_after_a_verb_that_raised_is_said_and_not_raised(
+    registry: VerbRegistry,
+) -> None:
+    """The executor answers a verb that raised with a stop, and a stop into a dropped socket
+    raised too: out of `run_verb`, from inside the handler that exists to turn the verb's error
+    into a result. A run with an event log had `LoggedTransport` to catch it, and one without
+    had nothing. The result says both now, and that the stop did not land."""
+    transport = _DroppedLink()
+    ex = Executor(registry, transport, contract=duck("walk").frontmatter)
+    result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
+    assert not result.ok and transport.stops == 1
+    assert result.summary == f"walk raised ConnectionResetError: Connection lost; {DROPPED}"
+
+
+async def test_a_verb_that_timed_out_whose_stop_raises_is_said_and_not_raised() -> None:
+    registry = VerbRegistry()
+
+    async def slow(ctx: VerbContext, _: NoParams) -> VerbResult:
+        await asyncio.sleep(1)
+        return VerbResult.success("never")
+
+    registry.register(Verb("slow", "slow", slow, timeout_s=0.05))
+    transport = _DroppedLink()
+    ex = Executor(registry, transport, contract=duck("slow").frontmatter)
+    result = await ex.run_verb("slow")
+    assert not result.ok and transport.stops == 1
+    assert result.summary == f"slow timed out after 0.05s; {DROPPED}"
+
+
+async def test_an_abort_whose_stop_raises_is_still_the_abort() -> None:
+    """An abort cancels the verb and sends a stop, and the abort is what the caller is told:
+    the agent loop and the MCP server each answer `Aborted` in words of their own. A stop that
+    raised left in its place, its own error where the abort should have been."""
+    registry = VerbRegistry()
+    started = asyncio.Event()
+
+    async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
+        started.set()
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    registry.register(Verb("waiting", "waits", waiting, timeout_s=30))
+    transport = _DroppedLink()
+    ex = Executor(registry, transport, contract=duck("waiting").frontmatter)
+    running = asyncio.create_task(ex.run_verb("waiting"))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    ex.abort.set()
+    with pytest.raises(Aborted, match=DROPPED):
+        await asyncio.wait_for(running, timeout=5)
+    assert transport.stops == 1
+
+
 async def test_no_contract_allows_safe_verbs_only(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:

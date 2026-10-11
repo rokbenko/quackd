@@ -24,7 +24,16 @@ from quackd.adapters.manifest import (
     Sensor,
     verb_spec,
 )
-from quackd.transport.base import Ack, DuckState, DuckTransport, HeartbeatError, Intent
+from quackd.perception import ASSUMED_LENS
+from quackd.transport.base import (
+    Ack,
+    DuckState,
+    DuckTransport,
+    HeartbeatError,
+    Intent,
+    frame_period_of,
+    frame_taken_at_of,
+)
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
 from quackd_microduck.verbs import MICRODUCK_VERBS, microduck_conditions
@@ -35,6 +44,21 @@ rather than being read from the core, because this file is all an adapter's sdis
 contains."""
 
 BACKENDS = ("sim2d", "mujoco", "mock", "jsonrpc", "websocket")
+DEPRECATED_BACKENDS = {
+    "websocket": (
+        "microduck:websocket is deprecated and is removed in 0.19.0: upstream dropped the "
+        "WebSocket agent gateway it was waiting for. Use --robot microduck:jsonrpc, with "
+        "--camera-url http://127.0.0.1:8080/frame for mediad's camera"
+    ),
+}
+"""A backend on its way out, to the one line `quackd run`, `doctor`, `serve-mcp` and
+`robot list --probe` print on stderr just before they connect through it, and never for a robot
+they do not connect (`quackd.adapters.factory.deprecated_backend`). The WebSocket stub was
+waiting for a gateway upstream's architecture.md designed, and by daemon-v0.16.1 upstream had
+dropped it for a lane quackd will not drive over, so there is nothing for the stub to become.
+The line names what replaces it: the robot's own socket, and mediad's `/frame` for a picture,
+both through an ssh tunnel the Microduck page gives. RELEASING.md wants a removal announced a
+minor ahead, so it stays a release with this line on it."""
 
 # The 0.3 descriptions of the renamed verbs, so an old duck's tool schemas are byte-identical.
 _MOVE_DESCRIPTION = (
@@ -69,20 +93,38 @@ DATASHEET = Datasheet(
     notes=[
         "The speed caps are a software clamp in robotd, not a measured hardware maximum",
         "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
-        "It falls, and it can get itself upright again",
+        # It said the duck could get itself upright again, which was robotd's limp_fall. On
+        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT), and this
+        # is the sheet a pilot judges a task against before anything moves.
+        "It falls, and may not get up again by itself: on daemon-v0.16.1 robotd does nothing "
+        "about a fall but report it",
     ],
 )
 
 
 def microduck_manifest(
-    backend: str, robot_id: str = "microduck", *, camera: bool = True
+    backend: str,
+    robot_id: str = "microduck",
+    *,
+    camera: bool = True,
+    camera_fov_deg: float | None = None,
+    camera_fov_assumed: str | None = None,
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
 
-    `camera` is the one thing a description of the robot cannot settle on its own. Upstream has
-    no socket-level camera method at all — the camera reaches clients through `mediad`'s WebRTC
-    track — so on the jsonrpc backend a frame exists only when `--camera-url` names something
-    serving one. Advertising `observe` either way promises the pilot vision it may not have.
+    `camera` is the one thing a description of the robot cannot settle on its own. robotd's
+    socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
+    names something serving one. Advertising `observe` either way promises the pilot vision it
+    may not have.
+
+    `camera_fov_deg` is the lens that camera reported, in degrees across the frames it hands
+    out, when it reported one. It goes in the limits, where `quackd run` takes the lens its
+    detector measures through when no `--fov-deg` names one, and where `serve-mcp`, which has
+    no `--fov-deg`, always takes it, as the LeRobot arm's camera does.
+
+    `camera_fov_assumed` is the words of the assumption that lens rests on, when nobody measured
+    it, which go in the extras under `quackd.perception.ASSUMED_LENS`: the detector then
+    measures through the lens uncalibrated, and says to pass `--fov-deg`.
     """
     core = [
         verb_spec(CORE["report_state"], core=True),
@@ -101,6 +143,29 @@ def microduck_manifest(
     sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
     if camera:
         sensors.insert(0, "camera")
+    # The 0.3 attachments, walk, kick and grab needing standing and sit, stand and gaze not
+    # being fallen, and the three verbs that walk on what the camera sees, which had no
+    # precondition at all until posture began failing closed. A precondition is read once, when
+    # the verb starts, and what stops a duck picked up halfway through one is the transport's
+    # hold on `robot.move`. The simulators never report `unknown`, so on them the one change is
+    # that a seated or fallen duck is refused the three, where it used to be steered while its
+    # legs ignored every twist.
+    preconditions: dict[str, list[str]] = {
+        "move": ["standing"],
+        "kick": ["standing"],
+        "grab": ["standing"],
+        "sit": ["not_fallen"],
+        "stand": ["not_fallen"],
+        "gaze": ["not_fallen"],
+    }
+    if camera:
+        preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
+    limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5}
+    extras: dict[str, Any] = {}
+    if camera and camera_fov_deg is not None:
+        limits["camera_fov_deg"] = float(camera_fov_deg)
+        if camera_fov_assumed:
+            extras[ASSUMED_LENS] = camera_fov_assumed
     return RobotManifest(
         id=robot_id,
         vendor="pollen-robotics",
@@ -110,22 +175,32 @@ def microduck_manifest(
         intents=["twist", "skill", "gaze", "sound", "pose"],
         sensors=sensors,
         verbs=core + extensions,
-        # exactly the 0.3 attachments: walk/kick/grab need standing, sit/stand/gaze not fallen
-        preconditions={
-            "move": ["standing"],
-            "kick": ["standing"],
-            "grab": ["standing"],
-            "sit": ["not_fallen"],
-            "stand": ["not_fallen"],
-            "gaze": ["not_fallen"],
-        },
+        preconditions=preconditions,
         safety_authority=SafetyAuthority(native="robotd_deadman", deadman=True, heartbeat_hz=2.0),
         frame=Frame(reference="body"),
-        limits={"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5},
+        limits=limits,
         backend=backend,
         blurb=BLURB,
         datasheet=DATASHEET,
+        extras=extras,
     )
+
+
+def _lens(value: Any) -> float | None:
+    """A field of view a camera reported, when it is one: a number of degrees between nothing and
+    a half turn. Anything else is no lens, and the detector falls back on its own."""
+    if isinstance(value, int | float) and not isinstance(value, bool) and 0 < value < 180:
+        return float(value)
+    return None
+
+
+def _robotd_line(robotd: dict[str, Any]) -> str:
+    """`0.16.1, API v41, revision d818af5`: the release, the version and the build that answered
+    `hello`. robotd sends null for a release number its own build cannot parse as one, and for
+    the revision of a build that did not come out of its CI, so either can be missing."""
+    build = robotd.get("daemon_version") or "a build that names no release"
+    revision = robotd.get("revision") or "none"
+    return f"{build}, API v{robotd.get('api_version')}, revision {revision}"
 
 
 class MicroduckAdapter:
@@ -150,7 +225,16 @@ class MicroduckAdapter:
             camera = bool(self.transport.camera_working)
         else:
             camera = getattr(self.transport, "camera_url", True) is not None
-        self.manifest = microduck_manifest(self.backend, self.robot_id, camera=camera)
+        # The lens the camera reported, read once a frame has arrived, which is where the
+        # transport learns it. The simulators report none: the detector knows their lens.
+        assumed = getattr(self.transport, "camera_fov_assumed", None)
+        self.manifest = microduck_manifest(
+            self.backend,
+            self.robot_id,
+            camera=camera,
+            camera_fov_deg=_lens(getattr(self.transport, "camera_fov_deg", None)),
+            camera_fov_assumed=assumed if isinstance(assumed, str) else None,
+        )
         return self.manifest
 
     async def disconnect(self) -> None:
@@ -174,11 +258,13 @@ class MicroduckAdapter:
         except HeartbeatError as e:
             return Health(ok=False, reason=str(e))
         state = await self.transport.get_state()
-        return Health(
-            ok=True,
-            battery_percent=state.battery_percent,
-            extras={"policy": state.policy, "posture": state.posture},
-        )
+        extras: dict[str, Any] = {"policy": state.policy, "posture": state.posture}
+        # Which robotd answered, a row in doctor's health block, so the release a robot runs is
+        # on the screen at the checklist's go/no-go gate whether or not it is the one quackd
+        # read. Only a real robot says; the simulators and the mock have no such record.
+        if isinstance(robotd := state.extras.get("robotd"), dict):
+            extras["robotd"] = _robotd_line(robotd)
+        return Health(ok=True, battery_percent=state.battery_percent, extras=extras)
 
     async def heartbeat(self) -> None:
         await self.transport.heartbeat()
@@ -196,6 +282,47 @@ class MicroduckAdapter:
         """`jsonrpc` has recorded this since 0.6, but nothing could read it: `stop` in
         `verbs/core.py` looks for it on the object it was handed, which is this adapter."""
         return getattr(self.transport, "stop_error", None)
+
+    @property
+    def camera_error(self) -> str | None:
+        """Why the camera has no frame to hand out just now, when the transport knows. `observe`,
+        `go_to` and `search_scan` read it off the object they were handed when a frame does not
+        come, which is this adapter, for `stop_error`'s reason."""
+        error = getattr(self.transport, "camera_error", None)
+        return str(error) if error else None
+
+    @property
+    def head_fade_s(self) -> float:
+        """How long `go_to` and `search_scan` wait after centring the head, which they read off
+        the object they were handed, this adapter: on `jsonrpc` the time a robotd that glances
+        around on its own takes to let go of a glance once a look arrives, and 0 on every
+        backend whose head moves only when it is asked to."""
+        fade = getattr(self.transport, "head_fade_s", 0.0)
+        return float(fade) if isinstance(fade, int | float) and not isinstance(fade, bool) else 0.0
+
+    def frame_taken_at(self) -> float | None:
+        """When the frame `get_frame` hands out now was taken, at the earliest, on the clock `now()`
+        reads, which `go_to` and `search_scan` read off the object they were handed, this
+        adapter, to act only on a frame taken after a move of theirs had settled. On `jsonrpc`
+        from mediad's `/frame`, and None from every camera that cannot say, which the simulators
+        are among: they draw a frame when it is asked for, so every frame they hand out is new."""
+        return frame_taken_at_of(self.transport)
+
+    @property
+    def frame_period_s(self) -> float | None:
+        """How long one frame of the camera takes to follow the last, which `go_to` reads off the
+        object it was handed, this adapter, to tell whether its steering law keeps up with the
+        camera: on `jsonrpc` from mediad's `/frame`, and None from every camera that does not
+        say, the simulators' among them."""
+        return frame_period_of(self.transport)
+
+    def lens_given(self, fov_deg: float) -> None:
+        """Hand the field of view `--fov-deg` gave to the transport, when it keeps a record of
+        the lens, so that the state says what the detector measures through: on `jsonrpc` it
+        stops listing the lens it assumed. The simulators keep none."""
+        given = getattr(self.transport, "lens_given", None)
+        if callable(given):
+            given(fov_deg)
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)
@@ -279,6 +406,7 @@ def make(
 
 __all__ = [
     "BACKENDS",
+    "DEPRECATED_BACKENDS",
     "MICRODUCK_VERBS",
     "MicroduckAdapter",
     "conditions",

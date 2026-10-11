@@ -20,6 +20,8 @@ import contextlib
 import math
 from typing import TYPE_CHECKING, Any
 
+from PIL import Image
+
 from quackd.adapters.base import RestResult, go_to_rest_if_any
 from quackd.adapters.manifest import RobotManifest
 from quackd.duckfile.schema import DuckFrontmatter
@@ -47,6 +49,7 @@ from quackd.safety import (
     SafetyStop,
     allow_all,
 )
+from quackd.transport.base import frame_head_yaw_of, frames_taken_since
 from quackd.verbs.registry import VerbResult, default_registry, registry_from_manifest
 
 if TYPE_CHECKING:
@@ -98,6 +101,8 @@ class FlockMember:
         promise it — and only the observer follows the CLI's log switch."""
         self._frame_stride = frame_stride
         self._frame_counter = 0
+        self._frame_seen: Any = None
+        """The frame a verb of this member's looked at last (`_on_frame`)."""
         self.budget = Budget(contract.budgets, now=transport.now)
         self.executor = Executor(
             registry=default_registry(),
@@ -138,6 +143,9 @@ class FlockMember:
     # ── frames (strided so a flock does not write 3x the frames of a solo run) ──────
 
     def _on_frame(self, img: Any, caption: str) -> None:
+        # the frame the verb in flight looked at last: the one `observe` detected on, and the one
+        # `search_scan` found the target in, which `_body_bearing` reads the head off
+        self._frame_seen = img
         self._frame_counter += 1
         if self._frame_counter % self._frame_stride == 1:
             self._member_transcript.save_frame(img, caption)
@@ -345,9 +353,21 @@ class FlockMember:
 
     # ── geometry: every judgement is in THIS robot's own body frame ─────────────────
 
-    async def _body_bearing(self, camera_bearing_deg: float) -> float:
-        state = await self.transport.get_state()
-        head_yaw = float(state.extras.get("head_yaw_deg") or 0.0)
+    async def _body_bearing(self, camera_bearing_deg: float, frame: Any = None) -> float:
+        """A bearing the camera measured in `frame`, from the body: the head's yaw added to it.
+
+        The yaw has to be the head the frame was taken through. It was always read off the state,
+        which says where the head points now, and on a body that hands out a frame it took a
+        while before, as a Microduck on mediad's `/frame` does, the frame could be older than the
+        member's last `gaze` by a frame period and a fetch, so a bearing measured through the old
+        head would be added to the new one. A body that knows records the head on the frame
+        (`FRAME_HEAD_YAW_DEG`), and that is the yaw used. Every other body draws its frame when
+        it is asked for, with the head where the state says, so the state's yaw is the same
+        moment, as it always was on the simulator a coordinator flock runs on."""
+        head_yaw = frame_head_yaw_of(frame if isinstance(frame, Image.Image) else None)
+        if head_yaw is None:
+            state = await self.transport.get_state()
+            head_yaw = float(state.extras.get("head_yaw_deg") or 0.0)
         return head_yaw + camera_bearing_deg
 
     @staticmethod
@@ -439,6 +459,7 @@ class FlockMember:
             max_steps = max(1, min(16, math.ceil(wedge.width_deg / self.task.step_deg)))
         else:
             max_steps = 8
+        self._frame_seen = None
         result = await self._verb(
             "search_scan",
             {"target": self.task.target, "step_deg": self.task.step_deg, "max_steps": max_steps},
@@ -451,7 +472,8 @@ class FlockMember:
         bearing = detections[0].get("bearing_deg") if detections else None
         dist_f = float(dist) if dist is not None else 9.9
         bearing_f = float(bearing) if bearing is not None else 0.0
-        body_deg = await self._body_bearing(bearing_f)
+        # search_scan stops at the frame it found the target in, so that is the last one it saw
+        body_deg = await self._body_bearing(bearing_f, self._frame_seen)
         self._sighting_deg = body_deg
         if self._ref is None and dist is not None:
             self._ref = self._point(body_deg, dist_f)
@@ -540,17 +562,28 @@ class FlockMember:
             await self._verb("gaze", {"bearing_deg": yaw})
 
     async def _look(self) -> tuple[float, float] | None:
-        """One fresh frame: the target's body-frame point, or None if not seen."""
+        """One fresh frame: the target's body-frame point, or None if not seen.
+
+        Fresh on every body: a frame taken after this member's last head move had been answered,
+        on a body that hands out frames it took a while before and says when (`frames_taken_since`),
+        which is the rule `go_to` and `search_scan` keep after a move of theirs. A frame from
+        before a `gaze` the judge or the spotter had just sent showed the view the head had left.
+        Every other body draws its frame when it is asked for, the simulator a coordinator flock
+        runs on among them, and is looked at at once, as it always was."""
         observe = self._pick("observe", "get_frame")
         if observe is None:
             return None
+        await frames_taken_since(self.transport, self.transport.now(), MEMBER_TICK_S)
+        self._frame_seen = None
         result = await self._verb(observe, {})
         dets = [
             d for d in (result.data.get("detections") or []) if d.get("label") == self.task.target
         ]
         if not dets or dets[0].get("est_distance_m") is None:
             return None
-        body_deg = await self._body_bearing(float(dets[0].get("bearing_deg") or 0.0))
+        body_deg = await self._body_bearing(
+            float(dets[0].get("bearing_deg") or 0.0), self._frame_seen
+        )
         self._sighting_deg = body_deg
         return self._point(body_deg, float(dets[0]["est_distance_m"]))
 

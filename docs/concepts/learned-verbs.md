@@ -71,16 +71,23 @@ the ONNX at export. The whole contract is cited at a pin in
 [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py) (`OBSERVATION`, `COMMAND`,
 `CONTROL`, `POLICY_METADATA`), which is what the MuJoCo backend reads. Upstream's
 `manifest.json` lists every policy with its kind (perpetual, scripted or episodic) and its
-command encoding. `robotd` checks the shape at load and points at policies by role in
-`robotd.toml` (`[policy] walk = ...`, read 2026-08-28). Roles today: walking, standing,
-sit↔stand, ground pick, kick left/right, roller, roller crouch, roulade.
+command encoding. `robotd` checks the shape at load and points at policies by slot in
+`robotd.toml` (`[policy] walk = ...`). At daemon-v0.16.1 the slots are `walk`, `stand`,
+`sitstand`, `ground_pick`, `kick_left`, `kick_right` and `roulade`, and roller mode puts the
+roller and its crouch in `walk` and `ground_pick`. The default `walk` is `velstand.onnx`, one
+network that walks on a twist and stands still at zero command, so `stand` is empty unless a
+board loads `alpha_stand.onnx` back by hand.
 
 ## What has to exist before a runner is real
 
-1. **A way to run a policy on the robot on demand.** Today `robotd` loads a fixed set of
-   roles from config at startup. A learned verb needs either an upstream "policy slot" that
-   can be hot-swapped over the socket (not designed yet), or a `robotd.toml` edit + restart
-   (slow, but real). Track upstream; do not guess.
+1. **A way to run a policy on the robot on demand.** `robotd` has had one since API v18:
+   `robot.loadPolicy` puts another `.onnx` in one slot while the robot runs, swapping it at the
+   home pose seconds later, and since v22 `robot.setSkill` makes a policy answer to `robot.do`
+   by name, with how long it runs and the twist it unwinds on. Both write `robotd.toml`, so
+   what a verb loads outlives the verb, a reboot included, until it is put back
+   (`robot.loadPolicy` with no path, or `robot.removeSkill`). A path in either is a file on the
+   robot, so a new policy has to be there first: `policy.fetch`, which `updaterd` answers rather
+   than `robotd`, puts one from the Hub in the robot's library. quackd calls none of them.
 2. **A sim runner.** This is the part that changed. `microduck:mujoco` runs upstream's
    walking and standing policies on upstream's model at 50 Hz on a laptop
    ([ADR-0030](../adr/0030-mujoco-physics-backend.md)), so the machinery a learned verb needs
@@ -99,19 +106,23 @@ sit↔stand, ground pick, kick left/right, roller, roller crouch, roulade.
    them, which is why `kick`, `grab` and `sit` on `microduck:mujoco` are stand-ins rather
    than policies (`KICK_STANDIN` in
    [`adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`](../../adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py)). The entry pose, the
-   start condition and the stop condition are not in the 61-value observation, and nobody
-   has worked out where they belong. Until that is answered, the cheapest first learned verb
-   to attempt in sim is a perpetual one with the same contract: a different gait rather than
-   a new skill.
+   start condition and the stop condition are not in the 61-value observation. Upstream's
+   manifest carries some of them beside it, an episodic policy's `duration_s` and, since `v5`,
+   an `entry_pose`, so far only velstand's, and quackd has not worked out what a runner in the
+   simulator does with them. Until that is answered, the cheapest first learned verb to
+   attempt in sim is a perpetual one with the same contract: a different gait rather than a
+   new skill.
 4. **Provenance.** `metadata` should carry the reward text, the training run, and the
    eval numbers, so a `.duck` author knows what they are allowing. Upstream's
    `manifest.json` is the shape to copy: one entry per policy with its kind and its command
-   encoding.
+   encoding, and since `v5` some entries also say where they came from, as `training`: the
+   task, the repository and commit, the run and the checkpoint.
 
 ## How to help
 
 - Prototype a runner against `microduck:mujoco`, which needs `quackd[mujoco]` and no GPU,
   rather than against `microduck_rl`'s evaluation env, which wants Python 3.12 exactly, torch,
   warp and mjlab. Keep `tests/test_registry.py::test_learned_verb_registers_and_runs` green.
-- If you are upstream: a hot-swappable policy slot over the socket is the one API this
-  needs. We will track it in `upstream_api.py` the day it is designed.
+- If you are upstream: the policy slot over the socket this page asked for has existed since
+  API v18, as `robot.loadPolicy`, and quackd will read it into `upstream_api.py` before
+  anything here calls it.

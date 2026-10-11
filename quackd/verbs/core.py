@@ -16,13 +16,21 @@ from __future__ import annotations
 import asyncio
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.perception.base import Detection, detect_off_loop, summarize_detections
-from quackd.transport.base import Intent, camera_names_of, frames_of, primary_of
+from quackd.transport.base import (
+    Intent,
+    camera_names_of,
+    frame_period_of,
+    frames_of,
+    frames_taken_since,
+    primary_of,
+    twist_shown_since_of,
+)
 from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbResult
 
 if TYPE_CHECKING:
@@ -38,6 +46,18 @@ MAX_WZ = 1.5
 TICK_S = 0.1
 TURN_RATE = 1.0  # rad/s used for scanning
 DEFAULT_GAZE_LIMIT_DEG = 60.0
+#: How hard `go_to` turns toward a target it sees: radians a second of turn for every degree the
+#: target is off the camera's axis, held until the next frame is measured, and the fastest turn.
+STEER_GAIN = 0.05
+STEER_MAX_WZ = 1.0
+#: How long `go_to`'s turn takes to cover a whole bearing it is held for: STEER_GAIN radians a
+#: second for every degree, so a degree's radians over the gain, about a third of a second, for
+#: every bearing the turn is not clamped on (`_measures_first`).
+STEER_TURN_S = math.radians(1.0) / STEER_GAIN
+#: How fast `go_to` turns toward the side a target it has lost was last seen on, and how many
+#: ticks of that turn it gives the target to come back into view before it gives up.
+LOST_WZ = 0.8
+LOST_TICKS = 30
 
 # ── parameters ──────────────────────────────────────────────────────────────────────────
 
@@ -61,13 +81,26 @@ class SayParams(BaseModel):
     text: str = Field(..., min_length=1, max_length=200, description="What to say.")
 
 
+#: The most steps one `search_scan` takes, the bound its `max_steps` is held to.
+MAX_SCAN_STEPS = 16
+
+
 class SearchScanParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: str = Field(default="ball", description="Label to look for (e.g. ball, person).")
-    step_deg: float = Field(default=45.0, ge=15, le=120, description="Rotation per step.")
+    step_deg: float = Field(
+        default=45.0,
+        ge=15,
+        le=120,
+        description="Rotation per step. Left out, 45, or less through a lens no wider than that, "
+        "so that each view overlaps the next.",
+    )
     max_steps: int = Field(
-        default=8, ge=1, le=16, description="Steps before giving up (8 x 45° = full turn)."
+        default=8,
+        ge=1,
+        le=MAX_SCAN_STEPS,
+        description="Steps before giving up. Left out, as many as make a full turn, 8 at 45°.",
     )
 
 
@@ -100,13 +133,85 @@ async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
     return None
 
 
-async def _look_ahead(ctx: VerbContext) -> None:
+class _Refused(Exception):
+    """A twist the body refused, carried with its reason out of the helper that sent it, deep
+    in a steering loop, to the verb that stops on it (`_stopped_by`)."""
+
+
+async def _twist(ctx: VerbContext, vx: float, vy: float, wz: float) -> None:
+    """Send one twist, and raise `_Refused` with the body's own reason when it refuses it.
+
+    `move` has always ended at a refused twist, through `send_or_fail`. `go_to`, `search_scan`
+    and the helpers they steer through threw the answer away, so a body that would not take a
+    twist was steered on regardless: `go_to` ran out its whole timeout and said only that it
+    had timed out, and `search_scan` reported a full sweep of a duck that never turned, which a
+    pilot reads as the target not being in the room. A Microduck's transport refuses a twist
+    once the duck has stopped standing or robotd has stopped showing the twists it was sent, and
+    every body refuses one it cannot deliver, a dropped link above all, so each of those reached
+    the pilot as a timeout or a target not found."""
+    ack = await ctx.transport.send_intent(Intent.move(vx, vy, wz))
+    if not ack.accepted:
+        raise _Refused(ack.reason or "no reason given")
+
+
+async def _stopped_by(
+    ctx: VerbContext, verb: str, stopped: str, refused: _Refused, **data: Any
+) -> VerbResult:
+    """Stop the body after a twist it refused, and fail saying what was refused and why, the
+    way `detector_failed` says a frame the detector could not read stopped it."""
+    await ctx.transport.stop()
+    return VerbResult.fail(
+        f"{verb}: a twist was refused, so {stopped}: {refused}", move_refused=str(refused), **data
+    )
+
+
+def _head_fade_s(ctx: VerbContext) -> float:
+    """How long the body's head takes to let go of a glance of its own once a look arrives
+    (`head_fade_s`), or 0 on a body whose head moves only when it is asked to."""
+    fade = getattr(ctx.transport, "head_fade_s", 0.0)
+    if isinstance(fade, int | float) and not isinstance(fade, bool) and fade > 0:
+        return float(fade)
+    return 0.0
+
+
+async def _look_ahead(ctx: VerbContext) -> float:
+    """Centre the head before a verb that steers on what the camera sees, give it the time to
+    get there, and return the moment after which a frame shows it there: the first frame the
+    verb acts on has to have been taken no earlier (`_see`).
+
+    A body whose robot turns the head on its own while it stands still says, as `head_fade_s`,
+    how long that takes to wear off once a look arrives. A Microduck's robotd has glanced around
+    since daemon-v0.16.1, and lets go of a glance by fading it out over a second and a half
+    rather than at once, so the first frame `go_to` and `search_scan` acted on, taken straight
+    after the look, could come from a head still most of a glance off centre: a bearing off by
+    that much, and `go_to` turning toward it at full rate. The wait comes first, with the body
+    still: nothing is sent that moves it. A body without the attribute waits for nothing, as
+    before.
+
+    The wait alone did not make the frame after it a frame taken after it. A body may hand out
+    a frame it took a while before, as a Microduck on mediad's `/frame` does: the newest frame
+    it holds was asked for as much as a frame period and a fetch earlier, so the first frame
+    acted on could still be from mid-glance, or from before the look, with the head where a
+    `gaze` had left it. The moment returned is when the wait ended, and on a body that says when
+    its frames were taken the first frame acted on is one taken after it. A body that does not
+    say hands out the newest frame, as before, and on the simulators that is drawn when it is
+    asked for.
+    """
     await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
+    fade = _head_fade_s(ctx)
+    if fade > 0:
+        await ctx.transport.sleep(fade)
+    return ctx.transport.now()
 
 
 async def _see(
-    ctx: VerbContext, label: str, caption: str
+    ctx: VerbContext, label: str, caption: str, since: float | None = None
 ) -> tuple[Image.Image | None, list[Detection]]:
+    """The newest frame and what the detector finds of `label` in it, on a body that says when
+    its frames were taken one taken no earlier than `since` on the body's own clock, waited for
+    a tick at a time (`frames_taken_since`)."""
+    if since is not None:
+        await frames_taken_since(ctx.transport, since, TICK_S)
     img = await ctx.transport.get_frame()
     if img is None:
         return None, []
@@ -139,13 +244,14 @@ def _clamped(ctx: VerbContext, vx: float, vy: float, wz: float) -> tuple[float, 
 
 
 async def _turn(ctx: VerbContext, radians: float) -> None:
-    """Rotate in place by `radians`, feeding the deadman every tick."""
+    """Rotate in place by `radians`, feeding the deadman every tick. A twist the body refuses
+    ends the turn where it is, with `_Refused` for the verb to stop on."""
     rate = min(TURN_RATE, speed_limits(ctx.manifest)[2])
     wz = rate if radians >= 0 else -rate
     duration = abs(radians) / rate
     ticks = max(1, round(duration / TICK_S))
     for _ in range(ticks):
-        await ctx.transport.send_intent(Intent.move(0.0, 0.0, wz))
+        await _twist(ctx, 0.0, 0.0, wz)
         await ctx.transport.sleep(duration / ticks)
     await ctx.transport.stop()
 
@@ -186,8 +292,10 @@ async def _see_holding(
     label: str,
     caption: str,
     twist: tuple[float, float, float] | None,
+    since: float | None = None,
 ) -> tuple[Image.Image | None, list[Detection]]:
-    """Fetch a frame while keeping the twist the last frame justified alive.
+    """Fetch a frame while keeping the twist the last frame justified alive, a frame taken no
+    earlier than `since` on a body that says when its frames were taken (`_see`).
 
     `_see` is a network round trip to a camera server, and `go_to` used to await it and only
     then send its next command — so the gap between two commands was `TICK_S + fetch +
@@ -208,8 +316,11 @@ async def _see_holding(
     WALK latched. Both kept going on the last twist for as long as the frame took, which
     through a board is up to two seconds for the detection and one more for a snapshot from
     its camera, all of it driving on a decision made from an older frame. A body with a
-    deadman loses nothing, because it was about to stop anyway."""
-    task = asyncio.ensure_future(_see(ctx, label, caption))
+    deadman loses nothing, because it was about to stop anyway.
+
+    A re-send the body refuses ends the wait there, with `_Refused`, and the frame still out
+    is let go of: the verb is over, and nothing it would have seen in it changes that."""
+    task = asyncio.ensure_future(_see(ctx, label, caption, since))
     deadline = ctx.transport.now() + HOLD_TTL_S
     try:
         while True:
@@ -219,14 +330,14 @@ async def _see_holding(
             if twist is None:
                 continue
             if ctx.transport.now() < deadline:
-                await ctx.transport.send_intent(Intent.move(*twist))
+                await _twist(ctx, *twist)
             else:
                 # a zero twist, not `stop()`: on a ToddlerBot `stop` leaves the walk policy for
                 # a held pose, and this stop is one the next frame may undo a moment later
-                await ctx.transport.send_intent(Intent.move(0.0, 0.0, 0.0))
+                await _twist(ctx, 0.0, 0.0, 0.0)
                 twist = None
     finally:
-        if not task.done():  # pragma: no cover - only on cancellation
+        if not task.done():  # on cancellation, and on a twist the body refused
             task.cancel()
 
 
@@ -367,10 +478,43 @@ def gaze_sweep_yaws(
     return yaws
 
 
-async def _gaze_sweep(ctx: VerbContext, p: SearchScanParams, limit_deg: float) -> VerbResult:
+def _lens_deg(ctx: VerbContext) -> float | None:
+    """How wide the view the detector measures bearings through is, in degrees, when it says:
+    the lens `--fov-deg` gave, the body's own, or the guess a detector falls back on."""
+    fov = getattr(ctx.detector, "fov_deg", None)
+    if isinstance(fov, int | float) and not isinstance(fov, bool) and 0 < fov < 360:
+        return float(fov)
+    return None
+
+
+def scan_steps(p: SearchScanParams, lens_deg: float | None) -> tuple[float, int]:
+    """The step `search_scan` turns by and how many it takes, for a lens `lens_deg` wide.
+
+    The step a caller leaves out was 45°, which through a lens narrower than that leaves a wedge
+    between each view and the next that no view sees: on an alpha's upright `/frame`, 37° wide,
+    a sixth of every turn, and a target standing in one of them was not there as far as the
+    scan could say. With the lens known, a step left out is the widest that turns a whole circle
+    in whole steps with each view overlapping the next, a circle over one more step than the lens
+    fits into it, and never wider than 45°. So a lens wider than 45° scans as it always did, and
+    so does a body whose detector names no lens, while one exactly 45° wide, whose views 45°
+    apart would only meet edge to edge, turns 40° at a time. A count of steps left out is then
+    as many as make the circle, as 8 does at 45°, up to `MAX_SCAN_STEPS`. A step or a count the
+    caller gave is kept as given."""
+    if lens_deg is None or "step_deg" in p.model_fields_set:
+        return p.step_deg, p.max_steps
+    per_turn = math.floor(360.0 / lens_deg) + 1
+    if 360.0 / per_turn >= p.step_deg:
+        return p.step_deg, p.max_steps
+    steps = p.max_steps if "max_steps" in p.model_fields_set else min(MAX_SCAN_STEPS, per_turn)
+    return 360.0 / per_turn, steps
+
+
+async def _gaze_sweep(
+    ctx: VerbContext, p: SearchScanParams, limit_deg: float, step: float, steps: int
+) -> VerbResult:
     state = await ctx.transport.get_state()
     centre = float(state.extras.get("head_yaw_deg") or 0.0)
-    yaws = gaze_sweep_yaws(centre, p.step_deg, p.max_steps, limit_deg)
+    yaws = gaze_sweep_yaws(centre, step, steps, limit_deg)
     for i, yaw in enumerate(yaws):
         rad = math.radians(yaw)
         await ctx.transport.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))
@@ -388,95 +532,276 @@ async def _gaze_sweep(ctx: VerbContext, p: SearchScanParams, limit_deg: float) -
                 steps=i,
                 gaze_yaw_deg=yaw,
             )
-    span = (len(yaws) - 1) * p.step_deg
+    span = (len(yaws) - 1) * step
     return VerbResult.fail(
         f"{p.target} not found in a gaze sweep of {len(yaws)} looks ({span:.0f}°)"
     )
 
 
+def _turns_taken(ctx: VerbContext, starts: list[float]) -> int | None:
+    """How many of the turns `search_scan` began at `starts`, on the body's clock, the body's own
+    state showed it took, or None on a body that does not say (`twist_shown_since_of`).
+
+    The turns are counted in order and the first not shown ends the count, since a state that
+    shows a later turn's twist shows that every one before it was taken too."""
+    taken = 0
+    for start in starts:
+        shown = twist_shown_since_of(ctx.transport, start)
+        if shown is None:
+            return None
+        if not shown:
+            break
+        taken += 1
+    return taken
+
+
+def _none_confirmed(sent: int) -> str:
+    """Says that a body's own state showed none of the `sent` turns a scan sent it. One turn is
+    named, not counted: the count read "none of the 1 turn sent to it", and one turn is what a slow
+    link's verdict usually lets out before it stops a scan, so that is the sentence a pilot meets
+    most often."""
+    if sent == 1:
+        return "the robot's own state did not confirm the turn sent to it"
+    return f"the robot's own state confirmed none of the {sent} turns sent to it"
+
+
 async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
+    """Turn in steps, or sweep the head, looking for the target after each step.
+
+    The turns it says it made are the turns the body took. On most bodies that is every turn
+    it sent, since a body that cannot take a twist refuses it. A Microduck's robotd answers no
+    twist, so a scan of one that took none of them used to say it had turned all the way round
+    and found nothing, which a pilot reads as the target not being in the room, and, once a
+    refused twist stopped it, that it had turned as far as it had sent. On a body whose own
+    state says which twists it took (`twist_shown_since_of`), a turn counts only once that state
+    has shown it, and a result whose turns the state did not show says so, in place of the sweep
+    it would otherwise claim."""
     if ctx.detector is None:
         return VerbResult.fail("search_scan needs a detector (none configured)")
     mode = scan_mode(ctx.manifest)
+    step, steps = scan_steps(p, _lens_deg(ctx))
     if mode == "gaze":
         limit = (ctx.manifest.limits.get("gaze_yaw_deg") if ctx.manifest else None) or (
             DEFAULT_GAZE_LIMIT_DEG
         )
-        return await _gaze_sweep(ctx, p, float(limit))
+        return await _gaze_sweep(ctx, p, float(limit), step, steps)
     if mode == "none":
         return VerbResult.fail("search_scan needs locomotion or gaze; this robot has neither")
-    await _look_ahead(ctx)
-    for i in range(p.max_steps + 1):
-        img, hits = await _see(ctx, p.target, f"search_scan {i}")
+    since = await _look_ahead(ctx)
+    glances = _head_fade_s(ctx) > 0
+    starts: list[float] = []  # when each turn that ended began, on the body's clock
+    for i in range(steps + 1):
+        # each view is a frame taken after the turn before it had settled, at the heading the
+        # result names, on a body that says when its frames were taken: one handed out from
+        # memory after a tenth of a second of settling could show the view from before the
+        # turn, or from halfway through it, and the target found in it was reported a step late
+        img, hits = await _see(ctx, p.target, f"search_scan {i}", since)
         if img is None:
             return await _no_frame(ctx, "search_scan")
         if (failed := await detector_failed(ctx, "search_scan", "the scan stopped")) is not None:
             return failed
         if hits:
             best = hits[0]
+            taken = _turns_taken(ctx, starts)
+            after = f"after {i} turn steps"
+            if taken is not None and taken < i:
+                after += f", of which the robot's own state confirmed {taken}"
             return VerbResult.success(
-                f"{p.target} found: {best.summary()} (after {i} turn steps)",
+                f"{p.target} found: {best.summary()} ({after})",
                 detections=[d.model_dump() for d in hits],
-                steps=i,
+                steps=i if taken is None else taken,
             )
-        if i == p.max_steps:
+        if i == steps:
             break
-        await _turn(ctx, math.radians(p.step_deg))
+        begun = ctx.transport.now()
+        try:
+            await _turn(ctx, math.radians(step))
+        except _Refused as refused:
+            # how far it really turned, the turn it was refused in not counted: a scan of a duck
+            # that never turned used to report the whole sweep, the target not in it
+            stopped, taken = _scan_stopped(ctx, starts, steps, step)
+            return await _stopped_by(ctx, "search_scan", stopped, refused, steps=taken)
+        starts.append(begun)
+        if glances:
+            # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
+            # that centred the head started, so the head is nobody's again, and robotd glances
+            # once the duck has stood still long enough while it waits for its next frame.
+            # Centred again straight after the turn, when no glance can be under way since the
+            # duck was turning until then, the head is held for this view as for the first.
+            await ctx.transport.send_intent(Intent.look(1.0, 0.0, 0.0))
         await ctx.transport.sleep(TICK_S)  # let the view settle
+        since = ctx.transport.now()
+    taken = _turns_taken(ctx, starts)
+    if taken is None or taken == steps:
+        return VerbResult.fail(f"{p.target} not found after {steps} steps ({steps * step:.0f}°)")
+    if taken == 0:
+        return VerbResult.fail(
+            f"{p.target} not found, but {_none_confirmed(steps)}, so it may not have turned at all "
+            "and every look may have been at the same view",
+            steps=0,
+        )
+    # "may not have", as for a scan it confirmed none of: a turn the state did not show can still
+    # have been partly made, when robotd held its twist for less than one frame before the stop
     return VerbResult.fail(
-        f"{p.target} not found after {p.max_steps} steps ({p.max_steps * p.step_deg:.0f}°)"
+        f"{p.target} not found, but the robot's own state confirmed only {taken} of the "
+        f"{steps} turns sent to it ({taken * step:.0f}°), so the scan may not have seen all the "
+        f"{steps * step:.0f}° it was meant to",
+        steps=taken,
+    )
+
+
+def _scan_stopped(
+    ctx: VerbContext, starts: list[float], steps: int, step: float
+) -> tuple[str, int]:
+    """How far `search_scan` had turned when a twist was refused, in the words its result says
+    it in, and the count of turns it reports as `steps`: the turns that ended before the one
+    refused, or, on a body whose own state says which twists it took, the ones it confirmed,
+    which are none at all on a robot that took no twist and said nothing."""
+    made = len(starts)
+    taken = _turns_taken(ctx, starts)
+    if taken is None or taken == made:
+        turned = made if taken is None else taken
+        return f"the scan stopped after {turned} of {steps} turns ({turned * step:.0f}°)", turned
+    if taken == 0:
+        return (
+            f"the scan stopped, and {_none_confirmed(made)}, so it may not have turned at all",
+            0,
+        )
+    return (
+        f"the scan stopped after {taken} of {steps} turns ({taken * step:.0f}°) the robot's own "
+        f"state confirmed, of the {made} sent to it",
+        taken,
     )
 
 
 async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
+    """`_go_to`, ended at the first twist the body refuses: stopped, and failed saying why.
+
+    It used to steer on without the twist until its timeout and then say only that it had timed
+    out, the hold, the pad or the link that refused it in a log line nobody piloting reads."""
+    try:
+        return await _go_to(ctx, p)
+    except _Refused as refused:
+        return await _stopped_by(ctx, "go_to", "the body stopped", refused)
+
+
+def _measures_first(ctx: VerbContext) -> bool:
+    """Whether `go_to` measures, then moves, on this body's camera, because its frames come too
+    seldom for the steering law.
+
+    The law turns STEER_GAIN radians a second for every degree of bearing and holds that turn
+    until the next tick, when it measures again, on the newest frame. It was sized for a camera
+    with a new frame most ticks. On a slower one the same frame is measured tick after tick and
+    the same turn held, and a frame steers from the moment it was taken until a newer one
+    replaces it, which on a camera whose fetch can take as long as its period is up to two
+    periods. The law covers a whole bearing in STEER_TURN_S of holding one, so where two periods
+    are longer than that, one measurement turns the duck past what it measured, and the next,
+    taken before the turn, says to go on turning. On mediad's `/frame`, asked at two frames a
+    second, a model of the duck turned a ball out of an alpha's 37° view that way, and the lost
+    branch then turned away from it. On such a camera `go_to` turns no further than each
+    measurement calls for, and measures again only on a frame taken once the turn had settled.
+
+    A body that does not say how often its frames come keeps the law as it was: the simulators,
+    which draw a frame when it is asked for, and a stream, which comes faster than a tick."""
+    period = frame_period_of(ctx.transport)
+    return period is not None and 2 * period > STEER_TURN_S
+
+
+async def _hold(ctx: VerbContext, twist: tuple[float, float, float], seconds: float) -> None:
+    """Hold `twist` for `seconds`, sent again every MOVE_RESEND_S so the deadman stays fed. A
+    twist the body refuses ends it with `_Refused`, as every twist here does."""
+    slices = max(1, round(seconds / MOVE_RESEND_S))
+    for _ in range(slices):
+        await _twist(ctx, *twist)
+        await ctx.transport.sleep(seconds / slices)
+
+
+async def _settle(ctx: VerbContext, vx: float) -> tuple[float, tuple[float, float, float] | None]:
+    """End a turn of `go_to`'s: walk on straight at `vx`, or stand, for a tick while the turn
+    dies down, and return the moment after which a frame shows where the turn left the duck,
+    with the twist to hold while that frame comes, which `_see_holding` holds for no more than
+    a deadman window."""
+    straight = _clamped(ctx, vx, 0.0, 0.0)
+    await _twist(ctx, *straight)
+    await ctx.transport.sleep(TICK_S)
+    return ctx.transport.now(), (straight if straight[0] else None)
+
+
+async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
+    """Steer toward the target on what the camera sees until it is close enough.
+
+    On a camera that keeps up with the steering law a frame is measured every tick and the turn
+    it calls for held for that tick (STEER_GAIN). On a slower one (`_measures_first`) each turn
+    is held only for as long as it takes to cover the bearing the frame measured, then the duck
+    walks on straight and the next frame acted on is one taken once the turn had settled, so no
+    measurement turns it past what it measured, and none taken before a turn steers after it.
+
+    A target lost from view is looked for by turning toward the side it was last seen on, as
+    before. Measured first, no turn goes further than the bearing that called for it, so that
+    side is still where the target should be, as it is on a camera that keeps up with the law.
+    It was the law's overshoot on a slow camera that sent the duck the wrong way. Measuring
+    first, the lost branch too turns only between frames taken once its last turn had settled,
+    each turn lasting STEER_TURN_S and counting for as many ticks, so it turns as far before it
+    gives up as on a camera that keeps up."""
     if ctx.detector is None:
         return VerbResult.fail("go_to needs a detector (none configured)")
-    await _look_ahead(ctx)
+    # the first frame acted on is one taken once the head has settled (`_look_ahead`)
+    since: float | None = await _look_ahead(ctx)
     t0 = ctx.transport.now()
-    lost = 0
+    lost = 0.0  # ticks' worth of the lost branch's turn since the target was last seen
     last_bearing = 0.0
     tick = 0
     held: tuple[float, float, float] | None = None
     while ctx.transport.now() - t0 < p.timeout_s:
         tick += 1
-        img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held)
+        img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held, since)
+        since = None
         if img is None:
             return await _no_frame(ctx, "go_to")
         if (failed := await detector_failed(ctx, "go_to", "the body stopped")) is not None:
             return failed
+        measures_first = _measures_first(ctx)
         if not hits:
-            lost += 1
-            if lost > 30:
+            hold = STEER_TURN_S if measures_first else TICK_S
+            lost += hold / TICK_S
+            if lost > LOST_TICKS:
                 await ctx.transport.stop()
                 return VerbResult.fail(f"lost the {p.target}; try search_scan")
             # turn toward where it was last seen
-            wz = 0.8 if last_bearing >= 0 else -0.8
-            held = _clamped(ctx, 0.0, 0.0, wz)
-            await ctx.transport.send_intent(Intent.move(*held))
+            held = _clamped(ctx, 0.0, 0.0, LOST_WZ if last_bearing >= 0 else -LOST_WZ)
+        else:
+            lost = 0.0
+            d = hits[0]
+            bearing = d.bearing_deg or 0.0
+            dist = d.est_distance_m
+            last_bearing = bearing
+            if dist is not None and dist <= p.stop_distance:
+                held = None
+                await ctx.transport.stop()
+                await ctx.transport.sleep(TICK_S)
+                return VerbResult.success(
+                    f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°",
+                    distance_m=dist,
+                    bearing_deg=bearing,
+                    ticks=tick,
+                )
+            wz = max(-STEER_MAX_WZ, min(STEER_MAX_WZ, bearing * STEER_GAIN))
+            vx = 0.2 if abs(bearing) < 25 else 0.05
+            if dist is not None and dist < p.stop_distance + 0.15:
+                vx = min(vx, 0.1)  # creep in
+            held = _clamped(ctx, vx, 0.0, wz)
+            # measuring first, the turn is held for as long as it takes to cover the bearing this
+            # frame measured and no longer, or, with no turn to make, for as long as the law takes
+            # to cover one
+            hold = TICK_S
+            if measures_first:
+                hold = abs(math.radians(bearing) / held[2]) if held[2] else STEER_TURN_S
+        if measures_first:
+            await _hold(ctx, held, hold)
+            since, held = await _settle(ctx, held[0])
+        else:
+            await _twist(ctx, *held)
             await ctx.transport.sleep(TICK_S)
-            continue
-        lost = 0
-        d = hits[0]
-        bearing = d.bearing_deg or 0.0
-        dist = d.est_distance_m
-        last_bearing = bearing
-        if dist is not None and dist <= p.stop_distance:
-            held = None
-            await ctx.transport.stop()
-            await ctx.transport.sleep(TICK_S)
-            return VerbResult.success(
-                f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°",
-                distance_m=dist,
-                bearing_deg=bearing,
-                ticks=tick,
-            )
-        wz = max(-1.0, min(1.0, bearing * 0.05))
-        vx = 0.2 if abs(bearing) < 25 else 0.05
-        if dist is not None and dist < p.stop_distance + 0.15:
-            vx = min(vx, 0.1)  # creep in
-        held = _clamped(ctx, vx, 0.0, wz)
-        await ctx.transport.send_intent(Intent.move(*held))
-        await ctx.transport.sleep(TICK_S)
     await ctx.transport.stop()
     return VerbResult.fail(
         f"go_to timed out after {p.timeout_s:g}s without reaching the {p.target}"

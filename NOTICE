@@ -38,8 +38,8 @@ This project builds on, interoperates with, and is grateful to:
     connect(). Nothing vendored.
     https://github.com/google-deepmind/mujoco
 
-  * ONNX Runtime (microsoft/onnxruntime) — what runs the robot's own walking
-    policy on the CPU, and onnxruntime-web in the browser demo. MIT.
+  * ONNX Runtime (microsoft/onnxruntime) — what runs alpha_walking.onnx and
+    alpha_stand.onnx on the CPU, and onnxruntime-web in the browser demo. MIT.
     Optional extra quackd[mujoco]. Nothing vendored.
     https://github.com/microsoft/onnxruntime
 

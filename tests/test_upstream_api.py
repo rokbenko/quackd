@@ -232,7 +232,9 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
 
     ADR-0022 asked every adapter for a pin and grandfathered this one, and in the week that
     followed upstream went from API v16 to v23 with nothing here to show it. A pin in the URL
-    is what makes that visible next time.
+    is what makes that visible next time. Then robotd's releases went on to v41 while the pin
+    stayed at v23, so every ref cites the one pin, the ones that quote a design doc included:
+    a ref left at an older commit is one the last re-read skipped.
     """
     assert len(upstream_api.PIN) == 40 and upstream_api.PIN.isalnum()
     assert upstream_api.PIN in upstream_api.API_VERSION.source
@@ -240,6 +242,129 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
     assert "/blob/main/" not in upstream_api.IPC_PROTO
     for ref in upstream_api.all_refs():
         assert "/blob/main/" not in ref.source, ref
+        assert upstream_api.PIN in ref.source, ref
+
+
+def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
+    """The floor and the version read are numbers the handshake compares, and the frame route is
+    a path the transport matches `--camera-url` against, so each has to agree with the ref beside
+    it: a floor above the version read refuses the very robot quackd read, and a path that is not
+    the route's leaves `extras.robotd.mediad_frame` saying nothing about it. What the rule rests
+    on, upstream's own word on a skew and the two facts the echo reads, was read, not assumed."""
+    assert int(upstream_api.API_FLOOR.name) <= int(upstream_api.API_VERSION.name)
+    assert upstream_api.MEDIAD_FRAME_HTTP.name.endswith(upstream_api.MEDIAD_FRAME_PATH)
+    for ref in (
+        upstream_api.API_FLOOR,
+        upstream_api.VERSION_SKEW,
+        upstream_api.MOVE_ECHO,
+        upstream_api.PAD_DRIVES,
+    ):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
+def test_the_posture_labels_are_the_ones_robotd_names() -> None:
+    """quackd sorts `robot.state.policy` into standing, sitting and everything else, and the
+    labels it sorts were an UNVERIFIED assumption until they were read in robotd's source at the
+    pin. The sort has to cover exactly what the two VERIFIED refs name: a label quackd sorts
+    that robotd never reports is one read wrong, and one robotd reports that quackd does not
+    sort is one nobody read."""
+    driven, not_driven = upstream_api.POLICY_LABELS_DRIVEN, upstream_api.POLICY_LABELS_NOT_DRIVEN
+    named = [label for ref in (driven, not_driven) for label in ref.name.split(", ")]
+    # a configured skill reports its own name, and that name with the suffix while it unwinds
+    placeholders = ["<skill>", "<skill>" + upstream_api.UNWIND_SUFFIX]
+    assert all(p in named for p in placeholders), named
+    sorted_labels = [
+        *upstream_api.STANDING_LABELS,
+        *upstream_api.SITTING_LABELS,
+        *upstream_api.NOT_STANDING_LABELS,
+    ]
+    assert len(set(sorted_labels)) == len(sorted_labels), "a label is sorted twice"
+    assert sorted(set(named) - set(placeholders)) == sorted(sorted_labels)
+    for ref in (driven, not_driven):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
+def test_the_labels_robotd_never_counts_still_are_labels_it_names() -> None:
+    """The gaze hold goes on judging the head while it waits only as long as the frames it reads
+    come from ticks robotd does not count the duck still on, since only then can no glance of
+    robotd's own be in them, and it knows those ticks by their labels. A label there that
+    robotd never reports is one read wrong. One that stands or seats the duck, or `held`, which
+    robotd also gives a tick whose policy failed while it went on driving, is a tick robotd may
+    count still, and trusting it would take a glance for somebody else's head."""
+    driven, not_driven = upstream_api.POLICY_LABELS_DRIVEN, upstream_api.POLICY_LABELS_NOT_DRIVEN
+    named = {label for ref in (driven, not_driven) for label in ref.name.split(", ")}
+    never_still = set(upstream_api.NOT_STILL_LABELS)
+    assert never_still <= named, never_still - named
+    assert not never_still & {*upstream_api.STANDING_LABELS, *upstream_api.SITTING_LABELS, "held"}
+
+
+def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
+    """The gaze hold sends `HEAD_PARAMS` back to robotd, the head pose finds the head_yaw joint
+    by its place in `JOINT_NAMES`, and the verbs that steer on the camera wait `IDLE_FADE_S` on a
+    robotd from `IDLE_HEAD_SINCE_API` on. Each is a name or a number read upstream at the pin,
+    and each has to agree with the ref that says where it was read."""
+    assert upstream_api.HEAD_PARAMS == ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
+    assert "{" + ", ".join(upstream_api.HEAD_PARAMS) + "}" in upstream_api.ROBOT_HEAD.note
+    assert upstream_api.JOINT_NAMES == (
+        "left_hip_yaw",
+        "left_hip_roll",
+        "left_hip_pitch",
+        "left_knee",
+        "left_ankle",
+        "neck_pitch",
+        "head_pitch",
+        "head_yaw",
+        "head_roll",
+        "mouth",
+        "right_hip_yaw",
+        "right_hip_roll",
+        "right_hip_pitch",
+        "right_knee",
+        "right_ankle",
+    )
+    note = upstream_api.IDLE_HEAD.note
+    assert f"IDLE_AFTER ({upstream_api.IDLE_AFTER_S:g} s)" in note
+    assert f"FADE ({upstream_api.IDLE_FADE_S:g} s)" in note
+    assert f"on API {upstream_api.IDLE_HEAD_SINCE_API}" in note
+    # IDLE_HEAD was read at the pin, so the release the pin is has to be one that glances
+    assert int(upstream_api.API_VERSION.name) >= upstream_api.IDLE_HEAD_SINCE_API
+    for ref in (upstream_api.IDLE_HEAD, upstream_api.HEAD_YAW_SIGN, upstream_api.STATE_FRAMES):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
+def test_the_numbers_that_stop_a_walk_are_the_ones_read() -> None:
+    """The safety page, the hardware checklist and the Microduck page say when robotd's deadman
+    zeroes a twist, how often `padd` re-sends a still pad's stop, and how long after a driving pad
+    goes it asks robotd to sit the duck, and `tests/test_docs.py` takes each number from these
+    constants. Each has to say what the VERIFIED ref that read it says, at the pin."""
+    assert f"{upstream_api.DEADMAN_S * 1000:g} ms by default" in upstream_api.DEADMAN.note
+    heartbeat = f"HEARTBEAT, {upstream_api.PAD_HEARTBEAT_S * 1000:g} ms"
+    assert heartbeat in upstream_api.PAD_DRIVES.note
+    assert f"PAD_LOST_SIT, {upstream_api.PAD_LOST_SIT_S:g} s" in upstream_api.PAD_DRIVES.note
+    for ref in (upstream_api.DEADMAN, upstream_api.PAD_DRIVES):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
+def test_the_camera_numbers_are_the_ones_read() -> None:
+    """The lens of a tall `/frame` is worked out from the IMX219's field of view, and the lens of
+    an upright WebRTC frame comes from the calibration mediad sends, the alpha family's on an
+    alpha. Each number sits beside the VERIFIED ref that read it and says what that ref says, and
+    that a tall frame is an alpha's is the one thing assumed."""
+    fov = upstream_api.IMX219_FOV_DEG
+    assert f"{fov:g} degrees" in upstream_api.IMX219_FOV.name
+    assert f"{fov:g} degrees" in upstream_api.ALPHA_UPRIGHT_FOV.name
+    assert f"tan({fov / 2:g} degrees)" in upstream_api.ALPHA_UPRIGHT_FOV.note
+    assert upstream_api.ALPHA_UPRIGHT_FOV.status == "UNVERIFIED"
+    solve = upstream_api.ALPHA_SOLVE
+    assert set(solve) == {"width", "height", "fx", "fy", "cx", "cy"}
+    assert f"{solve['width']:g} by {solve['height']:g} frame" in upstream_api.ALPHA_INTRINSICS.note
+    for ref in (
+        upstream_api.IMX219_FOV,
+        upstream_api.ALPHA_INTRINSICS,
+        upstream_api.CAMERA_MOUNT,
+        upstream_api.MEDIA_VIDEO,
+    ):
+        assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
 
 
 def test_lerobot_and_rosbridge_vocabularies_match_what_was_read() -> None:

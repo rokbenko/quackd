@@ -1,6 +1,13 @@
 # ADR-0006: Every upstream assumption lives in one file, tagged VERIFIED or UNVERIFIED
 
-**Status:** accepted · **Date:** 2026-08-28
+**Status:** accepted, amended · **Date:** 2026-08-28
+
+**Amended 2026-10-08 by [ADR-0051](0051-a-microduck-newer-than-the-read-is-served.md):** a
+VERIFIED ref is what quackd read at one pin, and the Microduck's handshake no longer refuses a
+robot on any other `duck-ipc-proto` version. It refuses one older than the oldest version read
+and serves the rest, warning whenever the version is not the one read, because upstream refuses
+a changed call by name rather than a peer by its number. The one kind of call nothing answers,
+the `robot.move` notification, is checked against the robot's own state instead.
 
 ## Context
 

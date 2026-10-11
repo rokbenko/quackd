@@ -102,13 +102,21 @@ ask ("add a `.duck` to `ducks/`, or an adapter for the robot on your desk").
 > Microduck. Demo GIF attached (a real SO-101 under a real model; the duck clips are sim, scripted pilot).
 >
 > One thing I'd really value from the people who built the real thing:
-> 1. **Microduck socket assumptions.** I read `duck-ipc-proto` (API v23, pinned) and mapped verbs to
->    `robot.move` (as notifications, feeding the deadman), `robot.do{skill}`, `robot.look`,
->    `robot.sound{tag}`, `robot.health` as the heartbeat. Everything I couldn't verify is
->    tagged UNVERIFIED in one file — mainly: how to read posture from `robot.state.policy`,
->    and that there's no socket-level camera snapshot yet.
-> 2. **The WebSocket agent surface** from architecture.md §5.3 — I have a stub waiting for it.
->    If the design changes, I'd rather track it than guess.
+> 1. **Microduck socket assumptions.** I read `duck-ipc-proto` at daemon-v0.16.1 (API v41,
+>    pinned) and mapped verbs to `robot.move` (as notifications, feeding the deadman, checked
+>    against `move.requested` since nothing answers them), `robot.do{skill}`, `robot.look`,
+>    `robot.sound{tag}`, `robot.health` as the heartbeat. Any robotd from API 23 up is served,
+>    with a warning when it isn't 41, which is how I read your rule that a bump promises nothing.
+>    Posture comes off `robot.state.policy` as an allowlist: `walk` and `stand` are standing,
+>    `sit` is sitting, and any other label refuses a walk. I resend `LookResult.head` as
+>    `robot.head` every second, so a gaze holds instead of the duck looking around on its own.
+>    Frames come from mediad's `GET /frame`, or the WebRTC track turned upright by the `rotate`
+>    mediad reports. Everything I couldn't verify is tagged UNVERIFIED in one file, mainly
+>    whether `robot.enable` gets a fallen duck up, and the lens I assume for a tall `/frame`.
+> 2. **The WebSocket agent surface** from architecture.md §5.3 is gone at daemon-v0.16.1, and
+>    agents go over the rendezvous lane now, which your relay says is not a teleop lane. So I've
+>    deprecated the stub I had waiting for it, and I drive over robotd's socket through ssh.
+>    Tell me if that's the wrong read.
 >
 > No Pollen assets are used (no meshes, no logos), Apache-2.0 like upstream, and the README
 > says "unofficial" up top. Thank you for building the robot. Repo: <link>
@@ -169,8 +177,7 @@ please correct it" framing.
 - **Third beat: when Microducks arrive**, which is around Christmas 2026 for the earliest
   pre-orders and four to six months out for later ones, so this beat lands per person rather
   than on one date: a hardware run of the six Microduck
-  starters, `jsonrpc` flipped to ✅, and the WebSocket backend if upstream shipped it. That's
-  the launch that earns v1.
+  starters and `jsonrpc` flipped to ✅. That's the launch that earns v1.
 
 ## Metrics that matter
 

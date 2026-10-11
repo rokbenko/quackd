@@ -374,6 +374,15 @@ A simulator of a real body declares itself: the module lists it in `SIMULATOR_BA
 `quackd preflight` refuses anything else by, so a command meant for a model never opens a real
 body's port. A module that declares none has none.
 
+A backend on its way out declares itself in the same module, as a mapping rather than a list:
+`DEPRECATED_BACKENDS` maps its name to one line saying what to use instead and the release it
+goes in, and `quackd.adapters.factory.deprecated_backend(spec)` reads it. A declaration in any
+other shape, or a line that is not a string, raises a TypeError naming the module rather than
+being read as nothing. `quackd run`, `quackd doctor`, `quackd serve-mcp` and
+`quackd robot list --probe` print that line once on stderr just before they connect through the
+backend, and never for a robot they do not connect, which is the warning at run time
+RELEASING.md asks of a removal announced a minor ahead. `microduck:websocket` is the one today.
+
 ## `upstream_api.py`: never guess a name
 
 The traps that recur across bodies, and what each one cost, are collected in

@@ -1,14 +1,22 @@
-"""Frames off a real Microduck, over the only path upstream actually offers: `mediad`'s WebRTC.
+"""Frames off a real Microduck over `mediad`'s WebRTC video track, turned upright.
 
-`duck-ipc-proto` has no camera method at all, `robotctl` and `duckctl` have no camera
-subcommand, and `mediad`'s HTTP port serves exactly one route: the console page. The camera
-reaches clients as an H.264 track over WebRTC and nowhere else, so getting a picture into quackd
-means being a WebRTC peer. `docs/adapters/microduck/README.md` carries the reference for that.
+At the pin `mediad` hands a picture out three ways: this track, one PNG per `GET /frame` on its
+console port (`up.MEDIAD_FRAME_HTTP`), and one raw frame per `media.frame` on a socket only the
+robot itself can reach (`up.MEDIA_FRAME`). The track is the stream, decoded here frame by frame,
+and it takes this extra and a WebRTC peer, where `GET /frame`, the camera quackd's docs start
+with, takes neither. `docs/adapters/microduck/README.md` carries the reference for all three.
 
-This runs **on your machine**, not on the robot. That is the point: a Microduck at somebody
-else's desk is not a robot you install daemons on or stop services on, and the alternative — a
-snapshot server on the duck — needs `sudo systemctl stop mediad` first, because `mediad`'s
-`v4l2src` holds `/dev/video0` for the life of the process. Nothing here writes to the robot.
+The track is the picture as the camera took it. On an alpha the camera is mounted a quarter turn
+off upright and nothing on the robot turns the pixels back (`up.CAMERA_MOUNT`), so each frame
+comes in on its side, where how far across it a ball is says how high the ball is in the room
+rather than where it is. `mediad` says how far to turn the picture, as `media.video`'s `rotate`
+(`up.MEDIA_VIDEO`). This turns every frame clockwise by that much, the way upstream's own `uyvy`
+crate does, and hands out no frame at all until `mediad` has said. The same answer carries the
+lens, for the frame as it is sent, and `upright_fov_deg` turns that with the frame.
+
+This runs **on your machine**, not on the robot, and installs nothing there. Past the signalling,
+the one line it writes to the robot is the `media.video` question, on the control datachannel
+`mediad` opens at every peer.
 
 Signalling is gst-plugins-rs `net/webrtc`, read from `mediad/webclient/index.html` at the pin.
 Five messages, and the robot offers rather than answers:
@@ -22,7 +30,7 @@ Five messages, and the robot offers rather than answers:
     -> peer {sessionId, sdp: {type: "answer", sdp}}
     <- peer {sessionId, ice: {candidate, sdpMLineIndex}}
 
-Two things to know before trusting a frame from this. **One media session at a time** — pulling
+Two things to know before trusting a frame from this. **One media session at a time**: pulling
 video competes with anyone who has the browser console open, though control-only clients
 coexist. And there is **no authentication**: upstream's own note is that a pairing PIN which is
 `000000` on every robot "authenticates nobody", so anyone who can reach port 8443 can watch and
@@ -43,11 +51,15 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import time
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, TypeGuard
 from urllib.parse import urlparse
 
 from PIL import Image
+
+from quackd_microduck import upstream_api as up
 
 SCHEME = "webrtc"
 DEFAULT_PORT = 8443
@@ -55,13 +67,42 @@ DEFAULT_PORT = 8443
 #: than hang it.
 DEFAULT_TIMEOUT_S = 15.0
 
+#: How to stand a frame upright, by `media.video`'s `rotate`: the degrees clockwise the camera is
+#: mounted from upright, which is how far clockwise the frame has to turn (`up.CAMERA_MOUNT`).
+#: PIL's transposes turn counterclockwise, so a quarter turn clockwise is its ROTATE_270. mediad
+#: names no other angle: it refuses to start on one.
+UPRIGHT: dict[int, Image.Transpose | None] = {
+    0: None,
+    90: Image.Transpose.ROTATE_270,
+    180: Image.Transpose.ROTATE_180,
+    270: Image.Transpose.ROTATE_90,
+}
+
+#: The id of the one request written to the control channel, the `media.video` question.
+VIDEO_REQUEST_ID = 1
+
+#: What `health()` shows of `media.video`'s intrinsics: the numbers and whose solve they are.
+INTRINSICS_SHOWN = ("fx", "fy", "cx", "cy", "calibrated", "source")
+
+#: Why `start()` reports no camera when frames came and the turn never did.
+NO_MOUNT = (
+    f"frames arrived, but mediad never said how its camera is mounted ({up.MEDIA_VIDEO.name}'s "
+    "rotate), so quackd hands none out: on an alpha they would be on their side"
+)
+#: Why `latest` hands out nothing while frames come and the turn has not, yet.
+UNTURNED = (
+    f"mediad has not said how its camera is mounted ({up.MEDIA_VIDEO.name}'s rotate), so quackd "
+    "hands out no frame: on an alpha it would be on its side"
+)
+
 log = logging.getLogger("quackd.microduck.webrtc")
 
 _MISSING = (
     "the WebRTC camera needs aiortc, av and websockets, which are not installed. "
     "Install them with `pip install 'quackd[microduck-camera]'`. "
-    "The alternative that needs no extra is an HTTP snapshot server and "
-    "`--camera-url http://.../snapshot.jpg`."
+    "The camera that needs no extra is mediad's own snapshot route: "
+    f"`--camera-url http://127.0.0.1:8080{up.MEDIAD_FRAME_PATH}` through "
+    "`ssh -L 8080:127.0.0.1:8080 microduck@<duck>`."
 )
 
 
@@ -77,15 +118,52 @@ def signalling_url(address: str) -> str:
     return f"ws://{host}:{port}"
 
 
+def _quarter_turn(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value in UPRIGHT
+
+
+def _positive(value: Any) -> TypeGuard[float]:
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def upright_fov_deg(video: Mapping[str, Any]) -> float | None:
+    """The horizontal field of view of an upright frame, in degrees, from what `media.video`
+    said, or None when it did not say enough to tell: no quarter turn, no intrinsics, or numbers
+    that are not a size and a focal length.
+
+    The intrinsics are for the frame as it is sent, which nothing on the robot turns, so a
+    quarter turn swaps the axes (`up.MEDIA_VIDEO`): the upright frame is as wide as the sent one
+    is tall, and the focal length across it is `fy`. Half that width over the focal length is the
+    tangent of half the lens. An angle holds at whatever size the frames are decoded at, and the
+    detector works the focal length back out of it at the width it is handed, which comes to
+    mediad's own, scaled. Where the principal point sits is not in it: the detector takes it to
+    be the centre."""
+    rotate, intrinsics = video.get("rotate"), video.get("intrinsics")
+    if not _quarter_turn(rotate) or not isinstance(intrinsics, Mapping):
+        return None
+    across, focal = ("height", "fy") if rotate in (90, 270) else ("width", "fx")
+    width, f = video.get(across), intrinsics.get(focal)
+    if not (_positive(width) and _positive(f)):
+        return None
+    return math.degrees(2 * math.atan(float(width) / 2 / float(f)))
+
+
 class WebRtcCamera:
-    """One video track, decoded, newest frame kept. Not a control path: it never sends intents.
+    """One video track, decoded and turned upright, newest frame kept. Not a control path: it
+    never sends an intent.
 
     `mediad` opens a `control` datachannel at us whether we want one or not (the robot creates
-    it, so a client that opens nothing still gets a control surface). We accept it and ignore
-    it — motion goes over `robotd`'s socket, where the executor, the allowlist and the deadman
-    feed already live, and having two ways to move the robot would mean two places to be sure
-    about. `detections` is the one thing read from it, because it costs nothing and is the only
-    perception upstream offers.
+    it, so a client that opens nothing still gets a control surface). Two things are read off
+    it: `media.video`, which says how far to turn the picture and what the lens is, and
+    `media.detections`, which costs nothing and is the perception `mediad` runs itself. One
+    thing is written to it, once: the `media.video` question. Motion goes over `robotd`'s
+    socket, where the executor, the allowlist and the deadman feed already live, and having two
+    ways to move the robot would mean two places to be sure about.
     """
 
     def __init__(self, address: str, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
@@ -96,44 +174,96 @@ class WebRtcCamera:
         self.error: str | None = None
         self.producer: dict[str, Any] | None = None
         self.detections: dict[str, Any] | None = None
+        self.video: dict[str, Any] | None = None
+        """What `mediad` last said the video is, `media.video`'s answer or its push, or None until
+        it has said either."""
+        self.rotate: int | None = None
+        """How far clockwise a frame turns to stand upright, once `mediad` has said a quarter turn,
+        or None. No frame is handed out while it is None."""
         self._frame: Image.Image | None = None
         self._frame_at: float | None = None
+        self._upright: tuple[Image.Image, int, Image.Image] | None = None
+        """The newest frame asked for, turned upright, beside the decoded frame and the turn it
+        came from (`_turned`)."""
         self._task: asyncio.Task[None] | None = None
         self._tracks: set[asyncio.Task[None]] = set()
         self._first = asyncio.Event()
         self._settled = asyncio.Event()
-        """Set when there is an answer either way: a frame decoded, or it definitively cannot."""
+        """Set when there is an answer either way: a frame quackd can stand upright, or none it
+        ever will."""
         self._pc: Any = None
         self._closing = False
 
     # ── what the transport uses ─────────────────────────────────────────────────────────
 
     def latest(self, *, max_age_s: float | None = None) -> Image.Image | None:
-        """The newest decoded frame, or None if it is too old to steer on.
+        """The newest frame, upright, or None if there is none to steer on: none has decoded, it
+        is too old, or `mediad` has not said how far to turn it.
 
         A session that dies leaves its last frame in memory. Handing that out forever is how a
-        stopped video turns into a robot walking at something that is no longer there.
+        stopped video turns into a robot walking at something that is no longer there. And a
+        frame handed out before the turn is known may be on its side, which `go_to` would steer
+        on as if a ball's height in the room were its bearing.
         """
-        if self._frame is None or self._frame_at is None:
+        frame, rotate = self._frame, self.rotate
+        if frame is None or self._frame_at is None or rotate is None:
             return None
         if max_age_s is not None and time.monotonic() - self._frame_at > max_age_s:
             return None
-        return self._frame
+        return self._turned(frame, rotate)
+
+    @property
+    def ready(self) -> bool:
+        """Whether a frame has decoded and `mediad` has said how far to turn it."""
+        return self._frame is not None and self.rotate is not None
+
+    @property
+    def fov_deg(self) -> float | None:
+        """How wide an upright frame is, in degrees, by `mediad`'s own intrinsics, or None until
+        it has said how far to turn one, and when it has no geometry to give (`upright_fov_deg`)."""
+        if self.video is None or self.rotate is None:
+            return None
+        return upright_fov_deg(self.video)
+
+    def why_no_frame(self, *, max_age_s: float | None = None) -> str | None:
+        """Why `latest` hands out nothing just now, or None when it would hand out a frame: the
+        session's own error, no frame decoded yet, the turn not known yet, or a frame too old to
+        steer on. The transport's `camera_error`, which a verb that found no frame quotes."""
+        if self.latest(max_age_s=max_age_s) is not None:
+            return None
+        if self.error is not None:
+            return self.error
+        if self._frame is None or self._frame_at is None:
+            return f"no frame has decoded from {self.address} yet"
+        if self.rotate is None:
+            return UNTURNED
+        age = time.monotonic() - self._frame_at
+        window = "" if max_age_s is None else f" the {max_age_s:g} s"
+        return (
+            f"the newest frame from {self.address} is {age:.1f} s old, older than{window} quackd "
+            "steers on"
+        )
 
     async def start(self, *, wait: bool = True) -> bool:
-        """Open the session. With `wait`, resolve once a frame decodes — or once it cannot.
+        """Open the session. With `wait`, resolve once a frame decodes and `mediad` has said how
+        far to turn it, or once that cannot happen.
 
         Every terminal failure sets `_settled` as well: a missing extra, a refused connection,
         `mediad` with no producer, the robot ending the session. Waiting out the full timeout
         for an answer already in hand is how a bring-up check that says it will "say so rather
         than hang" hangs for fifteen seconds.
+
+        A frame with no word on the turn is not a camera yet, since it may be on its side, so the
+        wait is for both. When it runs out on frames alone, `error` says so.
         """
         self._task = asyncio.create_task(self._run(), name="quackd-microduck-webrtc")
         if not wait:
             return False
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._settled.wait(), timeout=self.timeout_s)
-        return self._frame is not None
+        if self._frame is not None and self.rotate is None and self.error is None:
+            self.error = NO_MOUNT
+        return self.ready
 
     async def close(self) -> None:
         self._closing = True
@@ -152,13 +282,23 @@ class WebRtcCamera:
 
     def health(self) -> dict[str, Any]:
         age = None if self._frame_at is None else round(time.monotonic() - self._frame_at, 2)
+        upright = self.latest()
+        fov = self.fov_deg
+        intrinsics = (self.video or {}).get("intrinsics")
         return {
             "configured": True,
             "url": self.address,
-            "ok": self._frame is not None,
+            "ok": upright is not None,
             "age_s": age,
             "frames": self.frames,
-            "size": list(self._frame.size) if self._frame is not None else None,
+            "size": list(upright.size) if upright is not None else None,
+            "rotate": self.rotate,
+            "fov_deg": None if fov is None else round(fov, 1),
+            "intrinsics": (
+                {key: intrinsics.get(key) for key in INTRINSICS_SHOWN}
+                if isinstance(intrinsics, Mapping)
+                else None
+            ),
             "producer": (self.producer or {}).get("id"),
             "error": self.error,
         }
@@ -250,12 +390,44 @@ class WebRtcCamera:
 
         @pc.on("datachannel")
         def _on_datachannel(channel: Any) -> None:
-            # The robot opens this at us; we read it and never write to it.
-            @channel.on("message")
-            def _on_message(data: Any) -> None:
-                self._on_control(data)
+            self._on_channel(channel)
 
         return pc
+
+    def _on_channel(self, channel: Any) -> None:
+        """The control datachannel the robot opens at us: read everything that comes on it, and
+        ask it once what the video is.
+
+        `mediad` pushes `media.video` when the channel opens as well, but its own doc says that
+        push races the peer and can be lost, which is why upstream's console asks and this does
+        too (`up.MEDIA_VIDEO`). aiortc hands over a channel the robot opened already open; one
+        that is not yet is asked the moment it opens."""
+
+        @channel.on("message")
+        def _on_message(data: Any) -> None:
+            self._on_control(data)
+
+        if channel.readyState == "open":
+            self._ask_video(channel)
+        else:
+
+            @channel.on("open")
+            def _on_open() -> None:
+                self._ask_video(channel)
+
+    def _ask_video(self, channel: Any) -> None:
+        """Write the `media.video` question, the one line this writes to the robot, as upstream's
+        console writes it."""
+        request = {
+            "jsonrpc": up.JSONRPC_VERSION,
+            "id": VIDEO_REQUEST_ID,
+            "method": up.MEDIA_VIDEO.name,
+            "params": {},
+        }
+        try:
+            channel.send(json.dumps(request))
+        except Exception as e:  # a channel closing under us; the push may still come
+            log.warning("webrtc camera: could not ask mediad what its video is: %s", e)
 
     async def _drain(self, track: Any) -> None:
         """Decode frames until the track ends. The newest one is all anybody wants."""
@@ -264,17 +436,101 @@ class WebRtcCamera:
                 frame = await track.recv()
             except Exception:  # the track ended, or the session did
                 return
-            self._frame = frame.to_image()
-            self._frame_at = time.monotonic()
-            self.frames += 1
-            self._first.set()
+            self._took_frame(frame.to_image())
+
+    def _took_frame(self, image: Image.Image) -> None:
+        """Keep a decoded frame as the newest, as it came off the track: it is turned when it is
+        asked for (`_turned`)."""
+        self._frame = image
+        self._frame_at = time.monotonic()
+        self.frames += 1
+        self._first.set()
+        if self.rotate is not None:
             self._settled.set()
 
+    def _turned(self, frame: Image.Image, rotate: int) -> Image.Image:
+        """`frame` turned upright by `rotate`. Turned when it is asked for rather than as it
+        decodes, since the track decodes up to thirty frames a second and `go_to` reads ten, and
+        kept, since `doctor`, the state and a verb may each ask for the same frame. A frame the
+        pipeline already turned is handed out as it came (`_already_upright`)."""
+        turn = UPRIGHT[rotate]
+        if turn is None or self._already_upright(frame, rotate):
+            return frame
+        kept = self._upright
+        if kept is not None and kept[0] is frame and kept[1] == rotate:
+            return kept[2]
+        upright = frame.transpose(turn)
+        self._upright = (frame, rotate, upright)
+        return upright
+
+    def _already_upright(self, frame: Image.Image, rotate: int) -> bool:
+        """Whether `frame` came off the track already turned by the quarter turn `rotate` says.
+
+        A `mediad` started with `--flip-in-pipeline` turns the pixels in its pipeline, so the
+        track it encodes is upright, and still reports the mount as `rotate` and the size the
+        camera takes as `media.video`'s width and height (mediad/src/main.rs:557-594 and
+        :614-615, `up.CAMERA_MOUNT`). Turned again here, every frame was on its side, measured
+        through the upright lens, so a ball's height in the room read as its bearing. A frame
+        that is tall where `media.video` describes a wide one, or wide where it describes a tall
+        one, is the turn already made. Its shape is compared rather than its size, since the
+        stream may be scaled. A half turn leaves the shape as it was, and a square frame has none
+        to tell by, so those are turned as `rotate` says. No board mounts its camera a half turn
+        off (`up.CAMERA_MOUNT`)."""
+        if rotate not in (90, 270):
+            return False
+        video = self.video or {}
+        width, height = video.get("width"), video.get("height")
+        if not (_positive(width) and _positive(height)) or width == height:
+            return False
+        return (frame.width < frame.height) != (width < height)
+
     def _on_control(self, data: Any) -> None:
+        """One line off the control channel. Nothing on it is taken to be well formed, and
+        nothing raises out of here, which aiortc calls."""
         with contextlib.suppress(Exception):
             msg = json.loads(data)
-            if msg.get("method") == "media.detections":
+            if not isinstance(msg, dict):
+                return
+            method = msg.get("method")
+            if method == up.MEDIA_VIDEO.name:  # the push, when the channel opened
+                self._took_video(msg.get("params"))
+            elif method == up.FEATURE_STREAM.name:
                 self.detections = msg.get("params") or {}
+            elif method is None and msg.get("id") == VIDEO_REQUEST_ID:  # the answer
+                if "result" in msg:
+                    self._took_video(msg.get("result"))
+                elif "error" in msg:
+                    self._video_refused(msg.get("error"))
+
+    def _took_video(self, video: Any) -> None:
+        """What `mediad` says the video is. A `rotate` that is not a quarter turn is no turn
+        quackd can make, so no frame goes out on it."""
+        if not isinstance(video, dict):
+            return
+        self.video = dict(video)
+        rotate = video.get("rotate")
+        if _quarter_turn(rotate):
+            self.rotate = rotate
+            if self.error == NO_MOUNT:  # said late, after `start()` gave up waiting for it
+                self.error = None
+            if self._frame is not None:
+                self._settled.set()
+            return
+        self.rotate = None
+        self.error = (
+            f"mediad says its camera is mounted {rotate!r} degrees from upright, which is not a "
+            "quarter turn quackd can undo, so it hands out no frame"
+        )
+        self._settled.set()
+
+    def _video_refused(self, error: Any) -> None:
+        """`mediad` answered the question with an error, which it does when it has no video to
+        describe. A push that already said how to turn the frames still stands."""
+        if self.rotate is not None:
+            return
+        said = error.get("message") if isinstance(error, dict) else None
+        self.error = f"mediad would not say what its video is: {said or error!r}"
+        self._settled.set()
 
 
 # ── the optional dependencies, named once ───────────────────────────────────────────────
