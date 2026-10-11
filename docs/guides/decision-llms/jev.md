@@ -53,9 +53,15 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 
 ## What to know before you point a robot at it
 
-- **The path is not configurable.** `SYSTEM_ONE_PATH = "/v1/systemone"` is a hardcoded constant in
-  `typesafe_sdk/_core/constants.py`, concatenated onto the base URL, and the docs site agrees. A
-  gateway serving Jev elsewhere (the OpenRouter Decisions API) is out of reach by repointing it.
+- **The end of the path is not configurable.** `SYSTEM_ONE_PATH = "/v1/systemone"` is a hardcoded
+  constant in `typesafe_sdk/_core/constants.py`, concatenated onto the base URL, and the docs site
+  agrees. A path on the address is kept in front of it, so a gateway that serves the format under
+  a prefix of its own is reached by naming the prefix, but no address reaches a route that ends
+  any other way: the OpenRouter Decisions API, at `/api/alpha/decisions`, is out of reach by
+  repointing it. OpenRouter's System One endpoint, `/api/v1/systemone`, is within reach of the
+  path and not of the key, because an address typed for this row is sent the word `local` (the
+  warning below), so it would take a row of its own
+  ([What is not covered](README.md#what-is-not-covered-and-why)).
 - **The key is mandatory and validated.** Without one, and without `TYPESAFE_API_KEY`, the client
   raises `TypeSafeError` at construction; the validator rejects empty, non-ASCII, non-printable
   and whitespace-containing keys, and accepts the literal `local`, which is what every self-hosted
@@ -94,7 +100,7 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 |---|---|---|
 | Constructor | `AsyncTypeSafeClient(*, api_key, model, retry, timeout, headers, transport, http_client, base_url)`, all keyword-only, on `httpx2>=2.0.0` (not `httpx`), `pydantic>=2.12` and `tenacity>=9`; both clients are context managers, and never closing one emits no warning | `systemone.py` builds it while the CLI is still parsing, so a bad install is a sentence before the robot connects, and `quackd[decision]` is this client and nothing else |
 | Key handling | `TypeSafeError` at construction with no key and no `TYPESAFE_API_KEY`; the validator rejects empty, non-ASCII, non-printable and whitespace-containing keys and accepts `local` | `doctor` reports the variable unset, and a run that names this row without a key says so once before it connects to the robot and carries on without the stepper: `DecisionMissingKey` is what `decision_llm_is_available` puts in that sentence, and is never raised. `NO_KEY = "local"` in `base.py` is what every keyless row sends |
-| Address | argument, else `TYPESAFE_BASE_URL`, else `https://api.typesafe.ai`, `rstrip("/")`, with `SYSTEM_ONE_PATH = "/v1/systemone"` from `typesafe_sdk/_core/constants.py` appended by string concatenation | the row's `url` is `none` and quackd passes `base_url` only when a flag gave one; `--decision-url` takes a scheme, a host and a port and no path |
+| Address | argument, else `TYPESAFE_BASE_URL`, else `https://api.typesafe.ai`, `rstrip("/")`, with `SYSTEM_ONE_PATH = "/v1/systemone"` from `typesafe_sdk/_core/constants.py` appended by string concatenation | the row's `url` is `none` and quackd passes `base_url` only when a flag gave one, path and all, so the constant follows whatever path `--decision-url` carries, and an address that already ends in `/v1` reaches `/v1/v1/systemone` |
 | Two timeouts | `RetryPolicy` frozen: `max_retries=2, backoff_initial=0.5, backoff_max=5.0, backoff_jitter=0.25, http_statuses={408, 429, 500..599}, respect_retry_after=True, timeout=30.0`, that last one the budget for the whole retry sequence, read when an attempt fails; the clock on each operation of a request is the client's own `timeout=`, default `10.0` s | overridden with `max_retries=1, backoff_max=0.2, timeout=1.0` because one retry fits a one-second turn and two do not, plus twice `TIMEOUT_S` on the client itself, above the stepper's own `asyncio.timeout` around `decide()`, so that bound is the one clock that ends a turn |
 | The call | `system_one(state, questions, *, model, retry, timeout, extra_headers, extra_body, response_model)`, async; the SDK always sends `model`, substituting its own default when the call names none, and its own headers (`Authorization: Bearer <key>`, `User-Agent: typesafe-sdk/0.7.1`, `X-TypeSafe-SDK`, `X-TypeSafe-Runtime`, `X-TypeSafe-Retry-Count` on retries) overwrite anything passed in `headers=` | one request a turn carrying all four questions, with the row's id named explicitly so the record says what quackd asked for; quackd passes no headers, because one passed here would be silently discarded |
 | Plain dicts are questions | `Noul`, `Choice` and `Score` plus the three TypedDicts; a noul dict needs only `{"type": "noul"}`, while choice and score require criteria | the four questions are built once as dicts and reach every backend unrebuilt |
@@ -111,7 +117,7 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 | `LATENCY_UNDER_ONE_SECOND` | that 0.114 s on TypeSafe's own task holds on a robot's state over your own network. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the model and the record says how long it waited |
 | `USAGE_REPORTED` | whether the token counts come back on a real call. Both are typed optional and documented as absent where the API did not report one | where a count is missing or is not a measurement, quackd estimates the request at four characters to the token and marks the turn `usage_estimated`; at $0.042 per million the money either way is a rounding error, and the flag is there so nobody reads the estimate as an invoice |
 | `PYTHON_FLOOR` | that the SDK's own 3.10 floor is the SDK's problem | nothing; `quackd[decision]` is a small HTTP client that runs on quackd's own Python, and the model runs on TypeSafe's machines |
-| `PATH_IS_HARDCODED` | that `/v1/systemone` stays where it is | nothing it can do; a gateway serving Jev at another path (the OpenRouter Decisions API) is out of reach until the SDK makes the path configurable, and its issue #7 asking for exactly that was closed unresolved |
+| `PATH_IS_HARDCODED` | that `/v1/systemone` stays where it is | nothing it can do, and nothing a gateway under a prefix of its own needs: a path on the address is kept, with the constant after it. A route that ends any other way, the OpenRouter Decisions API at `/api/alpha/decisions` among them, is out of reach while the constant is all there is, and the SDK's issue #7 asking for the path to be configurable was closed unresolved. OpenRouter's key would need a row of its own as well, because an address typed for this one is sent `local` |
 
 ## Status
 

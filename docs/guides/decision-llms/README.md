@@ -256,7 +256,7 @@ Three flags, because there are many decision LLMs now rather than one:
 | Flag | What it says | Default |
 |---|---|---|
 | `--decision-llm NAME[:MODEL]` | which one answers, and optionally which model id it answers as | none, and then none of the rest of this happens |
-| `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. No path: the client adds `/v1/systemone`, or `/v1/decisions` on `openai`, where a path stops the run | whatever the row says |
+| `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. A System One row keeps a path on it and its client adds `/v1/systemone` after the path; `openai`'s client adds `/v1/decisions` to the host alone, and a path there stops the run | whatever the row says |
 | `--decision-mode off\|shadow\|on` | what its answer is allowed to do | `on` once you have named one, `off` when you have not |
 
 **Naming a decision LLM is asking for it**, so the mode defaults to `on` rather than to a second

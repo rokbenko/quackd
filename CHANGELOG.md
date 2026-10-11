@@ -202,6 +202,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   at all", which ADR-0043 had already corrected: `laya` reports the tokens its encoder read, and
   quackd takes that as a measurement. PLAN.md's open item on the stepper pointed at a break-even the
   hub no longer works out, and points at its speed and cost figures now.
+- **A System One address keeps its path, as it always has.** The pages for `jev` and `local`, the
+  hub's table of flags and `--decision-url`'s help said a System One row's address takes a scheme,
+  a host and a port and no path, because its client adds `/v1/systemone` itself. TypeSafe's client
+  puts that after whatever address it is handed, path and all, and quackd hands it the address as
+  given, so a server behind a gateway that serves the format under a prefix of its own is reached
+  by naming the prefix, while an address that already ends in `/v1` reaches `/v1/v1/systemone`.
+  They say so now, and the `jev` page says what keeps each of OpenRouter's two decision endpoints
+  out of reach, a route that ends another way for its alpha Decisions API and the key for its
+  System One endpoint, where it named the first alone. `tests/test_docs.py` holds each of them to
+  the rule the factory keeps.
 
 ## [0.17.1] — 2026-10-07
 

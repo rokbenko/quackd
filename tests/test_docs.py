@@ -1673,6 +1673,66 @@ def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page
     assert named == set(OPENAI_HOSTS), f"{page}: {sorted(named ^ set(OPENAI_HOSTS))}"
 
 
+def test_the_decision_url_help_names_every_host_the_openai_key_goes_to() -> None:
+    """`--decision-url`'s help says where `OPENAI_API_KEY` goes, and it went on naming the three
+    regional hosts the SDK's own regional choice names after `decisions_api.OPENAI_HOSTS` had
+    grown to the ten OpenAI's data controls page lists for this endpoint. It names them as the
+    prefixes in front of `api.openai.com`, in one parenthesis, and they are read back here and
+    held to the hosts the key goes to, both ways, so a host added to one fails here until the
+    other names it."""
+    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+    from quackd.cli import _DECISION_URL
+
+    said = " ".join(str(_DECISION_URL.help).split())
+    listed = re.search(
+        r"\(((?:[a-z]{2}\., )+[a-z]{2}\. or [a-z]{2}\.) in front of api\.openai\.com\)", said
+    )
+    assert listed and "https://api.openai.com" in said, said
+    regions = re.findall(r"([a-z]{2})\.", listed.group(1))
+    named = {"api.openai.com", *(f"{region}.api.openai.com" for region in regions)}
+    assert named == set(OPENAI_HOSTS), sorted(named ^ set(OPENAI_HOSTS))
+
+
+def test_a_page_that_says_how_an_address_is_read_keeps_a_system_one_path() -> None:
+    """A System One row's client puts `/v1/systemone` after whatever address it is handed, path
+    and all, and quackd hands it the address as given: `factory.resolve_decision_address` holds
+    only `openai` to the host alone. So a server behind a gateway that serves the format under a
+    prefix of its own is reached by naming the prefix. The `jev` and `local` pages, the hub's
+    table of flags and the flag's own help said such an address takes no path, which the hub's
+    own paragraph on OpenRouter's System One endpoint contradicts, since reaching it would take
+    an address with a path.
+
+    So the factory keeps the path for every System One row and refuses it for `openai`, and each
+    of those four places, read as one line, says the path is kept and no longer says the address
+    takes no path. A catalogue row's own address still has none, and saying so is not this."""
+    from quackd.agent.decision.base import DecisionError
+    from quackd.agent.decision.catalogue import SYSTEM_ONE
+    from quackd.agent.decision.factory import resolve_decision_address
+    from quackd.cli import _DECISION_URL
+
+    gateway = "https://gateway.example/decide"
+    rows = [name for name, spec in PRESETS.items() if spec.backend == SYSTEM_ONE]
+    assert rows and all(resolve_decision_address(PRESETS[n], gateway) == gateway for n in rows)
+    with pytest.raises(DecisionError, match="has a path"):
+        resolve_decision_address(PRESETS["openai"], gateway)
+    pages = REPO / "docs" / "guides" / "decision-llms"
+    hub = (pages / "README.md").read_text(encoding="utf-8")
+    (row,) = [line for line in hub.splitlines() if line.startswith("| `--decision-url URL` |")]
+    places = {
+        "the hub's row for --decision-url": row,
+        "--decision-url's help": str(_DECISION_URL.help),
+        "jev.md": (pages / "jev.md").read_text(encoding="utf-8"),
+        "local.md": (pages / "local.md").read_text(encoding="utf-8"),
+    }
+    for where, text in places.items():
+        flat = _one_line(text)
+        wrong = re.findall(r"takes a scheme, a host and a port|takes no path|\bno path[:,]", flat)
+        assert not wrong, f"{where} still says {wrong} of a System One address"
+        assert re.search(r"keeps a path|path and all|is kept", flat), (
+            f"{where} does not say a System One address keeps its path"
+        )
+
+
 def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     """The table is the way in, so it carries the links, in the order `doctor` prints.
 

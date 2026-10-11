@@ -2869,12 +2869,14 @@ _DECISION_LLM = typer.Option(
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
-    help="Where the decision LLM listens, e.g. http://localhost:8009 — no path, because the "
-    "client adds /v1/systemone itself, or /v1/decisions for `openai`, which refuses one. "
-    "Required by --decision-llm local, and the way to move any other one off the address its "
-    "row expects. `openai` sends OPENAI_API_KEY to OpenAI's own API alone, "
-    "https://api.openai.com or its us., eu. and ae. hosts, and the word local anywhere else. "
-    "QUACKD_DECISION_URL does the same for the rows that want no key.",
+    help="Where the decision LLM listens, e.g. http://localhost:8009. A System One row keeps a "
+    "path on it and its client adds /v1/systemone after the path; `openai`'s client adds "
+    "/v1/decisions to the host alone, and a path there stops the run. Required by "
+    "--decision-llm local, and the way to move any other one off the address its row expects. "
+    "`openai` sends OPENAI_API_KEY to OpenAI's own API alone, https://api.openai.com or a "
+    "regional host OpenAI name for it (us., eu., au., ca., jp., in., sg., kr., gb. or ae. in "
+    "front of api.openai.com), and the word local anywhere else. QUACKD_DECISION_URL does the "
+    "same for the rows that want no key.",
     rich_help_panel="Model",
 )
 _DECISION_MODE = typer.Option(
