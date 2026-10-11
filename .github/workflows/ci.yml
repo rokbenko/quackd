@@ -13,11 +13,13 @@ jobs:
   test:
     name: py${{ matrix.python }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # The whole job takes under four minutes. Without this a hung test ran to GitHub's six
-    # hour limit, three times on macOS, and the log named nothing. With it the job fails
-    # fast and the two faulthandler timers in pyproject.toml and tests/conftest.py have
-    # already dumped every thread's stack by then.
-    timeout-minutes: 20
+    # Without a limit a hung test ran to GitHub's six hour limit, three times on macOS, and
+    # the log named nothing. With it the job fails in half an hour at most, and the two
+    # faulthandler timers in pyproject.toml and tests/conftest.py have already dumped every
+    # thread's stack by then. The limit was 20 minutes while the slowest job, Windows on 3.12,
+    # took 14, and the Microduck re-read added minutes of wall-clock tests to every job, so 20
+    # would have cancelled healthy runs on a slow day.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

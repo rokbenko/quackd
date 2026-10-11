@@ -378,12 +378,11 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
         *sorted((REPO / ".github" / "ISSUE_TEMPLATE").glob("*.yml")),
         *sorted((REPO / "ducks").glob("*.duck")),
     ]
-    stale = [
-        f"{path.relative_to(REPO).as_posix()}: {claim!r}"
-        for path in sources
-        for claim in _RETIRED_MICRODUCK_CLAIMS
-        if claim in " ".join(path.read_text(encoding="utf-8").split())
-    ]
+    stale: list[str] = []
+    for path in sources:  # each file read once, not once a claim: the tree has hundreds
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        where = path.relative_to(REPO).as_posix()
+        stale += [f"{where}: {claim!r}" for claim in _RETIRED_MICRODUCK_CLAIMS if claim in text]
     assert not stale, (
         "these still describe a real Microduck the way quackd's read before daemon-v0.16.1 did "
         f"(docs/adapters/microduck/README.md has the read): {stale}"

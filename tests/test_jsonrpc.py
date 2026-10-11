@@ -265,8 +265,15 @@ class FakeRobotd:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._stream
             self._stream = None
+        # From Python 3.12.1 `wait_closed` also waits for every connection the server took to
+        # close, and a test that fails before it closes its transport leaves quackd's open, so
+        # teardown waited until CI's job limit cancelled it, and the failure was never printed.
+        # Hanging up first is what a robotd that exits does, and the bound is the backstop for a
+        # connection that does not close when told, as `_DelayingLink.stop` has.
+        self.hang_up()
         self.server.close()
-        await self.server.wait_closed()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self.server.wait_closed(), 2.0)
 
     def hang_up(self) -> None:
         """Close every connection from this end, as a robotd that exits does."""
@@ -1487,6 +1494,7 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
         # gaze hold may send robot.head meanwhile, so it is steering once three moves are out
         await _eventually(lambda: _moves(robotd) >= 3, "go_to steering", wait_s=10.0)
 
+        asked = len(robotd.requests)
         robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
         await _until(t, lambda s: s["safety"].get("picked_up") is True)
         await _landed(t)
@@ -1497,7 +1505,11 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
     said = "go_to: a twist was refused, so the body stopped: the duck stopped standing (somebody"
     assert not result.ok and result.summary.startswith(said), result.summary
     assert "holding the duck" in result.data["move_refused"]
-    assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name
+    # The stop go_to sent as it ended, wherever it fell among the requests after the pick-up:
+    # its refused twist can land between the frame that showed the pick-up and `_landed`'s own
+    # request, which a clock as fine as Linux's lets happen and Windows' coarse one hid.
+    sent = [r["method"] for r in robotd.requests[asked:]]
+    assert up.ROBOT_STOP.name in sent, sent
 
     robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
     await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
@@ -1551,6 +1563,7 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
             "go_to's last re-send, a zero twist",
         )
 
+        asked = len(robotd.requests)
         robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
         await _until(t, lambda s: s["safety"].get("picked_up") is True)
         await _landed(t)
@@ -1561,7 +1574,10 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
             assert walking is not None
             walked = await _ended(walking, "the walk ending at the twist held back")
             assert not walked.ok and "holding the duck" in walked.summary, walked.summary
-        assert robotd.requests[-1]["method"] == up.ROBOT_STOP.name, "another call's stop went out"
+        # wherever it fell: the walk's refused twist, and the stop after it, can come before
+        # `_landed`'s own request on a clock as fine as Linux's
+        sent = [r["method"] for r in robotd.requests[asked:]]
+        assert up.ROBOT_STOP.name in sent, f"another call's stop went out: {sent}"
 
         robotd.picked_up, robotd.policy = False, "walk"  # and puts it down on its feet
         await _until(t, lambda s: s["safety"].get("picked_up") is False and s["policy"] == "walk")
