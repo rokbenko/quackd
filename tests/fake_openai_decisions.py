@@ -373,14 +373,27 @@ SCRIPTS: dict[str, list[Reply]] = {
 a run of any length is answered."""
 
 
+def folded(lines: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """Header lines as one value a name, the values of a name sent more than once joined by a
+    comma and a space in the order they were sent, which is how HTTP itself folds repeated field
+    lines into one (RFC 9110, section 5.3)."""
+    by_name: dict[str, str] = {}
+    for name, value in lines:
+        by_name[name] = f"{by_name[name]}, {value}" if name in by_name else value
+    return by_name
+
+
 @dataclass
 class Recorded:
     method: str
     path: str
     """As sent, query and all, so a request that carried one shows it."""
     headers: dict[str, str]
-    """Every header, its name lowercased. A name sent twice keeps only its last value here,
-    which is why `lines` exists."""
+    """Every header, its name lowercased, and a name sent twice under both of its values
+    (`folded`). It used to keep the last value alone, so a second `Authorization` sent before
+    the expected one left no trace here, and an assertion that the header said `Bearer local`
+    passed beside a gateway's credential. Folded, the same assertion fails whichever line came
+    first. `lines` keeps every line apart."""
     body: Any
     status: int
     reply: Any
@@ -447,14 +460,15 @@ class FakeOpenAIDecisions:
                 status, reply = stand_in._answer(self.command, self.path, body)
                 pace = reply if isinstance(reply, Paced) else Paced(reply)
                 reply = pace.reply
+                lines = [(k.lower(), v) for k, v in self.headers.items()]
                 seen = Recorded(
                     self.command,
                     self.path,
-                    {k.lower(): v for k, v in self.headers.items()},
+                    folded(lines),
                     body,
                     status,
                     {"location": reply.location} if isinstance(reply, Moved) else reply,
-                    [(k.lower(), v) for k, v in self.headers.items()],
+                    lines,
                 )
                 with stand_in._lock:
                     stand_in.requests.append(seen)

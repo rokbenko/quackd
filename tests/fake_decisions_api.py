@@ -8,6 +8,11 @@ back, the `Omit` marker, the HTTP client the SDK is handed and the release it ca
 and records what each was handed, so a test can say what the client was built with, which
 header was omitted and what went out in the body.
 
+Because CI runs this and never the SDK, the fake refuses every call to `post` that a release
+the extra allows would refuse, rather than taking whatever it is handed: otherwise a call the
+real client turns down passes every test on CI, and on a real run each stepper turn ends on
+`gate: error` while the run exits 0.
+
 The answers are in the shapes OpenAI's API reference publishes for `POST /v1/decisions`, read
 2026-10-08: a decision is `{answers, model, usage}`, every answer names the question it
 answers, a `predicate` carries a `probability`, a `choice` its `choice`, `confidence` and a list
@@ -29,6 +34,7 @@ import os
 import sys
 import types
 from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from typing import Any
 
 __version__ = "0.0.0+fake"
@@ -190,6 +196,60 @@ def refusal(name: str | None) -> dict[str, Any]:
     return {"type": "refusal", "name": name}
 
 
+# ── how a release takes a request ───────────────────────────────────────────────────────
+#
+# Read from `AsyncAPIClient.post` and `RequestOptions` in the eleven releases uv had cached, from
+# 1.66.0, the extra's floor, to 3.22.1, the locked one (`openai/_base_client.py` and
+# `openai/_types.py` in each, 2026-10-11), and run in three of them, 1.66.0, 3.1.0 and 3.22.1, by
+# `tests/test_decisions_api_wire.py`.
+
+OPTIONS = frozenset(
+    {"headers", "max_retries", "timeout", "params", "extra_json", "idempotency_key"}
+)
+"""The per-request options 1.66.0 lists in `RequestOptions`, and so every release read lists:
+1.83.0 adds `follow_redirects`, and 3.1.0 and the releases after it `security` and
+`synthesize_event_and_data` besides. The three that were run, 1.66.0, 3.1.0 and 3.22.1, all build
+a request's options with pydantic's `model_construct`, which leaves out a key its model has no
+field for and says nothing, so an option outside this set is one that some release the extra
+allows would quietly not apply: the per-request `follow_redirects` is the case already met,
+which 1.66.0 drops. The fake refuses such an option rather than pretend it took effect."""
+
+_NO_OPTIONS: Mapping[str, Any] = MappingProxyType({})
+"""What `options` is when a caller hands none: empty, as the SDK's own default is, and read-only,
+so no call can leave anything in it for the next."""
+
+
+REFUSED: dict[str, dict[str, Any]] = {
+    "options=None": {"options": None},
+    "options naming a field post fills itself": {"options": {"url": "/elsewhere"}},
+    "a keyword only a resource method takes": {"extra_headers": {}},
+    "the clock as a keyword of its own": {"timeout": 1.0},
+}
+"""Calls to the generic request, beside a path, a `cast_to` and a body, that each release read
+refuses with a `TypeError` before anything is sent, by the keyword each adds: `post` takes no
+keyword it does not name, and unpacks `options` beside the fields it fills itself.
+`tests/test_decisions_api_wire.py` holds the real client to the same four wherever it is
+installed, which has been 1.66.0, 3.1.0 and 3.22.1, and `tests/test_decisions_api.py` holds the
+fake."""
+
+REFUSED_BY_THE_FLOOR: dict[str, dict[str, Any]] = {
+    "content, which 1.66.0 has not got": {"content": b"{}"},
+    "an option 1.66.0 drops without a word": {"options": {"follow_redirects": False}},
+}
+"""Calls that 3.22.1 takes and that 1.66.0, the floor, would not carry out: a keyword it has not
+got, which is a `TypeError` there, and an option it leaves out of the request without saying so,
+which the fake refuses with one rather than pretend it took effect."""
+
+
+def _request_options(**values: Any) -> dict[str, Any]:
+    """The keywords the SDK's `post` hands `FinalRequestOptions.construct`: the method, the path,
+    the body and the files it fills itself, with the caller's `options` unpacked beside them.
+    Called the same way, it fails the same way, and for the same two reasons: an `options` that
+    is not a mapping, None included, cannot be unpacked, and one that names a field `post` fills
+    hands that field a second value. Both are a `TypeError` raised before anything is sent."""
+    return values
+
+
 def decision(
     answers: Iterable[Mapping[str, Any]],
     *,
@@ -262,12 +322,47 @@ class FakeOpenAI:
         *,
         cast_to: Any,
         body: Any = None,
-        options: Mapping[str, Any] | None = None,
-        **rest: Any,
+        files: Any = None,
+        options: Mapping[str, Any] = _NO_OPTIONS,
+        stream: bool = False,
+        stream_cls: Any = None,
     ) -> Any:
-        self.posts.append(
-            {"path": path, "cast_to": cast_to, "body": body, "options": dict(options or {})}
-        )
+        """The SDK's generic request, refusing every call that a release the extra allows would
+        refuse, and answering the rest.
+
+        It used to take anything at all, the keywords it did not name in a catch-all, and to
+        record `options or {}`. So a call that handed the SDK `options=None`, which the SDK
+        unpacks and fails on, read here exactly as a call with no options, and so did a call
+        with `extra_headers=` or `timeout=`, which a resource method takes and this request
+        does not: CI runs this fake and never the SDK, so the suite passed calls that would
+        have ended every real stepper turn on `gate: error`.
+
+        The keywords are the ones `post` takes in every release read, which are 3.22.1's
+        without `content`, a keyword 1.66.0 and 1.83.0 have not got, and nothing else, so any
+        other is the `TypeError` it is in the SDK. `options` goes through what the SDK does
+        with it (`_request_options`), and a key the floor does not list is refused besides
+        (`OPTIONS`). A request to stream is refused as well: the SDK hands such a call a stream
+        rather than the decoded body the backend reads, and a fake that answered it with a body
+        would hide that."""
+        if stream or stream_cls is not None:
+            raise NotImplementedError(
+                "the fake answers with a decoded body and never streams, and the SDK would hand "
+                "a streamed request a stream rather than the body the backend reads"
+            )
+        _request_options(method="post", url=path, json_data=body, files=files, **options)
+        unknown = sorted(set(options) - OPTIONS)
+        if unknown:
+            raise TypeError(
+                f"post() options {unknown} are not among the RequestOptions of openai 1.66.0, the "
+                "extra's floor, which leaves an option it does not know out of the request "
+                "without a word"
+            )
+        return await self._send(path, cast_to, body, dict(options))
+
+    async def _send(self, path: str, cast_to: Any, body: Any, options: dict[str, Any]) -> Any:
+        """A request that passed every check the SDK makes before it sends, recorded and
+        answered."""
+        self.posts.append({"path": path, "cast_to": cast_to, "body": body, "options": options})
         if isinstance(self.raises, BaseException):
             raise self.raises
         if self.raises is not None:

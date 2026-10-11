@@ -40,6 +40,7 @@ from quackd.agent.decision.stepper import Call, Stepper, build_questions
 from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
+from tests import fake_decisions_api as fake_api
 from tests.conftest import ReachedOpenAI, openai_address, plain_text
 from tests.fake_openai_decisions import (
     CONFIDENCE,
@@ -194,7 +195,8 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
     for post in posts:
         assert post.path == PATH
         assert post.status == 200, post.reply
-        assert post.headers["authorization"] == "Bearer local"
+        # every line under the name, so a second one beside quackd's would show
+        assert post.every("authorization") == ["Bearer local"]
         assert post.headers["user-agent"].startswith("AsyncOpenAI/Python"), "not the real SDK"
         for ambient in ("x-gateway-key", "openai-organization", "openai-project"):
             assert ambient not in post.headers, ambient
@@ -227,9 +229,9 @@ def test_at_openais_own_address_the_key_and_the_account_headers_go_and_the_gatew
     posts = stand_in.posts()
     assert posts
     for post in posts:
-        assert post.headers["authorization"] == f"Bearer {KEY}"
-        assert post.headers["openai-organization"] == "org-x"
-        assert post.headers["openai-project"] == "proj-y"
+        assert post.every("authorization") == [f"Bearer {KEY}"]
+        assert post.every("openai-organization") == ["org-x"]
+        assert post.every("openai-project") == ["proj-y"]
         assert "x-gateway-key" not in post.headers
     records = _records(tmp_path)
     assert _start(records)["decision_price"] == rate.record()
@@ -554,6 +556,25 @@ def test_an_address_with_a_path_stops_the_run_before_the_sdk_sends_anything(
     assert f"--decision-url {stand_in.url}/v1 has a path" in plain_text(result.output)
     assert stand_in.requests == []
     assert not list(tmp_path.iterdir()), "the run started before the typo was noticed"
+
+
+# ── what the suite's other halves lean on ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("call", list(fake_api.REFUSED.values()), ids=list(fake_api.REFUSED))
+async def test_the_real_sdk_refuses_every_request_the_fake_refuses_on_its_behalf(
+    call: dict[str, Any],
+) -> None:
+    """`tests/fake_decisions_api.py` refuses these because each release of the SDK that was read
+    refuses them (`REFUSED`), and it is all CI ever runs, so this is where its word is checked
+    against the real client's: each is a `TypeError` before anything is sent."""
+    with FakeOpenAIDecisions() as stand_in:
+        llm: Any = make_decision_llm(OPENAI, url=stand_in.url)
+        with pytest.raises(TypeError):
+            await llm._client.post(
+                decisions_api.PATH, cast_to=object, body={"model": OPENAI.model}, **call
+            )
+    assert stand_in.requests == []
 
 
 # ── the suite's own guard, on the real client ───────────────────────────────────────────

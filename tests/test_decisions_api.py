@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import dataclasses
+import http.client
 import json
 import os
 import platform
@@ -61,6 +62,8 @@ from quackd.agent.decision.stepper import ESCALATE, Call, Stepper, build_questio
 from quackd.agent.providers.pricing import cost_usd
 from tests import fake_decisions_api as fake_api
 from tests.conftest import REPO, plain_text
+from tests.fake_openai_decisions import PATH as STAND_IN_PATH
+from tests.fake_openai_decisions import FakeOpenAIDecisions
 
 OPENAI = PRESETS["openai"]
 KEY = "sk-test-not-a-real-key"
@@ -189,6 +192,26 @@ async def test_a_timeout_handed_to_decide_sets_that_requests_own_clock_above_it(
     await llm.decide({"goal": "g"}, {})
     assert [p["options"] for p in fake.posts] == [{"timeout": client_timeout(1.5)}, {}]
     assert client_timeout(1.5) > 1.5
+
+
+@pytest.mark.parametrize(
+    "call",
+    [*fake_api.REFUSED.values(), *fake_api.REFUSED_BY_THE_FLOOR.values()],
+    ids=[*fake_api.REFUSED, *fake_api.REFUSED_BY_THE_FLOOR],
+)
+async def test_the_fake_sdk_refuses_a_request_some_release_of_the_sdk_would_not_send(
+    call: dict[str, Any],
+) -> None:
+    """The fake is all CI ever runs, so a call it takes and the SDK refuses passes every test
+    there and costs every turn of a real run, each recorded as `gate: error` while the run still
+    exits 0. It used to take any keyword in a catch-all and read `options=None` as no options at
+    all, so a backend that handed the SDK None, or the clock as a keyword of its own, passed.
+    Each call here is one that a release the extra allows refuses or would not carry out, and the
+    fake refuses it, before it records or answers anything."""
+    fake = fake_api.FakeOpenAI(answers=fake_api.turn("stop"))
+    with pytest.raises(TypeError):
+        await fake.post("/decisions", cast_to=object, body={"model": OPENAI.model}, **call)
+    assert fake.posts == []
 
 
 class _Trickles(fake_api.FakeOpenAI):
@@ -1205,6 +1228,46 @@ def test_a_run_at_a_server_you_run_needs_no_key_and_is_costed_as_one(
     }
     decided = [r for r in records if r.get("kind") == "decision"]
     assert decided and all(r["usage_estimated"] is False for r in decided)
+
+
+# ── the stand-in's own record ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        [("Authorization", "Bearer sk-ambient"), ("authorization", "Bearer local")],
+        [("authorization", "Bearer local"), ("Authorization", "Bearer sk-ambient")],
+    ],
+    ids=["the ambient line first", "the ambient line last"],
+)
+def test_the_stand_in_keeps_every_value_of_a_header_sent_twice(
+    lines: list[tuple[str, str]],
+) -> None:
+    """A second `Authorization` beside the first is the failure the wire tests are there to see,
+    and the stand-in kept one value a name, the last: with a gateway's line sent first, the record
+    said `Bearer local` and nothing else, and the line that should never have left was nowhere in
+    it. Sent twice here, in both orders, on a plain socket, each value is in the record, under
+    `every` one at a time and in `headers` folded together, so an assertion that the header said
+    one thing fails whichever line came first."""
+    body = json.dumps({"model": OPENAI.model, "input": "x", "questions": []}).encode()
+    with FakeOpenAIDecisions() as stand_in:
+        port = urllib.parse.urlsplit(stand_in.url).port
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        try:
+            connection.putrequest("POST", STAND_IN_PATH)
+            for name, value in lines:
+                connection.putheader(name, value)
+            connection.putheader("Content-Type", "application/json")
+            connection.putheader("Content-Length", str(len(body)))
+            connection.endheaders(body)
+            assert connection.getresponse().status == 200
+        finally:
+            connection.close()
+    (post,) = stand_in.posts()
+    sent = [value for _name, value in lines]
+    assert post.every("authorization") == sent
+    assert post.headers["authorization"] == ", ".join(sent)
 
 
 # ── the suite's own guard ───────────────────────────────────────────────────────────────
