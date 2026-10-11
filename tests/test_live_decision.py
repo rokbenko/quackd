@@ -32,6 +32,14 @@ openai: a row whose extra or key is missing is skipped, so one key measures one 
 cheap: each one is a single fan-out against the mock arm, not a run, except the openai
 measurement, which is `SAMPLES` of them and prints what they cost. `-s` matters, because what
 these are for is the numbers they print.
+
+A test that has nothing to read fails, and says why. A wrong key, a model id the API does not
+know, a request it turns down or a first turn slower than the stepper's second leaves a turn
+with no answer in it, and a question the model declines leaves that question with none. A test
+that reads a field off such a turn fails naming the error or the questions declined, where it
+used to die on a bare `KeyError` or, for the safety claim, pass on an answer nobody gave. Each
+such outcome is driven against the stand-in in `tests/test_decisions_api_wire.py`, with no key,
+to hold these to that.
 """
 
 from __future__ import annotations
@@ -40,6 +48,7 @@ import math
 import os
 import statistics
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +61,7 @@ from quackd.agent.decision.stepper import FLOORS, Stepper, build_questions
 from quackd.agent.providers.base import Observation
 from quackd.agent.providers.pricing import cost_usd
 from quackd.verbs.registry import registry_from_manifest
+from tests.fake_openai_decisions import send_once_through_the_sdk
 
 ALLOW = ["report_state", "stop", "gripper", "place", "move_joints"]
 BUDGET = "step 0/12, llm calls 0/12, 0.0/3 min"
@@ -148,6 +158,53 @@ async def _arm_turn(spec: DecisionSpec, goal: str, *, cleared: bool = True) -> t
     return advice, stepper
 
 
+async def _first_use_paid(spec: DecisionSpec) -> bool:
+    """Whether this row's SDK has done what it does once a process before anything here is timed.
+
+    True for a row in OpenAI's own format, which sends one request now to a stand-in on this
+    machine, keyless and free (`send_once_through_the_sdk`), so the request that is timed next
+    opens its own connection and pays for nothing else. False for any other row, which quackd has
+    no stand-in for, so its first timed request may also carry its SDK's first use in this
+    process, and what it prints says so."""
+    if spec.backend != DECISIONS_API:
+        return False
+    await send_once_through_the_sdk(spec)
+    return True
+
+
+def _seconds(value: Any) -> str:
+    """A time off a record, printed as one, or said to be missing: a turn that failed before it
+    was timed has none, and the line that prints it must still print."""
+    return f"{value:.3f} s" if isinstance(value, int | float) else "no time"
+
+
+def _failure(error: BaseException) -> str:
+    """What a request that raised came to, as the record would put it: the type and the HTTP
+    status where there is one, and never the message, which may quote the request."""
+    status = getattr(error, "status_code", None)
+    return f"{type(error).__name__}: HTTP {status}" if status else type(error).__name__
+
+
+def _answered(record: Mapping[str, Any]) -> None:
+    """Fail, saying why, where a turn has no answer to read.
+
+    A turn whose request failed has nothing in it but the failure, so a test that reads a field
+    off it used to die on a bare `KeyError` for the first one, and a wrong key, a model id the
+    API does not know and a slow first turn all read the same. And a question the model declined
+    has no answer either, so the fields the router reads came back empty and the test said a
+    field had been renamed. The safety claim fared worse: read off a turn like that, it passed,
+    on an answer nobody gave."""
+    assert record.get("error") is None, (
+        f"the turn ended on {record.get('gate')} with {record.get('error')} after "
+        f"{_seconds(record.get('latency_s'))}, so no answer came back to check"
+    )
+    declined = record.get("refused") or []
+    assert not declined, (
+        f"the model declined {', '.join(declined)}, so that question has no answer to check: "
+        "ask again, and if it keeps declining, the state it was shown is worth an issue"
+    )
+
+
 @pytest.mark.live_decision
 async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_took(
     row: DecisionSpec,
@@ -159,35 +216,48 @@ async def test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_too
     and that it arrived inside the timeout the loop gives it. Which verb it picks on a folded
     mock arm is the model's business and not a thing to pin, and so is a question it declines.
 
-    What matters is printed: the same kind of number each row's page quotes from its maker,
-    measured on the request quackd actually sends, from wherever you are.
+    What matters is printed, and printed before anything is asserted, so a turn that fails a
+    check still leaves its figures on the terminal: the same kind of number each row's page
+    quotes from its maker, measured on the request quackd actually sends, from wherever you
+    are. It is one turn on a client built for it, so it opens a new connection, which is what a
+    turn in shadow mode usually pays as well.
     """
+    warm = await _first_use_paid(row)
     advice, stepper = await _arm_turn(row, "Say whether you are holding anything, then let it go")
+    record = advice.record
 
-    assert advice.record.get("error") is None, advice.record["error"]
-    assert advice.gate in {"taken", "below_floor", "escalate", "done", "need_human", "refused"}
-    latency = advice.record["latency_s"]
-    chars = advice.record["state_chars"]
+    latency = record.get("latency_s")
     print(
-        f"\n{stepper.name} {stepper.model}: {latency:.3f} s, {chars} chars of state, "
-        f"gate={advice.gate}, choice={advice.record.get('choice')!r}, "
-        f"confidence={advice.record.get('confidence')}"
+        f"\n{stepper.name} {stepper.model}: {_seconds(latency)}, "
+        f"{record.get('state_chars')} chars of state, gate={advice.gate}, "
+        f"choice={record.get('choice')!r}, confidence={record.get('confidence')}"
     )
-    print(f"  probabilities: {advice.record.get('probabilities')}")
-    print(f"  done={advice.record.get('done')} need_human={advice.record.get('need_human')}")
-    print(f"  feasible: {advice.record.get('feasible')}")
-    print(f"  refused: {advice.record.get('refused') or 'nothing'}")
     print(
-        f"  usage: {advice.record.get('usage')}, estimated={advice.record.get('usage_estimated')}"
+        "  timed on its client's first request, so on a new connection, "
+        + (
+            "with the SDK's first use in this process already paid against a stand-in"
+            if warm
+            else "and on its SDK's first use in this process, unless a test before it sent one"
+        )
     )
+    print(f"  error: {record.get('error') or 'none'}")
+    print(f"  probabilities: {record.get('probabilities')}")
+    print(f"  done={record.get('done')} need_human={record.get('need_human')}")
+    print(f"  feasible: {record.get('feasible')}")
+    print(f"  refused: {record.get('refused') or 'nothing'}")
+    print(f"  usage: {record.get('usage')}, estimated={record.get('usage_estimated')}")
     print(
         f"  docs/guides/decision-llms/{row.name}.md says what its maker publishes about its "
         "speed, and docs/guides/decision-llms/README.md estimates from TypeSafe's figure for "
         "every row, so if this one differs, those are what need correcting."
     )
 
-    assert 0.0 < latency < TIMEOUT_S * 2, (
-        f"{latency:.3f} s is outside what the router is built for: the stepper waits "
+    assert record.get("error") is None, (
+        f"the turn ended on {advice.gate} with {record.get('error')}, so nothing was measured"
+    )
+    assert advice.gate in {"taken", "below_floor", "escalate", "done", "need_human", "refused"}
+    assert isinstance(latency, float) and 0.0 < latency < TIMEOUT_S * 2, (
+        f"{_seconds(latency)} is outside what the router is built for: the stepper waits "
         f"{TIMEOUT_S} s for any row, and docs/guides/decision-llms/README.md assumes far less"
     )
 
@@ -199,21 +269,27 @@ async def test_a_real_answer_carries_the_fields_the_router_reads(row: DecisionSp
     translates. That is why `_answer` and `_field` are tolerant, and tolerant code hides a
     rename, so this is the test that would notice one: every field the router branches on,
     present and the right type, from a real response rather than from a stub that was written
-    to match the documentation."""
+    to match the documentation. A turn with no answer in it, failed or declined, is no evidence
+    of a rename, and fails saying which it was (`_answered`)."""
     advice, _stepper = await _arm_turn(row, "Read the arm back and say what it reports")
 
     record = advice.record
-    assert isinstance(record["confidence"], float), "a Choice came back with no confidence"
-    assert 0.0 <= record["confidence"] <= 1.0
-    assert isinstance(record["probabilities"], dict) and record["probabilities"], (
+    _answered(record)
+    confidence = record.get("confidence")
+    assert isinstance(confidence, float), "a Choice came back with no confidence"
+    assert 0.0 <= confidence <= 1.0
+    probabilities = record.get("probabilities")
+    assert isinstance(probabilities, dict) and probabilities, (
         "no distribution came back, so confidence routing has nothing under it"
     )
-    assert record["choice"] in record["labels"], (
-        f"answered {record['choice']!r}, which was not one of the options it was given"
+    assert record.get("choice") in record["labels"], (
+        f"answered {record.get('choice')!r}, which was not one of the options it was given"
     )
     for noul in ("done", "need_human"):
-        assert isinstance(record[noul], float) and 0.0 <= record[noul] <= 1.0, noul
-    assert record["feasible"]["choice"] in {"feasible", "infeasible", "uncertain", None}
+        value = record.get(noul)
+        assert isinstance(value, float) and 0.0 <= value <= 1.0, noul
+    feasible = record.get("feasible") or {}
+    assert feasible.get("choice") in {"feasible", "infeasible", "uncertain", None}
 
 
 @pytest.mark.live_decision
@@ -224,15 +300,23 @@ async def test_a_real_answer_before_a_verdict_cannot_reach_a_moving_verb(
 
     Before a feasibility verdict the stepper is offered the reads and the brake and nothing
     else, so whatever the decision LLM thinks the right action is, the call that comes back
-    cannot be one that moves the arm."""
+    cannot be one that moves the arm. That is a claim about an answer, so a turn that brought
+    none back fails rather than passing on it: a request that failed, a `next_verb` declined, or
+    one whose choice could not be read."""
     advice, _stepper = await _arm_turn(
         row, "Close the gripper on whatever is in front of you", cleared=False
     )
 
-    assert set(advice.record["labels"]) <= {"report_state", "stop", "escalate"}
+    record = advice.record
+    _answered(record)
+    assert record.get("choice") is not None, (
+        f"the turn ended on {advice.gate} with no choice that could be read, so the claim was "
+        "not put to the model"
+    )
+    assert set(record["labels"]) <= {"report_state", "stop", "escalate"}
     if advice.call is not None:
         assert advice.call.name in {"report_state", "stop"}
-        assert advice.record["floor"] == FLOORS[advice.record["class"]]
+        assert record["floor"] == FLOORS[record["class"]]
 
 
 @pytest.mark.live_decision
@@ -246,14 +330,17 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     `LATENCY_UNDER_ONE_SECOND`: the median, the 95th percentile and the slowest, how many would have
     run out of the stepper's `TIMEOUT_S` and gone to the model, and the first request apart from the
     rest, because it opens the connection the others reuse, which is most of the difference between
-    a turn in shadow mode and a turn in a streak. It is also this client's first request, and does
-    once what no later one does, so it reads a little high for a shadow turn in a run that has asked
-    before: the SDK's look at its platform, the costly part, is taken while the client is built
-    (`decisions_api.warm_platform`), and the rest is in the figure, which says so.
-    `ANSWER_NAMES_ECHOED`: every answer back under the name its question was asked by, in the order
-    asked, which is asserted rather than printed, because quackd reads answers by name and nothing
-    else. `CONFIDENCE_MEANS_THE_SAME` and `NO_CACHE_DISCOUNT`, printed for a person to read: the
-    confidence beside the top probability on each answer, and the usage block as OpenAI sent it."""
+    a turn in shadow mode and a turn in a streak. What the SDK does once in a process is done
+    before the clock starts, by a request to a stand-in on this machine (`_first_use_paid`), and
+    its look at its platform while the client is built (`decisions_api.warm_platform`), so the
+    first figure is a new connection and not the SDK getting ready. `ANSWER_NAMES_ECHOED`: every
+    answer back under the name its question was asked by, in the order asked, which is asserted
+    rather than printed, because quackd reads answers by name and nothing else.
+    `CONFIDENCE_MEANS_THE_SAME` and `NO_CACHE_DISCOUNT`, printed for a person to read: the
+    confidence beside the top probability on each answer, and the usage block as OpenAI sent it.
+    All of it is printed before anything is asserted, and a request that fails ends the test
+    naming what it came to."""
+    await _first_use_paid(decisions_row)
     stepper, obs = await _arm_stepper(decisions_row, "Read the arm back and say what it reports")
     llm: Any = stepper.llm
     state, _trimmed = stepper._build_state(obs, budget=BUDGET, stepped=(), notes=None)
@@ -269,26 +356,27 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     llm._post = kept  # this one client only: what the API sent, before it was translated
     took: list[float] = []
     results: list[Any] = []
-    for _ in range(SAMPLES):
+    for n in range(SAMPLES):
         started = time.perf_counter()
-        results.append(await llm.decide(state, questions, timeout_s=PATIENCE_S))
+        try:
+            results.append(await llm.decide(state, questions, timeout_s=PATIENCE_S))
+        except Exception as e:
+            raise AssertionError(
+                f"request {n + 1} of {SAMPLES} failed with {_failure(e)}, so there is no answer "
+                "to measure"
+            ) from e
         took.append(time.perf_counter() - started)
 
-    asked = list(questions)
-    for data in replies:
-        names = [answer.get("name") for answer in data["answers"]]
-        assert names == asked, f"asked {asked} and the answers came back as {names}"
-    usage = replies[0]["usage"]
-    assert isinstance(usage["input_tokens"], int) and usage["input_tokens"] > 0, usage
+    usages = [data.get("usage") or {} for data in replies]
     spent = sum(
         cost_usd(
             {
-                "input_tokens": data["usage"]["input_tokens"],
-                "output_tokens": data["usage"].get("output_tokens") or 0,
+                "input_tokens": usage.get("input_tokens") or 0,
+                "output_tokens": usage.get("output_tokens") or 0,
             },
             stepper.price,
         )
-        for data in replies
+        for usage in usages
     )
     ordered = sorted(took)
     p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
@@ -299,11 +387,11 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
         f"slowest {ordered[-1]:.3f} s"
     )
     print(
-        f"  the first, on a new connection and the client's first use: {took[0]:.3f} s; the "
-        f"other {SAMPLES - 1}, on the same one: p50 {statistics.median(took[1:]):.3f} s"
+        f"  the first, on a new connection: {took[0]:.3f} s; the other {SAMPLES - 1}, on the "
+        f"same one: p50 {statistics.median(took[1:]):.3f} s"
     )
     print(f"  {over} of {SAMPLES} took longer than the stepper's {TIMEOUT_S} s")
-    print(f"  usage, as OpenAI sent it for the first: {usage}")
+    print(f"  usage, as OpenAI sent it for the first: {usages[0]}")
     print(f"  all {SAMPLES} at the row's rate: ${spent:.6f}")
     pairs = [
         (verb.get("confidence"), max(verb["probabilities"].values(), default=None))
@@ -314,14 +402,25 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
     declined = [result["refused"] for result in results if result["refused"]]
     print(f"  questions declined: {declined or 'none'}")
 
+    asked = list(questions)
+    for data in replies:
+        names = [answer.get("name") for answer in data.get("answers") or []]
+        assert names == asked, f"asked {asked} and the answers came back as {names}"
+    first = usages[0].get("input_tokens")
+    assert isinstance(first, int) and first > 0, usages[0]
+
 
 @pytest.mark.live_decision
 async def test_how_many_options_one_choice_may_carry(decisions_row: DecisionSpec) -> None:
     """`CHOICE_BOUNDS` on the row's page: one reading of OpenAI's reference said a choice takes 2
     to 255 options, and no source said so again. quackd always offers at least two, a call and
     `escalate`, so nothing depends on the answer yet. This asks with one option and with 256 and
-    prints what came back. Either is an answer or the API saying no, and anything else, a
-    timeout or a dropped connection, is a failure of the test rather than a bound."""
+    prints what came back. Either is an answer or the API turning the request down with a 400,
+    which is how it says a request is not one it takes. Anything else fails the test rather than
+    passing for a bound: a timeout or a dropped connection, and a 401, a 403, a 404 or a 429,
+    which are the API saying no to the key, the account, the model or the pace, and would have
+    said it to two options as readily. It used to take any 4xx for a bound, so a wrong key read
+    as the API refusing one option and 256 alike."""
     llm: Any = make_decision_llm(decisions_row)
     for count in (1, 256):
         criteria = {f"option_{n}": f"the option numbered {n}" for n in range(count)}
@@ -332,11 +431,14 @@ async def test_how_many_options_one_choice_may_carry(decisions_row: DecisionSpec
             )
         except Exception as e:
             status = getattr(e, "status_code", None)
-            assert isinstance(status, int) and 400 <= status < 500, (
-                f"{count} options: {type(e).__name__}, which is not the API saying no"
+            assert status == 400, (
+                f"{count} options: {_failure(e)}, which is not the API turning down the options"
             )
-            print(f"\n{count} options: refused, {type(e).__name__} HTTP {status}: {e}")
+            print(f"\n{count} options: turned down, {_failure(e)}: {e}")
         else:
+            if "pick" in result["refused"]:
+                print(f"\n{count} options: taken, and the question declined")
+                continue
             pick = result["answers"].get("pick") or {}
             print(
                 f"\n{count} options: answered {pick.get('choice')!r}, with "

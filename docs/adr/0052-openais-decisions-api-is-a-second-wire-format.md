@@ -190,7 +190,8 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   is one.
 - The generic request rests on two of the SDK's internals: `cast_to=object` passing the body
   through, and a body that is not JSON coming back as text. The reader checks that it got a JSON
-  object, and the wire test runs against the locked 3.22.1.
+  object, and the wire tests have run against 3.22.1, which the lock carries, against 3.1.0 and
+  against 1.66.0, the extra's floor, and against no other release.
 - **Nothing here has answered a real robot, and no request from quackd has reached OpenAI.** In CI
   the client runs against a fake of the SDK. Wherever the SDK is installed, a real `quackd run` goes
   through it to a stand-in on 127.0.0.1 (`tests/fake_openai_decisions.py`), which shows on the wire

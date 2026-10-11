@@ -517,6 +517,36 @@ class FakeOpenAIDecisions:
             self._server.server_close()
 
 
+async def send_once_through_the_sdk(spec: Any = None) -> Recorded:
+    """One request through the real `openai` SDK, on a client built the way a run builds one for
+    `spec` (the `openai` row when None), to a stand-in of its own on 127.0.0.1, and what that
+    stand-in recorded. It needs no key and reaches nothing but this machine.
+
+    For whatever the SDK and the HTTP stack under it do once in a process, which a test that
+    times a request, or gives it only the stepper's second, must not pay inside it. Building the
+    client takes care of the SDK's look at its platform (`decisions_api.warm_platform`). What is
+    left happens on the first request a process sends, whichever client sends it: with the
+    locked 3.22.1, anyio choosing its event-loop backend and importing it, which is an import
+    from disk inside the request, and whatever else a release leaves for its first request. On a
+    quick machine that is a small part of a second; on a slow one, or one busy at the wrong
+    moment, it is as long as the disk takes, and a turn has a second. A request sent here first
+    leaves a later one only its own connection to open.
+
+    The one function in this file that imports quackd, and lazily, so the stand-in still runs
+    by hand on the standard library alone."""
+    from quackd.agent.decision.catalogue import PRESETS
+    from quackd.agent.decision.factory import make_decision_llm
+
+    with FakeOpenAIDecisions() as stand_in:
+        llm = make_decision_llm(spec or PRESETS["openai"], url=stand_in.url)
+        await llm.decide(
+            {"goal": "nothing: this request warms the SDK"},
+            {"done": {"type": "noul", "instructions": "Is it done?"}},
+        )
+    (sent,) = stand_in.posts()
+    return sent
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--port", type=int, default=8765)

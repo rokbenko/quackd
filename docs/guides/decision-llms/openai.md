@@ -156,7 +156,7 @@ measurement.
 | `NO_CACHE_DISCOUNT` | how cached input is billed. The guide charges nothing for cache reads or writes, and `usage` still reports `cached_tokens` | every input token is costed at the full rate, which is the higher reading |
 | `REGIONAL_RATE` | the premium on the regional hosts and the long-context multiplier, which apply and are published for no Decisions row | the published rate everywhere OpenAI is reached; `QUACKD_DECISION_PRICE` for a rate of your own |
 | `MODEL_ALIAS_MOVES` | whether `gpt-6-luna` names one fixed model or moves under a run | nothing; the record names the id quackd asked for |
-| `GENERIC_POST_ACROSS_VERSIONS` | that the generic request keeps handing back the decoded body unchanged in every SDK between the floor and the cap. It was read in 1.66.0 and 3.22.1 | a body that is not a JSON object is a turn the record calls an error, in quackd's own words rather than the body's, `UnreadableReply: POST /v1/decisions answered str rather than a JSON object` for a page of text, and the model takes it |
+| `GENERIC_POST_ACROSS_VERSIONS` | that the generic request keeps handing back the decoded body unchanged in every SDK between the floor and the cap. It was read in 1.66.0 and 3.22.1, and the wire tests, which read every body back through it, have run against those two and 3.1.0 | a body that is not a JSON object is a turn the record calls an error, in quackd's own words rather than the body's, `UnreadableReply: POST /v1/decisions answered str rather than a JSON object` for a page of text, and the model takes it |
 | `BETA_SHAPE` | that the shapes above survive the beta | the reader is strict by name and by type, and leaves unanswered an answer of a type it does not know, of a type its question was not asked as, or without its type's field, so a renamed field costs a turn on `unreadable`, where a counter of gates sees it, and never the run |
 
 ## Status
@@ -168,12 +168,14 @@ and wherever the SDK is installed the real one drives a real `quackd run` agains
 API on 127.0.0.1 ([`tests/fake_openai_decisions.py`](../../../tests/fake_openai_decisions.py),
 [`tests/test_decisions_api_wire.py`](../../../tests/test_decisions_api_wire.py)), which shows the
 headers the SDK actually sends where the key is meant to go and where it is not. Both prove quackd's
-half of the conversation and not OpenAI's. No request from quackd has reached OpenAI: the tests that
-would, [`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and
-any other test that sends a request through the SDK to a host under openai.com is stopped before it
-is sent, and fails. Without the extra, `quackd doctor` prints this row as
-`missing (quackd[openai])`, `OPENAI_API_KEY unset`, `gpt-6-luna` and `https://api.openai.com`, and a
-run that names it says so once before it connects and carries on without the stepper:
+half of the conversation and not OpenAI's. The stand-in's tests have run against three releases of
+the SDK, 3.22.1, which the lock carries, 3.1.0 and 1.66.0, the extra's floor, and against no other.
+No request from quackd has reached OpenAI: the tests that would,
+[`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and any other
+test that sends a request through the SDK to a host under openai.com is stopped before it is sent,
+and fails. Without the extra, `quackd doctor` prints this row as `missing (quackd[openai])`,
+`OPENAI_API_KEY unset`, `gpt-6-luna` and `https://api.openai.com`, and a run that names it says so
+once before it connects and carries on without the stepper:
 
 ```
 $ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm openai --decision-mode shadow --no-memory

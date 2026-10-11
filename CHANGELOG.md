@@ -78,13 +78,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   wire that the key and OpenAI's account headers go only where they are meant to, that nothing
   `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in, in whatever spelling, that a redirect
   is never followed, and that a 429 is one request, recorded as the rate limit it is, where the
-  SDK's own retries would have slept through the turn's second and recorded a timeout.
-  `tests/test_live_decision.py` runs against `openai` as well as `jev` and waits for a key, and any
-  other test that sends a request through the real SDK to a host under openai.com, the pilot's or
-  the stepper's, is stopped before it is sent, and fails, and a process a test starts inherits an
-  empty `OPENAI_API_KEY`. The honest part: nothing has answered a real robot and no request has
-  reached OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated
-  on were shaped around Jev, so shadow mode comes first.
+  SDK's own retries would have slept through the turn's second and recorded a timeout. The wire
+  tests have run against 3.22.1, the release the lock carries, against 3.1.0 and against 1.66.0, the
+  extra's floor, and against no other release. `tests/test_live_decision.py` runs against `openai`
+  as well as `jev` and waits for a key, and a test there fails, saying why, when the answer it
+  checks never came back, because the request failed or the question was declined. Any other test
+  that sends a request through the real SDK to a host under openai.com, the pilot's or the
+  stepper's, is stopped before it is sent, and fails, and a process a test starts inherits an empty
+  `OPENAI_API_KEY`. The honest part: nothing has answered a real robot and no request has reached
+  OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated on were
+  shaped around Jev, so shadow mode comes first.
 
 ### Changed
 

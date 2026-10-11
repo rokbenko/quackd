@@ -5,6 +5,13 @@ provider SDK. To run it, sync an environment with the extra and run pytest there
 
     UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openai
 
+It has run, all of it, against three releases of the SDK, on 2026-10-11, and against no other:
+3.22.1, which the lock carries and that sync installs; 3.1.0, the first release in uv's cache that
+reads `OPENAI_CUSTOM_HEADERS`; and 1.66.0, the extra's floor, which sends through `httpx` rather
+than `httpx2`. Each of the last two was put into an environment synced that way with
+`uv pip install`. The extra allows every release from the floor to below 4.0, and what any other
+one does is read, where anybody read it, rather than run.
+
 No key and no network. `tests/fake_openai_decisions.py` answers every request on 127.0.0.1, so
 what this proves is what quackd puts on the wire through the SDK, what the SDK adds to a request
 or leaves off it once quackd has told it, and what quackd makes of an answer in OpenAI's
@@ -19,6 +26,8 @@ each of them.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import json
 import re
 import socket
@@ -42,14 +51,18 @@ from quackd.agent.providers.pricing import cost_usd
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
 from tests import fake_decisions_api as fake_api
+from tests import test_live_decision as live
 from tests.conftest import ReachedOpenAI, _openai_base, plain_text
 from tests.fake_openai_decisions import (
     CONFIDENCE,
     PATH,
     FakeOpenAIDecisions,
+    Recorded,
     answering,
+    failing,
     paced,
     redirecting,
+    send_once_through_the_sdk,
 )
 
 runner = CliRunner()
@@ -65,6 +78,25 @@ GATEWAY = "gk-secret"
 TYPES = {"choice": "choice", "noul": "predicate", "score": "score"}
 """quackd's question types to OpenAI's: a `noul` goes as a `predicate`, the same question by
 another name, and the other two keep theirs."""
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _the_sdk_has_sent_before() -> Recorded:
+    """One request through the real SDK to a stand-in of its own, before any test here starts,
+    so no test's first turn pays for what the SDK does once in a process
+    (`send_once_through_the_sdk`).
+
+    Most tests here give each turn the stepper's own second and then want every turn answered,
+    so a first turn that spent its second on the SDK getting ready would fail one on a slow
+    machine, for a reason that has nothing to do with what it checks. The SDK's look at its
+    platform is taken while each client is built, which covered most of that; what is left
+    falls on whichever request a process sends first, and this is that request. For the whole
+    module and before anything else, because pytest may be asked for any one test here alone.
+    The SDK's own variables are cleared for it, so a developer's never stops it."""
+    with pytest.MonkeyPatch.context() as patch:
+        for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
+            patch.delenv(name, raising=False)
+        return asyncio.run(send_once_through_the_sdk())
 
 
 @pytest.fixture(autouse=True)
@@ -504,9 +536,17 @@ async def test_a_bound_handed_to_decide_ends_a_request_answered_a_piece_at_a_tim
     trickle = paced(answering(), pieces=pieces, gap_s=bound / 2)
     whole = (pieces - 1) * bound / 2
     with FakeOpenAIDecisions(script=[trickle]) as stand_in:
+        # Built before the clock starts, because what is timed is the request. Inside it, as it
+        # used to be, the build could take longer than the request is allowed: the SDK's first
+        # import in a cold process, and on the httpx of the 1.x releases a certificate store
+        # loaded for every client. So the test failed on 1.66.0, and now and then when it was
+        # run alone, for a reason that was not the bound.
+        llm = make_decision_llm(OPENAI, url=stand_in.url)
         started = time.perf_counter()
         with pytest.raises(TimeoutError):
-            await _decide_once(stand_in.url, timeout_s=bound)
+            await llm.decide(
+                {"goal": "g"}, {"done": {"type": "noul", "instructions": "i"}}, timeout_s=bound
+            )
         took = time.perf_counter() - started
     assert len(stand_in.posts()) == 1
     assert took < whole, f"waited {took:.2f} s, for the whole answer rather than the bound"
@@ -578,6 +618,39 @@ async def test_the_real_sdk_refuses_every_request_the_fake_refuses_on_its_behalf
     assert stand_in.requests == []
 
 
+async def test_what_the_sdk_does_once_a_process_is_done_before_any_turn_here(
+    _the_sdk_has_sent_before: Recorded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process's first request through the SDK does work no later request does, and every
+    turn here has one second. That work is made slower than the second here, as a slow or busy
+    machine could make it: the next request any client of the SDK sends stops for longer than a
+    turn before it goes on. The request the module sends before its first test
+    (`_the_sdk_has_sent_before`, `send_once_through_the_sdk`) takes that stop, and the stepper's
+    first turn after it is answered. Left to that turn, it would have run out of its second
+    before anything was sent."""
+    import openai._base_client as sdk_base
+
+    assert _the_sdk_has_sent_before.status == 200, "the module's request was never answered"
+    request = sdk_base.AsyncAPIClient.request
+    stopped: list[bool] = []
+
+    async def first_request(self: Any, *args: Any, **kwargs: Any) -> Any:
+        if not stopped:
+            stopped.append(True)
+            # Blocking, as an import from disk inside the first request blocks the event loop.
+            time.sleep(1.5 * TIMEOUT_S)  # noqa: ASYNC251
+        return await request(self, *args, **kwargs)
+
+    monkeypatch.setattr(sdk_base.AsyncAPIClient, "request", first_request)
+    await send_once_through_the_sdk()
+    with FakeOpenAIDecisions() as stand_in:
+        stepper = _stepper(make_decision_llm(OPENAI, url=stand_in.url))
+        advice = await stepper.advise(SimpleNamespace(features={}), cleared=True, budget="b")
+    assert stopped, "nothing stopped, so this proves nothing"
+    assert advice.record.get("error") is None, advice.record.get("error")
+    assert len(stand_in.posts()) == 1
+
+
 # ── the suite's own guard, on the real client ───────────────────────────────────────────
 
 
@@ -634,3 +707,91 @@ async def test_the_suites_guard_stops_the_pilots_request_as_well(
         await pilot.step("You fly a mock arm.", [], [])
     assert _no_request_reaches_openai == [f"POST {OPENAI.url}/v1/chat/completions"]
     _no_request_reaches_openai.clear()
+
+
+# ── the live tests, held to their word against the stand-in ─────────────────────────────
+
+
+def _row_at(stand_in: FakeOpenAIDecisions) -> Any:
+    """The `openai` row with the stand-in for its address: a server you run, sent the word
+    `local`, so a live test driven here needs no key and reaches nothing but this machine."""
+    return dataclasses.replace(OPENAI, url=stand_in.url)
+
+
+LIVE = {
+    "the measurement": (
+        live.test_a_real_decision_llm_answers_an_arm_state_and_says_how_long_it_took
+    ),
+    "the fields": live.test_a_real_answer_carries_the_fields_the_router_reads,
+    "the safety claim": live.test_a_real_answer_before_a_verdict_cannot_reach_a_moving_verb,
+    "many requests": live.test_openais_answers_come_back_named_and_how_long_they_take_over_many,
+    "the options": live.test_how_many_options_one_choice_may_carry,
+}
+"""Every live test, called as a function with the row it is handed, so it can be driven here."""
+
+ON_ONE_TURN = ("the measurement", "the fields", "the safety claim")
+"""The live tests that read one stepper turn, and so have the stepper's second for it."""
+
+
+@pytest.mark.parametrize("name", list(LIVE))
+async def test_every_live_test_fails_naming_the_status_when_the_key_is_refused(name: str) -> None:
+    """A wrong key is every request answered 401. Each live test fails, and says so: none dies on
+    a bare `KeyError` for the first field it missed, as the one that checks the router's fields
+    did, and none passes, as the safety claim did and the one about options did, taking a 401
+    for the API's bound on a choice."""
+    refused = FakeOpenAIDecisions(script=[failing(401)])
+    with refused as stand_in, pytest.raises(AssertionError) as failed:
+        await LIVE[name](_row_at(stand_in))
+    assert "AuthenticationError: HTTP 401" in str(failed.value), str(failed.value)
+
+
+@pytest.mark.parametrize("name", ON_ONE_TURN)
+async def test_every_live_test_on_one_turn_fails_naming_a_first_turn_that_ran_out(
+    name: str,
+) -> None:
+    """A first turn slower than the stepper's second has no answer in it either, and the test
+    reading it says that the stepper's second ran out, rather than which field it missed."""
+    slow = paced(answering(), wait_s=1.5 * TIMEOUT_S)
+    with FakeOpenAIDecisions(script=[slow]) as stand_in, pytest.raises(AssertionError) as failed:
+        await LIVE[name](_row_at(stand_in))
+    said = f"TimeoutError: no answer within {TIMEOUT_S:.1f} s"
+    assert said in str(failed.value), str(failed.value)
+
+
+@pytest.mark.parametrize("name", ["the fields", "the safety claim"])
+async def test_a_live_test_that_reads_an_answer_fails_naming_the_question_declined(
+    name: str,
+) -> None:
+    """A `next_verb` the model declined has no choice, no confidence and no distribution. The test
+    of the router's fields used to fail on the empty distribution with the sentence meant for a
+    renamed field, and the safety claim passed. Both fail now, naming the question declined."""
+    declines = FakeOpenAIDecisions(script=[answering(refuse=("next_verb",))])
+    with declines as stand_in, pytest.raises(AssertionError, match="the model declined next_verb"):
+        await LIVE[name](_row_at(stand_in))
+
+
+async def test_the_measurements_measure_a_turn_with_a_question_declined_and_say_so(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A question declined is still a request answered, so the tests that measure take it, and
+    print what was declined beside what they measured."""
+    declines = answering(refuse=("next_verb", "pick"))
+    with FakeOpenAIDecisions(script=[declines]) as stand_in:
+        for name in ("the measurement", "many requests", "the options"):
+            await LIVE[name](_row_at(stand_in))
+    printed = capsys.readouterr().out
+    assert "gate=refused" in printed and "refused: ['next_verb']" in printed
+    assert "questions declined: [['next_verb']" in printed
+    assert "options: taken, and the question declined" in printed
+
+
+async def test_the_first_live_test_prints_what_it_measured_before_it_fails(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Whatever a turn came to, its figures reach the terminal before any check can stop them,
+    because those figures are what the test is for."""
+    with FakeOpenAIDecisions(script=[failing(401)]) as stand_in, pytest.raises(AssertionError):
+        await LIVE["the measurement"](_row_at(stand_in))
+    printed = capsys.readouterr().out
+    assert f"{OPENAI.name} {OPENAI.model}:" in printed
+    assert "error: AuthenticationError: HTTP 401" in printed
