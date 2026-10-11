@@ -698,6 +698,13 @@ second: all of them cost that turn and none of them costs the run. An interrupt 
 and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
 on the record as `interrupted`.
 
+On Windows a server that is not listening costs its turn the whole second, and its record is a
+slow server's. Windows takes longer than the second to refuse a connection to a port on your own
+machine that nothing listens on, so the stepper's own bound ends the turn first, and the record
+says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is there and
+too slow to answer. The stepper is asked before the model in either mode, so every such turn waits
+out its second before the model is asked.
+
 ## What the record says
 
 Two kinds in `transcript.jsonl`, both described in

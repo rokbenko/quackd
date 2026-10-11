@@ -214,6 +214,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   out of reach, a route that ends another way for its alpha Decisions API and the key for its
   System One endpoint, where it named the first alone. `tests/test_docs.py` holds each of them to
   the rule the factory keeps.
+- **The decision-LLM hub says what a server nobody started costs on Windows.** Windows takes
+  longer than the stepper's second to refuse a connection to a port on your own machine that
+  nothing listens on, so the stepper's own bound ends that turn, its record says
+  `TimeoutError: no answer within 1.0 s` as a slow server's does, and in either mode it waits out
+  its second before the model is asked. The hub said only that such a server costs a turn and
+  never the run. `tests/test_docs.py` holds the sentence to the words the stepper writes.
 
 ## [0.17.1] — 2026-10-07
 

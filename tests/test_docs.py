@@ -1906,6 +1906,28 @@ def test_a_promise_about_what_openais_sdk_reads_for_itself_says_it_is_the_decisi
             )
 
 
+def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() -> None:
+    """Windows refuses a connection to a port on the same machine that nothing listens on only
+    after longer than the stepper's second, so a decision server nobody started is a turn the
+    stepper's own bound ends. Its record then says what the record says of a server too slow to
+    answer, and the turn waits out its second before the model is asked, in shadow mode as in
+    `on`, because the stepper is asked first either way. The hub said only that such a server
+    costs a turn and never the run.
+
+    So its section on what a decision LLM may never do says it for Windows, and quotes the record
+    in the stepper's own words for a turn its bound ended, which are read off `stepper._failure`
+    here: a change to those words fails until the hub follows."""
+    from quackd.agent.decision.stepper import _failure
+
+    said = _failure(TimeoutError(), ran_out=True)
+    hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
+    section = hub.split("\n## What it is never allowed to do\n", 1)[1].split("\n## ", 1)[0]
+    windows = [" ".join(p.split()) for p in section.split("\n\n") if "On Windows" in p]
+    assert windows, "the hub no longer says what a server nobody started costs on Windows"
+    assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
+    assert "not listening" in windows[0] and "either mode" in windows[0], windows[0]
+
+
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
     """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 
