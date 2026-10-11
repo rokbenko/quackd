@@ -189,6 +189,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   leaves out a confidence nobody could read rather than print it as 0.00, and the shadow row of a
   turn that ended on `refused` carries the names declined, as `refused`. `tests/test_decision.py`
   and `tests/test_log.py` hold each, and the log golden gains the line.
+- **A flock's chatter reaches a decision LLM in its own letters.** The stepper wrote what the
+  flock's members had said into the state as JSON of its own, with every letter outside ASCII
+  escaped, so every decision LLM was handed `\u017e` where a member had written `ž`. It also
+  trimmed the state, and held it to its hard cap, on the same escaped text, six characters for
+  each such letter, so a state in Slovenian was cut sooner than the same state in ASCII. The
+  chatter goes in its own letters now, and the state is trimmed and capped on the letters
+  `state_chars` counts. `tests/test_decision_llms.py` finds the flock's letters in the state a
+  backend of every row is handed, and measures a goal with a letter outside ASCII the same as the
+  goal spelled in ASCII.
 
 ### Documentation
 
