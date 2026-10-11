@@ -1940,32 +1940,30 @@ def test_openrouter_builds_its_client_with_quackds_attribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The two headers OpenRouter credits an app by, on the client itself so every request
-    carries them. The SDK is not installed here, so a stand-in module records what it is built
-    with, and Grok built the same way must get nothing: the hook is inert for every other vendor.
-    """
-    import sys
-    import types
-
+    carries them, beside the key. The SDK is not installed here, so a stand-in module records
+    what it is built with, and Grok built the same way must get its key and none of OpenRouter's:
+    the hook is inert for every other vendor. Each names its key as `Authorization` and omits
+    OpenAI's account headers, which `tests/test_openai_headers.py` is about."""
     from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
+    from tests import fake_openai_sdk as fake_sdk
 
-    built: list[dict[str, Any]] = []
-
-    class AsyncOpenAI:
-        def __init__(self, **kwargs: Any) -> None:
-            built.append(kwargs)
-
-    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(AsyncOpenAI=AsyncOpenAI))
+    for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
     monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    openrouter = fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI())
     OpenRouterProvider()
+    grok = fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI())
     GrokProvider()
-    assert built[0]["default_headers"] == ATTRIBUTION
-    assert built[0]["base_url"] == BASE_URL == "https://openrouter.ai/api/v1"
+    assert openrouter.kwargs["base_url"] == BASE_URL == "https://openrouter.ai/api/v1"
     assert ATTRIBUTION == {
         "HTTP-Referer": "https://github.com/rokbenko/quackd",
         "X-OpenRouter-Title": "quackd",
     }
-    assert "default_headers" not in built[1], "Grok was built with headers it never had"
+    sent = {k: v for k, v in openrouter.handed.items() if not isinstance(v, fake_sdk.Omit)}
+    assert sent == {"Authorization": "Bearer sk-or-v1-test", **ATTRIBUTION}
+    sent = {k: v for k, v in grok.handed.items() if not isinstance(v, fake_sdk.Omit)}
+    assert sent == {"Authorization": "Bearer xai-test"}, "Grok was built with headers it never had"
 
 
 @pytest.mark.parametrize("spec", models_for("openrouter"), ids=lambda m: m.id)

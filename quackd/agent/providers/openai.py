@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -42,6 +43,28 @@ from quackd.agent.providers.base import (
     picture_parts,
 )
 from quackd.agent.providers.catalogue import default_model_for, find_model
+from quackd.agent.providers.openai_headers import (
+    CUSTOM_HEADERS_ENV,
+    foreign_authorization,
+    is_openai_host,
+    request_headers,
+    sdk_parts,
+)
+from quackd.command import readable_url, redacted_url
+
+BASE_URL_ENV = "OPENAI_BASE_URL"
+"""The SDK's own variable for where its client goes when it is handed no address."""
+
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
+"""Where the SDK goes when it is handed no address and `OPENAI_BASE_URL` is unset, in every
+release from 1.66.0 to 3.22.1 that the uv cache held (`openai/_client.py`, read 2026-10-11)."""
+
+
+def _quoted(url: str) -> str:
+    """`url` as a refusal may quote it: its password and any credential-named query parameter
+    taken out, or not quoted at all where redaction cannot read it, since an address it cannot
+    read may still carry a password it could not find."""
+    return redacted_url(url) if readable_url(url) else "an address quackd cannot read"
 
 
 def _image_part(png: bytes) -> dict[str, Any]:
@@ -405,9 +428,10 @@ class OpenAIProvider:
     prompt_hint = ""
     """Extra system-prompt text a provider wants (the local one explains the JSON fallback)."""
     default_headers: Mapping[str, str] = {}
-    """Headers sent with every request beside the SDK's own. Empty for every vendor but
-    OpenRouter, which credits an app on its public rankings by `HTTP-Referer` and
-    `X-OpenRouter-Title`. Empty builds the client exactly as it was always built."""
+    """Headers sent with every request beside the SDK's own and quackd's authorization. Empty for
+    every vendor but OpenRouter, which credits an app on its public rankings by `HTTP-Referer` and
+    `X-OpenRouter-Title`. They go whatever `OPENAI_CUSTOM_HEADERS` says about the same names,
+    because they are this vendor's and the variable's lines are somebody else's."""
     switches_api = True
     """Whether the 400 that refuses function tools on Chat Completions moves this run to the
     Responses API. True for OpenAI's own API; OpenRouter is asked on Chat Completions only."""
@@ -478,22 +502,100 @@ class OpenAIProvider:
             self.supports_vision = spec.vision
         self.tool_choice = tool_choice if tool_choice is not None else self.default_tool_choice
         if client is None:
-            import os
-
             key = api_key or os.environ.get(self.key_env) or self._fallback_key()
             if not key:
                 raise ProviderMissingKey(self.name, self.key_env)
-            try:
-                from openai import AsyncOpenAI
-            except ImportError as e:
-                raise ProviderNotInstalled(self.name, self.extra) from e
-            sent = {"default_headers": dict(self.default_headers)} if self.default_headers else {}
-            client = AsyncOpenAI(api_key=key, base_url=self.base_url, **sent)
+            client = self._build_client(key)
         self.client = client
 
     def _fallback_key(self) -> str | None:
         """What to use when no key is configured. Cloud: nothing (error). Local: a dummy."""
         return None
+
+    def client_address(self) -> str:
+        """The address the client is handed, which is where every request goes.
+
+        The provider's own, from `--base-url` or the vendor's class, and where it has none, which
+        is OpenAI's own provider without `--base-url`, the address the SDK would have found for
+        itself: `OPENAI_BASE_URL`, then OpenAI's API (`DEFAULT_BASE_URL`). Found here and handed
+        over rather than left to the SDK, because the headers the client is built with are decided
+        on this address (`openai_headers.request_headers`), and an address the SDK went looking for
+        after they were decided is an address nobody judged. Blank is absent at every step, as it
+        is everywhere quackd reads a setting: `OPENAI_BASE_URL=` in a `.env` is a shell saying
+        unset, where the SDK would have taken the empty string for an address and failed on the
+        first turn."""
+        given = (self.base_url or "").strip()
+        if given:
+            return given
+        return (os.environ.get(BASE_URL_ENV) or "").strip() or DEFAULT_BASE_URL
+
+    def _build_client(self, key: str) -> Any:
+        """The SDK's client, with the key, at `client_address`, sending nothing the environment
+        put there for somebody else.
+
+        The SDK adds `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` to every
+        request by itself, wherever the client points, and a gateway's `Authorization` line in the
+        first replaced this vendor's key on every request in 3.22.1. So the client is handed
+        quackd's own answer to each (`openai_headers.request_headers`): this provider's key as the
+        one authorization, under every spelling the variable gives one; at OpenAI's own API the
+        variable's other lines as the SDK would send them, and the account headers from the two
+        variables; at any other address, none of it. This vendor's own `default_headers` go on top,
+        whatever the variable says about their names.
+
+        It is built on the SDK's HTTP client told to follow no redirect. Followed, a redirect from
+        anything that answers for the address sends the request on to wherever it points, plain
+        http included, with every header the client was built with but the authorization, which the
+        HTTP client takes off a request that leaves for another host: at OpenAI the account headers
+        and the variable's other lines, and on a 307 or a 308 the whole body besides, the task, the
+        robot's state and its camera frames. A turn answered with a redirect is a turn that failed,
+        and its error says so. The request option that says the same is not in 1.66.0, which drops
+        an option it does not know without a word, so it is said where every release reads it.
+
+        Once built, the client is read back. An authorization it would still send that quackd did
+        not write stops the build, naming the release and the variable and never the value, which
+        is the credential this exists to keep at home. So does an address the client reads on the
+        other side of the rule from the one the headers were decided on, and so does a client whose
+        headers or address cannot be read at all, since nothing then says what it would send:
+        `openai_headers` answers the releases somebody read, and the extras allow ones nobody has.
+        """
+        sdk = sdk_parts()
+        if sdk is None:
+            raise ProviderNotInstalled(self.name, self.extra)
+        address = self.client_address()
+        at_openai = is_openai_host(address)
+        bearer = f"Bearer {key}"
+        headers = {
+            **request_headers(bearer, at_openai=at_openai, omit=sdk.omit, keep_at_openai=True),
+            **self.default_headers,
+        }
+        client = sdk.client(
+            api_key=key,
+            base_url=address,
+            default_headers=headers,
+            http_client=sdk.http_client(follow_redirects=False),
+        )
+        try:
+            built = dict(client.default_headers)
+            used = str(client.base_url)
+        except Exception as e:
+            raise ProviderError(
+                f"{self.name}: openai {sdk.version} built a client whose headers and address "
+                f"could not be read back ({type(e).__name__}), so it is not used"
+            ) from e
+        if foreign_authorization(built, bearer, sdk.omit):
+            raise ProviderError(
+                f"{self.name}: openai {sdk.version} would send an authorization header from "
+                f"{CUSTOM_HEADERS_ENV} in place of or beside the key quackd sends, so the client "
+                f"is not built: take that line out of {CUSTOM_HEADERS_ENV} for this run, or "
+                f'upgrade the SDK (uv pip install -U "quackd[{self.extra}]")'
+            )
+        if is_openai_host(used) != at_openai:
+            raise ProviderError(
+                f"{self.name}: openai {sdk.version} would send to {_quoted(used)} rather than "
+                f"{_quoted(address)}, the address its headers were decided on, so the client is "
+                "not built"
+            )
+        return client
 
     def _params(
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
