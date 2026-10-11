@@ -52,7 +52,11 @@ Also in scope:
   user, a port other than 443 or a host that only resembles one of those is never sent it. It
   gives any other `--decision-url` the same placeholder, sends nothing `OPENAI_CUSTOM_HEADERS`
   sets to any address at all, whichever release of the SDK is installed, and follows no redirect,
-  which would carry the account headers and the request itself somewhere else.
+  which would carry the account headers and the request itself somewhere else. All of that is the
+  decision LLM's client and holds for it alone. The pilot's own clients, `--llm openai` and every
+  other pilot built on OpenAI's SDK, are built as they always were and leave
+  `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` to the SDK, which in the release
+  the lock carries adds all three to every request the pilot sends, wherever it is pointed.
 - **The command line, which the run record now holds.** A solo run writes down what it was
   started with, in three places: `command` in the transcript's `run_start`, `command` in
   `summary.json`, and the first line of `terminal.txt`. A flock root has no `run_start`, so

@@ -1842,6 +1842,70 @@ def test_adr_0040_names_every_gate_adr_0052_says_it_added() -> None:
     assert not missing, f"ADR-0040's note by ADR-0052 does not name {missing}"
 
 
+def test_a_page_that_says_what_the_suites_guard_stops_names_every_marker_it_lets_through() -> None:
+    """`tests/conftest.py` stops any request the SDK builds for a host under openai.com in every
+    test but the ones marked with one of `LIVE`: the decision LLM's live tests and the pilot's,
+    which mean to pay OpenAI for a real answer. The CHANGELOG and the `openai` page said any test
+    but the decision LLM's own live ones was stopped, which a live test of the pilot's is not. So
+    every sentence of theirs and ADR-0052's that says a request is stopped before it is sent names
+    each marker the guard lets through, read from the guard itself."""
+    from tests.conftest import LIVE
+
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    pages = {
+        "CHANGELOG.md's [Unreleased]": changelog.split("\n## [Unreleased]\n", 1)[1].split(
+            "\n## [", 1
+        )[0],
+        "ADR-0052": _adr("0052"),
+        "openai.md": (REPO / "docs" / "guides" / "decision-llms" / "openai.md").read_text(
+            encoding="utf-8"
+        ),
+    }
+    for where, text in pages.items():
+        sentences = re.split(r"(?<=\.) ", " ".join(text.split()))
+        said = [sentence for sentence in sentences if "stopped before it is sent" in sentence]
+        assert said, f"{where} no longer says what the guard stops"
+        for sentence in said:
+            missing = [marker for marker in LIVE if f"`{marker}`" not in sentence]
+            assert not missing, f"{where} leaves {missing} out of what the guard lets through"
+
+
+def test_a_promise_about_what_openais_sdk_reads_for_itself_says_it_is_the_decision_llms() -> None:
+    """The `openai` decision LLM's client decides what `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
+    and `OPENAI_PROJECT_ID` reach (`decisions_api.request_headers`). The pilot's clients are built
+    as they always were and leave all three to the SDK, which in the release the lock carries adds
+    them to every request the pilot sends, a gateway's credential in the first of them included,
+    wherever the pilot is pointed. A page that said nothing the variable sets is ever sent, and
+    said nothing about whose client, read to anybody who keeps a gateway's headers there for the
+    pilot as a promise about the pilot too.
+
+    So every paragraph or list item that names the variable, outside a table, says the pilot,
+    `--llm openai`, is not held to it. And the pilot's own client still names none of the three,
+    which is what those paragraphs say of it: a pilot that came to decide them for itself fails
+    here until they say so."""
+    pilot = (REPO / "quackd" / "agent" / "providers" / "openai.py").read_text(encoding="utf-8")
+    for named in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "organization="):
+        assert named not in pilot, f"the pilot's client names {named} now; say what it does"
+    for page in (
+        ".env.example",
+        "SECURITY.md",
+        "docs/guides/decision-llms/README.md",
+        "docs/guides/decision-llms/openai.md",
+    ):
+        text = (REPO / page).read_text(encoding="utf-8")
+        blocks = [
+            block
+            for block in re.split(r"\n\s*\n|\n(?=- )", text)
+            if "OPENAI_CUSTOM_HEADERS" in block and not block.lstrip().startswith("|")
+        ]
+        assert blocks, f"{page} no longer says what becomes of OPENAI_CUSTOM_HEADERS"
+        for block in blocks:
+            assert "--llm openai" in block, (
+                f"{page} says what becomes of OPENAI_CUSTOM_HEADERS without saying the pilot, "
+                f"--llm openai, is not held to it: {' '.join(block.split())[:160]}"
+            )
+
+
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
     """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 

@@ -38,7 +38,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   line of it in any spelling carrying quackd's own key or word instead, and a release that would
   still send one stops the run and is named. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI,
   whatever a gateway's line of that variable names, and nowhere else, and the client follows no
-  redirect, which would have carried them and the request somewhere else. A `--decision-url` with
+  redirect, which would have carried them and the request somewhere else. That is this client's
+  alone: the pilot's own OpenAI clients, `--llm openai` among them, are built as they always were
+  and leave `OPENAI_CUSTOM_HEADERS` and the account variables to the SDK. A `--decision-url` with
   a path, a query or a fragment stops the run before anything connects, on every machine, with or
   without the SDK and the key, and a run at a server of your own needs no key. The client never
   retries, and its own clock sits above the stepper's second, so that second is what ends a turn and
@@ -84,12 +86,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   tests have run against 3.22.1, the release the lock carries, against 3.1.0 and against 1.66.0, the
   extra's floor, and against no other release. `tests/test_live_decision.py` runs against `openai`
   as well as `jev` and waits for a key, and a test there fails, saying why, when the answer it
-  checks never came back, because the request failed or the question was declined. Any other test
-  that sends a request through the real SDK to a host under openai.com, the pilot's or the
-  stepper's, is stopped before it is sent, and fails, and a process a test starts inherits an empty
-  `OPENAI_API_KEY`. The honest part: nothing has answered a real robot and no request has reached
-  OpenAI, OpenAI define no `confidence` and claim no calibration, and the floors it is gated on were
-  shaped around Jev, so shadow mode comes first.
+  checks never came back, because the request failed or the question was declined. Any test without
+  the `live_decision` or `live_llm` marker that sends a request through the real SDK to a host under
+  openai.com, the pilot's or the stepper's, is stopped before it is sent, and fails, and a process
+  such a test starts inherits an empty `OPENAI_API_KEY`. The honest part: nothing has answered a
+  real robot and no request has reached OpenAI, OpenAI define no `confidence` and claim no
+  calibration, and the floors it is gated on were shaped around Jev, so shadow mode comes first.
 
 ### Changed
 

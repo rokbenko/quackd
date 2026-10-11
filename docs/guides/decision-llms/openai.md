@@ -96,7 +96,10 @@ measurement.
   and every other line is left off. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` are OpenAI's
   identifiers, so they go to OpenAI as the SDK sends them, whatever a gateway's line says, and to
   nowhere else. That holds for every release of the SDK the extra allows, and a release that
-  would still send an authorization line of the variable's stops the run and is named.
+  would still send an authorization line of the variable's stops the run and is named. It is this
+  row's client alone: the pilot's, for `--llm openai` and every other pilot on OpenAI's SDK,
+  leaves all three variables to the SDK, which in the release the lock carries adds them to every
+  request the pilot sends, wherever it is pointed.
 - **It follows no redirect.** Followed, one would carry the account headers, and on a 307 or a 308
   the whole request with the robot's state in it, to wherever it pointed. A redirect is a turn the
   record calls an error.
@@ -171,11 +174,12 @@ headers the SDK actually sends where the key is meant to go and where it is not.
 half of the conversation and not OpenAI's. The stand-in's tests have run against three releases of
 the SDK, 3.22.1, which the lock carries, 3.1.0 and 1.66.0, the extra's floor, and against no other.
 No request from quackd has reached OpenAI: the tests that would,
-[`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and any other
-test that sends a request through the SDK to a host under openai.com is stopped before it is sent,
-and fails. Without the extra, `quackd doctor` prints this row as `missing (quackd[openai])`,
-`OPENAI_API_KEY unset`, `gpt-6-luna` and `https://api.openai.com`, and a run that names it says so
-once before it connects and carries on without the stepper:
+[`tests/test_live_decision.py`](../../../tests/test_live_decision.py), wait for a key, and any test
+without the `live_decision` or `live_llm` marker that sends a request through the SDK to a host
+under openai.com is stopped before it is sent, and fails. Without the extra, `quackd doctor` prints
+this row as `missing (quackd[openai])`, `OPENAI_API_KEY unset`, `gpt-6-luna` and
+`https://api.openai.com`, and a run that names it says so once before it connects and carries on
+without the stepper:
 
 ```
 $ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm openai --decision-mode shadow --no-memory

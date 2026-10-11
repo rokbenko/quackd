@@ -147,7 +147,11 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   inherits all four floors unmeasured, like every other, and shadow mode comes first.
 - **One word, two seams.** `--llm openai` is OpenAI's chat models flying the robot and
   `--decision-llm openai` is this, in front of it. The flag says which, and the pilot's key and
-  the pilot's extra serve both.
+  the pilot's extra serve both. What this ADR decides about the variables the SDK reads for itself
+  holds for this client and no other. The pilot's clients, `--llm openai` and every other pilot
+  built on OpenAI's SDK, are built as they were and leave `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
+  and `OPENAI_PROJECT_ID` to the SDK, which in 3.22.1 adds them to every request, wherever the
+  pilot is pointed.
 
 ## Why not
 
