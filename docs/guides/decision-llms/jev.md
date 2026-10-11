@@ -55,12 +55,12 @@ and nothing here repeats either as a quackd measurement. The interpreter floor i
 
 - **The end of the path is not configurable.** `SYSTEM_ONE_PATH = "/v1/systemone"` is a hardcoded
   constant in `typesafe_sdk/_core/constants.py`, concatenated onto the base URL, and the docs site
-  agrees. A path on the address is kept in front of it, so a gateway that serves the format under
-  a prefix of its own is reached by naming the prefix, but no address reaches a route that ends
-  any other way: the OpenRouter Decisions API, at `/api/alpha/decisions`, is out of reach by
-  repointing it. OpenRouter's System One endpoint, `/api/v1/systemone`, is within reach of the
-  path and not of the key, because an address typed for this row is sent the word `local` (the
-  warning below), so it would take a row of its own
+  agrees. A path on the address is kept in front of it, so a server you run behind a gateway that
+  serves the format under a prefix of its own is reached by naming the prefix, but no address
+  reaches a route that ends any other way: the OpenRouter Decisions API, at `/api/alpha/decisions`,
+  is out of reach by repointing it. OpenRouter's System One endpoint, `/api/v1/systemone`, is within
+  reach of the path and not of the key, because an address typed for this row is sent the word
+  `local` (the warning below), so it would take a row of its own
   ([What is not covered](README.md#what-is-not-covered-and-why)).
 - **The key is mandatory and validated.** Without one, and without `TYPESAFE_API_KEY`, the client
   raises `TypeSafeError` at construction; the validator rejects empty, non-ASCII, non-printable

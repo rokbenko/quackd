@@ -2869,8 +2869,8 @@ _DECISION_LLM = typer.Option(
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
-    help="Where the decision LLM listens, e.g. http://localhost:8009. A System One row keeps a "
-    "path on it and its client adds /v1/systemone after the path; `openai`'s client adds "
+    help="Where the decision LLM listens, e.g. http://localhost:8009. On a System One row a "
+    "path is kept and the client adds /v1/systemone after it; `openai`'s client adds "
     "/v1/decisions to the host alone, and a path there stops the run. Required by "
     "--decision-llm local, and the way to move any other one off the address its row expects. "
     "`openai` sends OPENAI_API_KEY to OpenAI's own API alone, https://api.openai.com or a "

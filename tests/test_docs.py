@@ -1916,7 +1916,9 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
 
     So its section on what a decision LLM may never do says it for Windows, and quotes the record
     in the stepper's own words for a turn its bound ended, which are read off `stepper._failure`
-    here: a change to those words fails until the hub follows."""
+    here: a change to those words fails until the hub follows. It says it of a server on your own
+    machine, because a refused connection to 127.0.0.1 is what was timed, and a closed port on
+    another machine was not."""
     from quackd.agent.decision.stepper import _failure
 
     said = _failure(TimeoutError(), ran_out=True)
@@ -1926,6 +1928,8 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     assert windows, "the hub no longer says what a server nobody started costs on Windows"
     assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
     assert "not listening" in windows[0] and "either mode" in windows[0], windows[0]
+    opening = windows[0].split(". ", 1)[0]
+    assert "on your own machine" in opening, f"the hub says more than was timed: {opening}"
 
 
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:

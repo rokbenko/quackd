@@ -256,7 +256,7 @@ Three flags, because there are many decision LLMs now rather than one:
 | Flag | What it says | Default |
 |---|---|---|
 | `--decision-llm NAME[:MODEL]` | which one answers, and optionally which model id it answers as | none, and then none of the rest of this happens |
-| `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. A System One row keeps a path on it and its client adds `/v1/systemone` after the path; `openai`'s client adds `/v1/decisions` to the host alone, and a path there stops the run | whatever the row says |
+| `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. On a System One row a path is kept and the client adds `/v1/systemone` after it; `openai`'s client adds `/v1/decisions` to the host alone, and a path there stops the run | whatever the row says |
 | `--decision-mode off\|shadow\|on` | what its answer is allowed to do | `on` once you have named one, `off` when you have not |
 
 **Naming a decision LLM is asking for it**, so the mode defaults to `on` rather than to a second
@@ -698,12 +698,12 @@ second: all of them cost that turn and none of them costs the run. An interrupt 
 and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
 on the record as `interrupted`.
 
-On Windows a server that is not listening costs its turn the whole second, and its record is a
-slow server's. Windows takes longer than the second to refuse a connection to a port on your own
-machine that nothing listens on, so the stepper's own bound ends the turn first, and the record
-says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is there and
-too slow to answer. The stepper is asked before the model in either mode, so every such turn waits
-out its second before the model is asked.
+On Windows a server on your own machine that is not listening costs its turn the whole second,
+and its record is a slow server's. Windows takes longer than the second to refuse a connection to
+a port there that nothing listens on, so the stepper's own bound ends the turn first, and the
+record says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is
+there and too slow to answer. The stepper is asked before the model in either mode, so every such
+turn waits out its second before the model is asked.
 
 ## What the record says
 
