@@ -5,8 +5,10 @@ The SDK reads `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` o
 environment and adds them to every request, wherever the client points. A gateway's
 `Authorization` line in the first replaced the vendor's key, and it, the gateway's other lines and
 OpenAI's account headers went to every vendor built on the SDK and to every model server you run.
-`quackd.agent.providers.openai_headers` holds quackd's answer to each, and
-`OpenAIProvider._build_client` hands it to every one of those clients.
+They go now where the SDK itself would send them and nowhere else: OpenAI's own API, and the
+address `OPENAI_BASE_URL` gives `--llm openai` when it is asked for no other.
+`quackd.agent.providers.openai_headers` holds the rule, and `OpenAIProvider._build_client` builds
+every one of those clients by it.
 
 Nothing here needs the `openai` package: CI installs no provider SDK, and every test that builds a
 client builds `tests/fake_openai_sdk.py` in its place, whose model of each kind of release the
@@ -17,6 +19,9 @@ the real SDK wherever it is installed.
 from __future__ import annotations
 
 import ast
+import importlib.abc
+import sys
+from types import SimpleNamespace as NS
 from typing import Any
 
 import pytest
@@ -25,27 +30,38 @@ from quackd.agent.providers import openai_headers
 from quackd.agent.providers.base import ProviderError, ProviderNotInstalled
 from quackd.agent.providers.catalogue import LOCAL_NAMES
 from quackd.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
-from quackd.agent.providers.openai import DEFAULT_BASE_URL
+from quackd.agent.providers.openai import DEFAULT_BASE_URL, _where_it_points
 from quackd.agent.providers.openai_headers import (
     OPENAI_HOSTS,
+    SENDS_JSON,
     ambient_headers,
     foreign_authorization,
+    foreign_headers,
     is_openai_host,
     request_headers,
+    sdks_own_address,
 )
 from quackd.agent.providers.openrouter import ATTRIBUTION
 from tests import fake_openai_sdk as fake_sdk
 from tests.conftest import REPO
 
 KEY = "sk-test-not-a-real-key"
-"""Never a real one: nothing here leaves the machine, and a fake key is what proves it."""
+"""Never a real one: nothing here leaves the machine, and a fake key is what proves it. The key
+of whichever preset a test builds."""
+OPENAI_KEY = "sk-openai-not-a-real-key"
+"""What `OPENAI_API_KEY` holds wherever the preset a test builds is not OpenAI's own, so a client
+that sent OpenAI's key in place of its own vendor's would show."""
 GATEWAY_AUTH = "Bearer gw-auth-secret"
 """The authorization a gateway's `OPENAI_CUSTOM_HEADERS` carries, which must never replace the
-vendor's key on its way out."""
+vendor's key on its way to anywhere but the gateway."""
 GATEWAY_KEY = "gk-gateway-secret"
-"""A gateway's own credential under a name of its own, which is that gateway's."""
+"""A gateway's own credential under a name of its own. It goes where the SDK sends it, which is
+OpenAI's own API and the gateway `OPENAI_BASE_URL` names, and nowhere else."""
 ORG = "org-x"
 PROJECT = "proj-y"
+GATEWAY = "https://gateway.stand-in.invalid/v1"
+"""A gateway's address, as `OPENAI_BASE_URL` or `--base-url` gives it. `.invalid` is reserved, so
+no name under it resolves anywhere."""
 
 #: Every variable the SDK reads for itself that the rule has an answer for.
 SDK_VARIABLES = (
@@ -61,6 +77,9 @@ PRESETS = ("openai", *OPENAI_COMPATIBLE, *LOCAL_NAMES)
 local preset. Read from the factory, so a vendor added there is held to this file on the day it
 arrives."""
 
+ELSEWHERE = tuple(preset for preset in PRESETS if preset != "openai")
+"""Every pilot whose own address is not OpenAI's: a vendor's API or a server you run."""
+
 LOCAL_URL = "http://127.0.0.1:8000/v1"
 """Where `--llm local` is pointed, the one preset with no address of its own."""
 
@@ -69,8 +88,9 @@ LOCAL_URL = "http://127.0.0.1:8000/v1"
 def _no_ambient_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     """A developer who pilots with OpenAI has these in a `.env`, and the CLI loads it. Empty
     rather than deleted, because an empty value survives `load_dotenv` and a deleted one does
-    not; the tests that mean one to be unset delete it themselves."""
-    for name in SDK_VARIABLES:
+    not; the tests that mean one to be unset delete it themselves. `LOCAL_API_KEY` too, which a
+    local preset reads before anything else."""
+    for name in (*SDK_VARIABLES, "LOCAL_API_KEY"):
         monkeypatch.setenv(name, "")
 
 
@@ -90,12 +110,28 @@ def _built(
 
 
 def _gateway(monkeypatch: pytest.MonkeyPatch, spelling: str = "Authorization") -> None:
-    """The variables as somebody who reaches OpenAI through a gateway might have them."""
+    """The variables as somebody who reaches OpenAI through a gateway might have them, beside an
+    OpenAI key of their own that no other vendor may be sent."""
     monkeypatch.setenv(
         "OPENAI_CUSTOM_HEADERS", f"{spelling}: {GATEWAY_AUTH}\nX-Gateway-Key: {GATEWAY_KEY}"
     )
     monkeypatch.setenv("OPENAI_ORG_ID", ORG)
     monkeypatch.setenv("OPENAI_PROJECT_ID", PROJECT)
+    monkeypatch.setenv("OPENAI_API_KEY", OPENAI_KEY)
+
+
+def _alone(fake: fake_sdk.FakeOpenAI, release: str) -> list[tuple[str, str]]:
+    """What `release` sends from a client built with the same key and address and nothing else,
+    which is what the SDK sends by itself."""
+    alone = fake_sdk.FakeOpenAI(release=release)(
+        api_key=fake.kwargs["api_key"], base_url=fake.kwargs["base_url"]
+    )
+    return fake_sdk.sent(alone, release)
+
+
+def _carries(lines: list[tuple[str, str]], secret: str) -> list[str]:
+    """Every header that carries `secret` anywhere in its value."""
+    return [name for name, value in lines if secret in value]
 
 
 # ── every preset, under every kind of release ───────────────────────────────────────────────
@@ -103,16 +139,14 @@ def _gateway(monkeypatch: pytest.MonkeyPatch, spelling: str = "Authorization") -
 
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
 @pytest.mark.parametrize("spelling", ["Authorization", "authorization", "AUTHORIZATION"])
-@pytest.mark.parametrize("preset", PRESETS)
-def test_a_gateways_headers_and_openais_account_never_reach_a_vendor_that_is_not_openai(
+@pytest.mark.parametrize("preset", ELSEWHERE)
+def test_away_from_the_sdks_own_address_one_authorization_leaves_and_nothing_ambient(
     preset: str, spelling: str, release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One authorization line leaves, and it is the vendor's key, whichever way the release
-    merges and whichever spelling the gateway used. Nothing else the SDK reads for itself goes
-    anywhere but OpenAI's own API: not the gateway's other lines, and not OpenAI's account
-    headers. At OpenAI's own API, the account headers go as the SDK fills them and the gateway's
-    other lines as the SDK sends them, which the release that does not read the variable never
-    did.
+    """One authorization line leaves, and it is the vendor's own key, whichever way the release
+    merges and whichever spelling the gateway used: never the gateway's, and never OpenAI's key
+    either. Nothing else the SDK reads for itself goes to a vendor or to a server you run: not the
+    gateway's other lines, and not OpenAI's account headers.
 
     Before, the release the lock carries sent the gateway's authorization in place of the key on
     every request, to every vendor and every server. The releases read from 3.1.0 to 3.19.0 did
@@ -120,24 +154,37 @@ def test_a_gateways_headers_and_openais_account_never_reach_a_vendor_that_is_not
     sent the account headers everywhere."""
     _gateway(monkeypatch, spelling)
     provider, fake = _built(monkeypatch, preset, release=release)
+    assert not is_openai_host(provider.client_address())
     lines = fake_sdk.sent(fake, release)
     assert fake_sdk.every(lines, "authorization") == [f"Bearer {KEY}"]
-    if is_openai_host(provider.client_address()):
-        assert fake_sdk.every(lines, "openai-organization") == [ORG]
-        assert fake_sdk.every(lines, "openai-project") == [PROJECT]
-        reads_the_variable = release != "1.66"
-        assert fake_sdk.every(lines, "x-gateway-key") == (
-            [GATEWAY_KEY] if reads_the_variable else []
-        )
-    else:
-        for name in ("x-gateway-key", "openai-organization", "openai-project"):
-            assert fake_sdk.every(lines, name) == [], name
+    for name in ("x-gateway-key", "openai-organization", "openai-project"):
+        assert fake_sdk.every(lines, name) == [], name
+    for secret in (OPENAI_KEY, GATEWAY_KEY, "gw-auth-secret"):
+        assert _carries(lines, secret) == [], secret
+
+
+@pytest.mark.parametrize("release", fake_sdk.RELEASES)
+@pytest.mark.parametrize("spelling", ["Authorization", "authorization", "AUTHORIZATION"])
+def test_at_openais_own_api_the_client_is_built_as_the_sdk_builds_it(
+    spelling: str, release: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The variables are OpenAI's SDK's own, and at OpenAI's own API they go exactly as that SDK
+    sends them by itself: the client is handed no header of quackd's, so a gateway's
+    `Authorization` line goes where the release puts it, and the account headers and the other
+    lines with it. That is what every release did before quackd answered any of it, and what the
+    rule as first built took away: the account headers' lines in the SDK's own spelling, and the
+    gateway's own `Authorization`, which quackd named the key over."""
+    _gateway(monkeypatch, spelling)
+    provider, fake = _built(monkeypatch, "openai", release=release)
+    assert provider.client_address() == DEFAULT_BASE_URL
+    assert "default_headers" not in fake.kwargs, "quackd named a header at OpenAI's own API"
+    assert fake_sdk.sent(fake, release) == _alone(fake, release)
 
 
 def test_only_openais_own_preset_at_its_own_address_is_at_openai(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The test above treats a preset as OpenAI's by the address its client is handed. So it says
+    """The two tests above split the presets by the address each client is handed. So they say
     something about both halves only if both halves are there: OpenAI's own, and every other."""
     at_openai = [
         preset
@@ -145,6 +192,19 @@ def test_only_openais_own_preset_at_its_own_address_is_at_openai(
         if is_openai_host(_built(monkeypatch, preset)[0].client_address())
     ]
     assert at_openai == ["openai"]
+
+
+def test_only_openais_own_preset_takes_the_sdks_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The SDK's own variables follow the SDK's own address variable, and only a provider asked
+    for no address of its own follows that: OpenAI's, without `--base-url`. Every vendor has an
+    address of its own, and every local preset one off its own ladder, so a vendor added without
+    one would take `OPENAI_BASE_URL` for its own and send its key and the SDK's variables there.
+    This finds one on the day it arrives."""
+    takers = [
+        preset for preset in PRESETS if _built(monkeypatch, preset)[0].takes_the_sdks_address()
+    ]
+    assert takers == ["openai"]
+    assert not _built(monkeypatch, "openai", base_url=GATEWAY)[0].takes_the_sdks_address()
 
 
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
@@ -168,28 +228,118 @@ def test_every_client_follows_no_redirect(preset: str, monkeypatch: pytest.Monke
     """Followed, a redirect sends the request on with every header but the authorization, and on
     a 307 or a 308 the robot's state and its camera frames with it, to wherever it pointed. Told on
     the HTTP client the SDK is built on, which every release the extras allow reads, rather than
-    per request, which 1.66.0 drops without a word."""
+    per request, which 1.66.0 drops without a word. The SDK's own address is no exception."""
     _provider, fake = _built(monkeypatch, preset)
     http_client = fake.kwargs["http_client"]
     assert isinstance(http_client, fake_sdk.DefaultAsyncHttpxClient)
     assert http_client.follow_redirects is False
 
 
+# ── the SDK's own headers ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("release", fake_sdk.RELEASES)
+@pytest.mark.parametrize(
+    "lines",
+    [
+        "User-Agent: corp-allowlisted/1.0\nContent-Type: text/plain\nX-Stainless-Lang: cobol",
+        "user-agent: corp-allowlisted/1.0\ncontent-type: text/plain\nACCEPT: text/html",
+        "User-Agent: corp-allowlisted/1.0\nuser-agent: corp-allowlisted/1.0",
+    ],
+    ids=["the sdk's own spelling", "another spelling", "both spellings"],
+)
+def test_a_line_naming_a_header_the_sdk_sends_itself_keeps_the_sdks_own_value(
+    lines: str, release: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An `Omit` under one of the SDK's own names took the SDK's own value away with the line, in
+    any spelling in 3.22.1 and in the SDK's own in every release: a request went out with the HTTP
+    library's `User-Agent` in place of the SDK's, and a JSON body with no `Content-Type` at all.
+    Such a line now carries the SDK's own value, read off a client of the same release, so what
+    goes is what the SDK sends when the variable is not there, and the line's own value goes
+    nowhere. A release that keeps two spellings sends the SDK's value twice where the variable
+    named it twice, and once otherwise."""
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
+    _provider, fake = _built(monkeypatch, "grok", release=release)
+    sent = fake_sdk.sent(fake, release)
+    twice = "\nuser-agent:" in lines and "User-Agent:" in lines and release != "3.22"
+    assert fake_sdk.every(sent, "user-agent") == [fake_sdk.USER_AGENT] * (2 if twice else 1)
+    assert fake_sdk.every(sent, "content-type") == [SENDS_JSON]
+    assert fake_sdk.every(sent, "accept") == [SENDS_JSON]
+    assert fake_sdk.every(sent, "x-stainless-lang") == ["python"]
+    assert _carries(sent, "corp-allowlisted") == [] and _carries(sent, "cobol") == []
+
+
+def test_the_sdks_own_values_are_asked_for_only_where_the_variable_names_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reading them means building a client to read them off, so it is done only for a variable
+    that names one of the SDK's own headers. Every other build is one client, as it always was."""
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", f"X-Gateway-Key: {GATEWAY_KEY}")
+    _provider, fake = _built(monkeypatch, "grok")
+    assert fake.built == 1
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "x-stainless-os: plan9")
+    _provider, fake = _built(monkeypatch, "grok")
+    assert fake.built == 2 and "default_headers" not in fake.calls[0]
+
+
 # ── the address the rule is decided on ──────────────────────────────────────────────────────
 
 
-def test_openais_own_preset_is_handed_the_address_the_sdk_would_have_found(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("release", fake_sdk.RELEASES)
+def test_through_openai_base_url_a_gateway_is_sent_what_the_sdk_sends_it(
+    release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Handed no address, the SDK follows `OPENAI_BASE_URL`, and quackd's own local presets read
-    the same variable as the address of a model server on your own machine. The client used to be
-    handed None and left to find it, after the headers were decided; it is handed the address now,
-    and the headers are decided on it."""
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://jetson.local:11434/v1")
+    """Handed no address, the SDK follows `OPENAI_BASE_URL`, and the variables beside it were set
+    for the same SDK: a gateway reached that way is what `OPENAI_CUSTOM_HEADERS` exists for. So
+    `--llm openai` without `--base-url` is built there as the SDK builds it, the gateway's own
+    `Authorization` going as the release puts it, its other lines and the account headers with it.
+    The rule as first built sent the gateway the OpenAI key and nothing of its own, and a gateway
+    that authenticates by its lines refused the run."""
+    monkeypatch.setenv("OPENAI_BASE_URL", GATEWAY)
     _gateway(monkeypatch)
-    provider, fake = _built(monkeypatch, "openai", release="3.22")
-    assert fake.kwargs["base_url"] == "http://jetson.local:11434/v1" == provider.client_address()
+    provider, fake = _built(monkeypatch, "openai", release=release)
+    assert fake.kwargs["base_url"] == GATEWAY == provider.client_address()
+    assert "default_headers" not in fake.kwargs
+    lines = fake_sdk.sent(fake, release)
+    assert lines == _alone(fake, release)
+    if release == "3.22":
+        assert fake_sdk.every(lines, "authorization") == [GATEWAY_AUTH]
+        assert fake_sdk.every(lines, "x-gateway-key") == [GATEWAY_KEY]
+        assert fake_sdk.every(lines, "openai-organization") == [ORG]
+
+
+@pytest.mark.parametrize("preset", LOCAL_NAMES)
+def test_a_local_preset_that_reads_openai_base_url_is_not_the_sdks_own_address(
+    preset: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local preset reads `OPENAI_BASE_URL` too, as one rung of quackd's own ladder, for a
+    server you run. That is quackd's choice and not the SDK's, the server is sent no hosted key,
+    and the leak this answers was a board over plain HTTP, so none of the SDK's variables go there
+    either: the server's own key and nothing ambient, as at any other rung."""
+    board = "http://jetson.local:11434/v1"
+    monkeypatch.setenv("OPENAI_BASE_URL", board)
+    _gateway(monkeypatch)
+    provider, fake = _built(monkeypatch, preset, release="3.22", base_url=None)
+    assert provider.client_address() == board and not provider.takes_the_sdks_address()
     lines = fake_sdk.sent(fake, "3.22")
+    assert fake_sdk.every(lines, "authorization") == [f"Bearer {KEY}"]
+    for name in ("x-gateway-key", "openai-organization", "openai-project"):
+        assert fake_sdk.every(lines, name) == [], name
+    assert _carries(lines, OPENAI_KEY) == []
+
+
+@pytest.mark.parametrize("release", fake_sdk.RELEASES)
+def test_a_gateway_reached_with_base_url_is_sent_the_key_alone(
+    release: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--base-url` is an address quackd was told for this run, not the one the SDK found, so it
+    is held to the rule as built, whatever is behind it: the key quackd was given and nothing the
+    environment holds. A gateway that wants the variable's lines is reached through
+    `OPENAI_BASE_URL` instead, and one that takes its token as the authorization is given it as
+    the key."""
+    _gateway(monkeypatch)
+    _provider, fake = _built(monkeypatch, "openai", release=release, base_url=GATEWAY)
+    lines = fake_sdk.sent(fake, release)
     assert fake_sdk.every(lines, "authorization") == [f"Bearer {KEY}"]
     for name in ("x-gateway-key", "openai-organization", "openai-project"):
         assert fake_sdk.every(lines, name) == [], name
@@ -220,6 +370,38 @@ def test_an_address_with_space_around_it_is_handed_over_without(
         monkeypatch.setenv("OPENAI_BASE_URL", padded)
         _provider, fake = _built(monkeypatch, "openai")
     assert fake.kwargs["base_url"] == padded.strip()
+
+
+@pytest.mark.parametrize("blank", ["", " "], ids=["empty", "spaces"])
+@pytest.mark.parametrize("preset", PRESETS)
+def test_a_blank_base_url_is_no_base_url(
+    preset: str, blank: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--base-url ""`, or one of spaces, is nothing typed, so every preset lands where it lands
+    with no `--base-url` at all: a vendor at its own API, a local preset on its own ladder, and
+    OpenAI's own where the SDK would go. A vendor's address used to be replaced with the blank,
+    which then fell through to wherever `OPENAI_BASE_URL` pointed, a board over plain HTTP here,
+    or to OpenAI's API, with this vendor's key and the whole first turn."""
+    board = "http://jetson.local:11434/v1"
+    monkeypatch.setenv("OPENAI_BASE_URL", board)
+    absent = _built(monkeypatch, preset, base_url=None)[0].client_address()
+    provider, fake = _built(monkeypatch, preset, base_url=blank)
+    assert provider.client_address() == fake.kwargs["base_url"] == absent
+    if preset in OPENAI_COMPATIBLE:
+        assert absent == type(provider).base_url
+        assert absent not in (board, DEFAULT_BASE_URL)
+
+
+def test_a_provider_left_holding_a_blank_address_is_refused_not_sent_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing quackd builds can hold one any more. A blank that got there anyway is refused
+    rather than read as no address, which only OpenAI's own provider may have and which falls
+    through to the SDK's."""
+    provider, _fake = _built(monkeypatch, "grok")
+    provider.base_url = "  "
+    with pytest.raises(ProviderError, match="no address to send to"):
+        provider.client_address()
 
 
 @pytest.mark.parametrize(
@@ -255,6 +437,42 @@ def test_a_preset_moved_to_a_board_is_judged_where_it_was_moved(
         assert fake_sdk.every(lines, name) == [], name
 
 
+# ── the key a server you run is sent ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("preset", LOCAL_NAMES)
+def test_a_local_preset_is_sent_its_own_key_or_none_and_never_openais(
+    preset: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server you run is sent `LOCAL_API_KEY` where it is set and the word `not-needed`
+    otherwise. It used to be sent `OPENAI_API_KEY` whenever that sat in the same `.env`, on a board
+    over plain HTTP too, where it crossed the network in the clear."""
+    monkeypatch.setenv("OPENAI_API_KEY", OPENAI_KEY)
+    monkeypatch.delenv("LOCAL_API_KEY")
+    fake = fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI(release="3.22"))
+    url = {"base_url": LOCAL_URL} if preset == "local" else {}
+    make_provider(preset, **url)
+    assert fake.kwargs["api_key"] == "not-needed"
+    assert fake_sdk.every(fake_sdk.sent(fake, "3.22"), "authorization") == ["Bearer not-needed"]
+    monkeypatch.setenv("LOCAL_API_KEY", "local-key-not-real")
+    make_provider(preset, **url)
+    assert fake.kwargs["api_key"] == "local-key-not-real"
+
+
+@pytest.mark.parametrize("preset", OPENAI_COMPATIBLE)
+def test_a_vendor_is_sent_its_own_key_and_never_openais(
+    preset: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every vendor reads its own variable, and `OPENAI_API_KEY` beside it is somebody else's."""
+    monkeypatch.setenv("OPENAI_API_KEY", OPENAI_KEY)
+    _provider, fake = _built(monkeypatch, preset, release="3.22")
+    assert fake.kwargs["api_key"] == KEY
+    assert _carries(fake_sdk.sent(fake, "3.22"), OPENAI_KEY) == []
+
+
+# ── the read-back ───────────────────────────────────────────────────────────────────────────
+
+
 @pytest.mark.parametrize(
     ("handed", "reported"),
     [
@@ -266,10 +484,10 @@ def test_a_preset_moved_to_a_board_is_judged_where_it_was_moved(
 def test_a_client_that_would_send_somewhere_else_is_refused(
     handed: str, reported: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The headers are decided on the address the client is handed, and a release that would send
-    somewhere else would have had them decided for the wrong address: away from OpenAI, OpenAI's
-    account headers and the gateway's lines would go to whoever that is. So the address is read
-    back off the built client, and one that lands on the other side of the rule stops the build."""
+    """What the client is built with is decided on the address it is handed, and a release that
+    would send somewhere else would have had it decided for the wrong address: OpenAI's account
+    headers and the gateway's lines would go to whoever that is. So the address is read back off
+    the built client, and one that lands on the other side of OpenAI's own API stops the build."""
     monkeypatch.setenv("OPENAI_BASE_URL", handed)
     fake = fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI(moves_to=reported))
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
@@ -301,10 +519,21 @@ def test_a_refusal_never_quotes_a_password_in_the_address(monkeypatch: pytest.Mo
     assert "hunter2" not in str(e.value) and "rok:***@api.openai.com" in str(e.value)
 
 
-# ── the read-back ───────────────────────────────────────────────────────────────────────────
+def test_a_refusal_never_quotes_an_address_redaction_cannot_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`http://rok:pw@[::1` has a password in it and no host redaction can find, so it would be
+    quoted as it is. A refusal names it as an address quackd cannot read instead."""
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI(moves_to="http://rok:pw-SECRET@[::1"))
+    monkeypatch.setenv("OPENAI_API_KEY", KEY)
+    with pytest.raises(ProviderError) as e:
+        make_provider("openai")
+    assert "an address quackd cannot read" in str(e.value)
+    assert "pw-SECRET" not in str(e.value)
 
 
-@pytest.mark.parametrize("preset", ["openai", "openrouter", "ollama"])
+@pytest.mark.parametrize("preset", ["grok", "openrouter", "ollama"])
 def test_a_release_that_would_still_send_the_variables_authorization_is_refused_by_name(
     preset: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -319,17 +548,43 @@ def test_a_release_that_would_still_send_the_variables_authorization_is_refused_
     assert "gw-auth-secret" not in said
 
 
+@pytest.mark.parametrize(
+    "lines",
+    [f"X-Gateway-Key: {GATEWAY_KEY}", "OpenAI-Organization: org-gateway-secret"],
+    ids=["a line of its own", "an account header"],
+)
+@pytest.mark.parametrize("preset", ["grok", "openrouter", "ollama"])
+def test_a_release_that_would_send_any_other_line_of_the_variable_is_refused_by_name(
+    preset: str, lines: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backstop reads every name quackd answered, not the authorization alone. A release that
+    put the variable's lines back over quackd's `Omit` would send a gateway's own credential, or
+    an account the request should not be billed to, to a vendor or a server you run, and the read
+    -back used to let it through because the authorization was quackd's."""
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
+    with pytest.raises(ProviderError) as e:
+        _built(monkeypatch, preset, release=fake_sdk.BACKWARDS)
+    said = str(e.value)
+    assert f"openai {fake_sdk.__version__}" in said and "OPENAI_CUSTOM_HEADERS" in said
+    assert GATEWAY_KEY not in said and "org-gateway-secret" not in said
+
+
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
 def test_every_release_read_is_built_without_a_refusal(
     release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The read-back refuses what a release does that the rule did not foresee, and nothing that
-    a release somebody read does with the variable's authorization lines."""
+    a release somebody read does with the variable: its authorization lines in two spellings, a
+    line of its own, an account header, and two of the SDK's own headers in two spellings."""
     monkeypatch.setenv(
-        "OPENAI_CUSTOM_HEADERS", f"authorization: {GATEWAY_AUTH}\nAUTHORIZATION: {GATEWAY_AUTH}"
+        "OPENAI_CUSTOM_HEADERS",
+        f"authorization: {GATEWAY_AUTH}\nAUTHORIZATION: {GATEWAY_AUTH}\nX-Gw: 1\n"
+        "openai-organization: gw-org\nUser-Agent: corp\ncontent-type: text/plain",
     )
-    provider, fake = _built(monkeypatch, "grok", release=release)
-    assert provider.client is fake
+    monkeypatch.setenv("OPENAI_ORG_ID", ORG)
+    for preset in ("grok", "openrouter", "ollama"):
+        provider, fake = _built(monkeypatch, preset, release=release)
+        assert provider.client is fake
 
 
 class _Unreadable(fake_sdk.FakeOpenAI):
@@ -365,6 +620,37 @@ def test_the_read_back_takes_quackds_own_value_and_omits_and_nothing_else() -> N
     assert foreign_authorization({"authorization": None}, bearer, omit), "an unreadable value"
 
 
+def test_the_read_back_of_every_other_name_takes_what_was_handed_and_nothing_else() -> None:
+    omit = fake_sdk.Omit
+    handed = {
+        "Authorization": "Bearer k",
+        "X-Gw": omit(),
+        "User-Agent": omit(),
+        "user-agent": "ua",
+        "OpenAI-Organization": omit(),
+    }
+    taken = {
+        "Accept": "application/json",
+        "User-Agent": omit(),
+        "user-agent": "ua",
+        "x-gw": omit(),
+        "OpenAI-Organization": omit(),
+        "Authorization": "Bearer someone-else's",
+    }
+    assert not foreign_headers(taken, handed, omit), "the authorization is not this one's to read"
+    assert foreign_headers({**taken, "X-GW": "1"}, handed, omit)
+    assert foreign_headers({**taken, "User-Agent": "corp"}, handed, omit)
+    assert foreign_headers({**taken, "openai-organization": "org"}, handed, omit)
+
+    class Uncomparable:
+        def __eq__(self, other: object) -> bool:
+            raise RuntimeError("no")
+
+        __hash__ = None  # type: ignore[assignment]
+
+    assert foreign_headers({"X-Gw": Uncomparable()}, {"X-Gw": "1"}, omit)
+
+
 @pytest.mark.parametrize("missing", ["AsyncOpenAI", "Omit", "DefaultAsyncHttpxClient"])
 def test_an_sdk_without_what_the_client_is_built_from_is_the_extras_sentence(
     missing: str, monkeypatch: pytest.MonkeyPatch
@@ -377,27 +663,180 @@ def test_an_sdk_without_what_the_client_is_built_from_is_the_extras_sentence(
         make_provider("grok")
 
 
+class _Broken(importlib.abc.MetaPathFinder):
+    """A half-installed SDK: importing it raises something other than `ImportError`, as a package
+    whose own imports fail part of the way through is free to."""
+
+    def find_spec(self, name: str, path: Any = None, target: Any = None) -> Any:
+        if name == "openai":
+            raise RuntimeError("the SDK is half installed")
+        return None
+
+
+def test_an_sdk_that_raises_anything_while_it_is_imported_is_the_extras_sentence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Not only `ImportError`: whatever an import raises is the same answer as a missing SDK, the
+    sentence that names the extra, rather than a traceback out of the CLI."""
+    monkeypatch.delitem(sys.modules, "openai", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [_Broken(), *sys.meta_path])
+    monkeypatch.setenv("XAI_API_KEY", KEY)
+    with pytest.raises(ProviderNotInstalled, match=r"quackd\[grok\]"):
+        make_provider("grok")
+
+
+# ── a turn answered with a redirect ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("location", "requested", "address", "shown", "suggested"),
+    [
+        (
+            "https://llm.example/v1/chat/completions",
+            "http://llm.example/v1/chat/completions",
+            "http://llm.example/v1",
+            "https://llm.example/v1/chat/completions",
+            "https://llm.example/v1",
+        ),
+        # relative to the request, and the user, the query and the fragment never quoted
+        (
+            "/v2/models?token=abc#x",
+            "http://rok:pw@box:8000/v1/models",
+            "http://rok:pw@box:8000/v1",
+            "http://box:8000/v2/models",
+            "http://box:8000/v2",
+        ),
+        (
+            "https://rok:pw@elsewhere.example/login",
+            "https://api.x.ai/v1/chat/completions",
+            "https://api.x.ai/v1",
+            "https://elsewhere.example/login",
+            None,
+        ),
+        (
+            "https://evil.example/\x1b[2Jv1",
+            "https://api.x.ai/v1/chat/completions",
+            "https://api.x.ai/v1",
+            "an address quackd will not quote",
+            None,
+        ),
+        (
+            "ftp://files.example/v1/models",
+            "http://box:8000/v1/models",
+            "http://box:8000/v1",
+            "an address quackd will not quote",
+            None,
+        ),
+        (
+            "http://[::1",
+            "http://box:8000/v1/models",
+            "http://box:8000/v1",
+            "an address quackd will not quote",
+            None,
+        ),
+    ],
+    ids=["http to https", "relative", "elsewhere", "an escape", "not http", "unreadable"],
+)
+def test_a_redirect_is_quoted_by_its_scheme_host_and_path_and_suggests_its_api(
+    location: str, requested: str, address: str, shown: str, suggested: str | None
+) -> None:
+    assert _where_it_points(location, requested, address) == (shown, suggested)
+
+
+def _redirect(status: int, location: str | None, url: str) -> Exception:
+    """An error the way the SDK raises a 3xx once the client follows none: a status code, and the
+    response it came with, which carries the request."""
+    headers = {} if location is None else {"location": location}
+    error = Exception(f"Error code: {status}")
+    error.status_code = status  # type: ignore[attr-defined]
+    error.response = NS(headers=headers, request=NS(url=url))  # type: ignore[attr-defined]
+    return error
+
+
+def test_a_redirect_says_where_it_pointed_and_how_to_go_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SDK's own words for a redirect it was told not to follow are `Error code: 308`, which
+    names neither a redirect nor where it pointed. The sentence says both, and the way to give
+    the address it implies: `--base-url`, or `OPENAI_BASE_URL` for the provider that took its
+    address from there. Any other failure keeps the SDK's words."""
+    vllm, _fake = _built(monkeypatch, "vllm", base_url="http://llm.example/v1", model="m")
+    error = _redirect(
+        308, "https://llm.example/v1/chat/completions", "http://llm.example/v1/chat/completions"
+    )
+    assert str(vllm._failed(error)) == (
+        "vllm: http://llm.example/v1 answered with a redirect (308) to "
+        "https://llm.example/v1/chat/completions, so it was not followed: if the server is there "
+        "now, pass --base-url https://llm.example/v1"
+    )
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://gateway.example/v1")
+    openai, _fake = _built(monkeypatch, "openai")
+    error = _redirect(
+        301, "https://gateway.example/v1/responses", "http://gateway.example/v1/responses"
+    )
+    assert str(openai._failed(error)).endswith(
+        "if the server is there now, set OPENAI_BASE_URL=https://gateway.example/v1"
+    )
+    nowhere = _redirect(302, None, "http://llm.example/v1/chat/completions")
+    assert str(vllm._failed(nowhere)) == (
+        "vllm: http://llm.example/v1 answered with a redirect (302) that names no address, so it "
+        "was not followed"
+    )
+    refused = _redirect(401, None, "http://llm.example/v1/chat/completions")
+    assert str(vllm._failed(refused)) == "vllm: Exception: Error code: 401"
+
+    class Unasked:
+        """A response that cannot say which request it answered, and still says where to."""
+
+        headers = {"location": "https://llm.example/v1/chat/completions"}
+
+        @property
+        def request(self) -> Any:
+            raise RuntimeError("no request on this response")
+
+    unasked = Exception("Error code: 307")
+    unasked.status_code = 307  # type: ignore[attr-defined]
+    unasked.response = Unasked()  # type: ignore[attr-defined]
+    assert str(vllm._failed(unasked)) == (
+        "vllm: http://llm.example/v1 answered with a redirect (307) to "
+        "https://llm.example/v1/chat/completions, so it was not followed"
+    )
+
+
 # ── the rule itself ─────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
 @pytest.mark.parametrize("unset", [False, True], ids=["variables set", "variables unset"])
 @pytest.mark.parametrize(
-    "lines",
+    ("lines", "twice"),
     [
-        "OpenAI-Organization: gw-org\nOpenAI-Project: gw-proj",
-        "openai-organization: gw-org\nOPENAI-PROJECT: gw-proj",
-        "OpenAI-Organization: gw-org\nopenai-organization: gw-org\nOpenAI-Project: gw-proj",
+        ("OpenAI-Organization: gw-org\nOpenAI-Project: gw-proj", ()),
+        ("openai-organization: gw-org\nOPENAI-PROJECT: gw-proj", ()),
+        (
+            "OpenAI-Organization: gw-org\nopenai-organization: gw-org\nOpenAI-Project: gw-proj",
+            ("1.66", "3.1", "3.6"),
+        ),
     ],
     ids=["the sdk's own spelling", "another spelling", "both spellings"],
 )
-def test_at_openai_the_account_headers_are_what_the_two_variables_say(
-    lines: str, unset: bool, release: str, monkeypatch: pytest.MonkeyPatch
+def test_at_openai_the_rule_gives_the_account_headers_what_the_two_variables_say(
+    lines: str,
+    twice: tuple[str, ...],
+    unset: bool,
+    release: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A gateway's line in the SDK's own spelling takes the place of the entry the SDK fills from
-    `OPENAI_ORG_ID`, and a request to OpenAI was billed to whatever the line said. At OpenAI the
-    account headers carry the two variables' values, whatever spelling the gateway gave its lines,
-    and nothing where the variables are unset, as the SDK sends nothing then."""
+    """The rule for a client that sends nothing ambient anywhere, which the pilot is built with
+    away from the SDK's own address and another client may be built with everywhere. At OpenAI a
+    gateway's line in the SDK's own spelling takes the place of the entry the SDK fills from
+    `OPENAI_ORG_ID`, and a request was billed to whatever the line said, so each account header
+    carries its variable's value whatever spelling the gateway gave its lines, and nothing where
+    the variables are unset, as the SDK sends nothing then.
+
+    Named in two spellings, the value goes once where a release merges them, and twice where it
+    keeps both, the variable's two lines in 3.1.0 and 3.6.0 and in 1.66.0, which never reads the
+    variable, the SDK's own entry and the one quackd handed under the other spelling."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
     if unset:
         monkeypatch.delenv("OPENAI_ORG_ID")
@@ -405,40 +844,48 @@ def test_at_openai_the_account_headers_are_what_the_two_variables_say(
     else:
         monkeypatch.setenv("OPENAI_ORG_ID", ORG)
         monkeypatch.setenv("OPENAI_PROJECT_ID", PROJECT)
-    _provider, fake = _built(monkeypatch, "openai", release=release)
+    handed = request_headers(f"Bearer {KEY}", at_openai=True, omit=fake_sdk.Omit)
+    fake = fake_sdk.FakeOpenAI(release=release)(api_key=KEY, default_headers=handed)
     sent = fake_sdk.sent(fake, release)
-    for name, value in (("openai-organization", ORG), ("openai-project", PROJECT)):
-        assert set(fake_sdk.every(sent, name)) == (set() if unset else {value}), name
+    count = 2 if release in twice else 1
+    assert fake_sdk.every(sent, "openai-organization") == ([] if unset else [ORG] * count)
+    assert fake_sdk.every(sent, "openai-project") == ([] if unset else [PROJECT])
 
 
-@pytest.mark.parametrize("keep_at_openai", [False, True])
-def test_away_from_openai_every_line_is_omitted_whatever_keep_says(keep_at_openai: bool) -> None:
+def test_away_from_openai_every_line_is_omitted() -> None:
     omit = fake_sdk.Omit
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("OPENAI_CUSTOM_HEADERS", "X-Gw: 1\nOpenAI-Organization: 2\nauthorization: 3")
-        headers = request_headers(
-            "Bearer k", at_openai=False, omit=omit, keep_at_openai=keep_at_openai
-        )
+        headers = request_headers("Bearer k", at_openai=False, omit=omit)
     assert headers["authorization"] == "Bearer k" and isinstance(headers["Authorization"], omit)
     for name in ("X-Gw", "OpenAI-Organization", "OpenAI-Project"):
         assert isinstance(headers[name], omit), name
 
 
-def test_at_openai_other_lines_are_omitted_unless_kept() -> None:
-    """Omitted by default, which is the rule for a client that sends nothing ambient anywhere, and
-    left to the SDK where the caller keeps them, which is the pilot's: at OpenAI's own API the
-    variable's other lines are what the SDK has always sent there."""
+def test_at_openai_the_rule_omits_every_other_line_and_leaves_the_sdks_account_entry() -> None:
+    """The rule a client that sends nothing ambient anywhere is built with: at OpenAI too, a line
+    of the variable that is neither an authorization nor an account header is omitted. The pilot
+    is built at OpenAI as the SDK builds it instead (`sdks_own_address`)."""
     omit = fake_sdk.Omit
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("OPENAI_CUSTOM_HEADERS", "X-Gw: 1\nAuthorization: 3")
         patch.setenv("OPENAI_ORG_ID", ORG)
-        omitted = request_headers("Bearer k", at_openai=True, omit=omit)
-        kept = request_headers("Bearer k", at_openai=True, omit=omit, keep_at_openai=True)
-    assert isinstance(omitted["X-Gw"], omit)
-    assert "X-Gw" not in kept
-    for headers in (omitted, kept):
-        assert headers["Authorization"] == "Bearer k"
-        assert "OpenAI-Organization" not in headers, "the SDK's own entry was touched"
+        headers = request_headers("Bearer k", at_openai=True, omit=omit)
+    assert isinstance(headers["X-Gw"], omit)
+    assert headers["Authorization"] == "Bearer k"
+    assert "OpenAI-Organization" not in headers, "the SDK's own entry was touched"
+
+
+def test_a_line_naming_one_of_the_sdks_own_headers_is_handed_the_sdks_value() -> None:
+    omit = fake_sdk.Omit
+    own = {"User-Agent": "AsyncOpenAI/Python 9", "Accept": SENDS_JSON}
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("OPENAI_CUSTOM_HEADERS", "user-agent: corp\nAccept: text/html\nX-Gw: 1")
+        headers = request_headers("Bearer k", at_openai=False, omit=omit, own=own)
+    assert isinstance(headers["User-Agent"], omit), "the SDK's own spelling would go beside"
+    assert headers["user-agent"] == "AsyncOpenAI/Python 9"
+    assert headers["Accept"] == SENDS_JSON
+    assert isinstance(headers["X-Gw"], omit)
 
 
 def test_with_the_variable_unset_only_the_key_is_named() -> None:
@@ -463,6 +910,24 @@ def test_the_variable_is_read_exactly_as_the_sdk_reads_it() -> None:
 
 
 @pytest.mark.parametrize(
+    ("url", "from_its_variable", "sdks"),
+    [
+        ("https://api.openai.com/v1", False, True),
+        ("https://eu.api.openai.com/v1", False, True),
+        ("https://gateway.example/v1", True, True),
+        ("http://jetson.local:11434/v1", True, True),
+        ("https://gateway.example/v1", False, False),
+        ("http://jetson.local:11434/v1", False, False),
+        ("http://api.openai.com/v1", False, False),
+    ],
+)
+def test_the_sdks_own_address_is_openais_api_or_the_one_its_variable_gave(
+    url: str, from_its_variable: bool, sdks: bool
+) -> None:
+    assert sdks_own_address(url, from_its_variable=from_its_variable) is sdks
+
+
+@pytest.mark.parametrize(
     ("url", "openais"),
     [
         ("https://api.openai.com/v1", True),
@@ -470,9 +935,13 @@ def test_the_variable_is_read_exactly_as_the_sdk_reads_it() -> None:
         # every regional host OpenAI's data-controls page lists (2026-10-10)
         *[(f"https://{host}/v1", True) for host in sorted(OPENAI_HOSTS)],
         ("https://api.openai.com:443/v1", True),
-        # a host is case-insensitive, and whitespace around the address comes off first
+        # a host is case-insensitive
         ("https://API.OpenAI.com/v1", True),
+        # whitespace around the address comes off first. `urlsplit` takes off the leading half
+        # by itself since Python 3.11.4, and never the trailing half, which is in the authority
+        # wherever there is no path, so the last row is the one only the rule's own strip passes
         (" https://api.openai.com/v1 ", True),
+        ("https://api.openai.com ", True),
         ("http://127.0.0.1:11434/v1", False),
         ("http://api.openai.com/v1", False),
         ("https://api.openai.com:8443/v1", False),
@@ -505,6 +974,20 @@ def test_the_hosts_are_the_ones_openai_document_and_no_others() -> None:
     assert {"api.openai.com", *(f"{region}.api.openai.com" for region in regions)} == OPENAI_HOSTS
     with_the_port_https_uses = {*OPENAI_HOSTS, *(f"{host}:443" for host in OPENAI_HOSTS)}
     assert with_the_port_https_uses == openai_headers.OPENAI_AUTHORITIES
+
+
+def test_the_sdks_own_headers_are_read_off_the_client_and_what_cannot_be_read_is_left_out() -> None:
+    client = fake_sdk.FakeOpenAI(user_agent="AsyncOpenAI/Python 9")
+    assert openai_headers.own_headers(client) == {
+        "Accept": SENDS_JSON,
+        "Content-Type": SENDS_JSON,
+        "User-Agent": "AsyncOpenAI/Python 9",
+        **fake_sdk.PLATFORM,
+    }
+    assert openai_headers.own_headers(object()) == {
+        "Accept": SENDS_JSON,
+        "Content-Type": SENDS_JSON,
+    }
 
 
 # ── nothing goes round it ───────────────────────────────────────────────────────────────────
@@ -550,7 +1033,7 @@ def test_no_client_is_built_on_openais_sdk_anywhere_but_through_the_rule() -> No
     a security issue, because whatever builds one by itself sends whatever the environment put
     there to wherever it points. So every module quackd ships is read for a way to reach the SDK,
     and `openai_headers.sdk_parts` is the one place that may: every client is built from what it
-    hands back, and through `request_headers`."""
+    hands back, and by its rule."""
     roots = [REPO / "quackd", REPO / "bridge", *sorted((REPO / "adapters").glob("*/src"))]
     reached = {
         path.relative_to(REPO).as_posix(): where

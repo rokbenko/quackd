@@ -15,7 +15,9 @@ the locked release and no other. So this also carries a model of what each kind 
 extras allow puts on a request (`RELEASES`, `sent`), read from the releases themselves, so that CI
 holds quackd's rule to all of them and not only to the one a developer happens to have. The SDK's
 own account headers are modelled beside the variable's lines, because what reaches a vendor that
-is not OpenAI is the point here.
+is not OpenAI is the point here, and so are the headers the SDK writes on every request by
+itself, `Accept`, `Content-Type`, `User-Agent` and its `X-Stainless-` lines, because a line of the
+variable that names one used to take the SDK's own away.
 """
 
 from __future__ import annotations
@@ -27,6 +29,19 @@ from typing import Any
 
 __version__ = "0.0.0+fake"
 """What the module says its release is, which a refusal that names the release quotes."""
+
+USER_AGENT = f"AsyncOpenAI/Python {__version__}"
+"""What the client says it is, in the shape every release read gives its `user_agent`."""
+
+PLATFORM = {
+    "X-Stainless-Lang": "python",
+    "X-Stainless-Package-Version": __version__,
+    "X-Stainless-OS": "Fake",
+    "X-Stainless-Arch": "fake",
+    "X-Stainless-Runtime": "CPython",
+    "X-Stainless-Runtime-Version": "3.11.0",
+}
+"""What the client's `platform_headers()` says, by the names every release read gives them."""
 
 
 class Omit:
@@ -56,7 +71,12 @@ class DefaultAsyncHttpxClient:
 # `default_headers` and `_build_headers` in `openai/_base_client.py`. Every release that reads
 # `OPENAI_CUSTOM_HEADERS` parses it the same way. They differ in what they do next, and in how a
 # request's headers are merged, which is all a model here has to say. Each was then run against
-# the real releases with the network patched shut, and agreed with all eleven.
+# the real releases with the network patched shut, and agreed with all eleven, on 2026-10-12 with
+# the SDK's own headers modelled as well. One thing it does not model: what the HTTP library adds
+# to a request that lacks one of the SDK's own headers, its own `User-Agent`, and in 1.66.0 and
+# 1.83.0 a `Content-Type` for a JSON body. Nothing quackd hands leaves that gap, since a line of
+# the variable that names one of those headers carries the SDK's own value
+# (`openai_headers.own_headers`).
 
 RELEASES = ("1.66", "3.1", "3.6", "3.22")
 """Four kinds of release inside the extras' range, by the first cached release of each. `1.66`,
@@ -115,24 +135,38 @@ def _custom(release: str, handed: dict[str, Any]) -> dict[str, Any]:
     return {**parsed, **handed}
 
 
-def default_headers(release: str, handed: dict[str, Any], api_key: str) -> dict[str, Any]:
+def default_headers(
+    release: str,
+    handed: dict[str, Any],
+    api_key: str,
+    *,
+    user_agent: str = USER_AGENT,
+    platform: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """What a built client's own `default_headers` holds under `release`, in the order the SDK
     builds it, which matters as much as what is in it.
 
-    The base class spreads the custom headers first, after the SDK's own `Accept`, `User-Agent`
-    and the like, and in 1.66.0 after the key's `Authorization` as well. The client then names
-    `OpenAI-Organization` and `OpenAI-Project`, from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` or
-    `Omit` where either is unset, and spreads the custom headers again. A custom header spelled
-    exactly as one of those two therefore takes its place, and one spelled another way keeps the
-    early place the first spread gave it, ahead of the SDK's own entry. The headers that cannot
-    matter here are left out."""
+    The base class names the SDK's own `Accept`, `Content-Type`, `User-Agent` and platform lines,
+    in 1.66.0 the key's `Authorization` after them, and then spreads the custom headers, so a
+    custom header spelled exactly as one of the SDK's own takes its early place. The client then
+    names `X-Stainless-Async`, and `OpenAI-Organization` and `OpenAI-Project` from
+    `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` or `Omit` where either is unset, and spreads the
+    custom headers again. A custom header spelled exactly as one of those therefore takes its
+    place, and one spelled another way keeps the place the first spread gave it, ahead of the
+    SDK's own entry, which is what lets an `Omit` under it take the SDK's entry out in a release
+    that merges without regard to case."""
     custom = _custom(release, handed)
     organization = os.environ.get("OPENAI_ORG_ID")
     project = os.environ.get("OPENAI_PROJECT_ID")
-    own = {"Authorization": f"Bearer {api_key}"} if release == "1.66" else {}
+    auth = {"Authorization": f"Bearer {api_key}"} if release == "1.66" else {}
     return {
-        **own,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": user_agent,
+        **(PLATFORM if platform is None else platform),
+        **auth,
         **custom,
+        "X-Stainless-Async": "async:asyncio",
         "OpenAI-Organization": organization if organization is not None else Omit(),
         "OpenAI-Project": project if project is not None else Omit(),
         **custom,
@@ -148,7 +182,9 @@ def sent(fake: FakeOpenAI, release: str) -> list[tuple[str, str]]:
     it: by exact name up to 3.19.0, and without regard to case in 3.22.1, where an `Omit` takes
     out whatever came before it under any spelling of its name."""
     api_key = str(fake.kwargs.get("api_key"))
-    headers = default_headers(release, fake.handed, api_key)
+    headers = default_headers(
+        release, fake.handed, api_key, user_agent=fake.user_agent, platform=fake.platform_headers()
+    )
     key = ("Authorization", f"Bearer {api_key}")
     if release == "3.22":
         lines: dict[str, tuple[str, str]] = {}
@@ -174,21 +210,44 @@ class FakeOpenAI:
     `release` is which of `RELEASES` (or `BACKWARDS`) the client's own `default_headers` is merged
     like when it is read back, and None, the default, gives back exactly what it was handed.
     `moves_to` is an address the client reports instead of the one it was handed, for a release
-    that would send somewhere else."""
+    that would send somewhere else. `user_agent` and `platform` are what the client says about
+    itself, for a test that holds the model to a real client that says something else."""
 
-    def __init__(self, *, release: str | None = None, moves_to: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        release: str | None = None,
+        moves_to: str | None = None,
+        user_agent: str = USER_AGENT,
+        platform: dict[str, str] | None = None,
+    ) -> None:
         self.release = release
         self.moves_to = moves_to
+        self._user_agent = user_agent
+        self._platform = dict(PLATFORM if platform is None else platform)
         self.kwargs: dict[str, Any] = {}
-        """What the client class was called with, as the SDK's constructor would have been."""
+        """What the client class was last called with, as the SDK's constructor would have
+        been."""
+        self.calls: list[dict[str, Any]] = []
+        """Every call, in order, a client built only to be read included."""
         self.built = 0
 
     def __call__(self, **kwargs: Any) -> FakeOpenAI:
         """The constructor's shape, so a provider builds this the way it builds the real one, and
         the test keeps hold of what it was handed."""
         self.kwargs = kwargs
+        self.calls.append(kwargs)
         self.built += 1
         return self
+
+    @property
+    def user_agent(self) -> str:
+        """As the SDK's `BaseClient.user_agent` gives it."""
+        return self._user_agent
+
+    def platform_headers(self) -> dict[str, str]:
+        """As the SDK's `BaseClient.platform_headers()` gives them."""
+        return dict(self._platform)
 
     @property
     def handed(self) -> dict[str, Any]:
@@ -200,7 +259,13 @@ class FakeOpenAI:
         """What the real client's own `default_headers` holds once it is built."""
         if self.release is None:
             return self.handed
-        return default_headers(self.release, self.handed, str(self.kwargs.get("api_key")))
+        return default_headers(
+            self.release,
+            self.handed,
+            str(self.kwargs.get("api_key")),
+            user_agent=self.user_agent,
+            platform=self.platform_headers(),
+        )
 
     @property
     def base_url(self) -> str:

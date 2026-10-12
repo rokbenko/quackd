@@ -477,9 +477,11 @@ class OpenRouterProvider(OpenAIProvider):
         chosen = model or default_model_for(self.name) or ""
         spec = find_model(self.name, chosen)
         # Before the key is read: a model OpenRouter does not list is the reader's to fix
-        # first, and the list needs no key to say so. `listed` is how a test hands one in.
+        # first, and the list needs no key to say so. `listed` is how a test hands one in. A
+        # blank `--base-url` is no address, here as where the client is built.
         if spec is None and listed is None:
-            listed = admit(chosen, base_url=base_url or self.base_url, source=source)
+            where = (base_url or "").strip() or self.base_url or BASE_URL
+            listed = admit(chosen, base_url=where, source=source)
         if vision is None and listed is not None:
             vision = listed.vision
         # Chat Completions only, whatever `QUACKD_OPENAI_API` says: see the module docstring.

@@ -2485,6 +2485,19 @@ def test_a_base_url_with_no_scheme_is_refused_not_a_traceback(
         OpenRouterProvider(model="qwen/qwen3.8-flash", base_url="example.invalid/api/v1")
 
 
+@pytest.mark.parametrize("blank", ["", "  "], ids=["empty", "spaces"])
+def test_a_blank_base_url_reads_openrouters_own_list_and_sends_there(
+    blank: str, or_list: Listing
+) -> None:
+    """A blank `--base-url` is no address, for the list an id is checked against as for the
+    client: both are OpenRouter's own. One of spaces used to be asked for the list as it was."""
+    from quackd.agent.providers.openrouter import BASE_URL
+
+    provider = OpenRouterProvider(model="qwen/qwen3.8-flash", base_url=blank, client=object())
+    assert or_list.fetched == [BASE_URL]
+    assert provider.client_address() == BASE_URL
+
+
 def test_a_model_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_taken(
     or_list: Listing,
 ) -> None:
