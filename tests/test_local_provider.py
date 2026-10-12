@@ -163,6 +163,23 @@ def test_a_blank_rung_is_no_rung(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _address(monkeypatch, host="  ", QUACKD_HOST="") == "http://localhost:11434/v1"
 
 
+@pytest.mark.parametrize(
+    "blank",
+    [{"base_url": " "}, {"QUACKD_BASE_URL": " "}, {"OPENAI_BASE_URL": " "}],
+    ids=["--base-url", "QUACKD_BASE_URL", "OPENAI_BASE_URL"],
+)
+def test_a_url_of_spaces_is_no_rung_either(
+    blank: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A URL rung was taken as it came, so one of spaces won it, beat `QUACKD_HOST` below it,
+    and was then read as no address at all and sent on to wherever the SDK would have gone:
+    `OPENAI_BASE_URL`, or OpenAI's own API with `OPENAI_API_KEY`. It is nothing typed, and the
+    board below it is where the server is."""
+    env = {name: value for name, value in blank.items() if name.isupper()}
+    url = _address(monkeypatch, base_url=blank.get("base_url"), QUACKD_HOST="jetson.local", **env)
+    assert url == "http://jetson.local:11434/v1"
+
+
 def test_every_preset_moves_to_the_host_with_its_own_port_and_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -256,8 +273,10 @@ def test_make_provider_hands_the_host_to_the_local_presets_and_to_no_vendor(
 
 
 def test_no_key_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no `LOCAL_API_KEY` a server you run is sent a placeholder, and never `OPENAI_API_KEY`,
+    which used to be its fallback and so reached every local server it shared a `.env` with."""
     monkeypatch.delenv("LOCAL_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-not-a-real-key")
     p = LocalProvider("m", preset="ollama", client=FakeClient())
     assert p._fallback_key() == "not-needed"
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -383,6 +402,33 @@ async def test_model_discovery_with_empty_server_is_clear() -> None:
     p = LocalProvider(None, preset="ollama", client=FakeClient(reply(text="{}"), models=[]))
     with pytest.raises(ProviderError, match="lists no models"):
         await p.step("S", history(), TOOLS)
+
+
+async def test_model_discovery_names_the_server_without_the_password_in_its_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both of discovery's failures name the server, and they named it as this provider was
+    given it, a password in it included. They name the address the client was handed, as a
+    refusal may quote it: the password is a `***`."""
+    for name in _ADDRESS_ENV:
+        monkeypatch.delenv(name, raising=False)
+    url = "http://rok:pw-SECRET@box:8000/v1"
+    empty = LocalProvider(None, preset="vllm", base_url=url, client=FakeClient(models=[]))
+    with pytest.raises(ProviderError) as e:
+        await empty.ensure_model()
+    assert "the server at http://rok:***@box:8000/v1 lists no models" in str(e.value)
+    assert "pw-SECRET" not in str(e.value)
+
+    async def refuse() -> Any:
+        raise ConnectionError("refused")
+
+    down = FakeClient()
+    down.models = NS(list=refuse)
+    stopped = LocalProvider(None, preset="vllm", base_url=url, client=down)
+    with pytest.raises(ProviderError) as e:
+        await stopped.ensure_model()
+    assert "cannot list models at http://rok:***@box:8000/v1" in str(e.value)
+    assert "pw-SECRET" not in str(e.value)
 
 
 # ── text fallback ───────────────────────────────────────────────────────────────────────

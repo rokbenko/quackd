@@ -253,11 +253,10 @@ on: vLLM wants `--enable-auto-tool-choice --tool-call-parser <family>`, and llam
 wants `--jinja`. [guides/local-llms.md](../../guides/local-llms.md) has the per-server detail,
 including the JSON text fallback quackd uses when a server is weak at native tool calls.
 
-> [!WARNING]
-> If an `OPENAI_API_KEY` is in your environment, a local run sends it to your local server as
-> the bearer token, because that is the last fallback before the literal string
-> `not-needed`. Set `LOCAL_API_KEY=not-needed` or pass `--api-key not-needed` if that server
-> is not yours.
+> [!NOTE]
+> A local run sends your server `LOCAL_API_KEY` as the bearer token, or the literal string
+> `not-needed` where that is unset, and never an `OPENAI_API_KEY` that sits in the same
+> environment. A server that wants a key is given it as `LOCAL_API_KEY`.
 
 #### The one that decides whether the arm can see you
 

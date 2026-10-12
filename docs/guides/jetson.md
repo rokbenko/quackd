@@ -173,6 +173,17 @@ to `0.0.0.0:11434` in its service's environment (`sudo systemctl edit ollama`, t
 `--host jetson.local` then reaches it with no tunnel, and so does everybody else on that
 network.
 
+Every turn a local preset asks Ollama carries one `Authorization`, the local key, and nothing the
+`openai` package reads out of the environment for itself: `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
+and `OPENAI_PROJECT_ID` go to OpenAI's own API, or to the address `OPENAI_BASE_URL` gives
+`--llm openai`, and never to a board a local preset reaches, even one it found through
+`OPENAI_BASE_URL`. The local key is `--api-key`, then `LOCAL_API_KEY`, then the word `not-needed`,
+and never `OPENAI_API_KEY`, so a hosted key on the laptop stays there. Without the tunnel the
+local key crosses the network in the clear, so give the board a key of its own, if it wants one at
+all ([guides/local-llms.md](local-llms.md#knobs)). `--llm openai` is not a local preset: pointed
+at the board by `OPENAI_BASE_URL`, it sends the board everything the `openai` package sends by
+itself, those three included ([SECURITY.md](../../SECURITY.md)).
+
 ### quackd's host daemon
 
 The daemon is one file, `bridge/jetson/quackd_jetson_hostd.py`, run by systemd under the

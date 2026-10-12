@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from quackd.agent.providers.base import ProviderError, ProviderTurn, ToolCall
-from quackd.agent.providers.openai import OpenAIProvider
+from quackd.agent.providers.openai import OpenAIProvider, _quoted
 from quackd.host import HOST_ENV, host_of, netloc
 
 PRESETS: dict[str, str | None] = {
@@ -170,6 +170,15 @@ class LocalProvider(OpenAIProvider):
     `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
     registered with this robot is a decision about this run, and beats a `.env` line naming a
     model server's URL; `QUACKD_HOST` is the board you usually use, and must not.
+
+    `OPENAI_BASE_URL` is a rung of this ladder and nothing more: an address quackd chose to read
+    for a server you run, not the address the SDK found for itself, so the SDK's own variables
+    never go there (`openai_headers`, whose module docstring says why).
+
+    The key is `--api-key`, then `LOCAL_API_KEY`, then the word `not-needed`, and never
+    `OPENAI_API_KEY`, which is a key to OpenAI's API and no business of a server you run, on a
+    board over plain HTTP least of all. A server that wants a key is given it as
+    `LOCAL_API_KEY`.
     """
 
     supports_vision = False
@@ -213,16 +222,21 @@ class LocalProvider(OpenAIProvider):
     @staticmethod
     def _address(preset: str | None, base_url: str | None, host: str | None) -> str:
         """The class docstring's ladder, rung by rung. Blank is absent at every rung, as it is
-        everywhere quackd reads a setting: `QUACKD_HOST=` in a `.env` is a shell saying unset."""
+        everywhere quackd reads a setting: `QUACKD_HOST=` in a `.env` is a shell saying unset,
+        and a URL of spaces is nothing typed. A URL used to be taken as it came, so one of spaces
+        won its rung, beat `--host` and `QUACKD_HOST` below it, and was then read as no address at
+        all and sent on to wherever the SDK would have gone."""
         host = (host or "").strip() or None
         env_host = (os.environ.get(HOST_ENV) or "").strip() or None
-        if base_url:
-            return base_url
+        given = (base_url or "").strip()
+        if given:
+            return given
         if host and preset:
             return _moved(preset, host, source="--host")
-        url = os.environ.get("QUACKD_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
-        if url:
-            return url
+        for name in ("QUACKD_BASE_URL", "OPENAI_BASE_URL"):
+            url = (os.environ.get(name) or "").strip()
+            if url:
+                return url
         if env_host and preset:
             return _moved(preset, env_host, source=HOST_ENV)
         if preset:
@@ -230,25 +244,34 @@ class LocalProvider(OpenAIProvider):
         raise ProviderError(_A_HOST_MOVES_ONLY_A_PRESET if host or env_host else _LOCAL_NEEDS_A_URL)
 
     def _fallback_key(self) -> str | None:
-        # local servers ignore the key but the SDK insists on a non-empty string
-        return os.environ.get("OPENAI_API_KEY") or "not-needed"
+        """The SDK insists on a key, and a local server ignores it, so a placeholder. Never
+        `OPENAI_API_KEY`, which used to go here and so reached every local server, a board over
+        plain HTTP included, whenever it sat in the same `.env`."""
+        return "not-needed"
 
     async def ensure_model(self) -> str:
-        """Discover the served model when none was given (`/v1/models`, first entry)."""
+        """Discover the served model when none was given (`/v1/models`, first entry).
+
+        A failure names the address the client was handed, as a refusal may quote it, rather than
+        the one this provider was given, since that is where the request went."""
         if self.model:
             return self.model
         try:
             page = await self.client.models.list()
         except Exception as e:
+            redirected = self._redirected(e)
+            if redirected is not None:
+                raise redirected from e
             raise ProviderError(
-                f"{self.name}: cannot list models at {self.base_url} ({type(e).__name__}: {e}). "
-                "Is the server running? Pass --llm <preset>:<model> to skip discovery."
+                f"{self.name}: cannot list models at {_quoted(self.client_address())} "
+                f"({type(e).__name__}: {e}). Is the server running? Pass --llm <preset>:<model> "
+                "to skip discovery."
             ) from e
         ids = [str(getattr(m, "id", "")) for m in (getattr(page, "data", None) or [])]
         ids = [i for i in ids if i]
         if not ids:
             raise ProviderError(
-                f"{self.name}: the server at {self.base_url} lists no models. "
+                f"{self.name}: the server at {_quoted(self.client_address())} lists no models. "
                 "Load one (e.g. `ollama pull qwen3:8b`) or pass --llm <preset>:<model>."
             )
         self.model = ids[0]
