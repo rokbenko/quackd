@@ -207,20 +207,55 @@ def test_only_openais_own_preset_takes_the_sdks_address(monkeypatch: pytest.Monk
     assert not _built(monkeypatch, "openai", base_url=GATEWAY)[0].takes_the_sdks_address()
 
 
+VENDOR_SPELLINGS = (
+    "its own spelling alone",
+    "another spelling alone",
+    "its own spelling, then another",
+    "another spelling, then its own",
+)
+"""How lines of the variable may name one of a vendor's own headers: once, in the vendor's
+spelling or in another, or twice, in both and in either order."""
+
+
+def _spelled(name: str, spellings: str) -> list[str]:
+    """`name` as `spellings`, one of `VENDOR_SPELLINGS`, gives it, in the variable's order."""
+    other = name.lower()
+    return {
+        "its own spelling alone": [name],
+        "another spelling alone": [other],
+        "its own spelling, then another": [name, other],
+        "another spelling, then its own": [other, name],
+    }[spellings]
+
+
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
+@pytest.mark.parametrize("spellings", VENDOR_SPELLINGS)
+@pytest.mark.parametrize("name", list(ATTRIBUTION))
 def test_a_vendors_own_headers_still_go_whatever_the_variable_says_about_them(
-    release: str, monkeypatch: pytest.MonkeyPatch
+    name: str, spellings: str, release: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """OpenRouter credits an app by two headers, and they are OpenRouter's to receive. A line of
-    the variable that names either, in the same spelling or another, is somebody else's, so it is
-    omitted and OpenRouter's own value goes, once."""
+    the variable that names either, in OpenRouter's spelling or another, is somebody else's, so
+    its value goes nowhere and OpenRouter's own goes in its place.
+
+    Named in OpenRouter's own spelling and then in another, the header went nowhere at all in
+    3.22.1, which merges the variable's slots in the variable's order without regard to case: the
+    `Omit` quackd handed under the second spelling took OpenRouter's value away from the first.
+    Every spelling the variable gives now carries OpenRouter's value, so a release that merges
+    spellings sends it once, and a release that keeps them apart sends it once for each spelling
+    the variable gave."""
+    named = _spelled(name, spellings)
     monkeypatch.setenv(
-        "OPENAI_CUSTOM_HEADERS", "HTTP-Referer: https://elsewhere.example\nx-openrouter-title: x"
+        "OPENAI_CUSTOM_HEADERS", "\n".join(f"{n}: elsewhere-{i}" for i, n in enumerate(named))
     )
     _provider, fake = _built(monkeypatch, "openrouter", release=release)
     lines = fake_sdk.sent(fake, release)
-    for name, value in ATTRIBUTION.items():
-        assert fake_sdk.every(lines, name) == [value], name
+    twice = len(named) == 2 and release != "3.22"
+    assert fake_sdk.every(lines, name) == [ATTRIBUTION[name]] * (2 if twice else 1)
+    assert _carries(lines, "elsewhere") == []
+    for other, value in ATTRIBUTION.items():
+        if other != name:
+            assert fake_sdk.every(lines, other) == [value], other
 
 
 @pytest.mark.parametrize("preset", PRESETS)
@@ -550,8 +585,12 @@ def test_a_release_that_would_still_send_the_variables_authorization_is_refused_
 
 @pytest.mark.parametrize(
     "lines",
-    [f"X-Gateway-Key: {GATEWAY_KEY}", "OpenAI-Organization: org-gateway-secret"],
-    ids=["a line of its own", "an account header"],
+    [
+        f"X-Gateway-Key: {GATEWAY_KEY}",
+        "OpenAI-Organization: org-gateway-secret",
+        "x-openrouter-title: title-gateway-secret",
+    ],
+    ids=["a line of its own", "an account header", "a header openrouter sends"],
 )
 @pytest.mark.parametrize("preset", ["grok", "openrouter", "ollama"])
 def test_a_release_that_would_send_any_other_line_of_the_variable_is_refused_by_name(
@@ -560,13 +599,15 @@ def test_a_release_that_would_send_any_other_line_of_the_variable_is_refused_by_
     """The backstop reads every name quackd answered, not the authorization alone. A release that
     put the variable's lines back over quackd's `Omit` would send a gateway's own credential, or
     an account the request should not be billed to, to a vendor or a server you run, and the read
-    -back used to let it through because the authorization was quackd's."""
+    -back used to let it through because the authorization was quackd's. A line naming one of
+    OpenRouter's own headers is answered with OpenRouter's value, and a release that put the
+    line's own value back over that is refused the same way."""
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
     with pytest.raises(ProviderError) as e:
         _built(monkeypatch, preset, release=fake_sdk.BACKWARDS)
     said = str(e.value)
     assert f"openai {fake_sdk.__version__}" in said and "OPENAI_CUSTOM_HEADERS" in said
-    assert GATEWAY_KEY not in said and "org-gateway-secret" not in said
+    assert lines.partition(": ")[2] not in said
 
 
 @pytest.mark.parametrize("release", fake_sdk.RELEASES)
@@ -886,6 +927,29 @@ def test_a_line_naming_one_of_the_sdks_own_headers_is_handed_the_sdks_value() ->
     assert headers["user-agent"] == "AsyncOpenAI/Python 9"
     assert headers["Accept"] == SENDS_JSON
     assert isinstance(headers["X-Gw"], omit)
+
+
+def test_a_line_naming_one_of_a_vendors_own_headers_is_handed_the_vendors_value() -> None:
+    """Under every spelling the variable gives it, so whichever slot a release applies last
+    carries the vendor's value. Where the variable gives the name only in other spellings, the
+    vendor's own is not handed at all: beside them, a release that keeps spellings apart would
+    send it once more, and an `Omit` under it would come after the variable's slots and take the
+    value away."""
+    omit = fake_sdk.Omit
+    referer, title = ATTRIBUTION["HTTP-Referer"], ATTRIBUTION["X-OpenRouter-Title"]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(
+            "OPENAI_CUSTOM_HEADERS",
+            "X-OpenRouter-Title: a\nx-openrouter-title: b\nhttp-referer: c\nX-Gw: 1",
+        )
+        headers = request_headers("Bearer k", at_openai=False, omit=omit, vendor=ATTRIBUTION)
+    assert headers["X-OpenRouter-Title"] == headers["x-openrouter-title"] == title
+    assert headers["http-referer"] == referer and "HTTP-Referer" not in headers
+    assert isinstance(headers["X-Gw"], omit)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("OPENAI_CUSTOM_HEADERS", raising=False)
+        headers = request_headers("Bearer k", at_openai=False, omit=omit, vendor=ATTRIBUTION)
+    assert headers["HTTP-Referer"] == referer and headers["X-OpenRouter-Title"] == title
 
 
 def test_with_the_variable_unset_only_the_key_is_named() -> None:

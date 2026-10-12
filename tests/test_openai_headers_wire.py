@@ -52,6 +52,7 @@ from quackd.agent.providers import openai_headers
 from quackd.agent.providers.base import ProviderError
 from quackd.agent.providers.catalogue import LOCAL_NAMES
 from quackd.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
+from quackd.agent.providers.openrouter import ATTRIBUTION
 from quackd.cli import app
 from tests import fake_openai_sdk as fake_sdk
 from tests.fake_openrouter import SCRIPTS, completion
@@ -531,6 +532,53 @@ async def test_a_line_naming_a_header_the_sdk_sends_itself_changes_nothing_on_th
     assert _lines(lined) == _lines(plain)
 
 
+# ── a vendor's own headers ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        "its own spelling alone",
+        "another spelling alone",
+        "its own spelling, then another",
+        "another spelling, then its own",
+    ],
+)
+@pytest.mark.parametrize("name", list(ATTRIBUTION))
+async def test_a_line_naming_one_of_openrouters_own_headers_leaves_openrouters_value(
+    name: str, spellings: str, wire: Wire, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OpenRouter's two headers are OpenRouter's, and a line of the variable that names either is
+    somebody else's. Named in OpenRouter's own spelling and then in another, the locked release
+    sent neither the line nor OpenRouter's value: it merges in the variable's order without regard
+    to case, and the `Omit` quackd handed under the second spelling took OpenRouter's value away
+    from the first. Every spelling the variable gives now carries OpenRouter's value, so the
+    request is the one sent with no such line, header for header, wherever the variable names the
+    header once or the release merges spellings, and a release that keeps them apart sends
+    OpenRouter's value under each of the two."""
+    other = name.lower()
+    named = {
+        "its own spelling alone": [name],
+        "another spelling alone": [other],
+        "its own spelling, then another": [name, other],
+        "another spelling, then its own": [other, name],
+    }[spellings]
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "")
+    await _one_turn(_built(monkeypatch, "openrouter"))
+    monkeypatch.setenv(
+        "OPENAI_CUSTOM_HEADERS", "\n".join(f"{n}: elsewhere-{i}" for i, n in enumerate(named))
+    )
+    await _one_turn(_built(monkeypatch, "openrouter"))
+    plain, lined = wire.requests
+    assert wire.carrying("elsewhere") == []
+    values = wire.every(other)
+    assert values and set(values) == {ATTRIBUTION[name]}
+    if len(named) == 1 or KIND == "3.22":
+        assert _lines(lined) == _lines(plain)
+    elif KIND is not None:
+        assert values == [ATTRIBUTION[name]] * 2
+
+
 # ── a turn answered with a redirect ─────────────────────────────────────────────────────────
 
 
@@ -602,6 +650,7 @@ async def test_a_server_that_moved_to_https_is_named_with_the_address_to_give(
         f"authorization: {GATEWAY_AUTH}\nAUTHORIZATION: {GATEWAY_AUTH}",
         "OpenAI-Organization: gw-org\nopenai-project: gw-proj",
         "HTTP-Referer: https://elsewhere.example\nx-openrouter-title: x",
+        "X-OpenRouter-Title: x\nx-openrouter-title: y\nhttp-referer: a\nHTTP-Referer: b",
         "User-Agent: corp\ncontent-type: text/plain\nx-stainless-os: plan9",
     ],
 )

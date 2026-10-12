@@ -473,7 +473,10 @@ class OpenAIProvider:
     """Headers sent with every request beside the SDK's own and quackd's authorization. Empty for
     every vendor but OpenRouter, which credits an app on its public rankings by `HTTP-Referer` and
     `X-OpenRouter-Title`. They go whatever `OPENAI_CUSTOM_HEADERS` says about the same names,
-    because they are this vendor's and the variable's lines are somebody else's."""
+    because they are this vendor's and the variable's lines are somebody else's: every spelling
+    the variable gives one carries this vendor's value (`openai_headers.request_headers`). That
+    holds everywhere but the SDK's own address, which a vendor reaches only where `--base-url`
+    names OpenAI's own API, and where the variable's lines go as the SDK sends them."""
     switches_api = True
     """Whether the 400 that refuses function tools on Chat Completions moves this run to the
     Responses API. True for OpenAI's own API; OpenRouter is asked on Chat Completions only."""
@@ -606,8 +609,9 @@ class OpenAIProvider:
         to each (`openai_headers.request_headers`): this provider's key as the one authorization,
         under every spelling the variable gives one, and none of the rest, except that a line
         naming one of the headers the SDK sends by itself carries the SDK's own value, read off a
-        client of the same release (`openai_headers.own_headers`). This vendor's own
-        `default_headers` go on top, whatever the variable says about their names.
+        client of the same release (`openai_headers.own_headers`), and a line naming one of this
+        vendor's own `default_headers` carries this vendor's value, so neither is taken off with
+        the line.
 
         It is built on the SDK's HTTP client told to follow no redirect. Followed, a redirect from
         anything that answers for the address sends the request on to wherever it points, plain
@@ -650,10 +654,9 @@ class OpenAIProvider:
             own = own_headers(sdk.client(api_key=key, base_url=address, http_client=http_client))
         # Never OpenAI's own API here, since that is the SDK's own address, so both account
         # headers are always among the names answered.
-        handed = {
-            **request_headers(bearer, at_openai=False, omit=sdk.omit, own=own),
-            **self.default_headers,
-        }
+        handed = request_headers(
+            bearer, at_openai=False, omit=sdk.omit, own=own, vendor=self.default_headers
+        )
         client = sdk.client(
             api_key=key, base_url=address, default_headers=handed, http_client=http_client
         )

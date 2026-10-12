@@ -29,9 +29,10 @@ a vendor's own API, OpenRouter's, a local preset's server, `--base-url`, and a p
 board by `--host`. There the client is handed headers that answer all three (`request_headers`):
 the provider's own key as the one authorization, under every spelling the variable gives one, and
 every name the variable carries, and both account headers, omitted, apart from the few headers the
-SDK puts on every request by itself, which keep the SDK's own values (`own_headers`). It is read
-back once it is built (`foreign_authorization`, `foreign_headers`), because what a release does with
-what it is handed differs across the range the extras allow (`request_headers` says how).
+SDK puts on every request by itself, which keep the SDK's own values (`own_headers`), and a vendor's
+own headers, which keep the vendor's. It is read back once it is built (`foreign_authorization`,
+`foreign_headers`), because what a release does with what it is handed differs across the range the
+extras allow (`request_headers` says how).
 
 A local preset that took its address from `OPENAI_BASE_URL` is not the SDK's own address, though
 it is the same variable. The local presets read it as one rung of quackd's own address ladder
@@ -226,6 +227,7 @@ def request_headers(
     at_openai: bool,
     omit: Callable[[], Any],
     own: Mapping[str, str] | None = None,
+    vendor: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """The `default_headers` a client is built with: quackd's own authorization, and an answer for
     every header the SDK would otherwise add by itself.
@@ -234,7 +236,9 @@ def request_headers(
     `is_openai_host` of the address the client is handed. `omit` makes the SDK's own `Omit`, an
     instance of which under a header's name sends no header by that name. `own` is what the SDK
     sends on every request by itself (`own_headers`), which a line of the variable naming one of
-    those headers must not take away.
+    those headers must not take away. `vendor` is what the client sends on every request of its
+    own, a vendor's headers such as OpenRouter's two, which a line of the variable must neither
+    replace nor take away.
 
     The pilot builds a client with these only where the address is not the SDK's own
     (`sdks_own_address`), so it always hands `at_openai=False`. The rule still answers OpenAI's own
@@ -271,6 +275,18 @@ def request_headers(
       variable spells it otherwise than the SDK, the SDK's own spelling is omitted, so that a
       release that keeps both spellings sends one line, the SDK's value under the variable's
       spelling. Named in both spellings, both carry the SDK's value.
+    - A name that is, in any spelling, one of `vendor`'s carries the vendor's value under every
+      spelling the variable gives it. The client keeps the variable's lines in the variable's
+      order, a header handed under a spelling the variable gives taking that line's place, and
+      3.22.1 merges them in that order, so which spelling comes last is the variable's to say.
+      Where the variable named OpenRouter's `X-OpenRouter-Title` in OpenRouter's own spelling and
+      then in another, the `Omit` handed under the second took OpenRouter's value away from the
+      first, and the header went nowhere. With the vendor's value in every slot, the last one is
+      the vendor's in any order. Where the variable gives the name only in other spellings, the
+      vendor's own is not handed at all. Beside them, a release that keeps spellings apart would
+      send the value once more, and it cannot be omitted there as the SDK's own spelling is: the
+      SDK's has a slot of its own ahead of the variable's lines, and the vendor's would come after
+      every one of them, where an `Omit` takes the value away again.
     - At OpenAI, a name spelled exactly as the SDK spells an account header would replace the entry
       the SDK fills from `OPENAI_ORG_ID` or `OPENAI_PROJECT_ID` (`ACCOUNT_HEADERS`), and the request
       would be billed to whatever the line said, or to the key's default account where the line
@@ -285,10 +301,13 @@ def request_headers(
 
     A value is the same under every spelling it is sent in, so a release that keeps two spellings
     sends the same value twice, which is the worst a variable that names one header twice can do
-    here. One case of that is quackd's own doing: at OpenAI, a variable that names an account
-    header in the SDK's spelling and in another has both carry the variable's value, and 1.66.0
-    and 1.83.0, which never read the variable, then send the SDK's own entry and the one quackd
-    handed under the other spelling, two lines with one value, where the SDK alone sends one.
+    here. Two cases of it are quackd's own doing, in 1.66.0 and 1.83.0, which never read the
+    variable but send every spelling quackd hands them. At OpenAI, a variable that names an
+    account header in the SDK's spelling and in another has both carry the variable's value, and
+    those two releases send the SDK's own entry and the one quackd handed under the other
+    spelling, two lines with one value, where the SDK alone sends one. And a vendor's header the
+    variable names in two spellings is handed under both, so those two releases send the vendor's
+    value twice where the vendor alone sends it once.
     What a release does that this cannot foresee, the caller reads back off the client it built
     (`foreign_authorization`, `foreign_headers`)."""
     named = ambient_headers(os.environ.get(CUSTOM_HEADERS_ENV))
@@ -320,6 +339,11 @@ def request_headers(
     if not at_openai:
         for name in ACCOUNT_HEADERS:
             headers[name] = omit()
+    # Last, so a vendor's own header wins over whatever the rule above answered for its name.
+    for spelled, value in (vendor or {}).items():
+        variants = [n for n in named if n.lower() == spelled.lower()]
+        for name in variants or [spelled]:
+            headers[name] = value
     return headers
 
 
