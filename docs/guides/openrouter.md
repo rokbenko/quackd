@@ -153,10 +153,11 @@ key, and nothing else is added to what a request would carry without them.
 
 Nothing the `openai` package reads out of the environment for itself goes to OpenRouter either.
 A line of `OPENAI_CUSTOM_HEADERS`, which may be a gateway's credential, and `OPENAI_ORG_ID` and
-`OPENAI_PROJECT_ID`, which are OpenAI's identifiers for an account, go to OpenAI's own API and
-nowhere else, and the one authorization on a turn is your OpenRouter key, `--api-key` or
-`OPENROUTER_API_KEY`, even where `OPENAI_CUSTOM_HEADERS` carries an `Authorization` line of its
-own ([SECURITY.md](../../SECURITY.md)).
+`OPENAI_PROJECT_ID`, which are OpenAI's identifiers for an account, go to OpenAI's own API and to
+the address `OPENAI_BASE_URL` gives `--llm openai`, and never to OpenRouter, and the one
+authorization on a turn is your OpenRouter key, `--api-key` or `OPENROUTER_API_KEY`, even where
+`OPENAI_CUSTOM_HEADERS` carries an `Authorization` line of its own
+([SECURITY.md](../../SECURITY.md)).
 A turn OpenRouter answers with a redirect fails, because the client follows none.
 
 ## Routing preferences

@@ -88,6 +88,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   measures through it uncalibrated on a run and over MCP and hands the flag's lens to the body, and
   `tests/test_docs.py` holds the page to the numbers in the code. Each failed before this change.
 
+- **A local preset sends its server `LOCAL_API_KEY`, or the word `not-needed`, and never
+  `OPENAI_API_KEY`.** With no `--api-key` and no `LOCAL_API_KEY`, `ollama`, `vllm`, `llamacpp`,
+  `lmstudio` and `local` sent `OPENAI_API_KEY` as their bearer token whenever it was set, a hosted
+  key on its way to a server you run, over plain HTTP to a board included, which is not what
+  [ADR-0014](docs/adr/0014-local-llms.md) decided for them. They send `not-needed` now. A server
+  that checked the key it was sent against `OPENAI_API_KEY` is given its key with one line in
+  `.env`, `LOCAL_API_KEY=` and that key. `tests/test_local_provider.py` and
+  `tests/test_openai_headers.py` build every local preset with `OPENAI_API_KEY` set to a value of
+  its own and find the placeholder sent, and `tests/test_openai_headers_wire.py` finds it on the
+  wire to a board through the real SDK. Each failed before this change.
+
 ### Deprecated
 
 - **`microduck:websocket` is deprecated, and is removed in 0.19.0.** It was a stub that refused to
@@ -402,32 +413,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Security
 
-- **A pilot built on OpenAI's SDK sends a gateway's credential, its other headers and OpenAI's
-  account headers to OpenAI's own API alone, and the vendor's key is the one authorization on every
-  request.** The `openai` package reads `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
-  `OPENAI_PROJECT_ID` for itself and adds them to every request wherever the client points, and
-  quackd built its clients with no answer to any of them, so `--llm openai` and every vendor and
-  local preset that speaks OpenAI's API sent them to its own address: OpenRouter, Grok, a model
-  server on a Jetson over plain HTTP. In 3.22.1, the release the lock carries, an `Authorization`
-  line of the variable, in any spelling, replaced the vendor's key on every request. In every
-  earlier release tried that reads the variable, from 3.1.0, `Authorization` did the same and any
-  other spelling went beside the key, and every release tried, from 1.66.0, sent
-  `OpenAI-Organization` and `OpenAI-Project` everywhere. Every such client is now built with the
-  vendor's key named as its one authorization, under every spelling the variable gives one, and at
-  any address that is not OpenAI's own API over https, with every other line of the variable and
-  both account headers omitted. At OpenAI's own API the variable's other lines go as the SDK sends
-  them and the account headers carry the two variables' values. The rule is decided on the address
-  the client is handed, which `--llm openai` now finds for itself, `OPENAI_BASE_URL` included, so a
-  blank `OPENAI_BASE_URL=` reads as unset where the SDK took it for an address. The client follows
-  no redirect, so a turn answered with one fails instead of sending the request on to wherever it
-  points, and a client whose own headers would still carry another authorization, or whose address
-  reads on the other side of the rule, is refused before the robot connects, naming the SDK's
-  release and never the value. The rule is `quackd/agent/providers/openai_headers.py`.
-  `tests/test_openai_headers.py` holds every preset to it under a model of each of the four ways the
-  releases merge headers, and `tests/test_openai_headers_wire.py` captures what each preset sends
-  through the real SDK with the network shut, for each spelling of the authorization and both
-  account headers, holds the model to the installed release, and has run against 3.22.1, 3.1.0 and
-  1.66.0. Each failed with its part of this change taken out.
+- **A pilot built on OpenAI's SDK sends `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
+  `OPENAI_PROJECT_ID` only where the SDK itself would send them, to OpenAI's own API and to the
+  address `OPENAI_BASE_URL` gives `--llm openai`, and everywhere else its own key is the one
+  authorization.** The `openai` package reads those three variables for itself and adds them to
+  every request wherever the client points, and quackd built its clients with no answer to any of
+  them, so `--llm openai` and every vendor and local preset that speaks OpenAI's API sent them to
+  its own address: OpenRouter, Grok, a model server on a Jetson over plain HTTP. In 3.22.1, the
+  release the lock carries, an `Authorization` line of the variable, in any spelling, replaced the
+  vendor's key on every request. In every earlier release tried that reads the variable, from 3.1.0,
+  `Authorization` did the same and any other spelling went beside the key, and every release tried,
+  from 1.66.0, sent `OpenAI-Organization` and `OpenAI-Project` everywhere. The three variables now
+  follow the SDK's own address variable. At OpenAI's own API, `api.openai.com` or one of OpenAI's
+  regional hosts over https, and at the address `OPENAI_BASE_URL` gives `--llm openai` with no
+  `--base-url`, the client is built as before, so all three go there exactly as the SDK sends them,
+  and a gateway reached that way keeps working as it did in 0.17.1: it is sent its own lines, an
+  `Authorization` line among them, and the account headers. At every other address, a vendor's own
+  API, OpenRouter, a local preset's server, an address given with `--base-url` and a preset moved by
+  `--host`, the provider's own key is named as the one authorization, under every spelling the
+  variable gives one, and every other line of the variable and both account headers are left off,
+  except that a line naming `Accept`, `Content-Type` or `User-Agent` leaves the SDK's own value in
+  place rather than taking it off with the line. A local preset that took its address from
+  `OPENAI_BASE_URL` is among those, since that rung is quackd's own ladder for a server you run,
+  which is sent no hosted key, and the leak this closes was found on exactly such a server, a board
+  over plain HTTP. `--llm openai` still sends its key to whatever `OPENAI_BASE_URL` names, as the
+  SDK always has. The address is settled before the client is built, and a blank one,
+  `--base-url ""`, a blank `OPENAI_BASE_URL` or a URL of spaces on a local preset's ladder, reads as
+  unset, where it failed every turn. The client follows no redirect, so a turn answered with one
+  fails instead of sending the request on to wherever it points, and the error says where it pointed
+  and, for an API that moved whole, the address to give quackd instead. A client whose own headers
+  would still carry an authorization or any other line quackd answered, or whose address reads on
+  the other side of OpenAI's own API, is refused before the robot connects, naming the SDK's release
+  and never the value, and a local preset's model discovery names its server with the password in
+  the address taken out, where it printed the address whole. The rule is
+  `quackd/agent/providers/openai_headers.py`. `tests/test_openai_headers.py` holds every preset to
+  it under a model of each of the four ways the releases merge headers, with the SDK's own headers
+  modelled beside the variable's, and the model agreed with all eleven releases in uv's cache, from
+  1.66.0 to 3.22.1. `tests/test_openai_headers_wire.py` captures what each preset sends through the
+  real SDK with the network shut, holds what goes at OpenAI's own API and through `OPENAI_BASE_URL`
+  to what the SDK sends by itself, header for header, and has run against all eleven of those
+  releases. Each failed with its part of this change taken out.
 
 ### Documentation
 
@@ -486,6 +511,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   upstream name on an adapter's page read an escaped pipe as the pipe it renders as.
   `tests/test_docs.py` counts every table row's cells the way GitHub does, in every Markdown file in
   the repository, and failed on all six.
+
+### Known limitations
+
+- **A gateway or an access proxy reached with `--base-url`, through a local preset or with `--host`
+  is sent nothing from `OPENAI_CUSTOM_HEADERS`, and quackd has no other way to add a header yet.**
+  Those are addresses quackd was told for the run, and the rule above sends them the provider's own
+  key and nothing the SDK reads for itself. A gateway in front of OpenAI is reached with
+  `--llm openai` and `OPENAI_BASE_URL`, which sends it everything the SDK would. Behind any of the
+  others, a gateway that takes its token as the `Authorization` works with that token as the key,
+  `--api-key`, the vendor's own variable or `LOCAL_API_KEY`. One that wants a header of its own,
+  Cloudflare Access's pair or `Helicone-Auth`, refuses the run, and one that passes requests on to
+  OpenAI has them billed to the key's default organization and project, since neither account header
+  goes there. A way to name headers for an address of your own is not in this release.
 
 ## [0.17.1] — 2026-10-07
 

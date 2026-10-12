@@ -44,32 +44,43 @@ Also in scope:
   yourself or a checkpoint in this process, and quackd hands those a placeholder
   in the key field rather than whatever hosted key happens to be sitting in the same `.env`.
 - **What a pilot built on OpenAI's SDK sends besides the request.** `--llm openai`, every vendor
-  that speaks OpenAI's API (Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and
-  OpenRouter) and every local preset reach their address through that one SDK, and the SDK reads
-  three variables of its own out of the environment and adds them to every request, wherever the
-  client points: `OPENAI_CUSTOM_HEADERS`, one header per line, which is where a gateway's own
-  credential lives for somebody who reaches OpenAI through one, and `OPENAI_ORG_ID` and
-  `OPENAI_PROJECT_ID`, which it sends as `OpenAI-Organization` and `OpenAI-Project`. quackd
-  builds every such client with its own answer to all three
-  (`quackd/agent/providers/openai_headers.py`). The vendor's key is the one authorization on
-  every request, under whatever spelling the variable gives an `Authorization` line of its own.
-  At OpenAI's own API, `api.openai.com` or one of the regional hosts OpenAI list, over https,
-  the variable's other lines go as the SDK would send them, and the account headers carry the
-  two variables' values. At any other address, a vendor, a gateway or a model server on a board
-  over plain HTTP, none of it goes. The vendor's own headers still go, OpenRouter's two among
-  them. `OPENAI_BASE_URL` still moves `--llm openai`, and what goes is decided on the address it
-  gives. The client follows no redirect, so a turn answered with one fails instead of sending
-  the request on to wherever it points. And once a client is built its headers and its address
-  are read back: a release of the SDK that would still send an authorization quackd did not
-  write, or whose client reads its address as OpenAI's where the address it was handed is not,
-  or the other way round, is refused before the robot connects, naming the release and never the
-  value. The key itself goes wherever the pilot is pointed, which is what `--base-url` is for,
-  and a local preset with no `--api-key` or `LOCAL_API_KEY` sends `OPENAI_API_KEY` when that is
-  set, as [docs/guides/local-llms.md](docs/guides/local-llms.md) says. What would be a security
-  issue: a line of `OPENAI_CUSTOM_HEADERS`, or `OPENAI_ORG_ID` or `OPENAI_PROJECT_ID`, reaching
-  an address that is not OpenAI's own, an authorization other than the vendor's key on any
-  request, a redirect followed, or a client built on OpenAI's SDK anywhere in quackd that does
-  not go through that module.
+  that speaks OpenAI's API (Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and OpenRouter)
+  and every local preset reach their address through that one SDK, and the SDK reads three variables
+  of its own out of the environment and adds them to every request, wherever the client points:
+  `OPENAI_CUSTOM_HEADERS`, one header per line, which is where a gateway's own credential lives for
+  somebody who reaches OpenAI through one, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, which it
+  sends as `OpenAI-Organization` and `OpenAI-Project`. quackd decides where they go
+  (`quackd/agent/providers/openai_headers.py`), and the rule is that they follow the SDK's own
+  address variable. All three go, exactly as the SDK sends them by itself, to OpenAI's own API,
+  `api.openai.com` or one of the regional hosts OpenAI list, over https, and to the address
+  `OPENAI_BASE_URL` gives `--llm openai` when no `--base-url` is given, which is the address the SDK
+  would have found for itself. A gateway named there is sent its own lines, an `Authorization` line
+  among them, which the locked release sends in place of the key, and the account headers. None of
+  the three goes anywhere else: not to a vendor's API, not to OpenRouter, not to a local preset's
+  server, not to any other address given with `--base-url`, and not to a preset moved to a board
+  with `--host`. A local preset reads `OPENAI_BASE_URL` too, as one rung of its own ladder, and its
+  server is not the SDK's own address even then. At all of those the vendor's own key is the one
+  authorization on every request, under whatever spelling the variable gives an `Authorization` line
+  of its own, a line that names `Accept`, `Content-Type` or `User-Agent` leaves the SDK's own value
+  in place rather than taking it off with the line, and every other line and both account headers
+  are left off. A gateway behind one of those that wants a header of its own has no way to be sent
+  one yet. A local preset is sent `LOCAL_API_KEY`, or the word `not-needed`, and never
+  `OPENAI_API_KEY`. The vendor's own headers still go, OpenRouter's two among them. The client
+  follows no redirect, so a turn answered with one fails instead of sending the request on to
+  wherever it points, and says where it pointed. And once a client is built its headers and its
+  address are read back: a release of the SDK that would still send an authorization quackd did not
+  write, or any other value under a name quackd answered, or whose client reads its address as
+  OpenAI's where the address it was handed is not, or the other way round, is refused before the
+  robot connects, naming the release and never the value. The key itself goes wherever the pilot is
+  pointed, which is what `--base-url` is for, and `--llm openai` sends its key to whatever
+  `OPENAI_BASE_URL` names, as the SDK always has, so a board named there is sent `OPENAI_API_KEY` in
+  the clear: a model server you run is reached with a local preset, which sends it no hosted key.
+  What would be a security issue: a line of `OPENAI_CUSTOM_HEADERS`, or `OPENAI_ORG_ID` or
+  `OPENAI_PROJECT_ID`, reaching an address that is neither OpenAI's own API nor the one
+  `OPENAI_BASE_URL` gives `--llm openai`, an authorization other than the provider's own key on any
+  request to such an address, `OPENAI_API_KEY` reaching a local preset's server, a redirect
+  followed, or a client built on OpenAI's SDK anywhere in quackd that does not go through that
+  module.
 - **The command line, which the run record now holds.** A solo run writes down what it was
   started with, in three places: `command` in the transcript's `run_start`, `command` in
   `summary.json`, and the first line of `terminal.txt`. A flock root has no `run_start`, so

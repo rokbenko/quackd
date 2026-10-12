@@ -175,11 +175,12 @@ network.
 
 Every turn a run asks Ollama carries one `Authorization`, the local key, and nothing the
 `openai` package reads out of the environment for itself: `OPENAI_CUSTOM_HEADERS`,
-`OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI's own API and never to a board. The local key
-is `--api-key` or `LOCAL_API_KEY`, and with neither set it is `OPENAI_API_KEY` when that is in
-your environment, before the word `not-needed`. Without the tunnel that key crosses the network
-in the clear, so set `LOCAL_API_KEY=not-needed` on a laptop that keeps a hosted key
-([guides/local-llms.md](local-llms.md#knobs)).
+`OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI's own API, or to a gateway `OPENAI_BASE_URL`
+names for `--llm openai`, and never to a board, even one a local preset found through
+`OPENAI_BASE_URL`. The local key is `--api-key`, then `LOCAL_API_KEY`, then the word
+`not-needed`, and never `OPENAI_API_KEY`, so a hosted key on the laptop stays there. Without the
+tunnel the local key crosses the network in the clear, so give the board a key of its own, if
+it wants one at all ([guides/local-llms.md](local-llms.md#knobs)).
 
 ### quackd's host daemon
 
