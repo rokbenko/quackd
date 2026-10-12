@@ -229,7 +229,7 @@ network in the clear. A server that wants a key is given it as `LOCAL_API_KEY`. 
 `openai` package reads out of the environment for itself goes with the request either, whichever
 rung found the server, `OPENAI_BASE_URL` included: the lines of `OPENAI_CUSTOM_HEADERS`, and
 `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, go to OpenAI's own API and to the address
-`OPENAI_BASE_URL` gives `--llm openai`, and to no server of yours
+`OPENAI_BASE_URL` gives `--llm openai`, and never to a server a local preset reaches
 ([SECURITY.md](../../SECURITY.md)). So a gateway or an access proxy in front of a server, one
 that wants a header of its own such as Cloudflare Access's pair, is not sent one by a local
 preset, and quackd has no other way to add a header yet. One that takes its token as the
