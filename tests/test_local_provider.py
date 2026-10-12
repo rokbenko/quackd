@@ -256,8 +256,10 @@ def test_make_provider_hands_the_host_to_the_local_presets_and_to_no_vendor(
 
 
 def test_no_key_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no `LOCAL_API_KEY` a server you run is sent a placeholder, and never `OPENAI_API_KEY`,
+    which used to be its fallback and so reached every local server it shared a `.env` with."""
     monkeypatch.delenv("LOCAL_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-not-a-real-key")
     p = LocalProvider("m", preset="ollama", client=FakeClient())
     assert p._fallback_key() == "not-needed"
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

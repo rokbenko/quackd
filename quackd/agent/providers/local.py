@@ -170,6 +170,11 @@ class LocalProvider(OpenAIProvider):
     `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
     registered with this robot is a decision about this run, and beats a `.env` line naming a
     model server's URL; `QUACKD_HOST` is the board you usually use, and must not.
+
+    The key is `--api-key`, then `LOCAL_API_KEY`, then the word `not-needed`, and never
+    `OPENAI_API_KEY`, which is a key to OpenAI's API and no business of a server you run, on a
+    board over plain HTTP least of all. A server that wants a key is given it as
+    `LOCAL_API_KEY`.
     """
 
     supports_vision = False
@@ -230,8 +235,10 @@ class LocalProvider(OpenAIProvider):
         raise ProviderError(_A_HOST_MOVES_ONLY_A_PRESET if host or env_host else _LOCAL_NEEDS_A_URL)
 
     def _fallback_key(self) -> str | None:
-        # local servers ignore the key but the SDK insists on a non-empty string
-        return os.environ.get("OPENAI_API_KEY") or "not-needed"
+        """The SDK insists on a key, and a local server ignores it, so a placeholder. Never
+        `OPENAI_API_KEY`, which used to go here and so reached every local server, a board over
+        plain HTTP included, whenever it sat in the same `.env`."""
+        return "not-needed"
 
     async def ensure_model(self) -> str:
         """Discover the served model when none was given (`/v1/models`, first entry)."""
