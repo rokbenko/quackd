@@ -81,6 +81,14 @@ person answered with go is told so, and not to assess the same doubt again: told
 motion now ran, the bench's pilot asked again, as `infeasible`, and ended its run. The rule
 that a figure nobody published is not met stands.
 
+**Amended 2026-10-13:** the Microduck's note that the decision below describes was wrong about
+where its cap is. robotd clamps no twist at any release quackd has read: what limits a tick in
+its `robot.state` is the deadman, a joint target past the actuator's travel, or one that is not
+finite, and nothing caps the speed of the twist its policy is handed. The caps, 0.3 m/s forward,
+0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's `manifest.limits`, which quackd
+holds every twist a verb sends to (`speed_limits` in `quackd/verbs/core.py`), as the decision
+says of every body. The note says so now, and the numbers are as they were.
+
 ## Context
 
 A pilot was told one line about the body it was driving, `manifest.blurb`, and a list of

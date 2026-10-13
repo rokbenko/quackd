@@ -322,7 +322,9 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "systemctl stop mediad",
     # posture: the labels are read in robotd's source, and `sit` is matched exactly
     "a policy whose name contains `sit`",
-    # falls: limp_fall, robotd's own get-up, is off by default at daemon-v0.16.1
+    # falls: limp_fall, robotd's own answer to a fall, is off by default at daemon-v0.16.1, and
+    # from daemon-v0.16.2 it hands the duck to a policy upstream says gets up, which nobody has
+    # seen do so under quackd
     "recovers from falls itself",
     # the pad: robotd keeps one twist, the newest from any client, and ranks none above another,
     # so a gamepad does not out-rank quackd, letting go of sticks nobody touched stops nothing,

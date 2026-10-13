@@ -48,6 +48,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   upstream's gamepad asks for at full stick at the pin and from daemon-v0.16.2, and the Microduck
   page has a row for it. `tests/test_datasheets.py` holds the note to it.
 
+### Documentation
+
+- **The hardware checklist, ADR-0011 and the README say what robotd does about a fall on
+  daemon-v0.16.1 and on the releases after it, and ADR-0032 that robotd clamps no twist.** Step 9 of
+  the Microduck's hardware checklist said a robot on daemon-v0.16.1 does nothing about a fall but
+  report it, and now says what one on daemon-v0.16.2 or later does too, and that quackd sends it no
+  walk meanwhile, and step 10 asks what robotd's answer to a fall did on a real duck. ADR-0011
+  carries a dated amendment for the fall, and ADR-0032 one for the note that called the speed caps
+  robotd's. The README's Why section listed standing up after a fall among the Microduck's own
+  skills, which nobody has seen, and says now that Pollen says its controllers do so from
+  daemon-v0.16.2.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's
