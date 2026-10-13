@@ -221,8 +221,8 @@ parts, and a text only model is still a text only model with it on.
 `parallel_tool_calls` is never sent to local servers, because some reject unknown fields, and
 nothing else is added unless `--extra-body` asks for it.
 
-Beside the body, a request carries the key above as its one `Authorization`, and the headers the
-`openai` package sends about itself and the platform it runs on. The key is `--api-key`, then
+Beside the body, a request carries the headers the `openai` package sends about itself and the
+platform it runs on, and no authorization but the key above. The key is `--api-key`, then
 `LOCAL_API_KEY`, then the word `not-needed`, and never `OPENAI_API_KEY`, so a hosted key in the
 same `.env` stays off a board reached over plain HTTP, where whatever the key is crosses that
 network in the clear. A server that wants a key is given it as `LOCAL_API_KEY`. Nothing the

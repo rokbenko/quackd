@@ -173,7 +173,7 @@ to `0.0.0.0:11434` in its service's environment (`sudo systemctl edit ollama`, t
 `--host jetson.local` then reaches it with no tunnel, and so does everybody else on that
 network.
 
-Every turn a local preset asks Ollama carries one `Authorization`, the local key, and nothing the
+Every turn a local preset asks Ollama carries no authorization but the local key, and nothing the
 `openai` package reads out of the environment for itself: `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
 and `OPENAI_PROJECT_ID` go to OpenAI's own API, or to the address `OPENAI_BASE_URL` gives
 `--llm openai`, and never to a board a local preset reaches, even one it found through

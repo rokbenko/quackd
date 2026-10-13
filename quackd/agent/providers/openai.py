@@ -538,9 +538,9 @@ class OpenAIProvider:
             .lower()
         )
         # Blank is absent, as it is everywhere quackd reads a setting, so `--base-url ""` leaves a
-        # vendor at its own address and OpenAI's own provider at the one the SDK would find. It
-        # used to replace the vendor's address with nothing, and nothing then fell through to
-        # wherever `OPENAI_BASE_URL` pointed, with this vendor's key (`client_address`).
+        # vendor at its own address and OpenAI's own provider at the one the SDK would find. It used
+        # to replace the vendor's address with nothing, which the SDK kept as the address, so every
+        # turn failed (`client_address`).
         if base_url is not None and base_url.strip():
             self.base_url = base_url.strip()
         # The catalogue knows which models take an image. A model that does not gets the
@@ -575,9 +575,9 @@ class OpenAIProvider:
         empty string for an address and failed on the first turn.
 
         Only a provider with no address at all falls through to the SDK's. A vendor or a local
-        preset always has one, since a blank `--base-url` is never stored over it (`__init__`),
-        and one that somehow came to hold a blank is refused rather than sent on to whatever
-        `OPENAI_BASE_URL` names with this vendor's key, which is what a blank used to do."""
+        preset always has one, since a blank `--base-url` is never stored over it (`__init__`), and
+        one that somehow came to hold a blank is refused, where the SDK would keep the blank as the
+        address and fail every turn on it, which is what a blank used to do."""
         if self.base_url is None:
             return (os.environ.get(BASE_URL_ENV) or "").strip() or DEFAULT_BASE_URL
         given = self.base_url.strip()

@@ -30,8 +30,11 @@ before.
   warning when it is not v41 (the handshake used to refuse every release from daemon-v0.12.0 on),
   posture failing closed on every label but `walk`, `stand` and `sit`, state actually subscribed
   to, and frames from `mediad`'s `GET /frame` or its WebRTC track, since `robotd`'s socket
-  carries none. Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026
-  and later orders four to six months out.
+  carries none. Upstream shipped daemon-v0.16.2 to daemon-v0.17.1 on 2026-10-12, after that
+  read. Each still names API v41, so neither quackd nor `doctor` says a robot on one is newer
+  than the read, and quackd has not read what they changed. Re-read `robotd` at the release the
+  duck arrives on before its first walk. Pre-orders opened 2026-08-27, earliest arrivals
+  estimated around Christmas 2026 and later orders four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
   through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really

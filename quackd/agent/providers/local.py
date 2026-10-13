@@ -224,8 +224,8 @@ class LocalProvider(OpenAIProvider):
         """The class docstring's ladder, rung by rung. Blank is absent at every rung, as it is
         everywhere quackd reads a setting: `QUACKD_HOST=` in a `.env` is a shell saying unset,
         and a URL of spaces is nothing typed. A URL used to be taken as it came, so one of spaces
-        won its rung, beat `--host` and `QUACKD_HOST` below it, and was then read as no address at
-        all and sent on to wherever the SDK would have gone."""
+        won its rung, beat `--host` and `QUACKD_HOST` below it, and was handed to the SDK, which
+        kept it as the address, so every request failed."""
         host = (host or "").strip() or None
         env_host = (os.environ.get(HOST_ENV) or "").strip() or None
         given = (base_url or "").strip()

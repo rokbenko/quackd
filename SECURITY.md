@@ -59,12 +59,13 @@ Also in scope:
   the three goes anywhere else: not to a vendor's API, not to OpenRouter, not to a local preset's
   server, not to any other address given with `--base-url`, and not to a preset moved to a board
   with `--host`. A local preset reads `OPENAI_BASE_URL` too, as one rung of its own ladder, and its
-  server is not the SDK's own address even then. At all of those the vendor's own key is the one
-  authorization on every request, under whatever spelling the variable gives an `Authorization` line
-  of its own, a line that names `Accept`, `Content-Type` or `User-Agent` leaves the SDK's own value
-  in place rather than taking it off with the line, and every other line and both account headers
-  are left off. A gateway behind one of those that wants a header of its own has no way to be sent
-  one yet. A local preset is sent `LOCAL_API_KEY`, or the word `not-needed`, and never
+  server is not the SDK's own address even then. At all of those no authorization goes on any
+  request but the vendor's own key, under every spelling the variable gives an `Authorization` line
+  of its own, a line that names `Accept`, `Content-Type`, `User-Agent` or one of the `X-Stainless-`
+  lines that name the SDK's release and platform leaves the SDK's own value in place rather than
+  taking it off with the line, and every other line and both account headers are left off. A gateway
+  behind one of those that wants a header of its own has no way to be sent one yet. A local preset
+  is sent the key `--api-key` or `LOCAL_API_KEY` gives it, or the word `not-needed`, and never
   `OPENAI_API_KEY`. The vendor's own headers still go, OpenRouter's two among them. The client
   follows no redirect, so a turn answered with one fails instead of sending the request on to
   wherever it points, and says where it pointed. And once a client is built its headers and its
