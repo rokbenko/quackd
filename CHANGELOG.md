@@ -7,6 +7,36 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`stand_up` tells a pilot whose duck robotd still has after a fall so, rather than that it may
+  need a hand.** A robotd whose `limp_fall` is on, which daemon-v0.16.2 made the default, takes a
+  falling duck off its policy, lets it land limp, ramps it to its standing pose and only then hands
+  it back, and it labels those ticks `limp_fall` and then `limp_pose`. When `stand_up` read the duck
+  again after its three second wait and robotd still had it, one that read as fallen was told that
+  robotd does not promise to get a fallen duck up and that it may need a hand, and one that did not
+  was told only that its posture was unknown. It is told now that robotd is still answering the fall
+  itself, with the label and what it means, that robotd hands the duck back to the policy once it
+  has posed it, and to run `stand_up` again in a moment. What `stand_up` refuses before it asks the
+  policy to drive, and the request itself, are as they were. Its description says the result may say
+  this, and so does the Microduck page's row for its assumption. `tests/test_jsonrpc.py` runs it
+  against a fake robotd in both halves of the sequence, fallen and not, and the four cases failed
+  before this change.
+
+- **The Microduck's datasheet says what robotd does about a fall on daemon-v0.16.1 and on the
+  releases after it.** It said that on daemon-v0.16.1 robotd does nothing about a fall but report
+  it, which is so there by default. From daemon-v0.16.2 `limp_fall` is on by default, and robotd
+  goes limp in the fall, poses the duck and hands it back to its walking policy, the `velstand.onnx`
+  of upstream's policy set `v8`, which upstream says gets up from a fall. The note says both now,
+  and still that the duck may not get up again by itself, since nobody has seen either release get
+  one up under quackd. `upstream_api.py` reads the sequence at the pin as `LIMP_FALL`, its notes on
+  the fall verdict, on velstand and on `stand_up`'s assumption say what daemon-v0.16.2 changed, and
+  the physics simulator's say that `v8` changes no policy the simulator runs. The Microduck page has
+  a row for the sequence, and its rows for the fall verdict, velstand and `stand_up`'s assumption
+  and its physics section say the same. `tests/test_datasheets.py` holds the note to both releases.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

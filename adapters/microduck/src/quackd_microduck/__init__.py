@@ -94,10 +94,15 @@ DATASHEET = Datasheet(
         "The speed caps are a software clamp in robotd, not a measured hardware maximum",
         "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
         # It said the duck could get itself upright again, which was robotd's limp_fall. On
-        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT), and this
-        # is the sheet a pilot judges a task against before anything moves.
-        "It falls, and may not get up again by itself: on daemon-v0.16.1 robotd does nothing "
-        "about a fall but report it",
+        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT). From
+        # daemon-v0.16.2 it is on, and robotd hands the duck back to a policy upstream says gets
+        # it up, which nobody has seen (upstream_api.LIMP_FALL). This is the sheet a pilot
+        # judges a task against before anything moves, so it says what each release does and
+        # promises no get-up.
+        "It falls, and may not get up again by itself. By default, robotd on daemon-v0.16.1 "
+        "does nothing about a fall but report it, and from daemon-v0.16.2 it goes limp in the "
+        "fall, poses the duck and hands it back to its walking policy, which upstream says gets "
+        "it up",
     ],
 )
 

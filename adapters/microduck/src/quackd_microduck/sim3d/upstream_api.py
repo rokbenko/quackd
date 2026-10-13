@@ -26,6 +26,10 @@ the licence sentence and every fact of the control loop reading as they did. So 
 stays: moving it would rename the cache and nothing else, and send every user to fetch the same
 10 MB again.
 
+daemon-v0.16.2, released on 2026-10-12, seeds a robot with `v8` instead (POLICY_SET). `v8`
+changes `velstand.onnx` and `manifest.json` and no other file, so the two policies quackd
+fetches are the same bytes there, and the revision stays at `v7`.
+
 quackd never imports `microduck_rl`: it requires Python 3.12 exactly, pulls torch, warp
 and mjlab, and needs a CUDA GPU to train. What quackd needs from it is three files' worth
 of facts (the model, the walking policy's contract, the control loop of its own CPU
@@ -247,7 +251,13 @@ POLICY_SET = UpstreamRef(
     f"{POLICIES_REPO}/tree/{POLICIES_PIN}",
     "the set a Microduck ships with: daemon-v0.16.1's scripts/seed-policies.sh seeds a robot from "
     "v7, and velstand.onnx is the walk its robotd loads. quackd fetches two of them (WALK_POLICY, "
-    "STAND_POLICY), stands in for four (KICK_STANDIN) and runs none of the rest",
+    "STAND_POLICY), stands in for four (KICK_STANDIN) and runs none of the rest. From "
+    "daemon-v0.16.2 the script seeds v8 (scripts/seed-policies.sh:51 there), and a board on an "
+    "older official set is moved up to it on update. v8, 665ae4e on the Hub, changes "
+    "velstand.onnx and manifest.json and no other file, and its manifest says velstand 'gets up "
+    "from a fall smoothly and reliably instead of violently or getting stuck on its back, and yaw "
+    "commands are tracked'. That is upstream's word on its model, which nobody has seen on a "
+    "duck under quackd, and the two files quackd fetches are the same bytes at v8",
 )
 POLICY_METADATA = UpstreamRef(
     "joint_names, default_joint_pos, action_scale, observation_names, command_names",

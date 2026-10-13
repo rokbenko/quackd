@@ -1276,6 +1276,43 @@ async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
         await fake.stop()
 
 
+@pytest.mark.parametrize(
+    ("policy", "fallen", "limp"),
+    [
+        ("limp_fall", False, True),  # riding the fall down: unknown, on safety.limp
+        ("limp_fall", True, True),  # landed, and still limp: fallen
+        ("limp_pose", True, False),  # being posed on the floor: fallen
+        ("limp_pose", False, False),  # being posed where it does not read as down: unknown
+    ],
+    ids=["limp", "limp-landed", "posed-landed", "posed"],
+)
+async def test_stand_up_says_robotd_still_has_the_duck_after_a_fall(
+    registry: VerbRegistry, policy: str, fallen: bool, limp: bool
+) -> None:
+    """From daemon-v0.16.2 robotd goes limp as it predicts a fall, poses the duck and only then
+    hands it back to the policy (`up.LIMP_FALL`). `stand_up` gives the policy three seconds, and
+    a duck robotd still had in that sequence then was told only that its posture was unknown,
+    or, once it had landed and read as fallen, that robotd does not promise to get a fallen duck
+    up and that it may need a hand. It is told robotd still has it and hands it back once it has
+    posed it, and to run the verb again. The request still goes out first, as it does to any
+    duck that is down or `unknown`."""
+    fake = FakeRobotd(policy=policy, fallen=fallen, limp=limp)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        t.sleep = _quick  # type: ignore[method-assign]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        said = result.summary
+        assert not result.ok and "may need a hand" not in said, said
+        assert f"robotd is still answering the fall itself (policy {policy!r}: " in said, said
+        assert up.NOT_STANDING_LABELS[policy] in said and "run stand_up again in a moment" in said
+        assert "robot.enable" in [r["method"] for r in fake.requests]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
 async def test_stand_up_asks_nothing_of_a_duck_nobody_can_see(
     registry: VerbRegistry, robotd: FakeRobotd
 ) -> None:

@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import SayParams, send_or_fail
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd_microduck import upstream_api as up
 
 
 class KickParams(BaseModel):
@@ -92,6 +93,20 @@ def _walk_held(state: DuckState) -> str | None:
     if not hold:
         return None
     return f"a verb that was walking is still running, and quackd holds its walk back ({hold})"
+
+
+def _robotds_fall(state: DuckState) -> str | None:
+    """What robotd's own answer to a fall is doing with the duck, or None when it has none.
+
+    A robotd whose `limp_fall` is on, which daemon-v0.16.2 made the default, takes a falling
+    duck off its policy, lets it land limp, ramps it to its standing pose and only then hands it
+    back (`up.LIMP_FALL`), and it labels every tick of that with one of two labels. The label is
+    read whatever the posture says, since a duck that has landed reads `fallen` before any label
+    is looked at. safety.limp is true on the first half's ticks and on no others, so the label
+    covers it too. The simulators and the mock never report either label."""
+    if state.policy not in up.LIMP_FALL_LABELS:
+        return None
+    return f"policy {state.policy!r}: {up.NOT_STANDING_LABELS[state.policy]}"
 
 
 def _not_fallen(state: DuckState) -> str | None:
@@ -213,6 +228,9 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     walk is held back for a verb still running, since the duck reads `unknown` for that while
     it may well be standing. A fallen duck, and one whose posture is `unknown` for any other
     reason, gets the request, and afterwards only a duck that reads standing is called upright.
+    One that robotd's own answer to a fall still has then (`_robotds_fall`) is told so, and to
+    run the verb again in a moment, since robotd hands the duck back to its policy once it has
+    posed it. One of those that read as fallen used to be told it may need a hand.
     """
     state = await ctx.transport.get_state()
     if (held := _held(state)) is not None:
@@ -245,9 +263,19 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         return VerbResult.fail("asked the policy to run, but nothing reports whether it is upright")
     if (held := _held(state)) is not None:
         return VerbResult.fail(f"asked the policy to run, but {held}")
+    if (fall := _robotds_fall(state)) is not None:
+        # Read before `fallen`, which a duck robotd is posing on the floor reads too. robotd has
+        # not handed it back to the policy yet, so it is too soon to say whether it gets up.
+        return VerbResult.fail(
+            f"asked the policy to run, but robotd is still answering the fall itself ({fall}). "
+            "It hands the duck back to the policy once it has posed it, so run stand_up again in "
+            "a moment to see whether the duck is up"
+        )
     if state.fallen:
         # It used to say an onboard recovery had not finished, which sent the pilot to wait for
-        # one. robotd's recovery was limp_fall, and on daemon-v0.16.1 that is off by default.
+        # one. robotd runs none on daemon-v0.16.1 by default, and from daemon-v0.16.2 a duck it
+        # caught falling is back with the policy once it has posed it (`_robotds_fall`), which
+        # upstream says gets it up and nobody has seen do so, so one still down may need a hand.
         return VerbResult.fail(
             "asked the policy to run, and the duck is still down: robotd does not promise to get "
             "a fallen duck up, so it may need a hand"
@@ -336,7 +364,8 @@ MICRODUCK_VERBS: dict[str, Verb] = {
         Verb(
             "stand_up",
             "Ask the robot's policy to get a fallen duck up. It may not manage, and the result "
-            "says whether the duck is upright.",
+            "says whether the duck is upright, or that the robot is still answering the fall "
+            "itself.",
             stand_up,
             NoParams,
             timeout_s=15,

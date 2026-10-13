@@ -13,6 +13,7 @@ from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
 from quackd.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
 from quackd_microduck import MICRODUCK_VERBS, microduck_manifest
+from quackd_microduck import upstream_api as up
 from quackd_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
@@ -88,10 +89,19 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
     `limp_fall`, which is off by default on daemon-v0.16.1, where a fall changes nothing in
     robotd. The sheet is what the pilot judges a task against, and `stand_up`'s description is
     what it reads before calling the verb, so neither may promise a recovery the robot does
-    not run."""
+    not run.
+
+    From daemon-v0.16.2 `limp_fall` is on by default, and robotd hands the duck back to a
+    walking policy upstream says gets it up (`up.LIMP_FALL`), which nobody has seen. The sheet
+    said only what daemon-v0.16.1 does, so it says what each release does now, the get-up as
+    upstream's word."""
     text = body_section(microduck_manifest("sim2d"))
     assert "may not get up again by itself" in text and "get itself upright" not in text
     assert "may not manage" in MICRODUCK_VERBS["stand_up"].description
+    said = " ".join(text.split())
+    assert f"robotd on {up.RELEASE} does nothing about a fall but report it" in said
+    assert "from daemon-v0.16.2 it goes limp in the fall, poses the duck and hands it back" in said
+    assert "which upstream says gets it up" in said
 
 
 def test_an_unpublished_figure_is_a_question_for_a_person_not_a_refusal() -> None:

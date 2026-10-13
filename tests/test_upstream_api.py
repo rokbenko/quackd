@@ -298,6 +298,20 @@ def test_the_labels_robotd_never_counts_still_are_labels_it_names() -> None:
     assert not never_still & {*upstream_api.STANDING_LABELS, *upstream_api.SITTING_LABELS, "held"}
 
 
+def test_the_limp_fall_labels_are_the_ones_robotd_gives_its_sequence() -> None:
+    """`stand_up` tells a pilot whose duck robotd still has in its own answer to a fall so, by
+    the two labels robotd gives that sequence's ticks, and says what each means. A label there
+    that robotd never reports would never match, one that stands or seats the duck would tell a
+    duck on its feet it is being posed, and one with no words would leave the pilot none."""
+    labels = set(upstream_api.LIMP_FALL_LABELS)
+    assert labels <= set(upstream_api.POLICY_LABELS_NOT_DRIVEN.name.split(", "))
+    assert labels <= upstream_api.NOT_STANDING_LABELS.keys()
+    assert labels <= set(upstream_api.NOT_STILL_LABELS)
+    assert not labels & {*upstream_api.STANDING_LABELS, *upstream_api.SITTING_LABELS}
+    ref = upstream_api.LIMP_FALL
+    assert ref.status == "VERIFIED" and upstream_api.PIN in ref.source, ref
+
+
 def test_the_head_vocabulary_and_the_idle_numbers_are_the_ones_read() -> None:
     """The gaze hold sends `HEAD_PARAMS` back to robotd, the head pose finds the head_yaw joint
     by its place in `JOINT_NAMES`, and the verbs that steer on the camera wait `IDLE_FADE_S` on a
