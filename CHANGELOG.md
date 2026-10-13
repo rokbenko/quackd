@@ -11,19 +11,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
-- **`stand_up` tells a pilot whose duck robotd still has after a fall so, rather than that it may
-  need a hand.** A robotd whose `limp_fall` is on, which daemon-v0.16.2 made the default, takes a
-  falling duck off its policy, lets it land limp, ramps it to its standing pose and only then hands
-  it back, and it labels those ticks `limp_fall` and then `limp_pose`. When `stand_up` read the duck
-  again after its three second wait and robotd still had it, one that read as fallen was told that
-  robotd does not promise to get a fallen duck up and that it may need a hand, and one that did not
-  was told only that its posture was unknown. It is told now that robotd is still answering the fall
-  itself, with the label and what it means, that robotd hands the duck back to the policy once it
-  has posed it, and to run `stand_up` again in a moment. What `stand_up` refuses before it asks the
-  policy to drive, and the request itself, are as they were. Its description says the result may say
-  this, and so does the Microduck page's row for its assumption. `tests/test_jsonrpc.py` runs it
-  against a fake robotd in both halves of the sequence, fallen and not, and the four cases failed
-  before this change.
+- **`stand_up` says so when robotd is still answering a fall as it reads the duck again, where it
+  said the duck may need a hand or that its posture was unknown.** A robotd whose `limp_fall` is on,
+  as it is by default again from daemon-v0.16.2, takes a falling duck off its policy, lets it land
+  limp, ramps it to its standing pose and only then hands it back, and it labels those ticks
+  `limp_fall` and then `limp_pose`. `stand_up` reads the duck again three seconds after its request,
+  and when robotd still had it then, one that read as fallen was told that robotd does not promise
+  to get a fallen duck up and that it may need a hand, and one that did not was told only that its
+  posture was unknown. It is told now that robotd is still answering the fall itself, with the label
+  and what it means, that robotd hands the duck back to the policy once it has posed it, and to run
+  `stand_up` again in a moment. With upstream's defaults the sequence is over within about 2.1 s, at
+  most 1.5 s limp and then 0.6 s of pose, so robotd still has the duck at that read only after a
+  fall it caught during the wait, such as one that came after the policy had got the duck partway
+  up. A duck robotd had when `stand_up` was asked is back with the policy by then and is judged as
+  before: upright if it reads standing, and told it may need a hand if it is still down, even while
+  the policy is still getting it up. What `stand_up` refuses before it asks the policy to drive, and
+  the request itself, are as they were. Its description says the result may say this, and so do the
+  Microduck page's rows for the sequence and for `stand_up`'s assumption, which says too that the
+  request only sets the flag again on a robot whose policy is enabled already.
+  `tests/test_jsonrpc.py` runs it against a fake robotd that catches a fall as the request arrives,
+  in both halves of the sequence, fallen and not, and the four cases failed before this change. It
+  also runs it against one that hands the duck back during the wait, which is told it is upright or
+  may need a hand, and those cases fail when the label is read off the frame from before the
+  request.
 
 - **The Microduck's datasheet says what robotd does about a fall on daemon-v0.16.1 and on the
   releases after it.** It said that on daemon-v0.16.1 robotd does nothing about a fall but report

@@ -22,8 +22,10 @@ And `get_frame`'s missing socket method is settled: robotd's socket carries no p
 is off by default. From `daemon-v0.16.2`, released on 2026-10-12, it is on: robotd goes limp as
 it predicts a fall, poses the duck and hands it back to its walking policy, whose `v8` upstream
 says gets up from a fall. Nobody has seen that under quackd, so `stand_up` still asks the policy
-to drive with no promise that the duck gets up, and a duck robotd still has in that sequence
-when `stand_up` reads it again is told so, rather than that it may need a hand.
+to drive with no promise that the duck gets up. A duck robotd still has in that sequence when
+`stand_up` reads it again, three seconds after its request, is told so, where one that read as
+fallen was told it may need a hand and one that did not that its posture was unknown. The
+sequence is over within about 2.1 s by default, so that is a fall robotd caught during the wait.
 
 ## Context
 

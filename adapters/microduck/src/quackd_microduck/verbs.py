@@ -98,12 +98,12 @@ def _walk_held(state: DuckState) -> str | None:
 def _robotds_fall(state: DuckState) -> str | None:
     """What robotd's own answer to a fall is doing with the duck, or None when it has none.
 
-    A robotd whose `limp_fall` is on, which daemon-v0.16.2 made the default, takes a falling
-    duck off its policy, lets it land limp, ramps it to its standing pose and only then hands it
-    back (`up.LIMP_FALL`), and it labels every tick of that with one of two labels. The label is
-    read whatever the posture says, since a duck that has landed reads `fallen` before any label
-    is looked at. safety.limp is true on the first half's ticks and on no others, so the label
-    covers it too. The simulators and the mock never report either label."""
+    A robotd whose `limp_fall` is on, as it is by default again from daemon-v0.16.2, takes a
+    falling duck off its policy, lets it land limp, ramps it to its standing pose and only then
+    hands it back (`up.LIMP_FALL`), and it labels every tick of that with one of two labels. The
+    label is read whatever the posture says, since a duck that has landed reads `fallen` before
+    any label is looked at. safety.limp is true on the first half's ticks and on no others, so
+    the label covers it too. The simulators and the mock never report either label."""
     if state.policy not in up.LIMP_FALL_LABELS:
         return None
     return f"policy {state.policy!r}: {up.NOT_STANDING_LABELS[state.policy]}"
@@ -230,7 +230,12 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     reason, gets the request, and afterwards only a duck that reads standing is called upright.
     One that robotd's own answer to a fall still has then (`_robotds_fall`) is told so, and to
     run the verb again in a moment, since robotd hands the duck back to its policy once it has
-    posed it. One of those that read as fallen used to be told it may need a hand.
+    posed it. One of those that read as fallen used to be told it may need a hand. With
+    upstream's defaults that answer is over within about 2.1 s, so robotd still has the duck at
+    the second read only after a fall it caught during the wait. One it had when the verb was
+    asked is back with the policy by then and is judged like any other, so a duck still down
+    three seconds after the request is told it may need a hand, even while the policy is still
+    getting it up.
     """
     state = await ctx.transport.get_state()
     if (held := _held(state)) is not None:

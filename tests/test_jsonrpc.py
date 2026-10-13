@@ -229,6 +229,9 @@ class FakeRobotd:
         """When each call arrived, on this machine's monotonic clock, and which it was."""
         self.recover_on_enable = False
         """Stand a fallen duck up when `robot.enable` arrives, as the policy taking over would."""
+        self.on_enable: dict[str, Any] = {}
+        """What the duck is, attribute by attribute, in the frames after `robot.enable` arrives,
+        as what robotd did meanwhile would leave it: a fall it caught, or a duck it handed back."""
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.rejected: list[tuple[str, str]] = []
@@ -429,6 +432,9 @@ class FakeRobotd:
                     self.twist = [0.0, 0.0, 0.0]  # robotd's stop zeroes the twist it was asked for
                 if method == "robot.enable" and self.recover_on_enable:
                     self.fallen, self.policy = False, "stand"
+                if method == "robot.enable":
+                    for name, value in self.on_enable.items():
+                        setattr(self, name, value)
             elif method == "robot.do":
                 ok = params.get("skill") in (
                     "ground_pick",
@@ -1290,13 +1296,18 @@ async def test_stand_up_says_robotd_still_has_the_duck_after_a_fall(
     registry: VerbRegistry, policy: str, fallen: bool, limp: bool
 ) -> None:
     """From daemon-v0.16.2 robotd goes limp as it predicts a fall, poses the duck and only then
-    hands it back to the policy (`up.LIMP_FALL`). `stand_up` gives the policy three seconds, and
-    a duck robotd still had in that sequence then was told only that its posture was unknown,
-    or, once it had landed and read as fallen, that robotd does not promise to get a fallen duck
-    up and that it may need a hand. It is told robotd still has it and hands it back once it has
-    posed it, and to run the verb again. The request still goes out first, as it does to any
-    duck that is down or `unknown`."""
-    fake = FakeRobotd(policy=policy, fallen=fallen, limp=limp)
+    hands it back to the policy (`up.LIMP_FALL`). `stand_up` reads the duck again three seconds
+    after its request, and a duck robotd had in that sequence then was told only that its
+    posture was unknown, or, once it had landed and read as fallen, that robotd does not promise
+    to get a fallen duck up and that it may need a hand. It is told robotd still has it and
+    hands it back once it has posed it, and to run the verb again.
+
+    With upstream's defaults the sequence is over within about 2.1 s, so robotd has the duck at
+    that read only after a fall it caught during the wait, and the fake catches one as the request
+    arrives. Before it, the duck is down with the policy driving it, as robotd leaves one once its
+    sequence is over, and the request goes out as it does to any duck that is down."""
+    fake = FakeRobotd(policy="walk", fallen=True)
+    fake.on_enable = {"policy": policy, "fallen": fallen, "limp": limp}
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
@@ -1307,6 +1318,46 @@ async def test_stand_up_says_robotd_still_has_the_duck_after_a_fall(
         assert not result.ok and "may need a hand" not in said, said
         assert f"robotd is still answering the fall itself (policy {policy!r}: " in said, said
         assert up.NOT_STANDING_LABELS[policy] in said and "run stand_up again in a moment" in said
+        assert "robot.enable" in [r["method"] for r in fake.requests]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    ("policy", "fallen", "limp", "then", "ok", "summary"),
+    [
+        ("limp_fall", False, True, {"policy": "stand", "limp": False}, True, "upright"),
+        ("limp_pose", True, False, {"policy": "stand", "fallen": False}, True, "upright"),
+        ("limp_pose", True, False, {"policy": "walk"}, False, "so it may need a hand"),
+    ],
+    ids=["limp-then-up", "posed-then-up", "posed-then-down"],
+)
+async def test_stand_up_judges_a_duck_robotd_hands_back_before_it_reads_again(
+    registry: VerbRegistry,
+    policy: str,
+    fallen: bool,
+    limp: bool,
+    then: dict[str, Any],
+    ok: bool,
+    summary: str,
+) -> None:
+    """A duck robotd has in its limp-fall sequence when `stand_up` is asked is back with the
+    policy by the time `stand_up` reads it again, three seconds after its request, since the
+    sequence is over within about 2.1 s by default (`up.LIMP_FALL`). It is judged on that second
+    frame like any other duck: upright if it stands, and told it may need a hand if it is still
+    down. The label on the first frame is not what it is told about, since robotd no longer has
+    the duck. The request goes out first, and to a robot already enabled it changes nothing."""
+    fake = FakeRobotd(policy=policy, fallen=fallen, limp=limp)
+    fake.on_enable = then
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        t.sleep = _quick  # type: ignore[method-assign]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        said = result.summary
+        assert result.ok is ok and summary in said and "still answering" not in said, said
         assert "robot.enable" in [r["method"] for r in fake.requests]
         await t.close()
     finally:

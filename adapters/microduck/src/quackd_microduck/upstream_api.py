@@ -475,9 +475,12 @@ LIMP_FALL = UpstreamRef(
     "only when something else takes the robot: the policy disabled, the torque off or the joints "
     "ramping home, the shutdown sit, or the power off (main.rs:2896-2911). quackd sends no walk "
     "meanwhile: both labels and safety.limp read as not standing, as safety.fallen does, and a "
-    "verb that was walking is held until it ends. stand_up tells a pilot whose duck is still in "
-    "the sequence so. Whether the policy then gets the duck up is the policy's to say (VELSTAND), "
-    "and nobody has seen it under quackd.",
+    "verb that was walking is held until it ends. stand_up says so of a duck robotd has in the "
+    "sequence when it reads the duck again, three seconds after its request. With these defaults "
+    "the sequence is over within about 2.1 s, so that is a fall robotd caught during the wait, "
+    "and a duck it had when stand_up was asked is back with the policy by then. Whether the "
+    "policy then gets the duck up is the policy's to say (VELSTAND), and nobody has seen it under "
+    "quackd.",
 )
 #: The labels of the two halves of robotd's limp-fall sequence, the limp and the pose
 #: (LIMP_FALL). robotd gives every tick of the sequence one of them, whether or not its fall
@@ -824,15 +827,21 @@ STAND_UP_RPC = UpstreamRef(
     src("robotd-params/src/lib.rs", 1970),
     "No such RPC. robot.enable {on: true} is policy execution, which 'can bring a limp robot up "
     "as a side effect of being asked to drive', and robot.init, the call upstream names for "
-    "bringing up a duck that is on its feet, moves every joint and is never sent. robotd's own "
-    "stand-up after a fall is the end of limp_fall, and at the pin limp_fall is off by "
-    "default: 'With it off, a fall changes nothing: the policy keeps driving and the humans "
-    "stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on, and "
-    "robotd hands a duck it caught falling back to velstand once it has posed it (LIMP_FALL), "
-    "which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand gets a duck "
-    "off the floor has not been seen under quackd on either release. A duck robotd still has in "
-    "that sequence when stand_up reads it again is told so, and to run stand_up again in a "
-    "moment.",
+    "bringing up a duck that is on its feet, moves every joint and is never sent. On a robot "
+    "whose policy is enabled already, as it is when the duck fell while the policy drove it, "
+    "robot.enable {on: true} only sets the flag again (robotd/src/main.rs:5319-5328, "
+    "robotd/src/intents.rs:470-472), so what stand_up learns comes from its read three seconds "
+    "later. robotd's own stand-up after a fall is the end of limp_fall, and at the pin limp_fall "
+    "is off by default: 'With it off, a fall changes nothing: the policy keeps driving and the "
+    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on "
+    "again, and robotd hands a duck it caught falling back to velstand once it has posed it "
+    "(LIMP_FALL), which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand "
+    "gets a duck off the floor has not been seen under quackd on either release. A duck robotd "
+    "has in that sequence when stand_up reads it again is told so, and to run stand_up again in "
+    "a moment. The sequence is over within about 2.1 s by default, so that is a fall robotd "
+    "caught during the wait, and a duck it had when stand_up was asked is judged on that read "
+    "like any other: upright if it reads standing, and told it may need a hand if it is still "
+    "down, even while the policy is still getting it up.",
 )
 ALPHA_UPRIGHT_FOV = UpstreamRef(
     "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",
