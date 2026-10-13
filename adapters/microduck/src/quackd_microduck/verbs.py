@@ -275,7 +275,8 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         # It used to say an onboard recovery had not finished, which sent the pilot to wait for
         # one. robotd runs none on daemon-v0.16.1 by default, and from daemon-v0.16.2 a duck it
         # caught falling is back with the policy once it has posed it (`_robotds_fall`), which
-        # upstream says gets it up and nobody has seen do so, so one still down may need a hand.
+        # upstream says gets it up and nobody has seen do so under quackd, so one still down may
+        # need a hand.
         return VerbResult.fail(
             "asked the policy to run, and the duck is still down: robotd does not promise to get "
             "a fallen duck up, so it may need a hand"

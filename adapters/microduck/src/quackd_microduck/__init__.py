@@ -101,9 +101,9 @@ DATASHEET = Datasheet(
         # It said the duck could get itself upright again, which was robotd's limp_fall. On
         # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT). From
         # daemon-v0.16.2 it is on, and robotd hands the duck back to a policy upstream says gets
-        # it up, which nobody has seen (upstream_api.LIMP_FALL). This is the sheet a pilot
-        # judges a task against before anything moves, so it says what each release does and
-        # promises no get-up.
+        # it up, which nobody has seen under quackd (upstream_api.LIMP_FALL). This is the sheet a
+        # pilot judges a task against before anything moves, so it says what each release does
+        # and promises no get-up.
         "It falls, and may not get up again by itself. By default, robotd on daemon-v0.16.1 "
         "does nothing about a fall but report it, and from daemon-v0.16.2 it goes limp in the "
         "fall, poses the duck and hands it back to its walking policy, which upstream says gets "

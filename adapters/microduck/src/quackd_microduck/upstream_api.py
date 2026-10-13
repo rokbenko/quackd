@@ -37,7 +37,7 @@ on one network, `velstand.onnx` (VELSTAND), and with no standing network to hand
 to, `limp_fall` is off, so a fall changes nothing in robotd. The duck looks around on its own
 once nobody has steered its head for two seconds and it has then stood still for two more
 (IDLE_HEAD), and a pick-up detector pauses the policy while somebody holds it
-(SAFETY_PICKED_UP).
+(SAFETY_PICKED_UP). That is robotd at the pin: from daemon-v0.16.2 `limp_fall` is on (below).
 
 Upstream released daemon-v0.16.2, v0.16.3, v0.17.0 and v0.17.1 on 2026-10-12, each on API 41.
 Read against the pin, none changes the shape of anything quackd sends or reads, and robotd's
@@ -830,8 +830,9 @@ STAND_UP_RPC = UpstreamRef(
     "stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on, and "
     "robotd hands a duck it caught falling back to velstand once it has posed it (LIMP_FALL), "
     "which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand gets a duck "
-    "off the floor has not been seen on either release. A duck robotd still has in that "
-    "sequence when stand_up reads it again is told so, and to run stand_up again in a moment.",
+    "off the floor has not been seen under quackd on either release. A duck robotd still has in "
+    "that sequence when stand_up reads it again is told so, and to run stand_up again in a "
+    "moment.",
 )
 ALPHA_UPRIGHT_FOV = UpstreamRef(
     "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",

@@ -93,9 +93,9 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
     not run.
 
     From daemon-v0.16.2 `limp_fall` is on by default, and robotd hands the duck back to a
-    walking policy upstream says gets it up (`up.LIMP_FALL`), which nobody has seen. The sheet
-    said only what daemon-v0.16.1 does, so it says what each release does now, the get-up as
-    upstream's word."""
+    walking policy upstream says gets it up (`up.LIMP_FALL`), which nobody has seen under
+    quackd. The sheet said only what daemon-v0.16.1 does, so it says what each release does
+    now, the get-up as upstream's word."""
     text = body_section(microduck_manifest("sim2d"))
     assert "may not get up again by itself" in text and "get itself upright" not in text
     assert "may not manage" in MICRODUCK_VERBS["stand_up"].description
