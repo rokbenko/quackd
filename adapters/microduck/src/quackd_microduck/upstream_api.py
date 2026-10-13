@@ -41,10 +41,11 @@ once nobody has steered its head for two seconds and it has then stood still for
 
 Upstream released daemon-v0.16.2, v0.16.3, v0.17.0 and v0.17.1 on 2026-10-12, each on API 41.
 Read against the pin, none changes the shape of anything quackd sends or reads, and robotd's
-own source is the same outside its tests, but daemon-v0.16.2 changed two defaults cited here:
+own source is the same outside its tests, but daemon-v0.16.2 changed three defaults cited here:
 `limp_fall` is on, so robotd takes a falling duck off its policy, poses it and hands it back
-(LIMP_FALL), and a robot is seeded with the policy set `v8` (VELSTAND). The refs stay read at
-the pin, and the ones whose default moved say what changed and the release that changed it.
+(LIMP_FALL), a robot is seeded with the policy set `v8` (VELSTAND), and a gamepad's full stick
+asks for 0.4 m/s forward and 1.0 rad/s of turn (NO_TWIST_CLAMP). The refs stay read at the pin,
+and the ones whose default moved say what changed and the release that changed it.
 
 Nothing here has been run against a physical Microduck.
 """
@@ -412,6 +413,26 @@ DEADMAN = UpstreamRef(
 DEADMAN_S = 0.5
 PAD_HEARTBEAT_S = 0.1
 PAD_LOST_SIT_S = 1.0
+NO_TWIST_CLAMP = UpstreamRef(
+    "robotd clamps no twist",
+    "VERIFIED",
+    src("robotd/src/main.rs", 3931),
+    "What limits a tick, robot.state's move.limited_by, is the deadman, a joint target past the "
+    "actuator's travel, or one that is not finite, and nothing else (robotd/src/main.rs:"
+    "3931-3937). While the walking policy drives, the twist robot.move last asked for reaches "
+    "its observation as it was asked, smoothed toward each new value, until the deadman zeroes "
+    "a stale one (main.rs:3052-3058, duck-control/src/obs.rs:210-215), and 'the policy only "
+    "follows commands inside the range it was trained on — asking for more than that is "
+    "asking, not getting' (robotd-params/src/lib.rs:109-110). [pad_drive], what a gamepad's "
+    "full stick asks for, is 'what the *pad* asks for, not a limit on the robot. A robot.move "
+    "from anywhere else is not bounded by it' (lib.rs:108-109): 0.3 m/s forward and back, 0.3 "
+    "m/s sideways and 1.5 rad/s of turn at the pin (lib.rs:133-138). From daemon-v0.16.2 it is "
+    "0.4 m/s forward and back and 1.0 rad/s of turn, since v8's velstand 'tracks yaw commands' "
+    "and that is 'what that policy follows well on the robot' (lib.rs:129-139 there). The "
+    "Microduck's speed caps are quackd's own: its manifest's limits, 0.3 m/s forward, 0.2 m/s "
+    "sideways and 1.5 rad/s of turn, which every verb that walks is clamped to "
+    "(quackd.verbs.core.speed_limits).",
+)
 STATE_NEEDS_SUBSCRIBE = UpstreamRef(
     "robot.state is not pushed until robot.subscribe",
     "VERIFIED",

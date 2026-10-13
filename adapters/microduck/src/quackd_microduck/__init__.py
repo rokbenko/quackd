@@ -91,7 +91,12 @@ DATASHEET = Datasheet(
         "drifts",
     ],
     notes=[
-        "The speed caps are a software clamp in robotd, not a measured hardware maximum",
+        # It said the caps were a software clamp in robotd, which clamps no twist at any release
+        # quackd has read (upstream_api.NO_TWIST_CLAMP). They are this manifest's own `limits`,
+        # which quackd.verbs.core holds every twist a verb sends to (speed_limits), and which
+        # `move` refuses to be asked past.
+        "The speed caps are quackd's own clamp on the twists it sends, not a measured hardware "
+        "maximum: robotd clamps no twist",
         "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
         # It said the duck could get itself upright again, which was robotd's limp_fall. On
         # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT). From

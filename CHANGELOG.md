@@ -37,6 +37,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a row for the sequence, and its rows for the fall verdict, velstand and `stand_up`'s assumption
   and its physics section say the same. `tests/test_datasheets.py` holds the note to both releases.
 
+- **The Microduck's datasheet no longer says its speed caps are a clamp in robotd.** The note has
+  said since 0.9.0 that the caps are a software clamp in robotd, and robotd clamps no twist at any
+  release quackd has read: what limits a tick in its state is the deadman, a joint target past the
+  actuator's travel or one that is not finite, and nothing caps the speed of the twist its policy is
+  handed. The caps, 0.3 m/s forward, 0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's own
+  `limits`, which quackd holds every twist a verb sends to, and which the pilot's prompt already
+  called quackd's clamp above the note. The note says they are quackd's own clamp, and the numbers
+  are as they were. `upstream_api.py` records what was read as `NO_TWIST_CLAMP`, with what
+  upstream's gamepad asks for at full stick at the pin and from daemon-v0.16.2, and the Microduck
+  page has a row for it. `tests/test_datasheets.py` holds the note to it.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's
