@@ -3059,12 +3059,13 @@ async def test_a_head_turned_while_the_hold_waits_is_not_taken_back(
 async def test_a_head_turned_while_the_duck_is_briefly_down_is_not_taken_back(
     robotd: FakeRobotd, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """robotd may glance at a duck on the floor, which its policy goes on driving
-    (`up.FALLEN_IS_A_REPORT`), but only once nobody has steered the head for IDLE_AFTER and it
-    has then counted the duck still for IDLE_AFTER more (`up.IDLE_HEAD`). So no frame read
-    within IDLE_AFTER of the hold's last `robot.head` can show a glance, and a head off the held
-    one in such a frame is somebody else's, fallen duck or not. robotd's wait is set long here,
-    so that every frame of this fall is read within it on a loaded machine too."""
+    """robotd may glance at a duck on the floor, which its policy goes on driving outside
+    robotd's limp-fall sequence (`up.FALLEN_IS_A_REPORT`), but only once nobody has steered the
+    head for IDLE_AFTER and it has then counted the duck still for IDLE_AFTER more
+    (`up.IDLE_HEAD`). So no frame read within IDLE_AFTER of the hold's last `robot.head` can show
+    a glance, and a head off the held one in such a frame is somebody else's, fallen duck or not.
+    robotd's wait is set long here, so that every frame of this fall is read within it on a
+    loaded machine too."""
     monkeypatch.setattr(up, "IDLE_AFTER_S", 200 * HOLD_S)
     robotd.head_alpha = 0.5
     t = await _looked(robotd, 30.0)
@@ -3091,14 +3092,15 @@ async def test_a_pause_robotd_may_have_glanced_in_is_not_judged_as_it_ends(
     change: Callable[[FakeRobotd, bool], None],
     idle_after_s: float,
 ) -> None:
-    """robotd's policy goes on driving a duck on the floor (`up.FALLEN_IS_A_REPORT`), and
-    nothing in a fallen duck's frame stops robotd counting it still, so once IDLE_AFTER has
-    passed since the hold's last `robot.head` it may glance at one. Nor can frames read further
-    apart than IDLE_AFTER rule a glance out between them, whatever each says, since a whole
-    IDLE_AFTER of a still duck fits in. A head off the held one after such a pause may be
-    robotd's own, so the hold sends its head again as before and judges nothing until a glance
-    it lets go of has faded. robotd's wait is set to twenty hold periods for the fall, which the
-    head turns well after, and to less than the time between two frames for the duck held."""
+    """Outside robotd's limp-fall sequence, its policy goes on driving a duck on the floor
+    (`up.FALLEN_IS_A_REPORT`), and nothing in such a fallen duck's frame stops robotd counting it
+    still, so once IDLE_AFTER has passed since the hold's last `robot.head` it may glance at one.
+    Nor can frames read further apart than IDLE_AFTER rule a glance out between them, whatever
+    each says, since a whole IDLE_AFTER of a still duck fits in. A head off the held one after
+    such a pause may be robotd's own, so the hold sends its head again as before and judges
+    nothing until a glance it lets go of has faded. robotd's wait is set to twenty hold periods
+    for the fall, which the head turns well after, and to less than the time between two frames
+    for the duck held."""
     monkeypatch.setattr(up, "IDLE_AFTER_S", idle_after_s)
     robotd.head_alpha = 0.5
     t = await _looked(robotd, 30.0)

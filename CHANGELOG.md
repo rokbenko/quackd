@@ -37,15 +37,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **The Microduck's datasheet says what robotd does about a fall on daemon-v0.16.1 and on the
   releases after it.** It said that on daemon-v0.16.1 robotd does nothing about a fall but report
-  it, which is so there by default. From daemon-v0.16.2 `limp_fall` is on by default, and robotd
-  goes limp in the fall, poses the duck and hands it back to its walking policy, the `velstand.onnx`
-  of upstream's policy set `v8`, which upstream says gets up from a fall. The note says both now,
-  and still that the duck may not get up again by itself, since nobody has seen either release get
-  one up under quackd. `upstream_api.py` reads the sequence at the pin as `LIMP_FALL`, its notes on
-  the fall verdict, on velstand and on `stand_up`'s assumption say what daemon-v0.16.2 changed, and
-  the physics simulator's say that `v8` changes no policy the simulator runs. The Microduck page has
-  a row for the sequence, and its rows for the fall verdict, velstand and `stand_up`'s assumption
-  and its physics section say the same. `tests/test_datasheets.py` holds the note to both releases.
+  it, which is so there by default. From daemon-v0.16.2 `limp_fall` is on by default again, and
+  robotd goes limp in a fall it predicts while the duck walks or stands, poses the duck and hands it
+  back to its walking policy, the `velstand.onnx` of upstream's policy set `v8`, which upstream says
+  gets up from a fall. It catches no fall during a skill, a ground pick or a sit, so none during
+  quackd's `kick` or `grab`. The sheet says all of that now, in two notes, and still that the duck
+  may not get up again by itself, since nobody has seen either release get one up under quackd.
+  `upstream_api.py` reads the sequence at the pin as `LIMP_FALL`, with daemon-v0.11.0 and
+  daemon-v0.12.0, which had it on by default too, and daemon-v0.13.0, which turned it off. Its notes
+  on the fall verdict, on velstand and on `stand_up`'s assumption say what daemon-v0.16.2 changed,
+  and the physics simulator's say that `v8` changes no policy the simulator runs. The Microduck page
+  has a row for the sequence, and its rows for the fall verdict, velstand and `stand_up`'s
+  assumption and its physics section say the same. `tests/test_datasheets.py` holds the notes to
+  both releases and to the falls robotd catches, and failed on the note that said robotd goes limp
+  in every fall.
 
 - **The Microduck's datasheet no longer says its speed caps are a clamp in robotd.** The note has
   said since 0.9.0 that the caps are a software clamp in robotd, and robotd clamps no twist at any
@@ -65,11 +70,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   section names daemon-v0.16.2 to daemon-v0.17.1, each on API v41, and the three defaults
   daemon-v0.16.2 changed that its rows cite. Step 9 of the hardware checklist said a robot on
   daemon-v0.16.1 does nothing about a fall but report it, and now says what one on daemon-v0.16.2 or
-  later does too, and that quackd sends it no walk meanwhile, and step 10 asks what robotd's answer
-  to a fall did on a real duck. ADR-0011 carries a dated amendment for the fall, and ADR-0032 one
-  for the note that called the speed caps robotd's. The README's Why section listed standing up
-  after a fall among the Microduck's own skills, which quackd has never seen, and says now that
-  Pollen says its controllers do so from daemon-v0.16.2.
+  later does too, in a fall while the duck walks or stands, and that quackd sends it no walk
+  meanwhile. Step 10 asks what robotd's answer to a fall did on a real duck, and how long the duck
+  took to get up against the three seconds `stand_up` waits. ADR-0011 carries a dated amendment for
+  the fall, and ADR-0032 one for the note that called the speed caps robotd's. The README's Why
+  section listed standing up after a fall among the Microduck's own skills, which quackd has never
+  seen, and says now that Pollen says its newest walking policy gets the duck back up.
 
 ## [0.18.0] — 2026-10-13
 

@@ -358,7 +358,7 @@ Put keys in the environment or in a `.env` file (copy [`.env.example`](.env.exam
 
 ## Why?
 
-A modern robot is not short of skills. The Microduck's onboard controllers already balance it, walk, kick, sit and scoop with its beak, and from daemon-v0.16.2 Pollen says they stand it back up after a fall. An arm picks with its own learned policy, a wheeled base drives. Each is the robot's own skill, trained, written or recorded, and each works without any help from an AI model. What the robot lacks is any idea of **what those skills are for**.
+A modern robot is not short of skills. The Microduck's onboard controllers already balance it, walk, kick, sit and scoop with its beak, and Pollen says its newest walking policy gets the duck back up after a fall. An arm picks with its own learned policy, a wheeled base drives. Each is the robot's own skill, trained, written or recorded, and each works without any help from an AI model. What the robot lacks is any idea of **what those skills are for**.
 
 ```
 Traditional control:   walk forward, turn left, walk, look down, scoop, ...   (you plan every step)

@@ -280,9 +280,10 @@ stands, the pad's sit button.
 > only for a duck nobody holds, and calls it upright only if it then reads standing. A robot on
 > `daemon-v0.16.1` does nothing about a fall but report it, since `limp_fall` is off by default
 > there, so the recovery is the owner's. From `daemon-v0.16.2` robotd goes limp as the duck
-> falls, poses it and hands it back to its walking policy, which upstream says gets it up, and
-> quackd sends it no walk meanwhile. Nobody has seen that on a duck under quackd, so watch what
-> it does and write it down (step 10).
+> falls while it walks or stands, though not during a kick, a grab or a sit, poses it and
+> hands it back to its walking policy, which upstream says gets it up, and quackd sends it no
+> walk meanwhile. Nobody has seen that on a duck under quackd, so watch what it does and write
+> it down (step 10).
 
 ## 10. Tell everyone
 
