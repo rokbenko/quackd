@@ -17,6 +17,10 @@ in the System One shape, so the same four reach a hosted API, a server on this m
 model in this process without being rebuilt here, and a backend whose wire format is another
 shape translates them on its own side; which of those answers them is `factory.py`'s question
 and `catalogue.py`'s table. Nothing here imports a backend at all.
+
+On a run that asks with `--decision-frames`, the one decision LLM that may see is also shown the
+primary camera's picture beside the state, and the stepper keeps a copy of each picture before
+the request that carries it is sent (`frames.py`).
 """
 
 from __future__ import annotations
@@ -28,12 +32,19 @@ import json
 import math
 import time
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from quackd.agent.decision.base import TIMEOUT_S, UnreadableReply, state_text
+from quackd.agent.decision.base import (
+    TIMEOUT_S,
+    DecisionFrame,
+    SeeingDecisionLLM,
+    UnreadableReply,
+    state_text,
+)
 from quackd.agent.decision.catalogue import DecisionMode
+from quackd.agent.decision.frames import Snapshot, encode, keep, may_send_frames, too_large
 from quackd.agent.providers.base import ToolCall
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import SELF_HOSTED, cost_usd
@@ -332,9 +343,11 @@ state grows with content unrelated to the decision, and nothing about that is pa
 them, so the cap is an accuracy budget and the trim order below is which parts of a turn are
 least likely to decide it."""
 
-NEVER_TRIMMED = ("goal", "success_when", "body", "where", "now", "last")
+NEVER_TRIMMED = ("goal", "success_when", "body", "where", "now", "last", "picture")
 """A turn without these is not a turn worth answering, so if they alone blow the hard cap the
-call is not made at all and the model takes it."""
+call is not made at all and the model takes it. `picture` is the one sentence that says an image
+went beside the state, on a turn that sent one: trimmed, the image would go with nothing to say
+what it is."""
 
 TRIM_ORDER = ("flock", "notes", "recent", "tried", "camera")
 """Dropped in this order until the state fits: the flock's chatter first, then what earlier
@@ -406,6 +419,15 @@ def _one_line(text: str, limit: int = 240) -> str:
     """Somebody else's prose as one field of a named state. These read text, not layout."""
     flat = " ".join(str(text).split())
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def _picture(camera: str, cameras: Sequence[str]) -> str:
+    """The state's `picture`: the one sentence that says an image went beside it, and whose eye
+    it is. The camera is named only on a body with several, the rule every view of a camera in
+    quackd keeps (`transport.base.DEFAULT_CAMERA_NAME`), so a one-camera body reads `its
+    camera`."""
+    lens = f"its {camera} camera" if len(cameras) > 1 else "its camera"
+    return f"The image sent with this state is what this robot saw through {lens} this turn."
 
 
 DONE_THRESHOLD = 0.5
@@ -710,6 +732,11 @@ class Stepper:
     """Where it was reached, for the record. Already redacted: `build` is the only thing that
     sets it, and it redacts. A password or a credential-shaped query parameter in a
     `--decision-url` is `***` by the time anything here can write it down."""
+    frames: bool = False
+    """Whether it shows its decision LLM the robot's primary camera with each request
+    (`--decision-frames`). `build` sets it only for a decision LLM `frames.may_send_frames`
+    allows, and every frame is asked about again before it goes, so a stepper put together by
+    hand with this set shows nothing to anything else."""
 
     calls: dict[str, Call] = field(default_factory=dict)
     classes: dict[str, str] = field(default_factory=dict)
@@ -731,6 +758,10 @@ class Stepper:
     rather than answered it. Not among `errors`, since nothing failed: the vendor's own policy
     answered in place of its model, and whether that happens on a robot's state at all is one of
     the things a shadow run is for."""
+    frames_sent: int = 0
+    """Camera frames handed over with a request. Counted as each is handed over, before any
+    answer, the way a request's questions are counted as sent, so a turn that failed, ran out of
+    its second or was cut off after its frame left still counts it."""
     latency_s: float = 0.0
     last_request_ended: float | None = field(default=None, init=False, repr=False)
     """When this stepper's previous request ended with an answer, on `time.perf_counter`'s clock,
@@ -774,7 +805,18 @@ class Stepper:
         body: str = "",
         gated: Sequence[str] = (),
         max_steps: int = 0,
+        frames: bool = False,
     ) -> Stepper:
+        # `frames` is a camera's picture leaving the machine, so it is asked of the one gate
+        # every frame passes before anything is built, and a decision LLM it does not allow is a
+        # caller's mistake to refuse rather than a run to start quietly showing nothing. The CLI
+        # refuses the same runs before the robot connects (`factory.resolve_decision_frames`).
+        if frames and not may_send_frames(llm):
+            raise ValueError(
+                f"frames=True needs a decision LLM that may be shown the camera, and {llm.name} "
+                "may not: only quackd's own client for OpenAI's Decisions API, built with "
+                "frames=True at OpenAI's own address, may be (frames.may_send_frames)"
+            )
         stepper = cls(
             mode=mode,
             goal=goal,
@@ -791,6 +833,7 @@ class Stepper:
             url=redacted_url(raw_url) if (raw_url := getattr(llm, "url", None)) else None,
             price=price,
             max_steps=max_steps,
+            frames=frames,
         )
         # The contract's own confirm list, in canonical names, so a verb the task file gated
         # answers to the same floor as one the manifest did.
@@ -862,10 +905,15 @@ class Stepper:
             "llm": self.name,
             "model": self.model,
             "url": self.url,
+            # Whether it was shown the camera, and how many frames left the machine for it, on
+            # every run with a stepper, so a run that sent none says so rather than saying
+            # nothing (`--decision-frames`).
+            "frames": self.frames,
             "asked": self.asked,
             "taken": self.taken,
             "errors": self.errors,
             "refusals": self.refusals,
+            "frames_sent": self.frames_sent,
             "latency_s": round(self.latency_s, 3),
             # What the stepper asked for and what that cost, kept apart from the model's own
             # `usage` and `cost_usd` at the top of the summary rather than folded into them:
@@ -920,15 +968,18 @@ class Stepper:
         budget: str,
         stepped: Sequence[str],
         notes: str | None,
+        picture: str | None = None,
     ) -> tuple[dict[str, str], list[str]]:
         """A named JSON object, in English, carrying only what the questions need.
 
-        Never a picture. That is quackd's rule rather than a property of the models: every row
-        is sent text and nothing else (`sees` is false on each of them), `openai` included,
-        although OpenAI's API would take an image, and quackd would rather escalate a turn that
-        needs eyes than pretend otherwise. Never the system prompt either, because the
-        instructions belong in the questions, and never the history, which is the distractor
-        TypeSafe warn about by name."""
+        Never a picture in it. Every row is sent this text and nothing else, but for the one that
+        may see on a run that asks (`--decision-frames`), which is shown the camera's picture as
+        an image beside this text, never inside it, so `state_chars` measures the text and the
+        record never holds a byte of the image. `picture` is the one sentence that says such an
+        image went, on a turn that sent one, and it is text like every other field. A turn that
+        needs eyes on any other run escalates rather than pretending otherwise. Never the system
+        prompt either, because the instructions belong in the questions, and never the history,
+        which is the distractor TypeSafe warn about by name."""
         from quackd.perception.base import Detection, summarize_detections
         from quackd.transport.base import DuckState
 
@@ -949,6 +1000,8 @@ class Stepper:
             "where": _one_line(budget),
             "now": _one_line(now, 400),
             "camera": _one_line(summarize_detections(detections)),
+            # Empty, and so left out, on every turn that sends no image.
+            "picture": picture or "",
             "last": (
                 _one_line(
                     f"{last.get('verb')}: {'ok' if last.get('ok') else 'FAILED'} — "
@@ -978,8 +1031,21 @@ class Stepper:
         budget: str,
         stepped: Sequence[str] = (),
         notes: str | None = None,
+        snapshot: Snapshot | None = None,
+        on_frame: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Advice:
-        """Ask this turn's questions, and say whether the answer is good enough to act on."""
+        """Ask this turn's questions, and say whether the answer is good enough to act on.
+
+        `snapshot` is the primary camera's picture this turn, and where the copy of what is sent
+        of it is kept, on a run that shows its decision LLM the camera; None on every other run,
+        and on a turn whose primary camera gave nothing. A stepper built without `frames` never
+        looks at it.
+
+        `on_frame` is handed the frame's block once its copy is written and before the request
+        that carries it is handed over, for the loop to write down and flush. The turn's own
+        record is written only when the turn ends, and a process that dies while the request is
+        out never gets that far, so without this line a frame could leave with nothing on the
+        record naming it. If writing the line fails, so does the turn, before anything is sent."""
         self.cut_off = None
         offered = self.labels_for(cleared=cleared)
         record: dict[str, Any] = {
@@ -988,6 +1054,10 @@ class Stepper:
             "model": self.model,
             "labels": labels(offered),
         }
+        if self.frames:
+            # On every record of a run that shows frames, so each turn says whether a frame went
+            # with it: null until one does, and null on every turn that sends none.
+            record["frame"] = None
         if not offered:
             # Nothing on this body is a choice right now, so there is no question to ask and
             # nothing to pay for. A duck whose whole allowlist is continuous never reaches the
@@ -995,7 +1065,22 @@ class Stepper:
             # does on every turn the model takes (`_hand_back`).
             return self._hand_back({**record, "gate": "not_offered", "latency_s": 0.0})
 
-        state, dropped = self._build_state(obs, budget=budget, stepped=stepped, notes=notes)
+        shown: DecisionFrame | None = None
+        if self.frames:
+            shown, skipped = await self._shown(snapshot)
+            if skipped is not None:
+                record["frame_skipped"] = skipped
+        state, dropped = self._build_state(
+            obs,
+            budget=budget,
+            stepped=stepped,
+            notes=notes,
+            picture=(
+                _picture(snapshot.camera, getattr(obs, "cameras", None) or ())
+                if shown is not None and snapshot is not None
+                else None
+            ),
+        )
         # Measured on the very text a backend that takes text is sent (`base.state_text`), with
         # its letters as letters: escaped, a letter outside ASCII counted six times over.
         record["state_chars"] = len(state_text(state))
@@ -1016,9 +1101,7 @@ class Stepper:
         # `latency_s` alone cannot show it. None on the first request, which has no earlier one
         # whose connection it could reuse, and on the first after a request that failed, whose
         # connection may have gone with it (`_unanswered`).
-        idle = (
-            None if self.last_request_ended is None else round(started - self.last_request_ended, 3)
-        )
+        idle = self._idle(started)
         # Characters of questions handed to the decision LLM, and 0 while none have been: a turn
         # that could not build its questions owes nobody anything, and one that timed out after
         # they were handed over probably does. The client itself was built before the robot
@@ -1033,6 +1116,27 @@ class Stepper:
         bound: asyncio.Timeout | None = None
         try:
             questions = build_questions(offered, self.what)
+            if shown is not None and snapshot is not None:
+                # Record before send. The copy is on disk, a flushed line names it (`on_frame`),
+                # the turn's record holds it and the frame is counted, all before the request
+                # that carries it is handed over, so a turn that fails, runs out of its second, is
+                # cut off by an interrupt, or dies with its process, still says a frame was handed
+                # over and which one. Handed over is not reached: a connection refused or timed
+                # out first never carried it, and from here the two cannot be told apart. A disk
+                # that refuses the copy costs the copy, `kept: false`, and never the frame or run.
+                block = {
+                    **shown.record(),
+                    "path": snapshot.where,
+                    "kept": keep(snapshot.path, shown),
+                }
+                if on_frame is not None:
+                    on_frame(block)
+                record["frame"] = block
+                self.frames_sent += 1
+                # The request's own clock starts once the copy is down, so `latency_s` is the
+                # request's and `idle_s` the connection's, and neither is the disk's.
+                started = time.perf_counter()
+                idle = self._idle(started)
             sent = _question_chars(questions)
             assert self.llm is not None  # `build` always sets it; `advise` is never reached without
             # Bounded here rather than in each backend, because "quicker than the model" is a
@@ -1051,7 +1155,13 @@ class Stepper:
             # with nothing in it is what a backend's own clock raises too, and the record says
             # quackd's `no answer within` only where quackd's own second ran out (`_failure`).
             async with asyncio.timeout(TIMEOUT_S) as bound:
-                result = await self.llm.decide(state, questions)
+                if shown is not None:
+                    # Only the decision LLM `_shown` asked `frames.may_send_frames` about is ever
+                    # handed the keyword; every other is called with the two arguments it takes.
+                    seeing = cast(SeeingDecisionLLM, self.llm)
+                    result = await seeing.decide(state, questions, frames=(shown,))
+                else:
+                    result = await self.llm.decide(state, questions)
         except Exception as e:
             # A turn with no answer is a turn the model takes, so it ends the run of stepper turns
             # the way every other handover does (`_hand_back`). It used to return from here
@@ -1229,6 +1339,35 @@ class Stepper:
         self.last_call = None
         self.in_a_row = 0
         return Advice(None, record)
+
+    def _idle(self, started: float) -> float | None:
+        """Seconds from the end of this stepper's previous answered request to `started`, or
+        None where no connection can be said to be waiting (`last_request_ended`)."""
+        if self.last_request_ended is None:
+            return None
+        return round(started - self.last_request_ended, 3)
+
+    async def _shown(self, snapshot: Snapshot | None) -> tuple[DecisionFrame | None, str | None]:
+        """The frame this turn shows its decision LLM, or None and why none, in the words the
+        record keeps as `frame_skipped`.
+
+        Asked of `frames.may_send_frames` on every turn, whatever `build` was told, so a stepper
+        put together by hand shows nothing to a decision LLM that may not be shown the camera.
+        The JPEG is made in a worker thread, because it is CPU work on a whole picture and the
+        loop it would hold is the one keeping a body's deadman fed. A picture that cannot be
+        encoded, or comes out too large to send, costs the turn its frame and nothing else: the
+        turn is asked on its text alone."""
+        if not may_send_frames(self.llm):
+            return None, "the decision LLM may not be shown the camera"
+        if snapshot is None:
+            return None, "the primary camera gave no picture this turn"
+        try:
+            shown = await asyncio.to_thread(encode, snapshot.image, snapshot.camera)
+        except Exception as e:
+            return None, f"the picture could not be encoded: {type(e).__name__}"
+        if (reason := too_large(shown)) is not None:
+            return None, reason
+        return shown, None
 
     def _unanswered(
         self,

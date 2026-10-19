@@ -1252,6 +1252,7 @@ def test_a_run_at_a_server_you_run_needs_no_key_and_is_costed_as_one(
         "name": "openai",
         "model": OPENAI.model,
         "url": "http://127.0.0.1:9",
+        "frames": False,
     }
     decided = [r for r in records if r.get("kind") == "decision"]
     assert decided and all(r["usage_estimated"] is False for r in decided)

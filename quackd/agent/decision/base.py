@@ -5,14 +5,20 @@ and hands back answers; everything else -- which turns are a choice, what the st
 contain, how confident an answer must be before it moves a servo -- is `stepper.py`'s and
 stays there whatever answers them.
 
+One decision LLM may also be shown a camera frame beside the state, when a run asks for it
+(`SeeingDecisionLLM`, `DecisionFrame`). Which one, and when, is `frames.py`'s question.
+
 The errors are phrased like `providers/base.py`'s, deliberately: a reader who has met
 `ProviderNotInstalled` should recognise its neighbour here without being told.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 TIMEOUT_S = 1.0
@@ -157,4 +163,78 @@ class DecisionLLM(Protocol):
 
     async def decide(
         self, state: Mapping[str, str], questions: Mapping[str, Mapping[str, Any]]
+    ) -> Any: ...
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionFrame:
+    """One camera frame as a decision LLM is shown it: the bytes that go, and what the record
+    says about them.
+
+    Made by `frames.encode` from the primary camera's picture, and handed to
+    `SeeingDecisionLLM.decide` beside the state and never inside it. The bytes go two places,
+    the API and one file beside the transcript, and the record keeps everything else about them
+    (`record`): their size and their hash, never the bytes themselves."""
+
+    camera: str
+    """Which of the body's cameras took it, by the body's own name for it."""
+    media_type: str
+    """What the bytes are, `image/jpeg`, which is how the data URL names them."""
+    data: bytes
+    width: int
+    height: int
+    detail: str
+    """How closely the API is asked to look: `low`, `high`, `auto` or `original`, by OpenAI's
+    reference for an image part."""
+
+    @property
+    def sha256(self) -> str:
+        """The hash of the bytes, so the file kept beside the transcript can be checked against
+        the record of the turn that sent it. Worked out from the bytes on every read rather than
+        stored beside them, so a frame cannot carry a hash of some other picture."""
+        return hashlib.sha256(self.data).hexdigest()
+
+    def data_url(self) -> str:
+        """The bytes as an inline data URL, the one form OpenAI's API takes an image in: a link
+        or a file id is refused there."""
+        return f"data:{self.media_type};base64,{base64.b64encode(self.data).decode('ascii')}"
+
+    def record(self) -> dict[str, Any]:
+        """What the record keeps of it: every field but the bytes, and how many there were."""
+        return {
+            "camera": self.camera,
+            "media_type": self.media_type,
+            "width": self.width,
+            "height": self.height,
+            "bytes": len(self.data),
+            "detail": self.detail,
+            "sha256": self.sha256,
+        }
+
+
+@runtime_checkable
+class SeeingDecisionLLM(DecisionLLM, Protocol):
+    """A decision LLM that may be shown a camera frame beside the state.
+
+    The same protocol with two things added: `frames`, whether it was built to be shown any, and
+    a `decide` that takes them, keyword only, after the state and the questions. Every other row
+    and every plugin keeps the two-argument `decide` and is never handed the keyword. Whether a
+    frame goes at all is `frames.may_send_frames`'s answer, which is true of quackd's own client
+    for OpenAI's Decisions API alone, built with `frames` true, at OpenAI's own address.
+
+    `timeout_s`, where it is given, bounds the whole request, as `DecisionsAPILLM.decide` says.
+    The stepper passes none, because its own bound around `decide` is the one clock that ends its
+    turn (`TIMEOUT_S`)."""
+
+    frames: bool
+    """Whether it was built to be shown frames. A frame handed to one built without is refused
+    before anything is sent."""
+
+    async def decide(
+        self,
+        state: Mapping[str, str],
+        questions: Mapping[str, Mapping[str, Any]],
+        *,
+        frames: Sequence[DecisionFrame] = (),
+        timeout_s: float | None = None,
     ) -> Any: ...

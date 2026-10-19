@@ -18,6 +18,8 @@ The pieces:
 - `factory.py` -- the flags and variables, to something that answers.
 - `systemone.py` -- every server that speaks `POST /v1/systemone`.
 - `decisions_api.py` -- OpenAI's `POST /v1/decisions`, translated both ways.
+- `frames.py` -- what the one decision LLM that may see is shown of the camera, on a run that
+  asks with `--decision-frames`, and the one gate every frame passes.
 - `laya.py` -- the one that runs in this process instead.
 - `stepper.py` -- which turns are a choice at all, and what an answer has to clear before it
   moves a servo. That is quackd's half and does not change with the vendor.

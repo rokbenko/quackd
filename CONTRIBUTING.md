@@ -306,6 +306,12 @@ backend of its own beside `systemone.py`, as `decisions_api.py` is for OpenAI's
 in `make_decision_llm`, and the catalogue tests that pin which backends exist; and a change to
 what the stepper *asks*, which is `stepper.py` and belongs to none of them.
 
+A new row is sent text and nothing else. Whether a row may be shown the robot's camera is its
+`sees` field, true on `openai` alone, which a test pins, and a plugin's row is built with it false
+whatever the plugin says about itself. Every frame passes one gate, `frames.may_send_frames`, which
+allows quackd's own client for OpenAI's Decisions API, at OpenAI's own hosts, and nothing else
+(ADR-0053). Letting another row see is a decision of its own, not a field to flip in passing.
+
 Four things a row needs, and a test reads the first three:
 
 1. **The row itself**, in `PRESETS`, in the position `quackd doctor` should print it.

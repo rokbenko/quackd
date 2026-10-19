@@ -1,6 +1,12 @@
 # ADR-0052: OpenAI's Decisions API is a second wire format, built in
 
-**Status:** accepted · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+**Status:** accepted, amended · **Date:** 2026-10-10 · Amends [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (decision LLMs speak two wire formats rather than one, two rows carry a published rate rather than Jev's alone, and the hosts a key may go to live beside the client that sends it rather than in a row) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (two rows carry a published rate, and a count quackd estimated wears its `~` whatever the rate), and extends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (a question the decision LLM declines ends the turn on a gate of its own, `refused`, read before every other, a number the gates read is a probability from 0 to 1 or the turn is `unreadable`, and a request an interrupt cuts off is on the record, on `interrupted`) · Implemented in `quackd/agent/decision/decisions_api.py`, with changes in the catalogue, `base.py`, the factory, the stepper, the CLI and `quackd log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md)
+
+**Amended 2026-10-19 by [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md):** `sees` is true on `openai`, which may be shown the robot's
+camera on a run that asks with `--decision-frames`, at OpenAI's own hosts alone, and on no other
+row. Where the consequences below say that nothing but the state's text goes and that a camera
+frame reaching a decision LLM would need a flag of its own, that flag is ADR-0053's, and a run
+without it sends this row the state's text alone, as below.
 
 ## Context
 

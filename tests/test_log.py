@@ -578,6 +578,31 @@ def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handove
     assert bare.body == "interrupted by an interrupt after 0.10 s"
 
 
+def test_a_stepper_turn_that_sent_a_frame_says_so_whatever_became_of_it() -> None:
+    """`--decision-frames` shows the decision LLM the camera, and each turn whose request carried
+    a frame says `1 frame` in its parenthesis: on a turn that was answered, and on one that failed
+    or was cut off after its frame left, because it left all the same. A turn that sent none,
+    `frame: null` on a run that shows frames, says nothing of it, and nor does a turn of a run
+    that shows none."""
+    frame = {"camera": "camera", "bytes": 21345, "sha256": "ab" * 32, "kept": True}
+    billed = {"usage": {"input_tokens": 642, "output_tokens": 0}, "cost_usd": 0.0000642}
+
+    def body(**data: Any) -> str:
+        return str(render_events(LogEvent("decision", 0.0, {"latency_s": 0.62, **data}))[0].body)
+
+    taken = body(gate="taken", choice="stop", confidence=0.93, floor=0.5, frame=frame, **billed)
+    assert taken == "stop 0.93 >= 0.50 (0.62 s, 642 tok $0.000064, 1 frame)"
+    failed = body(gate="error", error="RateLimitError: HTTP 429", frame=frame, **billed)
+    assert failed == (
+        "ERROR RateLimitError: HTTP 429 after 0.62 s, 642 tok $0.000064, 1 frame, so the model "
+        "takes this turn"
+    )
+    cut = body(gate="interrupted", error="CancelledError", frame=frame, **billed)
+    assert cut == "interrupted by CancelledError after 0.62 s, 642 tok $0.000064, 1 frame"
+    none_went = body(gate="taken", choice="stop", confidence=0.93, floor=0.5, frame=None, **billed)
+    assert none_went == "stop 0.93 >= 0.50 (0.62 s, 642 tok $0.000064)"
+
+
 def test_a_shadow_row_with_no_choice_names_its_gate_rather_than_none() -> None:
     """A shadow row whose stepper chose nothing, a question declined, a call that failed, an
     answer with no label in it, printed the missing choice and its missing confidence as

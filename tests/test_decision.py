@@ -338,6 +338,7 @@ async def _arm(
     allow: Sequence[str] | None = None,
     llm: Any = None,
     price: Any = None,
+    frames: bool = False,
 ) -> tuple[Any, Any, Any]:
     """A stepper on the mock arm, with the adapter it was built from.
 
@@ -361,6 +362,7 @@ async def _arm(
         goal="Say whether you are holding anything, then let it go",
         success=["you have said whether anything is held"],
         body=manifest.summary(),
+        frames=frames,
     )
     return stepper, adapter, manifest
 
@@ -576,21 +578,55 @@ async def test_a_body_with_nothing_discrete_never_reaches_the_network() -> None:
 # ── the state ───────────────────────────────────────────────────────────────────────────
 
 
-async def test_the_state_is_named_english_fields_and_carries_no_picture() -> None:
-    """Every decision LLM quackd names reads text and nothing else, so a frame must never
-    reach one, and the instructions belong in the questions rather than in the state."""
+def _sentences_only(state: Any) -> None:
+    """The state is named English fields, each one a sentence, and no part of a picture."""
+    assert "goal" in state and "now" in state and "body" in state
+    assert all(isinstance(v, str) for v in state.values()), "every field is a sentence"
+    blob = " ".join(state.values()).lower()
+    for forbidden in ("png", "base64", "data:image", "jpeg"):
+        assert forbidden not in blob, f"{forbidden} reached the state"
+    assert chr(10) not in blob, "a field carried layout rather than a sentence"
+
+
+async def test_the_state_is_named_english_fields_and_carries_no_picture(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every decision LLM is sent this text, and no frame ever rides inside it. The one row that
+    may see is shown the camera beside the state, on a run that asks with `--decision-frames`,
+    and the state it is sent then is the same named English fields with one more sentence, which
+    says an image went beside it. The instructions belong in the questions rather than in the
+    state."""
+    from quackd.agent.decision.factory import make_decision_llm
+    from quackd.agent.decision.frames import Snapshot
+    from quackd.transport.base import frames_of
+    from tests import fake_decisions_api as fake_api
+
     _a, _s, fake = await _advise(
         _fake(answers=fake_systemone.turn("report_state", 0.91)),
         cleared=False,
     )
     state, questions = fake.calls[0]
     assert set(questions) == {"next_verb", "done", "need_human", "feasible"}
-    assert "goal" in state and "now" in state and "body" in state
-    assert all(isinstance(v, str) for v in state.values()), "every field is a sentence"
-    blob = " ".join(state.values()).lower()
-    for forbidden in ("png", "base64", "data:image", "jpeg"):
-        assert forbidden not in blob, f"{forbidden} reached a text-only model"
-    assert chr(10) not in blob, "a field carried layout rather than a sentence"
+    _sentences_only(state)
+    assert "picture" not in state
+
+    # and the frames case: OpenAI's row, built to see, shown the mock arm's own camera
+    sdk = fake_api.install(monkeypatch, fake_api.FakeOpenAI(answers=fake_api.turn("report_state")))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    seeing = make_decision_llm(PRESETS["openai"], frames=True)
+    stepper, adapter, _m = await _arm(llm=seeing, frames=True)
+    (frame,) = await frames_of(adapter)
+    snapshot = Snapshot(frame.image, frame.name, tmp_path / "0000-decision.jpg", "x.jpg")
+    advice = await stepper.advise(
+        await _observation(adapter), cleared=False, budget=BUDGET, snapshot=snapshot
+    )
+    await adapter.disconnect()
+    assert advice.record["frame"]["kept"] is True, "no frame went, so this proves nothing"
+    (text, _image) = sdk.posts[0]["body"]["input"][0]["content"]
+    shown = json.loads(text["text"])
+    _sentences_only(shown)
+    assert shown["picture"].startswith("The image sent with this state")
+    assert {k: v for k, v in shown.items() if k != "picture"}.keys() == state.keys()
 
 
 async def test_the_goal_survives_a_state_that_has_to_be_trimmed() -> None:

@@ -797,29 +797,42 @@ def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
 
 
 def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
-    """The same rule again, for the three flags and the three variables that decide whether a
-    discrete stepper answers a turn before the model is ever called.
+    """The same rule again, for the four flags and the four variables that decide whether a
+    discrete stepper answers a turn before the model is ever called, and whether it is shown the
+    camera when it does.
 
     There are many decision LLMs now rather than one, so the names a reader has to be able to
-    find are not a vendor's: they are `--decision-llm` and `--decision-mode` on the front page,
-    because that is where somebody decides whether to read any further, and on the page itself
-    the address for a server quackd has never heard of, the two extras that install the two
-    ways of reaching one, and the entry point group a third party publishes into.
+    find are not a vendor's: they are `--decision-llm`, `--decision-mode` and `--decision-frames`
+    on the front page, because that is where somebody decides whether to read any further, and on
+    the page itself the address for a server quackd has never heard of, the two extras that
+    install the two ways of reaching one, the entry point group a third party publishes into, and
+    the flag and the variable that send a picture of wherever the robot is off the machine, which
+    SECURITY.md names too.
 
-    `TYPESAFE_API_KEY=` carries its `=` because the key is also named in the prose around it,
-    and a key nobody can set is a hosted model nobody can run."""
+    `TYPESAFE_API_KEY=` and `QUACKD_DECISION_FRAMES=` carry their `=` because each is also named
+    in the prose around it, and a variable nobody can find the line for is one nobody sets on
+    purpose."""
     for path, needles in (
-        ("README.md", ("--decision-llm", "--decision-mode")),
+        ("README.md", ("--decision-llm", "--decision-mode", "--decision-frames")),
         (
             "docs/guides/decision-llms/README.md",
-            ("--decision-url", "quackd[decision]", "quackd[laya]", "quackd.decision_llms"),
+            (
+                "--decision-url",
+                "quackd[decision]",
+                "quackd[laya]",
+                "quackd.decision_llms",
+                "--decision-frames",
+                "QUACKD_DECISION_FRAMES",
+            ),
         ),
+        ("SECURITY.md", ("--decision-frames", "frames/NNNN-decision.jpg")),
         (
             ".env.example",
             (
                 "QUACKD_DECISION_LLM",
                 "QUACKD_DECISION_MODE",
                 "QUACKD_DECISION_URL",
+                "QUACKD_DECISION_FRAMES=",
                 "TYPESAFE_API_KEY=",
             ),
         ),
@@ -2361,6 +2374,32 @@ def test_the_warning_decision_mode_on_prints_names_the_rows_the_hub_estimates() 
     section = hub.split("\n## How much faster, and how much cheaper\n", 1)[1].split("\n### ", 1)[0]
     for name in priced:
         assert f"`{name}`" in section, f"the hub's estimates say nothing of {name}"
+
+
+def test_the_pages_on_decision_frames_say_what_the_code_sends_and_prints() -> None:
+    """`--decision-frames` sends a picture of wherever the robot is off the machine, so what the
+    pages say about it is read back off the code: the size, the quality and the detail of a frame
+    on the `openai` page from `frames.py`, the size wherever else a page or the flag's own help
+    states it, and the line a run with the mode off prints, which the page quotes, from the CLI's
+    own `_frames_notice`. A frame made larger, or a notice reworded, fails here until the pages
+    follow."""
+    from quackd.agent.decision.frames import DETAIL, JPEG_QUALITY, MAX_SIDE_PX
+    from quackd.cli import _DECISION_FRAMES, _frames_notice
+
+    page = (REPO / "docs" / "guides" / "decision-llms" / "openai.md").read_text(encoding="utf-8")
+    flat = " ".join(page.split())
+    for said in (
+        f"at most {MAX_SIDE_PX} pixels",
+        f"at quality {JPEG_QUALITY}",
+        f"detail `{DETAIL}`",
+    ):
+        assert said in flat, f"openai.md does not say {said!r}"
+    assert f"⚠ {_frames_notice('off', None)}" in page, "openai.md misquotes the mode-off notice"
+    for path in ("SECURITY.md", "README.md"):
+        text = " ".join((REPO / path).read_text(encoding="utf-8").split())
+        sizes = re.findall(r"(\d+) pixels on its longest side", text)
+        assert sizes and set(sizes) == {str(MAX_SIDE_PX)}, f"{path}: {sizes}"
+    assert f"at most {MAX_SIDE_PX} pixels" in str(_DECISION_FRAMES.help)
 
 
 ADR = REPO / "docs" / "adr"

@@ -251,13 +251,14 @@ simulators are not: `laya` pulls torch, and nobody should pay for a vendor that 
 run. The `openai` row needs neither: its client is the pilot's own SDK, which `quackd[all]`
 already carries.
 
-Three flags, because there are many decision LLMs now rather than one:
+Four flags, because there are many decision LLMs now rather than one, and one of them may see:
 
 | Flag | What it says | Default |
 |---|---|---|
 | `--decision-llm NAME[:MODEL]` | which one answers, and optionally which model id it answers as | none, and then none of the rest of this happens |
 | `--decision-url URL` | where it listens: your own server, or for `openai` one of OpenAI's regional hosts. On a System One row a path is kept and the client adds `/v1/systemone` after it; `openai`'s client adds `/v1/decisions` to the host alone, and a path there stops the run | whatever the row says |
 | `--decision-mode off\|shadow\|on` | what its answer is allowed to do | `on` once you have named one, `off` when you have not |
+| `--decision-frames` | whether it is shown the robot's primary camera beside the state on each turn it is asked about, which only `openai` may be, at OpenAI's own hosts alone ([openai](openai.md#showing-it-the-camera---decision-frames)). `--no-decision-frames` says no | off |
 
 **Naming a decision LLM is asking for it**, so the mode defaults to `on` rather than to a second
 flag you also have to remember. The three modes:
@@ -268,9 +269,10 @@ flag you also have to remember. The three modes:
 | `shadow` | it is asked on every turn and its answer is recorded beside the model's. **The run is unchanged**: the model still decides everything. This is the mode to start in, and the one that measures |
 | `on` | it takes the turns it is confident about, and hands back the rest. Switching it on prints one line saying it has never been measured against a robot, because that is still true |
 
-`QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL` and `QUACKD_DECISION_MODE` do the same when the flag
-is absent; the flag wins. `QUACKD_DECISION_URL` is read only for a row that wants no key, so a line
-left in a `.env` after an afternoon with a server of your own never moves `jev` or `openai`.
+`QUACKD_DECISION_LLM`, `QUACKD_DECISION_URL`, `QUACKD_DECISION_MODE` and `QUACKD_DECISION_FRAMES`
+do the same when the flag is absent; the flag wins. `QUACKD_DECISION_URL` is read only for a row
+that wants no key, so a line left in a `.env` after an afternoon with a server of your own never
+moves `jev` or `openai`.
 
 **Asking for a decision LLM that cannot run does not stop the run.** The stepper is an
 optimisation and the model is the pilot either way, so a script that always names one still drives
@@ -306,6 +308,17 @@ worse than stopping:
 $ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-mode shadow
 ✗ error: --decision-mode shadow needs a decision LLM to run: --decision-llm jev (or
 QUACKD_DECISION_LLM)
+```
+
+And so does a run that asks for frames where no frame may go: with no decision LLM named, with a
+row that cannot see, which is every row but `openai`, or with `openai` at an address that is not
+one of OpenAI's hosts, a server of your own on this machine included. A frame is a picture of
+wherever the robot is, so a typo here stops the run rather than being read either way:
+
+```
+$ quackd run arm-grip-check --robot lerobot:mock --llm fake --decision-llm kev --decision-frames --no-memory
+✗ error: --decision-frames shows a decision LLM the camera, and --decision-llm kev is sent text
+alone: only openai may be shown a picture
 ```
 
 ## The SO-101 arm, in four parts
@@ -682,9 +695,13 @@ hold whichever decision LLM answered.
 - **End a run.** `declare_success`, `declare_failure` and `assess_task` are all sentences, so the
   stepper cannot call any of them. Every ending goes through the model or through a budget.
 - **Write to memory, or speak to a flock.** `remember` and `tell` are sentences too.
-- **See anything.** quackd sends every row text and nothing else -- Jev is documented as text
-  only, and OpenAI's API, which would take an image, is never sent one -- so no camera frame ever
-  reaches one. A turn that needs eyes escalates rather than guessing.
+- **See anything a run did not ask it to.** quackd sends every row text and nothing else, and Jev
+  is documented as text only, with one exception: `openai`, on a run that asks with
+  `--decision-frames`, is shown the robot's primary camera beside the state, at OpenAI's own hosts
+  alone, and the record keeps every frame it is sent, written before the request that carries it
+  ([openai](openai.md#showing-it-the-camera---decision-frames)). No other row and no plugin is
+  ever shown a picture, whatever it says about itself, and on every other run a turn that needs
+  eyes escalates rather than guessing.
 - **Start a policy segment.** `manipulate` is offered and compared, and never taken, in either
   mode, so every segment of a learned policy driving the arm is one the model asked for.
 - **Get past a gate.** The allowlist, the budgets, the confirm gates, the preconditions and the
@@ -726,6 +743,19 @@ and on no other, and what quackd says about a reply it could not read, which nam
 what came back and nothing it said, as `UnreadableReply`. One that ended on `interrupted` is the
 request a second Ctrl-C or a flock's cancel cut off, named the same way, and the run ended with it.
 
+On a run that shows the camera (`--decision-frames`), every `decision` also carries `frame`, null
+where no frame went with the turn and otherwise what went: its `camera`, `media_type`, `width`,
+`height`, `bytes`, `detail` and `sha256`, the `path` of the copy kept beside the transcript as
+`frames/NNNN-decision.jpg`, under the number of that step's own PNG, and `kept`, false where the
+disk refused the copy. The copy is written, and a `decision_frame` line naming it is written to the
+transcript and flushed, before the request that carries the frame is handed over, so a turn that
+failed, ran out of its second or was interrupted still names its frame, and so does a run whose
+process died while the request was out. Handed over is not reached: a connection refused or timed
+out first never carried the frame, and the record cannot tell the two apart. A turn asked without
+one says why, as `frame_skipped`, in a sentence such as
+`the primary camera gave no picture this turn`. The bytes are never in the record, and nor is the
+state's text.
+
 `decision_shadow`, in shadow mode, and in `on` for a turn that offered a `manipulate` it may not
 take, only after that step's `llm` record: what the stepper would have chosen beside what the
 model actually chose, whether they agree, whether the stepper
@@ -739,9 +769,9 @@ and `gripper(open=false)` are opposite instructions that share a word, and on `a
 is most of what there is to compare. `same_verb` records the coarser reading beside it.
 
 `run_start` gains two fields when a run has one: `decision_price`, the rate that run was costed
-at, and `decision_llm`, which is `{name, model, url}` -- which preset answered, which id it
-answered as, and where it was reached, with the URL redacted. That last one is new with the split
-and it is load-bearing: `jev-1.13.0` names itself, but `kev-latest` on one machine and
+at, and `decision_llm`, which is `{name, model, url, frames}` -- which preset answered, which id it
+answered as, where it was reached, with the URL redacted, and whether the run shows it the camera.
+The url is load-bearing: `jev-1.13.0` names itself, but `kev-latest` on one machine and
 `kev-latest` on another are two different servers, and a transcript that recorded only the id
 could not tell a reader which of them answered.
 
@@ -749,8 +779,9 @@ could not tell a reader which of them answered.
 mints are prefixed `decision-`.
 
 `summary.json` grows a `decision` block when there was a stepper, and nothing when there was not:
-`mode`, `llm`, `model`, `url`, `asked`, `taken`, `errors`, `refusals`, `latency_s`, `usage`,
-`cost_usd`, `cost_estimated` and `price`.
+`mode`, `llm`, `model`, `url`, `frames`, `asked`, `taken`, `errors`, `refusals`, `frames_sent`,
+`latency_s`, `usage`, `cost_usd`, `cost_estimated` and `price`. `frames_sent` counts the frames
+handed over with a request, which a connection refused or timed out first never carried.
 
 The budget line in every observation grows one clause once the stepper has answered:
 
@@ -759,7 +790,9 @@ step 2/12, llm calls 1/12, 2 by the stepper, 0.0/3 min
 ```
 
 And on the terminal the gutter says `decide` for the stepper's own turn, `decide?` for the
-runners-up under it, and `decide=` for a shadow row putting both answers side by side.
+runners-up under it, and `decide=` for a shadow row putting both answers side by side. A turn that
+sent a frame says `1 frame` after its time and its bill, on a turn that failed or was cut off as on
+one that was answered.
 
 ## Measuring it yourself
 
@@ -933,6 +966,11 @@ of question names under `refused`, beside the answers and read the same way, say
 it declined rather than answered, and any name there hands the turn to the model on the gate
 `refused`.
 
+A plugin is never shown a picture. Its row is built with `sees` false whatever its module says
+about itself, `--decision-frames` with a plugin named stops the run before anything connects, and
+its `decide` is only ever called with the two arguments above. The one decision LLM quackd may
+show the camera is its own client for `openai` ([openai](openai.md)).
+
 Raising is allowed and is not fatal. `Stepper.advise` catches every `Exception`, records the
 turn as `gate: error`, and hands it to the model. A plugin may never end a run. The record keeps
 the exception's type, and its HTTP status where it carries one as `status_code` or `status`, on
@@ -947,13 +985,14 @@ shortest honest answer to "what do I have to write".
 
 ## Configuration
 
-Three flags and four variables. The flag always beats the variable.
+Four flags and five variables. The flag always beats the variable.
 
 | What | Flag | Variable | Default |
 |---|---|---|---|
 | Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
 | Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
+| Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `QUACKD_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision` |
 | What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
 
 `QUACKD_DECISION_PRICE` takes the same form `--price` does for the model, and it is quackd's own
@@ -979,16 +1018,18 @@ is honoured for the one row that declares it, `jev`, as a fallback when the spec
 but naming it in the spec is the way to say it, because that is the form every other row takes and
 the only one that reaches the record as a choice somebody made.
 
-The three flags are on `quackd run` and nowhere else. They are deliberately not on `quackd
+The four flags are on `quackd run` and nowhere else. They are deliberately not on `quackd
 record`, which makes the README's recordings and has to stay reproducible without a network call,
-and not on `quackd serve-mcp`, where the model is the client and quackd has no think path to sit
-in front of.
+and which pins the mode and the frames off whatever the variables say, and not on
+`quackd serve-mcp`, where the model is the client and quackd has no think path to sit in front of.
 
 ## Limitations
 
-- **Text only.** quackd sends no image, audio or video to any row here: Jev takes none
-  ([models](https://docs.typesafe.ai/models)), and OpenAI's API, which would take an image, is
-  sent text alone. A turn that needs to look escalates.
+- **Text only, but for one row on a run that asks.** quackd sends no image, audio or video to any
+  row here, and Jev takes none ([models](https://docs.typesafe.ai/models)), except that `openai`
+  is shown one camera frame a turn on a run with `--decision-frames`. What a frame costs that row
+  and how much slower it makes a turn is unmeasured ([openai](openai.md)). On every other run a
+  turn that needs to look escalates.
 - **A network call in a decision loop**, for seven of the eight rows. There is a one-second
   timeout, with one retry inside it on a System One row and none on `openai`, and a failure costs
   that turn and never the run: the error is recorded and the model takes over. A CPU-only server
@@ -1036,4 +1077,5 @@ quackd: [architecture](../../concepts/architecture.md) · [safety](../../concept
 [local LLMs](../local-llms.md) · [the LeRobot arm](../../adapters/lerobot/README.md) ·
 [ADR-0040](../../adr/0040-a-discrete-stepper-in-front-of-the-model.md) ·
 [ADR-0043](../../adr/0043-decision-llms-are-a-wire-format-and-a-data-row.md) ·
-[ADR-0052](../../adr/0052-openais-decisions-api-is-a-second-wire-format.md)
+[ADR-0052](../../adr/0052-openais-decisions-api-is-a-second-wire-format.md) ·
+[ADR-0053](../../adr/0053-a-decision-llm-may-be-shown-the-camera.md)

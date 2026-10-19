@@ -40,6 +40,14 @@ a scale of its own, and a `next_verb` with no choice in it, which used to read a
 than handing the turn to anybody. No floor moves and no other gate changes, and which turns are
 a choice and what a stepper may never do are as below.
 
+**Amended 2026-10-19 by [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md):** the stepper may be shown a picture, by one row, on a run that says so.
+`--decision-frames` shows `openai`, and no other row and no plugin, the robot's primary camera
+beside the text state, one JPEG a turn, at OpenAI's own hosts alone. Each frame sent is written
+beside the transcript before its request goes and named in that turn's `decision` record, as
+`frame`, or the reason none went as `frame_skipped`, and `run_start.decision_llm` gains `frames`
+and the summary's `decision` block `frames` and `frames_sent`. Every other run is sent text and
+nothing else. No gate and no floor changes.
+
 ## Context
 
 quackd's loop asks one question a turn — which single tool call now — and pays a frontier

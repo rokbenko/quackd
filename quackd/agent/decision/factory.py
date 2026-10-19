@@ -1,6 +1,7 @@
-"""`--decision-llm jev`, `--decision-url`, `--decision-mode` to something that answers.
+"""`--decision-llm jev`, `--decision-url`, `--decision-mode`, `--decision-frames` to something
+that answers.
 
-Three flags and four variables resolve here, in one place, so that a refusal can name where a
+Four flags and five variables resolve here, in one place, so that a refusal can name where a
 value came from: a flag somebody has just typed and a line in a `.env` they have forgotten
 want different sentences. Nothing in this module imports a backend until a run has named one,
 and nothing imports `typesafe_sdk`, `openai` or `laya` at all -- the classes that do are one
@@ -36,16 +37,26 @@ from quackd.agent.decision.catalogue import DecisionMode as DecisionMode
 from quackd.agent.decision.catalogue import DecisionSpec as DecisionSpec
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import SELF_HOSTED, parse_price
+from quackd.command import readable_url, redacted_url
 
 ENV_LLM = "QUACKD_DECISION_LLM"
 """Which decision LLM, in the shape `--decision-llm` takes. `off` here is off."""
 ENV_URL = "QUACKD_DECISION_URL"
 ENV_MODE = "QUACKD_DECISION_MODE"
+ENV_FRAMES = "QUACKD_DECISION_FRAMES"
+"""Whether the decision LLM is shown the robot's camera, as `--decision-frames` says it: one of
+`FRAMES_ON` or `FRAMES_OFF`, and unset or blank is off."""
 PRICE_ENV = "QUACKD_DECISION_PRICE"
 """quackd's knob, which is why it is not spelled `TYPESAFE_*`. Everything with that prefix is
 read by `typesafe_sdk` itself; this one quackd reads, so it carries quackd's prefix."""
 
 MODES: tuple[str, ...] = ("off", "shadow", "on")
+
+FRAMES_ON: tuple[str, ...] = ("1", "true", "yes", "on")
+FRAMES_OFF: tuple[str, ...] = ("0", "false", "no", "off")
+"""The words `QUACKD_DECISION_FRAMES` takes, in any case. Anything else is a typo, and a typo in
+the one variable that sends a camera's picture off the machine stops the run rather than being
+read either way."""
 
 
 @lru_cache(maxsize=1)
@@ -114,6 +125,9 @@ def find_preset(name: str, *, source: str = "--decision-llm") -> DecisionSpec:
             model=getattr(module, "MODEL", None),
             extra=getattr(module, "EXTRA", None),
             sdk=None,  # it was found through its own metadata, so it is installed
+            # Never shown the camera, whatever the module says about itself: a frame goes only
+            # to a row quackd vouches for, at its vendor's own address (`frames.may_send_frames`).
+            sees=False,
         )
     raise DecisionError(
         f"unknown decision LLM {name!r} from {source}; choose one of {', '.join(preset_names())}"
@@ -171,6 +185,71 @@ def resolve_decision_mode(flag: str | None, *, named: bool, refused: bool = Fals
             f"--decision-llm {PRESET_NAMES[0]} (or {ENV_LLM})"
         )
     return raw  # type: ignore[return-value]
+
+
+def resolve_decision_frames(
+    flag: bool | None,
+    *,
+    spec: DecisionSpec | None,
+    url: str | None = None,
+    refused: bool = False,
+) -> bool:
+    """`--decision-frames`, then `QUACKD_DECISION_FRAMES`, then off: whether the decision LLM is
+    shown the robot's primary camera with each request.
+
+    Off unless a run says so, and said, it is refused while the CLI is still reading its flags,
+    before anything connects, in three cases, each a frame that would go somewhere a frame may
+    not: no decision LLM is named, the one named is a row that cannot see (`DecisionSpec.sees`,
+    false on every row but `openai`), or its address is not one of OpenAI's own hosts, a server of
+    your own on this machine included. The address is read the way the key and the price read it
+    (`resolve_decision_url`, then `decisions_api.is_openai_host`), so the one function that
+    decides where `OPENAI_API_KEY` goes and what a turn costs decides this too.
+
+    Independent of `--decision-mode`: what is decided here is whether a frame may go, and the
+    mode is how much the stepper's answer may do. A run with the mode off asks the stepper
+    nothing and so sends it no frame. Independent of `--vision` as well, which is the pilot's.
+
+    `refused` is `--decision-llm off` said on the line, which turns this off as it turns the mode
+    off, rather than being answered with a demand to name one. A variable set to a word that is
+    neither on nor off is a typo and stops the run, the same as an unknown mode."""
+    if refused:
+        return False
+    if flag is None:
+        raw = (os.environ.get(ENV_FRAMES) or "").strip().lower()
+        if not raw or raw in FRAMES_OFF:
+            return False
+        if raw not in FRAMES_ON:
+            raise DecisionError(
+                f"unknown {ENV_FRAMES} {raw!r}; say {', '.join(FRAMES_ON[:-1])} or "
+                f"{FRAMES_ON[-1]} to show the decision LLM the camera, or "
+                f"{', '.join(FRAMES_OFF[:-1])} or {FRAMES_OFF[-1]} not to"
+            )
+        where = ENV_FRAMES
+    elif not flag:
+        return False
+    else:
+        where = "--decision-frames"
+    seeing = [name for name, row in PRESETS.items() if row.sees]
+    if spec is None:
+        raise DecisionError(
+            f"{where} shows a decision LLM the camera, and none is named: "
+            f"--decision-llm {seeing[0]} (or {ENV_LLM})"
+        )
+    if not spec.sees:
+        raise DecisionError(
+            f"{where} shows a decision LLM the camera, and --decision-llm {spec.name} is sent "
+            f"text alone: only {' and '.join(seeing)} may be shown a picture"
+        )
+    from quackd.agent.decision.decisions_api import is_openai_host
+
+    address = resolve_decision_url(spec, url) or ""
+    if not is_openai_host(address):
+        shown = redacted_url(address) if readable_url(address) else "that address"
+        raise DecisionError(
+            f"{where} sends the camera to OpenAI's own API alone, and {shown} is not one of "
+            f"its hosts: drop {where} to send {spec.name} the state there without it"
+        )
+    return True
 
 
 def resolve_decision_url(spec: DecisionSpec, url: str | None = None) -> str | None:
@@ -317,14 +396,28 @@ def decision_llm_is_available(spec: DecisionSpec, url: str | None = None) -> tup
 
 
 def make_decision_llm(
-    spec: DecisionSpec, *, model: str | None = None, url: str | None = None
+    spec: DecisionSpec,
+    *,
+    model: str | None = None,
+    url: str | None = None,
+    frames: bool = False,
 ) -> DecisionLLM:
     """The thing that answers, built before the robot connects.
 
     Built here rather than on the first turn on purpose: constructing a client can fail, and
     that failure is a sentence while the CLI is still parsing rather than a phantom cost on a
     turn that never left the machine.
+
+    `frames` builds it to be shown the robot's camera, which only a row that can see may be
+    (`DecisionSpec.sees`), and that row's client refuses again at an address that is not
+    OpenAI's. Every other backend is built as it always was and never hears of it, a plugin's
+    `make` included.
     """
+    if frames and not spec.sees:
+        raise DecisionError(
+            f"--decision-llm {spec.name} is sent text alone, so it cannot be built to be shown "
+            "the camera"
+        )
     model = resolve_decision_model(spec, model)
     url = resolve_decision_url(spec, url)
     if spec.backend == SYSTEM_ONE:
@@ -344,7 +437,7 @@ def make_decision_llm(
         # fail with a `KeyError` the CLI does not catch.
         from quackd.agent.decision.decisions_api import DecisionsAPILLM
 
-        return DecisionsAPILLM(spec, model=model, url=url)
+        return DecisionsAPILLM(spec, model=model, url=url, frames=frames)
     if spec.backend == IN_PROCESS:
         from quackd.agent.decision.laya import LayaLLM
 
