@@ -7,7 +7,20 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.18.1] — 2026-10-19
+
+0.18.1 makes what quackd says about a Microduck that falls true on every robotd it serves, and fixes
+three small things. robotd turned `limp_fall` back on in daemon-v0.16.2: it goes limp when it
+predicts a fall while the duck walks or stands, poses the duck and hands it back to its walking
+policy, upstream's `v8`, which upstream says gets up from a fall. quackd's datasheet, `stand_up`'s
+words and the Microduck's pages described only daemon-v0.16.1, where robotd did nothing about a fall
+but report it, and they say what each release does now. The datasheet no longer calls the speed caps
+a clamp in robotd, which clamps no twist at any release quackd has read: they are quackd's own. The
+Microduck page names upstream's releases to daemon-v0.17.6, which from daemon-v0.17.3 report API 44,
+which quackd serves with a warning: nothing it sends or reads changed shape. A `.duck` saved with a
+byte-order mark is read, a ToddlerBot with no walk checkpoint is told it has legs, and a `--goal`
+run with `--no-memory` no longer tells its pilot to call `remember`. No verb sends a robot anything
+it did not send before.
 
 ### Fixed
 
@@ -6674,7 +6687,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/rokbenko/quackd/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/rokbenko/quackd/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/rokbenko/quackd/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/rokbenko/quackd/compare/v0.16.1...v0.17.0
