@@ -20,6 +20,10 @@ Each look's frame goes the way the stepper's does (ADR-0053), with one more line
    of the frame it had handed over;
 4. only then is the request handed to the client, bounded at the look's own `timeout_s`.
 
+Requests are handed over at least `watch.MIN_PERIOD_S` apart on the wall's clock (`_pace`), as
+looks are on the robot's: a simulator's clock runs only as fast as it is stepped, and the
+promise that no more than two frames a second go out is the wall's.
+
 Whatever then becomes of the request, an answer, a 429, a timeout, a cancel, the look's row
 (`watch_tick`, which `watch` writes from a `finally`) carries what it cost and how long it took.
 A frame handed to the client is counted as sent, though one whose connection was refused or
@@ -55,6 +59,7 @@ from quackd.agent.decision.frames import (
 from quackd.agent.providers.pricing import cost_usd
 from quackd.command import redacted_url
 from quackd.transport.base import DEFAULT_CAMERA_NAME
+from quackd.verbs.watch import MIN_PERIOD_S
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -149,6 +154,8 @@ class DecisionEyes:
         self.cost_usd = 0.0
         self.estimated = False
         self.ended: Counter[str] = Counter()
+        self._handed_at: float | None = None
+        """When the newest request was handed to the client, on the wall's clock (`_pace`)."""
 
     # ── a call ──
 
@@ -174,6 +181,7 @@ class DecisionEyes:
         counted, and only then handed to the client. Fills `row` with the frame before the request
         and with what the request cost and how long it took however it ended, and raises whatever
         ended it without an answer."""
+        await self._pace()
         if not may_send_frames(self.llm):
             raise _not_sent(row, "the decision LLM may not be shown the camera")
         try:
@@ -202,6 +210,7 @@ class DecisionEyes:
         failed: BaseException | None = None
         backstop: asyncio.Timeout | None = None
         started = time.perf_counter()
+        self._handed_at = time.monotonic()
         try:
             # The look's own bound is the client's, `timeout_s` on the whole request. This one,
             # a whole bound later, can only end a request that outlived it (`base.client_timeout`).
@@ -222,6 +231,16 @@ class DecisionEyes:
                 row.update(self._bill(None, chars))
             if failed is not None:
                 row["error"] = _failure(failed, timeout_s, backstop)
+
+    async def _pace(self) -> None:
+        """Hold a request back until `MIN_PERIOD_S` has passed on the wall's clock since the one
+        before it was handed over. `watch` spaces its looks on the robot's clock, which on a robot
+        is the wall's and makes this a wait of nothing, while a simulator's runs only as fast as
+        it is stepped, and frames sent to OpenAI are counted on the wall's."""
+        if self._handed_at is not None:
+            wait = self._handed_at + MIN_PERIOD_S - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
 
     def _bill(self, result: Any, chars: int) -> dict[str, Any]:
         """What a look asked for and what it cost: the count the API reported where it reported

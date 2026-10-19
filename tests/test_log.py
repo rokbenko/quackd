@@ -36,6 +36,7 @@ from quackd.log import (
 )
 from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
+from quackd.verbs.watch import CAMERA_SAID
 
 
 def events(event_log: EventLog) -> list[LogEvent]:
@@ -1513,8 +1514,8 @@ def test_a_watch_look_is_one_line_saying_what_it_was_told_and_what_it_did() -> N
     failed = line(gate="error", error="TimeoutError: no answer within 1.5 s", streak={"errors": 3})
     assert failed.style == "red" and failed.mark == "fail"
     assert failed.body == "#3 ERROR TimeoutError: no answer within 1.5 s (3 of 3)"
-    stale = line(gate="stale", error="GET /frame: 503", streak={"stale": 2}, ended="camera")
-    assert stale.body == "#3 no fresh frame: GET /frame: 503 (2 of 2); ended: camera"
+    stale = line(gate="stale", error=CAMERA_SAID, streak={"stale": 2}, ended="camera")
+    assert stale.body == f"#3 no fresh frame: {CAMERA_SAID} (2 of 2); ended: camera"
     declined = line(gate="refused", ended="refused", **billed)
     assert declined.body.startswith("#3 declined to say where") and declined.style == "red"
     assert declined.body.endswith("; ended: refused")

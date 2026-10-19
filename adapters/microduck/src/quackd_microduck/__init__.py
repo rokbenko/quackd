@@ -335,10 +335,11 @@ class MicroduckAdapter:
 
     @property
     def frames_upright(self) -> bool:
-        """Whether every frame this duck hands out is upright, which `watch` needs, since it turns
-        the head by where a thing is across the picture: on the simulators always, and on
-        `jsonrpc` from mediad's `/frame` or its WebRTC track turned upright, and from no other
-        camera. A transport that does not say is taken for one whose frames may be on their side."""
+        """Whether every frame this duck hands out is upright and known fresh, which `watch` needs,
+        since it turns the head by where a thing is across the picture, and uses a frame only once
+        it was taken after the head settled: on the simulators always, which draw each frame when
+        it is asked for, and on `jsonrpc` from mediad's `/frame` alone, whose frames say when they
+        were taken. A transport that does not say is taken for one whose frames may be neither."""
         return getattr(self.transport, "frames_upright", False) is True
 
     @property

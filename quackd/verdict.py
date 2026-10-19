@@ -55,9 +55,9 @@ from this set by name as well, so an unproven policy called `observe` waits like
 else until somebody classifies it on purpose.
 
 `watch` is here for the reason `gaze` is: it moves the head and nothing else, on the Microduck
-as far as `gaze` turns it either way and up, and down as far as robotd's own idle glances tilt
-it. Whether its frames may go to a decision LLM is not the pilot's verdict to give but the
-run's, and only `--decision-frames` gives it (ADR-0054).
+as far as `gaze`'s own `left`, `right` and `up` turn it, and down as far as robotd's own idle
+glances tilt it. Whether its frames may go to a decision LLM is not the pilot's verdict to give
+but the run's, and only `--decision-frames` gives it (ADR-0054).
 
 This half is matched by name, which makes the ten a vocabulary rather than a list: a body
 that ships a verb called `gaze` which walks has said the wrong word about itself, the way a

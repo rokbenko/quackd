@@ -25,7 +25,8 @@ BATTERY_DRAIN_PER_S = 0.02  # percent per sim second: a 5-minute run costs ~6 %
 class Sim2DTransport:
     name = "sim2d"
     frames_upright = True
-    """The duck-cam is drawn the right way up, so `watch` may read left and right off it."""
+    """The duck-cam is drawn the right way up when a frame is asked for, so `watch` may read left
+    and right off it and every frame shows the head where it is."""
     head_pitches = False
     """The cartoon's world is flat: a look's height is taken and does nothing, so `watch` asks
     the decision LLM where a thing is across the picture and never how high."""

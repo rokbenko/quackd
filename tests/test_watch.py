@@ -58,6 +58,7 @@ from quackd.verbs.watch import (
     ACROSS,
     ANSWER_TIMEOUT_S,
     ASSUMED_FOV_DEG,
+    CAMERA_SAID,
     DEADBAND,
     EDGE_AFTER,
     ERRORS_AFTER,
@@ -121,6 +122,18 @@ def _no_ambient_openai(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_PROJECT_ID",
     ):
         monkeypatch.setenv(name, "")
+
+
+@pytest.fixture
+def unhurried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No cap on the wall's clock that a busy test machine could reach. A call on a simulator
+    ends at its duration and `WALL_SLACK_S` on the wall's clock, and the eyes hand requests over
+    at least `MIN_PERIOD_S` apart on the wall's, so a call of n looks takes n half seconds of the
+    wall at least, and a machine running other suites can use up the slack. The cap has a test of
+    its own, and the tests that close the loop through the real client hold the loop."""
+    import quackd.verbs.watch as watch_module
+
+    monkeypatch.setattr(watch_module, "WALL_SLACK_S", 600.0)
 
 
 # ── the parameters and the questions ────────────────────────────────────────────────────
@@ -380,7 +393,6 @@ def test_the_microduck_head_starts_inside_what_gaze_and_robotd_already_use() -> 
     assert spec.pitch_up_deg == pytest.approx(math.degrees(math.atan(0.25)), abs=0.05)
     assert spec.pitch_down_deg == pytest.approx(math.degrees(0.2), abs=0.05)
     assert spec.hold_s == up.IDLE_AFTER_S / 2 and spec.idle_after_s == up.IDLE_AFTER_S
-    assert set(spec.stop_policies) == {"held", "limp_fall", "limp_pose", "rest", "homing"}
     assert spec.settle_s == pytest.approx(0.4)
 
 
@@ -657,6 +669,8 @@ async def test_a_camera_that_gives_nothing_ends_as_camera_and_says_why() -> None
     assert not result.ok and result.data["ended"] == "camera", result.summary
     assert "503 Camera snapshot unavailable" in result.summary
     assert eyes.images == [] and [row["gate"] for row in eyes.rows] == ["stale"] * STALE_AFTER
+    # the row's error is in quackd's own words, as every row's is, and the camera's are the result's
+    assert all(row["error"] == CAMERA_SAID for row in eyes.rows), eyes.rows
     assert set(duck.looks()) == {(0.0, 0.0)}, "the head was held where it was claimed, and moved"
 
 
@@ -756,6 +770,90 @@ async def test_a_body_that_falls_between_looks_is_not_looked_at_again() -> None:
     result = await _watch(_executor(duck, eyes), duration_s=10)
     assert result.data["ended"] == "fallen", result.summary
     assert len(eyes.images) == 2 and "move" in eyes.rows[-1]
+
+
+@pytest.mark.parametrize("clock", ["replayed", "wall"])
+async def test_a_duck_picked_up_while_an_answer_is_out_is_sent_no_more_looks(clock: str) -> None:
+    """The hold reads the body before every look it sends again, so a duck picked up as a
+    request goes out, its answer slow to come, is sent nothing more: on a simulator's clock,
+    run on for as long as the answer took, as on a robot's, which runs on by itself."""
+    duck = Duck() if clock == "replayed" else Realtime()
+    picked: list[float] = []
+
+    def picked_up_as_it_goes(_image: Image.Image) -> tuple[float, dict[str, Any]]:
+        duck.state = DuckState(posture="unknown", policy="held", extras={"picked_up": True})
+        picked.append(duck.now())
+        return 1.4, seen_at(-0.4)
+
+    eyes = ScriptedEyes([picked_up_as_it_goes], default=seen_at(0.0))
+    result = await _watch(_executor(duck, eyes), duration_s=10)
+    assert result.data["ended"] == "held", result.summary
+    later = [t for t, intent in duck.sent_at if intent.kind == "look" and t > picked[0]]
+    assert later == [], later
+
+
+@pytest.mark.parametrize(
+    ("policy", "skills"),
+    [
+        ("ground_pick", ()),
+        ("rise", ()),
+        ("skill", ()),
+        ("kick", ("kick",)),
+        ("kick:unwind", ("kick",)),
+        ("moonwalk", ()),
+    ],
+    ids=["ground_pick", "rise", "skill", "a_named_skill", "unwinding", "unread"],
+)
+async def test_a_duck_neither_standing_nor_sitting_is_never_looked_at(
+    policy: str, skills: tuple[str, ...]
+) -> None:
+    """The head moves only on a duck that reads as standing or sitting, the allowlist the
+    Microduck's own gaze hold keeps, read the way it reads it (`posture_of`): a scoop, a rise, a
+    skill, one unwinding and a label quackd has not read each end the call before any look."""
+    from quackd_microduck.transports.jsonrpc_unix import posture_of
+
+    posture, why = posture_of(policy, {"fallen": False, "picked_up": False}, skills=skills)
+    assert posture == "unknown" and why, (posture, why)
+    duck, eyes = Duck(), ScriptedEyes(default=seen_at(0.0))
+    duck.state = DuckState(policy=policy, posture=posture, extras={"posture_reason": why})
+    result = await _watch(_executor(duck, eyes), duration_s=5)
+    assert result.data["ended"] == "held" and why in result.summary, result.summary
+    assert eyes.images == [] and duck.intents == []
+
+
+async def test_a_call_something_raised_in_ends_as_error_and_says_so_on_its_row() -> None:
+    """Something raised that is no exit of the call's own, a link to the robot that dropped
+    mid-call, is counted as `error` and never as the call's time running out, on the row of the
+    look it ended and in the count of how calls ended, by its type and never its message."""
+
+    class Dropping(Duck):
+        async def get_frame(self) -> Image.Image | None:
+            if self.now() > 1.0:
+                raise ConnectionError("the link to robotd is gone, said at length")
+            return await super().get_frame()
+
+    duck, eyes = Dropping(), ScriptedEyes(default=seen_at(0.0))
+    result = await _watch(_executor(duck, eyes), duration_s=10)
+    assert not result.ok and "ConnectionError" in result.summary, result.summary
+    assert eyes.ended == {"error": 1}
+    assert eyes.rows[-1]["ended"] == "error" and eyes.rows[-1]["error"] == "ConnectionError"
+
+
+async def test_a_link_that_drops_while_an_answer_is_out_is_no_failed_request() -> None:
+    """What the hold raises while an answer is out is the body's, not the request's: the call
+    ends on it then, rather than counting a look with no answer and asking again."""
+
+    class Dropping(Realtime):
+        async def send_intent(self, intent: Intent) -> Ack:
+            if intent.kind == "look" and self.now() > 0.8:
+                raise ConnectionError("the link to robotd is gone")
+            return await super().send_intent(intent)
+
+    duck, eyes = Dropping(), ScriptedEyes([(1.4, seen_at(0.0))], default=seen_at(0.0))
+    result = await _watch(_executor(duck, eyes), duration_s=10)
+    assert not result.ok and eyes.ended == {"error": 1}, result.summary
+    (row,) = eyes.rows
+    assert row["ended"] == "error" and row["error"] == "ConnectionError" and "gate" not in row
 
 
 async def test_a_refused_look_ends_the_call_as_look_refused() -> None:
@@ -1426,6 +1524,7 @@ def _jpeg(body: Any) -> bytes:
     return base64.b64decode(str(image["image_url"]).split(",", 1)[1])
 
 
+@pytest.mark.usefixtures("unhurried")
 async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1483,6 +1582,7 @@ async def test_a_run_keeps_every_frame_it_sent_and_names_each_before_it_goes(
     assert watched["frame"] == {"max_side_px": 512, "quality": 85, "detail": "low"}
 
 
+@pytest.mark.usefixtures("unhurried")
 async def test_a_run_with_a_stepper_folds_watchs_bill_into_the_decision_totals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1500,6 +1600,7 @@ async def test_a_run_with_a_stepper_folds_watchs_bill_into_the_decision_totals(
     assert stepper_cost > 0 and watched["cost_usd"] > 0
 
 
+@pytest.mark.usefixtures("unhurried")
 async def test_a_frame_the_disk_refused_is_still_named_as_sent_and_leaves_no_part_behind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1604,6 +1705,35 @@ async def test_a_frame_the_record_could_not_name_is_neither_sent_nor_kept(
     await _ask_once(eyes)
     assert fake.posts == [] and eyes.sent == 0
     assert not list((tmp_path / "sent").glob("*.jpg")), "a copy no line names was left"
+
+
+async def test_requests_are_handed_over_half_a_second_apart_on_the_wall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Looks are spaced on the robot's clock, which on a simulator runs only as fast as it is
+    stepped, so the eyes space the requests they hand over on the wall's as well: no more than
+    two frames a second go out, whatever clock the robot keeps."""
+    handed: list[float] = []
+    fake = BlobEyes(on_post=lambda _body: handed.append(time.monotonic()))
+    llm = _seeing(monkeypatch, fake)
+    eyes = DecisionEyes(llm, resolve_decision_price(OPENAI), emit=_quiet, run_dir=tmp_path)
+    for _ in range(3):
+        row = await _ask_once(eyes)
+        assert "error" not in row, row
+    gaps = [b - a for a, b in itertools.pairwise(handed)]
+    assert len(gaps) == 2 and min(gaps) >= MIN_PERIOD_S - 0.02, gaps
+
+
+def test_a_run_that_did_not_ask_for_frames_has_no_eyes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run's own word is asked as well as the gate: a client the gate would allow builds no
+    eyes on a run that did not ask for frames."""
+    llm = _seeing(monkeypatch, BlobEyes())
+    price = resolve_decision_price(OPENAI)
+    assert may_send_frames(llm)
+    assert eyes_for(llm, price, frames=False, emit=_quiet, run_dir=tmp_path) is None
+    assert eyes_for(llm, price, frames=True, emit=_quiet, run_dir=tmp_path) is not None
 
 
 async def test_a_request_is_bounded_by_the_look_and_backed_by_twice_that(
@@ -1748,17 +1878,24 @@ async def test_an_mcp_session_has_no_watch(monkeypatch: pytest.MonkeyPatch) -> N
         assert session.manifest is not None and WATCH in session.manifest.verb_names()
 
 
-def test_only_frames_mediad_turns_upright_are_known_to_be_upright() -> None:
-    """On a real duck, mediad's `/frame`, which mediad turns upright, and its WebRTC track, which
-    quackd turns by `media.video`, and no other camera: one quackd knows nothing about offers no
-    `watch`."""
+def test_on_a_real_duck_only_mediads_frame_route_offers_watch() -> None:
+    """mediad's `/frame`, which mediad turns upright and quackd stamps with when each frame was
+    asked for, and no other camera. Its WebRTC track is turned upright too, but hands out frames
+    up to two seconds old with no time on them, so one from before the head settled would pass
+    for one after: a duck on it withdraws `watch` when it connects, naming the route that has it."""
     from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 
-    def upright(url: str | None) -> bool:
-        return JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=url).frames_upright
+    def duck(url: str | None) -> MicroduckAdapter:
+        return MicroduckAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", camera_url=url))
 
-    assert upright("http://duck.local:8080/frame") and upright("webrtc://duck.local:8443")
-    assert not upright("http://duck.local:8080/snapshot.jpg") and not upright(None)
+    assert duck("http://duck.local:8080/frame").frames_upright
+    for url in ("webrtc://duck.local:8443", "http://duck.local:8080/snapshot.jpg", None):
+        registry = VerbRegistry()
+        registry.register(watch_verb(MICRODUCK_HEAD))
+        registry.register(CORE["stop"])
+        assert withdraw_watch(registry, eyes=ScriptedEyes(), transport=duck(url)) == NOT_UPRIGHT
+        assert WATCH not in registry, url
+    assert "--camera-url http://127.0.0.1:8080/frame" in NOT_UPRIGHT
 
 
 def test_a_flock_member_neither_has_watch_nor_says_it_provides_it(
@@ -1799,6 +1936,7 @@ def test_a_flock_member_neither_has_watch_nor_says_it_provides_it(
 # ── the head closes on the ball, on the cartoon ─────────────────────────────────────────
 
 
+@pytest.mark.usefixtures("unhurried")
 async def test_on_the_cartoon_the_head_turns_onto_the_ball_and_holds_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1824,6 +1962,7 @@ async def test_on_the_cartoon_the_head_turns_onto_the_ball_and_holds_it(
     assert {q["name"] for post in fake.posts for q in post["body"]["questions"]} == {WHERE}
 
 
+@pytest.mark.usefixtures("unhurried")
 async def test_on_the_cartoon_a_ball_out_of_view_ends_as_lost_after_four_looks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1862,6 +2001,7 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
     )
 
 
+@pytest.mark.usefixtures("unhurried")
 def test_the_bundled_task_watches_through_the_command_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

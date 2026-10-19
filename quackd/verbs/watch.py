@@ -18,9 +18,13 @@ wrote, and never in the instructions, which are fixed (`WHERE_INSTRUCTIONS`).
 the probabilities the decision LLM answered with (`read_answer`). OpenAI do not define their
 `confidence` and claim no calibration for it, so it is recorded and never gated on.
 
-**Exits.** Every way out is a named `ended`, in the result, in the summary and on the row of the
-look that ended it, and none of them moves the head on its way out: the head stays where the
-thing was last seen.
+**Exits.** Every way out is a named `ended`, counted in the summary, said in the result but for
+the three the executor ends from outside, whose result is its own, and on the row of the look
+that ended it where a look did. None of them sends the head anywhere on its way out.
+
+**The body, before anything is sent.** The head is moved only on a body that reads as standing
+or sitting, the allowlist the Microduck's own gaze hold keeps (`body_exit`), and the body is read
+before every command the head is sent: the claim, every move and every hold.
 
 **The record.** Each look leaves a `watch_tick` row, written from a `finally` so that a look cut
 off still says what was sent, and the frame each look sends is written beside the transcript,
@@ -28,11 +32,11 @@ and named in a line of the record of its own, before the request that carries it
 the client (`quackd.agent.decision.eyes`).
 
 The verb runs only with eyes (`Eyes`): a decision LLM that may be shown the camera, on a run that
-asked with `--decision-frames`, through frames that are upright. Without them it is withdrawn
-when the robot connects (`withdraw_watch`), and if it is reached anyway it refuses before it
-sends anything. The engine is here, in the core, and a body with a head gives itself the verb
-with its own numbers (`watch_verb`): only the Microduck does today. It is never a core verb,
-because a head reflex on a head nobody measured is a head that breaks.
+asked with `--decision-frames`, through frames that are upright and known fresh. Without them it
+is withdrawn when the robot connects (`withdraw_watch`), and if it is reached anyway it refuses
+before it sends anything. The engine is here, in the core, and a body with a head gives itself
+the verb with its own numbers (`watch_verb`): only the Microduck does today. It is never a core
+verb, because a head reflex on a head nobody measured is a head that breaks.
 """
 
 from __future__ import annotations
@@ -44,7 +48,7 @@ import time
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -213,11 +217,14 @@ NO_EYES = (
 )
 """Why `watch` is withdrawn, or refuses, on a run with nothing to look through."""
 NOT_UPRIGHT = (
-    "watch turns the head by where things are in the picture, and this camera's frames are not "
-    "known to be upright: use mediad's /frame or its WebRTC track"
+    "watch turns the head by where a thing is in each frame, and uses a frame only once it is "
+    "known to be upright and taken after the head settled, which this camera's frames are not: "
+    "give the run mediad's /frame, as --camera-url http://127.0.0.1:8080/frame"
 )
 """Why `watch` is withdrawn, or refuses, on a camera whose frames may be on their side, where
-left and right would be up and down."""
+left and right would be up and down, or carry no time they were taken, so that one from before
+the head settled could pass for one after: mediad's WebRTC track, which is turned upright but
+hands out frames up to two seconds old with no time on them."""
 
 DESCRIPTION = (
     "Keep the head on something you describe in a few words, for up to 30 seconds: each camera "
@@ -245,7 +252,10 @@ class HeadSpec:
     """How far up and how far down it may tilt, both as positive degrees."""
     step_yaw_deg: float = 15.0
     step_pitch_deg: float = 8.0
-    """The most one look turns it, either way."""
+    """The most one look turns it, either way. The claim at the start of a call is no look: it
+    sends the head to where the call starts, held to the envelope, in one command, so a head that
+    something else turned past the envelope comes back inside it by more than a step, up to 45° on
+    a Microduck after a `gaze` to 90° (`_start_head`)."""
     settle_s: float = 0.4
     """How long after the head is sent somewhere new a frame is taken for one that shows it there:
     the head's own settle and slack for when the camera took its picture."""
@@ -256,8 +266,6 @@ class HeadSpec:
     """How long the body leaves a head unsteered before it may take it back, or None for one that
     never does. A gap longer than this since the last look the body accepted may have let a
     glance in, and `watch` waits out the fade and a settle before it uses a frame again."""
-    stop_policies: Mapping[str, str] = field(default_factory=dict)
-    """Policy labels on which `watch` ends as `held`, each with the words that say why."""
     source: str = ""
     """Where the numbers come from, for the record."""
 
@@ -589,13 +597,21 @@ def look_intent(yaw: float, pitch: float) -> Intent:
 
 ENDS_ON_THE_BODY = ("blind", "held", "fallen")
 
+FREE_POSTURES = ("standing", "sitting")
+"""The postures a head is moved in, and the only two: the allowlist the Microduck's own gaze
+hold keeps, which sends the head nothing while the duck reads as anything else, read the way it
+reads it (`jsonrpc`'s `_hold_gaze`, and `posture_of` for what each label reads as). A skill, a
+rise, a scoop, robotd's own answer to a fall and a label quackd has not read are all `unknown`."""
 
-def body_exit(state: DuckState, spec: HeadSpec) -> tuple[str, str] | None:
+
+def body_exit(state: DuckState) -> tuple[str, str] | None:
     """Why `watch` may move this body's head no more, as `(ended, why)`, or None.
 
-    Nothing reporting whether it is upright is `blind`, and somebody holding it, or a policy in
-    `spec.stop_policies`, is `held`, read before `fallen`, since a robot held at an angle reads as
-    fallen too, as the Microduck's own preconditions read them."""
+    Nothing reporting whether it is upright is `blind`. Somebody holding it is `held`, read before
+    `fallen`, since a robot held at an angle reads as fallen too, as the Microduck's own
+    preconditions read them, and so is any posture but standing or sitting (`FREE_POSTURES`): the
+    body is somebody else's then, whether a person's, a skill's or robotd's, and the words say
+    whose where the body says (`posture_reason`)."""
     extras = state.extras
     if extras.get("fall_detection") is False or extras.get("state_stale"):
         return "blind", "nothing is reporting whether the robot is upright"
@@ -603,8 +619,9 @@ def body_exit(state: DuckState, spec: HeadSpec) -> tuple[str, str] | None:
         return "held", "somebody is holding the robot"
     if state.fallen or state.posture == "fallen":
         return "fallen", "the robot has fallen"
-    if (why := spec.stop_policies.get(state.policy)) is not None:
-        return "held", f"policy {state.policy!r}: {why}"
+    if state.posture not in FREE_POSTURES:
+        why = extras.get("posture_reason") or f"policy {state.policy!r}"
+        return "held", f"the robot is neither standing nor sitting ({why})"
     return None
 
 
@@ -621,8 +638,10 @@ def frame_window_s(transport: Any) -> float:
 
 def why_not_offered(eyes: Eyes | None, transport: Any) -> str | None:
     """Why a run cannot offer `watch`, or None when it can: nothing to look through, or frames
-    nobody can say are upright. A body says its frames are upright with `frames_upright`, and one
-    that does not say is taken for one whose frames may not be."""
+    nobody can say are upright and fresh. A body says so with `frames_upright`: true where every
+    frame is upright and either drawn when it is asked for, as a simulator's are, or stamped with
+    when it was taken (`frame_taken_at`), and one that does not say is taken for one whose frames
+    may be neither (`NOT_UPRIGHT`)."""
     if eyes is None:
         return NO_EYES
     if getattr(transport, "frames_upright", False) is not True:
@@ -688,6 +707,34 @@ class _Ended(Exception):
         super().__init__(why)
         self.ended = ended
         self.why = why
+
+
+class _RequestFailed(Exception):
+    """A look's request ended without an answer, `error` being what it raised: a look with no
+    answer to use, counted toward `errors`, as against anything else raised meanwhile, which
+    ends the call."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(type(error).__name__)
+        self.error = error
+
+
+ERROR = "error"
+"""How a call ends that something raised in, which is no exit of its own: a link to the robot
+that dropped, a camera that raised rather than reporting. The executor says what it was."""
+
+
+class _NoFrame(NamedTuple):
+    """Why a look had no fresh frame: `recorded` on the look's row, in quackd's own words, and
+    `said` in the result of a call that ends on it, which names the camera's own error."""
+
+    recorded: str
+    said: str
+
+
+CAMERA_SAID = "the camera reported an error"
+"""What a stale look's row says of a camera that said what is wrong: in quackd's words, as a
+row's `error` always is, while the camera's own go to the result of a call that ends on it."""
 
 
 def _finite(value: Any) -> float | None:
@@ -782,9 +829,10 @@ class _Watch:
             raise _Ended("duration", why)
 
     async def _body(self) -> None:
-        """End the call when the body can no longer be vouched for (`body_exit`)."""
+        """End the call when the body can no longer be vouched for (`body_exit`). Read before every
+        command the head is sent, so nothing goes to a head on a body that has changed hands."""
         state = await self.ctx.transport.get_state()
-        if (out := body_exit(state, self.spec)) is not None:
+        if (out := body_exit(state)) is not None:
             raise _Ended(*out)
 
     # ── the head ──
@@ -800,9 +848,12 @@ class _Watch:
         return ack
 
     async def _keep(self) -> None:
-        """Send the head its target again when that is due (`HeadSpec.hold_s`)."""
+        """Send the head its target again when that is due (`HeadSpec.hold_s`), on a body read
+        first: one picked up or put to anything but standing or sitting while a frame or an answer
+        was waited for ends the call rather than being sent a head it is not free to take."""
         hold = self.spec.hold_s
         if hold is not None and self.now() - self.sent_at >= hold:
+            await self._body()
             await self._send(self.yaw, self.pitch)
 
     async def _until(self, when: float) -> None:
@@ -826,7 +877,7 @@ class _Watch:
                 return False
         return True
 
-    async def _frame(self) -> tuple[Any, float | None, str | None]:
+    async def _frame(self) -> tuple[Any, float | None, _NoFrame | None]:
         """A usable frame and when it was taken, or None and why none came.
 
         Within `frame_window_s`. When the window runs out, a fetch asked for inside it and still
@@ -844,23 +895,20 @@ class _Watch:
             if self.now() - begun >= window:
                 error = getattr(transport, "camera_error", None)
                 asked = frame_asked_at_of(transport)
-                if error or asked is None or asked < begun:
-                    return (
-                        None,
-                        None,
-                        (
-                            str(error)
-                            if error
-                            else f"no frame taken after the head settled came in {window:.1f} s"
-                        ),
-                    )
+                if error:
+                    return None, None, _NoFrame(CAMERA_SAID, str(error))
+                if asked is None or asked < begun:
+                    said = f"no frame taken after the head settled came in {window:.1f} s"
+                    return None, None, _NoFrame(said, said)
                 begun = self.now()
             await self._keep()
             await transport.sleep(POLL_S)
 
     async def _ask(self, image: Any, row: dict[str, Any]) -> Any:
         """The look's answer, waited for a slice at a time while the head is held. Told to end
-        meanwhile, the request is let go of, and the row still says the frame was sent."""
+        meanwhile, the request is let go of, and the row still says the frame was sent. A request
+        that failed raises `_RequestFailed`, which the look counts toward `errors`; anything the
+        hold raises meanwhile is the body's, and ends the call."""
         task = asyncio.ensure_future(
             self.eyes.ask(
                 image,
@@ -874,7 +922,10 @@ class _Watch:
             while True:
                 done, _ = await asyncio.wait({task}, timeout=POLL_S)
                 if done:
-                    return task.result()
+                    try:
+                        return task.result()
+                    except Exception as e:
+                        raise _RequestFailed(e) from e
                 # only the brake and the budget, which are reasons to stop now: a call whose time
                 # runs out waits for the answer it already asked for, and moves nothing after it
                 self._check(deadlines=False)
@@ -901,15 +952,15 @@ class _Watch:
         row: dict[str, Any] = {"n": self.looks}
         try:
             image, taken, stale = await self._frame()
-            if image is None:
+            if stale is not None:
                 row["gate"] = "stale"
-                row["error"] = stale
+                row["error"] = stale.recorded
                 self.stale += 1
                 if self.stale >= STALE_AFTER:
                     raise _Ended(
                         "camera",
                         f"the camera gave no frame taken after the head settled, {STALE_AFTER} "
-                        f"looks in a row: {stale}",
+                        f"looks in a row: {stale.said}",
                     )
                 return
             self.stale = 0
@@ -918,11 +969,9 @@ class _Watch:
             self.next_look_at = asked_at + MIN_PERIOD_S
             try:
                 result = await self._ask(image, row)
-            except _Ended:
-                raise
-            except Exception as e:
+            except _RequestFailed as e:
                 row["gate"] = "error"
-                self._failed(str(row.get("error") or type(e).__name__))
+                self._failed(str(row.get("error") or type(e.error).__name__))
                 return
             where = read_answer(result, WHERE, ACROSS)
             height = read_answer(result, HEIGHT, UP_DOWN) if self.pitches else None
@@ -992,6 +1041,12 @@ class _Watch:
         except asyncio.CancelledError as e:
             # the executor's abort or timeout, or a caller that went away, cut this look off
             row["ended"] = _cancelled(e)
+            raise
+        except Exception as e:
+            # Something raised that is no exit of the call's own, a link to the robot that
+            # dropped among them: the call ends on it, by its type, and the executor says what.
+            row["ended"] = ERROR
+            row["error"] = type(e).__name__
             raise
         finally:
             row["streak"] = {
@@ -1065,7 +1120,8 @@ class _Watch:
     # ── the call ──
 
     async def run(self) -> VerbResult:
-        ended, why = "duration", ""
+        # every way out names itself, so only something raised leaves this as it is
+        ended, why = ERROR, ""
         call = self.eyes.begin()
         try:
             self.started = self.now()

@@ -1365,12 +1365,16 @@ class JsonRpcUnixTransport:
 
     @property
     def frames_upright(self) -> bool:
-        """Whether the frames `get_frame` hands out are upright: mediad's `/frame`, which mediad
-        turns upright itself (`up.MEDIAD_FRAME_HTTP`), and its WebRTC track, which quackd turns
-        by `media.video`'s `rotate` before it hands out a frame (`up.MEDIA_VIDEO`). Any other
-        camera is one quackd knows nothing about, and on an alpha a picture can be a quarter turn
-        off, which would read left and right as up and down. `watch` needs it to be true."""
-        return is_mediad_frame(self.camera_url) or is_webrtc_url(self.camera_url)
+        """Whether the frames `get_frame` hands out are upright and known fresh, which `watch`
+        needs: mediad's `/frame`, which mediad turns upright itself (`up.MEDIAD_FRAME_HTTP`) and
+        which quackd stamps with when each was asked for (`frame_taken_at`), and no other camera.
+
+        mediad's WebRTC track is turned upright too, by `media.video`'s `rotate` (`up.MEDIA_VIDEO`),
+        but its frames carry no time they were taken and are handed out up to two seconds old, so
+        one from before the head settled would pass for one after it and `watch` would steer a
+        look behind. Any other camera is one quackd knows nothing about, and on an alpha a picture
+        can be a quarter turn off, which would read left and right as up and down."""
+        return is_mediad_frame(self.camera_url)
 
     def lens_given(self, fov_deg: float) -> None:
         """Learn the field of view `--fov-deg` gave, which the detector measures through from now.

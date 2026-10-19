@@ -20,7 +20,8 @@ from quackd.verbs.watch import HeadSpec, watch_verb
 from quackd_microduck import upstream_api as up
 
 MICRODUCK_HEAD = HeadSpec(
-    # `gaze`'s own left and right, and inside both simulators' 60.
+    # `gaze`'s own `left` and `right`, half the 90 its `bearing_deg` may ask for, and inside both
+    # simulators' 60.
     yaw_deg=45.0,
     # Up as far as `gaze`'s `up` goes (atan 0.25), and down as far as robotd's own glances tilt it,
     # 0.2 rad (`up.IDLE_HEAD`). Wider than `gaze` downward, and nothing more until a duck is
@@ -36,13 +37,6 @@ MICRODUCK_HEAD = HeadSpec(
     # before it counts the duck still and glances (`up.IDLE_HEAD`).
     hold_s=up.IDLE_AFTER_S / 2,
     idle_after_s=up.IDLE_AFTER_S,
-    # robotd's own labels for a duck no network drives, or one it is answering a fall with: in
-    # somebody's hands, homing, shutting down, limp or posing after a fall
-    # (`up.NOT_STANDING_LABELS`).
-    stop_policies={
-        label: up.NOT_STANDING_LABELS[label]
-        for label in ("held", "limp_fall", "limp_pose", "rest", "homing")
-    },
     source=(
         "gaze's own reach and robotd's idle glances, until a Microduck's head is measured "
         f"(up.IDLE_HEAD, read {up.READ_ON})"

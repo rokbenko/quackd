@@ -180,6 +180,9 @@ async def test_watch_turns_and_tilts_the_head_onto_the_ball_in_mujoco(
     from tests.fake_eyes import BlobEyes
 
     _opengl_or_skip()
+    # no cap on the wall's clock a busy machine could reach, as in tests/test_watch.py's
+    # `unhurried`: the cap has its own test, and this one holds the loop
+    monkeypatch.setattr("quackd.verbs.watch.WALL_SLACK_S", 600.0)
     fake = fake_api.install(monkeypatch, BlobEyes(noise=0.02, seed=5))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
     for name in ("OPENAI_BASE_URL", "OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
