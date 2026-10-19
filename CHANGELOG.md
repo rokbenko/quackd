@@ -7,7 +7,25 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.19.0] — 2026-10-19
+
+0.19.0 lets a task give its pilot a part to play, adds OpenAI's Decisions API as a decision LLM, and
+removes `microduck:websocket`, as 0.18.0 said it would. `play: true` in a `duck: 4` task file, or
+`--play`, adds one section to the pilot's prompt: the pilot acts a part out with the body it has,
+the verdict asks whether this body can act it out rather than whether it is the thing it plays, a
+real result the task asks for still has to happen, and no part brings the body into contact with a
+person or within reach of one. With play off quackd adds nothing to the prompt. 118 of the SO-101's
+223 example files now play, and no played run has reached the arm yet.
+
+`--decision-llm openai` asks OpenAI's `POST /v1/decisions` the stepper's four questions and reads
+each typed answer back by its name, billed at the published $0.10 per million input tokens.
+`OPENAI_API_KEY` goes to OpenAI's own API alone, and the SDK's own variables go where they go for
+the pilot. A question the API declines hands the turn to the model on a gate of its own, `refused`.
+Nothing has answered a real robot through it, and no request has reached OpenAI.
+
+An OpenAI refusal now reaches the record in its own words, six fixes to the stepper and its decision
+LLMs come with the new row, and a command that names `microduck:websocket` fails at `--robot`, where
+`--robot microduck:jsonrpc` is what to use.
 
 ### Added
 
@@ -7074,7 +7092,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/rokbenko/quackd/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/rokbenko/quackd/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/rokbenko/quackd/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/rokbenko/quackd/compare/v0.17.0...v0.17.1

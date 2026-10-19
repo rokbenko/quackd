@@ -24,11 +24,15 @@ pace and the stops, and that a trained policy has driven the arm's simulator thi
 yet the arm. 0.17's was that one OpenRouter key reaches models made by many vendors, through
 the six rows quackd carries and through ids it does not carry, each taken only if quackd does
 not refuse its spelling and OpenRouter's public model list carries it with tool calling when
-the run starts, though no OpenRouter model has answered a real quackd request yet. **0.18's is
-that quackd connects to a Microduck on robotd's release daemon-v0.16.1, where it had refused
-every release from daemon-v0.12.0 on, serves a robotd on a newer API with a warning rather
-than a refusal, can take its frames from the `/frame` mediad already serves, and sends a duck
-that does not read as standing no walk, though none of it has run on a real Microduck yet.**
+the run starts, though no OpenRouter model has answered a real quackd request yet. 0.18's was that
+quackd connects to a Microduck on robotd's release daemon-v0.16.1, where it had refused every
+release from daemon-v0.12.0 on, serves a robotd on a newer API with a warning rather than a refusal,
+can take its frames from the `/frame` mediad already serves, and sends a duck that does not read as
+standing no walk, though none of it has run on a real Microduck yet. **0.19's is that a task can
+give its pilot a part to play, acted out with the body it has and judged by whether this body can
+act it out, and that OpenAI's Decisions API is the second wire format a decision LLM speaks, behind
+`--decision-llm openai`, though no played run has reached the arm and no request has reached
+OpenAI's Decisions API yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 
