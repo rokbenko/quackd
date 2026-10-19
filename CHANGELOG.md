@@ -7,6 +7,44 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **With `--no-memory`, `quackd serve-mcp` no longer tells its client to call `robot_recall`.** Both
+  memory tools stay registered under `--no-memory` and answer that memory is off, and the server's
+  instructions already said nothing about them, but `robot_recall`'s own description still said to
+  call it before planning, and a client reads a tool's description as an instruction like any other.
+  With memory off both descriptions say that memory is off for the server and that there is no need
+  to call them, and with memory on they read as they did. `tests/test_mcp_memory.py` reads both
+  descriptions from a server started each way, and the one with memory off failed before this
+  change.
+- **A ToddlerBot with no walk checkpoint is no longer told how fast it may walk.** Until its daemon
+  reports a walk checkpoint that can move it, `toddlerbot:bridge` offers no verb that moves it and
+  is told it does not move, yet its manifest keeps the walk's speed caps, and its prompt said
+  `quackd clamps you to 0.2 m/s forward, 0.1 m/s sideways, 1 rad/s turning` two lines under that. A
+  speed cap is a rule about a verb that moves the body, so only a body whose mobility is not `none`
+  is told its caps now. The clamp itself is unchanged, and so is every other line: rendering every
+  shipped body with every starter before and after the change changed the bridge's prompts alone, by
+  that one line. `tests/test_datasheets.py` checks the bridge before its daemon answers and as built
+  for a daemon with no checkpoint, a bridge that can walk, which is still told its caps, and that
+  among the shipped bodies one is told its caps exactly when it moves. It failed before this change.
+- **A `.duck` saved as UTF-16 is refused in a sentence rather than a traceback.** Windows PowerShell
+  5.1 saves UTF-16 with `>` and `Out-File`, and reading such a file as UTF-8 raised an error that
+  `quackd run`, `quackd validate`, `quackd preflight` and the MCP tool `robot_load_duckfile` let out
+  as a traceback. The one place quackd opens a `.duck` refuses it now as a file it cannot read,
+  which each of them already says in a sentence:
+  `saved as UTF-16, which quackd does not read: save it as UTF-8`, and how to in PowerShell. A file
+  in any other encoding that is not UTF-8 is told so, with the byte where reading it failed, and the
+  `.duck` reference says both. `tests/test_duckfile.py` reads a starter saved as UTF-16 through the
+  loader, `quackd validate` and what `robot_load_duckfile` calls, and a Latin-1 file through the
+  loader. It failed before this change.
+- **`quackd serve-mcp --duckfile` refuses a task file it cannot read in a sentence.** It loaded the
+  file with nothing around it, so a file it refused, a missing one or one with no frontmatter among
+  them, ended the command in a traceback with the reason at its foot. It is refused now as
+  `quackd run` refuses it, before anything connects. `tests/test_cli.py` starts it on a file with no
+  frontmatter and on one that does not exist, and failed before this change.
+
 ## [0.19.0] — 2026-10-19
 
 0.19.0 lets a task give its pilot a part to play, adds OpenAI's Decisions API as a decision LLM, and

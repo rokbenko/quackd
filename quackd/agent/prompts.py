@@ -627,6 +627,12 @@ def body_lines(manifest: RobotManifest) -> list[str]:
         )
     lines.append(f"- {_power_and_ground(ds, mobile=mobile, embodiment=manifest.embodiment)}.")
     limits = dict(manifest.limits)
+    if not mobile:
+        # A speed cap is a rule about a verb that moves the body, and this body has none: the
+        # ToddlerBot's bridge carries its walk's caps before its daemon reports a checkpoint
+        # that can walk it, and a pilot told it does not move was told how fast it may go.
+        for key in ("max_vx", "max_vy", "max_wz"):
+            limits.pop(key, None)
     ranges: dict[str, Any] = manifest.extras.get("joint_range_deg") or {}
     if ranges:
         # an arm that has answered knows each joint's real travel, and a goal outside it is

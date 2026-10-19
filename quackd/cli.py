@@ -4085,6 +4085,7 @@ def serve_mcp(
 ) -> None:
     """Expose a robot, or a flock of them, as MCP tools over stdio (Claude Code /
     Claude Desktop)."""
+    from quackd.duckfile.parser import DuckParseError
     from quackd.mcp_server import serve
     from quackd.registry import RegistryError
     from quackd.transport.base import TransportError
@@ -4124,7 +4125,9 @@ def serve_mcp(
             # `doctor` print for it
             warn=_deprecated,
         )
-    except (TransportError, RegistryError) as e:
+    except (DuckParseError, TransportError, RegistryError) as e:
+        # a task file the server cannot read is refused before anything connects, as `run`
+        # refuses it, rather than as a traceback with the sentence at its foot
         _fail(str(e))
     except BaseExceptionGroup as group:
         # A refusal raised as the server starts, by a connect in its lifespan, reaches here

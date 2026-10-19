@@ -165,6 +165,23 @@ def test_no_log_verbose_prints_the_dry_run_line_intact(tmp_path: Path, monkeypat
     assert "Traceback" not in out
 
 
+def test_serve_mcp_refuses_a_task_file_it_cannot_read_in_a_sentence(tmp_path: Path) -> None:
+    """`quackd serve-mcp --duckfile` loaded the file with nothing around it, so a file it
+    refused, a missing one included, ended the command in a DuckParseError traceback. It is
+    refused now as `quackd run` refuses it, before anything connects."""
+    broken = tmp_path / "broken.duck"
+    broken.write_text("no fence here\n", encoding="utf-8")
+    for path, said in (
+        (str(broken), "missing frontmatter"),
+        (str(tmp_path / "missing.duck"), "file not found"),
+    ):
+        result = runner.invoke(
+            app, ["serve-mcp", "--robot", "microduck:mock", "--no-memory", "--duckfile", path]
+        )
+        assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
+        assert said in " ".join(result.output.split()), result.output
+
+
 def test_serve_mcp_forwards_no_log(monkeypatch) -> None:
     """`--no-log` is what silences an MCP server that logs to the same stderr its client
     reads. The flag is parsed by one module and honoured by another, so nothing but a call
