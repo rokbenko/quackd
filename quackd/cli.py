@@ -366,6 +366,12 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
             spent.append(f"model {fmt_duration(llm)}")
         if (stepper := _number((end.get("decision") or {}).get("latency_s"))) is not None:
             spent.append(f"stepper {fmt_duration(stepper)}")
+        # and the seconds `watch` waited on its answers, a share of its verbs' own time rather
+        # than of the turns between them, only where a run had it
+        if (
+            watched := _number(_block(_block(end, "decision"), "watch").get("latency_s"))
+        ) is not None:
+            spent.append(f"watch {fmt_duration(watched)}")
         # and the seconds the arm's policy drove it, when it had one and it ran, on the wall's
         # clock as the rest of the split is: on the simulator the policy's own `seconds` are
         # the simulator's, and a split can never be larger than the whole
@@ -391,7 +397,14 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
             # that IS known.
             unpriced = "cost unpriced"
             if decision_cost:
-                unpriced += f" (stepper {'~' if estimated else ''}{fmt_usd(decision_cost)})"
+                # the stepper's bill, and `watch`'s with it where a run had it, which is then the
+                # decision LLM's whole bill rather than the stepper's
+                payer = (
+                    "decision LLM"
+                    if isinstance(decision_block.get("watch"), Mapping)
+                    else "stepper"
+                )
+                unpriced += f" ({payer} {'~' if estimated else ''}{fmt_usd(decision_cost)})"
             counters.append(unpriced)
         else:
             total = model_cost + (decision_cost or 0.0)
@@ -1667,6 +1680,8 @@ def _run_impl(
                     for vocabulary in vocabularies
                     for v in vocabulary.verbs()
                     if v.safety_class == "safe"
+                    # `watch` only on a run that asked for frames, the one kind that can offer it
+                    and (v.name != "watch" or _frames_asked(decision_frames, decision_llm))
                 }
             )
             # and `manipulate` with a policy server, which is no safe verb: allowed, and asked
@@ -2098,10 +2113,22 @@ def _run_impl(
             decision_price = resolve_decision_price(chosen, url=decision_url)
             if frames:
                 # One line, where the person who asked for frames is looking, naming where they
-                # go, and on a run whose mode asks the stepper nothing, that none will.
-                ui.console.print(
-                    _warn_line(_frames_notice(decision, decision_pilot.url)), soft_wrap=True
+                # go, and on a run whose mode asks the stepper nothing, that it sends none, with
+                # what `watch` sends where the task lets the pilot call it on this body.
+                watch = (
+                    "watch" in described.verb_names() and "watch" in duck.frontmatter.verbs.allow
                 )
+                ui.console.print(
+                    _warn_line(_frames_notice(decision, decision_pilot.url, watch=watch)),
+                    soft_wrap=True,
+                )
+    if "watch" in duck.frontmatter.effective_requires and not frames:
+        # A task that needs `watch` on a run with nothing for it to look through is refused here,
+        # before the robot connects, rather than by the loop once it has (`withdraw_watch`).
+        from quackd.verbs.watch import NO_EYES
+
+        _fail(f"{duck.name} requires watch, and {NO_EYES}")
+        return
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
         # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
@@ -3046,7 +3073,9 @@ _DECISION_FRAMES = typer.Option(
     help="EXPERIMENTAL: show the decision LLM the robot's primary camera with each turn the "
     f"stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest side, "
     "beside the state and never inside it, and keep each one sent as frames/NNNN-decision.jpg "
-    "in the run directory. Only `openai` may be shown one, and only at OpenAI's own address: "
+    "in the run directory. It also gives a Microduck the watch verb, which shows it one such "
+    "frame a look, whatever --decision-mode says, kept as sent/watch-NNNN.jpg. "
+    "Only `openai` may be shown one, and only at OpenAI's own address: "
     "with no decision LLM named, any other one, or a --decision-url that is not OpenAI's, the "
     "run stops before the robot connects. --vision is about the pilot and changes nothing here. "
     "Off unless you say so. QUACKD_DECISION_FRAMES=1 does the same.",
@@ -3054,23 +3083,50 @@ _DECISION_FRAMES = typer.Option(
 )
 
 
-def _frames_notice(mode: str, url: str | None) -> str:
+def _frames_notice(mode: str, url: str | None, *, watch: bool = False) -> str:
     """What `--decision-frames` says once before the robot connects: where a frame goes, and on a
-    run whose mode asks the stepper nothing, that none will. The address is the client's own,
-    redacted as the record writes it."""
+    run whose mode asks the stepper nothing, that the stepper sends none. `watch` is whether the
+    task lets the pilot call `watch` on a body that declares it, which sends a frame a look
+    whatever the mode, and then the line says so. The address is the client's own, redacted as the
+    record writes it."""
+    # Never the bare word as a fallback: a string that is exactly one of the SDK's client class
+    # names reads to `tests/test_openai_headers.py`'s guard as a way of reaching the SDK.
+    where = f" at {redacted_url(url)}" if url else ""
+    watching = (
+        f"watch, where the robot offers it, sends OpenAI{where} one such frame a look while it "
+        "runs, and the run keeps each one as sent/watch-NNNN.jpg"
+    )
+    if mode == "off" and watch:
+        return (
+            "--decision-frames: the stepper sends no camera frame, because --decision-mode off "
+            f"asks it nothing, and {watching}"
+        )
     if mode == "off":
         return (
             "--decision-frames: no camera frame goes to OpenAI on this run, because "
             "--decision-mode off asks the stepper nothing"
         )
-    # Never the bare word as a fallback: a string that is exactly one of the SDK's client class
-    # names reads to `tests/test_openai_headers.py`'s guard as a way of reaching the SDK.
-    where = f" at {redacted_url(url)}" if url else ""
-    return (
+    said = (
         f"--decision-frames: the robot's primary camera goes to OpenAI{where} with every turn "
         f"the stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest "
         "side, and the run keeps each one it sends as frames/NNNN-decision.jpg"
     )
+    return f"{said}, and {watching}" if watch else said
+
+
+def _frames_asked(flag: bool | None, decision_llm: str | None) -> bool:
+    """Whether a run asks for frames, read as `factory.resolve_decision_frames` reads it and
+    never refusing: for a `--goal` run's allowlist, which is built before the flags are judged,
+    and offers `watch` only to a run that asked. A run that asked and is then refused stops
+    before anything connects, and one whose decision LLM turns out not to be here runs without
+    `watch`, which the loop says when it withdraws it."""
+    from quackd.agent.decision.factory import ENV_FRAMES, FRAMES_ON
+
+    if (decision_llm or "").strip().lower() == "off":
+        return False
+    if flag is not None:
+        return flag
+    return (os.environ.get(ENV_FRAMES) or "").strip().lower() in FRAMES_ON
 
 
 CONTROLLERS = ("llm", "vla")

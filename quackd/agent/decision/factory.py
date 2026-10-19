@@ -207,7 +207,9 @@ def resolve_decision_frames(
 
     Independent of `--decision-mode`: what is decided here is whether a frame may go, and the
     mode is how much the stepper's answer may do. A run with the mode off asks the stepper
-    nothing and so sends it no frame. Independent of `--vision` as well, which is the pilot's.
+    nothing and so sends it no frame, and the Microduck's `watch` verb, which is no stepper,
+    still sends one a look (`quackd.agent.decision.eyes`). Independent of `--vision` as well,
+    which is the pilot's.
 
     `refused` is `--decision-llm off` said on the line, which turns this off as it turns the mode
     off, rather than being answered with a demand to name one. A variable set to a word that is

@@ -703,6 +703,11 @@ class JsonRpcUnixTransport:
         self._fetch_s = 0.0
         """How long the newest HTTP fetch took, answered or not, which the snapshot loop waits out
         before it asks again (`frame_period_s`)."""
+        self._fetch_started: float | None = None
+        """When the newest HTTP fetch was asked for, answered yet or not (`frame_asked_at`)."""
+        self.look_head: dict[str, float] | None = None
+        """The four head joints robotd answered the newest `robot.look` with (`LookResult.head`),
+        or None before any, or when it answered with something else."""
         self.fov_given: float | None = None
         """The field of view `--fov-deg` gave, which the detector measures through in place of
         the camera's own or the one assumed from the first frame (`lens_given`), or None."""
@@ -1233,6 +1238,7 @@ class JsonRpcUnixTransport:
         period = 1.0 / max(0.1, self.camera_fps)
         while True:
             started = time.monotonic()
+            self._fetch_started = started
             head = self._head_at_request()
             try:
                 frame = await self._fetch_frame()
@@ -1339,6 +1345,36 @@ class JsonRpcUnixTransport:
         if self._webrtc is not None or not is_mediad_frame(self.camera_url):
             return None
         return max(1.0 / max(0.1, self.camera_fps), self._fetch_s)
+
+    @property
+    def frame_fetch_s(self) -> float | None:
+        """How long the newest HTTP snapshot took, answered or not, or None from a camera that is
+        not fetched a frame at a time. `watch` sizes its wait for a fresh frame by it."""
+        if self._camera_task is None or self._fetch_started is None:
+            return None
+        return self._fetch_s
+
+    def frame_asked_at(self) -> float | None:
+        """When the newest HTTP snapshot was asked for, answered yet or not, on the clock `now()`
+        reads, or None from a camera that is not fetched a frame at a time. `watch` reads it when
+        a wait for a fresh frame runs out: one asked for inside the wait is a slow camera, and
+        none at all one that has stopped."""
+        if self._camera_task is None or self._fetch_started is None:
+            return None
+        return self._fetch_started - self._t0
+
+    @property
+    def frames_upright(self) -> bool:
+        """Whether the frames `get_frame` hands out are upright and known fresh, which `watch`
+        needs: mediad's `/frame`, which mediad turns upright itself (`up.MEDIAD_FRAME_HTTP`) and
+        which quackd stamps with when each was asked for (`frame_taken_at`), and no other camera.
+
+        mediad's WebRTC track is turned upright too, by `media.video`'s `rotate` (`up.MEDIA_VIDEO`),
+        but its frames carry no time they were taken and are handed out up to two seconds old, so
+        one from before the head settled would pass for one after it and `watch` would steer a
+        look behind. Any other camera is one quackd knows nothing about, and on an alpha a picture
+        can be a quarter turn off, which would read left and right as up and down."""
+        return is_mediad_frame(self.camera_url)
 
     def lens_given(self, fov_deg: float) -> None:
         """Learn the field of view `--fov-deg` gave, which the detector measures through from now.
@@ -2026,7 +2062,12 @@ class JsonRpcUnixTransport:
                         newest = self._look_to_hold == look
                         if newest:
                             self._look_to_hold = None
-                    if newest and (head := _look_head(res)) is not None:
+                    head = _look_head(res)
+                    # what the head was handed, as robotd answered, for whoever records the look
+                    self.look_head = (
+                        None if head is None else dict(zip(up.HEAD_PARAMS, head, strict=True))
+                    )
+                    if newest and head is not None:
                         self._hold(head)
                     clamped = isinstance(res, dict) and res.get("clamped")
                     return Ack(accepted=True, reason="clamped" if clamped else None)

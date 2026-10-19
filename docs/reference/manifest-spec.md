@@ -146,7 +146,7 @@ with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
 
 | Robot | embodiment / mobility | intents | verbs |
 |---|---|---|---|
-| `microduck:sim2d` | biped / legged | twist, skill, gaze, sound, pose | observe, report_state, stop, say, move, go_to, search_scan, approach_and, sit, stand, stand_up, kick, grab, gaze, quack |
+| `microduck:sim2d` | biped / legged | twist, skill, gaze, sound, pose | observe, report_state, stop, say, move, go_to, search_scan, approach_and, sit, stand, stand_up, kick, grab, gaze, quack, watch |
 | `lerobot:mock` | arm / none | joint, gripper, skill | observe, report_state, stop, move_joints, gripper, place, pick, manipulate |
 | `rosbridge:mock` | wheeled / wheeled | twist | observe, report_state, stop, move, introspect, go_to, search_scan, approach_and |
 | `open_duck:sim2d` | biped / legged | twist, gaze, sound, skill | report_state, stop, move, observe, go_to, search_scan, approach_and, say, quack, gaze, express |

@@ -12,6 +12,13 @@ unbuilt. `HostDetector` waits on the network, so quackd runs it in a worker thre
 steering verb keeps re-sending its last twist while the board answers, for one deadman window
 and no longer.
 
+**Amended 2026-10-19 by [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md):** a decision
+LLM may be shown the primary frame inside the Microduck's `watch` verb, as it may be shown one
+beside the stepper's state by [ADR-0053](0053-a-decision-llm-may-be-shown-the-camera.md), and only
+on a run started with `--decision-frames`, at OpenAI's own hosts. What it answers is a sector of the
+picture, never a `Detection`: no bearing, no distance and nothing the steering loop reads. The
+`Detector` is still the only perception in the 10 Hz loop, and the pilot still reads features.
+
 ## Context
 
 Upstream's principle: put perception next to the sensor and publish *features* ("ball at

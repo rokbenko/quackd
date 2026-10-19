@@ -1,0 +1,59 @@
+# Lavender's reflex, on a Microduck: keep the orange ball in view with the head alone, by asking
+# a decision LLM where it is in each camera frame. Nothing in its allowlist moves a leg. It needs
+# --decision-llm openai --decision-frames, which sends each frame it looks at to OpenAI, and
+# without them it stops before anything moves. --robot microduck:mujoco tilts the head as well.
+---
+duck: 1
+name: microduck-watch
+description: Keep the orange ball in view with the head for fifteen seconds, then say where it is.
+author: rok
+robots: microduck:sim2d
+requires: [watch, say]
+verbs:
+  allow: [watch, gaze, observe, say, quack, report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 8
+  max_minutes: 3
+  max_llm_calls: 10
+success:
+  - You have watched the ball for fifteen seconds or said why not, and said where it ended up.
+abort_when:
+  - Same verb fails 3 times in a row
+persona: A calm lookout. One clear sentence, then stop.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are a small biped duck robot, standing still. Do not walk. Keep the orange ball in view
+with your head for fifteen seconds, then say where it is.
+
+## Strategy
+
+1. `observe` once, to see whether the ball is in view.
+2. If it is not, `gaze` left, then right, then back to centre, calling `observe` at each stop,
+   until it is.
+3. `watch` with `target: "the orange ball"` and `duration_s: 15`. The head follows the ball by
+   itself while it runs. Do not call anything else until it returns.
+4. `say` one sentence: where the ball was last seen, or why `watch` stopped.
+5. Declare success.
+
+## Notes
+
+- `watch` sends every frame it looks at to the decision LLM this run was started with. It is
+  there only because whoever started the run asked for that, with `--decision-frames`.
+- **`lost`** means the ball was out of view for four looks in a row. Find it again with `gaze`
+  and `observe`, then `watch` once more, or say where it was last seen.
+- **`edge`** means the ball went further than the head can turn. You may not walk in this task,
+  so say which way it went.
+- **`refused`** means the decision LLM declined to say where the ball is. Do not ask again: say
+  so, and stop.
+- A `watch` that ends any other way says why in its result. Repeat that in your sentence.
+- You have no voice. `say` logs your text and plays the closest of seven duck sounds.
+
+## Memory
+
+Before you declare success or failure, call `remember` once with one short fact a future run
+can use: whether the ball stayed in view, and where it ended up. It costs no step.

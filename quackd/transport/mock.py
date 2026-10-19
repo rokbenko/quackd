@@ -18,6 +18,8 @@ from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
 
 class MockTransport:
     name = "mock"
+    frames_upright = True
+    """Its frames are whatever the test hands it, which are the right way up by saying so."""
 
     def __init__(
         self,

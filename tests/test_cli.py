@@ -277,7 +277,7 @@ def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None
 def test_validate_starter_ducks() -> None:
     result = runner.invoke(app, ["validate", *[str(p) for p in sorted(DUCKS.glob("*.duck"))]])
     assert result.exit_code == 0, result.output
-    assert "15 files valid" in result.output
+    assert "16 files valid" in result.output
 
 
 def test_validate_expands_globs_itself() -> None:

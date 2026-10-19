@@ -16,7 +16,33 @@ from pydantic import BaseModel, ConfigDict, Field
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import SayParams, send_or_fail
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.watch import HeadSpec, watch_verb
 from quackd_microduck import upstream_api as up
+
+MICRODUCK_HEAD = HeadSpec(
+    # `gaze`'s own `left` and `right`, half the 90 its `bearing_deg` may ask for, and inside both
+    # simulators' 60.
+    yaw_deg=45.0,
+    # Up as far as `gaze`'s `up` goes (atan 0.25), and down as far as robotd's own glances tilt it,
+    # 0.2 rad (`up.IDLE_HEAD`). Wider than `gaze` downward, and nothing more until a duck is
+    # measured: nobody has commanded a real Microduck's head further than either.
+    pitch_up_deg=14.0,
+    pitch_down_deg=11.5,
+    step_yaw_deg=15.0,
+    step_pitch_deg=8.0,
+    # About 0.3 s for the head to get there, and 0.1 s more because mediad's PNG carries no
+    # capture time, so a frame is taken for after the move only once its request is.
+    settle_s=0.4,
+    # Sent again as often as the transport holds a gaze (`GAZE_HOLD_S`), half of robotd's wait
+    # before it counts the duck still and glances (`up.IDLE_HEAD`).
+    hold_s=up.IDLE_AFTER_S / 2,
+    idle_after_s=up.IDLE_AFTER_S,
+    source=(
+        "gaze's own reach and robotd's idle glances, until a Microduck's head is measured "
+        f"(up.IDLE_HEAD, read {up.READ_ON})"
+    ),
+)
+"""The Microduck's head as `watch` holds it: starting values, until a duck is measured."""
 
 
 class KickParams(BaseModel):
@@ -394,5 +420,8 @@ MICRODUCK_VERBS: dict[str, Verb] = {
             timeout_s=5,
             core=True,
         ),
+        # Declared only on a duck with a camera (`microduck_manifest`), and offered only on a run
+        # that can look through a decision LLM (`quackd.verbs.watch.withdraw_watch`).
+        watch_verb(MICRODUCK_HEAD),
     )
 }

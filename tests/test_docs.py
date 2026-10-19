@@ -675,10 +675,12 @@ def _emitted_kinds(*modules: str) -> set[str]:
 def test_the_docs_describe_every_log_event_the_code_emits() -> None:
     """architecture.md is the one place that enumerates the transcript, so it is the one
     place this can go stale."""
-    # the three modules that write a *run* transcript. The flock keeps its own `flock.jsonl`
-    # (docs/guides/flock.md) and the MCP server's two envelope kinds are documented in
-    # docs/guides/mcp.md.
-    emitted = _emitted_kinds("agent/loop.py", "safety.py", "log.py")
+    # the modules that write a *run* transcript: the loop, the executor and the log, and the
+    # eyes `watch` looks through, which write its two kinds. The flock keeps its own
+    # `flock.jsonl` (docs/guides/flock.md) and the MCP server's two envelope kinds are
+    # documented in docs/guides/mcp.md.
+    emitted = _emitted_kinds("agent/loop.py", "safety.py", "log.py", "agent/decision/eyes.py")
+    assert {"watch_frame", "watch_tick"} <= emitted, "the reader stopped seeing what eyes emit"
     doc = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     missing = [kind for kind in sorted(emitted) if f"`{kind}`" not in doc]
     assert not missing, f"docs/concepts/architecture.md does not describe: {missing}"

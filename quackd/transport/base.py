@@ -290,6 +290,28 @@ def frame_period_of(transport: Any) -> float | None:
     return period if period is not None and period > 0 else None
 
 
+def frame_fetch_of(transport: Any) -> float | None:
+    """How long the body's newest fetch of a frame took, in seconds, answered or not, or None when
+    the body does not fetch its frames one at a time or does not say.
+
+    A body that pulls each frame with a request of its own, as a Microduck on mediad's `/frame`
+    does, offers `frame_fetch_s`. `watch` reads it to size how long it waits for a frame taken
+    after the head settled: a fetch that takes a second puts the first such frame up to two
+    fetches away."""
+    fetch = _finite(getattr(transport, "frame_fetch_s", None))
+    return fetch if fetch is not None and fetch >= 0 else None
+
+
+def frame_asked_at_of(transport: Any) -> float | None:
+    """When the body's newest fetch of a frame was asked for, on the clock `transport.now()`
+    reads, whether or not it has answered yet, or None when the body does not say.
+
+    `watch` reads it when a wait for a fresh frame runs out: a fetch asked for inside the wait
+    and still out is a slow camera, and none asked for at all is a camera that has stopped."""
+    asked_at = getattr(transport, "frame_asked_at", None)
+    return _finite(asked_at()) if callable(asked_at) else None
+
+
 async def frames_taken_since(transport: Any, since: float, poll_s: float) -> None:
     """Wait until the frame the body would hand out was taken no earlier than `since` on its own
     clock, checking every `poll_s` of its time, on a body that says when its frames were taken.

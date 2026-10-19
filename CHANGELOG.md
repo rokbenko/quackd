@@ -47,6 +47,44 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   much slower it makes a turn, are unmeasured, and no frame from quackd has reached OpenAI
   ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md),
   [ADR-0053](docs/adr/0053-a-decision-llm-may-be-shown-the-camera.md)).
+- **A head that keeps something in view: `watch` on the Microduck.** `watch(target, duration_s=15)`
+  keeps a thing the pilot describes in view with the head alone, for 2 to 30 seconds, as OpenAI's
+  launch video for its Decisions API has a Microduck do it. Each look sends one frame to the one
+  decision LLM `--decision-frames` may show the camera, `openai` at OpenAI's own hosts, with a
+  `choice` question, where across the picture the thing is, and on a head that tilts a second, how
+  high, and quackd turns the head by a law of its own on the answer: the angle through the lens
+  times 0.6, nothing within 0.08 of the middle, at most 15° of yaw and 8° of pitch a look, and never
+  past 45° either way, 14° up or 11.5° down. The answer is read by its distribution and never by
+  OpenAI's `confidence`, which the record keeps. One request is out at a time, looks begin at least
+  0.5 s apart on the robot's clock and requests go at least 0.5 s apart on the wall's, 60 a call at
+  most, and each answer is bounded at 1.5 s. The head is claimed and given robotd's glance fade and
+  a settle before the first frame, sent its target again at least every second, and claimed again
+  after any gap robotd could glance in, and the duck is read before every command the head is sent,
+  which goes only to a duck that reads as standing or sitting, the allowlist quackd's own gaze hold
+  keeps. A frame is used only when it was taken after the head settled, and never twice, which on a
+  real duck takes mediad's `/frame`: its WebRTC track carries no time a frame was taken, so a duck
+  on it has `watch` withdrawn. Every way a call ends is named as its `ended`, and none sends the
+  head anywhere: `duration`, `lost` after 4 looks, `edge` after 3, `errors` after 3, `refused`,
+  `camera`, `fallen`, `blind`, `held`, `look_refused`, `stopped`, `budget`, `error` for something
+  raised, and `abort`, `timeout` and `cancel`. It is offered only on a run with
+  `--decision-llm openai --decision-frames`, whatever `--decision-mode` says, on a duck whose camera
+  worked at connect. Every other run, `serve-mcp` and a flock have it withdrawn when the duck
+  connects, by a new `VerbRegistry.remove` that never removes `stop`, and a task that requires it is
+  refused before the robot connects where the run has nothing to look through, and once it has,
+  before anything moves, where the camera cannot be used. It runs before a verdict, as `gaze` does,
+  and a dry run sends no frame. Before each request the JPEG is written as `sent/watch-NNNN.jpg` and
+  a `watch_frame` line naming it is written through to the transcript, a disk that refuses the copy
+  leaves no partial file and records `kept: false`, and each look leaves a `watch_tick` row however
+  it ended. `run_start.watch` says what the head was held to and through which lens, the summary's
+  `decision` block gains `watch`, whose bill is folded into that block's totals, `quackd log` prints
+  each look, and the counters at a run's end give `watch`'s seconds a split of their own. A `stop`
+  asked for from beside a running verb now reaches a verb that asks, through
+  `VerbContext.interrupted`, which carries the run's time budget too. A new starter duck,
+  `microduck-watch`, requires `watch`. In the suite the head closes on the ball on
+  `microduck:sim2d`, and in MuJoCo turning and tilting, through quackd's own client on a fake of its
+  SDK that finds the ball in each JPEG it is handed. Nothing of it has run on a duck or against
+  OpenAI ([microduck](docs/adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view),
+  [ADR-0054](docs/adr/0054-a-reflex-may-look-through-a-decision-llm.md)).
 
 ## [0.19.1] — 2026-10-19
 
