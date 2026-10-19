@@ -7,7 +7,24 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.20.0] — 2026-10-19
+
+0.20.0 lets the decision LLM see, and gives the Microduck a head that keeps something in view. With
+`--decision-frames` the stepper shows its decision LLM the robot's primary camera beside the state,
+one JPEG of at most 512 pixels a turn, and only `--decision-llm openai` at OpenAI's own hosts may be
+shown one: any other decision LLM or address stops the run before the robot connects. Each frame's
+copy is written into the run directory, and a line naming it is flushed to the transcript, before
+the request that carries it is handed over.
+
+On a Microduck the same flag gives the pilot `watch(target, duration_s)`, the reflex OpenAI's launch
+video for its Decisions API shows on a Microduck. It asks where a described thing is in each frame
+and turns the head toward it by quackd's own law, at most 15° of yaw a look and never past 45°, only
+while the duck reads as standing or sitting, and on a real duck only through `mediad`'s `/frame`.
+Every way a call ends is named, and none sends the head anywhere.
+
+Nothing in this release has run against OpenAI or on a real duck. What a frame costs on
+`gpt-6-luna`, how much slower it makes a turn and how well a model places a thing are unmeasured,
+and the numbers the head is held to are starting values.
 
 ### Added
 
@@ -7215,7 +7232,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/rokbenko/quackd/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/rokbenko/quackd/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rokbenko/quackd/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/rokbenko/quackd/compare/v0.18.0...v0.18.1
