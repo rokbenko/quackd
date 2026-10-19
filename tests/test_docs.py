@@ -2436,15 +2436,13 @@ def test_a_page_that_says_what_the_suites_guard_stops_names_every_marker_it_lets
     test but the ones marked with one of `LIVE`: the decision LLM's live tests and the pilot's,
     which mean to pay OpenAI for a real answer. The CHANGELOG and the `openai` page said any test
     but the decision LLM's own live ones was stopped, which a live test of the pilot's is not. So
-    every sentence of theirs and ADR-0052's that says a request is stopped before it is sent names
-    each marker the guard lets through, read from the guard itself."""
+    every sentence of the `openai` page's and ADR-0052's that says a request is stopped before it
+    is sent names each marker the guard lets through, read from the guard itself. The CHANGELOG's
+    entry said the same when it shipped in 0.19.0, and a section that has shipped is history, which
+    no later guard may ask to change."""
     from tests.conftest import LIVE
 
-    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
     pages = {
-        "CHANGELOG.md's [Unreleased]": changelog.split("\n## [Unreleased]\n", 1)[1].split(
-            "\n## [", 1
-        )[0],
         "ADR-0052": _adr("0052"),
         "openai.md": (REPO / "docs" / "guides" / "decision-llms" / "openai.md").read_text(
             encoding="utf-8"
