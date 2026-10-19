@@ -699,9 +699,13 @@ hold whichever decision LLM answered.
   is documented as text only, with one exception: `openai`, on a run that asks with
   `--decision-frames`, is shown the robot's primary camera beside the state, at OpenAI's own hosts
   alone, and the record keeps every frame it is sent, written before the request that carries it
-  ([openai](openai.md#showing-it-the-camera---decision-frames)). No other row and no plugin is
-  ever shown a picture, whatever it says about itself, and on every other run a turn that needs
-  eyes escalates rather than guessing.
+  ([openai](openai.md#showing-it-the-camera---decision-frames)). The same flag lets the one verb
+  that looks through a decision LLM, the Microduck's `watch`, show that row a frame a look, under
+  the same gate and with the same record, and it asks only where a thing is in the picture, never
+  how far to turn the head
+  ([microduck](../../adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view)). No
+  other row and no plugin is ever shown a picture, whatever it says about itself, and on every
+  other run a turn that needs eyes escalates rather than guessing.
 - **Start a policy segment.** `manipulate` is offered and compared, and never taken, in either
   mode, so every segment of a learned policy driving the arm is one the model asked for.
 - **Get past a gate.** The allowlist, the budgets, the confirm gates, the preconditions and the
@@ -782,6 +786,17 @@ mints are prefixed `decision-`.
 `mode`, `llm`, `model`, `url`, `frames`, `asked`, `taken`, `errors`, `refusals`, `frames_sent`,
 `latency_s`, `usage`, `cost_usd`, `cost_estimated` and `price`. `frames_sent` counts the frames
 handed over with a request, which a connection refused or timed out first never carried.
+
+A run whose pilot could call the Microduck's `watch` keeps it beside these, since `watch` asks the
+same decision LLM: `run_start` carries `decision_llm` and `decision_price` whatever the mode, and
+`watch`, what the head was held to and through which lens. Each frame `watch` hands to the client is
+written as `sent/watch-NNNN.jpg` and named in a `watch_frame` line before its request is handed
+over, each look leaves a `watch_tick` row, and the `decision` block gains `watch`, with `calls`,
+`looks`, `sent`, `seen`, `errors`, `timeouts`, `refusals`, `stale`, `latency_s`, `usage`,
+`cost_usd`, `cost_estimated` and how each call `ended`. Its `usage` and `cost_usd` are folded into
+the block's own, which are then every question the run asked a decision LLM, and on a run with
+`watch` and no stepper the block has the mode, `off`, the decision LLM, the totals and `watch`, and
+none of the stepper's counts ([architecture](../../concepts/architecture.md#transcript-format)).
 
 The budget line in every observation grows one clause once the stepper has answered:
 
@@ -992,7 +1007,7 @@ Four flags and five variables. The flag always beats the variable.
 | Which decision LLM answers, as `NAME[:MODEL]` | `--decision-llm` | `QUACKD_DECISION_LLM` | none, and then none of this runs. `off` in either place is off |
 | Where your own server listens | `--decision-url` | `QUACKD_DECISION_URL` | whatever the preset's row says; `local` has none and refuses without one. The variable is not read for `jev` or `openai`, the two rows that send a key |
 | What its answer may do, `off\|shadow\|on` | `--decision-mode` | `QUACKD_DECISION_MODE` | `on` once one is named, `off` when none is |
-| Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `QUACKD_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision` |
+| Whether it is shown the robot's primary camera | `--decision-frames`, `--no-decision-frames` | `QUACKD_DECISION_FRAMES`: `1`, `true`, `yes` or `on`, or `0`, `false`, `no` or `off`, and any other word stops the run | off. Only `openai` may be shown a frame, and only at OpenAI's own hosts; asked for anywhere else, the run stops before it connects. `--decision-llm off` turns it off, and it is independent of the mode and of `--vision`. On a Microduck it also gives the pilot `watch`, which shows that row a frame a look whatever the mode |
 | What a question is costed at, written `in=0.042,out=0` in USD per million tokens | -- | `QUACKD_DECISION_PRICE` | the row's published rate for `jev` with no `--decision-url`, and for `openai` at OpenAI's own address, and the self-hosted $0 for every server you run, either of those two at an address of yours included |
 
 `QUACKD_DECISION_PRICE` takes the same form `--price` does for the model, and it is quackd's own
@@ -1027,8 +1042,9 @@ and which pins the mode and the frames off whatever the variables say, and not o
 
 - **Text only, but for one row on a run that asks.** quackd sends no image, audio or video to any
   row here, and Jev takes none ([models](https://docs.typesafe.ai/models)), except that `openai`
-  is shown one camera frame a turn on a run with `--decision-frames`. What a frame costs that row
-  and how much slower it makes a turn is unmeasured ([openai](openai.md)). On every other run a
+  is shown one camera frame a turn on a run with `--decision-frames`, and one a look while a
+  Microduck's `watch` runs. What a frame costs that row and how much slower it makes a turn is
+  unmeasured ([openai](openai.md)), and `watch` has never asked it anything. On every other run a
   turn that needs to look escalates.
 - **A network call in a decision loop**, for seven of the eight rows. There is a one-second
   timeout, with one retry inside it on a System One row and none on `openai`, and a failure costs

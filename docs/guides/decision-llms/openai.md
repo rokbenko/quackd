@@ -175,6 +175,11 @@ describe, with each turn the stepper asks about. It is off unless a run says so.
   ⚠ --decision-frames: no camera frame goes to OpenAI on this run, because --decision-mode off asks the stepper nothing
   ```
 
+  On a Microduck whose task lets the pilot call `watch`, the flag gives it that verb as well, which
+  shows this row one frame a look whatever the mode, and there the line says the stepper sends
+  none and `watch` one a look
+  ([microduck](../../adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view)).
+
 - **The second does not move.** A turn with a frame has the stepper's 1.0 s like any other. The one
   figure anybody has posted for a request carrying an image is about 0.8 s, over a 3 Mbps link, on
   OpenAI's forum, so expect more of these turns to run out than turns of text alone, and read the

@@ -154,24 +154,30 @@ Also in scope:
   carries it is handed over, so the record names it even when the process dies while the request is
   out. That turn's `decision` event names it again, whatever became of the request, and counts it as
   sent once handed over, though a connection refused or timed out first never carried it.
-  `run_start.decision_llm.frames` says whether the run was set to show frames. OpenAI's data
-  controls say image inputs to that endpoint are scanned for child sexual abuse material when they
-  are sent, and a flagged one kept for manual review even under zero data retention. How much was
-  sent is on the record, as `state_chars` and `state_tokens_est` on each `decision` event, and which
-  fields were dropped to fit is there as `trimmed`; the text itself is not, so a reader auditing
-  what left the machine is reading a size and a shape rather than the words. That holds when a turn
-  fails as well: its `error` is the exception's type, with its HTTP status where it carries one, and
-  never the message, which can quote the request back. The only words kept are quackd's own: that
-  the stepper's own second ran out, and what quackd says about a reply it could not read, which
-  names the type of what came back and nothing it said. The address is on the record too, in
-  `run_start.decision_llm`, with a password in it or a credential-named query parameter already
-  replaced by `***`, because that url can arrive through `QUACKD_DECISION_URL` where argv redaction
-  would never see it. What would be a security issue: a picture reaching a decision LLM on a run
-  that did not ask for frames, or reaching any row but `openai` or any address but OpenAI's own
-  hosts, a frame handed over with no line on the record naming it, image bytes in the state or in
-  the record, a credential reaching any of them but its own vendor at its own address, a credential
-  surviving that recorded url, a hosted key being sent to a server you run, or a stepper-authored
-  call bypassing the executor.
+  `run_start.decision_llm.frames` says whether the run was set to show frames. On a Microduck the
+  same flag gives the pilot `watch`, which hands that row one such frame a look, no more than two a
+  second and sixty a call, beside the words the pilot described the thing in, and keeps each as
+  `sent/watch-NNNN.jpg`, named with its size and its sha256 in a `watch_frame` line written through
+  to the transcript before the request that carries it is handed to the client, so a frame `watch`
+  sends with no such line naming it is a security issue
+  ([microduck](docs/adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view)).
+  OpenAI's data controls say image inputs to that endpoint are scanned for child sexual abuse
+  material when they are sent, and a flagged one kept for manual review even under zero data
+  retention. How much was sent is on the record, as `state_chars` and `state_tokens_est` on each
+  `decision` event, and which fields were dropped to fit is there as `trimmed`; the text itself is
+  not, so a reader auditing what left the machine is reading a size and a shape rather than the
+  words. That holds when a turn fails as well: its `error` is the exception's type, with its HTTP
+  status where it carries one, and never the message, which can quote the request back. The only
+  words kept are quackd's own: that the stepper's own second ran out, and what quackd says about a
+  reply it could not read, which names the type of what came back and nothing it said. The address
+  is on the record too, in `run_start.decision_llm`, with a password in it or a credential-named
+  query parameter already replaced by `***`, because that url can arrive through
+  `QUACKD_DECISION_URL` where argv redaction would never see it. What would be a security issue: a
+  picture reaching a decision LLM on a run that did not ask for frames, or reaching any row but
+  `openai` or any address but OpenAI's own hosts, a frame handed over with no line on the record
+  naming it, image bytes in the state or in the record, a credential reaching any of them but its
+  own vendor at its own address, a credential surviving that recorded url, a hosted key being sent
+  to a server you run, or a stepper-authored call bypassing the executor.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
   sentences a model wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never

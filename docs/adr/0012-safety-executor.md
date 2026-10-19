@@ -1,6 +1,6 @@
 # ADR-0012: One executor between every LLM and the transport
 
-**Status:** accepted · **Date:** 2026-08-28 · **Amended 2026-09-05:** gate 1 exempts `stop` (the abort is set exactly when the pilot reaches for the brake), and gate 9 races the abort event as well as the clock, so a kill switch cancels the running verb. `RobotSession` exempts `stop` the same way.
+**Status:** accepted · **Date:** 2026-08-28 · **Amended 2026-09-05:** gate 1 exempts `stop` (the abort is set exactly when the pilot reaches for the brake), and gate 9 races the abort event as well as the clock, so a kill switch cancels the running verb. `RobotSession` exempts `stop` the same way. **Amended 2026-10-19 by [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md):** a verb that runs for a while may ask whether to end (`VerbContext.interrupted`), and is told so once the run's minutes are spent or a `stop` has been asked for from beside it, and a verb the executor cancels is told why: the abort, its timeout, or a caller that went away. Only `watch` asks, and `go_to` does not yet.
 
 ## Context
 

@@ -12,6 +12,15 @@ the consequence below still holds: the model calls `manipulate` with one short s
 judges what the arm did from a fresh look, so a policy is something the LLM calls, not
 something it is.
 
+**Amended 2026-10-19 by [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md):** "Composite
+verbs never call the LLM" below reads "never call the *pilot*". The steering tier has a third kind
+of loop on a Microduck, `watch`, which keeps a thing the pilot described in view with the head, a
+look at most every half second, by asking a decision LLM that can see two closed questions about
+each frame, where the thing is across it and how high, on a run started with `--decision-frames`.
+What comes back is a sector, and quackd turns it into a move of its own, clamped to the head's
+numbers, so the decision LLM decides where and never how. The pilot still calls it as a verb, and
+nothing about it reaches the deliberation tier.
+
 ## Context
 
 An LLM takes 1–10 s to answer. A biped falls over in 0.3 s. Upstream's own architecture
