@@ -84,6 +84,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   it reports its servos' temperatures in `robot.health` without acting on them. The three say so
   now, and `tests/test_docs.py` keeps the old words out of every living page.
 
+- **The Microduck page says what robotd's `move.applied` is.** Its row for
+  `robot.state.move.requested` called `applied` the twist after the deadman and the limits, and
+  the only limits robotd has besides the deadman are on joint targets. It says now that `applied`
+  is the twist robotd's control loop hands its controller: the one asked for, or zero once the
+  deadman finds it stale, smoothed toward each new value and held at zero through the limp-fall
+  sequence. The row that says robotd clamps no twist says too that its controller zeroes the twist
+  while a client holds robotd's body-pose mode, which neither `requested` nor `applied` shows.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

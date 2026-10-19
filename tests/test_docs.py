@@ -360,6 +360,8 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "it clamps velocities",
     "joint and thermal clamps",
     "fall detection, thermal clamps",
+    # and the twist robotd reports as applied passes no limit but the deadman
+    "the twist after the deadman and the limits",
 )
 
 
