@@ -26,22 +26,25 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `Stepper.build` refuses frames for any other decision LLM, the stepper asks the gate again before
   each frame goes, and the client refuses a frame it was not built for, or more than the 128 one
   request may carry, before anything is sent. Before each request that carries a frame, the JPEG is
-  written beside the step's own PNG as `frames/NNNN-decision.jpg`, and the turn's `decision` record
-  names it, with its camera, size, bytes, detail, sha256, path and whether the disk kept it, and
-  never its bytes, so a turn that failed, ran out of its second or was interrupted still says its
-  frame left. A turn asked without one says why, as `frame_skipped`. `run_start.decision_llm` gains
-  `frames`, the summary's `decision` block gains `frames` and `frames_sent`, and `quackd log` says
-  `1 frame` on each turn that sent one. Whether a frame may go is decided apart from
-  `--decision-mode`, so a run that asks for frames builds its decision LLM whatever the mode, and
-  with the mode off one line says no frame will go; apart from `--vision` too, which is the pilot's.
-  `--decision-llm off` turns it off, and `quackd record` pins it off. A turn with a frame keeps the
-  stepper's second. `tests/test_decision_frames.py` holds the encoding, the gate, every refusal, the
-  copy written before the request, and a run cut off while a frame was out, and the wire tests send
-  frames through openai 3.22.1 to the stand-in on 127.0.0.1, treated as OpenAI's, which checks each
-  image part against the reference's shape. `tests/test_live_decision.py` gains a measurement of
-  what a frame adds to a turn's time and to the tokens it bills, which needs a key and has not run.
-  What a frame costs on `gpt-6-luna`, and how much slower it makes a turn, are unmeasured, and no
-  frame from quackd has reached OpenAI
+  written beside the step's own PNG as `frames/NNNN-decision.jpg`, and a `decision_frame` line
+  naming it, with its camera, size, bytes, detail, sha256, path and whether the disk kept it, and
+  never its bytes, is written to the transcript and flushed, so the record names the frame even when
+  the process dies while the request is out. The turn's `decision` record names it again, so a turn
+  that failed, ran out of its second or was interrupted still says its frame was handed over, which
+  a connection refused or timed out first never carried. A disk that refuses the copy leaves none of
+  it behind, and the record says `kept: false`. A turn asked without one says why, as
+  `frame_skipped`. `run_start.decision_llm` gains `frames`, the summary's `decision` block gains
+  `frames` and `frames_sent`, and `quackd log` says `1 frame` on each turn that sent one. Whether a
+  frame may go is decided apart from `--decision-mode`, so a run that asks for frames builds its
+  decision LLM whatever the mode, and with the mode off one line says no frame will go; apart from
+  `--vision` too, which is the pilot's. `--decision-llm off` turns it off, and `quackd record` pins
+  it off. A turn with a frame keeps the stepper's second. `tests/test_decision_frames.py` holds the
+  encoding, the gate, every refusal, the copy written before the request, and a run cut off while a
+  frame was out, and the wire tests send frames through openai 3.22.1 to the stand-in on 127.0.0.1,
+  treated as OpenAI's, which checks each image part against the reference's shape.
+  `tests/test_live_decision.py` gains a measurement of what a frame adds to a turn's time and to the
+  tokens it bills, which needs a key and has not run. What a frame costs on `gpt-6-luna`, and how
+  much slower it makes a turn, are unmeasured, and no frame from quackd has reached OpenAI
   ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md),
   [ADR-0053](docs/adr/0053-a-decision-llm-may-be-shown-the-camera.md)).
 

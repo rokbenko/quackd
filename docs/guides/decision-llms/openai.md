@@ -155,10 +155,12 @@ describe, with each turn the stepper asks about. It is off unless a run says so.
   beside the step's own PNG as `frames/NNNN-decision.jpg`, under the same number, and the turn's
   `decision` record names it in a `frame` block: `camera`, `media_type`, `width`, `height`,
   `bytes`, `detail`, `sha256` and `path`, and `kept`, which is false where the disk refused the
-  copy and the frame went all the same. Never its bytes. The record says a frame left whatever
-  became of the request, a 429, a timeout and an interrupt included, because it left either way. A
-  turn asked without one says why, as `frame_skipped`, and is asked on its text alone.
-  `run_start.decision_llm.frames` says whether the run showed frames at all, the summary's
+  copy and the frame went all the same. Never its bytes. The record names a frame whatever became of
+  the request, a 429, a timeout and an interrupt included, and a `decision_frame` line written and
+  flushed before the request is handed over names it even when the process dies while the request is
+  out. A frame handed over is counted as sent, though a connection refused or timed out first never
+  carried it. A turn asked without one says why, as `frame_skipped`, and is asked on its text alone.
+  `run_start.decision_llm.frames` says whether the run was set to show frames, the summary's
   `decision` block counts them as `frames_sent`, and `quackd log` says `1 frame` on each turn that
   sent one.
 - **It is not `--vision`.** That flag says what the pilot is shown, and neither flag changes what

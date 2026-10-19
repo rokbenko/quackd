@@ -747,9 +747,12 @@ On a run that shows the camera (`--decision-frames`), every `decision` also carr
 where no frame went with the turn and otherwise what went: its `camera`, `media_type`, `width`,
 `height`, `bytes`, `detail` and `sha256`, the `path` of the copy kept beside the transcript as
 `frames/NNNN-decision.jpg`, under the number of that step's own PNG, and `kept`, false where the
-disk refused the copy. The copy and the block are written before the request that carries the
-frame is sent, so a turn that failed, ran out of its second or was interrupted still says its frame
-left. A turn asked without one says why, as `frame_skipped`, in a sentence such as
+disk refused the copy. The copy is written, and a `decision_frame` line naming it is written to the
+transcript and flushed, before the request that carries the frame is handed over, so a turn that
+failed, ran out of its second or was interrupted still names its frame, and so does a run whose
+process died while the request was out. Handed over is not reached: a connection refused or timed
+out first never carried the frame, and the record cannot tell the two apart. A turn asked without
+one says why, as `frame_skipped`, in a sentence such as
 `the primary camera gave no picture this turn`. The bytes are never in the record, and nor is the
 state's text.
 
@@ -778,7 +781,7 @@ mints are prefixed `decision-`.
 `summary.json` grows a `decision` block when there was a stepper, and nothing when there was not:
 `mode`, `llm`, `model`, `url`, `frames`, `asked`, `taken`, `errors`, `refusals`, `frames_sent`,
 `latency_s`, `usage`, `cost_usd`, `cost_estimated` and `price`. `frames_sent` counts the frames
-that left with a request, each counted as it was handed over.
+handed over with a request, which a connection refused or timed out first never carried.
 
 The budget line in every observation grows one clause once the stepper has answered:
 

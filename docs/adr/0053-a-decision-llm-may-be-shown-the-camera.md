@@ -55,15 +55,18 @@ keeps what was sent.
   give, and never inside the state, which gains one text field, `picture`, saying an image went
   beside it. `TIMEOUT_S` stays 1.0 s for a turn with a frame until a measurement says otherwise.
 - **Record before send.** Before `decide` is awaited, the JPEG is written as
-  `frames/NNNN-decision.jpg`, under the number of the step's own PNG, and the turn's `frame` block
-  is set, `{camera, media_type, width, height, bytes, detail, sha256, path, kept}`, and the frame
-  counted in `frames_sent`. The copy is written on the loop's own thread, so no file is on disk
-  without a record naming it and no record names a frame no request carried. The loop emits the
-  `decision` event from a `finally`, so a 429, a timeout, an abort or a cancel still records that
-  the frame left. An `OSError` on the write sets `kept: false`, the record still saying the frame
-  went, and never ends the run. A turn asked without a frame says why, as `frame_skipped`. Beside
-  them, `run_start.decision_llm.frames`, `frames` and `frames_sent` in the summary's `decision`
-  block, and `1 frame` on the turn's line in `quackd log`.
+  `frames/NNNN-decision.jpg`, under the number of the step's own PNG, a `decision_frame` line naming
+  it is written to the transcript and flushed, the turn's `frame` block is set,
+  `{camera, media_type, width, height, bytes, detail, sha256, path, kept}`, and the frame counted in
+  `frames_sent`. The loop emits the `decision` event from a `finally`, so a 429, a timeout, an abort
+  or a cancel still records the frame, and the line written before is what names it when the process
+  dies first. A process that dies between the copy and the line leaves a copy that nothing was sent
+  with, never a frame sent with nothing naming it. A frame handed over is counted, though a
+  connection refused or timed out first never carried it, since from here the two cannot be told
+  apart. An `OSError` on the write removes what part of the copy was written and sets `kept: false`,
+  the frame still going, and never ends the run. A turn asked without a frame says why, as
+  `frame_skipped`. Beside them, `run_start.decision_llm.frames`, `frames` and `frames_sent` in the
+  summary's `decision` block, and `1 frame` on the turn's line in `quackd log`.
 
 ## Why not
 

@@ -23,6 +23,7 @@ and the client this asks about is imported only by a run that shows frames.
 
 from __future__ import annotations
 
+import contextlib
 import io
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,14 +150,19 @@ def write_jpeg(path: Path, data: bytes) -> None:
 def keep(path: Path, frame: DecisionFrame) -> bool:
     """Write the bytes about to be sent to `path`, and say whether the disk took them.
 
-    Called the moment before the request that carries the frame, on the loop's own thread, like
-    every record line the transcript writes, so there is no moment at which the file is on disk
-    and the record says nothing of it, or the record names a frame no request carried. False
-    rather than an exception for a disk that refused: the frame still goes, and the record says
-    it went and that its copy is missing (`kept: false`), because a full disk is a reason to lose
-    a copy and never a reason to end a run with a robot connected."""
+    Called just before the request that carries the frame, on the loop's own thread, and before
+    the record line that names the frame is written and flushed (`Stepper.advise`'s `on_frame`),
+    so no frame is handed over without that line. A process that dies between the two leaves a
+    copy that nothing was sent with, and never a frame sent with nothing naming it. False rather
+    than an exception for a disk that refused: the frame still goes, and the record says so and
+    that its copy is missing (`kept: false`), because a full disk is a reason to lose a copy and
+    never a reason to end a run with a robot connected. A refused write may have left part of the
+    file behind, and that part is removed, so no copy sits beside a record whose sha256 it does
+    not match."""
     try:
         write_jpeg(path, frame.data)
     except OSError:
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
         return False
     return True

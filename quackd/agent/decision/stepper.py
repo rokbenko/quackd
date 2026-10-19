@@ -32,7 +32,7 @@ import json
 import math
 import time
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -1032,13 +1032,20 @@ class Stepper:
         stepped: Sequence[str] = (),
         notes: str | None = None,
         snapshot: Snapshot | None = None,
+        on_frame: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Advice:
         """Ask this turn's questions, and say whether the answer is good enough to act on.
 
         `snapshot` is the primary camera's picture this turn, and where the copy of what is sent
         of it is kept, on a run that shows its decision LLM the camera; None on every other run,
         and on a turn whose primary camera gave nothing. A stepper built without `frames` never
-        looks at it."""
+        looks at it.
+
+        `on_frame` is handed the frame's block once its copy is written and before the request
+        that carries it is handed over, for the loop to write down and flush. The turn's own
+        record is written only when the turn ends, and a process that dies while the request is
+        out never gets that far, so without this line a frame could leave with nothing on the
+        record naming it. If writing the line fails, so does the turn, before anything is sent."""
         self.cut_off = None
         offered = self.labels_for(cleared=cleared)
         record: dict[str, Any] = {
@@ -1110,18 +1117,21 @@ class Stepper:
         try:
             questions = build_questions(offered, self.what)
             if shown is not None and snapshot is not None:
-                # Record before send. The copy is on disk and the turn's record names it, and the
-                # frame is counted, before the request that carries it is handed over, so a turn
-                # that fails, runs out of its second, or is cut off by an interrupt still says a
-                # frame left and which one: every way out of here below keeps this `record`. The
-                # copy is written on the loop's own thread, so there is no moment at which it is
-                # on disk with no record naming it (`frames.keep`), and a disk that refuses it
-                # costs the copy, `kept: false`, and never the frame or the run.
-                record["frame"] = {
+                # Record before send. The copy is on disk, a flushed line names it (`on_frame`),
+                # the turn's record holds it and the frame is counted, all before the request
+                # that carries it is handed over, so a turn that fails, runs out of its second, is
+                # cut off by an interrupt, or dies with its process, still says a frame was handed
+                # over and which one. Handed over is not reached: a connection refused or timed
+                # out first never carried it, and from here the two cannot be told apart. A disk
+                # that refuses the copy costs the copy, `kept: false`, and never the frame or run.
+                block = {
                     **shown.record(),
                     "path": snapshot.where,
                     "kept": keep(snapshot.path, shown),
                 }
+                if on_frame is not None:
+                    on_frame(block)
+                record["frame"] = block
                 self.frames_sent += 1
                 # The request's own clock starts once the copy is down, so `latency_s` is the
                 # request's and `idle_s` the connection's, and neither is the disk's.

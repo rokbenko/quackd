@@ -2001,6 +2001,12 @@ class AgentLoop:
                             stepped=self.stepped,
                             notes=memory_text,
                             snapshot=snapshot,
+                            # Written and flushed before the request that carries the frame is
+                            # handed over, because the `decision` event below is written only
+                            # once the turn ends, which a process killed mid-request never does.
+                            on_frame=lambda block: self._emit(
+                                "decision_frame", step=self.budget.steps, frame=dict(block)
+                            ),
                         )
                     finally:
                         # From a `finally`, so the turn is on the record however `advise` ends.

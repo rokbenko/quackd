@@ -828,6 +828,58 @@ async def test_a_run_shows_one_frame_a_turn_and_keeps_each_beside_its_step(
     assert (block["frames"], block["frames_sent"]) == (True, len(asked))
 
 
+class _Witness(fake_api.FakeOpenAI):
+    """A request that, at the moment it is handed over, reads what the run has written down."""
+
+    def __init__(self, runs: Path) -> None:
+        super().__init__(answers=fake_api.turn("stop"))
+        self.runs = runs
+        self.seen: list[tuple[str, list[str]]] = []
+
+    async def _send(self, path: str, cast_to: Any, body: Any, options: Any) -> Any:
+        transcript = next(self.runs.rglob("transcript.jsonl"))
+        written = [json.loads(line) for line in transcript.read_text(encoding="utf-8").splitlines()]
+        named = [e["frame"]["sha256"] for e in written if e["kind"] == "decision_frame"]
+        sent = hashlib.sha256(_sent_image({"body": body})).hexdigest()
+        self.seen.append((sent, named))
+        return await super()._send(path, cast_to, body, options)
+
+
+async def test_a_frame_is_on_the_record_before_its_request_is_handed_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The turn's own record is written when the turn ends, and a process killed while the
+    request was out never got there: the frame had gone with nothing on the record naming it.
+    A `decision_frame` line, written and flushed before the request is handed over, names it
+    now. This reads the transcript at the moment each request is handed over."""
+    witness = _Witness(tmp_path)
+    llm, _fake = _seeing(monkeypatch, fake=witness)
+    result = await _run(tmp_path, llm, frames_on=True)
+    assert witness.seen, "no frame was ever handed over"
+    for sent, named in witness.seen:
+        assert sent in named, "a frame was handed over before a line named it"
+    lines = [e["frame"] for e in _events(result.run_dir, "decision_frame")]
+    turns = [e["frame"] for e in _events(result.run_dir, "decision") if e.get("frame")]
+    assert lines == turns
+
+
+def test_a_copy_the_disk_refused_leaves_no_part_of_itself_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write that failed part of the way left a truncated JPEG beside a record whose sha256 it
+    did not match. What is left of it is removed, and the record says `kept: false`."""
+
+    def half(path: Path, data: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data[: len(data) // 2])
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(frames, "write_jpeg", half)
+    target = tmp_path / "frames" / "0001-decision.jpg"
+    assert frames.keep(target, frames.encode(_picture(), "camera")) is False
+    assert not target.exists()
+
+
 async def test_a_run_without_the_flag_shows_no_frame_even_to_a_client_that_could_see(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
