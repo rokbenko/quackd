@@ -65,6 +65,25 @@ async def test_memory_off(tmp_path: Path) -> None:
     assert os.listdir(tmp_path) == []
 
 
+async def test_the_tool_descriptions_only_ask_for_a_recall_when_memory_is_on(
+    tmp_path: Path,
+) -> None:
+    """Both tools stay registered with `--no-memory`, and robot_recall's description still said
+    to call it before planning, which a pilot reads as an instruction to spend a turn on an
+    answer that says memory is off. With memory off both descriptions say so instead."""
+
+    async def described(**kwargs: Any) -> dict[str, str]:
+        async with connected(two_robots(), memory_dir=tmp_path, **kwargs) as (client, _fleet):
+            return {t.name: t.description or "" for t in (await client.list_tools()).tools}
+
+    on = await described()
+    assert "Call it before planning" in on["robot_recall"]
+    assert "Memory is off" not in on["robot_remember"]
+    off = await described(memory=False)
+    for name in ("robot_recall", "robot_remember"):
+        assert "Memory is off" in off[name] and "Call it" not in off[name], off[name]
+
+
 async def test_the_instructions_only_sell_memory_when_it_is_on(tmp_path: Path) -> None:
     """Both tools stay registered with `--no-memory` and both answer "memory is off", so an
     instruction to call robot_recall early is an instruction to waste a turn."""

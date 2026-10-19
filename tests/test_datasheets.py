@@ -211,6 +211,28 @@ def test_a_body_with_legs_it_cannot_walk_on_here_is_not_told_it_has_none() -> No
     )
 
 
+def test_a_body_no_verb_moves_is_told_no_speed_cap() -> None:
+    """toddlerbot:bridge carries its walk's caps in `limits` until its daemon reports a
+    checkpoint that can walk it, and its prompt said `quackd clamps you to 0.2 m/s forward` two
+    lines under "It does not move". A speed cap is a rule about a verb that moves the body, so
+    only a body that has one is told its caps."""
+    from quackd_toddlerbot import toddlerbot_manifest
+
+    for grounded in (
+        describe(RobotSpec("toddlerbot", "bridge")),  # before the daemon has said anything
+        toddlerbot_manifest("bridge", camera=True, walk=False),  # a daemon with no checkpoint
+    ):
+        assert grounded.mobility == "none" and grounded.limits.get("max_vx")
+        assert "m/s forward" not in body_section(grounded)
+    walking = toddlerbot_manifest("bridge", camera=True, walk=True)
+    assert walking.mobility == "legged" and "m/s forward" in body_section(walking)
+    for spec in SPECS:
+        manifest = describe(spec)
+        moves = manifest.mobility != "none" and "max_vx" in manifest.limits
+        told = "m/s forward" in body_section(manifest)
+        assert told == moves, f"{spec.adapter}:{spec.backend}"
+
+
 def test_speed_clamps_come_from_the_limits_never_from_the_datasheet() -> None:
     """`limits` is quackd's own rule about what it sends. The datasheet never repeats it."""
     duck = body_section(microduck_manifest("sim2d"))

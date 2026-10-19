@@ -105,7 +105,20 @@ def resolve_duck_path(name_or_path: str) -> Path:
 
 def load_duck(name_or_path: str) -> DuckFile:
     path = resolve_duck_path(name_or_path)
-    return parse_duck_text(path.read_text(encoding="utf-8"), str(path))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        # Windows PowerShell 5.1 saves UTF-16 with `>` and `Out-File`, and the decode error
+        # escaped every command that reads a .duck as a traceback rather than a sentence.
+        if path.read_bytes()[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            reason = (
+                "saved as UTF-16, which quackd does not read: save it as UTF-8 (Windows "
+                "PowerShell 5.1's > writes UTF-16, and Set-Content -Encoding utf8 writes UTF-8)"
+            )
+        else:
+            reason = f"not UTF-8 (byte {e.start} is not): save it as UTF-8"
+        raise DuckParseError(reason, str(path)) from None
+    return parse_duck_text(text, str(path))
 
 
 def list_bundled_ducks() -> list[Path]:

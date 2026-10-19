@@ -106,6 +106,36 @@ def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
     assert adopted["instructions"] == want.body
 
 
+def test_a_duck_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
+    tmp_path: Path,
+) -> None:
+    """Windows PowerShell 5.1 saves UTF-16 with `>`, and every way into a `.duck` read such a file
+    into a UnicodeDecodeError traceback, `quackd validate` and what `robot_load_duckfile` calls
+    among them. The one place that opens a file refuses it now as a task file it cannot read,
+    which every caller already says in a sentence, and says what to do."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+    from quackd.mcp_server import build_server
+    from quackd.transport.sim2d import Sim2DTransport
+
+    wide = tmp_path / "hello-world.duck"
+    wide.write_bytes((DUCKS / "hello-world.duck").read_text(encoding="utf-8").encode("utf-16"))
+    with pytest.raises(DuckParseError, match="saved as UTF-16"):
+        load_duck(str(wide))
+    checked = CliRunner().invoke(app, ["validate", str(wide)])
+    assert checked.exit_code == 1 and isinstance(checked.exception, SystemExit), checked.exception
+    assert "saved as UTF-16" in " ".join(checked.output.split()), checked.output
+    _server, session = build_server(Sim2DTransport(seed=1), memory=False)
+    adopted = session.load(str(wide))
+    assert not adopted["ok"] and "saved as UTF-16" in adopted["error"], adopted
+
+    latin = tmp_path / "latin.duck"
+    latin.write_bytes("---\nname: caf\u00e9\n---\n".encode("latin-1"))
+    with pytest.raises(DuckParseError, match="not UTF-8"):
+        load_duck(str(latin))
+
+
 def test_machine_enforced_abort_conditions() -> None:
     duck = load_duck(str(DUCKS / "find-and-kick.duck"))
     fm = duck.frontmatter

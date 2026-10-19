@@ -1119,10 +1119,17 @@ def build_fleet_server(
         session = fleet.get(robot)
         return session.load(path) if session else fleet.unknown(robot)
 
+    # The rule `_instructions` keeps: with --no-memory both tools stay registered and answer
+    # "memory is off", so a description that says to call one is an instruction to waste a turn.
+    remembering = any(s.memory is not None for s in fleet.sessions.values())
+
     @mcp.tool(
         description="What one robot remembers from earlier sessions and runs: the notes a "
         "pilot saved with robot_remember, and how its recent runs ended. Call it before "
         "planning; it costs no step."
+        if remembering
+        else "Memory is off for this server (--no-memory): no robot here keeps notes or a "
+        "record of earlier runs, so this only answers that, and there is no need to call it."
     )
     async def robot_recall(robot: str | None = None) -> dict[str, Any]:
         session = fleet.get(robot)
@@ -1132,6 +1139,9 @@ def build_fleet_server(
         description="Keep one short fact for future sessions on one robot (where things "
         "usually are, what worked, what to avoid). Moves nothing, costs no step. The same "
         "sentence twice updates the old note instead of duplicating it."
+        if remembering
+        else "Memory is off for this server (--no-memory): nothing is kept, so this only "
+        "answers that, and there is no need to call it."
     )
     async def robot_remember(
         text: str, tags: list[str] | None = None, robot: str | None = None
