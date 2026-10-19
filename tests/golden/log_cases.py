@@ -677,6 +677,28 @@ def host_detector_start() -> LogEvent:
     )
 
 
+def played_start() -> LogEvent:
+    """A `run_start` whose pilot was told it may play a part, by `--play` over a task file
+    that did not say so.
+
+    Its own case for the reason `host_detector_start` is: added to `events()` it would move
+    `whole_call`'s lines, and this is the case that shows no older line moved. A record with
+    no `play`, or one that did not play, reads as it always did."""
+    return _e(
+        "run_start",
+        0.0,
+        duck="e049-t-rex",
+        provider="openai",
+        model="gpt-6-astra",
+        transport="real",
+        adapter="lerobot",
+        contract={"play": False},
+        play={"on": True, "from": "--play"},
+        tools=["report_state", "move_joints", "gripper", "place", "stop"],
+        connect_s=0.25,
+    )
+
+
 def golden() -> dict[str, Any]:
     """Every branch, plus the two knobs a view is built with, plus the burst coalescing,
     plus two whole calls through the path the MCP tool result actually uses."""
@@ -687,6 +709,7 @@ def golden() -> dict[str, Any]:
         list(line) for line in render_lines(by_name["run_start_full"], prompt=False)
     ]
     out["run_start_host_detector"] = [list(line) for line in render_lines(host_detector_start())]
+    out["run_start_played"] = [list(line) for line in render_lines(played_start())]
     for label, chars in (("cut", 100), ("none", 0), ("all", None)):
         out[f"llm_full@thinking-{label}"] = [
             list(line) for line in render_lines(by_name["llm_full"], thinking_chars=chars)

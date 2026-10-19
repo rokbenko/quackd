@@ -14,7 +14,7 @@ from quackd.duckfile.parser import (
     parse_duck_text,
     resolve_duck_path,
 )
-from quackd.duckfile.schema import json_schema
+from quackd.duckfile.schema import DUCK_SPEC_VERSION, json_schema
 
 from .conftest import DUCKS
 
@@ -129,7 +129,8 @@ def test_advisory_abort_conditions_pass_through() -> None:
     [
         (lambda s: s.replace("---\nduck", "duck", 1), "missing frontmatter"),
         (lambda s: s.replace("---\n# Task", "# Task"), "unterminated"),
-        (lambda s: s.replace("duck: 0", "duck: 4"), "duck"),
+        # one past the newest, so a new spec version needs no edit here
+        (lambda s: s.replace("duck: 0", f"duck: {DUCK_SPEC_VERSION + 1}"), "duck"),
         (lambda s: s.replace("success: [x]", "success: [x]\nrequires: [quack]"), "needs duck: 1"),
         (lambda s: s.replace("name: t", "name: Not A Slug"), "name"),
         (lambda s: s.replace("success: [x]", "success: [x]\nbogus: 1"), "bogus"),

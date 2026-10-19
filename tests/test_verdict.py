@@ -128,7 +128,7 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     `tests/test_mcp_server.py`, where there is a client to ask."""
     from pathlib import Path as _Path
 
-    from quackd.agent.prompts import build_system_prompt
+    from quackd.agent.prompts import build_system_prompt, play_section
     from quackd.duckfile.parser import load_duck
     from quackd.verbs.registry import default_registry
 
@@ -144,6 +144,8 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
         "docs/concepts/safety.md": (repo / "docs" / "concepts" / "safety.md").read_text(
             encoding="utf-8"
         ),
+        # a played run's pilot is told about the verdict there too, so it is held to both halves
+        "the play section": play_section(still=True, voice=None, memory=False, joints=True),
     }
     for where, text in surfaces.items():
         assert "not by itself" in text, f"{where} states the rule absolutely"

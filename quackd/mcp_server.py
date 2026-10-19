@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from quackd import __version__
 from quackd.adapters.base import adapter_name, backend_name, go_to_rest_if_any
 from quackd.adapters.manifest import RobotManifest, apply_datasheet_override
-from quackd.agent.prompts import body_summary
+from quackd.agent.prompts import body_summary, play_joints, play_paragraphs, play_voice
 from quackd.agent.transcript import png_bytes
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.parser import DuckParseError, load_duck
@@ -709,15 +709,40 @@ class RobotSession:
             # wondering why the new contract's budget is already part spent
             note += f" What this session already spent still counts: {budget.status()}."
         effective = self.effective_manifest()
-        return {
+        played = duck.frontmatter.play
+        if played:
+            note += (
+                " This task may give the robot a part to play: read the play field before you "
+                "assess it."
+            )
+        result: dict[str, Any] = {
             "ok": True,
             "robot": self.name,
             "name": duck.name,
-            "contract": duck.frontmatter.model_dump(),
+            # without `play` for a file that does not play, so loading any task file written
+            # before there was such a key reads exactly the result it always did
+            "contract": duck.frontmatter.model_dump(exclude=None if played else {"play"}),
             "instructions": duck.body,
             "datasheet_text": body_summary(effective) if effective is not None else None,
             "note": note,
         }
+        if played:
+            # The client's own prompt frames this pilot, so what a played run reads in its
+            # system prompt arrives here, worded for a chat by the same function. The facts
+            # are this session's: a body with no manifest is taken as one that moves, as the
+            # run's prompt takes it, and a voice or `move_joints` counts only where this body
+            # has the verb.
+            allowed = [v for v in duck.frontmatter.verbs.allow if v in self.registry]
+            result["play"] = "\n\n".join(
+                play_paragraphs(
+                    still=effective is not None and effective.mobility == "none",
+                    voice=play_voice(allowed),
+                    memory=self.memory is not None,
+                    joints=play_joints(allowed),
+                    mcp=True,
+                )
+            )
+        return result
 
 
 DuckSession = RobotSession

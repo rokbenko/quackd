@@ -223,6 +223,14 @@ class ProviderTurn(BaseModel):
     text: str | None = None
     usage: Usage = Field(default_factory=Usage)
     stop_reason: str | None = None
+    refused: bool = Field(
+        default=False,
+        description="The model said no through the API's own refusal channel: a refusal part, "
+        "with words or without, a refusal field that has words in it, or Anthropic's `refusal` "
+        "stop. Its words, where it gave any, are in the turn's text as `[refusal] ...`, an "
+        "Anthropic stop that gave none as `[refusal] the model refused`, and a call written out "
+        "in them is never read as one, whatever `stop_reason` says.",
+    )
     raw: Any = None
     thinking: str | None = Field(
         default=None,

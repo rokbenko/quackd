@@ -22,7 +22,7 @@ from quackd.adapters.manifest import (
 from quackd.verbs.aliases import canonical
 from quackd.verdict import check_needs
 
-DUCK_SPEC_VERSION = 3
+DUCK_SPEC_VERSION = 4
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _ROBOT_SPEC_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$")
@@ -488,13 +488,14 @@ class FlockSection(BaseModel):
 class DuckFrontmatter(BaseModel):
     """The contract. This is what `schema.json` describes and what the executor enforces."""
 
-    model_config = ConfigDict(extra="forbid", title="quackd .duck frontmatter (v0, v1, v2, v3)")
+    model_config = ConfigDict(extra="forbid", title="quackd .duck frontmatter (v0, v1, v2, v3, v4)")
 
-    duck: Literal[0, 1, 2, 3] = Field(
+    duck: Literal[0, 1, 2, 3, 4] = Field(
         ...,
         description="Spec version: 0 (quackd 0.1 to 0.3), 1 (0.4: requires, robots, "
         "flock.roles, flock.frame_hints; 0.9: flock.allocation.method: pilots), 2 (0.9: "
-        "datasheet, flock.roles.needs) or 3 (0.16: policy). Older files parse unchanged.",
+        "datasheet, flock.roles.needs), 3 (0.16: policy) or 4 (0.19: play). Older files parse "
+        "unchanged.",
     )
     name: str = Field(..., description="Slug: lowercase letters, digits, hyphens.")
     description: str = Field(..., min_length=1, description="One line, human-facing.")
@@ -512,6 +513,13 @@ class DuckFrontmatter(BaseModel):
         ),
     )
     persona: str | None = Field(default=None, description="Tone for the LLM. Optional.")
+    play: bool = Field(
+        default=False,
+        description="v4: the task may give the pilot a part to play, an animal, a person or a "
+        "character, which it acts out with the body it has. Adds one section to the system "
+        "prompt and changes no gate. `quackd run --play` or `--no-play` overrides it for one "
+        "run.",
+    )
     providers: list[str] = Field(
         default_factory=list, description="Providers this duck was tested with (not enforced)."
     )
@@ -583,6 +591,16 @@ class DuckFrontmatter(BaseModel):
             raise ValueError("datasheet describes one body; a flock duck cannot carry one")
         if self.duck < 3 and self.policy is not None:
             raise ValueError("policy needs duck: 3")
+        # Read off the value, never off whether the key was written: a pilot flock's contract
+        # is dumped and validated again for each member (`flock.pilots.trim_contract`), and a
+        # dumped `play: false` on a `duck: 1` file must keep passing there.
+        if self.duck < 4 and self.play:
+            raise ValueError("play needs duck: 4")
+        if self.play and self.flock is not None and self.flock.allocation.method == "auction":
+            raise ValueError(
+                "play is read by each pilot, and an auction flock has none: set "
+                "flock.allocation.method: pilots, or remove play"
+            )
         if self.policy is not None and self.flock is not None:
             raise ValueError(
                 "policy hands one arm to its learned policy; a flock duck cannot carry one"

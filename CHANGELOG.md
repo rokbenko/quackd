@@ -7,6 +7,159 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Added
+
+- **A task can give the pilot a part to play.** `play: true` in a `duck: 4` task file, or `--play`
+  on `quackd run`, `record` and `preflight`, adds one section to the system prompt, `## Playing a
+  part`, directly before the task file. It tells the pilot that a part is acted out with the body
+  it has, that the verdict asks whether this body can act it out rather than whether it is the
+  thing it plays, and that the legs, wings or second arm of what it plays stay out of `needs`. It
+  also tells the pilot that a real result the task asks for still has to happen and is judged as it
+  would be without the part, that no part brings the body into contact with a person or within
+  reach of one, that every pose made with `move_joints` stops short of the surface the body stands
+  on and of anything else there unless the task asks it to touch that, that every move is small and
+  slow while anyone is in reach or no camera picture shows the body and where a person near it
+  would stand, and that its verdict reason says plainly what the body will do and every other
+  reason what it actually did. No gate reads any of it. `--no-play` turns a file's `play` off for
+  one run, the flag wins over the file, and no variable sets either. The tools, the observations
+  and every gate are what they were, and with play off quackd adds nothing to the prompt: rendering
+  every shipped body with every starter, and the arm with every example file that does not play,
+  before and after the change gave the same bytes. An example file that now plays reads its new
+  lines with `--no-play` as well. Each member of a pilot flock plays. A coordinator flock refuses
+  either flag and a played file, since none of its members is a pilot, and `--controller vla`
+  refuses `--play`, and a played file unless `--no-play` turns its part off, since its policy reads
+  no prompt. Over MCP, a played file's `robot_load_duckfile` result carries the section's
+  paragraphs, worded for a chat, as `play`. A run's header, and the one `quackd log` replays, gains
+  a `play` row when play is on or a file's play was turned off, a pilot flock member's `run` line
+  in the log says `play` after its robot, and the record gains `run_start.play`, whether the pilot
+  was told it may play and whose word that was, beside `contract.play`, the file's own, and a pilot
+  flock's `flock_start` says the same. `tests/test_play.py` holds the schema's rules, a played
+  prompt as the plain one plus one section on every shipped body, the tools and the gate's words
+  unchanged played or not, the record of a run, a pilot flock and a rehearsal, MCP and the
+  coordinator flock's refusals, with the vla ones in `tests/test_controller_vla.py`. Four opt-in
+  live runs ask a real model to end a played task whose real result the body cannot make as
+  infeasible, a laundry basket on the Microduck's simulator asked for plainly and as a pack mule's,
+  and to move for a played part, a cat there and a T-rex on `lerobot:mock`. The first three are in
+  `tests/test_llm_in_the_simulator.py` and need MuJoCo, the last is in `tests/test_play.py`, all of
+  them need `QUACKD_LIVE_LLM=1` and an OpenAI key, and none of them has run yet
+  ([docs/guides/play.md](docs/guides/play.md),
+  [ADR-0055](docs/adr/0055-a-pilot-can-play-a-part.md)).
+
+### Fixed
+
+- **An OpenAI refusal reaches the record in its own words.** An OpenAI model says no in a channel of
+  its own: a refusal part on the Responses API, with its words under `refusal` and no text, and a
+  `refusal` field of the message on Chat Completions. quackd's OpenAI parser read only text, so it
+  dropped both, and a turn the model declined arrived as an empty one with no call: the record
+  showed a pilot that said nothing. The turn's text now reads `[refusal]` and the refusal's words,
+  as an Anthropic or OpenRouter refusal already did, which tells a refusal the model returned in
+  that channel from a no it wrote in its answer, and a Responses refusal part with no words adds no
+  text but still makes the turn a refusal. A turn that carries only a refusal stops with `refusal`
+  where the API gave no reason or only `stop`, or on the Responses API `completed`, and keeps a
+  reason it named, such as OpenRouter's `content_filter`. A Responses answer that a filter cut short
+  now stops with `content_filter`, where it said `incomplete`, or `tool_calls` beside a call. On
+  OpenAI's own APIs a call that arrives beside a refusal is kept, since that call is the turn's
+  answer, while OpenRouter keeps its own reading: it drops any call beside a refusal, as Anthropic's
+  does, and keeps only the refusal's words, where Anthropic's keeps the turn's text before them. A
+  local model's turn that carries a refusal, whatever its stop reason, or that a filter cut short,
+  is never read for a call written out in its text, so a call quoted in a refusal does not run,
+  while a native call runs as it always has. Every other vendor quackd reads through the Chat
+  Completions parser, Grok, DeepSeek, Mistral and the local servers among them, has its `refusal`
+  field read the same way where it sends one. `tests/test_providers.py` holds a Responses refusal,
+  one beside a call, one cut short and one with no words, a filtered Responses answer with and
+  without a call, a native call in a filtered answer on either API, which still runs, a Chat
+  Completions refusal alone and beside text and a call, one that keeps `content_filter`, and an
+  Anthropic refusal, and `tests/test_local_provider.py` holds a call quoted in a refusal, whatever
+  its stop reason, or cut off by a filter, that does not run.
+
+### Documentation
+
+- **Playing a part.** A guide, [docs/guides/play.md](docs/guides/play.md), says how to turn it on,
+  quotes the section as the SO-101 reads it, and says what a part cannot do: go past the travel, be
+  kept from striking itself or its table, speak on the arm, tell a person from something blue,
+  reach a decision LLM, or stay out of memory. It warns that nothing keeps a played arm away from a
+  person, since the section's care near people is a request no gate reads. The spec reference
+  describes `duck: 4` and `play` with a whole example and the `quackd validate` it passes,
+  [ADR-0055](docs/adr/0055-a-pilot-can-play-a-part.md) records why one named framing rather than an
+  override file or a set of templates, and `docs/concepts/safety.md` says that a part unlocks
+  nothing and that its rules are prose no gate reads.
+- **The shoot's task files that ask for a part now play it.** 118 of the 223 files in
+  `docs/examples/lerobot` are `duck: 4` files with `play: true`, and none of them counts saying why
+  the body cannot as a success any more. They share a persona that begins
+  `Game for anything: commit to the bit`, and all but `e067` and `e076` share a success line that
+  asks for the act and a reason saying what the arm did, and the last step of their strategy. Their
+  second step asks for the act in a few clear poses. 27 keep their older second step, which asks for
+  small, deliberate moves: those where the shoot's run sheet puts a person, a held prop, a camera or
+  a thing within the arm's reach, has someone hold something up in the camera's view, rates the
+  experiment as contact or warns that a pose may strike the arm's own base, and `e089/less`, whose
+  waves are meant to shrink. The examples README says that step is a request no gate reads, and to
+  keep people beyond the arm's reach in these as in any played run. Some tasks say a little more, so
+  that they end the way the run sheet means them to: `e035` acts its refusal out, `e059` says its
+  sock puppet is on the gripper, the six charades of `e008` keep their word secret, from the verdict
+  too, until the pilot declares, `e012` declares before its steps run out, `e060` when the person
+  stops, `e067` and `e076` give their lines in the verdict reason, after what the arm will do, and,
+  in a success line and a last step of their own, end without a declare, since the run sheet ends
+  them on an unplug and on the budget, `e048` says its cube is foam and asks the cat to touch it for
+  real, as the sheet allows, `e148/lower-flag` raises its flag and holds it briefly before it lowers
+  it, since a run ends folded at rest and the flag cannot stay up between runs, the flag of `e148`
+  and the placard of `e076` say they are taped to the wrist, as the sheet tapes them, and
+  `e079/touch-grass` names the pot of grass the sheet sets out. The other 105 keep every line. The
+  examples README also says what the aim of 90 to 95 percent of the files running as asked on the
+  arm comes to: by the run sheet's own expectations 195 of the 223 should, 87 percent, short of the
+  aim, and it names the 28 meant to fall short and why, where the sheet expects the arm not to do
+  what they ask. A test in `tests/test_play.py` parses every file and holds every played file to the
+  lines they share, the examples README's counts of the files that play and keep their lines to the
+  files, and its figures for the aim, and the files it names as falling short, each in the sentence
+  that says why, to the list the test keeps of them.
+
+### Known limitations
+
+- **The aim of 90 to 95 percent of the example files running as asked on the arm is unmeasured.**
+  By the run sheet's own expectations 195 of the 223 should, 87 percent, short of the aim, and the
+  examples README names the 28 that should not. Measuring it takes every file once on a release,
+  counting the runs that started, moved as asked and did not disown a part, which the bench steps
+  below do not.
+- **Played runs have not run on the arm.** Every check of play so far is offline: renders, the
+  test suite and the scripted pilot, and no paid model has been asked. These are the bench steps
+  that would settle it, in order, with a hand near the power switch, and what to report from
+  each:
+  1. Install this release where the arm's runs are made, and check that a run's
+     `run_start.version` says it. Run the task files from a checkout of this release, by the
+     command in each file's header.
+  2. Before each played file: blue things out of the front camera's view, since the colour
+     detector reads blue as a person, the front camera framing the arm and the space around it,
+     since a played arm is asked to keep every move small and slow while no picture shows them,
+     people beyond the arm's reach, and the file's props where its run sheet puts them, `e048`'s
+     foam cube near the table's edge among them.
+  3. `e048/be-a-cat`, `e049/t-rex`, `e043/are-you-a-duck`, `e032/mime-box`, `e079/sleep-on-it`,
+     `e079/hit-the-road`, `e027/teleoperated` and `e030/as-claude`, each with
+     `--llm openai:gpt-6-astra --no-memory`, the model the refusals were reported on, three ways:
+     the file as it read at v0.17.1, as it reads now with `--no-play`, and as it reads now. For
+     the first, check v0.17.1 out beside this checkout once, with
+     `git worktree add ../quackd-v0.17.1 v0.17.1`, and run the file from there in place of the
+     path in the header, `../quackd-v0.17.1/docs/examples/lerobot/e048/be-a-cat.duck` for `e048`.
+     Give each of the three runs a `--run-name` of its own, such as `v0171`, `no-play` and
+     `play`, in place of the `--run-name gpt-6-sol` in the header of `e030/as-claude`. Report for
+     each run whether it moved, and whether its verdict or a reason said the body cannot be what
+     the task asked, or acted the part and then said it had not.
+     `git worktree remove ../quackd-v0.17.1` takes the old checkout away again.
+  4. The controls: `e009/raise` as written and with `--play`, which must stay still both times,
+     and `e079/twist-my-arm` as written, which must move nothing toward anyone.
+  5. Count a refusal where a run never moved, or moved and then disowned its part in a reason.
+     Count a run with a `[refusal]` line or a `stop=refusal` turn, a refusal returned in OpenAI's
+     own refusal channel, as a refusal too, and report the two kinds apart.
+     `quackd log DIR --prompt --thinking all` shows each run whole.
+
+  Optional, before step 3, and only if you want a part's fold to reach all the way back into the
+  arm's rest fold: calibrate again, typing `c` at the first prompt and taking the shoulder all the
+  way back into its fold when the tool asks for each joint's full range, then record the rest pose
+  again, which is sections 05 and 07 of
+  [docs/adapters/lerobot/first-run.md](docs/adapters/lerobot/first-run.md). That moves
+  `shoulder_lift`'s zero, so a task or a remembered note that names an angle means a different
+  pose afterwards.
+
 ## [0.18.1] — 2026-10-19
 
 0.18.1 makes what quackd says about a Microduck that falls true on every robotd it serves, and fixes

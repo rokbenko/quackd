@@ -294,6 +294,8 @@ def parse_responses(response: Any) -> ProviderTurn:
     tool_calls: list[ToolCall] = []
     texts: list[str] = []
     thoughts: list[str] = []
+    refusals: list[str] = []
+    refused = False
     for item in getattr(response, "output", None) or []:
         kind = getattr(item, "type", None)
         if kind == "function_call":
@@ -312,6 +314,17 @@ def parse_responses(response: Any) -> ProviderTurn:
             )
         elif kind == "message":
             for part in getattr(item, "content", None) or []:
+                # A refusal is its own part, with its words under `refusal` and no `text`, so
+                # reading `text` alone dropped it and the turn arrived as an empty one with no
+                # call: the record then showed a pilot that said nothing where the model had
+                # said no. It reads as Anthropic's and OpenRouter's do, `[refusal] ...`. The
+                # part's type is enough to make the turn a refused one, words or none.
+                if getattr(part, "type", None) == "refusal":
+                    refused = True
+                    said = getattr(part, "refusal", None)
+                    if isinstance(said, str) and said.strip():
+                        refusals.append(said.strip())
+                    continue
                 text = getattr(part, "text", None)
                 if isinstance(text, str) and text.strip():
                     texts.append(text)
@@ -320,11 +333,31 @@ def parse_responses(response: Any) -> ProviderTurn:
                 text = getattr(part, "text", None)
                 if isinstance(text, str) and text.strip():
                     thoughts.append(text)
+    # Said whether or not a call came with it, and a call that did is kept: the output is a
+    # list of items, so a refusal part can sit beside a `stop` or a declare, and dropping
+    # those would turn the one call that answered into none.
+    texts += [f"[refusal] {said}" for said in refusals]
     usage = getattr(response, "usage", None)
     details = getattr(usage, "output_tokens_details", None)
     # the Responses API spells the same things `input_tokens` and `input_tokens_details`, and
     # means them the same way: the total already contains both cached slices
     input_details = getattr(usage, "input_tokens_details", None)
+    # No finish_reason here: `status` is "completed" or "incomplete", and a filter that cut the
+    # answer short is named in `incomplete_details`. It is recorded as the chat parser names
+    # it, calls or no calls, and only a plain "completed", or no status at all, becomes
+    # `refusal`, as only a plain "stop", or no reason at all, does there.
+    status = getattr(response, "status", None)
+    if getattr(getattr(response, "incomplete_details", None), "reason", None) == "content_filter":
+        status = "content_filter"
+    stop_reason: str | None
+    if status == "content_filter":
+        stop_reason = status
+    elif tool_calls:
+        stop_reason = "tool_calls"
+    elif refused and status in (None, "completed"):
+        stop_reason = "refusal"
+    else:
+        stop_reason = status
     return ProviderTurn(
         tool_calls=tool_calls,
         text="\n".join(texts) or None,
@@ -335,9 +368,8 @@ def parse_responses(response: Any) -> ProviderTurn:
             cache_read_tokens=int(getattr(input_details, "cached_tokens", 0) or 0),
             cache_write_tokens=int(getattr(input_details, "cache_write_tokens", 0) or 0),
         ),
-        # No finish_reason here. `status` is "completed" or "incomplete", and the loop only
-        # reads this for the log, so say the same words the other parser would.
-        stop_reason="tool_calls" if tool_calls else getattr(response, "status", None),
+        stop_reason=stop_reason,
+        refused=refused,
         raw=None,
         thinking="\n".join(thoughts) or None,
     )
@@ -372,11 +404,21 @@ def parse_response(response: Any) -> ProviderTurn:
         ),
         None,
     )
+    # The same refusal, as Chat Completions carries it: a field of the message rather than a
+    # part, read by Grok, the local presets and everything else on this path. OpenRouter
+    # overwrites the text with these same words and drops the calls (`openrouter.py`). Only a
+    # plain `stop`, or no reason at all, becomes `refusal`: a vendor that named its reason,
+    # `content_filter` say, keeps it.
+    refusal = getattr(message, "refusal", None)
+    said = refusal.strip() if isinstance(refusal, str) else ""
+    parts = [getattr(message, "content", None) or None, f"[refusal] {said}" if said else None]
+    finish = getattr(choice, "finish_reason", None)
     return ProviderTurn(
         tool_calls=tool_calls,
-        text=getattr(message, "content", None) or None,
+        text="\n".join(p for p in parts if p) or None,
         usage=read_usage(usage),
-        stop_reason=getattr(choice, "finish_reason", None),
+        stop_reason="refusal" if said and not tool_calls and finish in (None, "stop") else finish,
+        refused=bool(said),
         raw=None,
         thinking=reasoning.strip() if reasoning else None,
     )
@@ -840,6 +882,10 @@ class OpenAIProvider:
                     raise self._failed(retry) from retry
             else:
                 raise self._failed(e) from e
-        if not turn.tool_calls:
+        # A turn that carries a refusal is never read for a call written out as text, whatever
+        # its stop reason, and nor is one a filter cut short: a call quoted in a refusal, or
+        # written before a filter cut the answer off, is not one to run. A native call in a
+        # filtered answer still runs, as it always has: it is the API's own, and its gates hold.
+        if not turn.tool_calls and not turn.refused and turn.stop_reason != "content_filter":
             turn = self._fallback(turn, tools)
         return turn

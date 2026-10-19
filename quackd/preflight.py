@@ -528,6 +528,9 @@ class Rehearsal:
     runs_dir: str | Path = "runs"
     task_images: Sequence[NamedPng] = ()
     progress: Callable[[str], None] = lambda _message: None
+    play: bool | None = None
+    """`--play` or `--no-play` over every file's own `play`, as a run takes it. None is each
+    file's own word. Last in the class because a caller may fill it by position."""
 
     async def file(self, path: str) -> FileReport:
         from quackd.duckfile.parser import DuckParseError, load_duck
@@ -645,6 +648,7 @@ class Rehearsal:
             max_steps=self.max_steps,
             task_images=self.task_images,
             memory=None,
+            play=self.play,
         )
         loop = AgentLoop(cfg)
         errors: list[str] = []

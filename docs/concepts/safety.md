@@ -715,6 +715,15 @@ body's own safety authority all still apply, which is why the verdict is a layer
 and not a replacement for any. A wrong `infeasible` costs one run. A robot that reports a
 URDF that does not match the robot is believed, and that assumption is recorded as one.
 
+A task can give the pilot a part to play ([guides/play.md](../guides/play.md)). A part unlocks
+nothing: a played run has exactly the verbs, limits, budgets and gates the same run has without
+play. What a part changes is what the pilot chooses to do with them, so a played run moves where
+a plain one might have stopped, and its rules about people, mimes and the record are prose that
+no gate reads. A played run's ending and any note it keeps go into the robot's memory like any
+other run's, so `--no-memory` on `quackd run` keeps a session of parts out of what the robot
+remembers. `quackd record` has no such flag and always keeps them, in the Microduck simulator's
+memory unless `QUACKD_MEMORY_DIR` points it elsewhere.
+
 There is one more thing to know about. A robot's memory
 ([guides/memory.md](../guides/memory.md)) is text a model wrote, kept on disk, and handed to the
 *next* model as part of its system prompt. The executor never reads it, so a note cannot widen an

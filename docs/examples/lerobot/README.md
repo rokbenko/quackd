@@ -31,6 +31,52 @@ to take torque off where the arm stands: hold the arm and press Enter, or leave 
 seconds and torque stays on. After that, hold the arm and run `quackd robot release arm-01`,
 because connecting takes torque off every motor for a moment.
 
+118 of these files give the pilot a part to play, a feeling to show or a question to answer with
+its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,
+which adds one section to the pilot's prompt telling it to act the part out with the arm it has
+([guides/play.md](../../guides/play.md)), so they need quackd 0.19 or later: an older one refuses
+their version. They share a success line, a persona that begins `Game for anything: commit to the
+bit` and a last step that asks for a reason saying what the arm did, except `e067/last-words` and
+`e076/strike`, whose runs end without a declare and whose success line and last step say so. None
+of them counts saying why the body cannot as a success any more. Their second step asks for the
+act in a few clear poses. 27 of them keep the older second step instead, which asks for small,
+deliberate moves: those where the run sheet puts a person, a held prop, a camera or a thing within
+the arm's reach, has someone hold something up in the camera's view, rates the experiment as
+contact or warns that a pose may strike the arm's own base, and `e089/less`, whose waves
+are meant to shrink. That step and the section are requests no gate reads, and nothing keeps a
+played arm away from a person ([guides/play.md](../../guides/play.md#what-does-not-change)), so
+keep people beyond the arm's reach in these as in any played run. Run one with `--no-play` to
+see it without the section. The lines they had before are in this folder's git history. The
+other 105 keep every line they had and read what they always did: most ask for a result on the
+table, a high five, a guess or a question answered in words, a stillness test, a trap or a
+benchmark.
+`e004/royalty`, `e004/mornings`, `e011/yoga` and `e022/pat-on-the-back`, which ran on the arm on 23
+September, are among the 118 and no longer read what they read that day, and the 29 September
+rehearsal below ran the five `e004` files as they read before.
+
+The aim is that 90 to 95 percent of these files run as asked on the arm. By the run sheet's own
+expectations 195 of the 223, 87 percent, should, short of the aim, and the other 28 are meant to
+fall short: the sheet expects the arm not to do what they ask, and in most of them the miss is the
+point. An entry that hedges, or expects some of a set to fall short without saying which, as the
+idioms of `e079` do, counts as running. Eleven meet a limit of the arm or of how quackd drives it:
+the six drawings of `e001`, `e019` and `e020` and the keys of `e014`, all done without inverse
+kinematics, the point of `e130`, aimed without hand-eye calibration, the claw machine of `e039`,
+the tower of `e100` and the tangled cable of `e109`. Four meet the seconds each model call takes:
+the act of `e037`, asked for at once, the metronome of `e045`, which asks for a tick a second, the
+red light of `e096`, which catches the arm still moving every round, and the fly of `e113`, gone
+before each swing lands. Two ask for two things at the same time, the pat and rub of `e062` and the
+wave and count of `e070`, which the sheet expects one after the other or not at all. Two end on one
+of quackd's own limits: a range the validator refuses in `e084/give-110`, and the step budget of
+`e120`, partway through its waves. Four are cut short by a person, as the experiment plans: the
+hand of `e081`, gone before the high five lands, a cable pulled in `e116` and Ctrl-C in `e117`,
+both partway through the raise they ask for, and a confirm declined in `e121`. Three ask for a
+guess the sheet expects the pilot to refuse, on principle, in `e085`. Two end on an answer the
+sheet expects to be wrong: `e131/my-left`, the harder of two runs it expects at least one wrong
+answer from, and `e073`, whose header leaves the pilot only the colour detector, which reads orange
+as a ball and blue as a person. Whether the other 195 run as asked has not been measured. That
+takes every file once on a release, counting the runs that started, moved as asked and did not
+disown a part.
+
 Which cameras, which pilot and whether the arm starts from a pose you set by hand are flags on
 the line rather than lines in a file, because the same task runs with one camera or two and with
 any model. Each file opens with a comment carrying its first command. Check them all against the
@@ -84,7 +130,9 @@ None of these had run on an arm when they were written. On 23 September ten of t
 on `arm-01`, on quackd 0.12.0: `e001/circle`, `e003/small-then-tall`, `e004/royalty`,
 `e004/mornings`, `e005/do-nothing`, `e006/high-five`, `e011/yoga`, `e022/pat-on-the-back`,
 `e114/as-fast-as-you-can` and `e116/slow-raise`. Every run of `e001`, `e022` and `e114` ended
-before the pilot's first call, at connect or on the rest move. The other 213 files have not run
-on an arm, and nothing quackd changed after that afternoon has run on one either. The budgets
-are estimates, sized so that a run which goes well finishes well inside them, and the task files
-are plain text: [reference/duck-spec.md](../../reference/duck-spec.md) is what every field means.
+before the pilot's first call, at connect or on the rest move. The other 213 files had not run
+on an arm by then. Later runs of more of them on `arm-01`, on the lab's install, are what
+[ADR-0055](../../adr/0055-a-pilot-can-play-a-part.md) answers, and nothing quackd changed after
+that afternoon has run on an arm. The budgets are estimates, sized so that a run which goes well
+finishes well inside them, and the task files are plain text:
+[reference/duck-spec.md](../../reference/duck-spec.md) is what every field means.

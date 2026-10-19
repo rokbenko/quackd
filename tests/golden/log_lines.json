@@ -659,6 +659,16 @@
    "dim"
   ]
  ],
+ "run_start_played": [
+  [
+   "run     e049-t-rex provider=openai model=gpt-6-astra robot=lerobot:real play connected in 0.25 s",
+   "bold"
+  ],
+  [
+   "tools   report_state, move_joints, gripper, place, stop",
+   "dim"
+  ]
+ ],
  "llm_full@thinking-cut": [
   [
    "think   the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn... (+2960 chars in transcript.jsonl)",

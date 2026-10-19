@@ -1108,6 +1108,32 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
     )
 
 
+def test_a_replay_says_a_run_played_and_nothing_for_one_that_did_not() -> None:
+    """The replay's play row and the run line's ` play` come from `run_start.play`. Every record
+    carries one now, so a record that did not play is the common case, and it reads exactly as
+    a record from before the key existed does: no row, and no word on the run line."""
+
+    def panel(**extra: Any) -> str:
+        view, buffer = console_log(header=True)
+        data = {"duck": "arm-part", "provider": "fake", "transport": "mock", **extra}
+        view(LogEvent("run_start", 0.0, data))
+        return " ".join(buffer.getvalue().split())
+
+    played = panel(contract={"play": False}, play={"on": True, "from": "--play"})
+    assert "play on, from --play" in played
+    off = panel(contract={"play": True}, play={"on": False, "from": "--no-play"})
+    assert "play off, from --no-play" in off
+    plain = panel(contract={"play": False}, play={"on": False, "from": "task file"})
+    for quiet in (plain, panel()):
+        assert " play " not in f" {quiet} ", quiet
+    # every recorded run_start carries connect_s, so the word sits before the connect time
+    data = {"duck": "x", "provider": "fake", "transport": "mock", "connect_s": 0.25}
+    head = render_lines(LogEvent("run_start", 0.0, {**data, "play": {"on": False}}))[0][0]
+    assert " play " not in f" {head} ", head
+    head = render_lines(LogEvent("run_start", 0.0, {**data, "play": {"on": True}}))[0][0]
+    assert head.endswith(" play connected in 0.25 s"), head
+
+
 def test_the_terminal_view_never_reads_what_a_model_wrote_as_markup() -> None:
     """The same promise the plain view makes, made again by the renderer that replaced it."""
     view, buffer = console_log()

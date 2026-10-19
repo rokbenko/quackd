@@ -81,6 +81,13 @@ person answered with go is told so, and not to assess the same doubt again: told
 motion now ran, the bench's pilot asked again, as `infeasible`, and ended its run. The rule
 that a figure nobody published is not met stands.
 
+**Amended 2026-10-08 by [ADR-0055](0055-a-pilot-can-play-a-part.md):** a task that gives the
+pilot a part to play is judged by whether this body can act it out, not by whether it is the
+thing it plays, and the needs of what it plays, its legs, wings or second arm, are not the
+body's: the pilot leaves them out of `needs` or gives 0 or none, which is always met. The gate
+and its words are what they were. The pilot reads this only in a played run, in the section
+that run's prompt gains.
+
 **Amended 2026-10-13:** the Microduck's note that the decision below describes was wrong about
 where its cap is. robotd clamps no twist at any release quackd has read: what limits a tick in
 its `robot.state` is the deadman, a joint target past the actuator's travel, or one that is not
