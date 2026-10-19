@@ -37,10 +37,12 @@ OpenAI's own sub-second typed answers are what the reflex needs.
 - **Only with eyes.** It looks through `quackd/agent/decision/eyes.py`, built only through
   `frames.may_send_frames`, the gate every frame passes, so only quackd's own client for OpenAI's
   Decisions API, built with frames, at OpenAI's own address, is ever handed one. On a run without
-  that, or through frames nobody can say are upright, it is withdrawn when the robot connects, by
-  a new `VerbRegistry.remove` that refuses to remove `stop`, with a note where the task or the flags
-  asked for it, and a task that requires it is refused before anything connects. It is independent
-  of `--decision-mode`: `--decision-mode off --decision-frames` is `watch` with no stepper.
+  that, or through frames nobody can say are upright and fresh, mediad's WebRTC track among them, it
+  is withdrawn when the robot connects, by a new `VerbRegistry.remove` that refuses to remove
+  `stop`, with a note where the task or the flags asked for it. A task that requires it is refused
+  before the robot connects on a run with nothing to look through, and once it has, before anything
+  moves, on a camera that cannot be used. It is independent of `--decision-mode`:
+  `--decision-mode off --decision-frames` is `watch` with no stepper.
 - **Ask where, never how.** One request a look, two `choice` questions: `where`, the fifths of the
   picture's width or `out_of_view`, and `height`, its thirds or `out_of_view`, not asked of a head
   that cannot tilt. The instructions are fixed and prefer the thing nearest the middle, and the
@@ -49,22 +51,29 @@ OpenAI's own sub-second typed answers are what the reflex needs.
   which is recorded: 0.5 or more on `out_of_view` is not seen, 0.6 or more on the sectors spread no
   wider than 0.25 of the picture is seen at their mean weighted by probability, and anything else
   holds the head still.
-- **quackd's own control law and envelope.** The turn is `atan(2x tan(H/2))` through the lens,
-  times a gain of 0.6, nothing within 0.08 of the middle, at most 15° of yaw and 8° of pitch a look,
-  and the head held to the body's envelope, on the Microduck 45° either way, 14° up and 11.5° down
-  until a duck is measured, sent as `gaze` sends a look. The lens is `--fov-deg`, else the camera's
-  own, else an assumed 40°, and one that was assumed, an alpha's `/frame` among them, is named as
-  assumed in `run_start.watch` and in the result.
-- **Timing.** One request out at a time, looks at least 0.5 s apart and 60 a call at most. The head
-  is claimed first and given the body's glance fade and a settle before the first frame, 1.9 s on a
-  robotd that glances, and again after any gap in which a glance could have begun. A frame is used
-  only when the fetch that took it was asked for after the head settled, never twice, and waited
-  for as long as the camera needs. Each answer is bounded at 1.5 s, the head is sent its target
-  again at least every second while anything is waited for, and a simulator's clock is run for as
-  long as the answer took, with a cap on the wall's clock.
-- **Exits, each named, and none moves the head.** `duration`, `lost` after 4 looks, `edge` after 3,
-  `errors` after 3, `refused`, `camera`, `fallen`, `blind` and `held`, `look_refused`, `stopped`,
-  `budget`, and `abort`, `timeout` and `cancel` from the executor, which says which as it cancels.
+- **quackd's own control law and envelope.** The turn is `atan(2x tan(H/2))` through the lens, times
+  a gain of 0.6, nothing within 0.08 of the middle, at most 15° of yaw and 8° of pitch a look, and
+  the head held to the body's envelope, on the Microduck 45° either way, 14° up and 11.5° down until
+  a duck is measured, sent as `gaze` sends a look. The claim at the start of a call is no look: it
+  brings a head that something else turned past the envelope back inside it in one move, up to 45°
+  on a Microduck after a `gaze` to 90°. The lens is `--fov-deg`, else the camera's own, else an
+  assumed 40°, and one that was assumed, an alpha's `/frame` among them, is named as assumed in
+  `run_start.watch` and in the result.
+- **Timing.** One request out at a time, looks at least 0.5 s apart on the robot's clock and
+  requests at least 0.5 s apart on the wall's, and 60 a call at most. The head is claimed first and
+  given the body's glance fade and a settle before the first frame, 1.9 s on a robotd that glances,
+  and again after any gap in which a glance could have begun. A frame is used only when it is known
+  to be taken after the head settled, never twice, and waited for as long as the camera needs: on a
+  duck that is mediad's `/frame`, whose frames quackd stamps with when it asked for each, and its
+  WebRTC track, whose frames carry no time, offers no `watch`. Each answer is bounded at 1.5 s, the
+  head is sent its target again at least every second while anything is waited for, and a
+  simulator's clock is run for as long as the answer took, with a cap on the wall's clock.
+- **Exits, each named, and none sends the head anywhere.** `duration`, `lost` after 4 looks, `edge`
+  after 3, `errors` after 3, `refused`, `camera`, `fallen`, `blind` and `held`, `look_refused`,
+  `stopped`, `budget`, `error` for something raised, and `abort`, `timeout` and `cancel` from the
+  executor, which says which as it cancels. The body is read before every command the head is sent,
+  the claim, every move and every hold, and the head is moved only on one that reads as standing or
+  sitting, the allowlist quackd's own gaze hold keeps: anything else is `held`.
   `VerbContext.interrupted` carries the run's time budget and a `stop` asked for from beside the
   call.
 - **Record before send.** Each frame is written as `sent/watch-NNNN.jpg`, then a `watch_frame` line

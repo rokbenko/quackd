@@ -108,8 +108,8 @@ keeps what was sent.
   child sexual abuse material when they are sent, and that one the classifier flags is kept for
   manual review even under zero data retention.
 - What a frame costs in tokens and in time on `gpt-6-luna` is unpublished and unmeasured, and the
-  `openai` page lists it as unverified. A turn that failed after its frame left, and so has no
-  count from OpenAI, is estimated on its text alone, which is low for such a turn.
+  `openai` page lists it as unverified. A turn that failed after its frame was handed over, and so
+  has no count from OpenAI, is estimated on its text alone, which is low for such a turn.
 - **Nothing here has answered a real robot, and no frame from quackd has reached OpenAI.** In CI
   the client runs against a fake of the SDK. Wherever the SDK is installed, a real `quackd run`
   sends its frames through it to a stand-in on 127.0.0.1 treated as OpenAI's, which checks each

@@ -250,34 +250,42 @@ $ quackd run microduck-watch --llm fake --no-memory
 ✗ error: microduck-watch requires watch, and watch looks through a decision LLM that can see, and this run has none: run it with --decision-llm openai --decision-frames, and OPENAI_API_KEY set
 ```
 
-It needs a camera that worked at connect, as `observe` does, and frames that are upright, since it
-turns the head by where a thing is across the picture: mediad's `/frame` is, and so is its WebRTC
-track once quackd has turned it, and so are both simulators. Any other `--camera-url` is a camera
-quackd knows nothing about, and `watch` is not offered through it. A seated duck may watch, as it
-may `gaze`.
+It needs a camera that worked at connect, as `observe` does, whose frames are upright, since it
+turns the head by where a thing is across the picture, and known to be taken after the head settled,
+since a frame from before would steer a look behind. mediad's `/frame` is both, quackd stamping each
+frame with when it asked for it, and both simulators draw each frame when it is asked for. mediad's
+WebRTC track is turned upright but hands out frames up to 2 s old with no time on them, so on it, as
+on any other `--camera-url`, `watch` is withdrawn when the duck connects, and the note says to use
+`--camera-url http://127.0.0.1:8080/frame`. The head is moved only on a duck that reads as standing
+or sitting, the allowlist quackd's own gaze hold keeps: a seated duck may watch, as it may `gaze`,
+and one held, partway through a skill or on a label quackd has not read may not.
 
 | | |
 |---|---|
 | What it asks | `where`, one of `far_left`, `left`, `middle`, `right`, `far_right` and `out_of_view`, the fifths of the picture's width, and `height`, one of `top`, `middle`, `bottom` and `out_of_view`, its thirds. The target goes in the state as a description somebody wrote, and never in the instructions, which are fixed and ask for the thing nearest the middle where more than one fits. `microduck:sim2d` is asked no height, since its world is flat |
 | How it reads the answer | by the distribution, and never by OpenAI's `confidence`, which OpenAI do not define and which the record keeps: 0.5 or more on `out_of_view` is not seen, 0.6 or more on the fifths spread no wider than a quarter of the picture is seen at their mean weighted by probability, and anything else holds the head still |
-| How far it turns | 0.6 of the angle the answer puts the thing at through the lens, nothing within 0.08 of the picture's middle, and at most 15° of yaw and 8° of pitch a look |
-| Where the head may go | 45° either way, 14° up and 11.5° down: as far as `gaze` turns it and as far down as robotd's own idle glances tilt it, until a duck is measured |
+| How far it turns | 0.6 of the angle the answer puts the thing at through the lens, nothing within 0.08 of the picture's middle, and at most 15° of yaw and 8° of pitch a look. The claim at the start is no look: a head something else turned past the envelope, as a `gaze` to 90° does, is brought back inside it in one move |
+| Where the head may go | 45° either way, 14° up and 11.5° down: as far as `gaze`'s own `left`, `right` and `up` turn it, half the 90° its `bearing_deg` may ask for, and as far down as robotd's own idle glances tilt it, until a duck is measured |
 | The lens | `--fov-deg`, else the camera's own, which on an alpha's `/frame` is the 37.3° assumed from the picture's shape and named as assumed in the record and the result, else an assumed 40°, named too. A lens more than 1.5 times wider than the one the camera reports is warned about once, before the run starts |
-| How often | one request out at a time, a look at most every 0.5 s and 60 a call, and each answer bounded at 1.5 s |
+| How often | one request out at a time, a look at most every 0.5 s on the robot's clock and a request at most every 0.5 s on the wall's, so a simulator stepped faster than real time sends no more either, 60 looks a call, and each answer bounded at 1.5 s |
 
 robotd glances around on its own once nobody has steered the head for a while (`robotd's idle
 look-around`, above), so `watch` claims the head before its first look and waits out the 1.5 s
-robotd takes to let go of a glance and a 0.4 s settle, 1.9 s in all, sends the head its target
-again at least every second while it waits for a frame or an answer, and claims it again, with the
-same wait, after any gap of more than 2 s since the duck last accepted a look. A frame is used only
-when the fetch that took it was asked for after the head settled, and never twice. On `/frame` at 2
-frames a second that is the newest fetch asked for after the settle, and a look waits up to a
-period and two and a half fetches for one before it counts the camera as stale. How many looks a
-second that comes to on a duck is unmeasured.
+robotd takes to let go of a glance and a 0.4 s settle, 1.9 s in all, sends the head its target again
+at least every second while it waits for a frame or an answer, reading the duck before each, and
+claims it again, with the same wait, after any gap of more than 2 s since the duck last accepted a
+look. A frame is used only when the fetch that took it was asked for after the head settled, and
+never twice. On `/frame` at 2 frames a second that is the newest fetch asked for after the settle,
+and a look waits up to a period and two and a half fetches for one before it counts the camera as
+stale. How many looks a second that comes to on a duck is unmeasured.
 
-Every way a call ends is named as its `ended`, in the result the pilot reads, on the row of the look
-that ended it and in the summary, and none of them moves the head on its way out: it stays where
-the thing was last seen.
+Every way a call ends is named as its `ended`, counted in the summary, on the row of the look that
+ended it where a look did, and in the result the pilot reads, but for `abort`, `timeout` and
+`cancel`, whose result is the executor's own. An exit found between two looks, a time up or a duck
+picked up while the head was held, lands on no row. None of them sends the head anywhere on its way
+out, and on a duck quackd's gaze hold keeps the head where it was last sent, but for `stopped`,
+`abort`, `timeout` and `cancel`: the stop that ended the call, or that the executor sends after it,
+ends that hold, after which robotd's own idle glances may turn the head.
 
 | `ended` | When |
 |---|---|
@@ -287,11 +295,12 @@ the thing was last seen.
 | `errors` | 3 looks in a row had no answer to use: a request that timed out or failed, or an answer nobody could read |
 | `refused` | OpenAI declined to say where the thing is. The call is not asked again |
 | `camera` | 2 looks in a row had no fresh frame, and the result names the camera's own error |
-| `fallen`, `blind`, `held` | the duck fell, nothing reports whether it is upright, or somebody holds it or its policy reads `held`, `homing`, `rest`, `limp_fall` or `limp_pose`, read before every look and before every move |
+| `fallen`, `blind`, `held` | the duck fell, nothing reports whether it is upright, or it reads as neither standing nor sitting: somebody holds it, or robotd's own answer to a fall, a skill, a rise, a scoop or a label quackd has not read drives it. Read before every command the head is sent: the claim, every move and every hold |
 | `look_refused` | the duck refused a look |
 | `stopped` | a `stop` was asked for from beside the call |
 | `budget` | the run's own minutes ran out |
-| `abort`, `timeout`, `cancel` | the kill switch or a failed heartbeat, the verb's own 45 s, or a caller that went away, which the executor ends with a stop of its own |
+| `error` | something raised that is no exit of the call's own, a link to the robot that dropped among them: the executor's result names it, and the row of the look it ended has its type |
+| `abort`, `timeout`, `cancel` | the kill switch or a failed heartbeat, the verb's own 45 s, or a caller that went away. The executor ends the call, sends a stop of its own, and answers with its own message |
 
 The record keeps what was sent. Each frame is written beside the transcript as
 `sent/watch-NNNN.jpg`, and a `watch_frame` line naming it, its size and its sha256 is written
