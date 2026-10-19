@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from PIL import Image
 from pydantic import ValidationError
 
 from quackd import __version__
@@ -33,6 +32,7 @@ from quackd.adapters.base import (
 from quackd.adapters.manifest import RobotManifest, apply_datasheet_override
 from quackd.agent.decision.base import DecisionLLM
 from quackd.agent.decision.catalogue import DecisionMode
+from quackd.agent.decision.frames import Snapshot
 from quackd.agent.decision.stepper import Advice, Stepper
 from quackd.agent.prompts import (
     ASSESS_TASK_NAME,
@@ -280,7 +280,15 @@ class RunConfig:
     play: bool | None = None
     """Whether the task may give the pilot a part to play, over the task file's own `play`
     (`quackd run --play`, `--no-play`). None is the task file's word, which is every run
-    before there was a flag. Last in the class because a caller may fill it by position."""
+    before there was a flag. After every field older than it, because a caller may fill them by
+    position."""
+    decision_frames: bool = False
+    """Whether the decision LLM is shown the robot's primary camera with each request
+    (`quackd run --decision-frames`). False is every run before there was a flag, and the
+    stepper then sends text alone. True asks `Stepper.build` for a stepper that shows frames,
+    which it builds only for a decision LLM `frames.may_send_frames` allows, quackd's own client
+    for OpenAI's Decisions API built to be shown them at OpenAI's own address, and refuses for
+    any other. Last in the class, for the reason `play` gives."""
 
 
 @dataclass
@@ -510,18 +518,25 @@ class AgentLoop:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
 
-    async def _on_frames_off_loop(self, frames: Sequence[CameraFrame], caption: str) -> None:
+    async def _on_frames_off_loop(self, frames: Sequence[CameraFrame], caption: str) -> int | None:
         """`_on_frames` for the turn's own observation, with the PNGs written in a worker thread
         (`Transcript.save_frames_off_loop`). A verb's frames still go through `_on_frames`,
-        which the executor calls from inside the verb."""
+        which the executor calls from inside the verb.
+
+        Returns the number this step's pictures are filed under in `frames/`, or None where there
+        were none. It is the transcript's count as the save is called, which the save takes as
+        its own before it waits on anything (`Transcript.save_frames_off_loop`), so the JPEG a
+        decision LLM is shown of this step is filed under the same number as the step's PNG."""
         if not frames:
-            return
+            return None
+        number = self.transcript.frame_count
         await self.transcript.save_frames_off_loop(
             list(frames), caption, several=len(camera_names_of(self.cfg.transport)) > 1
         )
         if self.cfg.on_frame is not None:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
+        return number
 
     async def _park_before_the_run_began(self) -> None:
         """Put the body down and let go, for a failure between the connect and the first step.
@@ -1144,7 +1159,7 @@ class AgentLoop:
         last_result: VerbResult | None,
         stepped: Sequence[str] = (),
         mine: tuple[str | None, VerbResult | None] | None = None,
-    ) -> tuple[Observation, Image.Image | None]:
+    ) -> tuple[Observation, Snapshot | None]:
         """One turn as its two readers need it.
 
         `last_verb`/`last_result` are the most recent of anybody's and go into the features,
@@ -1152,7 +1167,12 @@ class AgentLoop:
         world as it actually is. `mine` is the last verb the *model* chose, and goes into the
         text, because the text becomes the tool_result answering the model's own tool call and
         has to carry that call's outcome. Without a stepper the two are always the same and
-        every observation is byte-identical to what it was."""
+        every observation is byte-identical to what it was.
+
+        Beside the observation, on a run that shows the decision LLM the camera
+        (`decision_frames`), the primary camera's picture this turn and where the copy of what is
+        sent of it goes: `frames/NNNN-decision.jpg`, under the number of this step's own PNGs.
+        None on every other run, and on a turn whose primary camera gave nothing."""
         state = await self.cfg.transport.get_state()
         frames = await frames_of(self.cfg.transport)
         # the body's own list first, because it does not shrink when a lens stalls, and the
@@ -1167,14 +1187,25 @@ class AgentLoop:
             detections = await detect_off_loop(self.cfg.detector, img)
             error = getattr(self.cfg.detector, "error", None)
             self._detector_said(error if isinstance(error, str) and error else None)
+        number: int | None = None
         if frames:
             # saved even when the primary gave nothing, because the other views are still what
             # the model is about to be shown. Off the loop's thread, like the encoding for the
             # model below: a body's heartbeat waits on that thread. The detector above and the
             # provider's own SDK stay where they are, the first because only a board's detector
             # waits on anything, the second because it is somebody else's code.
-            await self._on_frames_off_loop(
+            number = await self._on_frames_off_loop(
                 frames, f"step {self.budget.steps}: {last_verb or 'start'}"
+            )
+        snapshot: Snapshot | None = None
+        primary = next((f for f in frames if f.primary), None)
+        if self.cfg.decision_frames and primary is not None and number is not None:
+            named = f"{number:04d}-decision.jpg"
+            snapshot = Snapshot(
+                image=primary.image,
+                camera=primary.name,
+                path=self.transcript.frames_dir / named,
+                where=f"{self.transcript.frames_dir.name}/{named}",
             )
         # drained here and nowhere else, so each message is shown exactly once: a re-prompt
         # reuses these features rather than observing again
@@ -1217,7 +1248,7 @@ class AgentLoop:
                 features=features,
                 attachments=self._attachments(),
             ),
-            img,
+            snapshot,
         )
 
     def _detector_said(self, error: str | None) -> None:
@@ -1793,6 +1824,8 @@ class AgentLoop:
                     body=manifest.summary()
                     if manifest is not None
                     else backend_name(cfg.transport),
+                    # refused there for any decision LLM that may not be shown the camera
+                    frames=cfg.decision_frames,
                 )
             system = build_system_prompt(
                 self.duck,
@@ -1876,6 +1909,9 @@ class AgentLoop:
                             "name": stepper.name,
                             "model": stepper.model,
                             "url": redacted_url(stepper.url) if stepper.url is not None else None,
+                            # whether this run shows it the camera (`--decision-frames`), said
+                            # before the first frame goes, and on a run that shows none too
+                            "frames": stepper.frames,
                         },
                     }
                     if stepper is not None
@@ -1930,7 +1966,7 @@ class AgentLoop:
                     # say which one rather than blaming a kill switch nobody pressed
                     raise Aborted(self._abort_reason())
                 observe_started = time.perf_counter()
-                obs, _ = await self._observe(
+                obs, snapshot = await self._observe(
                     last_verb, last_result, self.stepped, mine=(mine_verb, mine_result)
                 )
                 observed_s = round(time.perf_counter() - observe_started, 3)
@@ -1949,9 +1985,11 @@ class AgentLoop:
                 )
 
                 # The stepper answers first where it can. It reads the same turn the model
-                # would have been given and nothing else: no picture, no system prompt, no
-                # history. It is only ever offered verbs the executor would run *this* turn,
-                # so a stepper-authored call never meets the verdict gate or the allowlist.
+                # would have been given and nothing else: no system prompt, no history, and no
+                # picture unless this run shows it the camera (`--decision-frames`), when the
+                # primary camera's picture goes beside its state. It is only ever offered verbs
+                # the executor would run *this* turn, so a stepper-authored call never meets the
+                # verdict gate or the allowlist.
                 advice: Advice | None = None
                 stepper_call: ToolCall | None = None
                 if stepper is not None:
@@ -1962,19 +2000,20 @@ class AgentLoop:
                             budget=self.budget.status(),
                             stepped=self.stepped,
                             notes=memory_text,
+                            snapshot=snapshot,
                         )
-                    except BaseException:
-                        # BaseException, as for the model's own call below. The second Ctrl-C
-                        # and a flock's cancel land here too while the stepper's request is out,
-                        # and the stepper has counted, timed and billed that request before
-                        # letting the interrupt go on, so without this record the summary written
-                        # on the way out would count a turn the transcript never mentions. One
-                        # record, on the gate `interrupted`, and then the run ends as it would
-                        # have (`Stepper.cut_off`).
-                        if (cut := stepper.cut_off) is not None:
-                            self._emit("decision", step=self.budget.steps, **cut.event())
-                        raise
-                    self._emit("decision", step=self.budget.steps, **advice.event())
+                    finally:
+                        # From a `finally`, so the turn is on the record however `advise` ends.
+                        # The second Ctrl-C and a flock's cancel land here too while the
+                        # stepper's request is out, and the stepper has counted, timed and billed
+                        # that request, and kept and counted the frame it carried, before letting
+                        # the interrupt go on, so without this record the summary written on the
+                        # way out would count a turn, and a frame that left the machine, that the
+                        # transcript never mentions. One record, on the gate `interrupted`, and
+                        # then the run ends as it would have (`Stepper.cut_off`).
+                        decided = advice if advice is not None else stepper.cut_off
+                        if decided is not None:
+                            self._emit("decision", step=self.budget.steps, **decided.event())
                     if cfg.decision == "on":
                         stepper_call = advice.call
 

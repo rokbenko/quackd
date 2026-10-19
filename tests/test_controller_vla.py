@@ -489,6 +489,20 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
             "no model for a decision LLM to step in front of, and --decision-llm names one",
             id="decision-llm",
         ),
+        # frames build a decision LLM whatever the mode, and this pilot has none to show one
+        pytest.param(
+            (
+                *GOAL,
+                *ARM,
+                "--decision-llm",
+                "openai",
+                "--decision-mode",
+                "off",
+                "--decision-frames",
+            ),
+            "no model for a decision LLM to step in front of, and --decision-llm names one",
+            id="decision-frames",
+        ),
     ],
 )
 def test_a_vla_run_is_refused_before_anything_connects(

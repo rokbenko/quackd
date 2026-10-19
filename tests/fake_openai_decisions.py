@@ -7,7 +7,10 @@ reference documents: `{answers, model, usage}`, each answer naming the question 
 `predicate` carrying its `probability`, a `choice` its `choice`, a `confidence` and a list of
 `{value, probability}`, a `score` the same over its levels, and a `refusal` in place of any
 question the script declines. A body the reference would not take is a 400 in OpenAI's error
-shape, and any other path is a 404, which is how a stray `/v1/v1/decisions` shows up.
+shape, and any other path is a 404, which is how a stray `/v1/v1/decisions` shows up. An `input`
+that carries a camera frame, a user message of an `input_text` part and an `input_image` part,
+is checked against the reference's shape for both and kept whole, and `Recorded.pictures` reads
+the frames back out of it.
 
 It proves what quackd puts on the wire through the real SDK, and what quackd makes of an answer
 shaped like OpenAI's. It proves nothing about OpenAI, and nothing that passes against it has ever
@@ -25,6 +28,7 @@ run's stepper turns are costed at the self-hosted rate.
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import json
 import threading
@@ -303,15 +307,31 @@ def failing(status: int) -> Reply:
     return lambda body: (status, error(status, f"the stand-in's script answers {status}"))
 
 
+def image_parts(given: Any) -> list[dict[str, Any]]:
+    """Every `input_image` part of a request's `input`, in the order sent: none for an `input`
+    that is a string, and none for a body the reference would not take."""
+    if not isinstance(given, list):
+        return []
+    return [
+        part
+        for message in given
+        if isinstance(message, dict) and isinstance(message.get("content"), list)
+        for part in message["content"]
+        if isinstance(part, dict) and part.get("type") == "input_image"
+    ]
+
+
 def quoting(status: int = 400) -> Reply:
     """An error whose message quotes the request it turned down, and carries a picture as a
-    data URL besides. The SDK puts a reply's body in its exception's message, so this is what a
-    record that kept that message would end up holding."""
-    picture = "data:image/png;base64," + "iVBORw0KGgo" * 40
+    data URL besides: the request's own picture, as `image_url`, where it sent one, and a made-up
+    one where it sent none. The SDK puts a reply's body in its exception's message, so this is
+    what a record that kept that message would end up holding."""
+    made_up = "data:image/png;base64," + "iVBORw0KGgo" * 40
 
     def reply(body: dict[str, Any]) -> tuple[int, Any]:
         quoted = error(status, f"Invalid value for 'input': {json.dumps(body['input'])}", "input")
-        quoted["error"]["image_url"] = picture
+        sent = image_parts(body["input"])
+        quoted["error"]["image_url"] = sent[0]["image_url"] if sent else made_up
         return status, quoted
 
     return reply
@@ -406,6 +426,18 @@ class Recorded:
     def every(self, name: str) -> list[str]:
         """Every value sent under `name`, in any spelling, in the order sent."""
         return [value for sent, value in self.lines if sent == name.lower()]
+
+    def pictures(self) -> list[tuple[str, bytes, Any]]:
+        """Every image the request carried, in the order sent, as its media type, its bytes
+        decoded from the data URL, and the `detail` it was sent with, or None where it named
+        none. The body keeps the parts whole; this is them read back."""
+        found: list[tuple[str, bytes, Any]] = []
+        body = self.body if isinstance(self.body, dict) else {}
+        for part in image_parts(body.get("input")):
+            head, _, data = str(part["image_url"]).partition(",")
+            media_type = head.removeprefix("data:").removesuffix(";base64")
+            found.append((media_type, base64.b64decode(data), part.get("detail")))
+        return found
 
 
 @dataclass

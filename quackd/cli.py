@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from rich.text import Text
 
 from quackd import __version__, ui
+from quackd.agent.decision.frames import MAX_SIDE_PX as DECISION_FRAME_PX
 from quackd.agent.providers.catalogue import (
     CLOUD_NAMES,
     DEFAULT_LLM,
@@ -38,7 +39,7 @@ from quackd.agent.providers.catalogue import (
     models_for,
     vendor_of,
 )
-from quackd.command import command_text
+from quackd.command import command_text, redacted_url
 from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
@@ -1378,6 +1379,7 @@ def _run_impl(
     decision_llm: str | None = None,
     decision_url: str | None = None,
     decision_mode: str | None = None,
+    decision_frames: bool | None = None,
     images: Sequence[str] = (),
     by_hand: bool = False,
     robot: str | None = None,
@@ -1411,6 +1413,7 @@ def _run_impl(
         make_decision_llm,
         parse_decision_llm,
         resolve_decision_address,
+        resolve_decision_frames,
         resolve_decision_mode,
         resolve_decision_price,
     )
@@ -1767,16 +1770,25 @@ def _run_impl(
     # a mode that was spelled right used to be accepted and silently do nothing.
     try:
         named_decision = parse_decision_llm(decision_llm)
+        # Said on the line rather than merely absent. `--decision-llm off` is how one command
+        # opts out of a `QUACKD_DECISION_LLM` in a `.env`, and refusing it because the same
+        # `.env` also set a mode, or asked for frames, would answer "I do not want this" with a
+        # demand to name one.
+        said_off = (decision_llm or "").strip().lower() == "off"
         decision = resolve_decision_mode(
-            decision_mode,
-            named=named_decision is not None,
-            # Said on the line rather than merely absent. `--decision-llm off` is how one
-            # command opts out of a `QUACKD_DECISION_LLM` in a `.env`, and refusing it because
-            # the same `.env` also set a mode would answer "I do not want this" with a demand
-            # to name one.
-            refused=(decision_llm or "").strip().lower() == "off",
+            decision_mode, named=named_decision is not None, refused=said_off
         )
-        if named_decision is not None and decision != "off":
+        # Whether a camera frame may go, which the mode does not decide, so a run that asks for
+        # frames builds its decision LLM whatever the mode. Refused here, before anything
+        # connects and on every machine, for a run with no decision LLM named, one that cannot
+        # see, or an address that is not OpenAI's own.
+        frames = resolve_decision_frames(
+            decision_frames,
+            spec=named_decision[0] if named_decision is not None else None,
+            url=decision_url,
+            refused=said_off,
+        )
+        if named_decision is not None and (decision != "off" or frames):
             # Here rather than when the client is built below, because the client is built only
             # on a machine that has the SDK and the key, and everywhere else the run would go
             # ahead without its stepper. An address the named row can never be handed is a typo,
@@ -1785,7 +1797,7 @@ def _run_impl(
     except DecisionError as e:
         _fail(str(e))
         return
-    if vla and named_decision is not None and decision != "off":
+    if vla and named_decision is not None and (decision != "off" or frames):
         # a stepper answers the turns a model would have been asked, and this pilot is no model:
         # it would take the scripted pilot's turns with nobody having asked it to
         _fail(
@@ -1815,14 +1827,17 @@ def _run_impl(
                     hint="drop the flag, or run the task as a pilot flock",
                 )
                 return
-        if decision != "off" and named_decision is not None:
+        if (decision != "off" or frames) and named_decision is not None:
             # One loop per member, each with its own executor and budget, and the stepper is
             # built per loop. Wiring it through a flock is a thing to do deliberately with a
-            # measurement in hand, not a thing to leave half done and unsaid.
+            # measurement in hand, not a thing to leave half done and unsaid. No member builds a
+            # decision LLM, so no member shows one a frame either, and the line says so where a
+            # run asked for frames.
             ui.console.print(
                 _warn_line(
                     f"--decision-llm {named_decision[0].name} does not apply to a flock: "
                     "every member is piloted by its model, as before"
+                    + (", and no camera frame is sent" if frames else "")
                 ),
                 soft_wrap=True,
             )
@@ -2056,25 +2071,37 @@ def _run_impl(
     # energised while it is read.
     decision_pilot = None
     decision_price = None
-    if decision != "off" and named_decision is not None:
+    # Built when the mode is not off, and when frames are on whatever the mode, because whether
+    # a frame may go is a question of its own (`resolve_decision_frames`).
+    if (decision != "off" or frames) and named_decision is not None:
         # `chosen` rather than `spec`, which in this function is the robot's.
         chosen, decision_model = named_decision
         # With the address, because whether a key is wanted can depend on where it would go:
         # `openai` sends one only to OpenAI's own API, so a run at a server you run needs none.
         available, why = decision_llm_is_available(chosen, url=decision_url)
         if not available:
+            # and with no decision LLM, no frame goes anywhere either
             ui.console.print(
                 _warn_line(f"--decision-llm {chosen.name} asked for, running without it: {why}"),
                 soft_wrap=True,
             )
             decision = "off"
+            frames = False
         else:
             try:
-                decision_pilot = make_decision_llm(chosen, model=decision_model, url=decision_url)
+                decision_pilot = make_decision_llm(
+                    chosen, model=decision_model, url=decision_url, frames=frames
+                )
             except DecisionError as e:
                 _fail(str(e))
                 return
             decision_price = resolve_decision_price(chosen, url=decision_url)
+            if frames:
+                # One line, where the person who asked for frames is looking, naming where they
+                # go, and on a run whose mode asks the stepper nothing, that none will.
+                ui.console.print(
+                    _warn_line(_frames_notice(decision, decision_pilot.url)), soft_wrap=True
+                )
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
         # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
@@ -2184,6 +2211,7 @@ def _run_impl(
         decision_price=decision_price,
         host=hello.record(board.address) if board is not None and hello is not None else None,
         play=play,
+        decision_frames=frames,
     )
     # Nothing is left that can refuse the run, and the body is connected next, so this is
     # where a backend its adapter is retiring is said, above the header as the root callback's
@@ -3012,6 +3040,37 @@ is a cost estimate. A server you run, `jev` and `openai` at an address of your o
 costed at the self-hosted $0 and has no latency anybody has measured, so neither half applies to
 it. `tests/test_docs.py` holds the sentence to the rows that carry a published rate, so the next
 row given one fails there until this names it."""
+_DECISION_FRAMES = typer.Option(
+    None,
+    "--decision-frames/--no-decision-frames",
+    help="EXPERIMENTAL: show the decision LLM the robot's primary camera with each turn the "
+    f"stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest side, "
+    "beside the state and never inside it, and keep each one sent as frames/NNNN-decision.jpg "
+    "in the run directory. Only `openai` may be shown one, and only at OpenAI's own address: "
+    "with no decision LLM named, any other one, or a --decision-url that is not OpenAI's, the "
+    "run stops before the robot connects. --vision is about the pilot and changes nothing here. "
+    "Off unless you say so. QUACKD_DECISION_FRAMES=1 does the same.",
+    rich_help_panel="Model",
+)
+
+
+def _frames_notice(mode: str, url: str | None) -> str:
+    """What `--decision-frames` says once before the robot connects: where a frame goes, and on a
+    run whose mode asks the stepper nothing, that none will. The address is the client's own,
+    redacted as the record writes it."""
+    if mode == "off":
+        return (
+            "--decision-frames: no camera frame goes to OpenAI on this run, because "
+            "--decision-mode off asks the stepper nothing"
+        )
+    where = redacted_url(url) if url else "OpenAI"
+    return (
+        f"--decision-frames: the robot's primary camera goes to OpenAI at {where} with every turn "
+        f"the stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest "
+        "side, and the run keeps each one it sends as frames/NNNN-decision.jpg"
+    )
+
+
 CONTROLLERS = ("llm", "vla")
 """What `--controller` takes: the model `--llm` names, or the scripted pilot of
 `quackd.agent.providers.vla`."""
@@ -3261,6 +3320,7 @@ def run(
     decision_llm: str | None = _DECISION_LLM,
     decision_url: str | None = _DECISION_URL,
     decision_mode: str | None = _DECISION_MODE,
+    decision_frames: bool | None = _DECISION_FRAMES,
     controller: str | None = _CONTROLLER,
     flock: str | None = _FLOCK,
     run_name: str | None = _RUN_NAME,
@@ -3297,6 +3357,7 @@ def run(
             decision_llm=decision_llm,
             decision_url=decision_url,
             decision_mode=decision_mode,
+            decision_frames=decision_frames,
             flock=flock,
             robot=robot,
             robots=robots,
@@ -3379,8 +3440,11 @@ def record(
             robot="microduck:sim2d",
             # Pinned off, not merely absent. `record` makes the recordings in this repository and
             # has to be reproducible without a network call, and leaving this to default meant
-            # `QUACKD_DECISION_LLM` in somebody's environment quietly switched one on.
+            # `QUACKD_DECISION_LLM` in somebody's environment quietly switched one on. Frames
+            # too, which the mode does not decide: a `QUACKD_DECISION_FRAMES=1` there would
+            # otherwise build a decision LLM for a run that asks it nothing.
             decision_mode="off",
+            decision_frames=False,
             log_on=log,
             log_prompt=log_prompt,
             run_name=run_name,

@@ -676,6 +676,11 @@ def render_events(
             took += f", {mark}{asked.get('input_tokens', 0)} tok"
             if d.get("cost_usd") is not None:
                 took += f" {mark}{fmt_usd(d['cost_usd'])}"
+        # A camera frame went with this turn's request (`--decision-frames`). Said on a turn that
+        # failed or was cut off as on one that was answered, because the frame left all the same,
+        # and on no turn that sent none.
+        if isinstance(d.get("frame"), Mapping):
+            took += ", 1 frame"
         if d.get("gate") == "interrupted":
             # The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
             # cancel, which the record names where an error would be named. Read before the

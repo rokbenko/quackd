@@ -18,9 +18,11 @@ produce.
 ordinary developer's network, and OpenAI publish no latency at all, so every speed figure in this
 repository is arithmetic rather than a measurement. The first test here is what turns it into one
 for each row, and it prints what it measured so the number can be read off the terminal and put
-in an issue. The last two ask OpenAI's row what its page lists as unverified: how long it takes
-over many requests rather than one, cold and warm, whether every answer comes back under the name
-its question was asked by, what its usage block counts, and how many options one choice may carry.
+in an issue. The last three ask OpenAI's row what its page lists as unverified: how long it takes
+over many requests rather than one, cold and warm, and with a camera frame beside the state as
+`--decision-frames` sends one, what that frame adds to the input it bills, whether every answer
+comes back under the name its question was asked by, what its usage block counts, and how many
+options one choice may carry.
 
 They cost money and need that row's key, so they are opt-in twice over: the `live_decision`
 marker and `QUACKD_LIVE_DECISION=1`. CI sets neither. Run them with
@@ -408,6 +410,110 @@ async def test_openais_answers_come_back_named_and_how_long_they_take_over_many(
         assert names == asked, f"asked {asked} and the answers came back as {names}"
     first = usages[0].get("input_tokens")
     assert isinstance(first, int) and first > 0, usages[0]
+
+
+def _a_camera_picture() -> Any:
+    """A picture the size of a 720p camera's, with a floor, a wall and an orange ball in it, which
+    `frames.encode` shrinks to the size `--decision-frames` sends. Drawn here rather than taken from
+    a camera, because what is measured with it is what a frame of that size costs and how long a
+    request with one takes, not what the model makes of the room."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (1280, 720), (90, 110, 140))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 360, 1280, 720), fill=(150, 130, 100))
+    draw.ellipse((520, 420, 640, 540), fill=(240, 120, 20))
+    return image
+
+
+@pytest.mark.live_decision
+async def test_openais_answers_with_a_frame_beside_the_state_and_how_long_they_take(
+    decisions_row: DecisionSpec,
+) -> None:
+    """What a frame costs a turn, which the row's page lists as unverified: `IMAGE_TOKENS`, how
+    the API counts a picture, and `LATENCY_UNDER_ONE_SECOND` once one rides beside the state.
+
+    `SAMPLES` requests of the arm turn quackd builds, each with one frame as `--decision-frames`
+    sends it, a 720p picture shrunk to `frames.MAX_SIDE_PX` on its longest side and sent as a JPEG
+    at detail `low`, each allowed `PATIENCE_S` rather than the stepper's second, so the slow ones
+    are measured rather than cut off. One request with the same state and no frame goes first, on
+    a client of its own, so the frame's own share of `input_tokens` is printed beside the
+    latency. The client that sends the frames is built as a run that asks for them builds it, and
+    `frames.may_send_frames` lets it, which it does at OpenAI's own hosts alone. Everything is
+    printed before anything is asserted, and a request that fails ends the test naming what it
+    came to."""
+    from quackd.agent.decision.frames import encode, may_send_frames
+    from quackd.agent.decision.stepper import _picture
+
+    await _first_use_paid(decisions_row)
+    stepper, obs = await _arm_stepper(decisions_row, "Read the arm back and say what it reports")
+    blind: Any = stepper.llm
+    seeing: Any = make_decision_llm(decisions_row, frames=True)
+    assert may_send_frames(seeing), "the row would not be shown a frame where this runs"
+    shown = encode(_a_camera_picture(), "camera")
+    picture = _picture(shown.camera, ())
+    state, _trimmed = stepper._build_state(
+        obs, budget=BUDGET, stepped=(), notes=None, picture=picture
+    )
+    questions = build_questions(stepper.labels_for(cleared=True), stepper.what)
+    replies: list[Any] = []
+
+    def keeping(llm: Any) -> None:
+        send = llm._post
+
+        async def kept(body: Any, timeout_s: float | None) -> Any:
+            data = await send(body, timeout_s)
+            replies.append(data)
+            return data
+
+        llm._post = kept  # this one client only: what the API sent, before it was translated
+
+    keeping(blind)
+    keeping(seeing)
+    try:
+        await blind.decide(state, questions, timeout_s=PATIENCE_S)
+    except Exception as e:
+        raise AssertionError(
+            f"the request without a frame failed with {_failure(e)}, so there is nothing to "
+            "measure the frame against"
+        ) from e
+    took: list[float] = []
+    results: list[Any] = []
+    for n in range(SAMPLES):
+        started = time.perf_counter()
+        try:
+            results.append(
+                await seeing.decide(state, questions, frames=(shown,), timeout_s=PATIENCE_S)
+            )
+        except Exception as e:
+            raise AssertionError(
+                f"request {n + 1} of {SAMPLES} with a frame failed with {_failure(e)}, so there "
+                "is no answer to measure"
+            ) from e
+        took.append(time.perf_counter() - started)
+
+    usages = [data.get("usage") or {} for data in replies]
+    without, with_frame = usages[0].get("input_tokens"), usages[1].get("input_tokens")
+    ordered = sorted(took)
+    p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
+    over = sum(seconds > TIMEOUT_S for seconds in took)
+    print(
+        f"\n{decisions_row.name} {seeing.model}: {SAMPLES} requests with a {shown.width} by "
+        f"{shown.height} JPEG of {len(shown.data)} bytes at detail {shown.detail}, p50 "
+        f"{statistics.median(took):.3f} s, p95 {p95:.3f} s, slowest {ordered[-1]:.3f} s"
+    )
+    print(f"  the first, on a new connection: {took[0]:.3f} s")
+    print(f"  {over} of {SAMPLES} took longer than the stepper's {TIMEOUT_S} s")
+    print(f"  input_tokens without the frame: {without}; with it: {with_frame}")
+    print(f"  usage, as OpenAI sent it for the first with a frame: {usages[1]}")
+    declined = [result["refused"] for result in results if result["refused"]]
+    print(f"  questions declined: {declined or 'none'}")
+
+    asked = list(questions)
+    for data in replies:
+        names = [answer.get("name") for answer in data.get("answers") or []]
+        assert names == asked, f"asked {asked} and the answers came back as {names}"
+    assert isinstance(with_frame, int) and with_frame > 0, usages[1]
 
 
 @pytest.mark.live_decision

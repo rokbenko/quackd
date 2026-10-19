@@ -112,10 +112,12 @@ def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_a_model_variab
         assert bool(spec.model_env) is (name == "jev"), f"{name}: model_env"
 
 
-def test_no_row_may_be_shown_a_picture() -> None:
-    """The stepper sends text and nothing else, `openai` included although its API would take
-    an image. The day one may see is this set growing, deliberately and nowhere else."""
-    assert {name for name, spec in PRESETS.items() if spec.sees} == set()
+def test_only_openai_may_be_shown_a_picture() -> None:
+    """Every other row is sent text and nothing else, and `openai`, whose API takes an image,
+    may be shown the camera on a run that asks with `--decision-frames`, at OpenAI's own hosts
+    alone (ADR-0053). The day another may see is this set growing, deliberately and nowhere
+    else."""
+    assert {name for name, spec in PRESETS.items() if spec.sees} == {"openai"}
 
 
 def test_a_preset_url_carries_no_path() -> None:

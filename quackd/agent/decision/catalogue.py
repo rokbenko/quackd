@@ -89,12 +89,15 @@ class DecisionSpec:
     sdk: str | None = "typesafe_sdk"
     """The import name that says whether that extra is here. `None` skips the probe."""
     sees: bool = False
-    """Whether quackd may show this row a picture. False on every row, `openai` included,
-    although OpenAI's API takes an image: the stepper sends a decision LLM text and nothing
-    else (`stepper.Stepper._build_state`), and that a vendor would accept a camera frame is not
-    a decision that one should be sent. A field rather than a sentence in the stepper so that
-    the day a row may see is one changed row and one changed test, and nothing a plugin says
-    about itself can set it."""
+    """Whether quackd may show this row the robot's camera, on a run that asks with
+    `--decision-frames`. True on `openai` alone, whose API takes an image beside the text, and
+    then only at OpenAI's own hosts (`frames.may_send_frames`); false on every other row, which
+    is sent text and nothing else, and a run that asks for frames with one of them stops before
+    the robot connects (`factory.resolve_decision_frames`). That a vendor would take a camera
+    frame is not on its own a reason to send one, which is why the flag is off unless a run says
+    so. A field rather than a sentence in the stepper so that which rows may see is one line per
+    row and one test, and a plugin's row is built with it false whatever the plugin says about
+    itself (`factory.find_preset`)."""
 
 
 #: Every decision LLM quackd names, in the order `doctor` prints them: the two hosted ones, Jev
@@ -155,8 +158,9 @@ PRESETS: dict[str, DecisionSpec] = {
         price=Price(input=0.10, output=0.0, source="published", checked="2026-10-08"),
         extra="openai",
         sdk="openai",
-        # Text only, like every row: the field's own docstring says why.
-        sees=False,
+        # The one row that may be shown the camera, and only on a run that says so, at OpenAI's
+        # own address: the field's own docstring says why, and `frames.py` holds the rule.
+        sees=True,
     ),
     "kev": DecisionSpec(
         name="kev",

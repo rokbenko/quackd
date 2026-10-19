@@ -113,15 +113,17 @@ def _log_off(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _no_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """`QUACKD_LLM` pins the pilot, and `QUACKD_DECISION_LLM` switches a decision LLM on for
-    every run. The CLI loads a developer's `.env` in its root callback, so one line in an
-    untracked file could make half this suite assert against a pilot nobody chose, or pay for
-    a stepper nobody asked for. Empty reads as unset everywhere any of them is consumed, and
+    every run, and `QUACKD_DECISION_FRAMES` shows it the camera. The CLI loads a developer's
+    `.env` in its root callback, so one line in an untracked file could make half this suite
+    assert against a pilot nobody chose, pay for a stepper nobody asked for, or refuse a run
+    for frames nobody asked for. Empty reads as unset everywhere any of them is consumed, and
     unlike `delenv` it survives `load_dotenv`, which does not overwrite a name already in the
     environment. The tests that exercise them set them themselves."""
     monkeypatch.setenv("QUACKD_LLM", "")
     monkeypatch.setenv("QUACKD_DECISION_LLM", "")
     monkeypatch.setenv("QUACKD_DECISION_MODE", "")
     monkeypatch.setenv("QUACKD_DECISION_URL", "")
+    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "")
 
 
 @pytest.fixture(autouse=True)

@@ -5,13 +5,15 @@ provider SDK. To run it, sync an environment with the extra and run pytest there
 
     UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openai
 
-It has run, all of it, against three releases of the SDK, on 2026-10-11 and again on 2026-10-19,
-once the decision client took the pilot's rule for the SDK's own variables, and against no other:
-3.22.1, which the lock carries and that sync installs; 3.1.0, the first release in uv's cache that
-reads `OPENAI_CUSTOM_HEADERS`; and 1.66.0, the extra's floor, which sends through `httpx` rather
-than `httpx2`. Each of the last two was put into an environment synced that way with
-`uv pip install`. The extra allows every release from the floor to below 4.0, and what any other
-one does is read, where anybody read it, rather than run.
+It has run, all of it but the tests that send a camera frame, against three releases of the SDK,
+on 2026-10-11 and again on 2026-10-19, once the decision client took the pilot's rule for the
+SDK's own variables, and against no other: 3.22.1, which the lock carries and that sync installs;
+3.1.0, the first release in uv's cache that reads `OPENAI_CUSTOM_HEADERS`; and 1.66.0, the extra's
+floor, which sends through `httpx` rather than `httpx2`. Each of the last two was put into an
+environment synced that way with `uv pip install`. The tests that send a camera frame, written
+with `--decision-frames` on 2026-10-19, have run against 3.22.1 alone. The extra allows every
+release from the floor to below 4.0, and what any other one does is read, where anybody read it,
+rather than run.
 
 No key and no network. `tests/fake_openai_decisions.py` answers every request on 127.0.0.1, so
 what this proves is what quackd puts on the wire through the SDK, what the SDK adds to a request
@@ -30,6 +32,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import hashlib
+import io
 import json
 import re
 import socket
@@ -43,6 +47,7 @@ import pytest
 
 pytest.importorskip("openai")
 
+from PIL import Image
 from typer.testing import CliRunner
 
 from quackd.agent.decision import decisions_api
@@ -115,9 +120,10 @@ def _a_developers_openai_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_PROJECT_ID", "proj-y")
 
 
-def _run(stand_in: FakeOpenAIDecisions, tmp_path: Path, *, url: str | None = None) -> Any:
+def _run(stand_in: FakeOpenAIDecisions, tmp_path: Path, *extra: str, url: str | None = None) -> Any:
     """The read-only arm task in shadow mode, so the scripted pilot flies it and the stepper is
-    asked on every turn without anything it says reaching the arm."""
+    asked on every turn without anything it says reaching the arm. `extra` goes on the end of
+    the command line."""
     return runner.invoke(
         app,
         [
@@ -138,6 +144,7 @@ def _run(stand_in: FakeOpenAIDecisions, tmp_path: Path, *, url: str | None = Non
             str(tmp_path),
             "--no-gif",
             "--no-memory",
+            *extra,
         ],
     )
 
@@ -262,7 +269,12 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
         assert set(post.body) == {"model", "input", "questions"}
         assert post.body["model"] == OPENAI.model
     start = _start(_records(tmp_path))
-    assert start["decision_llm"] == {"name": "openai", "model": OPENAI.model, "url": stand_in.url}
+    assert start["decision_llm"] == {
+        "name": "openai",
+        "model": OPENAI.model,
+        "url": stand_in.url,
+        "frames": False,
+    }
     assert start["decision_price"]["source"] == "self-hosted", "a server you run is free"
 
 
@@ -637,6 +649,85 @@ def test_an_address_with_a_path_stops_the_run_before_the_sdk_sends_anything(
     assert not list(tmp_path.iterdir()), "the run started before the typo was noticed"
 
 
+# ── a frame on the wire (`--decision-frames`) ───────────────────────────────────────────
+
+
+def test_a_frame_goes_as_the_reference_has_an_image_go_and_is_the_one_the_record_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through the real SDK, with the stand-in treated as OpenAI's, since a frame goes nowhere
+    else. Each request's `input` is one user message: the state as `input_text`, the very string
+    the turn measured as `state_chars`, and the frame after it as `input_image`, a JPEG data URL
+    at detail `low`. The stand-in checks both parts against the reference's shape and took every
+    request. The JPEG it was sent is no wider or taller than the limit, and is the file the run
+    kept and the hash its record names."""
+    from quackd.agent.decision.frames import MAX_SIDE_PX
+
+    with FakeOpenAIDecisions() as stand_in:
+        _as_openai(monkeypatch, stand_in)
+        result = _run(stand_in, tmp_path, "--decision-frames")
+    assert result.exit_code == 0, result.output
+    sent = _sent(_records(tmp_path))
+    posts = stand_in.posts()
+    assert sent and len(sent) == len(posts)
+    (run_dir,) = tmp_path.iterdir()
+    for post, turn in zip(posts, sent, strict=True):
+        assert post.status == 200, post.reply
+        (message,) = post.body["input"]
+        assert set(message) == {"role", "content"} and message["role"] == "user"
+        text, image = message["content"]
+        assert text["type"] == "input_text" and len(text["text"]) == turn["state_chars"]
+        assert json.loads(text["text"])["picture"].startswith("The image sent with this state")
+        assert image["type"] == "input_image" and image["detail"] == "low"
+        ((media_type, data, detail),) = post.pictures()
+        assert (media_type, detail) == ("image/jpeg", "low")
+        with Image.open(io.BytesIO(data)) as decoded:
+            assert decoded.format == "JPEG" and max(decoded.size) <= MAX_SIDE_PX
+        frame = turn["frame"]
+        assert frame["sha256"] == hashlib.sha256(data).hexdigest() and frame["kept"] is True
+        assert (run_dir / frame["path"]).read_bytes() == data
+    assert _start(_records(tmp_path))["decision_llm"]["frames"] is True
+    assert _summary(tmp_path)["decision"]["frames_sent"] == len(sent)
+
+
+def test_a_reply_that_echoes_the_frame_back_never_puts_it_in_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The SDK writes a 400's whole body into its exception's message, and this one quotes the
+    request with the frame in it and echoes the frame's `image_url` besides. Every turn records
+    the type and the status and never a byte of either: no data URL and no run of base64
+    anywhere in the transcript or the summary."""
+    with FakeOpenAIDecisions(script="quoting") as stand_in:
+        _as_openai(monkeypatch, stand_in)
+        result = _run(stand_in, tmp_path, "--decision-frames")
+    assert result.exit_code == 0, result.output
+    first = stand_in.posts()[0]
+    echoed = first.reply["error"]["image_url"]
+    assert echoed.startswith("data:image/jpeg;base64,"), "the reply did not echo the frame"
+    assert echoed in json.dumps(first.body), "the reply echoed some other picture"
+    sent = _sent(_records(tmp_path))
+    assert sent and all(turn["error"] == "BadRequestError: HTTP 400" for turn in sent)
+    assert all(turn["frame"]["kept"] is True for turn in sent), "no frame went"
+    for written in (next(tmp_path.rglob("transcript.jsonl")), next(tmp_path.rglob("summary.json"))):
+        text = written.read_text(encoding="utf-8")
+        assert "data:" not in text, f"a data URL reached {written.name}"
+        assert re.search(r"[A-Za-z0-9+/=]{100,}", text) is None, f"base64 reached {written.name}"
+
+
+def test_frames_to_a_server_of_your_own_stop_the_run_before_the_sdk_sends_anything(
+    tmp_path: Path,
+) -> None:
+    """The stand-in at its own address is a server of your own, as `--decision-url
+    http://127.0.0.1:8765` would be, and a frame goes to OpenAI's hosts alone: the run stops
+    while the flags are read, with the SDK and a key both here."""
+    with FakeOpenAIDecisions() as stand_in:
+        result = _run(stand_in, tmp_path, "--decision-frames")
+    assert result.exit_code == 1, result.output
+    assert f"{stand_in.url} is not one of its hosts" in plain_text(result.output)
+    assert stand_in.requests == []
+    assert not list(tmp_path.iterdir()), "the run started before the refusal"
+
+
 # ── what the suite's other halves lean on ───────────────────────────────────────────────
 
 
@@ -763,6 +854,7 @@ LIVE = {
     "the fields": live.test_a_real_answer_carries_the_fields_the_router_reads,
     "the safety claim": live.test_a_real_answer_before_a_verdict_cannot_reach_a_moving_verb,
     "many requests": live.test_openais_answers_come_back_named_and_how_long_they_take_over_many,
+    "the frames": live.test_openais_answers_with_a_frame_beside_the_state_and_how_long_they_take,
     "the options": live.test_how_many_options_one_choice_may_carry,
 }
 """Every live test, called as a function with the row it is handed, so it can be driven here."""
@@ -770,15 +862,23 @@ LIVE = {
 ON_ONE_TURN = ("the measurement", "the fields", "the safety claim")
 """The live tests that read one stepper turn, and so have the stepper's second for it."""
 
+SHOW_A_FRAME = ("the frames",)
+"""The live tests that send a frame, which goes to OpenAI's own hosts alone, so the stand-in each
+is driven against here is treated as OpenAI's (`_as_openai`) and is sent the fake key."""
+
 
 @pytest.mark.parametrize("name", list(LIVE))
-async def test_every_live_test_fails_naming_the_status_when_the_key_is_refused(name: str) -> None:
+async def test_every_live_test_fails_naming_the_status_when_the_key_is_refused(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A wrong key is every request answered 401. Each live test fails, and says so: none dies on
     a bare `KeyError` for the first field it missed, as the one that checks the router's fields
     did, and none passes, as the safety claim did and the one about options did, taking a 401
     for the API's bound on a choice."""
     refused = FakeOpenAIDecisions(script=[failing(401)])
     with refused as stand_in, pytest.raises(AssertionError) as failed:
+        if name in SHOW_A_FRAME:
+            _as_openai(monkeypatch, stand_in)
         await LIVE[name](_row_at(stand_in))
     assert "AuthenticationError: HTTP 401" in str(failed.value), str(failed.value)
 
@@ -821,6 +921,29 @@ async def test_the_measurements_measure_a_turn_with_a_question_declined_and_say_
     assert "gate=refused" in printed and "refused: ['next_verb']" in printed
     assert "questions declined: [['next_verb']" in printed
     assert "options: taken, and the question declined" in printed
+
+
+async def test_the_measurement_with_a_frame_prints_what_the_frame_added_and_what_was_declined(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Against a stand-in treated as OpenAI's, which counts a quarter of each body's characters
+    as its tokens, so a body with a frame in it counts more than one without: the test sends
+    every request it says it sends, the frame in each, prints both counts and what was declined,
+    and passes on an answer with a question declined, as the other measurements do."""
+    from quackd.agent.decision.frames import MAX_SIDE_PX
+
+    declines = answering(refuse=("next_verb",))
+    with FakeOpenAIDecisions(script=[declines]) as stand_in:
+        _as_openai(monkeypatch, stand_in)
+        await LIVE["the frames"](_row_at(stand_in))
+        posts = stand_in.posts()
+    printed = capsys.readouterr().out
+    assert len(posts) == 1 + live.SAMPLES
+    assert posts[0].pictures() == [] and all(len(post.pictures()) == 1 for post in posts[1:])
+    assert f"requests with a {MAX_SIDE_PX} by 288 JPEG" in printed
+    (counts,) = re.findall(r"input_tokens without the frame: (\d+); with it: (\d+)", printed)
+    assert int(counts[1]) > int(counts[0]), counts
+    assert "questions declined: [['next_verb']" in printed
 
 
 async def test_the_first_live_test_prints_what_it_measured_before_it_fails(

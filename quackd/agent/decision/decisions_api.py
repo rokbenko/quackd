@@ -61,6 +61,14 @@ request the SDK asks the operating system which platform it is running on, which
 good part of a second; the client asks it while it is built instead (`warm_platform`), so no
 turn ever waits for it.
 
+This is the one client quackd may hand a camera frame (`frames.may_send_frames`), and only when
+a run asks with `--decision-frames`. Built with `frames`, it is refused at any address that is
+not OpenAI's, a server of your own included, by the same `is_openai_host` that decides the key;
+handed a frame, it refuses before sending anything unless it was built so and is at one of
+OpenAI's hosts. A frame goes beside the state as OpenAI's reference has an image go: `input` is
+then one user message whose content is the state as `input_text` and the frame as `input_image`,
+an inline data URL with its `detail`, rather than the state alone as a string (`to_input`).
+
 Imported only when a run has named this row. Nothing at module scope touches the SDK, and the
 address rules are the standard library alone, so `factory` asks them on a machine without it.
 """
@@ -73,7 +81,7 @@ import importlib
 import math
 import os
 import platform
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -81,6 +89,7 @@ from quackd.agent.decision.base import (
     NO_KEY,
     TIMEOUT_S,
     DecisionError,
+    DecisionFrame,
     DecisionMissingKey,
     DecisionNotInstalled,
     UnreadableReply,
@@ -122,6 +131,12 @@ MAX_RETRIES = 0
 half of a second before it starts, or however long a `Retry-After` asks, up to two minutes: a
 good part of `TIMEOUT_S` spent asleep at best. Within one second a 429 or a 5xx is worth more
 as a turn the record calls an error than as a retry that cannot finish."""
+
+MAX_IMAGES = 128
+"""The most images one request may carry across all its messages, by OpenAI's reference for
+`POST /v1/decisions` and openai-python's request types, read 2026-10-08. The stepper sends one at
+most; a caller who hands `decide` more than this is refused before anything is sent, rather than
+told so by a 400 with the frames already on the wire."""
 
 
 def client_address(url: str) -> str:
@@ -282,15 +297,31 @@ def _field(question: Any, name: str) -> Any:
     return getattr(question, name, None)
 
 
-def to_input(state: Mapping[str, str]) -> str:
+def to_input(state: Mapping[str, str], frames: Sequence[DecisionFrame] = ()) -> Any:
     """The state as OpenAI's `input`: the same JSON object the stepper measures as
     `state_chars`, character for character, so that number is the size of what was sent.
 
     With its letters as letters (`base.state_text`). The `input` is text the API hands its model as
     it is and never decodes, so JSON's escapes went to `gpt-6-luna` as written, a goal in Slovenian
     as runs of `\\u017e` and every `last` field's dash as `\\u2014`, longer to bill and stranger
-    to read than the letters the state holds."""
-    return state_text(state)
+    to read than the letters the state holds.
+
+    With no frame it is that string, as it has always been. With frames it is the other shape
+    the reference takes, a list of user messages, here exactly one: `role` `user`, which the
+    reference requires, and a content list of the same string as an `input_text` part and each
+    frame after it as an `input_image` part, its bytes as an inline data URL and its `detail`
+    beside them. `type: "message"` is optional there and not sent, as the guide's own example
+    with an image sends none. The frame is never in the state: the text measured as
+    `state_chars` is the text sent, with or without a picture beside it."""
+    text = state_text(state)
+    if not frames:
+        return text
+    content: list[dict[str, str]] = [{"type": "input_text", "text": text}]
+    content += [
+        {"type": "input_image", "image_url": frame.data_url(), "detail": frame.detail}
+        for frame in frames
+    ]
+    return [{"role": "user", "content": content}]
 
 
 def _options(criteria: Any, key: str, name: str) -> list[dict[str, str]]:
@@ -481,10 +512,20 @@ class DecisionsAPILLM:
     a phantom cost on a turn that never left the machine. The address and the key are settled
     here, once, so nothing a turn does can move either, and so is what the SDK would otherwise
     do on the first turn before sending anything (`warm_platform`).
+
+    `frames` builds it to be shown the robot's camera beside the state, which only a run that
+    says `--decision-frames` asks for. It is refused at an address that is not OpenAI's own, a
+    server of your own included, so whatever a client built with it is shown goes to OpenAI and
+    nowhere else.
     """
 
     def __init__(
-        self, spec: DecisionSpec, *, model: str | None = None, url: str | None = None
+        self,
+        spec: DecisionSpec,
+        *,
+        model: str | None = None,
+        url: str | None = None,
+        frames: bool = False,
     ) -> None:
         self.name = spec.name
         self.model: str = model or spec.model or ""
@@ -505,8 +546,18 @@ class DecisionsAPILLM:
             )
         check_address(address)
         self.url: str | None = address
-        sdk = _sdk_parts(spec)
         at_openai = is_openai_host(address)
+        if frames and not at_openai:
+            # Before the SDK is asked for anything, so the refusal is the same sentence on a
+            # machine without it. Rok's rule: a frame goes to OpenAI's own hosts and nowhere
+            # else, a server of your own on this machine included.
+            raise DecisionError(
+                f"--decision-llm {spec.name} sends the camera to OpenAI's own API alone, and "
+                f"{redacted_url(address)} is not one of its hosts"
+            )
+        self.frames: bool = bool(frames)
+        """Whether it was built to be shown the camera, at OpenAI's own address."""
+        sdk = _sdk_parts(spec)
         if at_openai:
             key = os.environ.get(spec.key_env) if spec.key_env else None
             if not key:
@@ -588,9 +639,16 @@ class DecisionsAPILLM:
         state: Mapping[str, str],
         questions: Mapping[str, Mapping[str, Any]],
         *,
+        frames: Sequence[DecisionFrame] = (),
         timeout_s: float | None = None,
     ) -> Any:
         """One request carrying every question, translated out and the answers translated back.
+
+        `frames` go beside the state (`to_input`), and only from a client built to be shown them
+        at one of OpenAI's own hosts: handed any otherwise, or more than the `MAX_IMAGES` one
+        request may carry, it raises a `ValueError` before anything is sent. The stepper never
+        hands it one it may not send (`frames.may_send_frames`); this is the same rule kept by the
+        last thing that could break it, for whoever calls `decide` directly.
 
         `timeout_s`, where it is given, bounds the whole request, connecting, sending and every
         byte of the answer, with a `wait_for` of its own, and a request that runs out raises
@@ -605,8 +663,21 @@ class DecisionsAPILLM:
         per phase and above `TIMEOUT_S`, is a backstop. That is the stepper's case: its
         `asyncio.timeout` around this call, at `TIMEOUT_S`, is the bound, and the one clock that
         ends its turn."""
+        if frames and not (self.frames and is_openai_host(self.url or "")):
+            # A `ValueError` rather than a `DecisionError`, which is a sentence while the CLI is
+            # still reading its flags: this is a caller's mistake met mid-run, and the stepper
+            # records a turn that raises it by its type and hands the turn to the model.
+            raise ValueError(
+                f"--decision-llm {self.name} was not built to be shown the camera at OpenAI's own "
+                "address, so it is handed no frame and nothing was sent"
+            )
+        if len(frames) > MAX_IMAGES:
+            raise ValueError(
+                f"{len(frames)} frames, and one request to {API_PREFIX}{PATH} carries at most "
+                f"{MAX_IMAGES}, so nothing was sent"
+            )
         asked = to_questions(questions)
-        body = {"model": self.model, "input": to_input(state), "questions": asked}
+        body = {"model": self.model, "input": to_input(state, frames), "questions": asked}
         if timeout_s is None:
             data = await self._post(body, None)
         else:
