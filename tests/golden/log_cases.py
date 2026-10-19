@@ -174,11 +174,53 @@ def events() -> list[tuple[str, LogEvent]]:
                 probabilities={"place": 0.62, "gripper(open=true)": 0.30},
             ),
         ),
+        (
+            # A question the decision LLM declined, named, with what it did answer under it.
+            # `idle_s` is on the record and not the line, and is here so that a renderer which
+            # started printing it would have to change this file to do it.
+            "decision_refused",
+            _e(
+                "decision",
+                0.3,
+                mode="shadow",
+                llm="openai",
+                model="gpt-6-luna",
+                latency_s=0.31,
+                idle_s=7.5,
+                gate="refused",
+                refused=["need_human"],
+                choice="report_state",
+                confidence=0.91,
+                probabilities={"report_state": 0.94, "stop": 0.03},
+                done=0.02,
+                need_human=None,
+                usage={"input_tokens": 612, "output_tokens": 0},
+                cost_usd=0.0000612,
+            ),
+        ),
         ("decision_escalate", _e("decision", 0.3, mode="on", latency_s=0.19, gate="escalate")),
         ("decision_done", _e("decision", 0.3, mode="on", latency_s=0.2, gate="done", done=0.91)),
         (
             "decision_error",
             _e("decision", 0.3, mode="shadow", latency_s=1.0, error="TypeSafeAPITimeoutError"),
+        ),
+        (
+            # The run ended in the middle of the request, which the record names where an
+            # error's type would be. Not an error's line: nothing failed and nobody takes the
+            # turn, and the request had gone out, so its bill rides beside the seconds.
+            "decision_interrupted",
+            _e(
+                "decision",
+                0.3,
+                mode="shadow",
+                latency_s=0.37,
+                idle_s=6.2,
+                gate="interrupted",
+                error="KeyboardInterrupt",
+                usage={"input_tokens": 640, "output_tokens": 0},
+                usage_estimated=True,
+                cost_usd=0.000027,
+            ),
         ),
         # ── decision: what the question cost, measured and guessed ──
         (
@@ -263,6 +305,23 @@ def events() -> list[tuple[str, LogEvent]]:
                 model_verb="move_joints",
                 agree=False,
                 llm_latency_s=6.9,
+            ),
+        ),
+        (
+            # The stepper chose nothing, because the decision LLM declined the very question
+            # that asks for a choice: the row says so by its gate and the name, never `None`.
+            "decision_shadow_refused",
+            _e(
+                "decision_shadow",
+                0.4,
+                decision_choice=None,
+                decision_confidence=None,
+                decision_gate="refused",
+                refused=["next_verb"],
+                decision_latency_s=0.31,
+                model_verb="report_state",
+                agree=False,
+                llm_latency_s=7.4,
             ),
         ),
         # ── enforce ──

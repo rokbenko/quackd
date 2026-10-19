@@ -4,8 +4,9 @@ any other server that speaks /v1/systemone, at --decision-url. This is the row t
 told where to go: no vendor, no upstream to link, no licence to name and no version to pin,
 because what it describes is the wire format rather than an implementation of it. Any server that
 answers `POST /v1/systemone` is reachable without quackd knowing anything else about it, which is
-the whole point of the format being the abstraction; one that does not speak it is a plugin
-instead, under the `quackd.decision_llms` entry point group ([writing a
+the whole point of the format being the abstraction. One that speaks OpenAI's
+`POST /v1/decisions` instead is the [openai](openai.md) row at its own address, and one that
+speaks neither is a plugin, under the `quackd.decision_llms` entry point group ([writing a
 plugin](README.md#writing-a-plugin)). A decision LLM has no `upstream_api.py` the way an
 adapter does, so every name quackd spells for this one lives in its row in
 [`catalogue.py`](../../../quackd/agent/decision/catalogue.py).
@@ -42,11 +43,11 @@ local:<id>` is the whole of what this row is for.
 | Part | What it requires |
 |---|---|
 | The request | `POST {your base url}/v1/systemone`, carrying `{state, model, questions}`. quackd's state is a flat mapping of short English strings -- `goal`, `success_when`, `body`, `where`, `now`, `camera`, `last`, `recent`, `tried`, `notes`, `flock` -- and its questions are four plain dicts of `{type, instructions, criteria}`, with the types `choice` and `noul` |
-| No path on the address | the client appends `/v1/systemone` itself, so `--decision-url` takes a scheme, a host and a port and nothing else. A value with a path on the end produces `/v1/v1/systemone` and a 404 that names nothing, and a test holds every row in the catalogue to the same rule |
+| A path on the address | the client appends `/v1/systemone` to whatever address it is handed, path and all, so a server behind a gateway that serves the format under a prefix of its own is reached by giving `--decision-url` that prefix. An address that already ends in `/v1` produces `/v1/v1/systemone` and a 404 that names nothing, and a test holds every row in the catalogue to an address with no path at all |
 | The response | `{model, answers, usage}`. The `model` and `usage` keys must be present or the SDK's parser raises, though their contents may be null or empty. `answers` is keyed by the question names you were sent, and each one is a choice (`{type: "choice", choice, confidence}`, plus `probabilities` where you have them), a noul (`{type: "noul", noul}`) or a score (`type: "score"`). The `type` is not optional: the SDK tells the kinds of answer apart by it, so an answer without one fails validation, and quackd hands that turn to the model |
-| The key | quackd sends the literal word `local`, `NO_KEY` in [`systemone.py`](../../../quackd/agent/decision/systemone.py), because the SDK requires a non-empty printable ASCII key and a server you run wants none. A hosted key sitting in your environment is never sent here |
+| The key | quackd sends the literal word `local`, `NO_KEY` in [`base.py`](../../../quackd/agent/decision/base.py), because the SDK requires a non-empty printable ASCII key and a server you run wants none. A hosted key sitting in your environment is never sent here |
 | The model id | `--decision-llm local:<id>` names what the server should answer as. With none given the SDK substitutes its own default, `jev-latest`, which a server that validates ids may refuse, so name one |
-| The budget, and the price | one second a turn: `TIMEOUT_S` is declared in [`base.py`](../../../quackd/agent/decision/base.py) and enforced with `asyncio.wait_for` around `decide()` in [`stepper.py`](../../../quackd/agent/decision/stepper.py), at the seam rather than left to the client, and at most one retry inside it. A server you run is costed at the self-hosted $0; a paid endpoint behind this row is the one case where that is wrong, and `QUACKD_DECISION_PRICE`, in the same syntax as `QUACKD_PRICE`, is how you say so |
+| The budget, and the price | one second a turn: `TIMEOUT_S` is declared in [`base.py`](../../../quackd/agent/decision/base.py) and enforced with `asyncio.timeout` around `decide()` in [`stepper.py`](../../../quackd/agent/decision/stepper.py), at the seam rather than left to the client, and at most one retry inside it. A server you run is costed at the self-hosted $0; a paid endpoint behind this row is the one case where that is wrong, and `QUACKD_DECISION_PRICE`, in the same syntax as `QUACKD_PRICE`, is how you say so |
 
 ## What to know before you point a robot at it
 
@@ -72,8 +73,8 @@ local:<id>` is the whole of what this row is for.
 | Thing | Value | What quackd does with it |
 |---|---|---|
 | Client | `AsyncTypeSafeClient(*, api_key, model, retry, timeout, headers, transport, http_client, base_url)`, every argument keyword-only, and `api_key` mandatory: the literal `local` is accepted | `systemone.py` builds one while the CLI is still parsing, before the robot connects, so a bad address is a sentence rather than a failed turn, and the key it hands over is that word |
-| Address and path | `base_url` argument, else `TYPESAFE_BASE_URL`, else `https://api.typesafe.ai`, `rstrip("/")`; `/v1/systemone` is then a hardcoded constant appended to it, with no parameter to override it, and the issue asking for exactly that (its #7) was closed unresolved | `--decision-url` is passed explicitly, so this row never falls through to the hosted default. It is also why the address takes no path, and why a gateway serving the format at some other path is out of reach from this row |
-| Retries and clocks | `RetryPolicy(max_retries=2, backoff_initial=0.5, backoff_max=5.0, backoff_jitter=0.25, respect_retry_after=True, timeout=30.0)`, where `timeout` is the budget for the whole retry sequence and the per-request default is a separate `10.0` s | `systemone.py` passes `max_retries=1`, `backoff_max=0.2` and `TIMEOUT_S` for both clocks, because setting only the sequence budget left a turn able to wait ten seconds against a page promising one |
+| Address and path | `base_url` argument, else `TYPESAFE_BASE_URL`, else `https://api.typesafe.ai`, `rstrip("/")`; `/v1/systemone` is then a hardcoded constant appended to it, with no parameter to override it, and the issue asking for exactly that (its #7) was closed unresolved | `--decision-url` is passed explicitly, so this row never falls through to the hosted default. It is also why a path on the address is kept with `/v1/systemone` after it, and why a gateway serving the format at a route that ends any other way is out of reach from this row |
+| Retries and clocks | `RetryPolicy(max_retries=2, backoff_initial=0.5, backoff_max=5.0, backoff_jitter=0.25, respect_retry_after=True, timeout=30.0)`, where `timeout` is the budget for the whole retry sequence, read when an attempt fails, and the client's own clock on each operation of a request is a separate `10.0` s | `systemone.py` passes `max_retries=1`, `backoff_max=0.2`, `TIMEOUT_S` as the retry budget and twice it as the client's own clock, because setting only the sequence budget left a turn able to wait ten seconds against a page promising one, and a client clock at the stepper's own second would come due with the stepper's bound, which is the one that ends a turn |
 | Questions and response | plain dicts fully supported beside the SDK's own `Choice`, `Noul` and `Score` classes, and a noul dict needs only `{"type": "noul"}`; on the way back the `model` and `usage` keys are strictly required or the parser raises, contents lenient, and there is no `latency` attribute despite the docs site listing one | `build_questions` emits dicts, so the same four questions reach a hosted API, a server on your machine and a model in this process without being rebuilt for each; the answers are read tolerantly, and `stepper.py` times the call itself and writes `latency_s` rather than trusting a field that is not there |
 | Dependency | `httpx2` rather than `httpx` | any transport or timeout object you hand the client has to be an `httpx2` type, which is the one thing about this install that surprises people |
 
@@ -84,7 +85,7 @@ local:<id>` is the whole of what this row is for.
 | `NOBODY_HAS_CHECKED_THIS_ONE` | that the server you point it at is one quackd has ever seen | nothing, and that is the honest answer: every other row on the page had its README and its source read, and this one by definition did not |
 | `WIRE_COMPATIBLE` | that its response keeps the shape `typesafe_sdk` parses | the SDK requires the `model` and `usage` keys present, contents may be null; quackd's own reader takes an answer as an object or as a plain mapping, and an answer it cannot read costs that turn as `gate: unreadable` or `gate: error` and hands it to the model rather than raising |
 | `CONFIDENCE_MEANS_THE_SAME` | that its confidence is comparable to the one quackd's floors were set against. It is not: the floors (brake 0.50, read 0.60, motion 0.85, confirm 0.90) are two numbers TypeSafe publish with two of quackd's own set between them, all four Jev-shaped and none of them measured here, and this server computes confidence by its own formula | nothing automatic. `--decision-mode shadow` records what it would have chosen without letting it act, which is how the floors get re-tuned |
-| `LATENCY_UNDER_ONE_SECOND` | that it answers inside the turn budget. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.wait_for` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the model and the record says how long it waited |
+| `LATENCY_UNDER_ONE_SECOND` | that it answers inside the turn budget. Nobody has measured it against a robot | `TIMEOUT_S` is 1.0 s, enforced with `asyncio.timeout` around `decide()` in `stepper.py` so it holds whatever the backend is; a turn that runs out escalates to the model and the record says how long it waited |
 | `USAGE_REPORTED` | whether its token counts mean anything | where a count is missing or is not a measurement, quackd estimates the request at four characters to the token and marks the turn `usage_estimated`, and a self-hosted row is costed at $0 either way |
 | `PYTHON_FLOOR` | that its own interpreter floor is its own business | nothing. `quackd[decision]` is a small HTTP client that runs on quackd's own Python, and your server runs in whatever environment you started it in |
 
@@ -108,7 +109,8 @@ changes.
 A server that speaks the format can stop being `local` and become a row and a page of its own,
 which is four things and no code: the row, a page like this one, a row in the hub's table and a
 line in the changelog ([CONTRIBUTING.md](../../../CONTRIBUTING.md) has the checklist). One that does
-not speak it is a plugin instead ([writing a plugin](README.md#writing-a-plugin)).
+not speak it is the [openai](openai.md) row if it answers `POST /v1/decisions`, and a plugin
+otherwise ([writing a plugin](README.md#writing-a-plugin)).
 Either way, run it in shadow mode on your own bench ([Measuring it
 yourself](README.md#measuring-it-yourself)) and report the agreement rate, the latency
 and the answers that surprised you, and say which interface and port you ran the server on:

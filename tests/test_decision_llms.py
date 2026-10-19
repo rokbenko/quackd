@@ -2,12 +2,13 @@
 
 `test_decision.py` next door is about the stepper: which turns are a choice, what an answer
 has to clear, what the record says. This file is about everything in front of that -- the
-flags, the variables, the table of presets, the two backends and the plugin hook -- because
-that is the half that grew when Jev stopped being the only one.
+flags, the variables, the table of presets, the backends and the plugin hook -- because that is
+the half that grew when Jev stopped being the only one. What only the `openai` row does, its
+translation and where its key goes, is `test_decisions_api.py`.
 
-The one rule worth stating up front: nothing in this file may need `typesafe_sdk` or `laya` to
-be installed. Both are optional extras, CI installs neither, and a suite that quietly skipped
-here would be a suite that never tested the thing this release is.
+The one rule worth stating up front: nothing in this file may need `typesafe_sdk`, `openai` or
+`laya` to be installed. All three are optional extras, CI installs none of them, and a suite that
+quietly skipped here would be a suite that never tested the thing this release is.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import importlib.metadata
+import json
 import sys
 import time
 import tomllib
@@ -25,8 +27,9 @@ from typing import Any
 import pytest
 
 from quackd.agent.decision import factory
-from quackd.agent.decision.base import TIMEOUT_S, DecisionError
+from quackd.agent.decision.base import TIMEOUT_S, DecisionError, client_timeout
 from quackd.agent.decision.catalogue import (
+    DECISIONS_API,
     ENTRY_POINT_GROUP,
     IN_PROCESS,
     PRESET_NAMES,
@@ -50,7 +53,13 @@ from tests import fake_laya, fake_systemone
 ROOT = Path(__file__).resolve().parents[1]
 
 
-async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
+async def _advise_with(
+    answers: dict[str, Any] | None,
+    llm: Any = None,
+    *,
+    goal: str = "a goal",
+    features: dict[str, Any] | None = None,
+) -> Any:
     """One turn against a backend that answers exactly what it was handed.
 
     Built bare rather than through `Stepper.build`, because what is under test is how an
@@ -64,7 +73,7 @@ async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
 
     stepper = Stepper(
         mode="on",
-        goal="a goal",
+        goal=goal,
         llm=llm or Says(),
         name="probe",
         price=resolve_decision_price(PRESETS["local"]),
@@ -73,7 +82,7 @@ async def _advise_with(answers: dict[str, Any] | None, llm: Any = None) -> Any:
     stepper.classes["stop"] = "brake"
     stepper.what["stop"] = "the brake"
     stepper.early.add("stop")
-    return await stepper.advise(SimpleNamespace(features={}), cleared=True, budget="b")
+    return await stepper.advise(SimpleNamespace(features=features or {}), cleared=True, budget="b")
 
 
 # ── the table ───────────────────────────────────────────────────────────────────────────
@@ -84,26 +93,36 @@ def test_every_preset_row_is_complete() -> None:
     names itself in `--help` and then fails somewhere further in."""
     for name, spec in PRESETS.items():
         assert spec.name == name, f"{name}: the row and its key disagree"
-        assert spec.backend in (SYSTEM_ONE, IN_PROCESS), f"{name}: unknown backend"
+        assert spec.backend in (SYSTEM_ONE, IN_PROCESS, DECISIONS_API), f"{name}: unknown backend"
         assert spec.summary and not spec.summary.endswith("."), f"{name}: summary is a label"
         assert spec.install, f"{name}: nothing says how to get it running"
         assert spec.sdk, f"{name}: no import to probe, so doctor cannot say if it is here"
 
 
-def test_only_the_hosted_row_carries_a_key_a_price_or_a_model_variable() -> None:
-    """The three things that belong to a vendor rather than to the format. A second row growing
-    any of them is the table drifting back towards one-module-per-vendor."""
+def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_a_model_variable() -> None:
+    """The things that belong to a vendor rather than to a format. Two rows are hosted, so two
+    carry a key and a published rate, and a third growing either is the table drifting back
+    towards one-module-per-vendor. The model variable is the one SDK's own that quackd honours
+    where that SDK owns the address, which is `jev` alone: `openai`'s backend always hands its
+    SDK an address."""
     for name, spec in PRESETS.items():
-        hosted = name == "jev"
+        hosted = name in ("jev", "openai")
         assert bool(spec.key_env) is hosted, f"{name}: key_env"
         assert bool(spec.price) is hosted, f"{name}: price"
-        assert bool(spec.model_env) is hosted, f"{name}: model_env"
+        assert bool(spec.model_env) is (name == "jev"), f"{name}: model_env"
+
+
+def test_no_row_may_be_shown_a_picture() -> None:
+    """The stepper sends text and nothing else, `openai` included although its API would take
+    an image. The day one may see is this set growing, deliberately and nowhere else."""
+    assert {name for name, spec in PRESETS.items() if spec.sees} == set()
 
 
 def test_a_preset_url_carries_no_path() -> None:
     """The SDK appends `/v1/systemone` to whatever it is given, without normalising, so a row
     written in the style of `providers/local.py` -- which stores `http://host:8000/v1` --
-    would ask for `/v1/v1/systemone` and get a 404 that named nothing."""
+    would ask for `/v1/v1/systemone` and get a 404 that named nothing. The `openai` row is held
+    to the same rule for the same reason: its backend adds `/v1` itself."""
     for name, spec in PRESETS.items():
         if spec.url is None:
             continue
@@ -123,6 +142,7 @@ def test_the_hosted_model_is_pinned_and_the_open_ones_are_named() -> None:
     that answered. And the open servers do not share an id: OpenJev refuses a pinned Jev
     version with a 400, so a shared default would have been wrong there on every request."""
     assert PRESETS["jev"].model == "jev-1.13.0"
+    assert PRESETS["openai"].model == "gpt-6-luna"
     assert PRESETS["openjev"].model != PRESETS["jev"].model
     assert PRESETS["local"].model is None
 
@@ -147,6 +167,15 @@ def test_neither_optional_extra_is_in_all() -> None:
     assert "typesafe" not in everything and "laya" not in everything
 
 
+def test_the_openai_row_installs_nothing_the_pilot_does_not() -> None:
+    """Its extra is the pilot's own, so naming it adds no package to `quackd[all]` and no line
+    to the lock: every requirement it installs is already one `all` carries, word for word."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = pyproject["project"]["optional-dependencies"]
+    assert PRESETS["openai"].extra == "openai"
+    assert set(extras["openai"]) <= set(extras["all"])
+
+
 def test_the_catalogue_costs_nothing_to_import() -> None:
     """`--help` imports this table and so does every press of TAB. Nothing in it may reach for
     a vendor SDK, for torch, or for pydantic.
@@ -160,7 +189,7 @@ def test_the_catalogue_costs_nothing_to_import() -> None:
             imported.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
-    for heavy in ("typesafe_sdk", "laya", "torch", "pydantic", "httpx", "importlib"):
+    for heavy in ("typesafe_sdk", "openai", "laya", "torch", "pydantic", "httpx", "importlib"):
         assert heavy not in imported, f"catalogue.py imports {heavy}"
 
 
@@ -341,11 +370,17 @@ def test_a_named_model_beats_the_variable(monkeypatch: pytest.MonkeyPatch) -> No
     assert resolve_decision_model(PRESETS["jev"], "jev-1.13.0") == "jev-1.13.0"
 
 
-def test_a_server_you_run_is_free_and_the_hosted_one_is_not() -> None:
+def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
     """Not `None`, which quackd reserves for "there is a rate and nobody here knows it". A
     model on your own machine bills you in electricity, and that is the same `$0` the rest of
-    quackd already prices a local pilot at."""
+    quackd already prices a local pilot at.
+
+    OpenAI's rate was read on a day of its own, and the record says which: without its own
+    `checked` it would be stamped with the day the pilots' catalogue was read."""
     assert resolve_decision_price(PRESETS["jev"]).input == 0.042
+    openai = resolve_decision_price(PRESETS["openai"])
+    assert (openai.input, openai.output, openai.source) == (0.10, 0.0, "published")
+    assert openai.record()["checked"] == "2026-10-08"
     for name in ("kev", "von", "openjev", "opendecision", "local", "laya"):
         price = resolve_decision_price(PRESETS[name])
         assert (price.input, price.output) == (0.0, 0.0), name
@@ -435,6 +470,21 @@ def test_the_address_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None
     llm = make_decision_llm(PRESETS["local"], url="http://gpu.local:9001", model="my-build")
     assert fake.base_url == "http://gpu.local:9001"
     assert llm.url == "http://gpu.local:9001" and llm.model == "my-build"
+
+
+def test_the_clients_own_clock_sits_above_the_steppers_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TypeSafe's client hands its `timeout` to httpx2 for each operation of a request, so set to
+    the stepper's second it came due together with the stepper's own bound, and one slow turn
+    could be recorded as quackd's `no answer within 1.0 s` or as the SDK's own timeout, whichever
+    the event loop reached first. Above it, the stepper's bound is the one clock that ends a
+    turn. The retry budget only decides whether a retry is started, so it stays at the second,
+    and the SDK never sleeps towards a retry the turn would not live to send."""
+    fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    make_decision_llm(PRESETS["local"], url="http://gpu.local:9001")
+    assert fake.timeout == client_timeout(TIMEOUT_S) > TIMEOUT_S
+    assert fake.retry is not None and fake.retry.timeout == TIMEOUT_S
 
 
 def test_the_row_that_exists_to_be_told_an_address_refuses_without_one(
@@ -686,6 +736,132 @@ async def test_a_confidence_spelled_as_a_boolean_clears_nothing() -> None:
     assert advice.record["gate"] == "unreadable" and advice.call is None
 
 
+def _takes_stop(**over: dict[str, Any]) -> dict[str, Any]:
+    """Three answers the gates would take `stop` on, with `over` in place of whichever it names."""
+    answers: dict[str, Any] = {
+        "next_verb": {"choice": "stop", "confidence": 0.99},
+        "done": {"noul": 0.0},
+        "need_human": {"noul": 0.0},
+    }
+    return {**answers, **over}
+
+
+@pytest.mark.parametrize(
+    ("question", "field", "said"),
+    [
+        ("next_verb", "confidence", "0.99"),
+        ("next_verb", "confidence", b"0.99"),
+        ("next_verb", "confidence", 5.0),
+        ("next_verb", "confidence", 60),
+        ("next_verb", "confidence", -0.5),
+        ("done", "noul", "0"),
+        ("done", "noul", -1.0),
+        ("need_human", "noul", -1.0),
+        ("need_human", "noul", 1.5),
+    ],
+)
+async def test_a_number_that_is_no_probability_is_unreadable_on_every_row(
+    question: str, field: str, said: Any
+) -> None:
+    """A gate reads a probability, a number from 0 to 1, and nothing else. `float()` used to
+    read whatever it could, so a confidence written as text cleared its floor, a percentage or a
+    5 cleared every floor, a `done` of -1 said certainly not, and each moved the body; a
+    `need_human` of 1.5 asked a person on a number no backend meant. Every one is the answer
+    nobody could read, and the record keeps `null` where it was."""
+    advice = await _advise_with(_takes_stop(**{question: {**_takes_stop()[question], field: said}}))
+    assert advice.record["gate"] == "unreadable" and advice.call is None
+    recorded = {"next_verb": "confidence", "done": "done", "need_human": "need_human"}[question]
+    assert advice.record[recorded] is None
+
+
+async def test_the_state_is_measured_and_shown_with_its_letters_as_letters() -> None:
+    """A letter outside ASCII is one character, to the measure and to the model. `state_chars`
+    used to count JSON's six-character escape for it, so a goal in Slovenian measured longer than
+    the same goal in ASCII, and the flock's chatter, written into the state as JSON of its own,
+    reached the backend as escapes."""
+    shown: list[dict[str, str]] = []
+
+    class Keeps:
+        name, model, url = "probe", "p", None
+
+        async def decide(self, state: Any, questions: Any) -> Any:
+            shown.append(dict(state))
+            return {"answers": _takes_stop()}
+
+    flock = {"features": {"flock": {"duck": "žoga je pod mizo"}}}
+    slovenian = await _advise_with(None, llm=Keeps(), goal="poberi žogo", **flock)
+    ascii_only = await _advise_with(None, llm=Keeps(), goal="poberi zogo", **flock)
+    assert slovenian.record["state_chars"] == ascii_only.record["state_chars"]
+    assert shown[0]["goal"] == "poberi žogo"
+    assert "žoga je pod mizo" in shown[0]["flock"] and "\\u" not in shown[0]["flock"]
+
+
+async def test_a_probability_may_be_certain_and_may_be_a_whole_number() -> None:
+    """Both ends of 0 to 1 are probabilities, and JSON may well send them as `0` and `1`."""
+    advice = await _advise_with(
+        _takes_stop(next_verb={"choice": "stop", "confidence": 1}, done={"noul": 0})
+    )
+    assert advice.record["gate"] == "taken" and advice.call is not None
+
+
+@pytest.mark.parametrize(
+    "next_verb",
+    [
+        {"confidence": 0.99},
+        {"choice": None, "confidence": 0.99},
+        {"choice": 3, "confidence": 0.99},
+        {"value": "stop", "confidence": 0.99},
+    ],
+    ids=["no choice", "a null choice", "a number", "the choice under another name"],
+)
+async def test_a_next_verb_with_no_choice_in_it_is_unreadable_and_never_an_escalate(
+    next_verb: dict[str, Any],
+) -> None:
+    """A missing choice used to default to `escalate`, so an answer that carried a confidence and
+    no choice was recorded as a confident decision to hand the turn back, the gate `escalate`,
+    rather than as the answer nobody could read that it was."""
+    advice = await _advise_with(_takes_stop(next_verb=next_verb))
+    assert advice.record["gate"] == "unreadable" and advice.call is None
+
+
+@pytest.mark.parametrize(
+    ("feasible", "recorded"),
+    [
+        (
+            {"choice": "feasible", "confidence": float("nan")},
+            {"choice": "feasible", "confidence": None},
+        ),
+        (
+            {"choice": "feasible", "confidence": float("inf")},
+            {"choice": "feasible", "confidence": None},
+        ),
+        ({"choice": float("nan"), "confidence": 0.9}, {"choice": None, "confidence": 0.9}),
+    ],
+    ids=["a NaN confidence", "an infinite confidence", "a NaN choice"],
+)
+async def test_the_record_holds_no_number_json_cannot_spell(
+    feasible: dict[str, Any], recorded: dict[str, Any]
+) -> None:
+    """`transcript.jsonl` is JSON, and a NaN or an infinity in a distribution, or anywhere in
+    `feasible`, which nothing gates on, reached it as a bare `NaN` or `Infinity`: Python reads
+    the line back, and `jq` and `JSON.parse` refuse it. The distribution leaves such a number
+    out, and `feasible` records `null` for a confidence that is no probability and for a choice
+    that is no label. The turn itself is read as it would have been."""
+    answers = _takes_stop(
+        next_verb={
+            "choice": "stop",
+            "confidence": 0.99,
+            "probabilities": {"stop": 0.99, "escalate": float("nan"), "other": float("-inf")},
+        },
+        feasible=feasible,
+    )
+    advice = await _advise_with(answers)
+    json.dumps(advice.event(), allow_nan=False)
+    assert advice.record["gate"] == "taken"
+    assert advice.record["probabilities"] == {"stop": 0.99}
+    assert advice.record["feasible"] == recorded
+
+
 async def test_a_backend_that_never_answers_costs_one_turn_and_not_the_run() -> None:
     """The page promises a second. The SDK's own per-request default is ten, its retry budget
     is a different clock again, and a model in this process has no timeout at all, so the only
@@ -724,6 +900,97 @@ def test_a_hosted_row_at_an_address_you_typed_is_a_server_you_run(
     monkeypatch.setenv("TYPESAFE_API_KEY", "sk-hosted-and-private")
     make_decision_llm(PRESETS["jev"], url="http://127.0.0.1:8009")
     assert fake.api_key == "local"
+
+
+def test_a_hosted_row_at_an_address_you_typed_needs_no_key_and_is_costed_as_yours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sent the word rather than `TYPESAFE_API_KEY` at a `--decision-url` (the test above), so a
+    run there was switched off for want of a key it would never send, and with the key set its
+    turns were costed at TypeSafe's rate for a server on the bench. The rule `openai` keeps at an
+    address that is not OpenAI's, now kept by both, because one rule (`factory.sends_key`)
+    answers both questions for every row."""
+    fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    jev, url = PRESETS["jev"], "http://127.0.0.1:8009"
+    assert decision_llm_is_available(jev, url=url) == (True, "")
+    price = resolve_decision_price(jev, url=url)
+    assert (price.input, price.output, price.source) == (0.0, 0.0, "self-hosted")
+    ok, why = decision_llm_is_available(jev)
+    assert not ok and "TYPESAFE_API_KEY" in why, "with no address it is TypeSafe's, and wants it"
+    assert resolve_decision_price(jev) == jev.price
+
+
+def test_a_run_of_jev_at_an_address_you_typed_keeps_its_stepper_without_the_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command line's end of the rule above. No TypeSafe key here, `--decision-url` on the
+    line, and the run used to say "running without it: --decision-llm jev needs
+    TYPESAFE_API_KEY" and drop the stepper. It keeps it now, sends the word, and records the
+    self-hosted rate. Empty rather than deleted, because an empty variable survives the `.env`
+    the CLI loads."""
+    import json
+
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    fake = fake_systemone.install(
+        monkeypatch, fake_systemone.FakeDecisionLLM(answers=fake_systemone.turn("stop"))
+    )
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "lerobot-lookout",
+            "--robot",
+            "lerobot:mock",
+            "--llm",
+            "fake",
+            "--decision-llm",
+            "jev",
+            "--decision-url",
+            "http://127.0.0.1:9",
+            "--decision-mode",
+            "shadow",
+            "--no-log",
+            "--runs-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "running without it" not in result.output
+    assert fake.api_key == "local" and fake.calls, "the stepper was not asked"
+    (run_dir,) = tmp_path.iterdir()
+    records = [
+        json.loads(line)
+        for line in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    start = next(r for r in records if r.get("kind") == "run_start")
+    assert start["decision_price"]["source"] == "self-hosted"
+
+
+@pytest.mark.parametrize("url", [None, "http://127.0.0.1:8009"], ids=["no address", "an address"])
+@pytest.mark.parametrize("name", ["jev", "kev", "laya"])
+def test_the_rule_for_the_key_is_what_the_client_sends(
+    name: str, url: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`factory.sends_key` answers before any client exists, for the availability check and the
+    price, and each client decides what it sends for itself. Held to each other here, so the two
+    cannot drift: a System One client that sends its key hands the SDK nothing and lets it read
+    the variable, and one that does not hands it the word. `openai`'s half is in
+    `tests/test_decisions_api.py`, beside the hosts."""
+    fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
+    fake_laya.install(monkeypatch, fake_laya.FakeRouter())
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-hosted-and-private")
+    monkeypatch.setenv(factory.ENV_URL, "")
+    spec = PRESETS[name]
+    make_decision_llm(spec, url=url)
+    if spec.backend == SYSTEM_ONE:
+        assert (fake.api_key is None) is factory.sends_key(spec, url)
+    else:
+        assert factory.sends_key(spec, url) is False, "nothing in this process takes a key"
 
 
 @pytest.mark.parametrize("blank", ["", "   "])

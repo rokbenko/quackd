@@ -46,6 +46,111 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   them need `QUACKD_LIVE_LLM=1` and an OpenAI key, and none of them has run yet
   ([docs/guides/play.md](docs/guides/play.md),
   [ADR-0055](docs/adr/0055-a-pilot-can-play-a-part.md)).
+- **OpenAI's Decisions API as a decision LLM: `--decision-llm openai`.** OpenAI opened
+  `POST /v1/decisions` to every developer on 2026-10-06, with `gpt-6-luna` its only model, and it
+  asks the kind of question a decision LLM answers in a wire format of its own: the questions go as
+  a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
+  question. So it is a second backend rather than a row on the System One client.
+  `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
+  out and the answers back, strictly by the name each answer carries and never by its position, and
+  by its type: an answer of a type its question was not asked as, a choice with no choice in it, or
+  two answers under one name answer nothing, which for a question the gates read hands the turn to
+  the model on `unreadable`, and a refusal among them declines the question. The state goes as one
+  JSON object with its letters as letters, because OpenAI's `input` is text its model reads as
+  written, and the `state_chars` every row records now counts those letters rather than JSON's
+  six-character escape for each one outside ASCII. It reaches the API through the `openai` SDK's
+  generic request rather than its `decisions` resource, which arrived in 3.26.0, so the 3.22.1 the
+  lock carries serves it and no floor moves, and it installs with `quackd[openai]`, the pilot's own
+  extra, which `quackd[all]` already carries.
+  `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the
+  regional hosts OpenAI's data controls page lists for it, `us.`, `eu.`, `au.`, `ca.`, `jp.`, `in.`,
+  `sg.`, `kr.`, `gb.` and `ae.` in front of `api.openai.com`, over https, with nothing else in the
+  address's authority but the port https uses anyway: any other `--decision-url` is a server of
+  your own that answers the same format, sent the word `local` and costed at the self-hosted rate
+  unless `QUACKD_DECISION_PRICE` says otherwise. What the SDK reads for itself is answered too, in
+  every release of it the extra allows rather than only the one the lock carries. `OPENAI_BASE_URL`
+  never moves the address, nothing `OPENAI_CUSTOM_HEADERS` sets is ever sent, an authorization
+  line of it in any spelling carrying quackd's own key or word instead, and a release that would
+  still send one stops the run and is named. `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI,
+  whatever a gateway's line of that variable names, and nowhere else, and the client follows no
+  redirect, which would have carried them and the request somewhere else. That is this client's
+  alone: the pilot's own OpenAI clients, `--llm openai` among them, are built as they always were
+  and leave `OPENAI_CUSTOM_HEADERS` and the account variables to the SDK. A `--decision-url` with
+  a path, a query or a fragment stops the run before anything connects, on every machine, with or
+  without the SDK and the key, and a run at a server of your own needs no key. The client never
+  retries, and its own clock sits above the stepper's second, so that second is what ends a turn and
+  one that runs out of it is recorded one way, as `TimeoutError: no answer within 1.0 s`;
+  `decide(timeout_s=...)` bounds a whole request for a caller with no stepper around it. The SDK
+  asks which platform it is on before its first request, which on a cold Windows machine means a WMI
+  query or a subprocess, so that is asked while the client is built and no turn waits for it. A turn
+  is billed at the published $0.10 per million input tokens, output not charged, on the count OpenAI
+  reports, and a turn whose request went out and then failed on quackd's own estimate, which wears
+  a `~`. A question the API declines is no answer at all, so the stepper reads that before any
+  answer and hands the turn to the model on a gate of its own, `refused`, whichever of the four was
+  declined, `feasible` included. The turn's record names the questions declined, the run's
+  `decision` summary counts `refusals`, and `quackd log` prints the names in yellow. Every stepper
+  turn that sends a request now records `idle_s` as well, the seconds since the stepper's previous
+  request ended. OpenAI's SDK and TypeSafe's both drop a connection idle for five seconds, and in
+  shadow mode the model's own call and a verb usually take longer than that between two of the
+  stepper's requests, so `idle_s` tells a turn that paid for opening a new connection from one that
+  reused one. It is null on the first turn, and on the turn after a request that failed, which
+  may have taken its connection with it or never had one, so no number there claims a connection
+  that was kept warm. The catalogue gains a `sees` field, false on every row, `openai` included,
+  because quackd sends a decision LLM text and nothing else. The row has
+  [a page of its own](docs/guides/decision-llms/openai.md), SECURITY.md says where each decision
+  LLM's key may go, and the decision-LLM hub, the README, `.env.example`, CONTRIBUTING, the
+  architecture page, the SO-101's first run, the local-LLM guide and PLAN.md name it where they name
+  the others. The hub works its rate into the cost of one decision, about a thousandth of the model
+  call it replaces where Jev's is about a two-thousandth, and gives it no latency, because OpenAI
+  publish only a ratio to their own Responses API. The warning `--decision-mode on` prints says the
+  same: the hub's figures are estimates of speed and cost for `jev` at TypeSafe, of cost alone for
+  `openai` at OpenAI, and of neither for a server you run, where it used to say Jev and nothing at
+  all for anything else.
+  [ADR-0052](docs/adr/0052-openais-decisions-api-is-a-second-wire-format.md) records why it is built
+  in rather than a plugin, amending ADR-0043's one wire format and its one published rate, and
+  ADR-0041's note that an estimated cost and its `~` came only with a rate, Jev's alone, and
+  extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the
+  key, the headers and the address through a fake of the SDK, `tests/fake_decisions_api.py`, and
+  `tests/test_decision.py` drives the new gate and `idle_s` through the stepper. Wherever the SDK is
+  installed, `tests/test_decisions_api_wire.py` drives a real `quackd run` through the real one
+  against `tests/fake_openai_decisions.py`, a stand-in for the API on 127.0.0.1, and shows on the
+  wire that the key and OpenAI's account headers go only where they are meant to, that nothing
+  `OPENAI_CUSTOM_HEADERS` or `OPENAI_BASE_URL` says gets in, in whatever spelling, that a redirect
+  is never followed, and that a 429 is one request, recorded as the rate limit it is, where the
+  SDK's own retries would have slept through the turn's second and recorded a timeout. The wire
+  tests have run against 3.22.1, the release the lock carries, against 3.1.0 and against 1.66.0, the
+  extra's floor, and against no other release. `tests/test_live_decision.py` runs against `openai`
+  as well as `jev` and waits for a key, and a test there fails, saying why, when the answer it
+  checks never came back, because the request failed or the question was declined. Any test without
+  the `live_decision` or `live_llm` marker that sends a request through the real SDK to a host under
+  openai.com, the pilot's or the stepper's, is stopped before it is sent, and fails, and a process
+  such a test starts inherits an empty `OPENAI_API_KEY`. The honest part: nothing has answered a
+  real robot and no request has reached OpenAI, OpenAI define no `confidence` and claim no
+  calibration, and the floors it is gated on were shaped around Jev, so shadow mode comes first.
+
+### Changed
+
+- **A stepper turn that failed records the exception's type and HTTP status, never its message.**
+  The turn is still `gate: error` and still the model's, and its `error` used to carry the
+  exception's message whole. An SDK puts the server's reply there, TypeSafe's the reply's own
+  message and OpenAI's the body of a 4xx or a 5xx, and a reply can quote the request it turned down,
+  which is the state the record otherwise keeps as a size and a shape. So `error` now holds the type
+  and the status, `RateLimitError: HTTP 429` for a rate limit at OpenAI, or the type alone where
+  there is no status, and so does the line `quackd log` prints. Two sentences are quackd's own and
+  are kept. A turn that ran out of the stepper's own second still says
+  `TimeoutError: no answer within 1.0 s`, and only such a turn: a `TimeoutError` with nothing in
+  it that a backend raised on a shorter clock of its own used to be given the same sentence, beside
+  a `latency_s` that said otherwise, and is recorded by its type now. TypeSafe's client keeps its
+  own clock above that second too, as OpenAI's does, so on every row the second is the one clock
+  that ends a turn. And a reply quackd could not read is recorded in quackd's own words, which name
+  only the type of what came back, so a page a proxy answers with is
+  `UnreadableReply: POST /v1/decisions answered str rather than a JSON object`. Laya's
+  `ValueError` for options that overflow `head_max_len` is recorded by its type alone, so
+  [its page](docs/guides/decision-llms/laya.md) now asks for the turn's `labels` beside it.
+  `tests/test_decision.py` and `tests/test_decisions_api.py` fail when a reply that quotes the
+  state, or carries a data URL, reaches the record, when a backend's own `TimeoutError` is given
+  the stepper's sentence and when quackd's words about a reply are lost, and
+  `tests/test_decision_llms.py` fails when TypeSafe's clock sits on the stepper's second.
 
 ### Fixed
 
@@ -73,6 +178,74 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Completions refusal alone and beside text and a call, one that keeps `content_filter`, and an
   Anthropic refusal, and `tests/test_local_provider.py` holds a call quoted in a refusal, whatever
   its stop reason, or cut off by a filter, that does not run.
+- **`--decision-llm jev` at a `--decision-url` no longer wants `TYPESAFE_API_KEY`, and is costed
+  as the server you run that it is.** An address typed for `jev` is a server you run, and quackd
+  has always sent it the word `local` rather than the key. The run still asked for the key before
+  it built the stepper, though, so a machine without one printed
+  `running without it: --decision-llm jev needs TYPESAFE_API_KEY` and ran without a stepper that
+  would never have sent the key, and a machine with one costed every turn at TypeSafe's $0.042 per
+  million input tokens for a server on the bench. One rule now answers both questions for every
+  row, the rule each client already keeps about what it sends (`factory.sends_key`): `jev` wants
+  its key and is costed at TypeSafe's rate only with no `--decision-url`, and `openai` only at
+  OpenAI's own hosts. `tests/test_decision_llms.py` runs `jev` at an address with no key in the
+  environment, and holds the rule to what each client actually sends.
+- **What the stepper's gates read is a probability or nothing, on every decision LLM.** The gates
+  took any number they could make a float of. A confidence written as text, `"0.99"`, cleared its
+  floor, one on a scale of its own, a percentage or a 5, cleared every floor, a `done` and a
+  `need_human` of -1 said certainly not, and each of them moved the body; a `next_verb` that
+  carried a confidence and no choice was read as a confident `escalate`. A confidence, `done` and
+  `need_human` are now each a number from 0 to 1, a choice is a string, and anything else ends the
+  turn on `unreadable`, with `null` on the record where the number or the choice was. A NaN or an
+  infinity in a distribution or in `feasible` also used to reach `transcript.jsonl` as a bare `NaN`
+  or `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse; the distribution leaves
+  such a number out and `feasible` records `null`, so every line is JSON a strict reader takes.
+  `tests/test_decision_llms.py` drives each of those through the stepper, and
+  `tests/test_decisions_api_wire.py` sends a NaN and an infinity through the real SDK and reads
+  the events file back strictly.
+- **A turn the model takes ends the stepper's run of turns, however it came to be the model's.**
+  The stepper never answers twice running with the same call, nor more turns in a row than its
+  limit, and a turn the model takes starts both counts again. A turn whose call failed, a timeout
+  or a refused connection, went back to the model without doing that, and so did a turn whose
+  state was too large to send and one with nothing on offer. So after a `stop` the stepper took
+  and a turn that timed out, which the model then took, the same confident `stop` was refused as
+  a repeat, and a run of stepper turns broken by a failure reached its limit early. Each of them
+  now ends the stepper's run as every other handover does. None of it moved the body, since it
+  only ever gave the model more turns, but it skewed the gates shadow mode counts.
+  `tests/test_decision.py` has the model take a turn each of those three ways between two
+  identical answers, and breaks a run of two with a failed turn.
+- **A run interrupted while the stepper's request was out has that request on the record.** A
+  second Ctrl-C, or a flock cancelling a member, is not an exception the stepper caught, so the
+  request it cut off, already handed to the decision LLM, was missing from the stepper's count,
+  its seconds and its bill, the loop wrote no `decision` record for it, and the summary written
+  on the way out left it out too. The stepper now counts, times and bills that request as it
+  does one that failed, on a gate of its own, `interrupted`, which `quackd log` draws in yellow
+  with what cut it off, and not among `errors`, because nothing failed and the run ends there.
+  The loop writes the record before the interrupt goes on, as it already did for the model's own
+  call. The stepper also waits for its decision LLM in its own task now, because on Python 3.11
+  `asyncio.wait_for` ran the request in a task of its own, and a Ctrl-C that landed in there left
+  through the event loop at once. `tests/test_decision.py` interrupts a turn both ways, on the
+  stepper and in a run on the mock arm, and finds one record, on `interrupted`, and a summary
+  that counts it.
+- **A shadow row whose stepper chose nothing says why, rather than `None 0.00`.** The `decide=`
+  line `quackd log` prints for each shadow row gave the stepper's choice and its confidence, and
+  on a turn that chose nothing, a call that failed or a body with nothing on offer, that was
+  `None 0.00`, which read as an answer of its own. A `next_verb` nobody answered was recorded,
+  and printed, as `escalate`, which is how such a turn is routed and not anything anybody chose,
+  so every count of the stepper's choices took it for one. The record now says `null` for the
+  choice of a `next_verb` declined, never answered or answered with no label, the line names the
+  gate where there is no choice, `error`, `unreadable` or `refused to answer next_verb`, and
+  leaves out a confidence nobody could read rather than print it as 0.00, and the shadow row of a
+  turn that ended on `refused` carries the names declined, as `refused`. `tests/test_decision.py`
+  and `tests/test_log.py` hold each, and the log golden gains the line.
+- **A flock's chatter reaches a decision LLM in its own letters.** The stepper wrote what the
+  flock's members had said into the state as JSON of its own, with every letter outside ASCII
+  escaped, so every decision LLM was handed `\u017e` where a member had written `ž`. It also
+  trimmed the state, and held it to its hard cap, on the same escaped text, six characters for
+  each such letter, so a state in Slovenian was cut sooner than the same state in ASCII. The
+  chatter goes in its own letters now, and the state is trimmed and capped on the letters
+  `state_chars` counts. `tests/test_decision_llms.py` finds the flock's letters in the state a
+  backend of every row is handed, and measures a goal with a letter outside ASCII the same as the
+  goal spelled in ASCII.
 
 ### Documentation
 
@@ -113,6 +286,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   lines they share, the examples README's counts of the files that play and keep their lines to the
   files, and its figures for the aim, and the files it names as falling short, each in the sentence
   that says why, to the list the test keeps of them.
+- **The decision-LLM hub covers both of OpenRouter's decision endpoints, and no longer says the
+  in-process one counts no tokens.** Its section on what is not covered named only OpenRouter's
+  alpha Decisions API, at `/api/alpha/decisions`, which the System One client's fixed path cannot
+  reach. OpenRouter also documents a System One endpoint, `POST /api/v1/systemone`, for TypeSafe's
+  own client, which appends `/v1/systemone` to whatever address it is handed, so the section now
+  says what keeps that one out instead: an address given with `--decision-url` is sent the word
+  `local`, never a key. The OpenRouter guide, which said whether OpenRouter's decision LLMs can be
+  reached from `--decision-llm` "has not been checked", points there now. The hub also said the
+  in-process one never reports a count and that "a model running in this process reports no count
+  at all", which ADR-0043 had already corrected: `laya` reports the tokens its encoder read, and
+  quackd takes that as a measurement. PLAN.md's open item on the stepper pointed at a break-even the
+  hub no longer works out, and points at its speed and cost figures now.
+- **A System One address keeps its path, as it always has.** The pages for `jev` and `local`, the
+  hub's table of flags and `--decision-url`'s help said a System One row's address takes a scheme,
+  a host and a port and no path, because its client adds `/v1/systemone` itself. TypeSafe's client
+  puts that after whatever address it is handed, path and all, and quackd hands it the address as
+  given, so a server behind a gateway that serves the format under a prefix of its own is reached
+  by naming the prefix, while an address that already ends in `/v1` reaches `/v1/v1/systemone`.
+  They say so now, and the `jev` page says what keeps each of OpenRouter's two decision endpoints
+  out of reach, a route that ends another way for its alpha Decisions API and the key for its
+  System One endpoint, where it named the first alone. `tests/test_docs.py` holds each of them to
+  the rule the factory keeps.
+- **The decision-LLM hub says what a server nobody started costs on Windows.** Windows takes
+  longer than the stepper's second to refuse a connection to a port on your own machine that
+  nothing listens on, so the stepper's own bound ends that turn, its record says
+  `TimeoutError: no answer within 1.0 s` as a slow server's does, and in either mode it waits out
+  its second before the model is asked. The hub said only that such a server costs a turn and
+  never the run. `tests/test_docs.py` holds the sentence to the words the stepper writes.
 
 ### Known limitations
 

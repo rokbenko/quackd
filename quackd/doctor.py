@@ -183,8 +183,9 @@ class ProviderRow:
     """A local server does not need one; a cloud provider cannot run without it."""
     model: str
     url: str = ""
-    """Where a self-hosted decision LLM listens, and empty for everything that has no address:
-    every provider, whose vendor owns its own, and the hosted decision LLM, whose SDK does."""
+    """Where a decision LLM listens, and empty for everything that has no address: every
+    provider, whose vendor owns its own, and `jev`, whose SDK does. `openai` has one, because
+    its backend always hands the SDK the row's address rather than letting it find one."""
     pinned: bool = False
     """The environment named this model rather than the row taking its default: QUACKD_LLM for
     a provider, the SDK's own variable for a decision LLM that honours one."""

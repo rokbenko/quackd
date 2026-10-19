@@ -1410,6 +1410,7 @@ def _run_impl(
         decision_llm_is_available,
         make_decision_llm,
         parse_decision_llm,
+        resolve_decision_address,
         resolve_decision_mode,
         resolve_decision_price,
     )
@@ -1775,6 +1776,12 @@ def _run_impl(
             # to name one.
             refused=(decision_llm or "").strip().lower() == "off",
         )
+        if named_decision is not None and decision != "off":
+            # Here rather than when the client is built below, because the client is built only
+            # on a machine that has the SDK and the key, and everywhere else the run would go
+            # ahead without its stepper. An address the named row can never be handed is a typo,
+            # and a typo stops the run on every machine.
+            resolve_decision_address(named_decision[0], decision_url)
     except DecisionError as e:
         _fail(str(e))
         return
@@ -2052,7 +2059,9 @@ def _run_impl(
     if decision != "off" and named_decision is not None:
         # `chosen` rather than `spec`, which in this function is the robot's.
         chosen, decision_model = named_decision
-        available, why = decision_llm_is_available(chosen)
+        # With the address, because whether a key is wanted can depend on where it would go:
+        # `openai` sends one only to OpenAI's own API, so a run at a server you run needs none.
+        available, why = decision_llm_is_available(chosen, url=decision_url)
         if not available:
             ui.console.print(
                 _warn_line(f"--decision-llm {chosen.name} asked for, running without it: {why}"),
@@ -2065,27 +2074,18 @@ def _run_impl(
             except DecisionError as e:
                 _fail(str(e))
                 return
-            decision_price = resolve_decision_price(chosen)
+            decision_price = resolve_decision_price(chosen, url=decision_url)
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
         # `docs/guides/decision-llms/README.md` is arithmetic from published numbers rather than a
-        # result. Two of the four confidence floors are the 0.5 and 0.9 TypeSafe publish and two are
-        # quackd's own, and all four were shaped around Jev and are inherited unmeasured by
-        # every other row.
+        # result, and only for the rows something is published about: speed and cost for jev at
+        # TypeSafe, cost alone for openai at OpenAI. Two of the four confidence floors are the 0.5
+        # and 0.9 TypeSafe publish and two are quackd's own, and all four were shaped around Jev
+        # and are inherited unmeasured by every other row.
         # Refusing the flag over that would be the wrong shape of gate, because the executor
         # binds a stepper-authored call exactly as it binds the model's. Saying it once, where
         # the person switching it on is looking, is the right size of one.
-        ui.console.print(
-            _warn_line(
-                "--decision-mode on has not been measured against a real robot: no latency, no "
-                "agreement rate, and the figures in docs/guides/decision-llms/README.md are "
-                "estimates for Jev and nothing at all for anything else. Two of the four "
-                "confidence floors are published by TypeSafe and two are quackd's own, all "
-                "four shaped around Jev. --decision-mode shadow records both and changes "
-                "nothing about the run."
-            ),
-            soft_wrap=True,
-        )
+        ui.console.print(_warn_line(_DECISION_MODE_ON_UNMEASURED), soft_wrap=True)
     if task_images and not pilot.supports_vision:
         # Refused rather than dropped. A pilot that cannot see would be handed "draw what is
         # in the picture" with no picture, improvise something, and the only sign of why would
@@ -2961,22 +2961,27 @@ _DECISION_LLM = typer.Option(
     "decision LLM generates no text at all: it answers the turns whose answer is a choice "
     "among calls this body can make, a read, the brake, a gripper, a gaze, and hands "
     "everything else to the model, including every pose and every sentence. `jev` is "
-    "TypeSafe's, hosted; `kev`, `von`, `openjev` and `opendecision` are open ones you run "
-    "yourself; `laya` runs inside this process; `local` is any other server, with "
-    "--decision-url. Needs "
-    r"quackd\[decision] (or quackd\[laya])"
-    " and whatever key the one you name asks for, which for every one you run yourself is "
-    "none. Off unless you name one. QUACKD_DECISION_LLM does the same.",
+    "TypeSafe's and `openai` is OpenAI's Decisions API, both hosted; `kev`, `von`, `openjev` "
+    "and `opendecision` are open ones you run yourself; `laya` runs inside this process; "
+    "`local` is any other System One server, with --decision-url. Needs "
+    r"quackd\[decision], or quackd\[laya] for laya and quackd\[openai] for openai,"
+    " and whatever key the one you name asks for: TYPESAFE_API_KEY for jev, OPENAI_API_KEY "
+    "for openai, and none for one you run yourself. Off unless you name one. "
+    "QUACKD_DECISION_LLM does the same.",
     autocompletion=_complete_decision_llm,
     rich_help_panel="Model",
 )
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
-    help="Where your own System One server listens, e.g. http://localhost:8009 — no path, "
-    "because the client adds /v1/systemone itself. Required by --decision-llm local, and the "
-    "way to move any other one off the port its row expects. QUACKD_DECISION_URL does the "
-    "same.",
+    help="Where the decision LLM listens, e.g. http://localhost:8009. On a System One row a "
+    "path is kept and the client adds /v1/systemone after it; `openai`'s client adds "
+    "/v1/decisions to the host alone, and a path there stops the run. Required by "
+    "--decision-llm local, and the way to move any other one off the address its row expects. "
+    "`openai` sends OPENAI_API_KEY to OpenAI's own API alone, https://api.openai.com or a "
+    "regional host OpenAI name for it (us., eu., au., ca., jp., in., sg., kr., gb. or ae. in "
+    "front of api.openai.com), and the word local anywhere else. QUACKD_DECISION_URL does the "
+    "same for the rows that want no key.",
     rich_help_panel="Model",
 )
 _DECISION_MODE = typer.Option(
@@ -2989,6 +2994,24 @@ _DECISION_MODE = typer.Option(
     "as it has always been. QUACKD_DECISION_MODE does the same.",
     rich_help_panel="Model",
 )
+_DECISION_MODE_ON_UNMEASURED = (
+    "--decision-mode on has not been measured against a real robot: no latency, no agreement "
+    "rate, and the figures in docs/guides/decision-llms/README.md are estimates, of speed and "
+    "cost for jev at TypeSafe, of cost alone for openai at OpenAI, and of neither for a server "
+    "you run. Two of the four confidence floors are published by TypeSafe and two are quackd's "
+    "own, all four shaped around Jev. --decision-mode shadow records both and changes nothing "
+    "about the run."
+)
+"""What `--decision-mode on` says once, where the person switching it on is looking.
+
+It says what the hub's section on speed and cost says, row by row, because a sentence on the
+terminal is read by people who never open the page. It once said the hub had estimates for Jev
+and nothing at all for anything else, after the hub had begun working out what an `openai` turn
+costs: no latency, since OpenAI publish only a ratio to their own Responses API, and a rate, which
+is a cost estimate. A server you run, `jev` and `openai` at an address of your own among them, is
+costed at the self-hosted $0 and has no latency anybody has measured, so neither half applies to
+it. `tests/test_docs.py` holds the sentence to the rows that carry a published rate, so the next
+row given one fails there until this names it."""
 CONTROLLERS = ("llm", "vla")
 """What `--controller` takes: the model `--llm` names, or the scripted pilot of
 `quackd.agent.providers.vla`."""

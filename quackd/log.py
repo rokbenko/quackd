@@ -450,6 +450,15 @@ def play_row(on: bool, source: str, *, file_play: bool) -> str | None:
     return f"off, from {source}" if file_play else None
 
 
+def _listed(names: Any) -> str:
+    """Names as a sentence lists them, "a", "a and b", "a, b and c", the way the loop lists the
+    joints it names to the person holding the arm, or nothing where there is no list to read. The
+    stepper's line and its shadow line both name the questions a decision LLM declined this way,
+    so a reader meets one list the same way twice."""
+    items = [str(name) for name in names] if isinstance(names, list) else []
+    return ", ".join(items[:-1]) + " and " + items[-1] if len(items) > 1 else "".join(items)
+
+
 def _ok(outcome: str) -> bool:
     return outcome == "ok"
 
@@ -667,6 +676,20 @@ def render_events(
             took += f", {mark}{asked.get('input_tokens', 0)} tok"
             if d.get("cost_usd") is not None:
                 took += f" {mark}{fmt_usd(d['cost_usd'])}"
+        if d.get("gate") == "interrupted":
+            # The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
+            # cancel, which the record names where an error would be named. Read before the
+            # error line, because nobody takes this turn and nothing failed: it is the request
+            # the run was waiting on when it stopped, with what it had cost by then. Yellow with
+            # a warning's mark rather than an error's red, as a declined question is.
+            return [
+                LogLine(
+                    "decide",
+                    f"interrupted by {d.get('error') or 'an interrupt'} after {took}",
+                    "yellow",
+                    mark="warn",
+                )
+            ]
         if d.get("error"):
             return [
                 LogLine(
@@ -690,10 +713,25 @@ def render_events(
                 "yellow",
                 mark="warn",
             )
+        elif gate == "refused":
+            # A question the decision LLM declined rather than answered, by name. Yellow like a
+            # missed floor and not dim like the gates below: nothing failed, but it is the
+            # vendor's policy speaking about this state rather than its model answering, and
+            # that is worth a reader's attention. A record without the names, which quackd never
+            # writes, still says which gate it was.
+            said = _listed(d.get("refused"))
+            chosen = LogLine(
+                "decide",
+                f"refused to answer {said}, to the model ({took})"
+                if said
+                else f"refused, to the model ({took})",
+                "yellow",
+                mark="warn",
+            )
         else:
-            # `escalate`, `done`, `need_human`, `not_offered`, `state_too_large`: nothing
-            # happened and the model takes the turn, so this is dim like the request line
-            # it comes just before
+            # `escalate`, `repeat`, `handover`, `shadow_only`, `unreadable`, `done`,
+            # `need_human`, `not_offered`, `state_too_large`: nothing happened and the model
+            # takes the turn, so this is dim like the request line it comes just before
             chosen = LogLine("decide", f"{gate}, to the model ({took})", "dim")
         stepper = [chosen]
         # The runners-up, because a 0.93 beside a 0.91 is a different decision from a 0.93
@@ -715,10 +753,26 @@ def render_events(
         # Shadow mode's whole point in one line: what the stepper would have done beside what
         # the model did, on the same reading. The run is unchanged, so this is its only record.
         agrees = bool(d.get("agree"))
+        picked = d.get("decision_choice")
+        sure = d.get("decision_confidence")
+        if picked is None:
+            # The stepper chose nothing: a question declined, an answer with no label in it, a
+            # call that failed, a turn with nothing on offer. Named by its gate, and by the
+            # questions declined where there were any, because the line used to print the
+            # missing choice and its missing confidence as `None 0.00`, which read as an answer
+            # of its own.
+            gate = str(d.get("decision_gate") or "no choice")
+            said = _listed(d.get("refused"))
+            stepper_said = f"refused to answer {said}" if gate == "refused" and said else gate
+        elif isinstance(sure, int | float) and not isinstance(sure, bool):
+            stepper_said = f"{picked} {float(sure):.2f}"
+        else:
+            # A label beside a confidence nobody could read, which is not a confidence of 0.00.
+            stepper_said = str(picked)
         return [
             LogLine(
                 "decide=",
-                f"{d.get('decision_choice')} {float(d.get('decision_confidence') or 0):.2f} "
+                f"{stepper_said} "
                 f"vs model {d.get('model_verb')}: {'agrees' if agrees else 'differs'} "
                 f"({float(d.get('decision_latency_s') or 0):.2f} s against "
                 f"{float(d.get('llm_latency_s') or 0):.1f} s)",

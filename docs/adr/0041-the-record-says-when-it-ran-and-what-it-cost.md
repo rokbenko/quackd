@@ -26,6 +26,18 @@ costed at, and a rate read on a day of its own carries that day in `checked`. A 
 becomes null from the first call that has neither a bill nor a rate. Every other vendor's
 records are unchanged.
 
+**Amended 2026-10-10 by [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md):** read "the estimate and its `~` exist only
+where a non-zero rate does, which today is Jev alone", at the end of the 2026-09-22 note above,
+this way instead. Two decision LLMs carry a published rate now: `jev` reached with no
+`--decision-url`, and `openai` at OpenAI's own hosts, whose $0.10 per million input tokens OpenAI
+publish. Anywhere else either of them is a server you run, costed at the self-hosted `$0` unless
+`QUACKD_DECISION_PRICE` says otherwise. And an estimate never waited for a rate. A turn whose
+tokens quackd worked out for itself, because its request went out and then failed or because the
+backend reported no count, is `usage_estimated` on its record and sets the run's
+`cost_estimated` whatever the rate, and its line in the log puts the `~` on both its tokens and
+its money, so a server you run prints `~$0` there, as it did before ADR-0052. Only the run's
+cost counter keeps its `~` for a stepper total above zero. Nothing else in this ADR changes.
+
 ## Context
 
 The one hardware run this project has is at the top of `README.md`, and the sentence that

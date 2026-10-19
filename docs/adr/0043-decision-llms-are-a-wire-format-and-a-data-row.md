@@ -16,6 +16,18 @@ counts. And read "the floors are Jev's numbers" as true of two of the four: Type
 0.5 and 0.9, which are the brake and the confirm gate, while the 0.60 read floor and the
 0.85 motion floor are quackd's own, set between them. Nothing else in this ADR changes.
 
+**Amended 2026-10-10 by [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md):** decision LLMs speak two wire formats now.
+OpenAI's Decisions API asks the same kind of question at `POST /v1/decisions` in a shape of its
+own, so `decision/decisions_api.py` is a second backend beside `systemone.py` that translates
+both ways, and the `openai` row names it. Read "these are one POST with the same body" as true
+of every System One row and not of `openai`, and "Only Jev has a published rate" as Jev and
+`openai`, whose $0.10 per million input tokens OpenAI publish. `laya` is no longer the one row
+billed measured either, because `openai` reports the input tokens OpenAI counted. And read "The
+row is the only place a per-vendor fact may live" with one exception: the hosts
+`OPENAI_API_KEY` may be sent to live in `decisions_api.py`, beside the client that decides where
+the key goes, because a server of your own can answer the same format and must never be sent it.
+The wire format is still the abstraction, one per backend.
+
 ## Context
 
 [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) is four days old and its

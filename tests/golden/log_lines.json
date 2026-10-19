@@ -157,6 +157,16 @@
    "dim"
   ]
  ],
+ "decision_refused": [
+  [
+   "decide  refused to answer need_human, to the model (0.31 s, 612 tok $0.000061)",
+   "yellow"
+  ],
+  [
+   "decide? stop 0.03",
+   "dim"
+  ]
+ ],
  "decision_escalate": [
   [
    "decide  escalate, to the model (0.19 s)",
@@ -173,6 +183,12 @@
   [
    "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, so the model takes this turn",
    "red"
+  ]
+ ],
+ "decision_interrupted": [
+  [
+   "decide  interrupted by KeyboardInterrupt after 0.37 s, ~640 tok ~$0.000027",
+   "yellow"
   ]
  ],
  "decision_billed": [
@@ -210,6 +226,12 @@
  "decision_shadow_differ": [
   [
    "decide= stop 0.71 vs model move_joints: differs (0.30 s against 6.9 s)",
+   "yellow"
+  ]
+ ],
+ "decision_shadow_refused": [
+  [
+   "decide= refused to answer next_verb vs model report_state: differs (0.31 s against 7.4 s)",
    "yellow"
   ]
  ],
@@ -786,9 +808,12 @@
   "decide? place 0.04, stop 0.02",
   "decide  place 0.62 < 0.85, to the model (0.44 s)",
   "decide? gripper(open=true) 0.30",
+  "decide  refused to answer need_human, to the model (0.31 s, 612 tok $0.000061)",
+  "decide? stop 0.03",
   "decide  escalate, to the model (0.19 s)",
   "decide  done, to the model (0.20 s)",
   "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, so the model takes this turn",
+  "decide  interrupted by KeyboardInterrupt after 0.37 s, ~640 tok ~$0.000027",
   "decide  gripper(open=false) 0.93 >= 0.85 (0.11 s, 527 tok $0.000022)",
   "decide? stop 0.04",
   "decide  place 0.62 < 0.85, to the model (0.44 s, ~612 tok ~$0.000026)",
@@ -796,6 +821,7 @@
   "decide  ERROR TypeSafeAPITimeoutError after 1.00 s, ~640 tok ~$0.000027, so the model takes this turn",
   "decide= report_state 0.88 vs model report_state: agrees (0.20 s against 8.2 s)",
   "decide= stop 0.71 vs model move_joints: differs (0.30 s against 6.9 s)",
+  "decide= refused to answer next_verb vs model report_state: differs (0.31 s against 7.4 s)",
   "enforce no tool call: re-prompting once",
   "enforce no tool call: re-prompting once (You must call exactly one tool.)",
   "verb    go_to(target='ball')",

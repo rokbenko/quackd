@@ -523,6 +523,86 @@ def test_the_stepper_line_carries_its_tokens_and_its_fraction_of_a_cent() -> Non
     assert line(gate="not_offered") == "decide  not_offered, to the model (0.11 s)"
 
 
+def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() -> None:
+    """A question the decision LLM declined is neither a failure nor one of the quiet handovers:
+    its vendor's policy would not judge this state, and a reader watching a shadow run wants to
+    see how often that happens and on which question. So the line names what was declined, in
+    yellow, with the mark a missed floor has, and keeps the bill a request that went out has."""
+
+    def lines(**extra: Any) -> list[Any]:
+        data = {
+            "gate": "refused",
+            "choice": "stop",
+            "confidence": 0.97,
+            "probabilities": {"stop": 0.97, "escalate": 0.02},
+            "latency_s": 0.4,
+            **extra,
+        }
+        return render_events(LogEvent("decision", 0.0, data))
+
+    billed = {"usage": {"input_tokens": 42, "output_tokens": 0}, "cost_usd": 0.0000042}
+    first, runners_up = lines(refused=["done"], **billed)
+    assert first.label == "decide" and first.style == "yellow" and first.mark == "warn"
+    assert first.body == "refused to answer done, to the model (0.40 s, 42 tok $0.000004)"
+    # what it did answer is still worth reading beside it
+    assert runners_up.label == "decide?" and runners_up.body == "escalate 0.02"
+    (two, _rest) = lines(refused=["next_verb", "need_human"])
+    assert two.body == "refused to answer next_verb and need_human, to the model (0.40 s)"
+    # and more than two as a sentence lists them, not "a and b and c"
+    (three, _rest) = lines(refused=["next_verb", "done", "need_human"])
+    assert three.body == "refused to answer next_verb, done and need_human, to the model (0.40 s)"
+    # a record without the names, which quackd never writes, still says which gate it was
+    (bare, _rest) = lines()
+    assert bare.body == "refused, to the model (0.40 s)" and bare.mark == "warn"
+
+
+def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handover() -> None:
+    """The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
+    cancel, which the record names where an error's type would be. Nothing failed and nobody
+    takes the turn, so the line says neither: not the red `ERROR` of a failed call and not its
+    `so the model takes this turn`, but what cut it off, after how long, and the bill of a
+    request that had gone out."""
+    data = {
+        "gate": "interrupted",
+        "error": "KeyboardInterrupt",
+        "latency_s": 0.4,
+        "usage": {"input_tokens": 42, "output_tokens": 0},
+        "usage_estimated": True,
+        "cost_usd": 0.0000042,
+    }
+    (line,) = render_events(LogEvent("decision", 0.0, data))
+    assert line.label == "decide" and line.style == "yellow" and line.mark == "warn"
+    assert line.body == "interrupted by KeyboardInterrupt after 0.40 s, ~42 tok ~$0.000004"
+    # a record without the name, which quackd never writes, still says what happened
+    (bare,) = render_events(LogEvent("decision", 0.0, {"gate": "interrupted", "latency_s": 0.1}))
+    assert bare.body == "interrupted by an interrupt after 0.10 s"
+
+
+def test_a_shadow_row_with_no_choice_names_its_gate_rather_than_none() -> None:
+    """A shadow row whose stepper chose nothing, a question declined, a call that failed, an
+    answer with no label in it, printed the missing choice and its missing confidence as
+    `None 0.00`, which read as an answer of its own. It names the gate now, and the questions
+    declined where there were any, as the stepper's own line does. A label beside a confidence
+    nobody could read is printed without one, because a missing confidence is not 0.00."""
+
+    def body(**row: Any) -> str:
+        data = {"model_verb": "stop", "decision_latency_s": 0.31, "llm_latency_s": 2.1, **row}
+        (line,) = render_events(LogEvent("decision_shadow", 0.0, data))
+        return str(line.body)
+
+    against = "vs model stop: differs (0.31 s against 2.1 s)"
+    declined = body(decision_gate="refused", refused=["next_verb", "done"])
+    assert declined == f"refused to answer next_verb and done {against}"
+    assert body(decision_gate="error") == f"error {against}"
+    assert body(decision_gate="unreadable", decision_confidence=0.99) == f"unreadable {against}"
+    # a label nobody gave a readable confidence for, which agreed with the model all the same
+    agreed = body(decision_choice="stop", decision_gate="unreadable", agree=True)
+    assert agreed == "stop vs model stop: agrees (0.31 s against 2.1 s)"
+    # and a row with both reads as it always did
+    both = body(decision_choice="stop", decision_confidence=0.71, decision_gate="below_floor")
+    assert both == f"stop 0.71 {against}"
+
+
 def test_long_thinking_is_cut_with_a_pointer_to_the_transcript() -> None:
     event = LogEvent("llm", 0.0, {"thinking": "x" * 5000, "tool_calls": [], "usage": {}})
     out = [text for text, _ in render_lines(event, thinking_chars=100)]

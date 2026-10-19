@@ -14,13 +14,15 @@ enum, so there is nothing for a classifier to enumerate even in principle.
 
 This is quackd's half and does not change with the vendor. The questions go out as plain dicts
 in the System One shape, so the same four reach a hosted API, a server on this machine and a
-model in this process without being rebuilt; which of those answers them is `factory.py`'s
-question and `catalogue.py`'s table. Nothing here imports a backend at all.
+model in this process without being rebuilt here, and a backend whose wire format is another
+shape translates them on its own side; which of those answers them is `factory.py`'s question
+and `catalogue.py`'s table. Nothing here imports a backend at all.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import itertools
 import json
 import math
@@ -30,7 +32,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from quackd.agent.decision.base import TIMEOUT_S
+from quackd.agent.decision.base import TIMEOUT_S, UnreadableReply, state_text
 from quackd.agent.decision.catalogue import DecisionMode
 from quackd.agent.providers.base import ToolCall
 from quackd.agent.providers.catalogue import Price
@@ -198,6 +200,52 @@ def _finite(value: Any) -> tuple[float, bool]:
     return (number, True) if math.isfinite(number) else (0.0, False)
 
 
+def _probability(value: Any) -> tuple[float, bool]:
+    """A number a gate reads, and whether it was a probability: a number from 0 to 1.
+
+    `_finite`, with the two things a gate needs it to turn away besides, read the same way for
+    every row, so what moves a servo does not depend on which backend sent the number.
+
+    A number written as text is not one. `float()` reads `"0.99"` without a word, so a confidence
+    sent as a string cleared its floor and a Noul sent as `"0"` said certainly not. Both wire
+    formats quackd speaks type these as numbers: TypeSafe's SDK declares `confidence` and `noul`
+    floats "from 0 to 1" (typesafe-sdk 0.7.0 to 0.7.2, `_schemas/models.py`, read 2026-10-10), and
+    OpenAI's reference types them as numbers. An answer that spells one as text, from a plugin, a
+    model in this process or a server read without an SDK in between, is a malformed answer rather
+    than another spelling of a number.
+
+    Nor is a number outside 0 to 1. A probability of -1 is under both Noul thresholds and a
+    confidence of 5 is over every floor, so a server that answered on a scale of its own, a
+    percentage or a log-odds, moved the body on numbers that were never probabilities. Both ends
+    are in, because a model is allowed to be certain.
+
+    The caller hands the turn back to the model whenever this says False."""
+    if isinstance(value, str | bytes | bytearray):
+        return 0.0, False
+    number, finite = _finite(value)
+    if not finite or not 0.0 <= number <= 1.0:
+        return 0.0, False
+    return number, True
+
+
+def _distribution(probabilities: Any) -> dict[str, float]:
+    """A choice's distribution as the record keeps it: each label with its probability, and no
+    number JSON has no spelling for.
+
+    Recorded and never gated on, so it is read more gently than `_probability` reads a number a
+    gate uses. A value that is no number at all still fails the turn, as it always has: an answer
+    that broken is one the router cannot read, and the record calls it an error by its type. A NaN
+    or an infinity is left out, because it is no probability either and `json.dumps` writes it as a
+    bare `NaN` or `Infinity`, which Python reads back and `jq` and `JSON.parse` refuse, so one entry
+    made a whole line of `transcript.jsonl` one that a strict reader could not read."""
+    spread: dict[str, float] = {}
+    for label, value in (probabilities or {}).items():
+        number = float(value)
+        if math.isfinite(number):
+            spread[str(label)] = number
+    return spread
+
+
 def discrete_calls(schema: Mapping[str, Any]) -> list[Call] | None:
     """Every concrete call this tool allows, or None when it is not a choice.
 
@@ -343,7 +391,7 @@ def _trimmed_state(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     state = {k: v for k, v in raw.items() if v}
     dropped: list[str] = []
     for name in TRIM_ORDER:
-        if len(json.dumps(state)) <= STATE_SOFT_CHARS:
+        if len(state_text(state)) <= STATE_SOFT_CHARS:
             break
         if state.pop(name, None) is not None:
             dropped.append(name)
@@ -351,7 +399,7 @@ def _trimmed_state(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
 
 
 def _fits(state: Mapping[str, str]) -> bool:
-    return len(json.dumps(state)) <= STATE_HARD_CHARS
+    return len(state_text(state)) <= STATE_HARD_CHARS
 
 
 def _one_line(text: str, limit: int = 240) -> str:
@@ -381,7 +429,8 @@ def build_questions(offered: Sequence[Call], what: Mapping[str, str]) -> dict[st
     Plain dicts rather than an SDK's own `Choice` and `Noul`: the System One format spells a
     question as a type, an instruction and its criteria, and each backend reads that mapping
     itself. Built once here, they go to a hosted API, to a server on this machine and to a
-    model in this process without being rebuilt for any of them.
+    model in this process, and the backend that speaks OpenAI's format rather than this one
+    translates them on its own side (`decisions_api.py`).
 
     All four go every time. The questions are answered in parallel and in isolation against the
     same state, so adding one costs almost nothing, and `feasible` is asked on every turn even
@@ -543,6 +592,97 @@ def _field(answer: Any, name: str, default: Any = None) -> Any:
     return getattr(answer, name, default)
 
 
+def _refused(result: Any) -> list[str]:
+    """The questions this answer says were declined rather than answered, by name.
+
+    A backend says so in a `refused` beside its `answers`, as an attribute or as a key, read the
+    way `_answer` reads the answers themselves. OpenAI's Decisions API is the backend that does:
+    it may refuse a question "without disclosing its refusal score", and that question comes
+    back answering nothing (`decisions_api.to_result`). Only a list or a tuple counts, as
+    `base.DecisionLLM` documents it, and only the names in it that are strings. A bare string
+    is not read as one name, because iterating it would read `"done"` as four questions called
+    `d`, `o`, `n` and `e`."""
+    refused = getattr(result, "refused", None)
+    if refused is None and isinstance(result, Mapping):
+        refused = result.get("refused")
+    if not isinstance(refused, list | tuple):
+        return []
+    return [name for name in refused if isinstance(name, str)]
+
+
+def _http_status(error: BaseException) -> int | None:
+    """The HTTP status a failed call carries, or None where it carries none.
+
+    Read where the clients behind the decision LLMs keep one: `status_code` on the exception
+    itself, which is where OpenAI's SDK puts it on every 4xx and 5xx (`APIStatusError`, 3.22.1),
+    `status`, which is TypeSafe's spelling for every System One row (`TypeSafeAPIError`,
+    typesafe-sdk 0.7.2), and either of them on the response an exception holds, which is where
+    an httpx `HTTPStatusError` from a plugin keeps it. Only a whole number in the range a status
+    can take counts, so a field that happens to share the name and holds a word, or a flag, is not
+    mistaken for one: `True` is an `int` to Python, and 1 is no status. A read that raises is
+    `_failure`'s to catch."""
+    for holder in (error, getattr(error, "response", None)):
+        if holder is None:
+            continue
+        for name in ("status_code", "status"):
+            value = getattr(holder, name, None)
+            if isinstance(value, int) and 100 <= value <= 599:
+                return int(value)
+    return None
+
+
+def _failure(error: BaseException, *, ran_out: bool = False) -> str:
+    """What the record says about a turn that failed: the exception's type, and its HTTP status
+    where it carries one. Never its message, but for two sentences of quackd's own.
+
+    A message is the other side's text, and an SDK puts the server's reply in it. OpenAI's puts
+    the body of a 4xx or a 5xx after `Error code: 400 - `, or makes that body the whole message
+    when it is not JSON (`openai/_base_client.py`, 3.22.1), and TypeSafe's puts the reply's own
+    message after the status, or the first 200 characters of the body where the reply names
+    none (`typesafe_sdk/_core/errors.py`, 0.7.2), both read 2026-10-10. A reply can quote the
+    request it turned down, and the request is the state, which the record otherwise keeps as a
+    size and a shape rather than as the words; a reply to a request that carried a picture could
+    quote that too, as a data URL. So no message is written down, whoever wrote it: an answer
+    the router could not read fails with a message quoting that answer, and is recorded by its
+    type alone too. The type and the status say which failure it was, a 429 being a rate limit
+    and a 400 a request the API would not take, and what the server said about it is for its
+    own logs or a direct call, not for a transcript.
+
+    The two sentences kept are quackd's own, and each only where it is true.
+
+    A turn the stepper's own budget ended says so: `no answer within 1.0 s`, because what a
+    reader wants from it is the budget it ran out of, the number they would change. `ran_out` is
+    whether that budget is what ended this turn, which `Stepper.advise` reads off the bound itself
+    (`asyncio.Timeout.expired`), because nothing else can say it. The rule used to be a
+    `TimeoutError` with no message, and any backend with a shorter clock of its own, a plugin's
+    or one in this process, raises exactly that too: the record said `no answer within 1.0 s`
+    beside a `latency_s` of a fifth of a second, naming a budget that was not the one that ran
+    out. Such a `TimeoutError` is recorded by its type alone now, like every other exception, and
+    so are the two the SDKs raise for their own clocks, OpenAI's `APITimeoutError` and
+    TypeSafe's `TypeSafeAPITimeoutError`, which cannot come due before the stepper's second
+    anyway, because each client's clock is set above it (`base.client_timeout`).
+
+    And a `base.UnreadableReply` keeps its message, which is quackd's own sentence about the shape
+    of a reply it could not read, the type of what came back and never what it said, so that a
+    page that was not JSON and an object with no list of answers in it read apart.
+
+    Nothing here may raise, because it runs inside the handler whose whole job is to keep a
+    failed turn from ending the run. A status that cannot be read, a property that raises as it
+    is asked, or an exception that cannot be made a string leaves the type alone, which no
+    exception can fail to have."""
+    name = type(error).__name__
+    try:
+        if (status := _http_status(error)) is not None:
+            return f"{name}: HTTP {status}"
+        if ran_out and isinstance(error, TimeoutError):
+            return f"{name}: no answer within {TIMEOUT_S:.1f} s"
+        if isinstance(error, UnreadableReply) and (said := str(error)):
+            return f"{name}: {said}"
+    except Exception:
+        pass
+    return name
+
+
 @dataclass
 class Stepper:
     """The turns that are a choice, on this body, under this contract.
@@ -586,7 +726,27 @@ class Stepper:
     asked: int = 0
     taken: int = 0
     errors: int = 0
+    refusals: int = 0
+    """Turns that ended on the `refused` gate, because the decision LLM declined a question
+    rather than answered it. Not among `errors`, since nothing failed: the vendor's own policy
+    answered in place of its model, and whether that happens on a robot's state at all is one of
+    the things a shadow run is for."""
     latency_s: float = 0.0
+    last_request_ended: float | None = field(default=None, init=False, repr=False)
+    """When this stepper's previous request ended with an answer, on `time.perf_counter`'s clock,
+    or None where no connection can be said to be waiting: before its first request, and after
+    one that went out and failed (`_unanswered` says why). What each turn's `idle_s` is measured
+    from."""
+    cut_off: Advice | None = field(default=None, init=False, repr=False)
+    """The record of the turn an interrupt cut off in the middle of its request, or None.
+
+    A second Ctrl-C or a flock's cancel is not an `Exception`, so it passes through every handler
+    `advise` has for a failed call and ends the run. The request it cut off had been handed over
+    by then, though, and `advise` has already counted it, timed it and billed it, so the summary
+    would count a turn the transcript had no record of. It cannot return that record, because the
+    interrupt has to go on, so it leaves it here, and the loop writes it down on its way out
+    (`loop.py`), as it writes down the model's own call when an interrupt cuts that off. Cleared
+    at the start of every turn, so what is here is never an earlier turn's."""
     price: Price = SELF_HOSTED
     """What a question costs: the preset's published rate, `QUACKD_DECISION_PRICE`, or the
     self-hosted `$0` of a server you run. Always resolved by `factory`; the default here is
@@ -705,6 +865,7 @@ class Stepper:
             "asked": self.asked,
             "taken": self.taken,
             "errors": self.errors,
+            "refusals": self.refusals,
             "latency_s": round(self.latency_s, 3),
             # What the stepper asked for and what that cost, kept apart from the model's own
             # `usage` and `cost_usd` at the top of the summary rather than folded into them:
@@ -762,7 +923,9 @@ class Stepper:
     ) -> tuple[dict[str, str], list[str]]:
         """A named JSON object, in English, carrying only what the questions need.
 
-        Never a picture: these models read text, and quackd would rather escalate a turn that
+        Never a picture. That is quackd's rule rather than a property of the models: every row
+        is sent text and nothing else (`sees` is false on each of them), `openai` included,
+        although OpenAI's API would take an image, and quackd would rather escalate a turn that
         needs eyes than pretend otherwise. Never the system prompt either, because the
         instructions belong in the questions, and never the history, which is the distractor
         TypeSafe warn about by name."""
@@ -797,7 +960,13 @@ class Stepper:
             "recent": _one_line(" | ".join(list(stepped)[-4:]), 600),
             "tried": ", ".join(f"{name} {n}" for name, n in sorted(self.tried.items())),
             "notes": _one_line(notes or "", 400),
-            "flock": _one_line(json.dumps(features["flock"])) if features.get("flock") else "",
+            # Its letters as letters, as the state around it is sent (`base.state_text`): a
+            # flock message in another alphabet is read, not shown as escapes.
+            "flock": (
+                _one_line(json.dumps(features["flock"], ensure_ascii=False))
+                if features.get("flock")
+                else ""
+            ),
         }
         return _trimmed_state(raw)
 
@@ -811,6 +980,7 @@ class Stepper:
         notes: str | None = None,
     ) -> Advice:
         """Ask this turn's questions, and say whether the answer is good enough to act on."""
+        self.cut_off = None
         offered = self.labels_for(cleared=cleared)
         record: dict[str, Any] = {
             "mode": self.mode,
@@ -821,22 +991,46 @@ class Stepper:
         if not offered:
             # Nothing on this body is a choice right now, so there is no question to ask and
             # nothing to pay for. A duck whose whole allowlist is continuous never reaches the
-            # network at all.
-            return Advice(None, {**record, "gate": "not_offered", "latency_s": 0.0})
+            # network at all. The model takes the turn, so the stepper's streak ends here, as it
+            # does on every turn the model takes (`_hand_back`).
+            return self._hand_back({**record, "gate": "not_offered", "latency_s": 0.0})
 
         state, dropped = self._build_state(obs, budget=budget, stepped=stepped, notes=notes)
-        record["state_chars"] = len(json.dumps(state))
+        # Measured on the very text a backend that takes text is sent (`base.state_text`), with
+        # its letters as letters: escaped, a letter outside ASCII counted six times over.
+        record["state_chars"] = len(state_text(state))
         record["state_tokens_est"] = record["state_chars"] // 4
         record["trimmed"] = dropped
         if not _fits(state):
-            return Advice(None, {**record, "gate": "state_too_large", "latency_s": 0.0})
+            return self._hand_back({**record, "gate": "state_too_large", "latency_s": 0.0})
 
         started = time.perf_counter()
-        # Characters of questions that actually went out, and 0 while nothing has: a turn that
-        # could not build its questions owes nobody anything, and one that timed out after the
-        # request left probably does. The client itself was built before the robot connected,
-        # so nothing in here can fail without the request being real.
+        # How long since this stepper's previous request ended, which is how long a connection
+        # its client kept from that request has been sitting idle. Both SDKs here pool their
+        # connections in httpx2, whose default drops one that has been idle five seconds, and
+        # neither changes it (httpx2 2.12.0, openai 3.22.1 and typesafe-sdk 0.7.2, read
+        # 2026-10-10). In shadow mode the stepper is asked once a turn, with the model's own call
+        # and a verb in between, which on a frontier model is usually longer than that, so a
+        # request there usually starts on a new connection and pays for opening it inside the
+        # one second it has. That is the difference between a cold turn and a warm one, and
+        # `latency_s` alone cannot show it. None on the first request, which has no earlier one
+        # whose connection it could reuse, and on the first after a request that failed, whose
+        # connection may have gone with it (`_unanswered`).
+        idle = (
+            None if self.last_request_ended is None else round(started - self.last_request_ended, 3)
+        )
+        # Characters of questions handed to the decision LLM, and 0 while none have been: a turn
+        # that could not build its questions owes nobody anything, and one that timed out after
+        # they were handed over probably does. The client itself was built before the robot
+        # connected, and so was the answer to the one question OpenAI's SDK would otherwise stop to
+        # ask before its first request, which platform it runs on (`decisions_api.warm_platform`):
+        # asked in here it once took the whole second and the turn with it, before anything was
+        # sent. So the second below is spent on the request rather than on getting ready to send
+        # one. Handed over is still not the same as reached: a server that refused the connection
+        # never saw the questions, and from here that cannot be told from one that took them and
+        # then failed, so both are recorded as requests that went out (`_unanswered`).
         sent = 0
+        bound: asyncio.Timeout | None = None
         try:
             questions = build_questions(offered, self.what)
             sent = _question_chars(questions)
@@ -846,34 +1040,54 @@ class Stepper:
             # timeout with its own meaning, a model in this process has none, and a plugin has
             # whatever its author thought of. A turn that runs out escalates like any other
             # failure, and the record says which.
-            result = await asyncio.wait_for(self.llm.decide(state, questions), TIMEOUT_S)
+            #
+            # In this task, with `asyncio.timeout`, rather than with `asyncio.wait_for`, which on
+            # Python 3.11 runs what it waits on as a task of its own. An interrupt raised in
+            # there, a Ctrl-C that lands while the SDK is busy rather than while the loop is
+            # waiting, left through the event loop at once and reached the handler below only
+            # when the loop was being torn down. In this task it comes up through this frame, as
+            # every other exception does, on 3.11 and 3.12 alike. And the bound can say afterwards
+            # whether it was what ended the turn (`expired`), which a `TimeoutError` cannot: one
+            # with nothing in it is what a backend's own clock raises too, and the record says
+            # quackd's `no answer within` only where quackd's own second ran out (`_failure`).
+            async with asyncio.timeout(TIMEOUT_S) as bound:
+                result = await self.llm.decide(state, questions)
         except Exception as e:
+            # A turn with no answer is a turn the model takes, so it ends the run of stepper turns
+            # the way every other handover does (`_hand_back`). It used to return from here
+            # without that, which left the call before it standing as the stepper's last: after a
+            # `stop` the stepper took and a turn that timed out, which the model then took, the
+            # very same confident `stop` was refused as a repeat, and a run of stepper turns
+            # broken by a timeout reached its limit early, counted as if the turn the model took
+            # in between had never broken it.
             self.errors += 1
-            self.asked += 1
-            # A bare `TimeoutError` stringifies to nothing, and `error:` with nothing after it
-            # tells a reader less than the gate already did. The one thing they want to know
-            # is how long it waited, because that is the number they would change.
-            if isinstance(e, TimeoutError) and not str(e):
-                e = TimeoutError(f"no answer within {TIMEOUT_S:.1f} s")
-            took = round(time.perf_counter() - started, 3)
-            self.latency_s += took
-            failed = {
-                **record,
-                "gate": "error",
-                "error": f"{type(e).__name__}: {e}",
-                "latency_s": took,
-            }
-            if sent:
-                # The questions were built and handed over, so the turn is counted as billed.
-                # Nobody publishes whether a call that failed on their side is charged, and
-                # between an estimate that is slightly high and a bill that silently is not
-                # there, the high one is the one nobody is hurt by.
-                failed.update(self._bill(None, record["state_chars"], sent))
-            return Advice(None, failed)
+            ran_out = bound is not None and bound.expired()
+            return self._hand_back(
+                self._unanswered(record, e, "error", started, idle, sent, ran_out=ran_out)
+            )
+        except BaseException as e:
+            # A second Ctrl-C, or a flock cancelling its members, arrives here while the request is
+            # out, and is not an `Exception`, so the handler above never saw it. It still ends the
+            # run, and nothing here may stop it, but the request it cut off was as real as any
+            # other: counted, timed and billed like a turn that failed, on a gate of its own,
+            # `interrupted`, since nothing failed and nobody takes the turn. Not among `errors`
+            # either, which count what went wrong with the decision LLM, and a person ending a
+            # run is not that. The record is left on `cut_off` for the loop to write down, as the
+            # loop does for the model's own call (`loop.py`). Building it may not replace the
+            # interrupt with a traceback of its own, so a failure there costs the record and
+            # nothing else, and the interrupt goes on as it came.
+            with contextlib.suppress(Exception):
+                self.cut_off = Advice(
+                    None, self._unanswered(record, e, "interrupted", started, idle, sent)
+                )
+            raise
+        ended = time.perf_counter()
+        self.last_request_ended = ended
         self.asked += 1
-        took = round(time.perf_counter() - started, 3)
+        took = round(ended - started, 3)
         self.latency_s += took
         record["latency_s"] = took
+        record["idle_s"] = idle
         record["questions"] = len(questions)
         try:
             record.update(self._bill(result, record["state_chars"], sent))
@@ -888,41 +1102,72 @@ class Stepper:
             return self._route(result, record, offered)
         except Exception as e:
             # Reading the answer is part of the call, so it fails the way the call does. A
-            # backend that returns a confidence of "high" or a list where a mapping belongs
-            # would otherwise raise through the loop and end the run with a traceback while
-            # the arm is energised, which is the one thing this must never do.
+            # backend that returns a distribution holding a word, or a list where a mapping
+            # belongs, would otherwise raise through the loop and end the run with a traceback
+            # while the arm is energised, which is the one thing this must never do. Recorded by
+            # its type alone, as a failed call is, because the message quotes the answer.
             self.errors += 1
-            return self._hand_back({**record, "gate": "error", "error": f"{type(e).__name__}: {e}"})
+            return self._hand_back({**record, "gate": "error", "error": _failure(e)})
 
     def _route(self, result: Any, record: dict[str, Any], offered: Sequence[Call]) -> Advice:
         """What one fan-out means, in the order the gates have to be read.
 
-        The Nouls come first, so a stepper that thinks the job is finished never moves
-        anything else. Either of them hands the turn back: one ends a run and the other asks a
-        person, and the stepper is allowed to do neither."""
+        A question the decision LLM declined comes first, before any gate reads an answer. The
+        Nouls come next, so a stepper that thinks the job is finished never moves anything
+        else. Either of them hands the turn back: one ends a run and the other asks a person, and
+        the stepper is allowed to do neither."""
         verb = _answer(result, "next_verb")
-        choice = str(_field(verb, "choice", ESCALATE))
-        confidence, finite = _finite(_field(verb, "confidence"))
-        spread = {str(k): float(v) for k, v in (_field(verb, "probabilities") or {}).items()}
+        # The choice is a label, and every label quackd offers is a string. With none, or with
+        # anything else, there is no choice to read. A missing one used to default to `ESCALATE`,
+        # so a `next_verb` that carried a confidence and no choice was taken for a confident
+        # decision to hand the turn back rather than for the answer nobody could read that it
+        # was. `ESCALATE` is still where such a turn is routed, and nothing more: the record says
+        # `null` (below), because written down it read as an answer somebody gave.
+        picked = _field(verb, "choice")
+        chose = isinstance(picked, str)
+        choice = str(picked) if chose else ESCALATE
+        confidence, finite = _probability(_field(verb, "confidence"))
+        spread = _distribution(_field(verb, "probabilities"))
         # No default. A question a backend did not answer has to arrive here as nothing, so
         # that the guard below can tell it from an answer of zero.
-        done, done_ok = _finite(_field(_answer(result, "done"), "noul"))
-        human, human_ok = _finite(_field(_answer(result, "need_human"), "noul"))
+        done, done_ok = _probability(_field(_answer(result, "done"), "noul"))
+        human, human_ok = _probability(_field(_answer(result, "need_human"), "noul"))
         feasible = _answer(result, "feasible")
+        # Recorded and never gated on, and read as strictly as what is: a number that is no
+        # probability, NaN among them, would reach `transcript.jsonl` as something no strict JSON
+        # reader takes, and a choice that is no label is no answer to the question asked.
+        feasible_choice = _field(feasible, "choice")
+        feasible_confidence, feasible_ok = _probability(_field(feasible, "confidence"))
         record.update(
-            choice=choice,
-            confidence=confidence,
+            # The label it chose, and `null` where it chose none: a `next_verb` declined, never
+            # answered, or answered with no label in it. Recorded as the `ESCALATE` it is routed
+            # as, a `next_verb` nobody answered read as a decision to take the way out, and every
+            # count of choices and every shadow row took it for one.
+            choice=choice if chose else None,
+            # `null` rather than `0.0` where nothing readable was answered, because a reader of
+            # this record should be able to tell a backend that said "not done" from one that
+            # was never asked, never replied or replied with something that is no probability.
+            confidence=confidence if finite else None,
             probabilities=spread,
-            # `null` rather than `0.0` where nothing was answered, because a reader of this
-            # record should be able to tell a backend that said "not done" from one that was
-            # never asked or never replied.
             done=done if done_ok else None,
             need_human=human if human_ok else None,
             feasible={
-                "choice": _field(feasible, "choice"),
-                "confidence": _field(feasible, "confidence"),
+                "choice": feasible_choice if isinstance(feasible_choice, str) else None,
+                "confidence": feasible_confidence if feasible_ok else None,
             },
         )
+        # A question the decision LLM declined is not one it answered badly, and every gate
+        # below would misname it. A declined `next_verb`, `done` or `need_human` arrives as a
+        # question nobody answered and would end on `unreadable`, which says the backend sent
+        # something nobody could read; a declined `feasible` would not be noticed at all,
+        # because nothing acts on it, and the turn could be taken. So it is read first, and any
+        # declined question hands the turn back, `feasible` included: a refusal is the vendor's
+        # policy speaking about this state rather than its model answering a question, and the
+        # model, which is shown the whole turn, is the one to take a turn like that. The record
+        # keeps whatever was answered beside the names that were not.
+        if declined := _refused(result):
+            self.refusals += 1
+            return self._hand_back({**record, "gate": "refused", "refused": declined})
         # An answer that cannot be read is not a permissive answer. NaN is no confidence
         # rather than a low one and loses every comparison it is put through, so an unguarded
         # one would clear the motion floor, the done gate and the need_human gate at once and
@@ -931,8 +1176,10 @@ class Stepper:
         # pair of answers that lets a verb through. A backend that answered only `next_verb`
         # -- a plugin under construction, a server that dropped a field, a model that does not
         # implement Nouls at all -- must hand the turn to the model rather than move the body
-        # on two questions nobody answered.
-        if not (finite and done_ok and human_ok):
+        # on two questions nobody answered. A number on some other scale, or written as text,
+        # is no probability either (`_probability`), and a `next_verb` with no choice in it is
+        # no answer to the question it was asked, whatever confidence it carries.
+        if not (chose and finite and done_ok and human_ok):
             return self._hand_back({**record, "gate": "unreadable"})
         if done >= DONE_THRESHOLD:
             return self._hand_back({**record, "gate": "done"})
@@ -983,6 +1230,52 @@ class Stepper:
         self.in_a_row = 0
         return Advice(None, record)
 
+    def _unanswered(
+        self,
+        record: dict[str, Any],
+        error: BaseException,
+        gate: str,
+        started: float,
+        idle: float | None,
+        sent: int,
+        *,
+        ran_out: bool = False,
+    ) -> dict[str, Any]:
+        """The record of a turn whose call never answered, on `gate`, and what that turn counts.
+        `ran_out` is whether the stepper's own budget is what ended it (`_failure`).
+
+        Asked and timed whatever ended it, because the run waited every one of those seconds.
+        Where its questions had been handed over (`sent`), it is billed as well, and keeps the
+        `idle_s` it started with. Nobody publishes whether a call that failed on their side is
+        charged, and between an estimate that is slightly high and a bill that silently is not
+        there, the high one is the one nobody is hurt by.
+
+        And the request after it claims no connection was waiting for it: `last_request_ended`
+        goes back to None, so the next turn's `idle_s` is null, as the first turn's is. A request
+        that went out and failed may have taken its connection with it or never had one, and from
+        here which it was cannot be told. On either SDK, one that the stepper's own clock cut off
+        takes its connection with it, because httpcore2 closes a connection whose answer was never
+        read to the end (2.12.0, read 2026-10-09), and one refused or reset had none to leave.
+        Counted as the previous request, the turn after a timeout would say how long a connection
+        had sat idle that was already gone, and the hub's reading of `idle_s`, a short one for a
+        reused connection, would take that turn's cost of opening a new one for a warm turn's. A
+        null reads apart from both."""
+        ended = time.perf_counter()
+        self.asked += 1
+        took = round(ended - started, 3)
+        self.latency_s += took
+        failed = {
+            **record,
+            "gate": gate,
+            "error": _failure(error, ran_out=ran_out),
+            "latency_s": took,
+        }
+        if sent:
+            failed["idle_s"] = idle
+            self.last_request_ended = None
+            failed.update(self._bill(None, record["state_chars"], sent))
+        return failed
+
     def compares(self, advice: Advice) -> bool:
         """Whether the model's answer to this turn is recorded beside the stepper's in
         `--decision-mode on` as it is in shadow: a turn that offered a `SHADOW_ONLY` call,
@@ -999,10 +1292,18 @@ class Stepper:
         The only record shadow mode leaves, and what turns the arithmetic in
         `docs/guides/decision-llms/README.md` into a measurement."""
         chosen = advice.record.get("choice")
+        declined = advice.record.get("refused")
         return {
+            # Null where the stepper chose nothing, a question declined among the reasons, and
+            # then the gate says why: a row that read `escalate` there was counted as a vote for
+            # the way out by anybody tallying what the stepper would have chosen.
             "decision_choice": chosen,
             "decision_confidence": advice.record.get("confidence"),
             "decision_gate": advice.gate,
+            # The questions declined, on a turn that ended on `refused`, so the shadow row says
+            # which without a join back to its `decision` record, and only there, so every
+            # other row reads as it did.
+            **({"refused": list(declined)} if declined else {}),
             "decision_latency_s": advice.record.get("latency_s"),
             "model_verb": call.name,
             "model_arguments": dict(call.arguments),

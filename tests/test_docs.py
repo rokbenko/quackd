@@ -2249,6 +2249,79 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
         assert "--decision-url" in page and "/v1/systemone" in page
 
 
+@pytest.mark.parametrize("page", ["docs/guides/decision-llms/openai.md", "SECURITY.md"])
+def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page: str) -> None:
+    """`decisions_api.OPENAI_HOSTS` is every host `OPENAI_API_KEY` may be sent to, and these two
+    pages name them host by host, which is a list easy to leave behind: the code and the pages
+    once named four where OpenAI document eleven for this endpoint. So every host of OpenAI's API a
+    page names is one the key goes to, and every one the key goes to is named."""
+    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+
+    text = (REPO / page).read_text(encoding="utf-8")
+    named = set(re.findall(r"\b(?:[a-z]{2}\.)?api\.openai\.com\b", text))
+    assert named == set(OPENAI_HOSTS), f"{page}: {sorted(named ^ set(OPENAI_HOSTS))}"
+
+
+def test_the_decision_url_help_names_every_host_the_openai_key_goes_to() -> None:
+    """`--decision-url`'s help says where `OPENAI_API_KEY` goes, and it went on naming the three
+    regional hosts the SDK's own regional choice names after `decisions_api.OPENAI_HOSTS` had
+    grown to the ten OpenAI's data controls page lists for this endpoint. It names them as the
+    prefixes in front of `api.openai.com`, in one parenthesis, and they are read back here and
+    held to the hosts the key goes to, both ways, so a host added to one fails here until the
+    other names it."""
+    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+    from quackd.cli import _DECISION_URL
+
+    said = " ".join(str(_DECISION_URL.help).split())
+    listed = re.search(
+        r"\(((?:[a-z]{2}\., )+[a-z]{2}\. or [a-z]{2}\.) in front of api\.openai\.com\)", said
+    )
+    assert listed and "https://api.openai.com" in said, said
+    regions = re.findall(r"([a-z]{2})\.", listed.group(1))
+    named = {"api.openai.com", *(f"{region}.api.openai.com" for region in regions)}
+    assert named == set(OPENAI_HOSTS), sorted(named ^ set(OPENAI_HOSTS))
+
+
+def test_a_page_that_says_how_an_address_is_read_keeps_a_system_one_path() -> None:
+    """A System One row's client puts `/v1/systemone` after whatever address it is handed, path
+    and all, and quackd hands it the address as given: `factory.resolve_decision_address` holds
+    only `openai` to the host alone. So a server behind a gateway that serves the format under a
+    prefix of its own is reached by naming the prefix. The `jev` and `local` pages, the hub's
+    table of flags and the flag's own help said such an address takes no path, which the hub's
+    own paragraph on OpenRouter's System One endpoint contradicts, since reaching it would take
+    an address with a path.
+
+    So the factory keeps the path for every System One row and refuses it for `openai`, and each
+    of those four places, read as one line, says the path is kept and no longer says the address
+    takes no path. A catalogue row's own address still has none, and saying so is not this."""
+    from quackd.agent.decision.base import DecisionError
+    from quackd.agent.decision.catalogue import SYSTEM_ONE
+    from quackd.agent.decision.factory import resolve_decision_address
+    from quackd.cli import _DECISION_URL
+
+    gateway = "https://gateway.example/decide"
+    rows = [name for name, spec in PRESETS.items() if spec.backend == SYSTEM_ONE]
+    assert rows and all(resolve_decision_address(PRESETS[n], gateway) == gateway for n in rows)
+    with pytest.raises(DecisionError, match="has a path"):
+        resolve_decision_address(PRESETS["openai"], gateway)
+    pages = REPO / "docs" / "guides" / "decision-llms"
+    hub = (pages / "README.md").read_text(encoding="utf-8")
+    (row,) = [line for line in hub.splitlines() if line.startswith("| `--decision-url URL` |")]
+    places = {
+        "the hub's row for --decision-url": row,
+        "--decision-url's help": str(_DECISION_URL.help),
+        "jev.md": (pages / "jev.md").read_text(encoding="utf-8"),
+        "local.md": (pages / "local.md").read_text(encoding="utf-8"),
+    }
+    for where, text in places.items():
+        flat = _one_line(text)
+        wrong = re.findall(r"takes a scheme, a host and a port|takes no path|\bno path[:,]", flat)
+        assert not wrong, f"{where} still says {wrong} of a System One address"
+        assert re.search(r"keeps a path|path and all|is kept", flat), (
+            f"{where} does not say a System One address keeps its path"
+        )
+
+
 def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     """The table is the way in, so it carries the links, in the order `doctor` prints.
 
@@ -2269,8 +2342,187 @@ def test_the_decision_llms_hub_links_every_preset_page_from_its_table() -> None:
     assert linked == set(PRESET_NAMES), f"the hub links {sorted(linked)}"
 
 
+def test_the_warning_decision_mode_on_prints_names_the_rows_the_hub_estimates() -> None:
+    """`--decision-mode on` tells the person switching it on that the hub's figures are estimates,
+    and for which rows. It said the hub had them for Jev and nothing at all for anything else
+    after the hub had begun costing an `openai` turn at OpenAI's published rate, and no test read
+    the sentence. A row with a published rate is one the hub works a cost out for, so the warning
+    names each of them, as `for NAME at` its maker, and no other, and says a server you run has
+    neither; the hub's section on speed and cost names the same rows. A row given a rate fails
+    here until the warning names it."""
+    from quackd.cli import _DECISION_MODE_ON_UNMEASURED as said
+
+    priced = {
+        name for name, spec in PRESETS.items() if spec.price and spec.price.source == "published"
+    }
+    assert set(re.findall(r"\bfor (\w+) at\b", said)) == priced, said
+    assert "a server you run" in said and "docs/guides/decision-llms/README.md" in said
+    hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
+    section = hub.split("\n## How much faster, and how much cheaper\n", 1)[1].split("\n### ", 1)[0]
+    for name in priced:
+        assert f"`{name}`" in section, f"the hub's estimates say nothing of {name}"
+
+
+ADR = REPO / "docs" / "adr"
+"""Where the decisions live, each in a file named for its number."""
+
+
+def _adr(number: str) -> str:
+    """ADR `number`, whole, read from the one file whose name starts with it."""
+    (path,) = ADR.glob(f"{number}-*.md")
+    return path.read_text(encoding="utf-8")
+
+
+def _notes(number: str) -> str:
+    """What sits above ADR `number`'s first section: its header line and the dated notes that
+    amend it, which is the part of an ADR still read as true today. The body below is what was
+    believed on the day it was accepted, and is left alone."""
+    return _adr(number).split("\n## ", 1)[0]
+
+
+def test_adr_0041_names_every_row_with_a_rate_and_says_an_estimate_needs_none() -> None:
+    """ADR-0043's note on ADR-0041 ended "the estimate and its `~` exist only where a non-zero
+    rate does, which today is Jev alone". ADR-0052 gave `openai` a published rate and left that
+    note standing, and its first half had never held: a turn whose count quackd worked out for
+    itself wears the `~` on its log line whatever the rate, so a server you run prints `~$0`
+    there. ADR-0052 amends ADR-0041 for both and says so in its header.
+
+    So ADR-0041's notes, read without the sentences they quote in order to overturn them, name
+    every row the catalogue gives a published rate, and a row given one fails here until a note
+    names it too. And they say what a server you run prints on such a turn, which is drawn here
+    by `quackd log`'s own renderer rather than taken on trust: a note that quoted a line the
+    renderer no longer draws would fail as well."""
+    from quackd.log import LogEvent, render_lines
+
+    said = re.sub(r'"[^"]*"', "", _notes("0041"))
+    priced = {
+        name for name, spec in PRESETS.items() if spec.price and spec.price.source == "published"
+    }
+    unnamed = sorted(name for name in priced if f"`{name}`" not in said)
+    assert not unnamed, f"ADR-0041's notes never name {unnamed}, which carry a published rate"
+    estimated = {
+        "gate": "error",
+        "error": "TimeoutError: no answer within 1.0 s",
+        "latency_s": 1.0,
+        "usage": {"input_tokens": 400, "output_tokens": 0},
+        "usage_estimated": True,
+        "cost_usd": 0.0,
+    }
+    drawn = " ".join(text for text, _ in render_lines(LogEvent("decision", 0.0, estimated)))
+    assert "~$0," in drawn, f"quackd log no longer draws an estimated $0 turn as ~$0: {drawn}"
+    assert "`~$0`" in said, "ADR-0041's notes do not say a server you run prints ~$0"
+    amends = _notes("0052").split(" Amends ", 1)[1].split(" extends ", 1)[0]
+    assert "](0041-" in amends, "ADR-0052's header does not say it amends ADR-0041"
+
+
+def test_adr_0040_names_every_gate_adr_0052_says_it_added() -> None:
+    """ADR-0052 extends ADR-0040's stepper with gates of its own, says which in its header, and
+    leaves ADR-0040 a note by it. That note said no other gate changed after the same work had
+    added `interrupted`, for a request a second Ctrl-C or a flock's cancel cuts off. So every
+    gate the header names is one the stepper writes, and ADR-0040's note by ADR-0052 names each
+    of them, so a gate added to one fails here until the other has it."""
+    extends = _notes("0052").split("extends [ADR-0040]", 1)[1].split(" · ", 1)[0]
+    added = set(re.findall(r"`(\w+)`", extends))
+    stepper = (REPO / "quackd" / "agent" / "decision" / "stepper.py").read_text(encoding="utf-8")
+    unwritten = sorted(gate for gate in added if f'"{gate}"' not in stepper)
+    assert added and not unwritten, f"ADR-0052 names gates the stepper never writes: {unwritten}"
+    note = _notes("0040").split("**Amended 2026-10-10 by [ADR-0052]", 1)[1].split("\n\n", 1)[0]
+    missing = sorted(gate for gate in added if f"`{gate}`" not in note)
+    assert not missing, f"ADR-0040's note by ADR-0052 does not name {missing}"
+
+
+def test_a_page_that_says_what_the_suites_guard_stops_names_every_marker_it_lets_through() -> None:
+    """`tests/conftest.py` stops any request the SDK builds for a host under openai.com in every
+    test but the ones marked with one of `LIVE`: the decision LLM's live tests and the pilot's,
+    which mean to pay OpenAI for a real answer. The CHANGELOG and the `openai` page said any test
+    but the decision LLM's own live ones was stopped, which a live test of the pilot's is not. So
+    every sentence of theirs and ADR-0052's that says a request is stopped before it is sent names
+    each marker the guard lets through, read from the guard itself."""
+    from tests.conftest import LIVE
+
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    pages = {
+        "CHANGELOG.md's [Unreleased]": changelog.split("\n## [Unreleased]\n", 1)[1].split(
+            "\n## [", 1
+        )[0],
+        "ADR-0052": _adr("0052"),
+        "openai.md": (REPO / "docs" / "guides" / "decision-llms" / "openai.md").read_text(
+            encoding="utf-8"
+        ),
+    }
+    for where, text in pages.items():
+        sentences = re.split(r"(?<=\.) ", " ".join(text.split()))
+        said = [sentence for sentence in sentences if "stopped before it is sent" in sentence]
+        assert said, f"{where} no longer says what the guard stops"
+        for sentence in said:
+            missing = [marker for marker in LIVE if f"`{marker}`" not in sentence]
+            assert not missing, f"{where} leaves {missing} out of what the guard lets through"
+
+
+def test_a_promise_about_what_openais_sdk_reads_for_itself_says_it_is_the_decision_llms() -> None:
+    """The `openai` decision LLM's client decides what `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
+    and `OPENAI_PROJECT_ID` reach (`decisions_api.request_headers`). The pilot's clients are built
+    as they always were and leave all three to the SDK, which in the release the lock carries adds
+    them to every request the pilot sends, a gateway's credential in the first of them included,
+    wherever the pilot is pointed. A page that said nothing the variable sets is ever sent, and
+    said nothing about whose client, read to anybody who keeps a gateway's headers there for the
+    pilot as a promise about the pilot too.
+
+    So every paragraph or list item that names the variable, outside a table, says the pilot,
+    `--llm openai`, is not held to it. And the pilot's own client still names none of the three,
+    which is what those paragraphs say of it: a pilot that came to decide them for itself fails
+    here until they say so."""
+    pilot = (REPO / "quackd" / "agent" / "providers" / "openai.py").read_text(encoding="utf-8")
+    for named in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "organization="):
+        assert named not in pilot, f"the pilot's client names {named} now; say what it does"
+    for page in (
+        ".env.example",
+        "SECURITY.md",
+        "docs/guides/decision-llms/README.md",
+        "docs/guides/decision-llms/openai.md",
+    ):
+        text = (REPO / page).read_text(encoding="utf-8")
+        blocks = [
+            block
+            for block in re.split(r"\n\s*\n|\n(?=- )", text)
+            if "OPENAI_CUSTOM_HEADERS" in block and not block.lstrip().startswith("|")
+        ]
+        assert blocks, f"{page} no longer says what becomes of OPENAI_CUSTOM_HEADERS"
+        for block in blocks:
+            assert "--llm openai" in block, (
+                f"{page} says what becomes of OPENAI_CUSTOM_HEADERS without saying the pilot, "
+                f"--llm openai, is not held to it: {' '.join(block.split())[:160]}"
+            )
+
+
+def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() -> None:
+    """Windows refuses a connection to a port on the same machine that nothing listens on only
+    after longer than the stepper's second, so a decision server nobody started is a turn the
+    stepper's own bound ends. Its record then says what the record says of a server too slow to
+    answer, and the turn waits out its second before the model is asked, in shadow mode as in
+    `on`, because the stepper is asked first either way. The hub said only that such a server
+    costs a turn and never the run.
+
+    So its section on what a decision LLM may never do says it for Windows, and quotes the record
+    in the stepper's own words for a turn its bound ended, which are read off `stepper._failure`
+    here: a change to those words fails until the hub follows. It says it of a server on your own
+    machine, because a refused connection to 127.0.0.1 is what was timed, and a closed port on
+    another machine was not."""
+    from quackd.agent.decision.stepper import _failure
+
+    said = _failure(TimeoutError(), ran_out=True)
+    hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
+    section = hub.split("\n## What it is never allowed to do\n", 1)[1].split("\n## ", 1)[0]
+    windows = [" ".join(p.split()) for p in section.split("\n\n") if "On Windows" in p]
+    assert windows, "the hub no longer says what a server nobody started costs on Windows"
+    assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
+    assert "not listening" in windows[0] and "either mode" in windows[0], windows[0]
+    opening = windows[0].split(". ", 1)[0]
+    assert "on your own machine" in opening, f"the hub says more than was timed: {opening}"
+
+
 def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
-    """Seven is `len(PRESET_NAMES)`, and the README says it in a status cell.
+    """Eight is `len(PRESET_NAMES)`, and the README says it in a status cell.
 
     The same shape as the cloud-provider guard above, and for the same reason: a count in
     prose is a fact about the code that nothing else would notice going stale."""

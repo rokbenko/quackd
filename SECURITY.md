@@ -39,10 +39,20 @@ Also in scope:
 
 - API keys leaking into transcripts, GIFs, logs, run directories, or a robot's memory file.
   `TYPESAFE_API_KEY`, which the optional discrete stepper reads for the `jev` preset
-  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), is one of these. It is the
-  only decision LLM quackd names that wants a key at all: every other one is a server you run
-  yourself or a checkpoint in this process, and quackd hands those a placeholder
-  in the key field rather than whatever hosted key happens to be sitting in the same `.env`.
+  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), is one of these, and so
+  is `OPENAI_API_KEY` when the `openai` preset reads it
+  ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md)). No other decision
+  LLM quackd names wants a key at all: the rest are servers you run yourself or a checkpoint in this
+  process, and quackd hands those a placeholder in the key field rather than whatever hosted key
+  happens to be sitting in the same `.env`. The `openai` preset sends `OPENAI_API_KEY` to OpenAI's
+  own API alone, `https://api.openai.com` or one of the regional hosts OpenAI list for the
+  endpoint (`us.api.openai.com`, `eu.api.openai.com`, `au.api.openai.com`, `ca.api.openai.com`,
+  `jp.api.openai.com`, `in.api.openai.com`, `sg.api.openai.com`, `kr.api.openai.com`,
+  `gb.api.openai.com` and `ae.api.openai.com`), decided on the address's whole authority, so a
+  user, a port other than 443 or a host that only resembles one of those is never sent it. It
+  gives any other `--decision-url` the same placeholder, sends nothing `OPENAI_CUSTOM_HEADERS`
+  sets to any address at all, whichever release of the SDK is installed, and follows no redirect,
+  which would carry the account headers and the request itself somewhere else.
 - **What a pilot built on OpenAI's SDK sends besides the request.** `--llm openai`, every vendor
   that speaks OpenAI's API (Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and OpenRouter)
   and every local preset reach their address through that one SDK, and the SDK reads three variables
@@ -113,23 +123,34 @@ Also in scope:
   its last few results. Where that goes is the part that differs, and it is worth knowing which of
   the three you chose. `jev` is a third party's hosted API, so a run that names it sends that state
   over the network to TypeSafe
-  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)). Every other server row,
-  `local` included, is a server you run, so it goes wherever `--decision-url` points, which is a
-  port on your own machine unless you moved it. What each one binds and whether anything
+  ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), and `openai` is another,
+  so a run that names it sends that state to OpenAI
+  ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md)), whose data controls
+  say it is not used for training and is kept in abuse-monitoring logs for 30 days. Every other
+  server row, `local` included, is a server you run, so it goes wherever `--decision-url` points,
+  which is a port on your own machine unless you moved it. What each one binds and whether anything
   authenticates it is on its own page, and the two are not the same answer:
   [kev](docs/guides/decision-llms/kev.md) binds `127.0.0.1` and authenticates nothing, while
   [von](docs/guides/decision-llms/von.md) binds every interface unless you pass `--host`, which is
   why the catalogue's own command passes it. `laya` runs inside this process, so nothing leaves it
   at all ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is
-  ever sent a camera frame, a system prompt or an API key. How much was sent is on the record, as
-  `state_chars` and `state_tokens_est` on each `decision` event, and which fields were dropped to
-  fit is there as `trimmed`; the text itself is not, so a reader auditing what left the machine is
-  reading a size and a shape rather than the words. The address is on the record too, in
+  ever sent a camera frame or a system prompt, and none is sent an API key but its own vendor's, at
+  that vendor's address. The one way round that is the SDK's own: with no `--decision-url`,
+  TypeSafe's client sends `jev`'s key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd
+  neither reads nor sets, so setting it is choosing where that key goes. How much was sent is on the
+  record, as `state_chars` and `state_tokens_est` on each `decision` event, and which fields were
+  dropped to fit is there as `trimmed`; the text itself is not, so a reader auditing what left the
+  machine is reading a size and a shape rather than the words. That holds when a turn fails as well:
+  its `error` is the exception's type, with its HTTP status where it carries one, and never the
+  message, which can quote the request back. The only words kept are quackd's own: that the
+  stepper's own second ran out, and what quackd says about a reply it could not read, which names
+  the type of what came back and nothing it said. The address is on the record too, in
   `run_start.decision_llm`, with a password in it or a credential-named query parameter already
   replaced by `***`, because that url can arrive through `QUACKD_DECISION_URL` where argv redaction
-  would never see it. What would be a security issue: a picture or a credential reaching any of
-  them, a credential surviving that recorded url, a hosted key being sent to a server you run, or a
-  stepper-authored call bypassing the executor.
+  would never see it. What would be a security issue: a picture reaching any of them, a credential
+  reaching any of them but its own vendor at its own address, a credential surviving that recorded
+  url, a hosted key being sent to a server you run, or a stepper-authored call bypassing the
+  executor.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
   sentences a model wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never

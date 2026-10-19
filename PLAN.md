@@ -128,17 +128,18 @@ before.
 ## Open here
 
 - ⬜ **Nobody has run the discrete stepper against a real decision LLM.** Not TypeSafe's hosted
-  API, not a `kev`, `von`, `openjev` or `opendecision` server, not `laya` in this process, and
-  not on hardware in any of those shapes. `--decision-llm` ships off unless you name one and is
-  exercised against a stub, so there is no agreement rate and no calibration curve, and the only
-  latency figure anywhere is TypeSafe's own, on TypeSafe's own task, for Jev alone. The floors
-  every one of the seven names is gated on are Jev's published numbers, inherited by the other
-  six unmeasured, which is a guess wearing a number's clothes until somebody checks it.
+  API, not OpenAI's Decisions API, not a `kev`, `von`, `openjev` or `opendecision` server, not
+  `laya` in this process, and not on hardware in any of those shapes. `--decision-llm` ships off
+  unless you name one and is exercised against stubs and fakes, so there is no agreement rate and
+  no calibration curve, and the only latency figure anywhere is TypeSafe's own, on TypeSafe's own
+  task, for Jev alone. The floors every one of the eight names is gated on were shaped around
+  Jev, two of them TypeSafe's published numbers and two quackd's own, and the other seven inherit
+  all four unmeasured, which is a guess wearing a number's clothes until somebody checks it.
   `--decision-mode shadow` is built to produce all three without changing a run, on
   `lerobot:mock` or on a real arm, and it is how this line stops being true. Until somebody runs
-  it, the break-even in [docs/decision-llms.md](docs/guides/decision-llms/README.md) is arithmetic rather than
-  a result: the break-even there is a stepper answering in under 1.40 seconds, and below that
-  it is a net loss.
+  it, the speed and cost figures in
+  [the decision-LLM hub](docs/guides/decision-llms/README.md#how-much-faster-and-how-much-cheaper)
+  are arithmetic rather than a result.
 
 - ⬜ **Nobody has run the host daemon on a Jetson.** quackd no longer runs on the board. It
   reaches one from the laptop with `--host`, through `bridge/jetson/quackd_jetson_hostd.py`
