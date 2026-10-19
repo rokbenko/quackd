@@ -154,6 +154,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the stepper's sentence and when quackd's words about a reply are lost, and
   `tests/test_decision_llms.py` fails when TypeSafe's clock sits on the stepper's second.
 
+### Removed
+
+- **`microduck:websocket`, which 0.18.0 deprecated.** It was a stub that refused to connect while
+  it waited for the WebSocket agent gateway upstream's architecture.md designed, and by
+  daemon-v0.16.1 upstream had dropped that design, so there was nothing for it to become. A
+  command that names it fails at `--robot` now, before any body is built, with
+  `unknown backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc`, and
+  what to use instead is what 0.18.0's line named: `--robot microduck:jsonrpc`, with
+  `--camera-url http://127.0.0.1:8080/frame` for mediad's camera. A robot registered on it leaves
+  `robots.json` refusing every command that reads it, `quackd robot remove` among them, with that
+  error naming the file and the robot, until its entry is deleted from the file by hand. What
+  only the stub used went with it: the Microduck's `DEPRECATED_BACKENDS`, whose one line was the
+  stub's, the `WebSocket agent gateway` ref and the link to upstream's roadmap, with their row and
+  link on the Microduck's page, and the README's ⏳ stub mark, which no backend carries now. The
+  `rendezvous control lane` ref stays, since it says why quackd reaches a duck elsewhere over ssh
+  and not over that lane. So does the machinery itself: an adapter may still declare
+  `DEPRECATED_BACKENDS`, `quackd.adapters.factory.deprecated_backend` still reads it, and `run`,
+  `doctor`, `serve-mcp` and `robot list --probe` still print the line, though no adapter quackd
+  publishes declares one now.
+  [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) shows a declaration
+  where it named the stub. `tests/test_doctor_and_stub.py` is `tests/test_doctor.py`, without the
+  stub's own test, and the tests of the line moved to `tests/test_deprecated_backends.py`, onto an
+  adapter the tests install that retires a backend of its own. Its `serve-mcp` case with two
+  robots on that backend lets both connect before a third refuses, so it holds the server to
+  saying the line once per start. Eleven ways of breaking the machinery, tried one at a time, each
+  failed the test that guards it. [ADR-0006](docs/adr/0006-upstream-api-single-file.md) is amended
+  in place.
+
 ### Fixed
 
 - **An OpenAI refusal reaches the record in its own words.** An OpenAI model says no in a channel of

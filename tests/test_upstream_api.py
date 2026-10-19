@@ -33,7 +33,6 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         {
             "adapters/microduck/upstream_api.py",
             "adapters/microduck/transports/jsonrpc_unix.py",
-            "adapters/microduck/transports/websocket_stub.py",
         },
         ("https://github.com/pollen-robotics/microduck",),
     ),

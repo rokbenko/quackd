@@ -119,7 +119,7 @@ ask ("add a `.duck` to `ducks/`, or an adapter for the robot on your desk").
 >    whether `robot.enable` gets a fallen duck up, and the lens I assume for a tall `/frame`.
 > 2. **The WebSocket agent surface** from architecture.md §5.3 is gone at daemon-v0.16.1, and
 >    agents go over the rendezvous lane now, which your relay says is not a teleop lane. So I've
->    deprecated the stub I had waiting for it, and I drive over robotd's socket through ssh.
+>    removed the stub I had waiting for it, and I drive over robotd's socket through ssh.
 >    Tell me if that's the wrong read.
 >
 > No Pollen assets are used (no meshes, no logos), Apache-2.0 like upstream, and the README

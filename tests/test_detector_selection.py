@@ -46,7 +46,7 @@ from tests.test_mcp_fleet import _data, connected
 
 runner = CliRunner()
 
-REAL = ("bridge", "real", "ws", "zmq", "jsonrpc", "websocket")
+REAL = ("bridge", "real", "ws", "zmq", "jsonrpc")
 SIMULATED = ("sim2d", "mujoco", "mock")
 
 

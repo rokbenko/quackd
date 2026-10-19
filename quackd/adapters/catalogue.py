@@ -45,10 +45,10 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
     # optional extras, which is where a per-backend answer belongs.
     AdapterInfo(
         name="microduck",
-        backends=("sim2d", "mujoco", "mock", "jsonrpc", "websocket"),
+        backends=("sim2d", "mujoco", "mock", "jsonrpc"),
         status=(
             "✅ in the package: sim2d, mock · ✅ mujoco (physics, needs quackd[mujoco]) · "
-            "🧪 jsonrpc · ⏳ websocket (deprecated)"
+            "🧪 jsonrpc"
         ),
         summary="a 25 cm biped duck from Pollen Robotics",
         extra="quackd[microduck]",

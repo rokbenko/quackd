@@ -1,8 +1,8 @@
 """A backend name → a `DuckTransport`.
 
-The default is the simulator, because the north-star demo needs no hardware. The two
-robot-facing transports are reachable only by name, which is how the "no UNVERIFIED
-upstream call without `--robot microduck:jsonrpc|websocket`" promise is kept.
+The default is the simulator, because the north-star demo needs no hardware. The
+robot-facing transport is reachable only by name, which is how the "no UNVERIFIED upstream
+call without `--robot microduck:jsonrpc`" promise is kept.
 """
 
 from __future__ import annotations
@@ -11,13 +11,12 @@ import os
 
 from quackd.transport.base import DuckTransport, TransportError
 
-TRANSPORT_NAMES = ("sim2d", "mujoco", "mock", "jsonrpc", "websocket")
+TRANSPORT_NAMES = ("sim2d", "mujoco", "mock", "jsonrpc")
 TRANSPORT_STATUS = {
     "sim2d": "✅ built-in simulator (default)",
     "mujoco": "✅ physics: upstream's model and walk policy (needs quackd[mujoco])",
     "mock": "✅ scripted, for tests",
     "jsonrpc": "🧪 experimental — real robot over robotd's unix socket (or a TCP forward)",
-    "websocket": "⏳ stub, deprecated and removed in 0.19.0: upstream dropped the gateway",
 }
 
 
@@ -53,8 +52,4 @@ def make_transport(
         from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 
         return JsonRpcUnixTransport(address=address, camera_url=camera_url)
-    if name == "websocket":
-        from quackd_microduck.transports.websocket_stub import WebSocketTransport
-
-        return WebSocketTransport(address=address)
     raise TransportError(f"unknown transport {name!r}; choose one of {', '.join(TRANSPORT_NAMES)}")

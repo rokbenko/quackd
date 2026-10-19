@@ -3,7 +3,7 @@
 Every constant is tagged VERIFIED (read from upstream source, link given) or UNVERIFIED
 (designed upstream but not shipped, or an assumption of ours). `docs/adapters/microduck/README.md`
 is the human-readable version of this file; `tests/test_upstream_api.py` proves that
-UNVERIFIED names are only reachable from the experimental and stub transports.
+UNVERIFIED names are only reachable from the experimental transport.
 
 Pinned and read on 2026-10-08, at daemon-v0.16.1 (API 41). The pin is a release now rather than
 whatever `main` was on the day, because a robot runs a release. `main` was three commits past
@@ -73,7 +73,6 @@ _ARCH_DOC = "docs/design/architecture.md"
 IPC_PROTO = src(_PROTO)
 ARCH_DOC = src(_ARCH_DOC)
 ROBOTD_DOC = src(_ROBOTD_DOC)
-ROADMAP = src("docs/project/roadmap.md")
 WEBRTC_DOC = src("docs/design/remote-webrtc.md")
 
 
@@ -809,30 +808,20 @@ RENDEZVOUS_LANE = UpstreamRef(
     "rendezvous control lane",
     "VERIFIED",
     src("mediad/src/relay.rs", 44),
-    "What upstream sends a server-side agent over now, in place of the WebSocket gateway it once "
-    "designed (WEBSOCKET_GATEWAY): JSON-RPC over HTTP/SSE through upstream's rendezvous service, "
-    "which mediad's relay bridges to the robot's own sockets. Upstream names two limits on it. "
+    "What upstream sends a server-side agent over: JSON-RPC over HTTP/SSE through upstream's "
+    "rendezvous service, which mediad's relay bridges to the robot's own sockets. Upstream names "
+    "two limits on it. "
     "'No pixels': 'Video over this would be base64 inside JSON at the rate below', so frames "
     "come from WebRTC or media.stream (docs/design/remote-access-design.md:589-590). And 'What "
     "it is not is a teleop lane': 'The rendezvous allows 1200 requests per 60 s per peer', and "
     "'exceeding it earns a `429` on the *whole peer*, which would take the robot's own lease "
     "down with it'. A walk under quackd re-sends its twist against robotd's deadman until it "
-    "ends, a joystick's rate rather than a behaviour's, so quackd does not drive over it: "
-    "microduck:websocket is deprecated, and a robot elsewhere is reached over ssh with "
-    "microduck:jsonrpc.",
+    "ends, a joystick's rate rather than a behaviour's, so quackd does not drive over it, and a "
+    "robot elsewhere is reached over ssh with microduck:jsonrpc.",
 )
 
 # ── assumptions and things upstream has designed but not shipped ────────────────────────
 
-WEBSOCKET_GATEWAY = UpstreamRef(
-    "WebSocket agent gateway",
-    "UNVERIFIED",
-    src(_ARCH_DOC, 443),
-    "Dropped upstream. At bc41fb5 architecture.md §5.3 designed one, 'open a WebSocket, poll a "
-    "frame, send intents', for a server-side agent. At the pin the same table sends that agent "
-    "over the 'rendezvous control lane — JSON-RPC over HTTP/SSE, no WebRTC', and roadmap M5's "
-    "SDK is that lane. There is no gateway to connect to.",
-)
 STAND_UP_RPC = UpstreamRef(
     "stand_up asks robotd's policy to drive (robot.enable), which upstream does not promise "
     "gets a fallen duck up",

@@ -9,6 +9,15 @@ and serves the rest, warning whenever the version is not the one read, because u
 a changed call by name rather than a peer by its number. The one kind of call nothing answers,
 the `robot.move` notification, is checked against the robot's own state instead.
 
+**Amended 2026-10-19:** the `websocket` tier below is gone. Upstream dropped the WebSocket agent
+gateway that stub was waiting for: by daemon-v0.16.1 a server-side agent goes over a rendezvous
+lane that upstream's own relay says is not a teleop lane, and quackd does not drive over it.
+0.18.0 deprecated `microduck:websocket`, and 0.19.0 removes it with its stub and with the
+`WebSocket agent gateway` ref that only the stub read, so the stub's file is no longer among
+those `tests/test_upstream_api.py` allows to touch an UNVERIFIED ref. The Consequences' "the stub
+becomes real by editing one file and one doc" has nothing left to apply to. The rule itself is
+unchanged: every upstream assumption lives in one file, tagged VERIFIED or UNVERIFIED.
+
 ## Context
 
 Microduck's architecture doc is a *draft* (2026-07-22) describing v1 direction; the shipped

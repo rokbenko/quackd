@@ -381,7 +381,14 @@ other shape, or a line that is not a string, raises a TypeError naming the modul
 being read as nothing. `quackd run`, `quackd doctor`, `quackd serve-mcp` and
 `quackd robot list --probe` print that line once on stderr just before they connect through the
 backend, and never for a robot they do not connect, which is the warning at run time
-RELEASING.md asks of a removal announced a minor ahead. `microduck:websocket` is the one today.
+RELEASING.md asks of a removal announced a minor ahead. An adapter retiring its backend `old`
+for `new` declares it like this:
+
+```python
+DEPRECATED_BACKENDS = {
+    "old": "<name>:old is deprecated and is removed in X.Y.0: use --robot <name>:new",
+}
+```
 
 ## `upstream_api.py`: never guess a name
 
