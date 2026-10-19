@@ -7,6 +7,21 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **A `.duck` file saved with a byte-order mark is read like one saved without.** Windows editors
+  can save UTF-8 with one, Notepad among them, which puts three bytes in front of the first line.
+  quackd decoded them to a character standing in front of the opening `---` fence, or in front of
+  the `#` comment lines a file may open with, so it refused a valid file as
+  `missing frontmatter: file must start with a '---' fence` wherever it read one: `quackd run`,
+  `quackd validate`, `quackd preflight`, `quackd serve-mcp --duck` and the MCP tool
+  `robot_load_duckfile`. A mark at the very start of the file is skipped now.
+  `tests/test_duckfile.py` saves `hello-world`, which opens on its fence, and `fetch`, which opens
+  on comment lines, each with a mark in front, and reads them through the parser, the loader,
+  `quackd validate` and what `robot_load_duckfile` calls. It failed before this change.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's
