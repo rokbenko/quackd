@@ -92,6 +92,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   sequence. The row that says robotd clamps no twist says too that its controller zeroes the twist
   while a client holds robotd's body-pose mode, which neither `requested` nor `applied` shows.
 
+- **The Microduck page says what upstream's daemon-v0.17.2 to daemon-v0.17.6 changed.** `v0.17.2` is
+  on API v41, and from `v0.17.3` they are on API v44, which quackd serves with a warning: the three
+  bumps add only calls quackd does not make, and nothing it sends or reads changed shape. From
+  `v0.17.3` robotd's idle look-around also leans the neck, opens the beak and yawns, and its 2 s and
+  1.5 s timings became `[idle]` settings. At the shipped values quackd's gaze hold and its fade wait
+  still hold, and the page says what a robot retuned to glance sooner or fade longer does to them.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

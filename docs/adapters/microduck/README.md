@@ -48,6 +48,17 @@ of anything quackd sends or reads, and robotd's own source is the same outside i
 with the policy set `v8`, and a gamepad's full stick asks for 0.4 m/s forward and 1.0 rad/s of
 turn. Those rows say what changed beside what they read at this pin.
 
+Upstream released `daemon-v0.17.2` to `v0.17.6` from 2026-10-13 to 2026-10-17. `v0.17.2` is on API
+v41 and is served without a warning, and from `v0.17.3` they are on API v44, which quackd serves
+with one. The three bumps add only calls quackd does not make, `robot.vetbook` and the calls around
+it, and none changes the shape of anything quackd sends or reads. From `v0.17.3` the idle
+look-around also leans the neck, opens the beak and yawns after 45 s, and its 2 s and 1.5 s timings
+became `[idle]` settings in `robotd.toml`. At the shipped values quackd's gaze hold and its fade
+wait still hold, since a `robot.look` or `robot.head` still clears every part of it within the fade.
+A robot retuned to glance sooner or fade longer is not one quackd can see: its gaze hold then lets
+go, taking the glance for another client's head, and `go_to` and `search_scan` can steer on a frame
+a glance is still fading out of.
+
 Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/duck-ipc-proto/src/lib.rs) ·
 [robotd/src](https://github.com/pollen-robotics/microduck/tree/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/robotd/src) ·
 [robotd-params/src/lib.rs](https://github.com/pollen-robotics/microduck/blob/d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1/robotd-params/src/lib.rs) ·
