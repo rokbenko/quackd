@@ -56,6 +56,14 @@ DEAD = "http://127.0.0.1:1"
 """A loopback address nothing listens on. Every refusal here fires before it would be asked."""
 
 
+def _reached(url: str, out: str) -> bool:
+    """Whether a run got as far as connecting to the policy server at `url`, which nothing
+    listens on. Linux and macOS refuse that connection at once, and the client says `nothing is
+    listening at`; Windows answers it slower than the client waits, and the client says `did not
+    take a connection`. Either way the run was let through to the server."""
+    return f"nothing is listening at {url}" in out or f"{url} did not take a connection" in out
+
+
 def _person(answer: bool, heard: list[str] | None = None) -> Callable[[str], bool]:
     """Somebody at a terminal, who answers `answer` to whatever they are asked."""
 
@@ -584,7 +592,7 @@ def test_no_play_with_no_part_to_turn_off_is_let_through(
     result = _cli(tmp_path, *what, *ARM, "--controller", "vla", "--no-play")
     out = _flat(result.output)
     assert "would do nothing" not in out and "a part to play" not in out, result.output
-    assert f"{DEAD} did not take a connection" in out, "it got as far as the policy server"
+    assert _reached(DEAD, out), "it got as far as the policy server"
 
 
 def test_no_play_lets_a_played_file_fly_its_instructions(
@@ -597,7 +605,7 @@ def test_no_play_lets_a_played_file_fly_its_instructions(
     out = _flat(result.output)
     assert "gives its pilot a part to play" not in out, result.output
     assert "would do nothing" not in out, result.output
-    assert f"{DEAD} did not take a connection" in out, "it got as far as the policy server"
+    assert _reached(DEAD, out), "it got as far as the policy server"
 
 
 def test_a_controller_nobody_defined_is_refused(tmp_path: Path) -> None:
