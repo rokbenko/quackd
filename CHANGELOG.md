@@ -34,6 +34,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the shipped bodies only an arm is told it has neither legs nor a base. It failed before this
   change.
 
+- **A `--goal` run with `--no-memory` no longer tells its pilot to call `remember`.** With memory
+  off a run is offered no `remember` tool and its prompt has no memory section, yet the task
+  `--goal` writes still told the pilot to `remember` one fact before declaring success, at the end
+  of its strategy and again in a Memory section under it. A pilot that did as it was told spent a
+  call on a refusal. With memory off that task now says nothing about `remember`, and with memory
+  on it reads as it did, byte for byte. A `.duck` file is its author's words and still asks for
+  whatever it asks for, as ADR-0025 records, and what quackd adds to its prompt already said
+  nothing about `remember` with memory off. The memory guide says a goal run asks for a note only
+  while memory is on. `tests/test_cli_memory.py` runs a goal and a `.duck` with `--no-memory` and
+  finds no `remember` in the prompt or the tools either one sent its pilot, and runs a goal with
+  memory on, which still asks for one. The goal with memory off failed before this change.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

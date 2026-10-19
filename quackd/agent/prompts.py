@@ -227,7 +227,7 @@ COMPOSITE_VERBS = ("walk_to", "go_to", "search_scan", "approach_and")
 one. A body that provides none of them is told about none of them."""
 
 
-def goal_strategy(allow: Sequence[str]) -> str:
+def goal_strategy(allow: Sequence[str], *, memory: bool = False) -> str:
     """The `## Strategy` paragraph of a `--goal` task, in the verbs this body was granted.
 
     It used to name `observe`, `search_scan` and `go_to` whatever the body was. On 2026-09-15
@@ -239,7 +239,10 @@ def goal_strategy(allow: Sequence[str]) -> str:
     Every verb named here is in `allow`. A body with neither looking verb is told to look with
     `report_state`, and one with no composite is told to prefer the verb that does the whole
     thing rather than being pointed at a verb that does not exist. A Microduck reads exactly
-    what it read before."""
+    what it read before.
+
+    `memory` is whether the run keeps one. The last step asks for a `remember` only then: a run
+    with memory off is offered no such tool, and this told its pilot to call it anyway."""
     names = set(allow)
     looking: list[str] = [verb for verb in ("observe", "search_scan") if verb in names]
     if not looking and "report_state" in names:
@@ -253,9 +256,10 @@ def goal_strategy(allow: Sequence[str]) -> str:
     )
     # a body with no camera verb has no frame to verify against, only its own joints
     fresh = "frame" if "observe" in names else "reading"
+    last = "then `remember` one fact and declare success" if memory else "then declare success"
     return (
         f"Use the available verbs. Look before you act ({look}), {prefer}, verify with a "
-        f"fresh {fresh}, then `remember` one fact and declare success."
+        f"fresh {fresh}, {last}."
     )
 
 
