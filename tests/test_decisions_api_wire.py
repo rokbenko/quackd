@@ -5,7 +5,8 @@ provider SDK. To run it, sync an environment with the extra and run pytest there
 
     UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openai
 
-It has run, all of it, against three releases of the SDK, on 2026-10-11, and against no other:
+It has run, all of it, against three releases of the SDK, on 2026-10-11 and again on 2026-10-19,
+once the decision client took the pilot's rule for the SDK's own variables, and against no other:
 3.22.1, which the lock carries and that sync installs; 3.1.0, the first release in uv's cache that
 reads `OPENAI_CUSTOM_HEADERS`; and 1.66.0, the extra's floor, which sends through `httpx` rather
 than `httpx2`. Each of the last two was put into an environment synced that way with
@@ -27,11 +28,13 @@ each of them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import re
 import socket
 import time
+import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -161,15 +164,38 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
 
 
 def _as_openai(monkeypatch: pytest.MonkeyPatch, stand_in: FakeOpenAIDecisions) -> None:
-    """Tell quackd's own rule that the stand-in is OpenAI's API, so the key and the account
-    headers go to it as they would to OpenAI. The suite's guard keeps a rule of its own, sees
-    127.0.0.1 and lets the request through."""
+    """Tell quackd's own rule that the stand-in is OpenAI's API, so the key and the SDK's own
+    variables go to it as they would to OpenAI. Compared on the authority, so the client's own
+    address, which the build reads back with `/v1/` on the end, is the stand-in's as well. The
+    suite's guard keeps a rule of its own, sees 127.0.0.1 and lets the request through."""
     real = decisions_api.is_openai_host
+    here = urllib.parse.urlsplit(stand_in.url).netloc
     monkeypatch.setattr(
         decisions_api,
         "is_openai_host",
-        lambda url: url.strip().rstrip("/") == stand_in.url or real(url),
+        lambda url: urllib.parse.urlsplit(url.strip()).netloc == here or real(url),
     )
+
+
+async def _sent_by_the_sdk_alone(stand_in: FakeOpenAIDecisions) -> Recorded:
+    """One request from a client the SDK built by itself, handed the key and the stand-in's
+    address and nothing else, as it would reach OpenAI's own API from a program that is not
+    quackd: what the rule says quackd's client sends there. Its answer is not read."""
+    import openai
+
+    before = len(stand_in.posts())
+    alone = openai.AsyncOpenAI(api_key=KEY, base_url=f"{stand_in.url}/v1", max_retries=0)
+    try:
+        with contextlib.suppress(openai.APIError):
+            await alone.post(decisions_api.PATH, cast_to=object, body={"model": OPENAI.model})
+    finally:
+        await alone.close()
+    return stand_in.posts()[before]
+
+
+AMBIENT_NAMES = ("authorization", "x-gateway-key", "openai-organization", "openai-project")
+"""Every header the variables the SDK reads for itself fill here: the key's own, the gateway's
+two lines, and the two account headers."""
 
 
 async def _decide_once(url: str, **kwargs: Any) -> Any:
@@ -240,80 +266,92 @@ def test_every_request_is_three_fields_at_v1_decisions_sent_the_word_and_nothing
     assert start["decision_price"]["source"] == "self-hosted", "a server you run is free"
 
 
-def test_at_openais_own_address_the_key_and_the_account_headers_go_and_the_gateways_do_not(
+def test_at_openais_own_address_a_run_sends_what_the_sdk_sends_by_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """What the SDK sends where the key is meant to go, seen without the network: quackd's own
-    rule is told the stand-in is OpenAI's API. The suite's guard keeps a rule of its own, sees
-    127.0.0.1 and lets the requests through. The key goes as the bearer token, and the gateway's
-    `Authorization` line never replaces it; OpenAI's account headers go as the SDK sends them; the
-    gateway's own header does not; and the turns are costed at OpenAI's published rate."""
+    """What a run sends where the key is meant to go, seen without the network: quackd's own
+    rule is told the stand-in is OpenAI's API. The SDK's own variables follow the SDK's own
+    address (ADR-0010's amendment of 2026-10-12), so every request carries the key, the gateway's
+    lines and the account headers exactly as a client the SDK built by itself sends them, and the
+    turns are costed at OpenAI's published rate."""
     rate = OPENAI.price
     assert rate is not None
     with FakeOpenAIDecisions() as stand_in:
-        real = decisions_api.is_openai_host
-        monkeypatch.setattr(
-            decisions_api,
-            "is_openai_host",
-            lambda url: url.rstrip("/") == stand_in.url or real(url),
-        )
+        _as_openai(monkeypatch, stand_in)
         result = _run(stand_in, tmp_path)
+        posts = stand_in.posts()
+        alone = asyncio.run(_sent_by_the_sdk_alone(stand_in))
     assert result.exit_code == 0, result.output
-    posts = stand_in.posts()
     assert posts
     for post in posts:
-        assert post.every("authorization") == [f"Bearer {KEY}"]
-        assert post.every("openai-organization") == ["org-x"]
-        assert post.every("openai-project") == ["proj-y"]
-        assert "x-gateway-key" not in post.headers
+        for name in AMBIENT_NAMES:
+            assert post.every(name) == alone.every(name), name
     records = _records(tmp_path)
     assert _start(records)["decision_price"] == rate.record()
     for turn in _sent(records):
         assert turn["cost_usd"] > 0 and turn["cost_usd"] == cost_usd(turn["usage"], rate)
 
 
-@pytest.mark.parametrize("at_openai", [False, True], ids=["a server you run", "openai"])
 @pytest.mark.parametrize("spelling", ["Authorization", "authorization", "AUTHORIZATION"])
-async def test_one_authorization_line_leaves_and_it_is_quackds_whatever_the_gateway_spelled(
-    spelling: str, at_openai: bool, monkeypatch: pytest.MonkeyPatch
+async def test_one_authorization_line_reaches_a_server_you_run_and_it_is_the_word(
+    spelling: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every line of the request read as it arrived, so a second authorization beside the
-    first would show. The gateway's line in each spelling, and the key or the word is the one
-    value that goes. `tests/test_decisions_api.py` holds the same rule to each kind of release
-    the extra allows; this is the locked one, for real."""
+    first would show. The gateway's line in each spelling, and the word is the one value that
+    goes. `tests/test_decisions_api.py` holds the same rule to each kind of release the extra
+    allows; this is the locked one, for real."""
     monkeypatch.setenv(
         "OPENAI_CUSTOM_HEADERS", f"{spelling}: Bearer {AMBIENT}\nX-Gateway-Key: {GATEWAY}"
     )
     with FakeOpenAIDecisions() as stand_in:
-        if at_openai:
-            _as_openai(monkeypatch, stand_in)
         await _decide_once(stand_in.url)
     (post,) = stand_in.posts()
-    assert post.every("authorization") == [f"Bearer {KEY if at_openai else 'local'}"]
+    assert post.every("authorization") == ["Bearer local"]
     assert post.every("x-gateway-key") == []
 
 
-@pytest.mark.parametrize("at_openai", [False, True], ids=["a server you run", "openai"])
 @pytest.mark.parametrize(
     "lines",
-    ["OpenAI-Organization: gw-org\nOpenAI-Project: gw-proj", "openai-organization: gw-org"],
-    ids=["the sdk's own spelling", "another spelling"],
+    [
+        f"Authorization: Bearer {AMBIENT}\nX-Gateway-Key: {GATEWAY}",
+        f"authorization: Bearer {AMBIENT}\nX-Gateway-Key: {GATEWAY}",
+        "OpenAI-Organization: gw-org\nOpenAI-Project: gw-proj",
+        "openai-organization: gw-org",
+        None,
+    ],
+    ids=[
+        "a gateway's authorization",
+        "in another spelling",
+        "the account headers in the sdk's spelling",
+        "in another spelling of its own",
+        "unset",
+    ],
 )
-async def test_the_account_headers_carry_the_variables_at_openai_whatever_the_gateway_names(
-    lines: str, at_openai: bool, monkeypatch: pytest.MonkeyPatch
+async def test_at_openai_the_sdks_own_variables_arrive_as_from_the_sdk_alone(
+    lines: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A gateway's line named in the SDK's own spelling used to take the place of the entry the
-    SDK fills from `OPENAI_ORG_ID`, so the request reached OpenAI with no organisation at all and
-    was billed to the key's default. At OpenAI the variables' values go, once each, whatever the
-    gateway's line says; anywhere else neither goes."""
-    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
+    """OpenAI's own API is the one address this row sends the SDK's own variables to, as the
+    SDK sends them by itself. So what arrives at a stand-in treated as OpenAI's, under every name
+    those variables can fill, is what arrives from a client the SDK built by itself with the key
+    and nothing else, whatever the locked release makes of the lines; and away from OpenAI none
+    of it arrives at all."""
+    if lines is None:
+        monkeypatch.delenv("OPENAI_CUSTOM_HEADERS", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", lines)
+    with FakeOpenAIDecisions() as yours:
+        await _decide_once(yours.url)
     with FakeOpenAIDecisions() as stand_in:
-        if at_openai:
-            _as_openai(monkeypatch, stand_in)
+        _as_openai(monkeypatch, stand_in)
         await _decide_once(stand_in.url)
-    (post,) = stand_in.posts()
-    assert post.every("openai-organization") == (["org-x"] if at_openai else [])
-    assert post.every("openai-project") == (["proj-y"] if at_openai else [])
+        alone = await _sent_by_the_sdk_alone(stand_in)
+    ours = stand_in.posts()[0]
+    for name in AMBIENT_NAMES:
+        assert ours.every(name) == alone.every(name), name
+    (at_yours,) = yours.posts()
+    assert at_yours.every("authorization") == ["Bearer local"]
+    for name in AMBIENT_NAMES[1:]:
+        assert at_yours.every(name) == [], name
 
 
 async def test_a_redirect_is_never_followed_so_nothing_reaches_where_it_points(

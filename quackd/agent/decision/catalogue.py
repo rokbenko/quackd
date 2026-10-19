@@ -150,7 +150,7 @@ PRESETS: dict[str, DecisionSpec] = {
         # the pilots' catalogue was read, which is not the day this one was. The guide adds that
         # regional processing premiums and long-context multipliers apply and publishes neither
         # for this endpoint, so a run at any of OpenAI's regional hosts
-        # (`decisions_api.OPENAI_HOSTS`) is costed at this rate, and `QUACKD_DECISION_PRICE` is
+        # (`openai_headers.OPENAI_HOSTS`) is costed at this rate, and `QUACKD_DECISION_PRICE` is
         # how you say otherwise.
         price=Price(input=0.10, output=0.0, source="published", checked="2026-10-08"),
         extra="openai",

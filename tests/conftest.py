@@ -201,7 +201,7 @@ def openai_address(url: object) -> str | None:
     request is about to go to, and `urlsplit`'s reading otherwise. A trailing dot names the same
     machine in DNS, so it comes off.
 
-    Wider than the hosts quackd sends a key to (`decisions_api.OPENAI_HOSTS`), on purpose, and
+    Wider than the hosts quackd sends a key to (`openai_headers.OPENAI_HOSTS`), on purpose, and
     a rule of the guard's own rather than `decisions_api.is_openai_host`: a test may replace
     that one to have a stand-in on 127.0.0.1 treated as OpenAI's and see what the key does there
     (`tests/test_decisions_api_wire.py` does), and a guard that replacement could talk round
@@ -264,7 +264,7 @@ def _openai_base() -> Any:
             base = importlib.import_module("openai._base_client")
         except Exception:
             # A package that is only half there may raise anything while it is imported, as
-            # `decisions_api._sdk_parts` says, and one that cannot be imported cannot send.
+            # `openai_headers.sdk_parts` says, and one that cannot be imported cannot send.
             return None
     build = getattr(getattr(base, "BaseClient", None), "_build_request", None)
     return base if callable(build) else None

@@ -971,16 +971,13 @@ And the rest:
 | Model | in the spec: `--decision-llm jev:jev-latest`, `--decision-llm laya:multilingual` |
 
 `TYPESAFE_BASE_URL` is not read by quackd at all: it belongs to the SDK, and `--decision-url` is
-how you tell quackd where a server is. On `openai` what OpenAI's SDK would read for itself is
-answered instead: `OPENAI_BASE_URL` never moves the address, because the client is always handed
-one, nothing `OPENAI_CUSTOM_HEADERS` sets is sent, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go
-to OpenAI alone ([openai](openai.md)). That is the decision LLM's client alone: the pilot's, for
-`--llm openai` and every other pilot on OpenAI's SDK, is built as it always was and leaves those
-three to the SDK, which in the release the lock carries adds them to every request the pilot
-sends, wherever it is pointed. `TYPESAFE_DEFAULT_MODEL` is honoured for the one row that declares
-it, `jev`, as a fallback when the spec names no model -- but naming it in the spec is the way to
-say it, because that is the form every other row takes and the only one that reaches the record
-as a choice somebody made.
+how you tell quackd where a server is. On `openai`, `OPENAI_BASE_URL` never moves the address,
+because the client is always handed one, and `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and
+`OPENAI_PROJECT_ID` go where they go for the pilot: to OpenAI's own API exactly as the SDK sends
+them, and to any other `--decision-url` not at all ([openai](openai.md)). `TYPESAFE_DEFAULT_MODEL`
+is honoured for the one row that declares it, `jev`, as a fallback when the spec names no model --
+but naming it in the spec is the way to say it, because that is the form every other row takes and
+the only one that reaches the record as a choice somebody made.
 
 The three flags are on `quackd run` and nowhere else. They are deliberately not on `quackd
 record`, which makes the README's recordings and has to stay reproducible without a network call,

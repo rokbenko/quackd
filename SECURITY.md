@@ -49,10 +49,12 @@ Also in scope:
   endpoint (`us.api.openai.com`, `eu.api.openai.com`, `au.api.openai.com`, `ca.api.openai.com`,
   `jp.api.openai.com`, `in.api.openai.com`, `sg.api.openai.com`, `kr.api.openai.com`,
   `gb.api.openai.com` and `ae.api.openai.com`), decided on the address's whole authority, so a
-  user, a port other than 443 or a host that only resembles one of those is never sent it. It
-  gives any other `--decision-url` the same placeholder, sends nothing `OPENAI_CUSTOM_HEADERS`
-  sets to any address at all, whichever release of the SDK is installed, and follows no redirect,
-  which would carry the account headers and the request itself somewhere else.
+  user, a port other than 443 or a host that only resembles one of those is never sent it. It gives
+  any other `--decision-url` the same placeholder, and its client follows no redirect, which would
+  carry the request itself somewhere else. What it sends besides the key is the next item's rule,
+  because it is built through the same module as the pilot's clients: `OPENAI_CUSTOM_HEADERS`,
+  `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI's own API exactly as the SDK sends them, and
+  to any other `--decision-url` not at all.
 - **What a pilot built on OpenAI's SDK sends besides the request.** `--llm openai`, every vendor
   that speaks OpenAI's API (Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and OpenRouter)
   and every local preset reach their address through that one SDK, and the SDK reads three variables

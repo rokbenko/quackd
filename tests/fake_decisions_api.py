@@ -376,6 +376,12 @@ class FakeOpenAI:
         return decision(self.answers, usage=self.usage)
 
     @property
+    def base_url(self) -> str:
+        """As the SDK gives it: the address it was built with, ending in a slash, which the
+        backend reads back once the client is built."""
+        return str(self.kwargs.get("base_url") or "").rstrip("/") + "/"
+
+    @property
     def headers(self) -> dict[str, Any]:
         """The `default_headers` the client was built with."""
         return dict(self.kwargs.get("default_headers") or {})
@@ -437,8 +443,8 @@ class SDKLookalike(BaseClient, FakeOpenAI):
 
     @property
     def base_url(self) -> str:
-        """As the SDK gives it: the address it was built with, ending in a slash."""
-        return str(self.kwargs.get("base_url") or "").rstrip("/") + "/"
+        """`FakeOpenAI`'s own, over the attribute `BaseClient` declares ahead of it."""
+        return FakeOpenAI.base_url.fget(self)  # type: ignore[attr-defined]
 
     async def _send(self, path: str, cast_to: Any, body: Any, options: dict[str, Any]) -> Any:
         self._build_request(SimpleNamespace(method="post", url=path))

@@ -68,20 +68,18 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   is costed at the self-hosted rate unless `QUACKD_DECISION_PRICE` says otherwise, the key and the
   price decided by one rule on one string (`factory.sends_key`, which decides `jev`'s too).
   `QUACKD_DECISION_URL` is never read for this row.
-- **What the SDK would add by itself is answered, in every release the extra allows.** The
-  releases between the floor and the lock treat `OPENAI_CUSTOM_HEADERS` four ways: not read at
-  all, every line added and merged by exact spelling, the authorization lines dropped when the
-  caller names one, and every name merged without regard to case. So the rule rests on none of
-  them. An authorization line of the variable, in any spelling, carries quackd's own value under
-  that spelling, with `Authorization` itself omitted first when there is one, so whichever way a
-  release merges, one line goes and it is quackd's. Every other name the variable carries is
-  omitted, read the way the SDK reads it. The built client's headers are read back, and a release
-  that would still send an authorization quackd did not write refuses the build, naming itself.
-  `OpenAI-Organization` and `OpenAI-Project` go to OpenAI as the SDK fills them, a line of the
-  variable that names either in the SDK's own spelling carrying the variable's value rather than
-  taking the SDK's entry away, and are omitted at any address that is not OpenAI's. Omitting every
-  name the variable carries, the obvious rule, breaks 3.22.1, which merges without regard to case:
-  an omitted `authorization` takes quackd's own away with it.
+- **What the SDK would add by itself goes where it goes for the pilot.** The SDK reads
+  `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` for itself, and where they go is
+  decided once for every client quackd builds on it, in `providers/openai_headers.py`, by ADR-0010's
+  amendment of 2026-10-12: they follow the SDK's own address. This client is always handed one, so
+  OpenAI's own API is the one place they go, and there it is built as the SDK builds one by itself
+  and they go exactly as the SDK sends them. At any other address it is handed the module's answer
+  to every name the variable carries, which holds under all four ways the releases between the floor
+  and the lock treat the variable: the word as the one authorization, under every spelling the
+  variable gives one, a header the SDK sends by itself keeping the SDK's own value, every other name
+  omitted, and both account headers omitted. The built client's headers and its address are read
+  back, and a release that would still send what quackd did not write refuses the build, naming
+  itself.
 - **No redirect is followed.** The client is built on the SDK's `DefaultAsyncHttpxClient`, told
   to follow none, because a redirect would carry the account headers, and on a 307 or a 308 the
   request with the state in it, to wherever it pointed, and 1.66.0 has no per-request way to say
@@ -147,11 +145,8 @@ the API opened, and the eleven extras that install the SDK, `all` among them, pi
   inherits all four floors unmeasured, like every other, and shadow mode comes first.
 - **One word, two seams.** `--llm openai` is OpenAI's chat models flying the robot and
   `--decision-llm openai` is this, in front of it. The flag says which, and the pilot's key and
-  the pilot's extra serve both. What this ADR decides about the variables the SDK reads for itself
-  holds for this client and no other. The pilot's clients, `--llm openai` and every other pilot
-  built on OpenAI's SDK, are built as they were and leave `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
-  and `OPENAI_PROJECT_ID` to the SDK, which in 3.22.1 adds them to every request, wherever the
-  pilot is pointed.
+  the pilot's extra serve both. The variables the SDK reads for itself go by one rule for both
+  (ADR-0010's amendment of 2026-10-12).
 
 ## Why not
 

@@ -2251,11 +2251,11 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
 
 @pytest.mark.parametrize("page", ["docs/guides/decision-llms/openai.md", "SECURITY.md"])
 def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page: str) -> None:
-    """`decisions_api.OPENAI_HOSTS` is every host `OPENAI_API_KEY` may be sent to, and these two
+    """`openai_headers.OPENAI_HOSTS` is every host `OPENAI_API_KEY` may be sent to, and these two
     pages name them host by host, which is a list easy to leave behind: the code and the pages
     once named four where OpenAI document eleven for this endpoint. So every host of OpenAI's API a
     page names is one the key goes to, and every one the key goes to is named."""
-    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+    from quackd.agent.providers.openai_headers import OPENAI_HOSTS
 
     text = (REPO / page).read_text(encoding="utf-8")
     named = set(re.findall(r"\b(?:[a-z]{2}\.)?api\.openai\.com\b", text))
@@ -2264,12 +2264,12 @@ def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page
 
 def test_the_decision_url_help_names_every_host_the_openai_key_goes_to() -> None:
     """`--decision-url`'s help says where `OPENAI_API_KEY` goes, and it went on naming the three
-    regional hosts the SDK's own regional choice names after `decisions_api.OPENAI_HOSTS` had
+    regional hosts the SDK's own regional choice names after `openai_headers.OPENAI_HOSTS` had
     grown to the ten OpenAI's data controls page lists for this endpoint. It names them as the
     prefixes in front of `api.openai.com`, in one parenthesis, and they are read back here and
     held to the hosts the key goes to, both ways, so a host added to one fails here until the
     other names it."""
-    from quackd.agent.decision.decisions_api import OPENAI_HOSTS
+    from quackd.agent.providers.openai_headers import OPENAI_HOSTS
     from quackd.cli import _DECISION_URL
 
     said = " ".join(str(_DECISION_URL.help).split())
@@ -2459,40 +2459,28 @@ def test_a_page_that_says_what_the_suites_guard_stops_names_every_marker_it_lets
             assert not missing, f"{where} leaves {missing} out of what the guard lets through"
 
 
-def test_a_promise_about_what_openais_sdk_reads_for_itself_says_it_is_the_decision_llms() -> None:
-    """The `openai` decision LLM's client decides what `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID`
-    and `OPENAI_PROJECT_ID` reach (`decisions_api.request_headers`). The pilot's clients are built
-    as they always were and leave all three to the SDK, which in the release the lock carries adds
-    them to every request the pilot sends, a gateway's credential in the first of them included,
-    wherever the pilot is pointed. A page that said nothing the variable sets is ever sent, and
-    said nothing about whose client, read to anybody who keeps a gateway's headers there for the
-    pilot as a promise about the pilot too.
-
-    So every paragraph or list item that names the variable, outside a table, says the pilot,
-    `--llm openai`, is not held to it. And the pilot's own client still names none of the three,
-    which is what those paragraphs say of it: a pilot that came to decide them for itself fails
-    here until they say so."""
-    pilot = (REPO / "quackd" / "agent" / "providers" / "openai.py").read_text(encoding="utf-8")
-    for named in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "organization="):
-        assert named not in pilot, f"the pilot's client names {named} now; say what it does"
-    for page in (
-        ".env.example",
-        "SECURITY.md",
-        "docs/guides/decision-llms/README.md",
-        "docs/guides/decision-llms/openai.md",
+def test_the_decision_llms_client_keeps_no_header_rule_of_its_own() -> None:
+    """`OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go where one rule says for
+    every client quackd builds on OpenAI's SDK (`providers/openai_headers.py`, ADR-0010's amendment
+    of 2026-10-12). The decision LLM's client was written beside a copy of that rule of its own,
+    which kept every line of the variable away from OpenAI's own API too, where the rule sends all
+    three as the SDK sends them, and the pages said what the copy did. So `decisions_api.py`
+    defines none of the rule's pieces and takes them from the module, and a copy that comes back
+    fails here."""
+    source = (REPO / "quackd" / "agent" / "decision" / "decisions_api.py").read_text(
+        encoding="utf-8"
+    )
+    for piece in (
+        "def is_openai_host(",
+        "def ambient_headers(",
+        "def request_headers(",
+        "def foreign_authorization(",
+        "def foreign_headers(",
+        "OPENAI_HOSTS = ",
+        "ACCOUNT_HEADERS = ",
     ):
-        text = (REPO / page).read_text(encoding="utf-8")
-        blocks = [
-            block
-            for block in re.split(r"\n\s*\n|\n(?=- )", text)
-            if "OPENAI_CUSTOM_HEADERS" in block and not block.lstrip().startswith("|")
-        ]
-        assert blocks, f"{page} no longer says what becomes of OPENAI_CUSTOM_HEADERS"
-        for block in blocks:
-            assert "--llm openai" in block, (
-                f"{page} says what becomes of OPENAI_CUSTOM_HEADERS without saying the pilot, "
-                f"--llm openai, is not held to it: {' '.join(block.split())[:160]}"
-            )
+        assert piece not in source, f"decisions_api.py keeps a piece of the rule again: {piece}"
+    assert "from quackd.agent.providers.openai_headers import" in source
 
 
 def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() -> None:
