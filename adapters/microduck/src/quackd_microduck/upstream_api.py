@@ -8,7 +8,8 @@ UNVERIFIED names are only reachable from the experimental and stub transports.
 Pinned and read on 2026-10-08, at daemon-v0.16.1 (API 41). The pin is a release now rather than
 whatever `main` was on the day, because a robot runs a release. `main` was three commits past
 the tag on the day of the read, with the same `duck-ipc-proto` byte for byte, and one of the
-three turns `limp_fall` back on, which no release had done yet.
+three turns `limp_fall` back on, which no release had done yet. daemon-v0.16.2 was the first
+that did, on 2026-10-12 (LIMP_FALL).
 
 This is the third read. The first, on 2026-08-28, was against `main` with no pin, and in the
 week after it upstream went from API 16 to 23 and `Skill` stopped being an enum, which a moving
@@ -36,7 +37,15 @@ on one network, `velstand.onnx` (VELSTAND), and with no standing network to hand
 to, `limp_fall` is off, so a fall changes nothing in robotd. The duck looks around on its own
 once nobody has steered its head for two seconds and it has then stood still for two more
 (IDLE_HEAD), and a pick-up detector pauses the policy while somebody holds it
-(SAFETY_PICKED_UP).
+(SAFETY_PICKED_UP). That is robotd at the pin: from daemon-v0.16.2 `limp_fall` is on (below).
+
+Upstream released daemon-v0.16.2, v0.16.3, v0.17.0 and v0.17.1 on 2026-10-12, each on API 41.
+Read against the pin, none changes the shape of anything quackd sends or reads, and robotd's
+own source is the same outside its tests, but daemon-v0.16.2 changed three defaults cited here:
+`limp_fall` is on, so robotd takes a falling duck off its policy, poses it and hands it back
+(LIMP_FALL), a robot is seeded with the policy set `v8` (VELSTAND), and a gamepad's full stick
+asks for 0.4 m/s forward and 1.0 rad/s of turn (NO_TWIST_CLAMP). The refs stay read at the pin,
+and the ones whose default moved say what changed and the release that changed it.
 
 Nothing here has been run against a physical Microduck.
 """
@@ -290,8 +299,10 @@ MOVE_ECHO = UpstreamRef(
     src("robotd/src/main.rs", 3746),
     "The twist robotd was last asked for, as it was asked. robot.move stores [vx, vy, vyaw] "
     "untouched (robotd/src/main.rs:4361) and every state frame reports it as requested, beside "
-    "applied, the twist after the deadman and the limits, and robotd's own test holds it to "
-    "that: 'what the client asked for must survive to the stream' (main.rs:7419), so the "
+    "applied, the twist the control loop hands its controller: the one asked for, or zero once the "
+    "deadman finds it stale, smoothed toward each new value and held at zero through robotd's "
+    "limp-fall sequence (main.rs:3049-3058, :3093-3094). robotd's own test holds requested to what "
+    "was asked: 'what the client asked for must survive to the stream' (main.rs:7419), so the "
     "deadman does not zero it. robot.stop does, and is answered at once (main.rs:5311-5314, "
     "robotd/src/intents.rs:320-323). robot.move is a notification, so robotd answers nothing "
     "when it cannot parse one, and this is the only place quackd can see whether a twist was "
@@ -404,6 +415,31 @@ DEADMAN = UpstreamRef(
 DEADMAN_S = 0.5
 PAD_HEARTBEAT_S = 0.1
 PAD_LOST_SIT_S = 1.0
+NO_TWIST_CLAMP = UpstreamRef(
+    "robotd clamps no twist",
+    "VERIFIED",
+    src("robotd/src/main.rs", 3931),
+    "What limits a tick, robot.state's move.limited_by, is the deadman, a joint target past the "
+    "actuator's travel, or one that is not finite, and nothing else (robotd/src/main.rs:"
+    "3931-3937). While the walking policy drives, the twist robot.move last asked for reaches "
+    "its observation as it was asked, smoothed toward each new value, until the deadman zeroes "
+    "a stale one (main.rs:3052-3058, duck-control/src/obs.rs:210-215) or a client holds the "
+    "body-pose mode, robot.pose with active true, in which the controller zeroes it "
+    "(robotd/src/control.rs:528-530 and :639-641). It zeroes its own copy (control.rs:626), so "
+    "robot.state's move.requested and move.applied (main.rs:3746-3747) never show that zero. padd "
+    "sends a zero twist with every pose in its own body-pose mode (padd/src/main.rs:1078-1079), "
+    "which move.requested does show, as it shows a pad's stops (PAD_DRIVES). And the policy 'only "
+    "follows commands inside the range it was trained on — asking for more than that is "
+    "asking, not getting' (robotd-params/src/lib.rs:109-110). [pad_drive], what a gamepad's "
+    "full stick asks for, is 'what the *pad* asks for, not a limit on the robot. A robot.move "
+    "from anywhere else is not bounded by it' (lib.rs:108-109): 0.3 m/s forward and back, 0.3 "
+    "m/s sideways and 1.5 rad/s of turn at the pin (lib.rs:133-138). From daemon-v0.16.2 it is "
+    "0.4 m/s forward and back and 1.0 rad/s of turn, since v8's velstand 'tracks yaw commands' "
+    "and that is 'what that policy follows well on the robot' (lib.rs:129-139 there). The "
+    "Microduck's speed caps are quackd's own: its manifest's limits, 0.3 m/s forward, 0.2 m/s "
+    "sideways and 1.5 rad/s of turn, which every verb that walks is clamped to "
+    "(quackd.verbs.core.speed_limits).",
+)
 STATE_NEEDS_SUBSCRIBE = UpstreamRef(
     "robot.state is not pushed until robot.subscribe",
     "VERIFIED",
@@ -421,9 +457,48 @@ FALLEN_IS_A_REPORT = UpstreamRef(
     "in the trunk frame, debounced 0.2 s', and it 'gates nothing'. Nor does robotd stand a "
     "fallen duck up at the pin: limp_fall, its one answer to a fall, is off by default (VELSTAND "
     "says why), and 'With it off, a fall changes nothing: the policy keeps driving and the "
-    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). Refusing to walk a fallen "
-    "robot is quackd's own decision, so quackd must actually be reading the frame to make it.",
+    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 limp_fall "
+    "is on by default again, and robotd poses a duck it catches falling and hands it back to the "
+    "policy (LIMP_FALL), while the verdict still gates nothing. Refusing to walk a fallen robot "
+    "is quackd's own decision, so quackd must actually be reading the frame to make it.",
 )
+LIMP_FALL = UpstreamRef(
+    "robotd's limp-fall sequence",
+    "VERIFIED",
+    src("robotd/src/main.rs", 2883),
+    "[safety] limp_fall, 'The only thing the daemon does about a fall' "
+    "(robotd-params/src/lib.rs:1975). Off by default at the pin (lib.rs:2048), and on by default "
+    "again from daemon-v0.16.2, where that line reads true and robotd's own source is the same as "
+    "at the pin outside its tests. daemon-v0.11.0 and daemon-v0.12.0 had it on by default too, "
+    "handing the duck back to the standing network (lib.rs:1576 at daemon-v0.11.0, :1666 at "
+    "daemon-v0.12.0), and daemon-v0.13.0 turned it off as velstand became the default walk "
+    "(lib.rs:1771 there). On, robotd takes a duck off its policy once fresh readings from a ready "
+    "IMU predict a fall while the walking or standing network drives it, unless the duck is "
+    "already down, and never during a skill, a ground pick, a sit or the rise from one "
+    "(robotd/src/main.rs:2913-2950, robotd/src/control.rs:376-386), so it catches no fall during "
+    "quackd's kick or grab. It holds the twist at zero until it hands the duck back "
+    "(main.rs:3049-3055). It lets the duck land limp, each tick labelled limp_fall with "
+    "safety.limp true, until it has landed or limp_fall_max_ms, 1.5 s, has passed, then ramps it "
+    "to the standing pose over limp_fall_pose_ms, 0.6 s, labelled limp_pose (main.rs:2952-2999, "
+    ":3470-3491 and :3757, lib.rs:2055-2056). Then it hands the duck back to the policy, where "
+    "'with nobody driving the standing network is what command magnitude selects — which is the "
+    "stand-up. A client that *is* driving gets its walk back' (main.rs:2991-2993). With no "
+    "standing network loaded, as on a stock robot, 'the hand-back is to velstand at zero command, "
+    "which stands still' (lib.rs:1971-1973 at daemon-v0.16.2), and that velstand gets the duck up "
+    "from there is upstream's word on v8 (VELSTAND). It drops the sequence only when something "
+    "else takes the robot: the policy disabled, the torque off or the joints ramping home, the "
+    "shutdown sit, or the power off (main.rs:2896-2911). quackd sends no walk meanwhile: both "
+    "labels and safety.limp read as not standing, as safety.fallen does, and a verb that was "
+    "walking is held until it ends. stand_up says so of a duck robotd has in the sequence when it "
+    "reads the duck again, three seconds after its request. With these defaults the sequence is "
+    "over within about 2.1 s, so that is a fall robotd caught during the wait, and a duck it had "
+    "when stand_up was asked is back with the policy by then. Whether the policy then gets the "
+    "duck up is the policy's to say (VELSTAND), and nobody has seen it under quackd.",
+)
+#: The labels of the two halves of robotd's limp-fall sequence, the limp and the pose
+#: (LIMP_FALL). robotd gives every tick of the sequence one of them, whether or not its fall
+#: verdict says the duck is down, and safety.limp is true on the first half's ticks and no others.
+LIMP_FALL_LABELS = ("limp_fall", "limp_pose")
 SAFETY_PICKED_UP = UpstreamRef(
     "safety.picked_up",
     "VERIFIED",
@@ -507,8 +582,17 @@ VELSTAND = UpstreamRef(
     "alpha_walking.onnx and alpha_stand.onnx 'stay in the set for a board that loads them back "
     "by hand' (robotd-params/src/lib.rs:1856-1859). Its subscribe answer names it in `walk`. "
     "limp_fall's stand-up hands the duck to the standing network, which is why limp_fall is "
-    "'Off by default since the velstand gait became the default walk' (lib.rs:1971). quackd's "
-    "physics simulator still runs alpha_walking and alpha_stand.",
+    "'Off by default since the velstand gait became the default walk' (lib.rs:1971). "
+    "daemon-v0.16.2 turns it back on, and with no standing network loaded 'the hand-back is to "
+    "velstand at zero command, which stands still' (lib.rs:1971-1973 there; LIMP_FALL). It also "
+    "seeds a robot with the policy set v8, where daemon-v0.16.1 seeds v7 (scripts/"
+    "seed-policies.sh:51 at each), and moves a board on an older official set up to it on "
+    "update. v8 changes no policy but velstand.onnx, and its manifest says that 'From v8 it gets "
+    "up from a fall smoothly and reliably instead of violently or getting stuck on its back, and "
+    "yaw commands are tracked (turning in place and while walking now reaches the commanded "
+    "rate)' (POLICY_SET in sim3d/upstream_api.py). That is upstream's word on its model, and "
+    "nobody has seen it on a duck under quackd. quackd's physics simulator still runs "
+    "alpha_walking and alpha_stand.",
 )
 
 # ── what robot.state.policy can say ─────────────────────────────────────────────────────
@@ -756,11 +840,21 @@ STAND_UP_RPC = UpstreamRef(
     src("robotd-params/src/lib.rs", 1970),
     "No such RPC. robot.enable {on: true} is policy execution, which 'can bring a limp robot up "
     "as a side effect of being asked to drive', and robot.init, the call upstream names for "
-    "bringing up a duck that is on its feet, moves every joint and is never sent. robotd's own "
-    "stand-up after a fall was the end of limp_fall, and at the pin limp_fall is off by "
-    "default: 'With it off, a fall changes nothing: the policy keeps driving and the humans "
-    "stay in charge' (robotd-params/src/lib.rs:1978-1979). Whether velstand gets a duck off the "
-    "floor has not been seen.",
+    "bringing up a duck that is on its feet, moves every joint and is never sent. On a robot "
+    "whose policy is enabled already, as it is when the duck fell while the policy drove it, "
+    "robot.enable {on: true} only sets the flag again (robotd/src/main.rs:5319-5328, "
+    "robotd/src/intents.rs:470-472), so what stand_up learns comes from its read three seconds "
+    "later. robotd's own stand-up after a fall is the end of limp_fall, and at the pin limp_fall "
+    "is off by default: 'With it off, a fall changes nothing: the policy keeps driving and the "
+    "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on "
+    "again, and robotd hands a duck it caught falling back to velstand once it has posed it "
+    "(LIMP_FALL), which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand "
+    "gets a duck off the floor has not been seen under quackd on either release. A duck robotd "
+    "has in that sequence when stand_up reads it again is told so, and to run stand_up again in "
+    "a moment. The sequence is over within about 2.1 s by default, so that is a fall robotd "
+    "caught during the wait, and a duck it had when stand_up was asked is judged on that read "
+    "like any other: upright if it reads standing, and told it may need a hand if it is still "
+    "down, even while the policy is still getting it up.",
 )
 ALPHA_UPRIGHT_FOV = UpstreamRef(
     "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",

@@ -12,7 +12,9 @@ import pytest
 from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
 from quackd.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
+from quackd.verbs.core import speed_limits
 from quackd_microduck import MICRODUCK_VERBS, microduck_manifest
+from quackd_microduck import upstream_api as up
 from quackd_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
@@ -88,10 +90,42 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
     `limp_fall`, which is off by default on daemon-v0.16.1, where a fall changes nothing in
     robotd. The sheet is what the pilot judges a task against, and `stand_up`'s description is
     what it reads before calling the verb, so neither may promise a recovery the robot does
-    not run."""
+    not run.
+
+    From daemon-v0.16.2 `limp_fall` is on by default again, and robotd hands the duck back to a
+    walking policy upstream says gets it up (`up.LIMP_FALL`), which nobody has seen under
+    quackd. The sheet said only what daemon-v0.16.1 does, so it says what daemon-v0.16.1 and
+    daemon-v0.16.2 onwards do now, the get-up as upstream's word. robotd catches no fall during
+    a skill, a ground pick or a sit, and quackd's kick and grab are two of those, so the sheet
+    says which falls it catches rather than that it catches every one. The release is spelled
+    out here rather than taken from `up.RELEASE`, which moves with the pin: a later pin would
+    have the test ask the sheet to say that release does nothing about a fall."""
     text = body_section(microduck_manifest("sim2d"))
     assert "may not get up again by itself" in text and "get itself upright" not in text
     assert "may not manage" in MICRODUCK_VERBS["stand_up"].description
+    said = " ".join(text.split())
+    assert "robotd on daemon-v0.16.1 does nothing about a fall but report it" in said
+    assert (
+        "From daemon-v0.16.2, by default, robotd goes limp in a fall it predicts while the duck "
+        "walks or stands, though not during a kick, a grab or a sit, poses the duck and hands it "
+        "back"
+    ) in said
+    assert "which upstream says gets it up" in said
+
+
+def test_the_microduck_says_its_speed_caps_are_quackds_own_clamp() -> None:
+    """The sheet said the speed caps were a software clamp in robotd. robotd clamps no twist at
+    any release quackd has read (`up.NO_TWIST_CLAMP`): the caps are the manifest's own limits,
+    which quackd holds every twist a verb sends to and the prompt renders as quackd's clamp, so
+    the note contradicted a line above it. It says whose clamp it is now, and the numbers
+    are as they were."""
+    manifest = microduck_manifest("sim2d")
+    text = body_section(manifest)
+    assert "software clamp in robotd" not in text
+    assert "The speed caps are quackd's own clamp on the twists it sends" in text
+    assert up.NO_TWIST_CLAMP.name in text
+    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1.5 rad/s turning." in text
+    assert speed_limits(manifest) == (0.3, 0.2, 1.5)
 
 
 def test_an_unpublished_figure_is_a_question_for_a_person_not_a_refusal() -> None:

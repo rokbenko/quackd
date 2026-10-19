@@ -7,6 +7,98 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **`stand_up` says so when robotd is still answering a fall as it reads the duck again, where it
+  said the duck may need a hand or that its posture was unknown.** A robotd whose `limp_fall` is on,
+  as it is by default again from daemon-v0.16.2, takes a falling duck off its policy, lets it land
+  limp, ramps it to its standing pose and only then hands it back, and it labels those ticks
+  `limp_fall` and then `limp_pose`. `stand_up` reads the duck again three seconds after its request,
+  and when robotd still had it then, one that read as fallen was told that robotd does not promise
+  to get a fallen duck up and that it may need a hand, and one that did not was told only that its
+  posture was unknown. It is told now that robotd is still answering the fall itself, with the label
+  and what it means, that robotd hands the duck back to the policy once it has posed it, and to run
+  `stand_up` again in a moment. With upstream's defaults the sequence is over within about 2.1 s, at
+  most 1.5 s limp and then 0.6 s of pose, so robotd still has the duck at that read only after a
+  fall it caught during the wait, such as one that came after the policy had got the duck partway
+  up. A duck robotd had when `stand_up` was asked is back with the policy by then and is judged as
+  before: upright if it reads standing, and told it may need a hand if it is still down, even while
+  the policy is still getting it up. What `stand_up` refuses before it asks the policy to drive, and
+  the request itself, are as they were. Its description says the result may say this, and so do the
+  Microduck page's rows for the sequence and for `stand_up`'s assumption, which says too that the
+  request only sets the flag again on a robot whose policy is enabled already.
+  `tests/test_jsonrpc.py` runs it against a fake robotd that catches a fall as the request arrives,
+  in both halves of the sequence, fallen and not, and the four cases failed before this change. It
+  also runs it against one that hands the duck back during the wait, which is told it is upright or
+  may need a hand, and those cases fail when the label is read off the frame from before the
+  request.
+
+- **The Microduck's datasheet says what robotd does about a fall on daemon-v0.16.1 and on the
+  releases after it.** It said that on daemon-v0.16.1 robotd does nothing about a fall but report
+  it, which is so there by default. From daemon-v0.16.2 `limp_fall` is on by default again, and
+  robotd goes limp in a fall it predicts while the duck walks or stands, poses the duck and hands it
+  back to its walking policy, the `velstand.onnx` of upstream's policy set `v8`, which upstream says
+  gets up from a fall. It catches no fall during a skill, a ground pick or a sit, so none during
+  quackd's `kick` or `grab`. The sheet says all of that now, in two notes, and still that the duck
+  may not get up again by itself, since nobody has seen either release get one up under quackd.
+  `upstream_api.py` reads the sequence at the pin as `LIMP_FALL`, with daemon-v0.11.0 and
+  daemon-v0.12.0, which had it on by default too, and daemon-v0.13.0, which turned it off. Its notes
+  on the fall verdict, on velstand and on `stand_up`'s assumption say what daemon-v0.16.2 changed,
+  and the physics simulator's say that `v8` changes no policy the simulator runs. The Microduck page
+  has a row for the sequence, and its rows for the fall verdict, velstand and `stand_up`'s
+  assumption and its physics section say the same. `tests/test_datasheets.py` holds the notes to
+  both releases and to the falls robotd catches, and failed on the note that said robotd goes limp
+  in every fall.
+
+- **The Microduck's datasheet no longer says its speed caps are a clamp in robotd.** The note has
+  said since 0.9.0 that the caps are a software clamp in robotd, and robotd clamps no twist at any
+  release quackd has read: what limits a tick in its state is the deadman, a joint target past the
+  actuator's travel or one that is not finite, and nothing caps the speed of the twist its policy is
+  handed. The caps, 0.3 m/s forward, 0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's own
+  `limits`, which quackd holds every twist a verb sends to, and which the pilot's prompt already
+  called quackd's clamp above the note. The note says they are quackd's own clamp, and the numbers
+  are as they were. `upstream_api.py` records what was read as `NO_TWIST_CLAMP`, with what
+  upstream's gamepad asks for at full stick at the pin and from daemon-v0.16.2, and the Microduck
+  page has a row for it. `tests/test_datasheets.py` holds the note to it.
+
+### Documentation
+
+- **The Microduck's pages say what upstream's releases of 2026-10-12 changed, and two ADRs and the
+  README say what a fall does and whose clamp the speed caps are.** The Microduck page's upstream
+  section names daemon-v0.16.2 to daemon-v0.17.1, each on API v41, and the three defaults
+  daemon-v0.16.2 changed that its rows cite. Step 9 of the hardware checklist said a robot on
+  daemon-v0.16.1 does nothing about a fall but report it, and now says what one on daemon-v0.16.2 or
+  later does too, in a fall while the duck walks or stands, and that quackd sends it no walk
+  meanwhile. Step 10 asks what robotd's answer to a fall did on a real duck, and how long the duck
+  took to get up against the three seconds `stand_up` waits. ADR-0011 carries a dated amendment for
+  the fall, and ADR-0032 one for the note that called the speed caps robotd's. The README's Why
+  section listed standing up after a fall among the Microduck's own skills, which quackd has never
+  seen, and says now that Pollen says its newest walking policy gets the duck back up.
+
+- **SECURITY.md, the safety page and the FAQ say what robotd clamps.** SECURITY.md said robotd
+  clamps velocities, the safety page that it gives joint and thermal clamps, and the FAQ that it
+  has thermal clamps. At daemon-v0.16.1 and at the four releases of 2026-10-12, robotd has no
+  velocity clamp and no thermal one: it holds each joint target inside its actuator's travel, and
+  it reports its servos' temperatures in `robot.health` without acting on them. The three say so
+  now, and `tests/test_docs.py` keeps the old words out of every living page.
+
+- **The Microduck page says what robotd's `move.applied` is.** Its row for
+  `robot.state.move.requested` called `applied` the twist after the deadman and the limits, and
+  the only limits robotd has besides the deadman are on joint targets. It says now that `applied`
+  is the twist robotd's control loop hands its controller: the one asked for, or zero once the
+  deadman finds it stale, smoothed toward each new value and held at zero through the limp-fall
+  sequence. The row that says robotd clamps no twist says too that its controller zeroes the twist
+  while a client holds robotd's body-pose mode, which neither `requested` nor `applied` shows.
+
+- **The Microduck page says what upstream's daemon-v0.17.2 to daemon-v0.17.6 changed.** `v0.17.2` is
+  on API v41, and from `v0.17.3` they are on API v44, which quackd serves with a warning: the three
+  bumps add only calls quackd does not make, and nothing it sends or reads changed shape. From
+  `v0.17.3` robotd's idle look-around also leans the neck, opens the beak and yawns, and its 2 s and
+  1.5 s timings became `[idle]` settings. At the shipped values quackd's gaze hold and its fade wait
+  still hold, and the page says what a robot retuned to glance sooner or fade longer does to them.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

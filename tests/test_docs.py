@@ -322,7 +322,9 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "systemctl stop mediad",
     # posture: the labels are read in robotd's source, and `sit` is matched exactly
     "a policy whose name contains `sit`",
-    # falls: limp_fall, robotd's own get-up, is off by default at daemon-v0.16.1
+    # falls: limp_fall, robotd's own answer to a fall, is off by default at daemon-v0.16.1, and
+    # from daemon-v0.16.2 it hands the duck to a policy upstream says gets up, which nobody has
+    # seen do so under quackd
     "recovers from falls itself",
     # the pad: robotd keeps one twist, the newest from any client, and ranks none above another,
     # so a gamepad does not out-rank quackd, letting go of sticks nobody touched stops nothing,
@@ -352,6 +354,14 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "the Microduck's own model and walking policy",
     # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
     "hot-swapped over the socket (not designed yet)",
+    # the clamps, found wrong in 0.18.1: robotd clamps no twist and sets no thermal limit at
+    # daemon-v0.16.1 or at the four releases of 2026-10-12, and what it clamps is a joint target
+    # past its actuator's travel
+    "it clamps velocities",
+    "joint and thermal clamps",
+    "fall detection, thermal clamps",
+    # and the twist robotd reports as applied passes no limit but the deadman
+    "the twist after the deadman and the limits",
 )
 
 
@@ -367,7 +377,9 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
     templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
     dated, as history. Whitespace is collapsed first, so a revert that was reflowed on its way
-    back is caught too."""
+    back is caught too. Since 0.18.1 it also keeps out a robotd that clamps velocities or
+    temperatures: what robotd clamps, at daemon-v0.16.1 and at the four releases of 2026-10-12,
+    is a joint target past its actuator's travel."""
     sources = [
         *_living_docs(),
         REPO / "NOTICE",

@@ -91,13 +91,26 @@ DATASHEET = Datasheet(
         "drifts",
     ],
     notes=[
-        "The speed caps are a software clamp in robotd, not a measured hardware maximum",
+        # It said the caps were a software clamp in robotd, which clamps no twist at any release
+        # quackd has read (upstream_api.NO_TWIST_CLAMP). They are this manifest's own `limits`,
+        # which quackd.verbs.core holds every twist a verb sends to (speed_limits), and which
+        # `move` refuses to be asked past.
+        "The speed caps are quackd's own clamp on the twists it sends, not a measured hardware "
+        "maximum: robotd clamps no twist",
         "The time-of-flight sensor is an 8 by 8 grid good from 0.12 to 3.54 m",
         # It said the duck could get itself upright again, which was robotd's limp_fall. On
-        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT), and this
-        # is the sheet a pilot judges a task against before anything moves.
-        "It falls, and may not get up again by itself: on daemon-v0.16.1 robotd does nothing "
-        "about a fall but report it",
+        # daemon-v0.16.1 that is off by default (upstream_api.FALLEN_IS_A_REPORT). From
+        # daemon-v0.16.2 it is on again, and robotd hands a duck it catches falling back to a
+        # policy upstream says gets it up, which nobody has seen under quackd. It catches none
+        # during a skill, a ground pick or a sit, so none during quackd's kick or grab
+        # (upstream_api.LIMP_FALL). This is the sheet a pilot judges a task against before
+        # anything moves, so it says what daemon-v0.16.1 and daemon-v0.16.2 onwards do, and
+        # promises no get-up. Two notes, since a note holds 300 characters.
+        "It falls, and may not get up again by itself. By default, robotd on daemon-v0.16.1 "
+        "does nothing about a fall but report it",
+        "From daemon-v0.16.2, by default, robotd goes limp in a fall it predicts while the duck "
+        "walks or stands, though not during a kick, a grab or a sit, poses the duck and hands it "
+        "back to its walking policy, which upstream says gets it up",
     ],
 )
 

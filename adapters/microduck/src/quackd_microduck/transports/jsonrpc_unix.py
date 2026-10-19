@@ -592,14 +592,15 @@ def _pickup_detection(read: StateRead) -> bool | None:
 def _not_still(read: StateRead, skills: Sequence[str]) -> bool:
     """Whether the newest frame comes from a tick robotd did not count the duck still on, so that
     its idle look-around was not waiting out IDLE_AFTER through it (`up.IDLE_HEAD`): somebody
-    holds the duck (`safety.picked_up`), it is riding a fall down (`safety.limp`, and the
-    limp-fall labels), or a skill, the ground pick or the rise off the seat is under way, which
-    robotd counts as busy (`up.NOT_STILL_LABELS`).
+    holds the duck (`safety.picked_up`), robotd has it in its answer to a fall (`safety.limp`,
+    and the limp-fall labels), or a skill, the ground pick or the rise off the seat is under way,
+    which robotd counts as busy (`up.NOT_STILL_LABELS`).
 
-    A fallen duck is none of those. robotd's policy goes on driving one on the floor
-    (`up.FALLEN_IS_A_REPORT`), and nothing in its frame keeps robotd from counting it still. Nor
-    is a skill's name that robotd also gives a tick it may count still on, such as a skill a
-    policy set calls `walk`, since the label cannot say which of the two drove the tick."""
+    A fall verdict alone is none of those. Outside robotd's limp-fall sequence, its policy goes
+    on driving a duck on the floor (`up.FALLEN_IS_A_REPORT`, `up.LIMP_FALL`), and nothing else in
+    its frame keeps robotd from counting it still. Nor is a skill's name that robotd also gives a
+    tick it may count still on, such as a skill a policy set calls `walk`, since the label cannot
+    say which of the two drove the tick."""
     if not read.fresh:
         return False
     safety = read.state.get("safety")
@@ -2260,11 +2261,12 @@ class JsonRpcUnixTransport:
         in, and a head somebody turns meanwhile is judged as soon as it shows.
 
         Any other frame read in time is judged too, but carries nothing on. A fallen duck's is
-        one: robotd's policy goes on driving a duck on the floor, so robotd may count it still,
-        and a fall that lasts IDLE_AFTER past the last `robot.head` or frame that ruled a glance
-        out may hide one. The first frame read too late, whatever it says, the first after a
-        stream that went quiet among them, ends the reckoning until the hold sends again, and
-        the head is then not judged until a glance robotd lets go of would have faded.
+        one, outside robotd's limp-fall sequence: robotd's policy goes on driving a duck on the
+        floor, so robotd may count it still, and a fall that lasts IDLE_AFTER past the last
+        `robot.head` or frame that ruled a glance out may hide one. The first frame read too
+        late, whatever it says, the first after a stream that went quiet among them, ends the
+        reckoning until the hold sends again, and the head is then not judged until a glance
+        robotd lets go of would have faded.
 
         Read times stand in for robotd's ticks. While it waits the hold reads a frame every
         period, half of IDLE_AFTER, so a frame the link held back by less than a period more

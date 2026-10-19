@@ -460,7 +460,7 @@ model's judgment: every verb call is checked against the loaded `.duck`'s allowl
 budgets and confirm gates before anything is sent, and machine-enforced `abort_when` rules
 and preconditions (not fallen, not sitting) run right after — a refusal is enforced code,
 not a request the model can talk its way around. That's still only the software layer, and
-what the body adds under it varies: the Microduck's `robotd` has fall detection, thermal
+what the body adds under it varies: the Microduck's `robotd` has fall detection, joint
 clamps and a deadman, while an Open Duck Mini v2 declares `none` and the watching human is
 its fall detector — see [concepts/safety.md](concepts/safety.md).
 
