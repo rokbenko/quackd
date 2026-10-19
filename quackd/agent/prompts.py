@@ -238,8 +238,8 @@ def goal_strategy(allow: Sequence[str], *, memory: bool = False) -> str:
 
     Every verb named here is in `allow`. A body with neither looking verb is told to look with
     `report_state`, and one with no composite is told to prefer the verb that does the whole
-    thing rather than being pointed at a verb that does not exist. A Microduck reads exactly
-    what it read before.
+    thing rather than being pointed at a verb that does not exist. With memory on, a Microduck
+    reads exactly what it read before.
 
     `memory` is whether the run keeps one. The last step asks for a `remember` only then: a run
     with memory off is offered no such tool, and this told its pilot to call it anyway."""

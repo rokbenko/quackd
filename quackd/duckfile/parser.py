@@ -39,11 +39,11 @@ def _format_validation_error(exc: ValidationError) -> str:
 def split_frontmatter(text: str) -> tuple[str, str]:
     """Return (yaml_text, body). A byte-order mark, and leading blank and `#` comment lines,
     are skipped."""
-    # Notepad saves UTF-8 with a byte-order mark, which plain UTF-8 decodes to a character in
-    # front of the first fence that `strip()` keeps, so a valid file was refused as having no
+    # Notepad can save UTF-8 with a byte-order mark, which plain UTF-8 decodes to a character
+    # in front of the first line that `strip()` keeps, so a valid file was refused as having no
     # frontmatter. One mark at the very start is how the file was encoded, not what it says, and
     # it is dropped here rather than in `load_duck` because every caller comes through here.
-    lines = text.removeprefix("﻿").splitlines()
+    lines = text.removeprefix("\ufeff").splitlines()
     i = 0
     while i < len(lines) and (not lines[i].strip() or lines[i].lstrip().startswith("#")):
         i += 1

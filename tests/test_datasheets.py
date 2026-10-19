@@ -176,11 +176,12 @@ def test_the_arm_says_it_cannot_go_anywhere_and_the_bridge_says_it_knows_nothing
 
 
 def test_a_body_with_legs_it_cannot_walk_on_here_is_not_told_it_has_none() -> None:
-    """toddlerbot:bridge has no locomotion until its daemon reports a walk checkpoint, which a
-    fresh install has not got, and its datasheet line said "It does not move: no base and no
-    legs" a few lines under a blurb about a humanoid with two legs. The legs are there; the walk
-    is what is missing. "It does not move" stays, because the verdict gate quotes it back, and
-    only a body that really has neither legs nor a base is told it has none."""
+    """toddlerbot:bridge has no locomotion until its daemon reports a walk checkpoint that can
+    move it, which a fresh install has not got, and its datasheet line said "It does not move: no
+    base and no legs" in the same prompt as a blurb about a humanoid with two legs. The legs are
+    there; the walk is what is missing. "It does not move" stays, because the verdict gate quotes
+    it back to a body that stays put and publishes no terrain, and only a body that really has
+    neither legs nor a base is told it has none."""
     from quackd_toddlerbot import toddlerbot_manifest
 
     said = "It does not move: it has legs, but no verb on this connection walks it"

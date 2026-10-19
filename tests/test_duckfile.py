@@ -76,7 +76,7 @@ def test_leading_comments_allowed() -> None:
 def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
     starter: str, tmp_path: Path
 ) -> None:
-    """Notepad saves UTF-8 with a byte-order mark, and every way into a `.duck` refused a file
+    """Notepad can save UTF-8 with a byte-order mark, and every way into a `.duck` refused a file
     saved so as missing its frontmatter: the mark decoded to a character in front of the first
     line, and the fence check never got past it. hello-world opens on its fence and fetch on
     comment lines, so the mark lands in front of both shapes a file may open with."""
@@ -91,7 +91,7 @@ def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
     marked.write_bytes(b"\xef\xbb\xbf" + plain.read_bytes())
     want = load_duck(str(plain))
 
-    parsed = parse_duck_text("﻿" + plain.read_text(encoding="utf-8"))
+    parsed = parse_duck_text("\ufeff" + plain.read_text(encoding="utf-8"))
     loaded = load_duck(str(marked))
     for got in (parsed, loaded):
         assert (got.frontmatter, got.body) == (want.frontmatter, want.body)
@@ -377,7 +377,7 @@ def test_a_goal_duck_names_no_verb_the_body_was_not_granted(spec: str) -> None:
 
     from quackd.duckfile.parser import duck_from_goal
 
-    duck = duck_from_goal("wave to me", _goal_allowlist(spec))
+    duck = duck_from_goal("wave to me", _goal_allowlist(spec), memory=True)
     named = set(re.findall(r"`([a-z_]+)`", duck.body))
     assert named, "the body names its verbs in backticks"
     allowed = set(duck.frontmatter.verbs.allow) | {"remember"}
@@ -394,7 +394,7 @@ def test_an_arm_is_told_to_look_with_report_state_and_a_duck_keeps_its_composite
     assert "verify with a fresh reading" in arm, "an arm with no camera verb has no frame"
     assert "composite" not in arm and "go_to" not in arm
 
-    duck = duck_from_goal("find the ball", _goal_allowlist("microduck:sim2d")).body
+    duck = duck_from_goal("find the ball", _goal_allowlist("microduck:sim2d"), memory=True).body
     assert "Look before you act (`observe` or `search_scan`)" in duck
     assert "prefer composite verbs like `go_to`" in duck
     assert "verify with a fresh frame" in duck

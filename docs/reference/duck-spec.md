@@ -25,7 +25,8 @@ Machine-readable schema: [`../quackd/duckfile/schema.json`](../../quackd/duckfil
 <Markdown body — must be non-empty>
 ```
 
-Encoding UTF-8. The first non-blank, non-comment line must be `---`.
+Encoding UTF-8, and a byte-order mark at the very start is skipped. The first non-blank,
+non-comment line must be `---`.
 
 ## Frontmatter fields
 
