@@ -141,6 +141,41 @@ def test_the_arm_says_it_cannot_go_anywhere_and_the_bridge_says_it_knows_nothing
     assert "unknown, not zero" in bridge
 
 
+def test_a_body_with_legs_it_cannot_walk_on_here_is_not_told_it_has_none() -> None:
+    """toddlerbot:bridge has no locomotion until its daemon reports a walk checkpoint, which a
+    fresh install has not got, and its datasheet line said "It does not move: no base and no
+    legs" a few lines under a blurb about a humanoid with two legs. The legs are there; the walk
+    is what is missing. "It does not move" stays, because the verdict gate quotes it back, and
+    only a body that really has neither legs nor a base is told it has none."""
+    from quackd_toddlerbot import toddlerbot_manifest
+
+    said = "It does not move: it has legs, but no verb on this connection walks it"
+    for grounded in (
+        describe(RobotSpec("toddlerbot", "bridge")),  # before the daemon has said anything
+        toddlerbot_manifest("bridge", camera=True, walk=False),  # a daemon with no checkpoint
+    ):
+        assert grounded.mobility == "none" and "two legs" in grounded.blurb
+        section, summary = body_section(grounded), body_summary(grounded)
+        assert said in section and said.lower() in summary
+        assert "no legs" not in section and "no legs" not in summary
+
+    for spec in SPECS:
+        manifest = describe(spec)
+        if manifest.mobility == "none":
+            denied = "no base and no legs" in body_section(manifest)
+            assert denied == (manifest.embodiment == "arm"), f"{spec.adapter}:{spec.backend}"
+
+    parked = _bare(
+        mobility="none",
+        intents=["skill"],
+        verbs=[VerbSpec(name="stop", core=True)],
+        datasheet=Datasheet(manipulator="none"),
+    )
+    assert "It does not move: it has a wheeled base, but no verb on this connection drives it" in (
+        body_section(parked)
+    )
+
+
 def test_speed_clamps_come_from_the_limits_never_from_the_datasheet() -> None:
     """`limits` is quackd's own rule about what it sends. The datasheet never repeats it."""
     duck = body_section(microduck_manifest("sim2d"))

@@ -19,7 +19,7 @@ from quackd.verbs.registry import Verb, VerbResult
 from quackd.verdict import BEFORE_VERDICT, needs_properties
 
 if TYPE_CHECKING:
-    from quackd.adapters.manifest import Datasheet, RobotManifest
+    from quackd.adapters.manifest import Datasheet, Embodiment, RobotManifest
 
 DUCK_BLURB = "a small biped duck robot (25 cm, 800 g)"
 
@@ -371,14 +371,22 @@ def _hands(ds: Datasheet) -> str:
     return "none: nothing quackd can command touches an object"
 
 
-def _power_and_ground(ds: Datasheet, *, mobile: bool) -> str:
+def _power_and_ground(ds: Datasheet, *, mobile: bool, embodiment: Embodiment) -> str:
     power = {
         True: "Mains powered, so nothing runs down",
         False: "Battery powered",
         None: "Power source not published",
     }[ds.tethered]
     if not mobile:
-        return f"{power}. It does not move: no base and no legs"
+        # The verdict gate quotes "it does not move" back to a body that stays put, when its
+        # sheet publishes no terrain and a task asks for more than a flat indoor floor, so every
+        # such body keeps those words. Only an arm has neither legs nor a base, though: a
+        # ToddlerBot with no walk checkpoint staged still stands on the two legs its blurb
+        # names, and this line used to tell it otherwise.
+        if embodiment == "arm":
+            return f"{power}. It does not move: no base and no legs"
+        has, verb = ("a wheeled base", "drives") if embodiment == "wheeled" else ("legs", "walks")
+        return f"{power}. It does not move: it has {has}, but no verb on this connection {verb} it"
     ground = {
         "indoor_flat": "Rated for a flat indoor floor",
         "indoor": "Rated for indoors",
@@ -417,7 +425,7 @@ def body_lines(manifest: RobotManifest) -> list[str]:
             f"- Not published: {', '.join(unknown)}. Where a task turns on {which}, say "
             "uncertain and name it rather than guessing; do not decline on it alone."
         )
-    lines.append(f"- {_power_and_ground(ds, mobile=mobile)}.")
+    lines.append(f"- {_power_and_ground(ds, mobile=mobile, embodiment=manifest.embodiment)}.")
     limits = dict(manifest.limits)
     ranges: dict[str, Any] = manifest.extras.get("joint_range_deg") or {}
     if ranges:
@@ -461,7 +469,11 @@ def body_summary(manifest: RobotManifest) -> str:
         return f"{manifest.model}: no datasheet published; treat every physical limit as unknown."
     facts = [f"{label.lower()} {fig.text(unit)}" for label, fig, unit in ds.known()]
     facts.append(_hands(ds))
-    facts.append(_power_and_ground(ds, mobile=manifest.mobility != "none").lower())
+    facts.append(
+        _power_and_ground(
+            ds, mobile=manifest.mobility != "none", embodiment=manifest.embodiment
+        ).lower()
+    )
     text = f"{manifest.model}: " + ", ".join(facts) + "."
     if unknown := ds.unknown():
         text += f" Not published: {', '.join(unknown)}."

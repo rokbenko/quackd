@@ -22,6 +22,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   on comment lines, each with a mark in front, and reads them through the parser, the loader,
   `quackd validate` and what `robot_load_duckfile` calls. It failed before this change.
 
+- **A ToddlerBot with no walk checkpoint is no longer told it has no legs.** Until its daemon
+  reports a walk checkpoint staged, which a fresh install has not got, `toddlerbot:bridge` has no
+  `move`, `go_to` or `approach_and`. Its datasheet line, in the pilot's prompt and in what the MCP
+  server tells a pilot, then read `It does not move: no base and no legs`, in the same prompt as
+  a blurb naming its two legs. That line was written for an arm. A body that stays put with legs
+  reads `It does not move: it has legs, but no verb on this connection walks it` now, and one on
+  wheels is told it has a wheeled base that no verb drives. An arm reads what it read, and so does
+  every body that walks or drives. `tests/test_datasheets.py` renders the bridge as described
+  before its daemon answers and as built for a daemon with no checkpoint, and checks that among
+  the shipped bodies only an arm is told it has neither legs nor a base. It failed before this
+  change.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's
