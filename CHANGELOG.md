@@ -7,7 +7,13 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.19.1] — 2026-10-19
+
+0.19.1 fixes four small things 0.19.0 left. With `--no-memory` the MCP memory tools no longer tell a
+client to call them, a ToddlerBot with no walk checkpoint is no longer told how fast it may walk,
+and a `.duck` quackd cannot read, a UTF-16 one from Windows PowerShell 5.1 above all, is refused in
+a sentence by every command that reads it, `quackd serve-mcp --duckfile` included, rather than in a
+traceback. No verb sends a robot anything it did not send before.
 
 ### Fixed
 
@@ -7130,7 +7136,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/rokbenko/quackd/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rokbenko/quackd/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/rokbenko/quackd/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/rokbenko/quackd/compare/v0.17.1...v0.18.0
