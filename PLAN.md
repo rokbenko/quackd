@@ -59,8 +59,8 @@ before.
   2026-09-23 when its rest pose was recorded; and that checklist's *What to report*, six things
   still chosen against Feetech's documentation rather than measured
   ([ADR-0036](docs/adr/0036-what-the-arm-does-not-say.md)).
-- ⬜ **The SO-101 again, for everything in 0.14.0, 0.15.0, 0.16.0 and 0.16.1.** The arm last ran
-  a build of the code that became quackd 0.13.0, still numbered 0.12.0. The rest pose clipped
+- ⬜ **The SO-101 again, for everything in 0.14.0, 0.15.0, 0.16.0, 0.16.1 and 0.19.0.** The arm last
+  ran a build of the code that became quackd 0.13.0, still numbered 0.12.0. The rest pose clipped
   into the travel, `quackd robot release`, the Enter offer at the end of a run whose rest move
   missed, the `--by-hand` refusal over a joint past its travel, the paced `move_joints` and the
   connect retries have run only against a fake arm, `lerobot:mock` and the test suite, and what
@@ -78,7 +78,10 @@ before.
   spends only while the bus is busy (steps 9 and 13), a connect that fails once the arm is
   energised keeping its torque (step 13), the close reading its flag back and saying a stalled
   shortfall once (step 14), and the heartbeat's reads kept out of the trace a grasp is judged by
-  (step 17). That checklist is the order to take the arm through, with a hand on the switch.
+  (step 17). That checklist is the order to take the arm through, with a hand on the switch. Nothing
+  0.19.0 asks of the arm in a played task file has run on it, and the bench steps that would settle
+  that, with what to report from each, are under 0.19.0's *Known limitations* in
+  [CHANGELOG.md](CHANGELOG.md).
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a
