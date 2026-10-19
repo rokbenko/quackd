@@ -11,13 +11,13 @@ within 72 hours.
 
 quackd sends *intents* to a robot. How much of the stopping the robot itself does depends
 on the body, and each adapter declares it in its manifest's `safety_authority`
-(see `docs/concepts/safety.md`). On a Microduck, `robotd` is the safety authority: it clamps
-velocities, detects falls, and zeroes motion when commands stall. On an Open Duck Mini the
-deadman is quackd's own daemon, running on the robot and zeroing the velocity inside the
-50 Hz loop, so it is code we ship and therefore code we are answerable for. On the other
-five bodies upstream has no deadman that covers the whole body. A rosbridge base
-declares `native: none`, and a LeRobot arm has a torque limit on its gripper alone and holds
-its last goal.
+(see `docs/concepts/safety.md`). On a Microduck, `robotd` is the safety authority: it holds
+joint targets inside the actuators' travel, detects falls, and zeroes the velocity when
+commands stall. On an Open Duck Mini the deadman is quackd's own daemon, running on the
+robot and zeroing the velocity inside the 50 Hz loop, so it is code we ship and therefore
+code we are answerable for. On the other five bodies upstream has no deadman that covers the
+whole body. A rosbridge base declares `native: none`, and a LeRobot arm has a torque limit
+on its gripper alone and holds its last goal.
 An XLeRobot's host watchdog zeroes its wheels and leaves the arms holding, and an
 AlohaMini's covers the base and the lift and never the arms, so both are partial by
 construction. A ToddlerBot has no watchdog, timeout or e-stop anywhere upstream at all, and

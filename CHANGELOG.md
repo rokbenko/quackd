@@ -77,6 +77,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   section listed standing up after a fall among the Microduck's own skills, which quackd has never
   seen, and says now that Pollen says its newest walking policy gets the duck back up.
 
+- **SECURITY.md, the safety page and the FAQ say what robotd clamps.** SECURITY.md said robotd
+  clamps velocities, the safety page that it gives joint and thermal clamps, and the FAQ that it
+  has thermal clamps. At daemon-v0.16.1 and at the four releases of 2026-10-12, robotd has no
+  velocity clamp and no thermal one: it holds each joint target inside its actuator's travel, and
+  it reports its servos' temperatures in `robot.health` without acting on them. The three say so
+  now, and `tests/test_docs.py` keeps the old words out of every living page.
+
 ## [0.18.0] — 2026-10-13
 
 This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's

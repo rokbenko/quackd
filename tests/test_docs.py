@@ -354,6 +354,12 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "the Microduck's own model and walking policy",
     # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
     "hot-swapped over the socket (not designed yet)",
+    # the clamps, found wrong in 0.18.1: robotd clamps no twist and sets no thermal limit at
+    # daemon-v0.16.1 or at the four releases of 2026-10-12, and what it clamps is a joint target
+    # past its actuator's travel
+    "it clamps velocities",
+    "joint and thermal clamps",
+    "fall detection, thermal clamps",
 )
 
 
@@ -369,7 +375,9 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
     templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
     dated, as history. Whitespace is collapsed first, so a revert that was reflowed on its way
-    back is caught too."""
+    back is caught too. Since 0.18.1 it also keeps out a robotd that clamps velocities or
+    temperatures: what robotd clamps, at daemon-v0.16.1 and at the four releases of 2026-10-12,
+    is a joint target past its actuator's travel."""
     sources = [
         *_living_docs(),
         REPO / "NOTICE",
