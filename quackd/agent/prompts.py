@@ -19,7 +19,7 @@ from quackd.verbs.registry import Verb, VerbResult
 from quackd.verdict import BEFORE_VERDICT, needs_properties
 
 if TYPE_CHECKING:
-    from quackd.adapters.manifest import Datasheet, RobotManifest
+    from quackd.adapters.manifest import Datasheet, Embodiment, RobotManifest
 
 DUCK_BLURB = "a small biped duck robot (25 cm, 800 g)"
 
@@ -227,7 +227,7 @@ COMPOSITE_VERBS = ("walk_to", "go_to", "search_scan", "approach_and")
 one. A body that provides none of them is told about none of them."""
 
 
-def goal_strategy(allow: Sequence[str]) -> str:
+def goal_strategy(allow: Sequence[str], *, memory: bool = False) -> str:
     """The `## Strategy` paragraph of a `--goal` task, in the verbs this body was granted.
 
     It used to name `observe`, `search_scan` and `go_to` whatever the body was. On 2026-09-15
@@ -239,7 +239,10 @@ def goal_strategy(allow: Sequence[str]) -> str:
     Every verb named here is in `allow`. A body with neither looking verb is told to look with
     `report_state`, and one with no composite is told to prefer the verb that does the whole
     thing rather than being pointed at a verb that does not exist. A Microduck reads exactly
-    what it read before."""
+    what it read before.
+
+    `memory` is whether the run keeps one. The last step asks for a `remember` only then: a run
+    with memory off is offered no such tool, and this told its pilot to call it anyway."""
     names = set(allow)
     looking: list[str] = [verb for verb in ("observe", "search_scan") if verb in names]
     if not looking and "report_state" in names:
@@ -253,9 +256,10 @@ def goal_strategy(allow: Sequence[str]) -> str:
     )
     # a body with no camera verb has no frame to verify against, only its own joints
     fresh = "frame" if "observe" in names else "reading"
+    last = "then `remember` one fact and declare success" if memory else "then declare success"
     return (
         f"Use the available verbs. Look before you act ({look}), {prefer}, verify with a "
-        f"fresh {fresh}, then `remember` one fact and declare success."
+        f"fresh {fresh}, {last}."
     )
 
 
@@ -371,14 +375,22 @@ def _hands(ds: Datasheet) -> str:
     return "none: nothing quackd can command touches an object"
 
 
-def _power_and_ground(ds: Datasheet, *, mobile: bool) -> str:
+def _power_and_ground(ds: Datasheet, *, mobile: bool, embodiment: Embodiment) -> str:
     power = {
         True: "Mains powered, so nothing runs down",
         False: "Battery powered",
         None: "Power source not published",
     }[ds.tethered]
     if not mobile:
-        return f"{power}. It does not move: no base and no legs"
+        # The verdict gate quotes "it does not move" back to a body that stays put, when its
+        # sheet publishes no terrain and a task asks for more than a flat indoor floor, so every
+        # such body keeps those words. Only an arm has neither legs nor a base, though: a
+        # ToddlerBot with no walk checkpoint staged still stands on the two legs its blurb
+        # names, and this line used to tell it otherwise.
+        if embodiment == "arm":
+            return f"{power}. It does not move: no base and no legs"
+        has, verb = ("a wheeled base", "drives") if embodiment == "wheeled" else ("legs", "walks")
+        return f"{power}. It does not move: it has {has}, but no verb on this connection {verb} it"
     ground = {
         "indoor_flat": "Rated for a flat indoor floor",
         "indoor": "Rated for indoors",
@@ -417,7 +429,7 @@ def body_lines(manifest: RobotManifest) -> list[str]:
             f"- Not published: {', '.join(unknown)}. Where a task turns on {which}, say "
             "uncertain and name it rather than guessing; do not decline on it alone."
         )
-    lines.append(f"- {_power_and_ground(ds, mobile=mobile)}.")
+    lines.append(f"- {_power_and_ground(ds, mobile=mobile, embodiment=manifest.embodiment)}.")
     limits = dict(manifest.limits)
     ranges: dict[str, Any] = manifest.extras.get("joint_range_deg") or {}
     if ranges:
@@ -461,7 +473,11 @@ def body_summary(manifest: RobotManifest) -> str:
         return f"{manifest.model}: no datasheet published; treat every physical limit as unknown."
     facts = [f"{label.lower()} {fig.text(unit)}" for label, fig, unit in ds.known()]
     facts.append(_hands(ds))
-    facts.append(_power_and_ground(ds, mobile=manifest.mobility != "none").lower())
+    facts.append(
+        _power_and_ground(
+            ds, mobile=manifest.mobility != "none", embodiment=manifest.embodiment
+        ).lower()
+    )
     text = f"{manifest.model}: " + ", ".join(facts) + "."
     if unknown := ds.unknown():
         text += f" Not published: {', '.join(unknown)}."

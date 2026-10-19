@@ -72,6 +72,40 @@ def test_leading_comments_allowed() -> None:
     assert duck.name == "t"
 
 
+@pytest.mark.parametrize("starter", ["hello-world", "fetch"])
+def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
+    starter: str, tmp_path: Path
+) -> None:
+    """Notepad saves UTF-8 with a byte-order mark, and every way into a `.duck` refused a file
+    saved so as missing its frontmatter: the mark decoded to a character in front of the first
+    line, and the fence check never got past it. hello-world opens on its fence and fetch on
+    comment lines, so the mark lands in front of both shapes a file may open with."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+    from quackd.mcp_server import build_server
+    from quackd.transport.sim2d import Sim2DTransport
+
+    plain = DUCKS / f"{starter}.duck"
+    marked = tmp_path / plain.name
+    marked.write_bytes(b"\xef\xbb\xbf" + plain.read_bytes())
+    want = load_duck(str(plain))
+
+    parsed = parse_duck_text("﻿" + plain.read_text(encoding="utf-8"))
+    loaded = load_duck(str(marked))
+    for got in (parsed, loaded):
+        assert (got.frontmatter, got.body) == (want.frontmatter, want.body)
+
+    checked = CliRunner().invoke(app, ["validate", str(marked)])
+    assert checked.exit_code == 0, checked.output
+
+    # what `robot_load_duckfile` calls
+    _server, session = build_server(Sim2DTransport(seed=1), memory=False)
+    adopted = session.load(str(marked))
+    assert adopted["ok"], adopted
+    assert adopted["instructions"] == want.body
+
+
 def test_machine_enforced_abort_conditions() -> None:
     duck = load_duck(str(DUCKS / "find-and-kick.duck"))
     fm = duck.frontmatter

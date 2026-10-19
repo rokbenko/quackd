@@ -1647,7 +1647,7 @@ def _run_impl(
                 if policy is not None and any("manipulate" in v for v in vocabularies)
                 else []
             )
-            duck = duck_from_goal(goal, safe, confirm=gated)
+            duck = duck_from_goal(goal, safe, confirm=gated, memory=memory)
         assert duck is not None
         # Refuse before connecting, with the validator's words. `serve-mcp` has always done
         # this; `run` never did, and reached the loop's tool_schemas and died on a raw

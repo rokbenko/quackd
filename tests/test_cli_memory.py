@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
+from quackd.agent.transcript import Transcript
 from quackd.cli import app
 from quackd.memory import RobotMemory
 
@@ -105,3 +108,35 @@ def test_no_memory_writes_nothing_at_all(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "earlier runs" not in result.output
     assert not memory_dir.exists(), "--no-memory must not even create the directory"
+
+
+def _run_start(tmp_path: Path, *argv: str) -> dict[str, Any]:
+    """What the pilot of one `quackd run` on the mock duck was sent, from its transcript."""
+    runs = tmp_path / "runs"
+    common = ["--llm", "fake", "--robot", "microduck:mock", "--runs-dir", str(runs)]
+    result = runner.invoke(app, ["run", *argv, *common, *_mem(tmp_path)])
+    assert result.exit_code == 0, result.output
+    start: dict[str, Any] = Transcript.read(next(runs.rglob("transcript.jsonl")))[0]
+    return start
+
+
+@pytest.mark.parametrize(
+    "task", [["--goal", "say hello and stop"], ["hello-world"]], ids=["goal", "duck"]
+)
+def test_a_run_with_memory_off_says_nothing_about_remember(tmp_path: Path, task: list[str]) -> None:
+    """`--no-memory` offers no `remember`, and a `--goal` run's own task still told the pilot to
+    call it twice: in the last step of its strategy and in a Memory section under it. A task
+    file is its author's words and keeps whatever it asks for (ADR-0025). What quackd writes
+    itself says nothing about a tool the run does not have, for a goal and a file alike."""
+    start = _run_start(tmp_path, *task, "--no-memory")
+    assert start["memory"] is None and "remember" not in start["tools"]
+    assert "remember" not in start["system_prompt"].lower()
+
+
+def test_a_goal_run_with_memory_on_is_still_asked_for_a_note(tmp_path: Path) -> None:
+    """The other half: with memory on, a goal's strategy and Memory section read as before."""
+    start = _run_start(tmp_path, "--goal", "say hello and stop")
+    assert "remember" in start["tools"]
+    prompt = start["system_prompt"]
+    assert "verify with a fresh frame, then `remember` one fact and declare success." in prompt
+    assert "## Memory\nBefore you declare success or failure, call `remember` once" in prompt

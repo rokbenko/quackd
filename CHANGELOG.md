@@ -63,6 +63,41 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   upstream's gamepad asks for at full stick at the pin and from daemon-v0.16.2, and the Microduck
   page has a row for it. `tests/test_datasheets.py` holds the note to it.
 
+- **A `.duck` file saved with a byte-order mark is read like one saved without.** Windows editors
+  can save UTF-8 with one, Notepad among them, which puts three bytes in front of the first line.
+  quackd decoded them to a character standing in front of the opening `---` fence, or in front of
+  the `#` comment lines a file may open with, so it refused a valid file as
+  `missing frontmatter: file must start with a '---' fence` wherever it read one: `quackd run`,
+  `quackd validate`, `quackd preflight`, `quackd serve-mcp --duck` and the MCP tool
+  `robot_load_duckfile`. A mark at the very start of the file is skipped now.
+  `tests/test_duckfile.py` saves `hello-world`, which opens on its fence, and `fetch`, which opens
+  on comment lines, each with a mark in front, and reads them through the parser, the loader,
+  `quackd validate` and what `robot_load_duckfile` calls. It failed before this change.
+
+- **A ToddlerBot with no walk checkpoint is no longer told it has no legs.** Until its daemon
+  reports a walk checkpoint staged, which a fresh install has not got, `toddlerbot:bridge` has no
+  `move`, `go_to` or `approach_and`. Its datasheet line, in the pilot's prompt and in what the MCP
+  server tells a pilot, then read `It does not move: no base and no legs`, in the same prompt as
+  a blurb naming its two legs. That line was written for an arm. A body that stays put with legs
+  reads `It does not move: it has legs, but no verb on this connection walks it` now, and one on
+  wheels is told it has a wheeled base that no verb drives. An arm reads what it read, and so does
+  every body that walks or drives. `tests/test_datasheets.py` renders the bridge as described
+  before its daemon answers and as built for a daemon with no checkpoint, and checks that among
+  the shipped bodies only an arm is told it has neither legs nor a base. It failed before this
+  change.
+
+- **A `--goal` run with `--no-memory` no longer tells its pilot to call `remember`.** With memory
+  off a run is offered no `remember` tool and its prompt has no memory section, yet the task
+  `--goal` writes still told the pilot to `remember` one fact before declaring success, at the end
+  of its strategy and again in a Memory section under it. A pilot that did as it was told spent a
+  call on a refusal. With memory off that task now says nothing about `remember`, and with memory
+  on it reads as it did, byte for byte. A `.duck` file is its author's words and still asks for
+  whatever it asks for, as ADR-0025 records, and what quackd adds to its prompt already said
+  nothing about `remember` with memory off. The memory guide says a goal run asks for a note only
+  while memory is on. `tests/test_cli_memory.py` runs a goal and a `.duck` with `--no-memory` and
+  finds no `remember` in the prompt or the tools either one sent its pilot, and runs a goal with
+  memory on, which still asks for one. The goal with memory off failed before this change.
+
 ### Documentation
 
 - **The Microduck's pages say what upstream's releases of 2026-10-12 changed, and two ADRs and the
