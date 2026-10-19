@@ -3063,9 +3063,11 @@ def _frames_notice(mode: str, url: str | None) -> str:
             "--decision-frames: no camera frame goes to OpenAI on this run, because "
             "--decision-mode off asks the stepper nothing"
         )
-    where = redacted_url(url) if url else "OpenAI"
+    # Never the bare word as a fallback: a string that is exactly one of the SDK's client class
+    # names reads to `tests/test_openai_headers.py`'s guard as a way of reaching the SDK.
+    where = f" at {redacted_url(url)}" if url else ""
     return (
-        f"--decision-frames: the robot's primary camera goes to OpenAI at {where} with every turn "
+        f"--decision-frames: the robot's primary camera goes to OpenAI{where} with every turn "
         f"the stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest "
         "side, and the run keeps each one it sends as frames/NNNN-decision.jpg"
     )
