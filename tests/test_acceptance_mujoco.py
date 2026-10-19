@@ -12,6 +12,7 @@ steer on rendered frames and there is nothing to steer on without one.
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from pathlib import Path
@@ -133,3 +134,91 @@ def _cached_microduck() -> object:
         return ensure_microduck(offline=True)
     except AssetError as e:
         pytest.skip(f"upstream's Microduck model is not cached: {e}")
+
+
+class _BallPlaced(MujocoTransport):
+    """The physics arena with its ball put `bearing_deg` to the left of where the head points and
+    `distance_m` ahead of the camera, on the floor, so below the head as well."""
+
+    def __init__(self, *, bearing_deg: float, distance_m: float) -> None:
+        super().__init__(seed=0, body="puppet")
+        self.bearing_deg = bearing_deg
+        self.distance_m = distance_m
+
+    async def connect(self) -> None:
+        import mujoco
+
+        from quackd_microduck.sim3d.scene import BALL_R
+
+        await super().connect()
+        world = self.world
+        x, y, _z, yaw, _pitch = world.head_pose()
+        heading = yaw + math.radians(self.bearing_deg)
+        qpos = world._ball_qpos  # the one free joint the arena's ball rides on
+        world.data.qpos[qpos : qpos + 3] = (
+            x + self.distance_m * math.cos(heading),
+            y + self.distance_m * math.sin(heading),
+            BALL_R,
+        )
+        world.data.qvel[world._ball_dof : world._ball_dof + 6] = 0.0
+        mujoco.mj_forward(world.model, world.data)
+
+
+async def test_watch_turns_and_tilts_the_head_onto_the_ball_in_mujoco(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`watch` closed through quackd's own client for OpenAI's Decisions API, on the fake SDK,
+    with `BlobEyes` answering where the ball is in each JPEG it is handed. The ball is left of the
+    head and below it, on the floor, so both the yaw and the pitch have to close, and both stay
+    inside the Microduck's envelope (`MICRODUCK_HEAD`) while they do."""
+    from quackd.agent.decision.catalogue import PRESETS
+    from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
+    from quackd.agent.providers.base import ToolCall
+    from quackd.duckfile.parser import parse_duck_text
+    from quackd_microduck.verbs import MICRODUCK_HEAD
+    from tests import fake_decisions_api as fake_api
+    from tests.fake_eyes import BlobEyes
+
+    _opengl_or_skip()
+    fake = fake_api.install(monkeypatch, BlobEyes(noise=0.02, seed=5))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    for name in ("OPENAI_BASE_URL", "OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
+        monkeypatch.setenv(name, "")
+    openai = PRESETS["openai"]
+    transport = _BallPlaced(bearing_deg=25.0, distance_m=0.6)
+    duck = parse_duck_text(
+        "---\nduck: 1\nname: watch-mujoco\ndescription: d\nverbs:\n  allow: [watch]\n"
+        "success: [x]\n---\n# Task\nWatch the ball.\n"
+    )
+    result = await run_duck(
+        RunConfig(
+            duck=duck,
+            provider=FakeProvider(
+                script=[
+                    ToolCall(
+                        name="watch", arguments={"target": "the orange ball", "duration_s": 8}
+                    ),
+                    ToolCall(name="declare_success", arguments={"reason": "watched"}),
+                ]
+            ),
+            transport=MicroduckAdapter(transport),
+            detector=ColorBlobDetector(),
+            runs_dir=tmp_path,
+            decision_llm=make_decision_llm(openai, frames=True),
+            decision_price=resolve_decision_price(openai),
+            decision_frames=True,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    seen = [at for at in fake.truth if at is not None]
+    assert len(seen) == len(fake.truth) > 6, "the ball went out of view"
+    first, last = seen[0], seen[-1]
+    assert first[0] < -0.15 and first[1] > 0.08, "the ball starts left of the head and below it"
+    assert abs(last[0]) <= 0.1 and abs(last[1]) <= 0.12, seen
+    asked = {q["name"] for post in fake.posts for q in post["body"]["questions"]}
+    assert asked == {"where", "height"}, "the physics head tilts, so a height is asked"
+    _x, _y, _z, yaw, pitch = transport.world.head_pose()
+    yaw_deg = math.degrees(yaw - transport.world.theta)
+    pitch_deg = math.degrees(pitch)
+    assert 10.0 < yaw_deg <= MICRODUCK_HEAD.yaw_deg
+    assert -MICRODUCK_HEAD.pitch_down_deg - 1e-6 <= pitch_deg < -4.0

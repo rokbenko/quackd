@@ -10,6 +10,7 @@ import pytest
 from rich.console import Console
 
 from quackd.agent.providers.catalogue import PRICES_CHECKED, Price
+from quackd.agent.providers.pricing import fmt_usd
 from quackd.log import (
     ConsoleLog,
     EventLog,
@@ -1479,3 +1480,49 @@ def test_the_done_line_says_sim_seconds_on_a_simulator() -> None:
     hardware = LogEvent("tool_result", 0.0, {"ok": True, "elapsed_s": 0.2, "transport_s": 0.2})
     ((text, _),) = render_lines(hardware)
     assert "in 0.2 s" in text and "sim" not in text
+
+
+def test_a_watch_look_is_one_line_saying_what_it_was_told_and_what_it_did() -> None:
+    """`watch`'s rows, as `quackd log` draws them: what the decision LLM said, the move it made
+    or that it held still, what the look cost, and the way the call ended on the look that ended
+    it, each with the count toward the exit it is on."""
+    billed = {"latency_s": 0.61, "usage": {"input_tokens": 1203, "output_tokens": 0}}
+    billed["cost_usd"] = 0.00012
+
+    def line(**data: Any) -> Any:
+        (drawn,) = render_events(LogEvent("watch_tick", 0.0, {"n": 3, **data}))
+        return drawn
+
+    seen = line(
+        gate="seen",
+        where={"choice": "left", "at": -0.21, "probabilities": {"left": 0.8}},
+        move={"moved": True, "yaw_deg": 12.4, "pitch_deg": -4.0, "edge": False},
+        streak={"lost": 0, "edge": 0, "errors": 0, "stale": 0},
+        **billed,
+    )
+    assert seen.label == "watch" and seen.style == "bold"
+    bill = f"0.61 s, 1203 tok {fmt_usd(0.00012)}"
+    assert seen.body == f"#3 left at -0.21 -> yaw +12 pitch -4 ({bill})"
+    held = line(
+        gate="out_of_view",
+        where={"probabilities": {"out_of_view": 0.91, "left": 0.05}},
+        streak={"lost": 2},
+        **billed,
+    )
+    assert held.body == f"#3 out_of_view (out_of_view 0.91, left 0.05), holding (2 of 4) ({bill})"
+    failed = line(gate="error", error="TimeoutError: no answer within 1.5 s", streak={"errors": 3})
+    assert failed.style == "red" and failed.mark == "fail"
+    assert failed.body == "#3 ERROR TimeoutError: no answer within 1.5 s (3 of 3)"
+    stale = line(gate="stale", error="GET /frame: 503", streak={"stale": 2}, ended="camera")
+    assert stale.body == "#3 no fresh frame: GET /frame: 503 (2 of 2); ended: camera"
+    declined = line(gate="refused", ended="refused", **billed)
+    assert declined.body.startswith("#3 declined to say where") and declined.style == "red"
+    assert declined.body.endswith("; ended: refused")
+
+
+def test_the_price_line_names_the_decision_llm_on_a_run_that_offered_watch() -> None:
+    """On such a run the decision LLM's rate is what `watch` is costed at too, so the replay's
+    head does not call it the stepper's."""
+    rate = Price(input=0.10, output=0.0, source="published").record()
+    assert _price_line(None, rate, watch=True).endswith(", decision LLM $0.1/M in")
+    assert _price_line(None, rate).endswith(", stepper $0.1/M in")

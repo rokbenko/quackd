@@ -35,6 +35,8 @@ BODY_ENV = "QUACKD_MUJOCO_BODY"
 
 class MujocoTransport:
     name = "mujoco"
+    frames_upright = True
+    """The head camera is rendered upright, along the head's yaw and pitch (`render_headcam`)."""
 
     def __init__(
         self,

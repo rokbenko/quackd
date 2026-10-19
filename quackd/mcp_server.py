@@ -81,6 +81,7 @@ from quackd.verbs.registry import (
     default_registry,
     registry_from_manifest,
 )
+from quackd.verbs.watch import withdraw_watch
 from quackd.verdict import (
     BEFORE_VERDICT,
     MANIPULATOR_WORDS,
@@ -376,6 +377,11 @@ class RobotSession:
             if not self.explicit_registry:
                 self.registry = registry_from_manifest(connected, self.transport)
                 self.executor.registry = self.registry
+        if not self.explicit_registry:
+            # A session has nothing to look through, since serve-mcp names no decision LLM, so
+            # the body's `watch` is not offered: a verb that could only refuse
+            # (`withdraw_watch`).
+            withdraw_watch(self.registry, eyes=None, transport=self.transport)
         self._narrow()
 
     def _narrow(self) -> None:
@@ -889,6 +895,9 @@ def build_fleet_server(
         if log:
             event_log = EventLog(observers=[_stderr_view(name), capture_sink])
         reg = registry or default_registry()
+        if registry is None:
+            # the vocabulary a session shows before its robot connects has no `watch` either
+            withdraw_watch(reg, eyes=None, transport=transport)
         det = detector
         if det is None and backend_name(transport) in ("sim2d", "mujoco"):
             # a bare transport has no manifest to ask; an adapter is upgraded after connect

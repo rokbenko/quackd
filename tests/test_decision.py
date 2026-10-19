@@ -71,6 +71,8 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "stand": (1, "motion"),
         "stand_up": (1, "motion"),
         "stop": (1, "brake"),
+        # a free-string target, so a value and never a choice: the stepper can never take it
+        "watch": (None, "motion"),
     },
     "microduck": {
         "gaze": (5, "motion"),
@@ -81,6 +83,7 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "sit": (1, "motion"),
         "stand": (1, "motion"),
         "stand_up": (1, "motion"),
+        "watch": (None, "motion"),
     },
     "lerobot": {
         "gripper": (2, "motion"),

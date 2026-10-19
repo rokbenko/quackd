@@ -21,8 +21,13 @@ from quackd.verbs.aliases import ALIASES
 
 if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
+    from quackd.verbs.watch import Eyes
 
 SafetyClass = Literal["safe", "confirm", "dangerous"]
+
+STOPPED = "a stop was sent while it ran"
+"""What `VerbContext.interrupted` says once a `stop` has run since the verb began, from any
+caller, so a verb can tell the brake from a budget that ran out (`watch` ends on both)."""
 VerbKind = Literal["builtin", "composite", "learned", "meta"]
 
 
@@ -65,6 +70,16 @@ class VerbContext:
     """Composites call other verbs through the executor, so allowlists still apply."""
     manifest: RobotManifest | None = None
     """The connected robot's manifest, so composite verbs can pick a strategy (0.4)."""
+    eyes: Eyes | None = None
+    """What `watch` looks through: a decision LLM that may be shown the camera, on a run that
+    asked with `--decision-frames` (`quackd.agent.decision.eyes`). None on every other run, and
+    then `watch` refuses before it sends anything. Still not the pilot: it answers two closed
+    questions about one frame and nothing else (ADR-0054)."""
+    interrupted: Callable[[], str | None] = lambda: None
+    """Why a verb that runs for a while should end now, or None while nothing says so: the run's
+    time budget spent, in the budget's own words, or a `stop` run since the verb began, as
+    `STOPPED`. The executor builds it for each call. Only `watch` reads it so far: the budget is
+    checked between verbs, and `watch` is the first verb whose point is to run for a while."""
 
 
 Precondition = Callable[[DuckState], str | None]
@@ -163,6 +178,20 @@ class VerbRegistry:
     def get(self, name: str) -> Verb:
         try:
             return self._verbs[self.canonical(name)]
+        except KeyError:
+            raise VerbNotFound(name) from None
+
+    def remove(self, name: str) -> Verb:
+        """Take a verb out, by any name it answers to, and hand it back.
+
+        For a verb a run cannot offer although its body declares it, withdrawn once the robot
+        has connected: `watch` on a run with nothing to look through. `stop` is refused, because
+        the brake is the one verb every registry keeps whatever else is taken out of it."""
+        canonical = self.canonical(name)
+        if canonical == "stop":
+            raise ValueError("stop is never removed: it is the one verb every registry keeps")
+        try:
+            return self._verbs.pop(canonical)
         except KeyError:
             raise VerbNotFound(name) from None
 

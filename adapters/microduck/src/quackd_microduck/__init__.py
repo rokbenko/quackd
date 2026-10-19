@@ -137,7 +137,12 @@ def microduck_manifest(
             verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
             verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
         ]
-    extensions = [verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n != "say"]
+    # `watch` looks through the camera, so it is a verb of a duck that has one, declared below
+    extensions = [
+        verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n not in ("say", "watch")
+    ]
+    if camera:
+        extensions.append(verb_spec(MICRODUCK_VERBS["watch"], core=False))
     sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
     if camera:
         sensors.insert(0, "camera")
@@ -158,6 +163,8 @@ def microduck_manifest(
     }
     if camera:
         preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
+        # the head alone, as `gaze`: a seated duck may watch, and a fallen or held one may not
+        preconditions["watch"] = ["not_fallen"]
     limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5}
     extras: dict[str, Any] = {}
     if camera and camera_fov_deg is not None:
@@ -211,6 +218,10 @@ class MicroduckAdapter:
         self.backend = transport.name
         self.robot_id = robot_id
         self.manifest: RobotManifest | None = None
+        self.last_look: tuple[float, float, float] | None = None
+        """The trunk-frame point of the newest look the duck accepted, or None before any:
+        where its head was last sent, which `watch` starts from. Not where the state says the
+        camera points, which on a robotd that glances shows the glance."""
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
@@ -248,7 +259,15 @@ class MicroduckAdapter:
         return await self.transport.get_frame()
 
     async def send_intent(self, intent: Intent) -> Ack:
-        return await self.transport.send_intent(intent)
+        ack = await self.transport.send_intent(intent)
+        if intent.kind == "look" and ack.accepted:
+            p = intent.params
+            self.last_look = (
+                float(p.get("x", 1.0)),
+                float(p.get("y", 0.0)),
+                float(p.get("z", 0.0)),
+            )
+        return ack
 
     async def health(self) -> Health:
         try:
@@ -313,6 +332,50 @@ class MicroduckAdapter:
         camera: on `jsonrpc` from mediad's `/frame`, and None from every camera that does not
         say, the simulators' among them."""
         return frame_period_of(self.transport)
+
+    @property
+    def frames_upright(self) -> bool:
+        """Whether every frame this duck hands out is upright, which `watch` needs, since it turns
+        the head by where a thing is across the picture: on the simulators always, and on
+        `jsonrpc` from mediad's `/frame` or its WebRTC track turned upright, and from no other
+        camera. A transport that does not say is taken for one whose frames may be on their side."""
+        return getattr(self.transport, "frames_upright", False) is True
+
+    @property
+    def head_pitches(self) -> bool:
+        """Whether a look's pitch moves this duck's camera: on every backend but the cartoon,
+        whose world is flat, so `watch` asks no `height` there."""
+        return getattr(self.transport, "head_pitches", True) is not False
+
+    @property
+    def camera_fps(self) -> float | None:
+        """How many frames a second an HTTP camera is asked for, on `jsonrpc`, and None on every
+        backend that draws its frame when asked."""
+        fps = getattr(self.transport, "camera_fps", None)
+        return float(fps) if isinstance(fps, int | float) and not isinstance(fps, bool) else None
+
+    @property
+    def frame_fetch_s(self) -> float | None:
+        """How long the newest fetch of an HTTP camera took, on `jsonrpc`, which `watch` sizes its
+        wait for a fresh frame by (`quackd.transport.base.frame_fetch_of`)."""
+        fetch = getattr(self.transport, "frame_fetch_s", None)
+        return (
+            float(fetch) if isinstance(fetch, int | float) and not isinstance(fetch, bool) else None
+        )
+
+    def frame_asked_at(self) -> float | None:
+        """When the newest fetch of an HTTP camera was asked for, on `jsonrpc`, answered or not
+        (`quackd.transport.base.frame_asked_at_of`), and None everywhere else."""
+        asked = getattr(self.transport, "frame_asked_at", None)
+        return asked() if callable(asked) else None
+
+    @property
+    def look_head(self) -> dict[str, float] | None:
+        """The four head joints robotd answered the newest `robot.look` with (`LookResult.head`),
+        on `jsonrpc`, which `watch` records beside the look it sent. None on every backend that
+        answers a look with no joints."""
+        head = getattr(self.transport, "look_head", None)
+        return dict(head) if isinstance(head, dict) else None
 
     def lens_given(self, fov_deg: float) -> None:
         """Hand the field of view `--fov-deg` gave to the transport, when it keeps a record of

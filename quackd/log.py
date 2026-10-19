@@ -31,6 +31,7 @@ from rich.text import Text
 
 from quackd.agent.providers.pricing import fmt_usd
 from quackd.transport.base import Ack, Intent
+from quackd.verbs.watch import EDGE_AFTER, ERRORS_AFTER, LOST_AFTER, STALE_AFTER
 
 
 @dataclass(frozen=True)
@@ -414,13 +415,17 @@ def _rate(value: Any) -> str:
 
 
 def _price_line(
-    price: Mapping[str, Any] | None, decision_price: Mapping[str, Any] | None = None
+    price: Mapping[str, Any] | None,
+    decision_price: Mapping[str, Any] | None = None,
+    *,
+    watch: bool = False,
 ) -> str:
     """What the run was costed at, for the head of a replay.
 
     A sentence rather than a missing row when there is no rate, because "quackd has no price
     for this model" is exactly what a reader of a run with no cost figure needs to be told, and
-    an absent line tells them nothing at all."""
+    an absent line tells them nothing at all. `watch` is whether the run offered `watch`, which
+    asks the decision LLM too, so its rate is then the decision LLM's and not the stepper's."""
     if not price:
         text = "unpriced: quackd has no rate for this model, so no cost was computed"
     else:
@@ -429,7 +434,8 @@ def _price_line(
         where = f" ({source}{when})" if source else ""
         text = f"{_rate(price.get('input'))}/M in, {_rate(price.get('output'))}/M out{where}"
     if decision_price:
-        text += f", stepper {_rate(decision_price.get('input'))}/M in"
+        payer = "decision LLM" if watch else "stepper"
+        text += f", {payer} {_rate(decision_price.get('input'))}/M in"
     return text
 
 
@@ -754,6 +760,8 @@ def render_events(
                 LogLine("decide?", ", ".join(f"{label} {v:.2f}" for v, label in rest), "dim")
             )
         return stepper
+    if k == "watch_tick":
+        return [_watch_line(d)]
     if k == "decision_shadow":
         # Shadow mode's whole point in one line: what the stepper would have done beside what
         # the model did, on the same reading. The run is unchanged, so this is its only record.
@@ -948,6 +956,82 @@ def render_events(
             text += f" budget: {d['budget']}"
         return [LogLine("done", text, "dim", mark="ok" if d.get("ok") else "fail")]
     return []
+
+
+def _watch_line(d: Mapping[str, Any]) -> LogLine:
+    """One look of `watch`'s, from its `watch_tick` row: what it was answered, the move that made,
+    and what the look cost, the way the stepper's `decide` line says a turn.
+
+    Bold for a look that saw the thing, dim for one that held still, yellow for a camera that gave
+    no fresh frame, red for a look with no answer to use or one declined, and the way the call
+    ended on the look that ended it. A look sends at most one frame, which the time and the bill
+    stand for, as `1 frame` does on the stepper's line."""
+    n = d.get("n")
+    gate = str(d.get("gate") or "")
+    where, move, streak = (_as_mapping(d.get(key)) for key in ("where", "move", "streak"))
+    took = ""
+    if "latency_s" in d:
+        took = f"{float(d.get('latency_s') or 0):.2f} s"
+        if isinstance(asked := d.get("usage"), Mapping):
+            mark = "~" if d.get("usage_estimated") else ""
+            took += f", {mark}{asked.get('input_tokens', 0)} tok"
+            if d.get("cost_usd") is not None:
+                took += f" {mark}{fmt_usd(d['cost_usd'])}"
+    cost = f" ({took})" if took else ""
+    style, mark_as = "dim", None
+    if gate == "seen":
+        at = where.get("at")
+        said = f"#{n} {where.get('choice')}" + (
+            f" at {float(at):+.2f}" if isinstance(at, int | float) else ""
+        )
+        if move.get("moved"):
+            said += (
+                f" -> yaw {float(move.get('yaw_deg') or 0):+.0f}"
+                f" pitch {float(move.get('pitch_deg') or 0):+.0f}"
+            )
+        else:
+            said += ", holding"
+        if move.get("edge") or move.get("clamped"):
+            said += f", at the head's reach ({streak.get('edge')} of {EDGE_AFTER})"
+        text, style = said + cost, "bold"
+    elif gate in ("out_of_view", "unsure"):
+        text = (
+            f"#{n} {gate} {_spread_words(where)}, holding "
+            f"({streak.get('lost')} of {LOST_AFTER}){cost}"
+        )
+    elif gate == "refused":
+        text, style, mark_as = f"#{n} declined to say where{cost}", "red", "fail"
+    elif gate in ("error", "unreadable"):
+        why = d.get("error") or "an answer watch could not read"
+        text = f"#{n} ERROR {why}{cost} ({streak.get('errors')} of {ERRORS_AFTER})"
+        style, mark_as = "red", "fail"
+    elif gate == "stale":
+        text = f"#{n} no fresh frame: {d.get('error')} ({streak.get('stale')} of {STALE_AFTER})"
+        style, mark_as = "yellow", "warn"
+    else:
+        text = f"#{n} {gate or 'no answer'}{cost}"
+    if d.get("ended"):
+        text += f"; ended: {d['ended']}"
+        if mark_as is None:
+            mark_as = "note"
+    return LogLine("watch", text, style, mark=mark_as)
+
+
+def _as_mapping(value: Any) -> Mapping[str, Any]:
+    """`value` where it is a block, or an empty one, so a hand-edited row draws a line short."""
+    return value if isinstance(value, Mapping) else {}
+
+
+def _spread_words(where: Mapping[str, Any]) -> str:
+    """The two likeliest answers of an unsure or out-of-view look, `left 0.41, middle 0.38`."""
+    spread = where.get("probabilities")
+    if not isinstance(spread, Mapping) or not spread:
+        return ""
+    top = sorted(
+        ((float(p), str(label)) for label, p in spread.items() if isinstance(p, int | float)),
+        reverse=True,
+    )[:2]
+    return "(" + ", ".join(f"{label} {p:.2f}" for p, label in top) + ")"
 
 
 def render_lines(
@@ -1308,7 +1392,12 @@ class ConsoleLog(LineLog):
         # before there were prices, and telling its reader it was "unpriced" would be
         # describing this release rather than their run.
         if "price" in d:
-            rows.append(("price", _price_line(d.get("price"), d.get("decision_price"))))
+            rows.append(
+                (
+                    "price",
+                    _price_line(d.get("price"), d.get("decision_price"), watch="watch" in d),
+                )
+            )
         hint = f"connected in {d['connect_s']:.2f} s" if "connect_s" in d else ""
         self._write_line(self._ui.run_header(str(d.get("duck")), rows, hint=hint))
 

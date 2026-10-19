@@ -228,6 +228,87 @@ feed already are, and two ways to move one robot would mean two places to be sur
 
 Neither route has been run against a Microduck.
 
+## `watch`: a head that keeps something in view
+
+`watch(target="the apple", duration_s=15)` keeps something the pilot describes in view with the
+head alone, for 2 to 30 seconds, the way OpenAI's launch video for its Decisions API has a
+Microduck do it. It is quackd's own reflex, not upstream's. Each look takes a frame, asks a
+decision LLM that can see two closed questions about it, where across the picture the thing is and
+how high, and turns the head by arithmetic of its own on the answer. The decision LLM says where
+the thing is and never how far to turn, so what it says moves the head one clamped step at most,
+and the next frame corrects a wrong one
+([ADR-0054](../../adr/0054-a-reflex-may-look-through-a-decision-llm.md)).
+
+It is there only on a run that can look through a decision LLM: `--decision-llm openai
+--decision-frames`, with `OPENAI_API_KEY` set, which sends OpenAI each frame `watch` looks at.
+With `--decision-mode off` beside them the run has `watch` and no stepper. Without the flags it is
+withdrawn when the duck connects, and a task that requires it, as the bundled `microduck-watch`
+does, is refused before anything connects:
+
+```
+$ quackd run microduck-watch --llm fake --no-memory
+✗ error: microduck-watch requires watch, and watch looks through a decision LLM that can see, and this run has none: run it with --decision-llm openai --decision-frames, and OPENAI_API_KEY set
+```
+
+It needs a camera that worked at connect, as `observe` does, and frames that are upright, since it
+turns the head by where a thing is across the picture: mediad's `/frame` is, and so is its WebRTC
+track once quackd has turned it, and so are both simulators. Any other `--camera-url` is a camera
+quackd knows nothing about, and `watch` is not offered through it. A seated duck may watch, as it
+may `gaze`.
+
+| | |
+|---|---|
+| What it asks | `where`, one of `far_left`, `left`, `middle`, `right`, `far_right` and `out_of_view`, the fifths of the picture's width, and `height`, one of `top`, `middle`, `bottom` and `out_of_view`, its thirds. The target goes in the state as a description somebody wrote, and never in the instructions, which are fixed and ask for the thing nearest the middle where more than one fits. `microduck:sim2d` is asked no height, since its world is flat |
+| How it reads the answer | by the distribution, and never by OpenAI's `confidence`, which OpenAI do not define and which the record keeps: 0.5 or more on `out_of_view` is not seen, 0.6 or more on the fifths spread no wider than a quarter of the picture is seen at their mean weighted by probability, and anything else holds the head still |
+| How far it turns | 0.6 of the angle the answer puts the thing at through the lens, nothing within 0.08 of the picture's middle, and at most 15° of yaw and 8° of pitch a look |
+| Where the head may go | 45° either way, 14° up and 11.5° down: as far as `gaze` turns it and as far down as robotd's own idle glances tilt it, until a duck is measured |
+| The lens | `--fov-deg`, else the camera's own, which on an alpha's `/frame` is the 37.3° assumed from the picture's shape and named as assumed in the record and the result, else an assumed 40°, named too. A lens more than 1.5 times wider than the one the camera reports is warned about once, before the run starts |
+| How often | one request out at a time, a look at most every 0.5 s and 60 a call, and each answer bounded at 1.5 s |
+
+robotd glances around on its own once nobody has steered the head for a while (`robotd's idle
+look-around`, above), so `watch` claims the head before its first look and waits out the 1.5 s
+robotd takes to let go of a glance and a 0.4 s settle, 1.9 s in all, sends the head its target
+again at least every second while it waits for a frame or an answer, and claims it again, with the
+same wait, after any gap of more than 2 s since the duck last accepted a look. A frame is used only
+when the fetch that took it was asked for after the head settled, and never twice. On `/frame` at 2
+frames a second that is the newest fetch asked for after the settle, and a look waits up to a
+period and two and a half fetches for one before it counts the camera as stale. How many looks a
+second that comes to on a duck is unmeasured.
+
+Every way a call ends is named as its `ended`, in the result the pilot reads, on the row of the look
+that ended it and in the summary, and none of them moves the head on its way out: it stays where
+the thing was last seen.
+
+| `ended` | When |
+|---|---|
+| `duration` | its time is up on the robot's clock, or 5 s later on the wall's. The call succeeds when it saw the thing at least once, and says which look last saw it and where |
+| `lost` | 4 looks in a row did not see it, out of view or unsure. The pilot is pointed at `search_scan` or `gaze` |
+| `edge` | 3 looks in a row wanted the head past its reach, or robotd answered a turn `clamped`. The pilot is told to turn the body, then watch again |
+| `errors` | 3 looks in a row had no answer to use: a request that timed out or failed, or an answer nobody could read |
+| `refused` | OpenAI declined to say where the thing is. The call is not asked again |
+| `camera` | 2 looks in a row had no fresh frame, and the result names the camera's own error |
+| `fallen`, `blind`, `held` | the duck fell, nothing reports whether it is upright, or somebody holds it or its policy reads `held`, `homing`, `rest`, `limp_fall` or `limp_pose`, read before every look and before every move |
+| `look_refused` | the duck refused a look |
+| `stopped` | a `stop` was asked for from beside the call |
+| `budget` | the run's own minutes ran out |
+| `abort`, `timeout`, `cancel` | the kill switch or a failed heartbeat, the verb's own 45 s, or a caller that went away, which the executor ends with a stop of its own |
+
+The record keeps what was sent. Each frame is written beside the transcript as
+`sent/watch-NNNN.jpg`, and a `watch_frame` line naming it, its size and its sha256 is written
+through to the transcript, both before the request that carries it is handed to the client, so a
+process killed with a request out has still recorded the frame. A disk that refuses the copy leaves
+no partial file and records `kept: false`. Each look leaves a `watch_tick` row with the
+distribution, OpenAI's `confidence`, the gate, the move and what robotd answered the look with, its
+time, its tokens and its cost, written whatever ended the look. `run_start.watch` says what the head
+was held to and through which lens, and the summary's `decision` block gains `watch`, whose bill is
+in that block's totals ([architecture](../../concepts/architecture.md#transcript-format)).
+
+Nothing of this has run on a duck or against OpenAI. In the suite the head closes on the ball on
+both simulators through quackd's own client for OpenAI's Decisions API, on a fake of its SDK that
+finds the ball in each JPEG it is handed. How long a look takes over a tunnel, what it costs, the
+head's real reach and settle, and whether robotd takes a look while somebody holds the duck are
+owed to the bench.
+
 ## The duck's physics upstreams
 
 `microduck:mujoco` runs the robot Pollen trains, on the pair of policies Pollen trained before

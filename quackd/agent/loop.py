@@ -32,6 +32,7 @@ from quackd.adapters.base import (
 from quackd.adapters.manifest import RobotManifest, apply_datasheet_override
 from quackd.agent.decision.base import DecisionLLM
 from quackd.agent.decision.catalogue import DecisionMode
+from quackd.agent.decision.eyes import DecisionEyes, eyes_for
 from quackd.agent.decision.frames import Snapshot
 from quackd.agent.decision.stepper import Advice, Stepper
 from quackd.agent.prompts import (
@@ -96,6 +97,7 @@ from quackd.verbs.registry import (
     default_registry,
     registry_from_manifest,
 )
+from quackd.verbs.watch import WATCH, watch_lens, watch_record, withdraw_watch
 from quackd.verdict import Verdict, own_sheet_objection, solo_hint
 
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
@@ -391,6 +393,21 @@ class AgentLoop:
         )
         # the pilot is handed an `assess_task` tool, so the executor holds it to the answer
         self.executor.require_verdict = True
+        self.eyes: DecisionEyes | None = eyes_for(
+            cfg.decision_llm,
+            cfg.decision_price,
+            frames=cfg.decision_frames,
+            emit=self._emit,
+            run_dir=self.run_dir,
+        )
+        """What `watch` looks through: the decision LLM, on a run that asked for frames and named
+        one the gate allows (`frames.may_send_frames`), whatever `decision` says, since the mode
+        is how much the stepper may do and `watch` is not the stepper. None on every other run,
+        which then has no `watch`."""
+        self.executor.eyes = self.eyes
+        self.watching = False
+        """Whether this run's pilot may call `watch`: eyes, a body that declares it, frames that
+        are upright, and a contract that allows it. Settled at connect."""
         self.history: list[Exchange] = []
         self._rest_note_said = False
         """Whether the rest move's note about the pose itself has been said this run. The
@@ -1307,6 +1324,65 @@ class AgentLoop:
             return record
         return {**record, "camera_role": "primary" if placed.get("primary") else "extra view"}
 
+    def _decision_llm_record(self, stepper: Stepper | None) -> dict[str, Any]:
+        """`run_start`'s `decision_llm` and `decision_price`: the stepper's, on a run with one,
+        else the one `watch` looks through, on a run whose pilot may call it, else nothing."""
+        if stepper is not None:
+            return {
+                "decision_price": stepper.price.record(),
+                "decision_llm": {
+                    "name": stepper.name,
+                    "model": stepper.model,
+                    "url": redacted_url(stepper.url) if stepper.url is not None else None,
+                    # whether this run shows it the camera (`--decision-frames`), said before the
+                    # first frame goes, and on a run that shows none too
+                    "frames": stepper.frames,
+                },
+            }
+        if self.watching and self.eyes is not None:
+            return {
+                "decision_price": self.eyes.price.record(),
+                "decision_llm": {
+                    "name": self.eyes.name,
+                    "model": self.eyes.model,
+                    "url": self.eyes.url,
+                    "frames": True,
+                },
+            }
+        return {}
+
+    def _decision_summary(self, stepper: Stepper | None) -> dict[str, Any] | None:
+        """The summary's `decision` block: the stepper's own, with `watch`'s block in it and
+        `watch`'s bill folded into its `usage` and `cost_usd`, which are then every question this
+        run asked a decision LLM. On a run with `watch` and no stepper, the block says which
+        decision LLM it looked through and the mode the run had, `off`. None on a run with
+        neither, whose summary is what it always was."""
+        block = stepper.summary() if stepper is not None else None
+        if not self.watching or self.eyes is None:
+            return block
+        watched = self.eyes.summary()
+        if block is None:
+            block = {
+                "mode": "off",
+                "llm": self.eyes.name,
+                "model": self.eyes.model,
+                "url": self.eyes.url,
+                "frames": True,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+                "cost_usd": 0.0,
+                "cost_estimated": False,
+                "price": self.eyes.price.record(),
+            }
+        usage = block.get("usage") or {}
+        block["usage"] = {
+            key: int(usage.get(key) or 0) + int(watched["usage"][key])
+            for key in ("input_tokens", "output_tokens")
+        }
+        block["cost_usd"] = round(float(block.get("cost_usd") or 0.0) + watched["cost_usd"], 6)
+        block["cost_estimated"] = bool(block.get("cost_estimated")) or watched["cost_estimated"]
+        block["watch"] = watched
+        return block
+
     def _policy(self, name: str) -> dict[str, Any] | None:
         """What the body says about the policy it hands segments to, `policy_served` for
         `run_start` or `policy_record` for the summary, or None for a body with none, which is
@@ -1747,6 +1823,18 @@ class AgentLoop:
                 self.executor.detector = cfg.detector
             registry = self.registry
             allow = self.fm.verbs.allow
+            # `watch` looks through a decision LLM, so a run with none to look through, or with
+            # frames nobody can say are upright, has no `watch` whatever its body declares. Taken
+            # out before the check below, so a task that requires it is refused in words that
+            # name the flags rather than as a verb this robot was not built with, and said once
+            # where the task or the flags asked for it, and nowhere else.
+            withdrawn = withdraw_watch(registry, eyes=self.eyes, transport=cfg.transport)
+            if withdrawn is not None:
+                if WATCH in self.fm.effective_requires:
+                    raise AdapterError(f"{self.duck.name} requires watch, and {withdrawn}")
+                if WATCH in allow or self.eyes is not None:
+                    self._note(f"watch is not offered on this run: {withdrawn}")
+                allow = [name for name in allow if name != WATCH]
             # `validate` and the CLI check the STATIC manifest, which describes a fully built
             # robot. One that reports fewer capabilities at connect (no camera, no speaker, no
             # head) narrows its own vocabulary, and building the tool schemas would then raise a
@@ -1827,6 +1915,18 @@ class AgentLoop:
                     # refused there for any decision LLM that may not be shown the camera
                     frames=cfg.decision_frames,
                 )
+            # What `watch` is held to on this run, said before it runs: the lens it turns the head
+            # through, named as assumed where nobody measured it, the head's numbers and the
+            # bounds on a call. Only where the pilot can call it.
+            self.watching = (
+                self.eyes is not None and WATCH in registry and self.executor.is_allowed(WATCH)
+            )
+            watched: dict[str, Any] | None = None
+            if self.watching and self.eyes is not None:
+                lens = watch_lens(manifest, cfg.detector)
+                watched = {**self.eyes.record(), **watch_record(registry.get(WATCH), lens)}
+                if lens.warning is not None:
+                    self._note(lens.warning)
             system = build_system_prompt(
                 self.duck,
                 [registry.view(n) for n in allow],
@@ -1902,21 +2002,10 @@ class AgentLoop:
                 # reader whether that was TypeSafe's API or a server on the bench. The url is
                 # redacted here rather than left to argv redaction, because it can arrive from
                 # `QUACKD_DECISION_URL`, which never appears in argv for redaction to reach.
-                **(
-                    {
-                        "decision_price": stepper.price.record(),
-                        "decision_llm": {
-                            "name": stepper.name,
-                            "model": stepper.model,
-                            "url": redacted_url(stepper.url) if stepper.url is not None else None,
-                            # whether this run shows it the camera (`--decision-frames`), said
-                            # before the first frame goes, and on a run that shows none too
-                            "frames": stepper.frames,
-                        },
-                    }
-                    if stepper is not None
-                    else {}
-                ),
+                # On a run with `watch` and no stepper too, since `watch` asks the same one.
+                **self._decision_llm_record(stepper),
+                # what `watch` looks through and is held to, on a run whose pilot may call it
+                **({"watch": watched} if watched is not None else {}),
                 # The policy the arm hands its segments to, when it has one: the server's
                 # address, redacted, and the checkpoint it serves, as the connect heard it.
                 # Only when there is one, so every other run's record stays what it was.
@@ -2415,8 +2504,8 @@ class AgentLoop:
                 "log_dropped": self.event_log.dropped,
                 # only when there was one, so every summary written before the stepper
                 # existed, and every run that does not ask for one, stays byte for byte
-                # what it was
-                **({"decision": stepper.summary()} if stepper is not None else {}),
+                # what it was. `watch`'s own block rides in it, its bill folded into the totals.
+                **({"decision": block} if (block := self._decision_summary(stepper)) else {}),
                 # and the arm's policy by the same rule: what it is, what its segments
                 # counted and the round trips to its server, never an action it sent
                 **({"policy": block} if (block := self._policy("policy_record")) else {}),

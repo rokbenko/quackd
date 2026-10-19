@@ -40,11 +40,25 @@ from quackd.log import (
 )
 from quackd.perception.base import Detector, detect_times
 from quackd.transport.base import CameraFrame, DuckState, DuckTransport
-from quackd.verbs.registry import Verb, VerbContext, VerbNotFound, VerbRegistry, VerbResult
+from quackd.verbs.registry import (
+    STOPPED,
+    Verb,
+    VerbContext,
+    VerbNotFound,
+    VerbRegistry,
+    VerbResult,
+)
 from quackd.verdict import BEFORE_VERDICT, MOVES_THE_BODY, Verdict
 
 if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
+
+CANCELLED_BY_ABORT = "abort"
+CANCELLED_BY_TIMEOUT = "timeout"
+CANCELLED_FROM_OUTSIDE = "cancel"
+"""Why the executor cancelled a running verb, as the message of the `CancelledError` the verb is
+handed (`Executor._execute`): the abort it races, the verb's own timeout, or the caller going
+away. A verb that keeps a record of its own names its ending by it."""
 
 Source = Literal["agent", "mcp", "cli", "decision"]
 """Who asked for this verb. `decision` is the discrete stepper answering a turn the model
@@ -228,6 +242,13 @@ class Executor:
     event_log: EventLog | None = None
     """Where the executor narrates itself: `verb_start`, every `gate` that fires, every
     `intent` a verb sends, `verb_end`. None is silent, which is what tests get."""
+    eyes: Any = None
+    """What `watch` looks through, handed to every verb's context (`VerbContext.eyes`), or None
+    on every run that did not ask for frames."""
+    stops: int = 0
+    """How many times `stop` has been asked for through this executor, from any caller. A
+    verb's context compares it with the count when the verb began (`VerbContext.interrupted`),
+    so a verb that runs for a while ends on a brake pulled from beside it."""
     segment: str | None = field(default=None, init=False)
     """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check
     against `policy_total_s` and its charge, or None. Another is refused meanwhile."""
@@ -343,7 +364,27 @@ class Executor:
             run_verb=lambda name, params: self.run_verb(name, params, source=source, nested=True),
             # an adapter carries its manifest after connect; a bare transport has none
             manifest=self.manifest or getattr(self.transport, "manifest", None),
+            eyes=self.eyes,
+            interrupted=self._interruption(self.stops),
         )
+
+    def _interruption(self, stops_then: int) -> Callable[[], str | None]:
+        """`VerbContext.interrupted` for a verb beginning now: `STOPPED` once a `stop` has been
+        asked for since, or the budget's own sentence once the run's minutes are spent, which
+        `check_time` is the one reading of, and None otherwise. Neither is an abort, which
+        cancels the verb from outside and needs no asking."""
+
+        def interrupted() -> str | None:
+            if self.stops != stops_then:
+                return STOPPED
+            if self.budget is not None:
+                try:
+                    self.budget.check_time()
+                except BudgetExceeded as e:
+                    return str(e)
+            return None
+
+        return interrupted
 
     # ── the one entry point ─────────────────────────────────────────────────────────
 
@@ -444,6 +485,10 @@ class Executor:
         source: Source,
         nested: bool,
     ) -> VerbResult:
+        if canonical == "stop":
+            # counted before any gate, since a brake asked for is a brake pulled, whoever asked:
+            # a verb running beside this call ends on it (`_interruption`)
+            self.stops += 1
         # `stop` is the one verb an aborted session must still be able to run. The abort is
         # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
         # which is the moment the pilot reaches for the brake, and refusing it here closed
@@ -713,9 +758,18 @@ class Executor:
                 abort_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await abort_task
-            # Nothing the verb does from here can be trusted to end, so take the legs back.
+            # Nothing the verb does from here can be trusted to end, so take the legs back. The
+            # cancel says why, which a verb that keeps a record of its own reads off the
+            # `CancelledError` it is handed (`watch`'s `ended`): the abort, its timeout, or a
+            # caller that went away.
             if verb_task not in done:
-                verb_task.cancel()
+                if abort_task is not None and abort_task in done:
+                    why = CANCELLED_BY_ABORT
+                elif finished:
+                    why = CANCELLED_BY_TIMEOUT
+                else:
+                    why = CANCELLED_FROM_OUTSIDE
+                verb_task.cancel(why)
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await verb_task
             if not finished:

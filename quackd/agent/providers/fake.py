@@ -164,6 +164,23 @@ def microduck_lookout_strategy(obs: Observation, step: int, history: list[Exchan
     return ToolCall(name="gaze", arguments={"bearing_deg": _MICRODUCK_SWEEP[looks]})
 
 
+def microduck_watch_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Watch the ball for fifteen seconds, then say how that went, in `watch`'s own words.
+
+    No legs, and no searching first: a rule cannot judge whether a picture shows the ball, so it
+    hands the whole of that to `watch` and repeats what `watch` said, which names the look that
+    last saw the ball or the reason it stopped."""
+    if _count_calls(history, "say") > 0:
+        return ToolCall(name="declare_success", arguments={"reason": "said how the watch went"})
+    last = _last(obs)
+    if last.get("verb") == "watch":
+        said = " ".join(str(last.get("summary") or "the watch ended").split())
+        return ToolCall(name="say", arguments={"text": said[:200]})
+    if "watch" not in obs.features.get("allowed", []):
+        return ToolCall(name="say", arguments={"text": "I have no watch to keep the ball in view"})
+    return ToolCall(name="watch", arguments={"target": "the orange ball", "duration_s": 15})
+
+
 def xlerobot_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
     """One frame, then the answer — because this robot has neither a voice nor a head.
 
@@ -527,6 +544,7 @@ STRATEGIES: dict[str, Strategy] = {
     "open-duck-scout": open_duck_scout_strategy,
     "open-duck-lookout": open_duck_lookout_strategy,
     "microduck-lookout": microduck_lookout_strategy,
+    "microduck-watch": microduck_watch_strategy,
     "xlerobot-lookout": xlerobot_lookout_strategy,
     "alohamini-lookout": alohamini_lookout_strategy,
     "toddlerbot-lookout": toddlerbot_lookout_strategy,

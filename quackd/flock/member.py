@@ -51,6 +51,7 @@ from quackd.safety import (
 )
 from quackd.transport.base import frame_head_yaw_of, frames_taken_since
 from quackd.verbs.registry import VerbResult, default_registry, registry_from_manifest
+from quackd.verbs.watch import withdraw_watch
 
 if TYPE_CHECKING:
     from quackd.flock.transcript import FlockTranscript
@@ -251,6 +252,9 @@ class FlockMember:
                 # an adapter: this member's vocabulary is its own robot's (ADR-0017)
                 self.executor.registry = registry_from_manifest(manifest, self.transport)
                 self.executor.manifest = manifest
+            # A member has nothing to look through, since a flock builds no decision LLM, so its
+            # body's `watch` is not offered and not announced as something it provides.
+            withdraw_watch(self.executor.registry, eyes=None, transport=self.transport)
             self.provides = sorted(self.executor.registry.names())
             # a member starts from the pose it will end at, so what it acts from is the same
             # arm every time rather than wherever the last run put it down. Before the
