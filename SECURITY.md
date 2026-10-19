@@ -136,23 +136,38 @@ Also in scope:
   [von](docs/guides/decision-llms/von.md) binds every interface unless you pass `--host`, which is
   why the catalogue's own command passes it. `laya` runs inside this process, so nothing leaves it
   at all ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is
-  ever sent a camera frame or a system prompt, and none is sent an API key but its own vendor's, at
-  that vendor's address. The one way round that is the SDK's own: with no `--decision-url`,
-  TypeSafe's client sends `jev`'s key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd
-  neither reads nor sets, so setting it is choosing where that key goes. How much was sent is on the
-  record, as `state_chars` and `state_tokens_est` on each `decision` event, and which fields were
-  dropped to fit is there as `trimmed`; the text itself is not, so a reader auditing what left the
-  machine is reading a size and a shape rather than the words. That holds when a turn fails as well:
-  its `error` is the exception's type, with its HTTP status where it carries one, and never the
-  message, which can quote the request back. The only words kept are quackd's own: that the
-  stepper's own second ran out, and what quackd says about a reply it could not read, which names
-  the type of what came back and nothing it said. The address is on the record too, in
-  `run_start.decision_llm`, with a password in it or a credential-named query parameter already
-  replaced by `***`, because that url can arrive through `QUACKD_DECISION_URL` where argv redaction
-  would never see it. What would be a security issue: a picture reaching any of them, a credential
-  reaching any of them but its own vendor at its own address, a credential surviving that recorded
-  url, a hosted key being sent to a server you run, or a stepper-authored call bypassing the
-  executor.
+  ever sent a system prompt, and none is sent an API key but its own vendor's, at that vendor's
+  address. The one way round that is the SDK's own: with no `--decision-url`, TypeSafe's client
+  sends `jev`'s key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd neither reads nor
+  sets, so setting it is choosing where that key goes. A camera frame reaches a decision LLM only
+  with `--decision-frames` (or `QUACKD_DECISION_FRAMES`), only for a row that can see, which is
+  `openai` alone, and only at OpenAI's own hosts, the ones its key goes to: then that row is shown
+  the robot's primary camera beside the state on each turn it is asked about, as one JPEG at most
+  512 pixels on its longest side
+  ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md)). A run that asks for
+  frames with no decision LLM named, with any other row or a plugin, or with a `--decision-url` that
+  is not one of those hosts, a server of your own included, stops before the robot connects, and
+  `--no-vision`, which is about the pilot, changes nothing here. The record keeps what was sent:
+  each frame is written into the run directory as `frames/NNNN-decision.jpg` before the request that
+  carries it goes, and that turn's `decision` event names it with its size and its sha256 and never
+  its bytes, whatever became of the request, while `run_start.decision_llm.frames` says whether the
+  run showed any. OpenAI's data controls say image inputs to that endpoint are scanned for child
+  sexual abuse material when they are sent, and a flagged one kept for manual review even under zero
+  data retention. How much was sent is on the record, as `state_chars` and `state_tokens_est` on
+  each `decision` event, and which fields were dropped to fit is there as `trimmed`; the text itself
+  is not, so a reader auditing what left the machine is reading a size and a shape rather than the
+  words. That holds when a turn fails as well: its `error` is the exception's type, with its HTTP
+  status where it carries one, and never the message, which can quote the request back. The only
+  words kept are quackd's own: that the stepper's own second ran out, and what quackd says about a
+  reply it could not read, which names the type of what came back and nothing it said. The address
+  is on the record too, in `run_start.decision_llm`, with a password in it or a credential-named
+  query parameter already replaced by `***`, because that url can arrive through
+  `QUACKD_DECISION_URL` where argv redaction would never see it. What would be a security issue: a
+  picture reaching a decision LLM on a run that did not ask for frames, or reaching any row but
+  `openai` or any address but OpenAI's own hosts, a frame sent with no `decision` event naming it,
+  image bytes in the state or in the record, a credential reaching any of them but its own vendor at
+  its own address, a credential surviving that recorded url, a hosted key being sent to a server you
+  run, or a stepper-authored call bypassing the executor.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
   sentences a model wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never
