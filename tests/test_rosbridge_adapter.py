@@ -113,7 +113,8 @@ async def test_mock_base_drives_coasts_on_silence_and_reaches_the_ball() -> None
 
 async def test_speed_limits_come_from_the_manifest() -> None:
     assert speed_limits(None) == (0.3, 0.2, 1.5)
-    assert speed_limits(microduck_manifest("sim2d")) == (0.3, 0.2, 1.5)  # the old schema bounds
+    # the Microduck narrows the schema's turn to its own, 1.0 rad/s from 0.21.0
+    assert speed_limits(microduck_manifest("sim2d")) == (0.3, 0.2, 1.0)
     adapter = RosbridgeAdapter(RosbridgeMock())
     await adapter.connect()
     slow = rosbridge_manifest("mock", camera=True, max_vx=0.1, max_wz=0.5)
