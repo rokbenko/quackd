@@ -462,7 +462,7 @@ def solo_hint(needs: Mapping[str, Any], here: RobotManifest | None) -> str:
     Read from the static descriptions, so it costs no connection. It names only robots whose
     adapter is installed, because a manifest is built by the adapter and quackd cannot
     describe a body whose package is absent. So the answer is about this machine rather than
-    about the seven quackd publishes, and a machine with one robot can only speak for that
+    about the eight quackd publishes, and a machine with one robot can only speak for that
     one. A body whose maker never published the figure is not named: unknown is not a yes.
 
     The last sentence is about the pilot's own body and reads its sheet the way the verdict

@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "quackd"
 dynamic = ["version", "readme"]
-description = "One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Microduck, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot and ROS bases."
+description = "One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Microduck, Huebot, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot and ROS bases."
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
 keywords = [
-  "microduck", "open-duck-mini", "lerobot", "so-101", "xlerobot", "alohamini", "toddlerbot", "humanoid", "ros", "ros2", "rosbridge",
+  "microduck", "huebot", "open-duck-mini", "lerobot", "so-101", "xlerobot", "alohamini", "toddlerbot", "humanoid", "ros", "ros2", "rosbridge",
   # "robot-fleet" is a PyPI search term people type, and the one place the retired word stays on purpose.
   "robotics", "embodied-ai", "physical-ai", "llm-agents", "multi-robot", "robot-fleet",
   "mcp", "model-context-protocol", "mujoco",
@@ -99,6 +99,7 @@ robots = [
   "quackd-xlerobot>=0.20.0,<0.21",
   "quackd-alohamini>=0.20.0,<0.21",
   "quackd-toddlerbot>=0.20.0,<0.21",
+  "quackd-huebot>=0.20.0,<0.21",
 ]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
@@ -125,6 +126,10 @@ xlerobot = ["quackd-xlerobot>=0.20.0,<0.21"]
 alohamini = ["quackd-alohamini>=0.20.0,<0.21"]
 open_duck = ["quackd-open-duck>=0.20.0,<0.21"]
 toddlerbot = ["quackd-toddlerbot>=0.20.0,<0.21"]
+# Huebot's own API is closed. Its maker is writing a shim for the robot that is to answer the
+# Microduck's JSON-RPC, which quackd speaks with the standard library, so there is no robot
+# library to pull.
+huebot = ["quackd-huebot>=0.20.0,<0.21"]
 # The Microduck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
 # mediad also serves one PNG per GET /frame, which needs nothing installed, so this is for the
 # stream. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not pulling the
@@ -148,6 +153,7 @@ dev = [
   "quackd-xlerobot",
   "quackd-alohamini",
   "quackd-toddlerbot",
+  "quackd-huebot",
   # The one robot SDK dev carries, because it is the only way the xlerobot wire protocol is
   # exercised for real: tests/test_xlerobot_host.py runs quackd's client against a fake host
   # over loopback sockets. It is a small pure wheel on every platform CI runs, unlike torch
@@ -178,6 +184,7 @@ quackd-open-duck = { workspace = true }
 quackd-xlerobot = { workspace = true }
 quackd-alohamini = { workspace = true }
 quackd-toddlerbot = { workspace = true }
+quackd-huebot = { workspace = true }
 
 [tool.hatch.version]
 path = "quackd/__init__.py"
@@ -227,6 +234,7 @@ extend-exclude = ["runs"]
 known-first-party = [
   "quackd",
   "quackd_alohamini",
+  "quackd_huebot",
   "quackd_microduck",
   "quackd_lerobot",
   "quackd_open_duck",
@@ -246,7 +254,7 @@ ignore = ["RUF012", "B008"]
 "tests/**" = ["T20"]
 # The scripts that build the README's assets are run by hand and report as they go.
 "docs/assets/*.py" = ["T20"]
-# Run by hand at a release and reports which of the eight files it rewrote, which is the
+# Run by hand at a release and reports which of the nine files it rewrote, which is the
 # whole of its user interface.
 "scripts/*.py" = ["T20"]
 # The browser demo's dev server. It is a command a person runs, and printing the URL it

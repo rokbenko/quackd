@@ -1,4 +1,4 @@
-"""The seven robots quackd publishes, as data, importing none of them.
+"""The eight robots quackd publishes, as data, importing none of them.
 
 `factory.py` builds robots; this file only says which ones exist. The split matters because
 `quackd list-adapters` and `quackd doctor` have to render the whole table on a machine where
@@ -6,7 +6,7 @@ none of the adapters is installed, and a table that had to import an adapter to 
 not. Everything here is a string.
 
 An adapter that is installed also describes itself, through the `quackd.adapters` entry point
-group, and a third party's adapter is discovered that way and nowhere else. The seven below
+group, and a third party's adapter is discovered that way and nowhere else. The eight below
 are only the ones quackd ships and supports, listed in a fixed order because the tables that
 print them are order sensitive and `tests/test_adapters.py` pins it.
 """
@@ -127,6 +127,18 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         ),
         summary="a small open-source humanoid",
         extra="quackd[toddlerbot]",
+    ),
+    # Huebot's own API is closed, and its maker is writing a shim for the robot that is to answer
+    # the Microduck's JSON-RPC, so the client is stdlib and there is no SDK to probe.
+    AdapterInfo(
+        name="huebot",
+        backends=("mock", "jsonrpc"),
+        status=(
+            "✅ in the package: mock · 🧪 jsonrpc (robotd's protocol, spoken to a shim its maker "
+            "is writing for the robot, never run on a robot)"
+        ),
+        summary="a 25 cm biped from Leif Rydenfalk",
+        extra="quackd[huebot]",
     ),
 )
 

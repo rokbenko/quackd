@@ -81,7 +81,7 @@ jobs:
           python - <<'PY'
           import json
           rows = json.load(open("report.json"))["adapters"]
-          assert len(rows) == 7, rows
+          assert len(rows) == 8, rows
           assert not any(r["adapter_installed"] for r in rows), rows
           PY
           ! ./bare/bin/quackd run hello-world --llm fake 2>err.txt

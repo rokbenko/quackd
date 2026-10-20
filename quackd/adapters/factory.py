@@ -71,7 +71,7 @@ def _installed() -> dict[str, str]:
 
 
 def adapter_names() -> tuple[str, ...]:
-    """Every adapter quackd can talk about: the seven it publishes, in their fixed order,
+    """Every adapter quackd can talk about: the eight it publishes, in their fixed order,
     then anything else installed here, alphabetically. A name quackd publishes keeps its
     place whether or not it is installed, because the tables that list them are a catalogue
     rather than an inventory."""
@@ -187,7 +187,7 @@ def default_spec() -> RobotSpec:
         publishes = ", ".join(n for n in BY_NAME if n != "microduck")
         raise NoRobotNamed(
             'no robot adapter is installed: uv pip install "quackd[microduck]" '
-            f"(or {publishes}; quackd[robots] installs all seven), "
+            f"(or {publishes}; quackd[robots] installs all eight), "
             "then --robot <adapter>:<backend>"
         )
     if len(usable) == 1:

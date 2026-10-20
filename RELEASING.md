@@ -1,12 +1,12 @@
 # RELEASING.md — what a version says, and how quackd ships one
 
-quackd is eight distributions with one version between them: `quackd`, and `quackd-microduck`,
-`quackd-lerobot`, `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`
-and `quackd-toddlerbot`. Sixteen releases, 0.1.0 to 0.16.0, were all minors whatever each one
-held, so the number said only that something had shipped. 0.16.1 is the first patch. This file
-is the rule that says which a release is, and then the order a maintainer ships one in.
-[ADR-0049](docs/adr/0049-a-version-says-what-changed.md) records why it was written down. A
-contributor needs only the part about the changelog, and
+quackd is nine distributions with one version between them: `quackd`, and `quackd-microduck`,
+`quackd-lerobot`, `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`,
+`quackd-toddlerbot` and `quackd-huebot`. Sixteen releases, 0.1.0 to 0.16.0, were all minors
+whatever each one held, so the number said only that something had shipped. 0.16.1 is the first
+patch. This file is the rule that says which a release is, and then the order a maintainer ships
+one in. [ADR-0049](docs/adr/0049-a-version-says-what-changed.md) records why it was written
+down. A contributor needs only the part about the changelog, and
 [CONTRIBUTING.md](CONTRIBUTING.md#versions-and-releases) says what that asks of a pull request.
 
 ## What a version number speaks about
@@ -32,7 +32,7 @@ program relies on without reading quackd's source.
   the Open Duck Mini and the ToddlerBot, `quackd-open-duck-bridge` and
   `quackd-toddlerbot-bridge`.
 - **Packaging:** the extras' names, which adapters exist, the Python versions quackd supports,
-  and the windows that tie the eight packages together.
+  and the windows that tie the nine packages together.
 - **Safety behaviour:** what the executor refuses, what it asks a person to confirm, and what it
   clips.
 
@@ -126,7 +126,7 @@ minor is the one trade these rules will not make.
      missing from [docs/guides/mcp.md](docs/guides/mcp.md) or a page counts them wrong, and beside
      it the event kinds a run's transcript holds and the keys of a run's `policy` block, which fail
      when docs/concepts/architecture.md leaves one out;
-   - `tests/test_workspace.py`, which fails when the eight versions or the windows between them
+   - `tests/test_workspace.py`, which fails when the nine versions or the windows between them
      disagree.
 
    None of those proves that an older script still works. The exit codes, the refusals scripts
@@ -152,12 +152,12 @@ exception still holds.
 
 ## How the numbers move
 
-- **Eight distributions, one version, released together,** even when only one of them changed,
+- **Nine distributions, one version, released together,** even when only one of them changed,
   so nobody has to work out which `quackd-lerobot` goes with which `quackd`.
 - **Every window starts at the release it ships in.** Each adapter allows the core from its own
   release up to the next minor (`quackd>=X.Y.Z,<X.Y+1`), and each of the core's extras allows
   its adapter's the same way. `scripts/set_version.py X.Y.Z` writes both from the whole version,
-  beside the eight `__version__` lines, so a patch raises every floor in the eight
+  beside the nine `__version__` lines, so a patch raises every floor in the nine
   `pyproject.toml` files to itself, and a minor or a major moves the whole window. The window
   quoted in prose, in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037, is edited
   by hand at every release.
@@ -216,7 +216,7 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    uv lock
    ```
 
-   It changes the eight `__version__` lines and every window in the eight `pyproject.toml`
+   It changes the nine `__version__` lines and every window in the nine `pyproject.toml`
    files: a patch raises each floor to itself, and a minor moves the whole window. Then the
    copies of the window in CONTRIBUTING.md, docs/adapters/writing-an-adapter.md and ADR-0037 are
    edited by hand, and so is the version in the `policy` line of the two `quackd policy check`
@@ -302,8 +302,8 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    ```
 
    The message's first line is `vX.Y.Z:` and a lowercase clause, the one the merge carries.
-   Then paragraphs on what changed, then the line `Eight distributions, one version between
-   them:` naming all eight, and last `The full note is in CHANGELOG.md.` It goes out under the
+   Then paragraphs on what changed, then the line `Nine distributions, one version between
+   them:` naming all nine, and last `The full note is in CHANGELOG.md.` It goes out under the
    maintainer's name, so it keeps the first two rules of
    [How the reply is written](CONTRIBUTING.md#how-the-reply-is-written): no dash used as
    punctuation, with a hyphen only inside a name such as `quackd-lerobot`, and none of the
@@ -320,10 +320,10 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     ls "$out/dist" | wc -l
     ```
 
-    That is sixteen, eight wheels and eight sdists. The core's wheel takes `quackd/` whole, and
+    That is eighteen, nine wheels and nine sdists. The core's wheel takes `quackd/` whole, and
     its sdist takes `quackd/`, `ducks/`, `docs/`, `tests/` and `bridge/` whole, so a file the
     checkout has and no commit does would ship. The archive holds exactly what the tag names.
-11. **The GitHub Release**, with all sixteen attached:
+11. **The GitHub Release**, with all eighteen attached:
 
     ```bash
     gh release create "v$v" --verify-tag -R rokbenko/quackd \
@@ -342,19 +342,19 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
     ```
 
     The token lives in the repository's ignored `.env`, and nothing echoes it. `--check-url`
-    skips a file PyPI already has, so the second command uploads the seven adapters, and either
+    skips a file PyPI already has, so the second command uploads the eight adapters, and either
     can run again after a partial upload or a `429`.
 13. **Compare every hash in three places.**
 
     ```bash
-    names="quackd quackd-microduck quackd-lerobot quackd-rosbridge quackd-open-duck quackd-xlerobot quackd-alohamini quackd-toddlerbot"
+    names="quackd quackd-microduck quackd-lerobot quackd-rosbridge quackd-open-duck quackd-xlerobot quackd-alohamini quackd-toddlerbot quackd-huebot"
     (cd "$out/dist" && sha256sum *) | awk '{sub(/^\*/, "", $2); print "sha256:" $1, $2}' | sort > "$out/local.txt"
     for n in $names; do curl -s "https://pypi.org/pypi/$n/$v/json" | python -c "import json, sys; [print('sha256:' + u['digests']['sha256'], u['filename']) for u in json.load(sys.stdin)['urls']]"; done | tr -d '\r' | sort > "$out/pypi.txt"
     gh release view "v$v" -R rokbenko/quackd --json assets --jq '.assets[] | "\(.digest) \(.name)"' | tr -d '\r' | sort > "$out/github.txt"
     (cd "$out" && wc -l < local.txt && diff local.txt pypi.txt && diff local.txt github.txt && echo "one hash each")
     ```
 
-    Sixteen lines, and no difference. PyPI's JSON is the verdict and the upload's output is not:
+    Eighteen lines, and no difference. PyPI's JSON is the verdict and the upload's output is not:
     it has reported files uploading that never appeared.
 14. **Wait for PyPI's simple index**, which is what `uv` resolves from:
 

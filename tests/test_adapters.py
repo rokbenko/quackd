@@ -270,6 +270,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "xlerobot",
         "alohamini",
         "toddlerbot",
+        "huebot",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
     assert rows[1]["extra"] == "quackd[lerobot]" and "real" in rows[1]["backends"]
@@ -296,8 +297,14 @@ PARKS_NOTHING = (
     "xlerobot:mock",
     "alohamini:mock",
     "toddlerbot:mock",
+    "huebot:mock",
+    "huebot:jsonrpc",
 )
 """Every adapter but lerobot: the bodies that hold their own posture when the power goes."""
+
+ADDRESSES = {"huebot:jsonrpc": "tcp://127.0.0.1:9870"}
+"""What a body needs to be built at all: huebot:jsonrpc refuses to be built without one,
+since quackd knows no default for its shim. Building one connects to nothing."""
 
 ONE_CAMERA = (
     "microduck:sim2d",
@@ -307,6 +314,8 @@ ONE_CAMERA = (
     "xlerobot:mock",
     "alohamini:mock",
     "toddlerbot:mock",
+    "huebot:mock",
+    "huebot:jsonrpc",
     "lerobot:mock",
 )
 """Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real` and its
@@ -327,7 +336,7 @@ async def test_a_body_that_cannot_park_refuses_a_rest_pose_instead_of_ignoring_i
     with pytest.raises(AdapterError, match="does not return to a rest pose"):
         make_adapter(spec, rest_pose={"shoulder_pan": 1.0})
 
-    parked = await make_adapter(spec).go_to_rest()
+    parked = await make_adapter(spec, address=ADDRESSES.get(spec)).go_to_rest()
     assert parked == RestResult.none()
     assert not parked.recorded and not parked.reached
 

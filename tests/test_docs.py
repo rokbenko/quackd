@@ -35,7 +35,7 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.
 
-    Every other upstream in the project has a doc-completeness guard, the six other adapter
+    Every other upstream in the project has a doc-completeness guard, the seven other adapter
     pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
     Without the second loop the newest table is the only one that can go stale in silence.
     """
@@ -465,7 +465,7 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 
 @pytest.mark.parametrize(
     "adapter",
-    ["lerobot", "rosbridge", "open_duck", "xlerobot", "alohamini", "toddlerbot"],
+    ["lerobot", "rosbridge", "open_duck", "xlerobot", "alohamini", "toddlerbot", "huebot"],
 )
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
@@ -1282,6 +1282,30 @@ def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
             )
 
 
+def test_the_counts_of_bodies_and_distributions_follow_the_adapters() -> None:
+    """Huebot made eight bodies and nine distributions, and the README's badge still said seven
+    bodies while the README and the docs map said eight packages and eight distributions: no
+    guard read either shape. The badge is the first number a reader meets, and the number of
+    distributions is what one version ships, so both follow `ADAPTER_NAMES`, the core counted in
+    for the second."""
+    from quackd.adapters.factory import ADAPTER_NAMES
+
+    bodies = len(ADAPTER_NAMES)
+    badge = re.search(r'badge/robots-(\d+)%20bodies[^"]*" alt="robots: (\d+) bodies', README)
+    assert badge is not None, "the README has no robots badge"
+    assert (int(badge.group(1)), int(badge.group(2))) == (bodies, bodies), badge.group(0)
+    for doc in _living_docs():
+        prose = _prose(doc.read_text(encoding="utf-8")).lower()
+        for count, word in _NUMBER_WORDS.items():
+            if count == bodies + 1:
+                continue
+            for claim in (f"{word} distributions", f"the {word} packages"):
+                assert claim not in prose, (
+                    f"{doc.relative_to(REPO)} says {claim!r}; quackd ships "
+                    f"{_NUMBER_WORDS[bodies + 1]}, the core and {', '.join(ADAPTER_NAMES)}"
+                )
+
+
 def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None:
     """The same failure the adapter count already has a guard for, one layer up.
 
@@ -1828,6 +1852,7 @@ _VERB_TABLE_ROWS = {
     "xlerobot": "| XLeRobot |",
     "alohamini": "| AlohaMini |",
     "toddlerbot": "| ToddlerBot |",
+    "huebot": "| Huebot |",
 }
 
 _CORE_VERBS = frozenset(

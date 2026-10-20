@@ -1,9 +1,9 @@
 # Reading someone else's robot
 
-quackd drives seven bodies and has run on one of them: a LeRobot SO-101 follower arm, on
+quackd drives eight bodies and has run on one of them: a LeRobot SO-101 follower arm, on
 2026-09-15 and again on 2026-09-23, the only two days any of this met hardware
 ([adapters/status.md](status.md) says what those runs covered and what they did not). The
-other six it has never touched. Almost everything it does was worked out by reading upstream
+other seven it has never touched. Almost everything it does was worked out by reading upstream
 code closely enough to be safe without executing it, and the same handful of traps came up on
 robot after robot. They are collected here by pattern, because
 that is how they recur: the next robot will not have the AlohaMini's bug, it will have a bug

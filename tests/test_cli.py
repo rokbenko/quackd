@@ -1451,7 +1451,7 @@ def test_by_hand_is_refused_for_a_flock(tmp_path: Path) -> None:
 def test_by_hand_is_refused_on_a_body_that_is_not_the_arm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Six of the seven bodies here have nothing to hand over: a walking duck with its torque
+    """Seven of the eight bodies here have nothing to hand over: a walking duck with its torque
     off is a duck on the floor. The refusal names the body, because the flag is right and the
     `--robot` beside it is the half to change.
 
@@ -1749,7 +1749,7 @@ def test_release_answered_no_never_connects(
 
 
 def test_release_refuses_a_body_that_is_not_the_arm(tmp_path: Path) -> None:
-    """A walking duck with its torque off is a duck on the floor, and six bodies of seven are
+    """A walking duck with its torque off is a duck on the floor, and seven bodies of eight are
     never handed to a person at all: `supports_hand_off` is the arm's alone."""
     reg = tmp_path / "registry"
     added = runner.invoke(

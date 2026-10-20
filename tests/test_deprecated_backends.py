@@ -113,7 +113,7 @@ def test_only_a_backend_its_adapter_declares_is_announced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`deprecated_backend` reads each adapter module's own `DEPRECATED_BACKENDS`. `retiring:old`
-    has the line, and `retiring:new` beside it has none. Every backend of the seven adapters
+    has the line, and `retiring:new` beside it has none. Every backend of the eight adapters
     quackd publishes has none either, since none of them declares one. An adapter that is not
     installed has nothing: a command asks only about a body it has built, and refuses one that
     is not installed before that, in its own words."""

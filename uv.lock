@@ -24,6 +24,7 @@ resolution-markers = [
 members = [
     "quackd",
     "quackd-alohamini",
+    "quackd-huebot",
     "quackd-lerobot",
     "quackd-microduck",
     "quackd-open-duck",
@@ -3635,6 +3636,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pyzmq" },
     { name = "quackd-alohamini" },
+    { name = "quackd-huebot" },
     { name = "quackd-lerobot" },
     { name = "quackd-microduck" },
     { name = "quackd-open-duck" },
@@ -3652,6 +3654,9 @@ glm = [
 ]
 grok = [
     { name = "openai" },
+]
+huebot = [
+    { name = "quackd-huebot" },
 ]
 kimi = [
     { name = "openai" },
@@ -3704,6 +3709,7 @@ qwen = [
 ]
 robots = [
     { name = "quackd-alohamini" },
+    { name = "quackd-huebot" },
     { name = "quackd-lerobot", extra = ["sdk"] },
     { name = "quackd-microduck" },
     { name = "quackd-open-duck" },
@@ -3761,6 +3767,9 @@ requires-dist = [
     { name = "quackd-alohamini", marker = "extra == 'alohamini'", editable = "adapters/alohamini" },
     { name = "quackd-alohamini", marker = "extra == 'dev'", editable = "adapters/alohamini" },
     { name = "quackd-alohamini", marker = "extra == 'robots'", editable = "adapters/alohamini" },
+    { name = "quackd-huebot", marker = "extra == 'dev'", editable = "adapters/huebot" },
+    { name = "quackd-huebot", marker = "extra == 'huebot'", editable = "adapters/huebot" },
+    { name = "quackd-huebot", marker = "extra == 'robots'", editable = "adapters/huebot" },
     { name = "quackd-lerobot", marker = "extra == 'dev'", editable = "adapters/lerobot" },
     { name = "quackd-lerobot", extras = ["sdk"], marker = "extra == 'lerobot'", editable = "adapters/lerobot" },
     { name = "quackd-lerobot", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/lerobot" },
@@ -3791,7 +3800,7 @@ requires-dist = [
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.2" },
     { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
 ]
-provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "mujoco", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
+provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "mujoco", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
 
 [[package]]
 name = "quackd-alohamini"
@@ -3806,6 +3815,16 @@ requires-dist = [
     { name = "pyzmq", specifier = ">=26" },
     { name = "quackd", editable = "." },
 ]
+
+[[package]]
+name = "quackd-huebot"
+source = { editable = "adapters/huebot" }
+dependencies = [
+    { name = "quackd" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quackd", editable = "." }]
 
 [[package]]
 name = "quackd-lerobot"
