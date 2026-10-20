@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.client
 import io
 import itertools
 import json
@@ -63,6 +64,7 @@ from quackd_huebot.transports.jsonrpc_unix import (
     SNAPSHOT_MAX_BYTES,
     JsonRpcUnixTransport,
     NotAStill,
+    SnapshotRefused,
     StillTooSlow,
     fetch_still,
 )
@@ -1240,9 +1242,12 @@ STILL_JPEG = _STILL.getvalue()
 def _camera(kind: str, **opts: float) -> Iterator[tuple[str, threading.Event]]:
     """An HTTP camera on loopback, and an event set once the client has dropped what it was
     sent. `still` answers one JPEG; `mjpeg` a `multipart/x-mixed-replace` stream of them;
-    `endless` an `image/jpeg` body with no end; `trickle` one byte every `every_s`. All but
-    `still` send for `for_s`, a minute unless told otherwise, so that a fetch that never lets
-    go fails its test rather than hanging it."""
+    `endless` an `image/jpeg` body with no end; `trickle` one byte every `every_s`. The rest
+    write the wire by hand: `slow-headers` a header that never ends, a byte at a time;
+    `redirect` a 302 whose body never ends; `trailers` a chunked body whose trailer never ends;
+    `truncated` 10 of the 100 bytes its length promises; `error` a 503 whose page trickles. All
+    but `still` and `truncated` send for `for_s`, a minute unless told otherwise, so that a fetch
+    that never lets go fails its test rather than hanging it."""
     dropped = threading.Event()
 
     class Camera(BaseHTTPRequestHandler):
@@ -1250,6 +1255,12 @@ def _camera(kind: str, **opts: float) -> Iterator[tuple[str, threading.Event]]:
             pass
 
         def do_GET(self) -> None:
+            if kind in RAW:
+                with contextlib.suppress(OSError):
+                    self.wfile.write(RAW[kind])
+                    if kind != "truncated":
+                        self.keep_sending()
+                return
             self.send_response(200)
             if kind == "still":
                 self.send_header("Content-Type", "image/jpeg")
@@ -1277,6 +1288,17 @@ def _camera(kind: str, **opts: float) -> Iterator[tuple[str, threading.Event]]:
             except OSError:
                 dropped.set()
 
+        def keep_sending(self) -> None:
+            until = time.monotonic() + opts.get("for_s", 60.0)
+            more = {"redirect": b"<p>moved</p>" * 1000, "trailers": b"X-More: yes\r\n"}
+            try:
+                while time.monotonic() < until:
+                    self.wfile.write(more.get(kind, b"x"))
+                    if kind != "redirect":
+                        time.sleep(0.05)
+            except OSError:
+                dropped.set()
+
     server = ThreadingHTTPServer(("127.0.0.1", 0), Camera)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, name="fake-camera", daemon=True)
@@ -1286,6 +1308,23 @@ def _camera(kind: str, **opts: float) -> Iterator[tuple[str, threading.Event]]:
     finally:
         server.shutdown()
         server.server_close()
+
+
+#: What each hand-written camera in `_camera` sends first, before `keep_sending` goes on.
+RAW = {
+    "slow-headers": b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nX-Slow: ",
+    "redirect": (
+        b"HTTP/1.1 302 Found\r\nLocation: /elsewhere.jpg\r\nContent-Type: text/html\r\n\r\n"
+    ),
+    "trailers": (
+        b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nTransfer-Encoding: chunked\r\n\r\n"
+        b"1\r\nx\r\n0\r\n"
+    ),
+    "truncated": (
+        b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: 100\r\n\r\n" + b"x" * 10
+    ),
+    "error": b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\n\r\n",
+}
 
 
 def test_a_still_is_fetched_whole() -> None:
@@ -1337,6 +1376,57 @@ def test_a_fetch_told_to_stop_stops_at_its_next_read() -> None:
         with pytest.raises(ConnectionAbortedError, match="the transport closed"):
             fetch_still(url, deadline_s=30.0, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop)
         assert time.monotonic() - started < 4.0
+
+
+@pytest.mark.parametrize("kind", ["slow-headers", "trailers"])
+def test_a_fetch_is_cut_off_at_its_deadline_wherever_it_is_reading(kind: str) -> None:
+    """A header that never ends and a chunked body's trailer that never ends are read inside
+    urllib and http.client, where no check between reads of the body can see them, and each
+    of their bytes comes inside every read's own timeout. The guard shuts the socket down at the
+    deadline all the same. The camera stops after 4 s, so a fetch it did not cut ends there."""
+    with _camera(kind, for_s=4.0) as (url, _):
+        started = time.monotonic()
+        with pytest.raises(StillTooSlow, match=r"no whole picture within 0\.5 s"):
+            fetch_still(url, deadline_s=0.5, max_bytes=SNAPSHOT_MAX_BYTES)
+        assert time.monotonic() - started < 3.0
+
+
+def test_a_stop_ends_a_fetch_still_reading_its_headers() -> None:
+    stop = threading.Event()
+    with _camera("slow-headers", for_s=4.0) as (url, _):
+        threading.Timer(0.3, stop.set).start()
+        started = time.monotonic()
+        with pytest.raises(ConnectionAbortedError, match="the transport closed"):
+            fetch_still(url, deadline_s=30.0, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop)
+        assert time.monotonic() - started < 3.0
+
+
+def test_a_redirect_is_refused_without_reading_its_body() -> None:
+    """urllib reads a redirect's whole body before it follows it, past every bound a fetch
+    sets, so a redirect is refused, naming where it points, and its body is never read."""
+    with _camera("redirect", for_s=6.0) as (url, dropped):
+        started = time.monotonic()
+        with pytest.raises(NotAStill) as refused:
+            fetch_still(url, deadline_s=5.0, max_bytes=SNAPSHOT_MAX_BYTES)
+        assert time.monotonic() - started < 3.0
+        said = str(refused.value)
+        assert "HTTP 302 Found, a redirect to http://127.0.0.1:" in said, said
+        assert "/elsewhere.jpg, which quackd does not follow" in said, said
+        assert dropped.wait(5.0), "the redirect's body is still being read"
+
+
+def test_a_body_shorter_than_its_length_is_no_picture() -> None:
+    with _camera("truncated") as (url, _), pytest.raises(http.client.IncompleteRead):
+        fetch_still(url, deadline_s=3.0, max_bytes=SNAPSHOT_MAX_BYTES)
+
+
+def test_an_error_page_that_trickles_is_read_no_longer_than_the_deadline() -> None:
+    with _camera("error", for_s=4.0) as (url, _):
+        started = time.monotonic()
+        with pytest.raises(SnapshotRefused) as refused:
+            fetch_still(url, deadline_s=0.5, max_bytes=SNAPSHOT_MAX_BYTES)
+        assert refused.value.code == 503
+        assert time.monotonic() - started < 3.0
 
 
 def test_a_camera_that_streams_is_named_and_leaves_nothing_reading() -> None:

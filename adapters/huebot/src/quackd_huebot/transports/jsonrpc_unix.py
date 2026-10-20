@@ -67,10 +67,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.client
 import io
 import json
 import logging
 import math
+import socket
+import ssl
 import sys
 import threading
 import time
@@ -299,15 +302,14 @@ def _head_yaw(state: dict[str, Any]) -> float | None:
 CAMERA_FPS = 5.0
 
 #: How long one snapshot may take before it counts as failed: from its request to the last
-#: byte of its picture, and the longest any one read waits for its next bytes (`fetch_still`).
+#: byte of its picture, and the longest a connect waits (`fetch_still`).
 SNAPSHOT_TIMEOUT_S = 3.0
 
 #: The most one snapshot may be, in bytes. A still from a camera on a robot this size is tens
 #: of kilobytes, so an answer past this is not one picture, and reading on would fill memory.
 SNAPSHOT_MAX_BYTES = 8_000_000
 
-#: The most one read of a snapshot asks for, and so how often a fetch looks at its deadline
-#: and at whether it was told to stop.
+#: The most one read of a snapshot's body asks for.
 SNAPSHOT_CHUNK_BYTES = 64 * 1024
 
 #: How long `connect()` waits for the camera's first frame, through the failures a camera that
@@ -350,12 +352,16 @@ def _first_line(answer: Any) -> str:
 
 class NotAStill(ValueError):
     """An HTTP camera whose answer is not one still image: a `multipart/*` stream, which never
-    ends, or more bytes than one picture has."""
+    ends, more bytes than one picture has, or a redirect, which `fetch_still` does not follow."""
 
 
 class StillTooSlow(TimeoutError):
     """An HTTP camera whose one picture did not arrive whole within the deadline, however fast
     its bytes were still coming."""
+
+
+#: How often the guard on a fetch looks at its deadline and at whether it was told to stop.
+STILL_GUARD_TICK_S = 0.05
 
 
 def fetch_still(
@@ -367,44 +373,121 @@ def fetch_still(
 ) -> bytes:
     """The bytes of one still image from an HTTP camera, fetched in the calling thread.
 
-    Self-contained, the standard library and nothing else, so another transport can take it
-    whole. Three things end a fetch that would otherwise read for as long as the camera sends:
-    an answer whose type is `multipart/*`, an MJPEG stream among them, is refused before a byte
-    of its body is read (`NotAStill`); a body longer than `max_bytes` is refused (`NotAStill`);
-    and past `deadline_s` from the request the fetch gives up, however fast bytes are still
-    arriving (`StillTooSlow`). Each read waits at most `deadline_s` for its next bytes, and the
-    deadline is looked at between reads of the body, so once the headers are in a fetch is over
-    within twice `deadline_s` whatever the camera sends. The request and the headers, which
-    urllib reads, are bounded by that wait for each next byte alone. `stop`, once set, ends a
-    fetch at its next read of the body (`ConnectionAbortedError`): a transport that closes sets
-    it, so no fetch reads a body on behind it, and none keeps `asyncio.run` waiting on its
-    thread at exit.
+    The standard library and nothing else, with `NotAStill`, `StillTooSlow`, `SnapshotRefused`
+    and `_first_line` beside it, so another transport can take it whole. What ends a fetch that
+    would otherwise read for as long as the camera sends:
 
-    An HTTP error status raises urllib's `HTTPError`, whose body the caller can still read."""
+    - An answer whose type is `multipart/*`, an MJPEG stream among them, is refused before a
+      byte of its body is read, and so is a redirect, whose body urllib would read whole before
+      following it (`NotAStill`, naming the type or where the redirect points).
+    - A body longer than `max_bytes` is refused (`NotAStill`), and one that ends short of the
+      length its headers gave is an `IncompleteRead`, never a picture.
+    - A guard thread shuts the socket down `deadline_s` after the request (`StillTooSlow`), or
+      once `stop` is set (`ConnectionAbortedError`), whatever the fetch is reading then: the
+      headers, the body, a chunked body's trailer, an error page. A transport that closes sets
+      `stop`, so no fetch reads on behind it, and none keeps `asyncio.run` waiting on its thread
+      at exit. The guard reaches a socket once it is connected, so a connect waits `deadline_s`
+      at most, as each read does.
+
+    An HTTP error status raises `SnapshotRefused` with the first line of what the camera said."""
     started = time.monotonic()
-    with urllib.request.urlopen(url, timeout=deadline_s) as answer:
-        kind = answer.headers.get_content_type()
-        if kind.startswith("multipart/"):
-            raise NotAStill(
-                f"the camera answers with a {kind} stream, not one still image: give "
-                "--camera-url a URL that returns one still image, a JPEG or a PNG, on each request"
-            )
-        body = bytearray()
-        while True:
+    sockets: list[socket.socket] = []
+    ended = threading.Event()
+    cut: list[BaseException] = []
+
+    def guard() -> None:
+        while not ended.wait(STILL_GUARD_TICK_S):
             if stop is not None and stop.is_set():
-                raise ConnectionAbortedError("the fetch was stopped: the transport closed")
-            if time.monotonic() - started > deadline_s:
-                raise StillTooSlow(f"no whole picture within {deadline_s:g} s")
-            chunk = answer.read1(SNAPSHOT_CHUNK_BYTES)
-            if not chunk:
+                cut.append(ConnectionAbortedError("the fetch was stopped: the transport closed"))
+            elif time.monotonic() - started > deadline_s:
+                cut.append(StillTooSlow(f"no whole picture within {deadline_s:g} s"))
+            else:
+                continue
+            for sock in sockets:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+            return
+
+    def watched(sock: socket.socket | None) -> None:
+        # A socket the guard missed, because it fired while the connect was still going on, is
+        # shut down as it is handed over instead.
+        if sock is not None:
+            sockets.append(sock)
+            if cut:
+                with contextlib.suppress(OSError):
+                    sock.shutdown(socket.SHUT_RDWR)
+
+    class Plain(http.client.HTTPConnection):
+        def connect(self) -> None:
+            super().connect()
+            watched(self.sock)
+
+    class Tls(http.client.HTTPSConnection):
+        def connect(self) -> None:
+            super().connect()
+            watched(self.sock)
+
+    class OpenPlain(urllib.request.HTTPHandler):
+        def http_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(Plain, req)
+
+    class OpenTls(urllib.request.HTTPSHandler):
+        def https_open(self, req: urllib.request.Request) -> http.client.HTTPResponse:
+            return self.do_open(Tls, req, context=ssl.create_default_context())
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
+        ) -> urllib.request.Request | None:
+            fp.close()
+            raise NotAStill(
+                f"the camera answered HTTP {code} {msg}, a redirect to {newurl}, which quackd does "
+                "not follow: give --camera-url that URL"
+            )
+
+    opener = urllib.request.build_opener(OpenPlain, OpenTls, NoRedirect)
+    threading.Thread(target=guard, name="quackd-still-guard", daemon=True).start()
+    try:
+        try:
+            with opener.open(url, timeout=deadline_s) as answer:
+                kind = answer.headers.get_content_type()
+                if kind.startswith("multipart/"):
+                    raise NotAStill(
+                        f"the camera answers with a {kind} stream, not one still image: give "
+                        "--camera-url a URL that returns one still image, a JPEG or a PNG, on "
+                        "each request"
+                    )
+                body = bytearray()
+                while chunk := answer.read1(SNAPSHOT_CHUNK_BYTES):
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise NotAStill(
+                            f"the camera sent more than {max_bytes / 1e6:g} MB for one picture, "
+                            "which no still image is: give --camera-url a URL that returns one "
+                            "still image, a JPEG or a PNG, on each request"
+                        )
+                if cut:
+                    raise cut[0]
+                if left := getattr(answer, "length", None):
+                    raise http.client.IncompleteRead(bytes(body), left)
                 return bytes(body)
-            body += chunk
-            if len(body) > max_bytes:
-                raise NotAStill(
-                    f"the camera sent more than {max_bytes / 1e6:g} MB for one picture, which no "
-                    "still image is: give --camera-url a URL that returns one still image, a JPEG "
-                    "or a PNG, on each request"
-                )
+        except urllib.error.HTTPError as e:
+            # read here, in the thread, while the answer is open and the guard still watches
+            raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
+    except (SnapshotRefused, NotAStill):
+        raise
+    except Exception as e:
+        if cut and e is not cut[0]:
+            raise cut[0] from e
+        raise
+    finally:
+        ended.set()
 
 
 def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
@@ -1024,13 +1107,9 @@ class JsonRpcUnixTransport:
         stop = self._camera_stop  # this one, which `close()` sets, and not the one after it
 
         def fetch() -> bytes:
-            try:
-                return fetch_still(
-                    url, deadline_s=SNAPSHOT_TIMEOUT_S, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop
-                )
-            except urllib.error.HTTPError as e:
-                # read here, in the thread and while the answer is open: the body says why
-                raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e
+            return fetch_still(
+                url, deadline_s=SNAPSHOT_TIMEOUT_S, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop
+            )
 
         data = await asyncio.to_thread(fetch)
         return Image.open(io.BytesIO(data)).convert("RGB")
