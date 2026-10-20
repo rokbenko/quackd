@@ -868,6 +868,48 @@ def test_validate_takes_a_registered_name(tmp_path: Path) -> None:
     assert "duck-a" in result.output, "the manifest id is the name you registered"
 
 
+def test_a_robot_this_quackd_cannot_build_is_listed_and_refused_by_name(tmp_path: Path) -> None:
+    """A robot on a backend its adapter has dropped used to make every command that reads the
+    registry refuse, `robot list` and `robot remove` among them. It is listed and marked with
+    the fix, shown, and refused by name by the run and the doctor that use it, while the robot
+    beside it still validates. `remove` then forgets it."""
+    _seed(tmp_path)
+    path = tmp_path / "robots.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["robots"]["kitchen"] = {"spec": "microduck:websocket"}
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    refusal = "kitchen is registered as microduck:websocket, which this quackd cannot build"
+    fix = "quackd robot edit kitchen --spec microduck:<backend>, or quackd robot remove kitchen"
+
+    listed = runner.invoke(app, ["robot", "list", *_reg(tmp_path)])
+    flat = " ".join(listed.output.split())
+    assert listed.exit_code == 0 and refusal in flat and fix in flat, listed.output
+    rows = {
+        row["name"]: row
+        for row in map(
+            json.loads,
+            runner.invoke(app, ["robot", "list", "--json", *_reg(tmp_path)]).stdout.splitlines(),
+        )
+    }
+    assert "unknown backend 'websocket'" in rows["kitchen"]["spec_problem"]
+    assert rows["duck-a"]["spec_problem"] is None
+    shown = runner.invoke(app, ["robot", "show", "kitchen", *_reg(tmp_path)])
+    assert shown.exit_code == 0 and refusal in " ".join(shown.output.split()), shown.output
+
+    ran = runner.invoke(app, ["run", "hello-world", "--robot", "kitchen", *_reg(tmp_path)])
+    assert ran.exit_code == 1 and refusal in " ".join(ran.output.split()), ran.output
+    doctor = json.loads(
+        runner.invoke(app, ["doctor", "--robot", "kitchen", "--json", *_reg(tmp_path)]).stdout
+    )
+    assert doctor["robot"]["error"].startswith(refusal), doctor["robot"]
+    beside = runner.invoke(app, ["validate", "hello-world", "--robot", "duck-a", *_reg(tmp_path)])
+    assert beside.exit_code == 0, beside.output
+
+    removed = runner.invoke(app, ["robot", "remove", "kitchen", "--yes", *_reg(tmp_path)])
+    assert removed.exit_code == 0, removed.output
+    assert "kitchen" not in json.loads(path.read_text(encoding="utf-8"))["robots"]
+
+
 def test_an_unknown_bare_name_names_both_things_it_could_have_been(tmp_path: Path) -> None:
     result = runner.invoke(app, ["run", "hello-world", "--robot", "ghost", *_reg(tmp_path)])
     assert result.exit_code == 1

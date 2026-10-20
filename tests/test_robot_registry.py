@@ -133,17 +133,89 @@ def test_a_flock_may_be_called_after_an_adapter_but_not_after_a_number() -> None
 
 
 def test_the_spec_is_normalised_and_a_bad_one_keeps_the_adapters_own_words() -> None:
+    """A spec that parses is stored canonically. One that does not is kept as written, and the
+    adapter table's own words say why on the robot that is refused for it."""
     assert _entry(spec="MicroDuck").spec == "microduck:sim2d"
-    with pytest.raises(ValidationError, match="unknown adapter 'bogus'"):
-        _entry(spec="bogus:nope")
+    assert _entry(spec="microduck:mock").spec_problem is None
+    kept = _entry(spec=" bogus:nope ")
+    assert (kept.spec, kept.adapter, kept.backend) == ("bogus:nope", "bogus", "nope")
+    assert "unknown adapter 'bogus'" in (kept.spec_problem or "")
+    with pytest.raises(AdapterError, match=r"^duck-a is registered as bogus:nope, which"):
+        _ = kept.robot_spec
+    assert _entry(spec="bogus").backend == "", "no colon reads as no backend, not a crash"
 
 
-def test_a_hand_edited_bad_spec_names_the_robot_it_belongs_to(tmp_path: Path) -> None:
-    (tmp_path / "robots.json").write_text(
-        json.dumps({"version": 1, "robots": {"duck-a": {"spec": "bogus:nope"}}}), encoding="utf-8"
+def test_the_door_still_refuses_a_spec_that_does_not_parse(tmp_path: Path) -> None:
+    """`add_robot`, and an edit that sets the spec, check what is being written, in the
+    adapter's own words: the lenient read is for files that were already there."""
+    reg = Registry(tmp_path)
+    with pytest.raises(RegistryError, match="unknown adapter 'bogus'"):
+        reg.add_robot(_entry(spec="bogus:nope"))
+    reg.add_robot(_entry())
+    with pytest.raises(RegistryError, match="unknown backend 'websocket' for microduck"):
+        reg.update_robot("duck-a", {"spec": "microduck:websocket"})
+    assert reg.robot("duck-a").spec == "microduck:mock"
+    assert not (tmp_path / "robots.json").read_text(encoding="utf-8").count("bogus")
+
+
+def _shelve(tmp_path: Path, name: str, spec: str, **fields: object) -> None:
+    """A robot written to the file as an older quackd, a hand or a lost adapter left it."""
+    path = tmp_path / "robots.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["robots"][name] = {"spec": spec, **fields}
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("spec", "why", "fix"),
+    [
+        # a backend its adapter has dropped, as 0.19.0 dropped this one
+        (
+            "microduck:websocket",
+            "unknown backend 'websocket' for microduck",
+            "quackd robot edit kitchen --spec microduck:<backend>",
+        ),
+        # an adapter not installed here: a third party's, or one a newer quackd publishes
+        ("acme:arm", "unknown adapter 'acme'", "install the package that provides acme, quackd"),
+    ],
+)
+def test_a_robot_this_quackd_cannot_build_no_longer_locks_the_file(
+    tmp_path: Path, spec: str, why: str, fix: str
+) -> None:
+    """One such robot used to make every read of the file refuse, `quackd robot remove` among
+    them, until its entry was deleted by hand. It reads, edits and removes like any other, the
+    robot beside it resolves, and using it is refused by its name, with the fix."""
+    reg = Registry(tmp_path)
+    reg.add_robot(_entry())
+    _shelve(tmp_path, "kitchen", spec, note="the old one", camera_url=["a", "b"])
+
+    entries = reg.robots()
+    kitchen = entries["kitchen"]
+    assert kitchen.spec == spec and why in (kitchen.spec_problem or "")
+    assert kitchen.public()["spec_problem"] == kitchen.spec_problem
+    assert entries["duck-a"].public()["spec_problem"] is None
+    assert resolve_robot_ref("duck-a", reg).spec.key == "microduck:mock"
+    with pytest.raises(AdapterError) as refused:
+        resolve_robot_ref("kitchen", reg)
+    said = str(refused.value)
+    assert said.startswith(f"kitchen is registered as {spec}, which this quackd cannot build ("), (
+        said
     )
-    with pytest.raises(RegistryError, match=r"duck-a: spec: .*unknown adapter"):
-        Registry(tmp_path).robots()
+    assert why in said and fix in said and said.endswith(", or quackd robot remove kitchen"), said
+
+    # an edit that leaves the spec alone keeps it as written, and remove forgets it
+    assert reg.update_robot("kitchen", {"note": "still the old one"}).spec == spec
+    assert reg.remove_robot("kitchen") == []
+    assert list(reg.robots()) == ["duck-a"]
+
+
+def test_an_edit_of_the_spec_mends_a_robot_this_quackd_cannot_build(tmp_path: Path) -> None:
+    reg = Registry(tmp_path)
+    reg.add_robot(_entry())
+    _shelve(tmp_path, "kitchen", "microduck:websocket", address="tcp://127.0.0.1:9870")
+    moved = reg.update_robot("kitchen", {"spec": "microduck:jsonrpc"})
+    assert moved.spec_problem is None and moved.address == "tcp://127.0.0.1:9870"
+    assert resolve_robot_ref("kitchen", reg).spec.key == "microduck:jsonrpc"
 
 
 def test_a_pilot_the_shelf_cannot_resolve_is_kept_rather_than_refused() -> None:
@@ -839,6 +911,13 @@ def test_a_reference_is_the_registry_then_a_spec_then_one_line(tmp_path: Path) -
         resolve_robot_ref("ghost", reg)
     with pytest.raises(AdapterError, match="unknown adapter"):
         resolve_robot_ref("ghost:nope", reg)
+
+
+async def test_a_probe_fails_a_robot_this_quackd_cannot_build_before_its_backend() -> None:
+    """Ahead of the backends a probe declines, which are read off the stored spec's text:
+    `acme:mujoco` is not a physics model to skip, it is a body this quackd does not have."""
+    result = await probe_entry(_entry("kitchen", "acme:mujoco"))
+    assert result.reachable is False and "unknown adapter 'acme'" in result.detail, result
 
 
 def test_a_flag_beats_the_stored_endpoint(tmp_path: Path) -> None:

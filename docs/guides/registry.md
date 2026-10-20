@@ -485,6 +485,24 @@ A file that says something untrue names itself rather than being trimmed to fit:
 urls under a body that reads one are refused when the file is read, and a rest pose under a
 body that does not park is refused when that robot is built.
 
+A robot this quackd cannot build is kept, from 0.21.0. When its spec names a backend its adapter
+has dropped, as `microduck:websocket` was in 0.19.0, or an adapter not installed here, the spec
+is kept as written rather than refused when the file is read, because that refused every command
+that reads the file, the `edit` and `remove` that would mend it among them. `quackd robot list`
+marks the robot and says why, `--json` carries the reason as `spec_problem`, and `show`, `edit`
+and `remove` work on it. Anything that builds it, a run, a flock, `doctor`, `serve-mcp` or
+`robot list --probe`, refuses it by name with the way out:
+
+```
+$ quackd run hello-world --robot kitchen
+x error: kitchen is registered as microduck:websocket, which this quackd cannot build (unknown
+backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc): quackd robot edit
+kitchen --spec microduck:<backend>, or quackd robot remove kitchen
+```
+
+For an adapter that is missing, it says to install the package that provides it first. `add` and
+`edit --spec` still refuse a spec that does not parse, in the adapter's own words.
+
 It is a file you can open. Each write goes to a temporary file renamed over the old one, so a
 reader never sees half of it, and nothing is serialised: two commands writing at the same
 instant are a race and the later one wins. That is the same bargain

@@ -1239,6 +1239,23 @@ def _ask_host(
     return report
 
 
+def _undescribed(robot: str, robot_name: str | None, e: AdapterError) -> str:
+    """Why `--robot` could not be described, in the adapter's own words. A registered robot
+    whose stored spec this quackd cannot parse is named, with the fix
+    (`quackd.registry.unusable_spec`), since the spec on the report is one nobody typed. One
+    that parses and still fails, an adapter whose package is missing, keeps its own words,
+    which already say what to install."""
+    if robot_name is None:
+        return str(e)
+    from quackd.registry import unusable_spec
+
+    try:
+        parse_robot_spec(robot)
+    except AdapterError:
+        return unusable_spec(robot_name, robot, str(e))
+    return str(e)
+
+
 def collect(
     robot: str | None = None,
     *,
@@ -1435,7 +1452,7 @@ def collect(
                 RobotSpec(parsed.adapter, parsed.backend, robot_name) if robot_name else parsed
             )
         except AdapterError as e:
-            report.robot = RobotReport(spec=robot, error=str(e))
+            report.robot = RobotReport(spec=robot, error=_undescribed(robot, robot_name, e))
         else:
             report.robot = RobotReport(
                 spec=robot,

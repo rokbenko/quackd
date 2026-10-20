@@ -237,6 +237,16 @@ async def grab(ctx: VerbContext, _: NoParams) -> VerbResult:
     )
 
 
+STAND_UP_POLL_S = 0.25
+"""How often `stand_up` reads the duck while it waits for it to stand."""
+
+STAND_UP_WAIT_S = 10.0
+"""How long `stand_up` waits for the duck to read as standing after its request: inside the verb's
+own 15 s timeout, and well past the about 2.1 s robotd's own answer to a fall takes by default
+(`up.LIMP_FALL`). How long the policy then takes to get a duck up nobody has measured under
+quackd, which is why the verb reads the duck as it goes rather than once at a guessed moment."""
+
+
 async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     """Ask the robot's policy to drive again, for a duck that is down and that nobody holds.
 
@@ -254,14 +264,15 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     walk is held back for a verb still running, since the duck reads `unknown` for that while
     it may well be standing. A fallen duck, and one whose posture is `unknown` for any other
     reason, gets the request, and afterwards only a duck that reads standing is called upright.
-    One that robotd's own answer to a fall still has then (`_robotds_fall`) is told so, and to
-    run the verb again in a moment, since robotd hands the duck back to its policy once it has
-    posed it. One of those that read as fallen used to be told it may need a hand. With
-    upstream's defaults that answer is over within about 2.1 s, so robotd still has the duck at
-    the second read only after a fall it caught during the wait. One it had when the verb was
-    asked is back with the policy by then and is judged like any other, so a duck still down
-    three seconds after the request is told it may need a hand, even while the policy is still
-    getting it up.
+
+    After the request the duck is read every `STAND_UP_POLL_S`, and nothing more is sent. It is
+    called upright the moment it reads standing, and the wait ends at once on a duck somebody
+    picks up or nothing reports on. It used to be read once, three seconds after the request,
+    and a duck still down then was told it may need a hand even while the policy was getting it
+    up. Only once `STAND_UP_WAIT_S` has passed is a duck that never stood judged: one that
+    robotd's own answer to a fall still has (`_robotds_fall`) is told so, and to run the verb
+    again in a moment, since robotd hands the duck back to its policy once it has posed it, and
+    one still down is told it may need a hand.
     """
     state = await ctx.transport.get_state()
     if (held := _held(state)) is not None:
@@ -286,14 +297,23 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         )
     if (fail := await send_or_fail(ctx, Intent.enable(True))) is not None:
         return fail
-    await ctx.transport.sleep(3.0)
-    state = await ctx.transport.get_state()
-    if _blind(state):
-        # Reporting "upright" here is how a face-down duck used to pass: nothing was reporting
-        # falls, so `fallen` was False, so this said it worked.
-        return VerbResult.fail("asked the policy to run, but nothing reports whether it is upright")
-    if (held := _held(state)) is not None:
-        return VerbResult.fail(f"asked the policy to run, but {held}")
+    waited = 0.0
+    while True:
+        await ctx.transport.sleep(STAND_UP_POLL_S)
+        waited += STAND_UP_POLL_S
+        state = await ctx.transport.get_state()
+        if _blind(state):
+            # Reporting "upright" here is how a face-down duck used to pass: nothing was
+            # reporting falls, so `fallen` was False, so this said it worked.
+            return VerbResult.fail(
+                "asked the policy to run, but nothing reports whether it is upright"
+            )
+        if (held := _held(state)) is not None:
+            return VerbResult.fail(f"asked the policy to run, but {held}")
+        if state.posture == "standing":
+            return VerbResult.success("upright")
+        if waited >= STAND_UP_WAIT_S:
+            break
     if (fall := _robotds_fall(state)) is not None:
         # Read before `fallen`, which a duck robotd is posing on the floor reads too. robotd has
         # not handed it back to the policy yet, so it is too soon to say whether it gets up.
@@ -309,14 +329,13 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         # upstream says gets it up and nobody has seen do so under quackd, so one still down may
         # need a hand.
         return VerbResult.fail(
-            "asked the policy to run, and the duck is still down: robotd does not promise to get "
-            "a fallen duck up, so it may need a hand"
+            f"asked the policy to run, and the duck is still down {STAND_UP_WAIT_S:g} s later: "
+            "robotd does not promise to get a fallen duck up, so it may need a hand"
         )
-    if state.posture != "standing":
-        return VerbResult.fail(
-            f"asked the policy to run, and posture is {state.posture}{_why_unknown(state)}"
-        )
-    return VerbResult.success("upright")
+    # Never standing by now, or the wait above would have said so.
+    return VerbResult.fail(
+        f"asked the policy to run, and posture is {state.posture}{_why_unknown(state)}"
+    )
 
 
 def quack_tag_for(text: str | None) -> str:

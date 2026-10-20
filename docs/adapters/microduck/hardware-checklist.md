@@ -313,8 +313,8 @@ What is most worth writing down, because it is what nobody can check without a d
   tunnel went the legs stopped
 - what a pad nobody touched did to quackd's walks in step 9: whether the duck walked on, slowed
   or stuttered, and how often a verb failed with `robotd has not taken robot.move`
-- whether a fallen duck got up, how long that took against the three seconds `stand_up` waits
-  before it reads the duck again, and how much it moved doing it. `stand_up`'s `robot.enable`
+- whether a fallen duck got up, how long that took against the ten seconds `stand_up` waits
+  for it to read as standing, and how much it moved doing it. `stand_up`'s `robot.enable`
   only sets a flag that is on already when the duck fell while its policy drove it, so what got
   the duck up, if anything did, was that policy. On `daemon-v0.16.2` or later, write down too
   what robotd's own answer to the fall did first: whether `policy` read `limp_fall` and then

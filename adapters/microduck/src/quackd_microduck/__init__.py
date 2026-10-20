@@ -165,7 +165,10 @@ def microduck_manifest(
         preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
         # the head alone, as `gaze`: a seated duck may watch, and a fallen or held one may not
         preconditions["watch"] = ["not_fallen"]
-    limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.5}
+    # quackd's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
+    # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
+    # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.
+    limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.0}
     extras: dict[str, Any] = {}
     if camera and camera_fov_deg is not None:
         limits["camera_fov_deg"] = float(camera_fov_deg)

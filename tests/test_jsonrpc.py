@@ -1236,8 +1236,32 @@ async def test_a_duck_somebody_holds_is_held_before_it_is_fallen(registry: VerbR
 
 
 async def _quick(seconds: float) -> None:
-    """`stand_up` gives the policy three seconds. The fake needs one frame to answer in."""
+    """A verb's sleeps cut to what the fake needs: a frame or three to answer in."""
     await asyncio.sleep(min(seconds, 0.3))
+
+
+async def _polled(seconds: float) -> None:
+    """`stand_up`'s reads, every quarter second for up to ten, cut short. The fake pushes a frame
+    every tenth of a second, so a new state reaches it within a few reads."""
+    await asyncio.sleep(min(seconds, 0.03))
+
+
+class _Clock:
+    """`stand_up`'s sleeps on a clock of their own, which changes the duck once `at` seconds have
+    passed on it, and then waits for a frame that shows the change."""
+
+    def __init__(self, fake: FakeRobotd, at: float, **change: Any) -> None:
+        self.fake, self.at, self.change = fake, at, change
+        self.now = 0.0
+
+    async def sleep(self, seconds: float) -> None:
+        before, self.now = self.now, self.now + seconds
+        if before < self.at <= self.now:
+            for name, value in self.change.items():
+                setattr(self.fake, name, value)
+            await asyncio.sleep(0.25)
+        else:
+            await asyncio.sleep(0.005)
 
 
 @pytest.mark.parametrize(
@@ -1273,7 +1297,7 @@ async def test_stand_up_reads_the_duck_before_it_asks_the_policy_to_drive(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _quick  # type: ignore[method-assign]
+        t.sleep = _polled  # type: ignore[method-assign]
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         assert result.ok is ok and summary in result.summary, result.summary
         assert ("robot.enable" in [r["method"] for r in fake.requests]) is enabled
@@ -1296,23 +1320,24 @@ async def test_stand_up_says_robotd_still_has_the_duck_after_a_fall(
     registry: VerbRegistry, policy: str, fallen: bool, limp: bool
 ) -> None:
     """From daemon-v0.16.2 robotd goes limp as it predicts a fall, poses the duck and only then
-    hands it back to the policy (`up.LIMP_FALL`). `stand_up` reads the duck again three seconds
-    after its request, and a duck robotd had in that sequence then was told only that its
-    posture was unknown, or, once it had landed and read as fallen, that robotd does not promise
-    to get a fallen duck up and that it may need a hand. It is told robotd still has it and
-    hands it back once it has posed it, and to run the verb again.
+    hands it back to the policy (`up.LIMP_FALL`). A duck robotd still had in that sequence when
+    `stand_up` gave up on it was told only that its posture was unknown, or, once it had landed
+    and read as fallen, that robotd does not promise to get a fallen duck up and that it may
+    need a hand. It is told robotd still has it and hands it back once it has posed it, and to
+    run the verb again.
 
-    With upstream's defaults the sequence is over within about 2.1 s, so robotd has the duck at
-    that read only after a fall it caught during the wait, and the fake catches one as the request
-    arrives. Before it, the duck is down with the policy driving it, as robotd leaves one once its
-    sequence is over, and the request goes out as it does to any duck that is down."""
+    With upstream's defaults the sequence is over within about 2.1 s, so robotd still has the duck
+    at the end of the wait only after a fall it caught during it, and the fake catches one as the
+    request arrives and never lets it go. Before it, the duck is down with the policy driving it,
+    as robotd leaves one once its sequence is over, and the request goes out as it does to any
+    duck that is down."""
     fake = FakeRobotd(policy="walk", fallen=True)
     fake.on_enable = {"policy": policy, "fallen": fallen, "limp": limp}
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _quick  # type: ignore[method-assign]
+        t.sleep = _polled  # type: ignore[method-assign]
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         said = result.summary
         assert not result.ok and "may need a hand" not in said, said
@@ -1343,22 +1368,73 @@ async def test_stand_up_judges_a_duck_robotd_hands_back_before_it_reads_again(
     summary: str,
 ) -> None:
     """A duck robotd has in its limp-fall sequence when `stand_up` is asked is back with the
-    policy by the time `stand_up` reads it again, three seconds after its request, since the
-    sequence is over within about 2.1 s by default (`up.LIMP_FALL`). It is judged on that second
-    frame like any other duck: upright if it stands, and told it may need a hand if it is still
-    down. The label on the first frame is not what it is told about, since robotd no longer has
-    the duck. The request goes out first, and to a robot already enabled it changes nothing."""
+    policy within about 2.1 s by default (`up.LIMP_FALL`), well inside the wait `stand_up` gives
+    it. It is judged then like any other duck: upright as soon as it stands, and told it may need
+    a hand if it is still down when the wait is over. The label on the first frame is not what it
+    is told about, since robotd no longer has the duck. The request goes out first, and to a robot
+    already enabled it changes nothing."""
     fake = FakeRobotd(policy=policy, fallen=fallen, limp=limp)
     fake.on_enable = then
     await fake.start()
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        t.sleep = _quick  # type: ignore[method-assign]
+        t.sleep = _polled  # type: ignore[method-assign]
         result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
         said = result.summary
         assert result.ok is ok and summary in said and "still answering" not in said, said
         assert "robot.enable" in [r["method"] for r in fake.requests]
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_stand_up_waits_for_a_duck_the_policy_gets_up_late(
+    registry: VerbRegistry,
+) -> None:
+    """`stand_up` read the duck once, three seconds after its request, and a duck the policy got
+    up a moment later had already been told it may need a hand. It reads the duck as it waits,
+    up to `STAND_UP_WAIT_S`, and a duck that stands six seconds in is upright. Nothing is sent
+    while it waits but the one request."""
+    from quackd_microduck.verbs import STAND_UP_WAIT_S
+
+    fake = FakeRobotd(policy="walk", fallen=True)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        clock = _Clock(fake, 6.0, fallen=False, policy="stand")
+        t.sleep = clock.sleep  # type: ignore[method-assign]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        assert result.ok and result.summary == "upright", result.summary
+        assert 6.0 <= clock.now < STAND_UP_WAIT_S, clock.now
+        methods = [r["method"] for r in fake.requests]
+        assert methods.count("robot.enable") == 1
+        assert not {"robot.move", "robot.do", "robot.look", "robot.head"} & set(methods), methods
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_stand_up_stops_waiting_for_a_duck_somebody_picks_up(
+    registry: VerbRegistry,
+) -> None:
+    """A duck somebody picks up while `stand_up` waits for it is in their hands, and the wait
+    ends there rather than running on to judge legs a person is holding."""
+    from quackd_microduck.verbs import STAND_UP_WAIT_S
+
+    fake = FakeRobotd(policy="walk", fallen=True)
+    await fake.start()
+    try:
+        t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
+        await t.connect()
+        clock = _Clock(fake, 1.0, picked_up=True)
+        t.sleep = clock.sleep  # type: ignore[method-assign]
+        result = await Executor(registry, t, contract=MOVERS.frontmatter).run_verb("stand_up", {})
+        assert not result.ok and result.summary.startswith("asked the policy to run, but"), (
+            result.summary
+        )
+        assert clock.now < STAND_UP_WAIT_S / 2, clock.now
         await t.close()
     finally:
         await fake.stop()
