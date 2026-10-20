@@ -75,6 +75,11 @@ CYCLE_S = float(up.CYCLE_TIMED_S.name)
 GOAL_AFTER_STOP_S = float(up.GOAL_AFTER_STOP_S.name)
 SESSION_MISSES = 3
 """As quackd's bridge counts them (`cockpit.SESSION_MISSES`)."""
+PICK_STARTUP_S = 2.0
+"""quackd's own guess, for the mock, at how long the maker's script takes to import dimOS,
+build its client and read the joints before it sends its one trajectory. Nobody has measured
+it on a rover. Inside it a cancel finds nothing executing, and only ending the script keeps
+the trajectory from going out after the cancel (`up.MISSION_STOP_LEAVES_PICK`)."""
 
 MOCK_CAM_HEIGHT_M = 0.12
 MOCK_BALL_R = 0.04
@@ -143,6 +148,9 @@ class _Job:
     exit: int | None = None
     held: bool | None = None
     owner: str = "quackd"
+    startup_s: float = 0.0
+    """How long a `starting` job's script takes to send its trajectory."""
+    script_alive: bool = True
 
     def doc(self, now: float) -> dict[str, Any]:
         return {
@@ -451,6 +459,13 @@ class MossMock:
         job = self.job
         if job is None or job.state not in ("starting", "running"):
             return
+        if job.state == "starting":
+            # the script is still importing and reading the joints: at the end of that, and
+            # only if nothing ended it, its one trajectory goes out
+            if job.script_alive and self._t - job.started >= job.startup_s:
+                job.state, job.started = "running", self._t
+                self.arm_folded = False
+            return
         elapsed = self._t - job.started
         if self.arm_lag_at_s is not None and elapsed >= self.arm_lag_at_s:
             job.state, job.exit, job.held = "lag", 4, True
@@ -499,9 +514,13 @@ class MossMock:
                 m.state, m.since = "PICKING", self._t
                 self._jobs += 1
                 self.job = _Job(
-                    f"mission-{self._jobs}", "running", self._t, CYCLE_S, owner="mission"
+                    f"mission-{self._jobs}",
+                    "starting",
+                    self._t,
+                    CYCLE_S,
+                    owner="mission",
+                    startup_s=PICK_STARTUP_S,
                 )
-                self.arm_folded = False
 
     def _session_step(self) -> None:
         if self._session_at is None:
@@ -554,23 +573,50 @@ class MossMock:
         self._publish((0.0, 0.0))
 
     def _arm_cancel(self) -> bool | None:
+        """The bridge's cancel. For a cycle of quackd's it stops the script before it cancels,
+        as `ArmJobs.cancel` does, so the cycle ends either way. For the mission's own it is
+        cancel_trajectory alone, which finds nothing to cancel while that script is still
+        starting: unless the script was ended, its trajectory goes out afterwards."""
         job = self.job
-        if job is None or job.state not in ("starting", "running"):
+        running = job is not None and job.state in ("starting", "running")
+        if not running and not self.arm_up:
             return None
+        # sent whenever the arm's coordinator is there, as the bridge sends it
         self.stop_log.append("arm.cancel")
+        if job is None or not running or (job.owner == "mission" and job.state == "starting"):
+            return None
         job.state, job.held, job.exit = "cancelled", True, None
         job.reason = "cancelled: the coordinator holds the last commanded position"
         self.arm_folded = False
         self._job_ended(job, ok=False)
         return True
 
+    def _end_mission_script(self) -> None:
+        """The bridge ends the mission's own pick script, which the mission's stop leaves
+        running. One still starting never sends its trajectory, and one already playing leaves
+        the coordinator playing it until the cancel that follows."""
+        job = self.job
+        if job is None or job.owner != "mission" or not job.script_alive:
+            return
+        if job.state not in ("starting", "running"):
+            return
+        self.stop_log.append("pick.script")
+        job.script_alive = False
+        if job.state == "starting":
+            job.state, job.exit = "failed", -15
+            job.reason = "the script was ended before it sent its trajectory"
+            self._job_ended(job, ok=False)
+
     def _bridge_stop(self) -> list[str]:
-        """The bridge's `/stop`: on moss-litter the mission's own stop first, then the arm's
-        cancel, then a zero twist, which also cancels any goal the planner has."""
+        """The bridge's `/stop`: on moss-litter the mission's own stop first, then the end of
+        the mission's own pick script, then the arm's cancel, then a zero twist, which also
+        cancels any goal the planner has."""
         if self.stack == "moss-litter" and self.mission.running:
             self.stop_log.append("mission.stop")
             self.mission.running = False
             self.mission_stopped = True
+        if self.stack == "moss-litter":
+            self._end_mission_script()
         self._arm_cancel()
         self.stop_log.append("twist.zero")
         self._twist, self._zero_sent = None, True

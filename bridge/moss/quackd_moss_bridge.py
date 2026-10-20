@@ -50,6 +50,7 @@ import json
 import logging
 import math
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -110,6 +111,11 @@ ARM_STACK = "moss-arm"
 MISSION_RPC = "LitterMission"
 """moss-litter deploys LitterMission with no instance name, so its RPCs are served under its
 class name (dimOS serve_module_rpc)."""
+PICK_SCRIPT = "tools/moss_arm_play.py"
+"""The maker's cycle, which the litter mission runs as a subprocess of its own for every pick
+(mission.py _start_pick) and which the mission's stop leaves running."""
+PICK_CMD_ENV = "MOSS_PICK_CMD"
+"""The stack's own override of that command (mission.py PICK_CMD_ENV), `none` for no arm."""
 
 RPC_TIMEOUT_S = 2.0
 """How long any one RPC from here may take. dimOS's own default is two minutes, which a stop
@@ -389,6 +395,132 @@ def read_stack(directory: str | None = None) -> StackInfo:
     )
 
 
+class Procs(Protocol):
+    """What a stop needs of the rover's processes: the mission's own picks, and a way to end
+    them. `ProcTable` reads /proc, and `--fake`'s bus answers for its own fake mission."""
+
+    def picks(self, stack: StackInfo) -> list[int]: ...
+
+    def alive(self, pid: int) -> bool: ...
+
+    def signal(self, pid: int, sig: int) -> None: ...
+
+
+def is_pick(argv: tuple[str, ...], custom: tuple[str, ...] = ()) -> bool:
+    """A command line that runs the maker's cycle: an argument that is tools/moss_arm_play.py,
+    or the stack's own MOSS_PICK_CMD, with anything the mission appends after it."""
+    if any(arg == PICK_SCRIPT or arg.endswith("/" + PICK_SCRIPT) for arg in argv):
+        return True
+    return bool(custom) and argv[: len(custom)] == custom
+
+
+class ProcTable:
+    """The rover's processes as /proc has them, read the way the cockpit reads a run."""
+
+    def __init__(self, root: str = "/proc") -> None:
+        self.root = root
+
+    def _stat(self, pid: int | str) -> tuple[str, int] | None:
+        """(the state letter, the parent's pid). The command name sits in parentheses and may
+        hold spaces or parentheses itself, so the fields are read after its last one."""
+        try:
+            with open(os.path.join(self.root, str(pid), "stat"), encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            return None
+        fields = text.rpartition(")")[2].split()
+        try:
+            return fields[0], int(fields[1])
+        except (IndexError, ValueError):
+            return None
+
+    def descendants(self, pid: int) -> list[int]:
+        try:
+            names = [n for n in os.listdir(self.root) if n.isdigit()]
+        except OSError:
+            return []
+        children: dict[int, list[int]] = {}
+        for name in names:
+            stat = self._stat(name)
+            if stat is not None:
+                children.setdefault(stat[1], []).append(int(name))
+        found: list[int] = []
+        todo = [pid]
+        while todo:
+            for child in children.get(todo.pop(), []):
+                if child != pid and child not in found:
+                    found.append(child)
+                    todo.append(child)
+        return found
+
+    def cmdline(self, pid: int) -> tuple[str, ...]:
+        try:
+            with open(os.path.join(self.root, str(pid), "cmdline"), "rb") as fh:
+                raw = fh.read()
+        except OSError:
+            return ()
+        return tuple(a.decode("utf-8", "replace") for a in raw.split(b"\0") if a)
+
+    def picks(self, stack: StackInfo) -> list[int]:
+        """The maker's cycle among the stack's own descendants, never the stack itself."""
+        if not stack.running or stack.pid is None:
+            return []
+        override = (stack.env.get(PICK_CMD_ENV) or "").strip()
+        try:
+            custom = tuple(shlex.split(override)) if override.lower() not in ("", "none") else ()
+        except ValueError:
+            custom = ()
+        return [p for p in self.descendants(stack.pid) if is_pick(self.cmdline(p), custom)]
+
+    def alive(self, pid: int) -> bool:
+        stat = self._stat(pid)
+        return stat is not None and stat[0] not in ("Z", "X")
+
+    def signal(self, pid: int, sig: int) -> None:
+        os.kill(pid, sig)
+
+
+SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+
+def _pids(pids: list[int]) -> str:
+    return ", ".join(str(p) for p in pids)
+
+
+def end_processes(
+    procs: Procs,
+    pids: list[int],
+    *,
+    grace_s: float = SCRIPT_GRACE_S,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, list[int]]:
+    """SIGTERM, a grace to end in, SIGKILL for whatever outlived it, and a wait for that too.
+    Says which ended on the first signal, which needed the second, and which are still there."""
+
+    def wait(left: list[int]) -> list[int]:
+        deadline = clock() + grace_s
+        while True:
+            left = [p for p in left if procs.alive(p)]
+            if not left or clock() >= deadline:
+                return left
+            sleep(0.05)
+
+    for pid in pids:
+        with contextlib.suppress(OSError):
+            procs.signal(pid, signal.SIGTERM)
+    stubborn = wait(list(pids))
+    for pid in stubborn:
+        with contextlib.suppress(OSError):
+            procs.signal(pid, SIGKILL)
+    left = wait(stubborn)
+    return {
+        "terminated": [p for p in pids if p not in stubborn],
+        "killed": [p for p in stubborn if p not in left],
+        "left": left,
+    }
+
+
 # ── frames ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -600,6 +732,41 @@ class Job:
         }
 
 
+def arm_holds(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> bool | None:
+    """Two reads of the joints: True when every joint moved slower than the maker's own still
+    rule between them, False when one moved faster, None when the arm did not answer."""
+    try:
+        first = bus.arm_joints()
+        sleep(ARM_HOLD_GAP_S)
+        second = bus.arm_joints()
+    except Exception:
+        return None
+    for name in up.arm_joints:
+        if name not in first or name not in second:
+            return None
+        speed = abs(second[name] - first[name]) * up.ticks_per_rad / ARM_HOLD_GAP_S
+        if speed >= up.still_ticks_per_s:
+            return False
+    return True
+
+
+def cancel_and_read(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> dict[str, Any]:
+    """cancel_trajectory, then the joints read twice, then once more of each if they moved."""
+    out: dict[str, Any] = {"cancel": None, "held": None}
+    try:
+        out["cancel"] = bus.arm_cancel()
+    except Exception as e:
+        out["error"] = f"cancel_trajectory did not answer: {type(e).__name__}: {e}"
+        return out
+    held = arm_holds(bus, up, sleep)
+    if held is False:
+        with contextlib.suppress(Exception):
+            out["cancel_again"] = bus.arm_cancel()
+        held = arm_holds(bus, up, sleep)
+    out["held"] = held
+    return out
+
+
 def ending_of(code: int | None, cancelled: bool) -> str:
     """How a run of tools/moss_arm_play.py ended, from its own exit code."""
     if cancelled:
@@ -709,42 +876,17 @@ class ArmJobs:
         return True
 
     def holds(self) -> bool | None:
-        """Two reads of the joints: True when every joint moved slower than the maker's own
-        still rule between them, None when the arm did not answer."""
-        try:
-            first = self.bus.arm_joints()
-            self.sleep(ARM_HOLD_GAP_S)
-            second = self.bus.arm_joints()
-        except Exception:
-            return None
-        for name in self.up.arm_joints:
-            if name not in first or name not in second:
-                return None
-            speed = abs(second[name] - first[name]) * self.up.ticks_per_rad / ARM_HOLD_GAP_S
-            if speed >= self.up.still_ticks_per_s:
-                return False
-        return True
+        return arm_holds(self.bus, self.up, self.sleep)
 
     def cancel(self) -> dict[str, Any]:
         """The script first, so it cannot send the trajectory after the cancel, then the cancel,
-        then the two reads. A second cancel and read when the first did not hold."""
-        out: dict[str, Any] = {"script": self._stop_script(), "cancel": None, "held": None}
-        try:
-            out["cancel"] = self.bus.arm_cancel()
-        except Exception as e:
-            out["error"] = f"cancel_trajectory did not answer: {type(e).__name__}: {e}"
-            self._mark(None)
-            return out
-        moved = out["script"] or out["cancel"] == "CANCELLED"
-        if moved:
-            held = self.holds()
-            if held is False:
-                with contextlib.suppress(Exception):
-                    out["cancel_again"] = self.bus.arm_cancel()
-                held = self.holds()
-            out["held"] = held
-        else:
-            out["held"] = True
+        then the two reads. A second cancel and read when the first did not hold.
+
+        The hold is always read, whatever the cancel answered: ALREADY_STOPPED says nothing was
+        executing at that instant, not that nothing is about to, and an arm whose joints were
+        not read twice is reported unread (None), never held."""
+        out: dict[str, Any] = {"script": self._stop_script()}
+        out.update(cancel_and_read(self.bus, self.up, self.sleep))
         self._mark(out["held"])
         return out
 
@@ -914,6 +1056,22 @@ _TINY_JPEG = base64.b64decode(
 """A 2 by 2 grey JPEG, so `--fake` serves frames where no image library is installed."""
 
 
+@dataclass
+class FakePick:
+    """The mission's own run of the maker's script, as a fake process. It spends `startup_s`
+    importing dimOS, building its client and reading the joints, as the real one does before
+    its one execute_trajectory, then sends the trajectory unless it was ended first, and the
+    coordinator plays that trajectory to its end whatever becomes of the script."""
+
+    pid: int
+    started: float
+    startup_s: float
+    ignores_term: bool = False
+    alive: bool = True
+    sent: bool = False
+    signals: int = 0
+
+
 class FakeBus:
     """`--fake`: an LCM bus, an arm coordinator and a litter mission in memory, never a rover.
 
@@ -921,7 +1079,8 @@ class FakeBus:
     after a cancel, unless told to ignore one, and an arm that does not answer makes its caller
     wait out the RPC's timeout, as a coordinator that is not there does. The mission answers
     until its stop has run, then falls silent after `mission_stop_s`, as the real one closes its
-    RPC service."""
+    RPC service, and its stop leaves its own pick running, as the real one's does: the bus is
+    also the process table for that pick (`Procs`)."""
 
     def __init__(
         self,
@@ -954,12 +1113,57 @@ class FakeBus:
         self.mission_stops = 0
         self.mission = {"state": "EXPLORING", "target": None, "picked": 0, "skipped": 0}
         self.events: list[str] = []
+        self.pick: FakePick | None = None
+        self._pids = 40000
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._stamps = stamps
         self._fps = fps
         if fps > 0:
             threading.Thread(target=self._camera, name="moss-fake-camera", daemon=True).start()
+
+    # ── the mission's own pick, and the process table a stop reads it from ──────────────
+
+    def start_mission_pick(self, startup_s: float = 0.5, *, ignores_term: bool = False) -> int:
+        """The mission reaches its pick point and runs the maker's script, which sends its
+        trajectory `startup_s` from now unless something ends it first."""
+        with self._lock:
+            self._pids += 1
+            self.pick = FakePick(self._pids, self.clock(), startup_s, ignores_term=ignores_term)
+            self.mission["state"] = "PICKING"
+            self.events.append("the mission's pick starts")
+            return self.pick.pid
+
+    def _advance(self) -> None:
+        """With the lock held: the script's trajectory goes out once its startup is over."""
+        p = self.pick
+        if p is not None and p.alive and not p.sent and self.clock() >= p.started + p.startup_s:
+            p.sent = True
+            self.executing = True
+            self.events.append("the mission's script: execute_trajectory")
+
+    def picks(self, stack: StackInfo) -> list[int]:
+        with self._lock:
+            self._advance()
+            return [self.pick.pid] if self.pick is not None and self.pick.alive else []
+
+    def alive(self, pid: int) -> bool:
+        with self._lock:
+            self._advance()
+            return self.pick is not None and self.pick.pid == pid and self.pick.alive
+
+    def signal(self, pid: int, sig: int) -> None:
+        with self._lock:
+            self._advance()
+            p = self.pick
+            if p is None or p.pid != pid or not p.alive:
+                raise ProcessLookupError(pid)
+            p.signals += 1
+            # the first signal asks, and any later one is the kill, which no script outlives
+            kill = p.signals > 1 or sig != signal.SIGTERM
+            self.events.append("pick script " + ("SIGKILL" if kill else "SIGTERM"))
+            if kill or not p.ignores_term:
+                p.alive = False
 
     def _camera(self) -> None:
         boot = time.time()
@@ -989,6 +1193,7 @@ class FakeBus:
         if not self.arm_answers:
             self._arm_silent()
         with self._lock:
+            self._advance()
             if self.executing:
                 for name in self.up.arm_joints:
                     # well past the still rule, so a moving arm reads as moving
@@ -1000,6 +1205,7 @@ class FakeBus:
         if not self.arm_answers:
             self._arm_silent()
         with self._lock:
+            self._advance()
             self.cancels += 1
             self.events.append("arm cancel")
             if not self.executing:
@@ -1068,12 +1274,16 @@ class Bridge:
         token: str | None = None,
         fake: bool = False,
         reread: Callable[[StackInfo], tuple[Upstream | None, str | None]] | None = None,
+        procs: Procs | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._stack = stack
         self.up, self.bus = up, bus
+        # `--fake`'s bus keeps its own mission, so it is that mission's process table too
+        fake_procs = bus if isinstance(bus, FakeBus) else None
+        self.procs: Procs = procs or fake_procs or ProcTable()
         self.bus_error, self.up_error, self.arm_error = bus_error, up_error, arm_error
         self.token = token or None
         self.fake = fake
@@ -1274,11 +1484,13 @@ class Bridge:
 
     def stop(self) -> dict[str, Any]:
         """Idempotent, never raises, and says what it did. On moss-litter the mission's stop
-        goes out first, then at once the arm's cancel and the zero, and only then is the
-        mission's stop confirmed. A cycle cancelled under a mission not yet told to stop makes
-        its script exit on its lag watch, the mission marks the pick failed, and its next tick
-        explores again. A cancel that waited for the confirmation would leave the arm moving
-        for as long as the confirmation took."""
+        goes out first, then at once the end of the mission's own pick, the arm's cancel and
+        the zero, and only then is the mission's stop confirmed. A cycle cancelled under a
+        mission not yet told to stop makes its script exit on its lag watch, the mission marks
+        the pick failed, and its next tick explores again. The mission's stop leaves its pick
+        running, and a pick still starting sends its trajectory after any cancel, so its script
+        is ended first. A cancel that waited for the confirmation would leave the arm moving for
+        as long as the confirmation took."""
         stack = self.stack()
         did: list[str] = []
         errors: list[str] = []
@@ -1287,6 +1499,7 @@ class Bridge:
             "did": did,
             "errors": errors,
             "mission": None,
+            "pick": None,
             "arm": None,
         }
         if self.bus is None:
@@ -1294,7 +1507,9 @@ class Bridge:
             doc["ok"] = False
             return doc
         sent = self._send_mission_stop(stack, did, errors) if self._litter(stack) else None
-        doc["arm"] = self._cancel_arm(did, errors)
+        if self._litter(stack):
+            doc["pick"] = self._end_mission_pick(stack, did, errors)
+        doc["arm"] = self._cancel_arm(did, errors, picked=bool(doc["pick"]))
         for chan in self._stop_twist_channels(stack):
             try:
                 self.bus.publish_twist(chan, 0.0, 0.0)
@@ -1370,10 +1585,40 @@ class Bridge:
         )
         return "unconfirmed"
 
-    def _cancel_arm(self, did: list[str], errors: list[str]) -> dict[str, Any] | None:
+    def _end_mission_pick(
+        self, stack: StackInfo, did: list[str], errors: list[str]
+    ) -> dict[str, list[int]] | None:
+        """The mission's own pick, which its stop leaves running: the maker's script, found
+        among the stack's own descendants, sent SIGTERM, and SIGKILL if it outlives its grace,
+        so it cannot send its trajectory after the cancel that follows. None for no pick."""
+        try:
+            pids = self.procs.picks(stack)
+        except Exception as e:
+            errors.append(f"the mission's pick could not be looked for: {e}")
+            return None
+        if not pids:
+            did.append("no pick of the mission's was running")
+            return None
+        ended = end_processes(self.procs, pids, clock=self.clock, sleep=self.sleep)
+        for how in ("terminated", "killed"):
+            if ended[how]:
+                did.append(f"the mission's pick script {how}: pid {_pids(ended[how])}")
+        if ended["left"]:
+            errors.append(
+                f"the mission's pick script outlived SIGKILL (pid {_pids(ended['left'])}): it "
+                "may still send its trajectory, so support the arm and stop the stack"
+            )
+        return ended
+
+    def _cancel_arm(
+        self, did: list[str], errors: list[str], *, picked: bool = False
+    ) -> dict[str, Any] | None:
+        """cancel_trajectory, the joints read twice, and a second cancel if they still moved.
+        Skipped only when nothing can be moving the arm: no cycle of quackd's, no pick of the
+        mission's just ended, and no moss-arm run for a cancel to reach."""
         assert self.bus is not None and self.up is not None
         ours = self.jobs is not None and self.jobs.running()
-        if not ours and self.stack().arm_run is None:
+        if not ours and not picked and self.stack().arm_run is None:
             # nothing can be moving the arm through a coordinator that is not running, and a
             # cancel sent to it would hold this stop for the RPC's whole timeout
             did.append("no moss-arm run, and no cycle of quackd's: nothing to cancel")
@@ -1381,12 +1626,9 @@ class Bridge:
         if self.jobs is not None:
             result = self.jobs.cancel()
         else:
-            try:
-                result = {"cancel": self.bus.arm_cancel(), "held": None, "script": False}
-            except Exception as e:
-                result = {"error": f"cancel_trajectory did not answer: {e}"}
+            result = cancel_and_read(self.bus, self.up, self.sleep)
         if result.get("error"):
-            if ours:
+            if ours or picked:
                 errors.append(f"the arm: {result['error']}")
             else:
                 did.append("the arm's coordinator did not answer, and no cycle of quackd's ran")
@@ -1763,7 +2005,9 @@ def fake_bridge(
         ]
         return out + (["--from", from_phase] if from_phase else [])
 
-    return Bridge(stack=lambda: stack, up=up, bus=bus, arm_argv=argv, token=token, fake=True)
+    return Bridge(
+        stack=lambda: stack, up=up, bus=bus, arm_argv=argv, token=token, fake=True, procs=bus
+    )
 
 
 # ── the server ──────────────────────────────────────────────────────────────────────────

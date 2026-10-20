@@ -206,7 +206,7 @@ for one tool call, and `collect_litter` does not run there at all.
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | after three missed heartbeats the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels it, so the arm holds | no arm verbs exist |
-| the litter mission | the mission's own stop, then at once the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop | `moss-litter` is refused at connect |
+| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every
   time. Each failure is kept and reported, and neither half skips the other. The `stop` verb
@@ -222,6 +222,13 @@ for one tool call, and `collect_litter` does not run there at all.
   watch, the mission marks the pick failed, and its next tick sets the rover exploring again.
   The mock reproduces that race, and a test proves the order prevents it. Nothing waits on the
   mission before the arm is cancelled, and a test with a mission slow to stop proves that too.
+- **The mission's own pick is ended before the cancel.** The mission's stop leaves its pick
+  running (`MISSION_STOP_LEAVES_PICK`), and a pick whose script is still importing dimOS and
+  reading the joints has sent nothing for a cancel to find: its trajectory would go out after
+  the cancel and play the whole cycle. So the bridge finds the maker's script among the stack's
+  own processes, or the stack's `MOSS_PICK_CMD`, sends it SIGTERM, then SIGKILL if it outlives
+  its grace, and only then cancels the trajectory and reads the arm twice. A hold is always a
+  reading: an arm whose joints did not answer after the cancel is reported unread, never held.
 - **The mission's stop is confirmed by silence.** dimOS sends a module's stop without waiting
   for an answer, because the module closes its RPC service as it stops. So after the cancel and
   the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop
@@ -435,6 +442,8 @@ asked.
 | Mission stop | `LitterMission.stop` | the bridge's first step on `moss-litter` |
 | Mission status | `LitterMission.mission_status` | `/mission`, and the stop's confirmation |
 | Mission pick | `[sys.executable, tools/moss_arm_play.py]` | the bridge runs the cycle the same way |
+| Pick command override | `MOSS_PICK_CMD` | how the bridge finds the mission's pick when it is not the maker's script |
+| Mission stop leaves the pick | `LitterMission.stop leaves its pick running` | the bridge's stop ends the mission's own pick script before it cancels the arm |
 | Mission resumes | `RESUMING` | why the mission is stopped before the arm is cancelled |
 | Mission autostart | `MOSS_MISSION_AUTOSTART` | `collect_litter` starts the explorer itself |
 | Pick timeout | `180.0` | s, which `pick_and_drop` gives the arm too |

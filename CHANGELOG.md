@@ -26,7 +26,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and silence, since every message on the pad's channel cancels MOSS's navigation. A frame that
   says when it was taken. The maker's own arm cycle, run as his own mission runs it, with a cancel
   that stops the script, cancels the trajectory and sees the arm hold. And the litter mission's own
-  stop, which the mission is the only thing it listens to. The bridge runs on the rover with MOSS's
+  stop, the only stop the mission listens to, which comes with the end of the mission's own pick
+  script, since the mission's stop leaves that running. The bridge runs on the rover with MOSS's
   own interpreter, imports quackd nowhere, binds loopback and takes a token, and after three missed
   heartbeats it halts what quackd started, and on `moss-litter` it runs the whole stop. quackd's
   close halts only what its own session started, its own arm cycle by its id, so a

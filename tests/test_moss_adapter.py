@@ -43,6 +43,7 @@ from quackd_moss import (
 from quackd_moss import upstream_api as up
 from quackd_moss.cockpit import NEVER_POSTED, CockpitClient, MossCockpit
 from quackd_moss.mock import (
+    PICK_STARTUP_S,
     PULSE_S,
     STALL_S,
     TRACK_M,
@@ -689,22 +690,40 @@ async def test_a_stop_that_failed_on_one_surface_still_ran_the_other_and_says_so
     assert other in mock.stop_log
 
 
+async def _picking(mock: MossMock, state: str) -> None:
+    """Until the mission's own pick is in `state`: starting, its script still reading the
+    joints, or running, its trajectory out."""
+    while mock.job is None or mock.job.owner != "mission" or mock.job.state != state:
+        await mock.sleep(0.25)
+
+
 async def test_on_moss_litter_the_mission_stops_before_the_arm_is_cancelled() -> None:
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
-    while mock.mission.state != "PICKING":
-        await mock.sleep(0.5)
+    await _picking(mock, "running")
     await adapter.stop()
-    assert mock.stop_log[:3] == ["mission.stop", "arm.cancel", "twist.zero"]
+    assert mock.stop_log[:4] == ["mission.stop", "pick.script", "arm.cancel", "twist.zero"]
     await mock.sleep(5.0)
     assert not mock.exploring, "a stopped mission explores nothing after its cancelled pick"
+
+
+async def test_on_moss_litter_a_stop_ends_the_missions_pick_while_its_script_is_starting() -> None:
+    """Inside the script's startup a cancel finds nothing executing, and the mission's stop
+    leaves the script running (`up.MISSION_STOP_LEAVES_PICK`): only ending it keeps its
+    trajectory from going out after the stop."""
+    mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
+    await _picking(mock, "starting")
+    await adapter.stop()
+    await mock.sleep(PICK_STARTUP_S + 5.0)
+    assert mock.job is not None and mock.job.state == "failed", mock.job
+    assert mock.arm_folded, "the trajectory never went out, so the arm never left its pose"
+    assert mock.stop_log[:3] == ["mission.stop", "pick.script", "arm.cancel"]
 
 
 async def test_cancelling_the_arm_before_the_mission_is_the_race_the_order_prevents() -> None:
     """The mock reproduces upstream's race on purpose: a pick cancelled under a mission that is
     still running is a failed pick, and the mission's next tick explores again."""
     mock, _, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
-    while mock.mission.state != "PICKING":
-        await mock.sleep(0.5)
+    await _picking(mock, "running")
     mock._arm_cancel()
     await mock.sleep(2.0)
     assert mock.exploring and mock.mission.skipped == 1

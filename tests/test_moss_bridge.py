@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from quackd_moss import upstream_api as up
 from tests.conftest import REPO
 
 BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
@@ -151,6 +152,8 @@ def test_the_pins_the_bridge_spells_are_the_ones_read_upstream() -> None:
     """The bridge's names sit outside upstream_api's rule, so they are pinned here instead."""
     src = BRIDGE.read_text(encoding="utf-8")
     assert B.MISSION_RPC == "LitterMission"
+    upstream = (up.ARM_PLAY.name, up.MISSION_PICK_CMD.name)
+    assert upstream == (B.PICK_SCRIPT, B.PICK_CMD_ENV)
     assert B.CAMERA_STREAMS == {"nose": "color_image", "wrist": "wrist_image"}
     assert B.channel(B.PAD_STREAM_EXPLORE, B.TWIST_MSG) == "/tele_cmd_vel#geometry_msgs.Twist"
     assert B.channel(B.PAD_STREAM_NAV, B.TWIST_MSG) == "/cmd_vel#geometry_msgs.Twist"
@@ -569,6 +572,132 @@ def test_a_stop_whose_zeros_fail_still_confirms_the_missions_stop() -> None:
     assert doc["mission"] == "stopped" and not doc["ok"], doc
     assert any("the pump's zero" in e for e in doc["errors"]), doc["errors"]
     bridge.close()
+
+
+# ── the mission's own pick, which its stop leaves running ───────────────────────────────
+
+
+def _litter_on_fake_time() -> tuple[Any, Clock]:
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _fake_time(bridge, clock)
+    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    return bridge, clock
+
+
+def test_on_moss_litter_a_stop_ends_the_missions_pick_before_its_trajectory_goes_out() -> None:
+    """The mission's stop leaves its pick running (`up.MISSION_STOP_LEAVES_PICK`), and a pick
+    still starting has sent nothing a cancel could find. Its trajectory would go out after the
+    cancel and play the whole cycle, so the stop ends the maker's script first."""
+    bridge, clock = _litter_on_fake_time()
+    bus = bridge.bus
+    pid = bus.start_mission_pick(startup_s=0.5)
+    doc = bridge.stop()
+    clock.t += 5.0  # long past the script's startup
+    bus.arm_joints()
+    assert not bus.executing, "the trajectory never went out"
+    assert "the mission's script: execute_trajectory" not in bus.events
+    assert doc["ok"] and doc["mission"] == "stopped", doc
+    assert doc["pick"] == {"terminated": [pid], "killed": [], "left": []}
+    assert doc["arm"]["held"] is True, "read twice, never assumed"
+    sent = [e for e in bus.events if e.startswith(("mission stop", "pick script", "arm cancel"))]
+    assert sent[:3] == ["mission stop", "pick script SIGTERM", "arm cancel"]
+    bridge.close()
+
+
+def test_on_moss_litter_a_pick_already_playing_is_ended_and_its_trajectory_cancelled() -> None:
+    bridge, clock = _litter_on_fake_time()
+    bus = bridge.bus
+    bus.start_mission_pick(startup_s=0.1)
+    clock.t += 0.5
+    bus.arm_joints()
+    assert bus.executing, "the mission's trajectory is out"
+    doc = bridge.stop()
+    assert not bus.executing and doc["arm"]["cancel"] == "CANCELLED", doc
+    assert doc["arm"]["held"] is True and doc["pick"]["terminated"]
+    bridge.close()
+
+
+def test_a_pick_script_that_outlives_its_sigterm_is_killed_after_its_grace() -> None:
+    bridge, clock = _litter_on_fake_time()
+    bus = bridge.bus
+    pid = bus.start_mission_pick(startup_s=60.0, ignores_term=True)
+    doc = bridge.stop()
+    assert doc["pick"] == {"terminated": [], "killed": [pid], "left": []}, doc
+    signals = [e for e in bus.events if e.startswith("pick script")]
+    assert signals == ["pick script SIGTERM", "pick script SIGKILL"]
+    assert clock.t >= B.SCRIPT_GRACE_S, "it had its grace before the kill"
+    bridge.close()
+
+
+def test_a_pick_that_outlives_both_signals_is_said_and_the_arm_is_still_cancelled() -> None:
+    class Stubborn:
+        def __init__(self) -> None:
+            self.sent: list[int] = []
+
+        def picks(self, stack: Any) -> list[int]:
+            return [4321]
+
+        def alive(self, pid: int) -> bool:
+            return True
+
+        def signal(self, pid: int, sig: int) -> None:
+            self.sent.append(sig)
+
+    bridge, _ = _litter_on_fake_time()
+    bridge.procs = Stubborn()
+    doc = bridge.stop()
+    assert doc["pick"]["left"] == [4321] and len(bridge.procs.sent) == 2
+    assert not doc["ok"] and any("outlived SIGKILL" in e for e in doc["errors"]), doc["errors"]
+    assert "arm cancel" in bridge.bus.events, "the cancel goes out all the same"
+    bridge.close()
+
+
+def test_a_cancel_never_says_the_arm_holds_without_reading_it() -> None:
+    """ALREADY_STOPPED says nothing executed at that instant. A hold is a reading, and an arm
+    whose joints did not answer after the cancel is unread."""
+    bridge = B.fake_bridge(fps=0)
+
+    def silent() -> dict[str, float]:
+        raise TimeoutError("the coordinator stopped answering its reads")
+
+    bridge.bus.arm_joints = silent
+    doc = bridge.stop()
+    assert doc["arm"]["cancel"] == "ALREADY_STOPPED" and doc["arm"]["held"] is None, doc
+    bridge.close()
+
+
+def _proc(root: Path, pid: int, ppid: int, *argv: str, state: str = "S") -> None:
+    d = root / str(pid)
+    d.mkdir()
+    (d / "stat").write_text(f"{pid} (py (x) y) {state} {ppid} 1 1 0 -1 4194560", encoding="utf-8")
+    (d / "cmdline").write_bytes(b"".join(a.encode() + b"\0" for a in argv))
+
+
+def test_the_process_table_finds_only_the_missions_own_picks(tmp_path: Path) -> None:
+    """Among the stack's own descendants, the maker's script, or the stack's own MOSS_PICK_CMD,
+    and nothing else: never the stack, its workers, a script outside it, or a zombie."""
+    _proc(tmp_path, 100, 1, "/home/m/moss/.venv/bin/python", "/home/m/moss/.venv/bin/dimos", "run")
+    _proc(tmp_path, 101, 100, "/home/m/moss/.venv/bin/python", "-c", "worker")
+    _proc(
+        tmp_path, 102, 101, "/home/m/moss/.venv/bin/python", "/home/m/moss/tools/moss_arm_play.py"
+    )
+    _proc(tmp_path, 103, 1, "python", "/home/m/moss/tools/moss_arm_play.py")
+    _proc(tmp_path, 104, 101, state="Z")
+    _proc(tmp_path, 105, 101, "/opt/pick", "--fast", "--sim")
+    table = B.ProcTable(str(tmp_path))
+    stack = B.StackInfo(running=True, blueprint="moss-litter", pid=100, run_id="r", env={})
+    assert table.picks(stack) == [102]
+    custom = B.StackInfo(
+        running=True,
+        blueprint="moss-litter",
+        pid=100,
+        run_id="r",
+        env={"MOSS_PICK_CMD": "/opt/pick --fast"},
+    )
+    assert sorted(table.picks(custom)) == [102, 105]
+    assert table.alive(102) and not table.alive(104) and not table.alive(999)
+    assert table.picks(B.StackInfo(running=False)) == []
 
 
 def test_the_arm_cancel_route_cancels_its_own_cycle_and_nothing_else() -> None:

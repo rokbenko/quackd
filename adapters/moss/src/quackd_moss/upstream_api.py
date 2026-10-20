@@ -574,6 +574,25 @@ MISSION_PICK_SUBPROCESS = UpstreamRef(
     "the mission picks by running the arm script as a subprocess in a thread of its own, with a "
     "PICK_TIMEOUT_S of 180 (line 72). stop() leaves that thread and that process alone.",
 )
+MISSION_PICK_CMD = UpstreamRef(
+    "MOSS_PICK_CMD",
+    "VERIFIED",
+    src(_MISSION, 65),
+    "the stack's own override of the pick command (line 400 reads it, line 512 splits it). The "
+    "bridge reads it from the stack's environment to find the mission's pick when it is not "
+    "the maker's script.",
+)
+MISSION_STOP_LEAVES_PICK = UpstreamRef(
+    "LitterMission.stop leaves its pick running",
+    "VERIFIED",
+    src(_MISSION, 431),
+    "stop() sets the stop event, joins the 10 Hz loop, publishes a zero and closes the module "
+    "(lines 431 to 439), and never touches self._pick_thread or the subprocess.run it waits on "
+    "(lines 507 to 527). A pick in flight outlives the stop: its script, still importing dimOS "
+    "and reading the joints (moss_arm_play.py lines 86 to 110), sends its one trajectory after "
+    "any cancel, and the coordinator plays the whole cycle. So the bridge's stop ends that "
+    "script first, then cancels the trajectory and reads the arm twice.",
+)
 MISSION_RESUMES_EXPLORING = UpstreamRef(
     "RESUMING",
     "VERIFIED",

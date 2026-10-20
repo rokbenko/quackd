@@ -49,11 +49,17 @@ alone cancels nothing: the whole cycle is one trajectory that the coordinator pl
 cycle its `id` names, the id `/arm/cycle` answered with, and does nothing for a cycle that has
 ended or that another id names, so quackd's close never cancels a trajectory it did not start.
 
-**The stop.** On `moss-litter` the mission's own `stop` goes first, then at once the arm's
-cancel and a zero twist, and only then the wait that confirms the mission's stop. The order
-matters: a cycle cancelled under a mission not yet told to stop makes the maker's script exit
-on its lag watch, the mission marks the pick failed, and its next tick sets the rover exploring
-again, while a cancel that waited for the confirmation would leave the arm moving meanwhile.
+**The stop.** On `moss-litter` the mission's own `stop` goes first, then at once the end of the
+mission's own pick, the arm's cancel and a zero twist, and only then the wait that confirms the
+mission's stop. The order matters: a cycle cancelled under a mission not yet told to stop makes
+the maker's script exit on its lag watch, the mission marks the pick failed, and its next tick
+sets the rover exploring again, while a cancel that waited for the confirmation would leave the
+arm moving meanwhile. The mission's stop leaves its own pick running, and a pick still starting
+sends its one trajectory after any cancel, so the bridge sends the maker's script SIGTERM, then
+SIGKILL if it outlives its grace, before it cancels. The script is found among the stack's own
+descendants in `/proc`, by `tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and no other
+process is ever signalled. After every cancel the joints are read twice, and a hold is never
+claimed without that reading.
 The mission's stop is sent without an answer, as dimOS sends every stop, so the bridge confirms
 it by the mission's RPC falling silent, and only for a mission it heard answer before. A stop
 it cannot confirm within 4 s of sending it is reported as a failure, and the arm's cancel and

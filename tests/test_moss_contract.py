@@ -414,6 +414,27 @@ async def test_on_moss_litter_the_stop_ends_the_mission_and_it_stays_ended(rover
 
 
 @pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_on_moss_litter_a_stop_ends_the_missions_own_pick_and_the_arm_never_plays_it(
+    rover: Rover,
+) -> None:
+    """The mission is picking, its script still starting, when quackd stops. The stop ends
+    that script before it cancels, so the trajectory never goes out after the stop, and the
+    close's word that the mission is stopped is true of its arm too."""
+    adapter = MossAdapter(rover.transport())
+    await adapter.connect()
+    bus = rover.bridge.bus
+    bus.start_mission_pick(startup_s=1.5)
+    await adapter.stop()
+    assert adapter.stop_error is None, adapter.stop_error
+    await asyncio.sleep(2.0)
+    bus.arm_joints()
+    assert not bus.executing, "the mission's trajectory went out after the stop"
+    assert bus.pick is not None and not bus.pick.alive
+    await adapter.close()
+    assert "litter mission is stopped" in (adapter.close_note or "")
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
 async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_running(
     rover: Rover,
 ) -> None:

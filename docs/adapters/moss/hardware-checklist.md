@@ -107,9 +107,9 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
     `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it needs a
     `.duck` of your own that allows it, run in a terminal where you answer its confirm yourself.
     Give it a minute with one can in view, then send `stop`. The mission's stop goes out first,
-    then at once the arm holds and the base stops, and the run ends with a note that the mission
-    is stopped and runs again only after the stack restarts. If the note says the stop was not
-    confirmed, stop the stack on the rover with the arm supported.
+    then at once its own pick script is ended, the arm holds and the base stops, and the run ends
+    with a note that the mission is stopped and runs again only after the stack restarts. If the
+    note says the stop was not confirmed, stop the stack on the rover with the arm supported.
 
 ## What to report
 
