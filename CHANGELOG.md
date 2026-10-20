@@ -7,6 +7,55 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Changed
+
+- **The Microduck turns at 1.0 rad/s at most, down from 1.5.** The cap is quackd's own, the
+  manifest's `limits` that every verb that walks is clamped to, since robotd clamps no twist.
+  1.0 rad/s is the turn upstream's walking task was trained on and, from `daemon-v0.16.2`, what a
+  gamepad's full stick asks for, "what that policy follows well on the robot", so a `move` that
+  asked for more was asking for a turn the policy was not trained to follow. quackd's own scans
+  and `go_to`'s steering already turned at 1.0 at most. The datasheet's clamp line, which the pilot
+  and an MCP client read, now says `1 rad/s turning`. The 3D simulator keeps its own ceiling of
+  1.5, since the clamp bounds every twist it is handed.
+- **`stand_up` waits up to ten seconds for the duck to stand, rather than reading it once at
+  three.** It asks the policy to run as before, then reads the duck every quarter second and sends
+  nothing more. A duck that reads standing is called upright at once, and the wait ends there on a
+  duck somebody picks up or nothing reports on. It used to read the duck once, three seconds after
+  the request, so a duck the policy got up a moment later had already been told it may need a hand.
+  Only a duck that has not stood when the ten seconds are over is judged as before: one robotd's
+  own answer to a fall still has is told to run the verb again in a moment, and one still down
+  that it may need a hand, now with how long it was given. The verb's 15 s timeout is unchanged,
+  and how long the policy takes to get a real duck up is still unmeasured.
+  `tests/test_jsonrpc.py` stands a duck up six seconds in and lifts one off the floor one second
+  in, on a clock of the test's own.
+
+### Fixed
+
+- **A registered robot this quackd cannot build no longer locks every `quackd robot` command.** A
+  robot on a backend its adapter has dropped, as `microduck:websocket` was in 0.19.0, or on an
+  adapter not installed here made `robots.json` refuse every command that read it, until its entry
+  was deleted by hand, as 0.19.0's notes said: `robot list`, `show`, `edit` and `remove`, and runs
+  of every other robot in the file. Its spec is now kept as written. `robot list` marks it and says
+  why, `--json` carries the reason as `spec_problem`, and `show`, `edit` and `remove` work on it.
+  A run, a flock, `doctor`, `serve-mcp` and `robot list --probe` refuse that one robot by name, as
+  `kitchen is registered as microduck:websocket, which this quackd cannot build`, the adapter's own
+  words, and then `quackd robot edit kitchen --spec microduck:<backend>, or quackd robot remove
+  kitchen`, with installing the package that provides it first for an adapter that is missing.
+  `robot add` and `robot edit --spec` still refuse a spec that does not parse.
+  `tests/test_robot_registry.py` and `tests/test_cli_robot.py` cover both kinds, and the second
+  fails on 0.20.0 at its first `robot list`.
+- **A Microduck's `search_scan` counts the turns robotd took in a run, as 0.18.0 said it did.**
+  0.18.0 has the scan count the turns it made by the ones robotd's state showed it took, read off
+  what the verb is handed, which in a run is the Microduck's adapter. The adapter never passed that
+  on from the `jsonrpc` transport, so a run's scan counted the turns it sent: over a slow link, a
+  scan stopped on a robotd that took none of them said it stopped `after 1 of 10 turns`, a turn
+  robotd never took, where it now says the robot's own state did not confirm the turn sent to it.
+  The tests handed the verb the transport itself, which is why they passed. The slow-link tests in
+  `tests/test_jsonrpc.py` hand it the adapter now, as a run does, and the scan's test fails on the
+  two slower links without the fix.
+
 ## [0.20.0] — 2026-10-20
 
 0.20.0 lets the decision LLM see, and gives the Microduck a head that keeps something in view. With

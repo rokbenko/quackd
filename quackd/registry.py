@@ -47,6 +47,7 @@ from quackd.adapters.factory import (
     ADAPTER_NAMES,
     BACKENDS,
     RobotSpec,
+    adapter_names,
     default_spec,
     parse_robot_spec,
 )
@@ -126,6 +127,18 @@ def _check_llm(spec: str) -> None:
     try:
         parse_llm(spec, source="llm")
     except ProviderError as e:
+        raise RegistryError(str(e)) from e
+
+
+def _check_spec(spec: str) -> None:
+    """Refuse a body on the way into the file, in the adapter table's own words.
+
+    The counterpart to `RobotEntry._spec`, which keeps a stored spec it cannot parse, for
+    `_check_llm`'s reason. The refusal names no robot and no file, `_check_host`'s rule: it
+    is about what was just typed."""
+    try:
+        parse_robot_spec(spec)
+    except AdapterError as e:
         raise RegistryError(str(e)) from e
 
 
@@ -246,12 +259,20 @@ class RobotEntry(BaseModel):
     @field_validator("spec")
     @classmethod
     def _spec(cls, value: str) -> str:
+        """Lenient on the shelf, the bargain `_llm` strikes, and for its reason.
+
+        A spec this quackd cannot parse used to be refused here, and so on every read: one
+        robot on a backend its adapter had dropped, as `microduck:websocket` was in 0.19.0, or
+        on an adapter no longer installed here, made `quackd robot list`, `show`, a run of any
+        other robot, and the `edit` and `remove` that would mend it all refuse the whole file
+        until somebody deleted the entry by hand. So a spec that parses is stored canonically
+        (`microduck` as `microduck:sim2d`) and one that does not is kept as written, stripped.
+        `add_robot` and `update_robot` check the one being written (`_check_spec`), and
+        `robot_spec` refuses a bad stored one by the robot's name on the command that uses it."""
         try:
             return parse_robot_spec(value).key
-        except AdapterError as e:
-            # re-raised as a ValueError so pydantic folds it into the one-line message that
-            # names which robot in the file is wrong; the wording stays the adapter's own
-            raise ValueError(str(e)) from e
+        except AdapterError:
+            return str(value).strip()
 
     @field_validator("camera_url")
     @classmethod
@@ -295,7 +316,10 @@ class RobotEntry(BaseModel):
     def _one_camera_bodies(self) -> RobotEntry:
         """A second camera on a body that reads one is a file saying something untrue, and
         the rule here is that such a file names itself rather than being quietly trimmed."""
-        if len(self.camera_urls) > 1 and self.spec not in MULTI_CAMERA_SPECS:
+        several = len(self.camera_urls) > 1 and self.spec not in MULTI_CAMERA_SPECS
+        # judged only against a body this quackd can build: one it cannot is refused by name
+        # where it is used (`robot_spec`), and refusing it here would refuse the whole file
+        if several and self.spec_problem is None:
             raise ValueError(f"{self.spec} takes one camera url; {who_takes_several()}")
         return self
 
@@ -363,20 +387,39 @@ class RobotEntry(BaseModel):
 
     @property
     def adapter(self) -> str:
-        return self.spec.split(":", 1)[0]
+        return self.spec.partition(":")[0]
 
     @property
     def backend(self) -> str:
-        return self.spec.split(":", 1)[1]
+        # partitioned rather than split, so a stored spec with no colon (`_spec` keeps one
+        # it cannot parse as written) reads as no backend instead of raising
+        return self.spec.partition(":")[2]
 
     @property
     def key(self) -> str:
         return self.spec
 
     @property
+    def spec_problem(self) -> str | None:
+        """Why this quackd cannot build the body this robot is registered as, in the adapter
+        table's own words, or None when it can. Asked of the file as it is read now, so a
+        robot whose adapter is installed again parses again without anything being saved."""
+        try:
+            parse_robot_spec(self.spec)
+        except AdapterError as e:
+            return str(e)
+        return None
+
+    @property
     def robot_spec(self) -> RobotSpec:
         """`RobotSpec` carries the name, so the manifest id is the name you registered, which
-        is what `--robots name=spec` has always done for a fleet."""
+        is what `--robots name=spec` has always done for a fleet.
+
+        A stored spec this quackd cannot parse is refused here, by the robot's name and with
+        the fix, because every command that builds a registered robot builds it from this:
+        a run, a flock, `doctor`, `serve-mcp`, `rest-pose` and `release`."""
+        if (why := self.spec_problem) is not None:
+            raise AdapterError(unusable_spec(self.name, self.spec, why))
         return RobotSpec(self.adapter, self.backend, self.name)
 
     @property
@@ -426,9 +469,25 @@ class RobotEntry(BaseModel):
             "host_token_set": self.host_token is not None,
             "llm": self.llm,
             "note": self.note,
+            "spec_problem": self.spec_problem,
             "added": self.added,
             "updated": self.updated,
         }
+
+
+def unusable_spec(name: str, spec: str, why: str) -> str:
+    """The refusal for a registered robot this quackd cannot build: which robot, what it is
+    registered as, the adapter table's reason, and the way out. An adapter this quackd has
+    lost a backend of is moved to one it has; one it does not have at all may only need its
+    package installed again."""
+    adapter = spec.partition(":")[0].strip().lower()
+    known = adapter in adapter_names()
+    moves = f"quackd robot edit {name} --spec {adapter if known else '<adapter>'}:<backend>"
+    install = "" if known else f"install the package that provides {adapter or 'it'}, "
+    return (
+        f"{name} is registered as {spec}, which this quackd cannot build ({why}): "
+        f"{install}{moves}, or quackd robot remove {name}"
+    )
 
 
 class StoredFlock(BaseModel):
@@ -633,6 +692,7 @@ class Registry:
 
     def add_robot(self, entry: RobotEntry) -> RobotEntry:
         check_name(entry.name, kind="robot")
+        _check_spec(entry.spec)  # the door is strict; `RobotEntry._spec` is the shelf
         if entry.llm is not None:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
@@ -668,7 +728,11 @@ class Registry:
         # retired model would fail on the pilot.
         if (named := changes.get("llm")) is not None:
             _check_llm(str(named))
-        # The board being set, by the same rule and for the same reason.
+        # The body being set, and the board, by the same rule and for the same reason: a robot
+        # whose stored spec no longer parses can still have its note edited, and its spec
+        # moved to one that does.
+        if (spec := changes.get("spec")) is not None:
+            _check_spec(str(spec))
         _check_host(changes.get("host"), changes.get("host_token"))
         data = current.model_dump()
         data.update(changes)
@@ -907,6 +971,10 @@ async def probe_entry(
 
     from quackd.adapters.factory import make_adapter
 
+    if (problem := entry.spec_problem) is not None:
+        # ahead of the backends a probe declines, which are read off the stored spec's text: a
+        # robot this quackd cannot build is a failed probe, and `robot list` says the fix
+        return ProbeResult(False, problem, 0.0)
     if (why := _UNPROBEABLE.get(entry.backend)) is not None:
         return ProbeResult(None, f"skipped: {why}", 0.0)
     started = time.perf_counter()

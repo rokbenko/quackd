@@ -436,8 +436,8 @@ NO_TWIST_CLAMP = UpstreamRef(
     "0.4 m/s forward and back and 1.0 rad/s of turn, since v8's velstand 'tracks yaw commands' "
     "and that is 'what that policy follows well on the robot' (lib.rs:129-139 there). The "
     "Microduck's speed caps are quackd's own: its manifest's limits, 0.3 m/s forward, 0.2 m/s "
-    "sideways and 1.5 rad/s of turn, which every verb that walks is clamped to "
-    "(quackd.verbs.core.speed_limits).",
+    "sideways and 1.0 rad/s of turn, the turn the pad asks for from daemon-v0.16.2, which every "
+    "verb that walks is clamped to (quackd.verbs.core.speed_limits).",
 )
 STATE_NEEDS_SUBSCRIBE = UpstreamRef(
     "robot.state is not pushed until robot.subscribe",
@@ -488,11 +488,12 @@ LIMP_FALL = UpstreamRef(
     "else takes the robot: the policy disabled, the torque off or the joints ramping home, the "
     "shutdown sit, or the power off (main.rs:2896-2911). quackd sends no walk meanwhile: both "
     "labels and safety.limp read as not standing, as safety.fallen does, and a verb that was "
-    "walking is held until it ends. stand_up says so of a duck robotd has in the sequence when it "
-    "reads the duck again, three seconds after its request. With these defaults the sequence is "
-    "over within about 2.1 s, so that is a fall robotd caught during the wait, and a duck it had "
-    "when stand_up was asked is back with the policy by then. Whether the policy then gets the "
-    "duck up is the policy's to say (VELSTAND), and nobody has seen it under quackd.",
+    "walking is held until it ends. stand_up says so of a duck robotd still has in the sequence "
+    "when its wait for the duck to stand is over, ten seconds after its request. With these "
+    "defaults the sequence is over within about 2.1 s, so that is a fall robotd caught in the "
+    "wait's last two seconds or so, and a duck it had when stand_up was asked is back with the "
+    "policy well before then. Whether the policy then gets the duck up is the policy's to say "
+    "(VELSTAND), and nobody has seen it under quackd.",
 )
 #: The labels of the two halves of robotd's limp-fall sequence, the limp and the pose
 #: (LIMP_FALL). robotd gives every tick of the sequence one of them, whether or not its fall
@@ -832,18 +833,18 @@ STAND_UP_RPC = UpstreamRef(
     "bringing up a duck that is on its feet, moves every joint and is never sent. On a robot "
     "whose policy is enabled already, as it is when the duck fell while the policy drove it, "
     "robot.enable {on: true} only sets the flag again (robotd/src/main.rs:5319-5328, "
-    "robotd/src/intents.rs:470-472), so what stand_up learns comes from its read three seconds "
-    "later. robotd's own stand-up after a fall is the end of limp_fall, and at the pin limp_fall "
+    "robotd/src/intents.rs:470-472), so what stand_up learns comes from reading the duck as it "
+    "waits, every quarter second for up to ten seconds. robotd's own stand-up after a fall is the end of limp_fall, and at the pin limp_fall "
     "is off by default: 'With it off, a fall changes nothing: the policy keeps driving and the "
     "humans stay in charge' (robotd-params/src/lib.rs:1978-1979). From daemon-v0.16.2 it is on "
     "again, and robotd hands a duck it caught falling back to velstand once it has posed it "
     "(LIMP_FALL), which upstream says gets up from a fall from v8 on (VELSTAND). Whether velstand "
     "gets a duck off the floor has not been seen under quackd on either release. A duck robotd "
-    "has in that sequence when stand_up reads it again is told so, and to run stand_up again in "
-    "a moment. The sequence is over within about 2.1 s by default, so that is a fall robotd "
-    "caught during the wait, and a duck it had when stand_up was asked is judged on that read "
-    "like any other: upright if it reads standing, and told it may need a hand if it is still "
-    "down, even while the policy is still getting it up.",
+    "still has in that sequence when stand_up's wait is over is told so, and to run stand_up "
+    "again in a moment. The sequence is over within about 2.1 s by default, so that is a fall "
+    "robotd caught late in the wait, and a duck it had when stand_up was asked is judged like "
+    "any other: upright as soon as it reads standing, and told it may need a hand only if it is "
+    "still down when the wait is over.",
 )
 ALPHA_UPRIGHT_FOV = UpstreamRef(
     "a tall /frame is assumed to be an alpha's IMX219, 62 degrees from top to bottom",

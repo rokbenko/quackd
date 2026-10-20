@@ -117,15 +117,15 @@ def test_the_microduck_says_its_speed_caps_are_quackds_own_clamp() -> None:
     """The sheet said the speed caps were a software clamp in robotd. robotd clamps no twist at
     any release quackd has read (`up.NO_TWIST_CLAMP`): the caps are the manifest's own limits,
     which quackd holds every twist a verb sends to and the prompt renders as quackd's clamp, so
-    the note contradicted a line above it. It says whose clamp it is now, and the numbers
-    are as they were."""
+    the note contradicted a line above it. It says whose clamp it is now. The turn is 1.0 rad/s
+    from 0.21.0, the turn upstream's walking task was trained on and its pad asks for."""
     manifest = microduck_manifest("sim2d")
     text = body_section(manifest)
     assert "software clamp in robotd" not in text
     assert "The speed caps are quackd's own clamp on the twists it sends" in text
     assert up.NO_TWIST_CLAMP.name in text
-    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1.5 rad/s turning." in text
-    assert speed_limits(manifest) == (0.3, 0.2, 1.5)
+    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in text
+    assert speed_limits(manifest) == (0.3, 0.2, 1.0)
 
 
 def test_an_unpublished_figure_is_a_question_for_a_person_not_a_refusal() -> None:
@@ -236,7 +236,7 @@ def test_a_body_no_verb_moves_is_told_no_speed_cap() -> None:
 def test_speed_clamps_come_from_the_limits_never_from_the_datasheet() -> None:
     """`limits` is quackd's own rule about what it sends. The datasheet never repeats it."""
     duck = body_section(microduck_manifest("sim2d"))
-    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1.5 rad/s turning." in duck
+    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in duck
 
     strafing = body_section(xlerobot_manifest("mock"))
     assert "0.2 m/s sideways" in strafing

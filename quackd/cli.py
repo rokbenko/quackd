@@ -4605,7 +4605,9 @@ def _entry_rows(entry: Any, *, flocks: list[str]) -> list[tuple[str, Any]]:
     pilot = Text(entry.llm) if entry.llm else dash
     return [
         ("name", Text(entry.name, style=ui.STYLES["key"])),
-        ("robot", Text(entry.key, style=ui.STYLES["accent"])),
+        # marked as `robot list` marks it when this quackd cannot build it, and the body row
+        # says why, in the words a run that names it is refused with
+        ("robot", Text(entry.key, style=ui.STYLES["fail" if entry.spec_problem else "accent"])),
         ("body", body),
         ("address", Text(entry.address) if entry.address else dash),
         # one per line, because two urls on one line is where a reader stops being able to
@@ -4950,7 +4952,7 @@ def robot_list(
     as_json: bool = _JSON,
 ) -> None:
     """Every registered robot. Static by default: --probe connects to each of them."""
-    from quackd.registry import RegistryError, probe_all
+    from quackd.registry import RegistryError, probe_all, unusable_spec
 
     try:
         registry = _registry(registry_dir)
@@ -5006,13 +5008,18 @@ def robot_list(
     table.add_column("robot", no_wrap=True)
     for name in shown:
         table.add_column(name, overflow="fold", ratio=1 if name in ("note", "reachable") else None)
+    problems = {name: why for name, e in entries.items() if (why := e.spec_problem) is not None}
     for i, (name, entry) in enumerate(entries.items()):
         table.add_row(
             Text(name),
-            Text(entry.key, style=ui.STYLES["accent"]),
+            Text(entry.key, style=ui.STYLES["fail" if name in problems else "accent"]),
             *(cells[column][i] for column in shown),
         )
     ui.console.print(table)
+    # Listed rather than refused: a robot this quackd cannot build used to make the whole file
+    # refuse, this command and the `edit` and `remove` that mend it among them.
+    for name, why in problems.items():
+        ui.console.print(_warn_line(unusable_spec(name, entries[name].spec, why)))
     _exit_on_unreachable(probes)
 
 
