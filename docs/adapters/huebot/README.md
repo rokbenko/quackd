@@ -81,6 +81,9 @@ maker put it. Forward the shim's socket over ssh, `ssh -L 9870:<socket> <huebot>
   line, answer a request before reading the line after it, and write the `robot.state` frames
   on the same connection. quackd's check that a twist was taken counts on that order: an answer
   to anything it sent after a twist says the shim has read the twist.
+- Answer every request within 2 s, the deadline quackd gives each one (`request_timeout_s`).
+  A call with no answer by then fails, and a `robot.health` that late fails the heartbeat,
+  which ends the run.
 
 ### `hello`
 
@@ -202,10 +205,12 @@ step of the [hardware checklist](hardware-checklist.md) tests it, before anythin
   `move.requested` too, and is answered before the shim writes another state frame, so that the
   frames before the answer are the ones built before the stop. quackd ends every walk and every
   run with one, and sends one when the pilot asks or the heartbeat fails.
-- `robot.health` takes no params, and quackd asks it twice a second as its heartbeat. `healthy:
-  false` ends the run, with `reason` as the reason. `battery.percent` is optional, and a task can
-  end a run on it. quackd also asks it as each walk starts, since its answer says the shim has
-  read the walk's first twist.
+- `robot.health` takes no params, and quackd asks it twice a second as its heartbeat. An answer
+  of `healthy: false` ends the run, with `reason` as the reason, and so does no answer within
+  2 s: either fails the heartbeat, which sends a stop and ends the run. `battery` is optional.
+  When it is there it is an object whose `percent` is a number from 0 to 100, `{"percent": 80}`,
+  which a task can end a run on, and anything else there reads as no battery. quackd also asks
+  it as each walk starts, since its answer says the shim has read the walk's first twist.
 
 ### `robot.do`, `robot.sound` and `robot.enable`
 

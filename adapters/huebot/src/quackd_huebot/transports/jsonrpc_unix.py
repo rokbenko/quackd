@@ -443,6 +443,16 @@ def _pickup_detection(read: StateRead) -> bool | None:
     return (_flag(safety, "picked_up") is not None) if isinstance(safety, dict) else None
 
 
+def _battery_percent(health: Any) -> float | None:
+    """`robot.health`'s `battery.percent`, when it is a finite number, and None for anything
+    else: an answer that is not an object, a `battery` that is not one, or a `percent` that is
+    not a number. A `battery` of `80` used to raise out of every state read, and so out of every
+    verb, since the executor reads the state before each one."""
+    battery = health.get("battery") if isinstance(health, dict) else None
+    percent: Any = battery.get("percent") if isinstance(battery, dict) else None
+    return float(percent) if _finite(percent) else None
+
+
 def parse_address(address: str) -> tuple[str, str, int | None]:
     if address.startswith("unix://"):
         return "unix", address[len("unix://") :], None
@@ -1095,7 +1105,7 @@ class JsonRpcUnixTransport:
                 self._last_health = health if isinstance(health, dict) else None
 
         read = self._read()
-        battery = ((health or {}).get("battery") or {}).get("percent")
+        battery = _battery_percent(health)
         hold = self._hold_record()
         posture, reason = read.posture, read.reason
         if hold is not None and posture == "standing":
@@ -1107,7 +1117,7 @@ class JsonRpcUnixTransport:
             policy=read.policy,
             posture=posture,
             fallen=read.fallen,
-            battery_percent=float(battery) if battery is not None else None,
+            battery_percent=battery,
             extras={
                 "health": health,
                 "move": read.state.get("move"),

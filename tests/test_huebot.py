@@ -832,6 +832,36 @@ async def test_an_unhealthy_shim_fails_the_heartbeat() -> None:
         await fake.stop()
 
 
+@pytest.mark.parametrize(
+    ("answer", "percent"),
+    [
+        ({"healthy": True, "battery": 80}, None),
+        ({"healthy": True, "battery": "80%"}, None),
+        ({"healthy": True, "battery": [80]}, None),
+        ({"healthy": True, "battery": {"percent": "80%"}}, None),
+        ({"healthy": True, "battery": {"percent": None}}, None),
+        ([80], None),
+        ({"healthy": True, "battery": {"percent": 55}}, 55.0),
+    ],
+    ids=["number", "string", "list", "string-percent", "null-percent", "answer-a-list", "object"],
+)
+async def test_a_battery_that_is_not_an_object_reads_as_no_battery(
+    shim: FakeShim, answer: object, percent: float | None
+) -> None:
+    """`robot.health`'s `battery` is an object whose `percent` is a number. Anything else is no
+    battery, and every state read goes on: a `battery` of `80` used to raise out of each one, so
+    no verb could run, since the executor reads the robot before every one."""
+    shim.answers["robot.health"] = answer
+    adapter = await _connected(shim)
+    state = await adapter.get_state()
+    assert state.battery_percent == percent
+    health = await adapter.health()
+    assert health.ok and health.battery_percent == percent
+    assert (await _executor(adapter).run_verb("walk", {"vx": 0.1, "duration_s": 0.3})).ok
+    assert "robot.move" in shim.methods()
+    await adapter.disconnect()
+
+
 async def test_an_answer_with_no_accepted_is_not_a_yes(shim: FakeShim) -> None:
     shim.answers["robot.do"] = {"ok": True}
     adapter = await _connected(shim)
