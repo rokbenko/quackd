@@ -27,6 +27,7 @@ members = [
     "quackd-huebot",
     "quackd-lerobot",
     "quackd-microduck",
+    "quackd-moss",
     "quackd-open-duck",
     "quackd-rosbridge",
     "quackd-toddlerbot",
@@ -3881,6 +3882,16 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'camera'", specifier = ">=13" },
 ]
 provides-extras = ["camera", "mujoco"]
+
+[[package]]
+name = "quackd-moss"
+source = { editable = "adapters/moss" }
+dependencies = [
+    { name = "quackd" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quackd", editable = "." }]
 
 [[package]]
 name = "quackd-open-duck"
