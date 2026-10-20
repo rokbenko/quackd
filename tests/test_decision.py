@@ -120,7 +120,6 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "stand": (1, "confirm"),
     },
     "huebot": {
-        "grab": (1, "motion"),
         "kick": (2, "motion"),
         "quack": (1, "motion"),
         "say": (None, "motion"),

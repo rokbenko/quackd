@@ -414,9 +414,11 @@ SHIM_SKILLS = UpstreamRef(
     "Huebot runs behaviour code of its own, its maker says, and quackd assumes nothing about "
     "which skills it has. It offers each verb that sends robot.do only when every skill the verb "
     "sends is in the skills of the shim's robot.subscribe answer: sit and stand send "
-    "sit_toggle, kick sends kick_left and kick_right, and grab sends ground_pick. The transport "
-    "refuses a robot.do for any other name without writing it, and a shim that lists none is "
-    "offered none of the four.",
+    "sit_toggle, and kick sends kick_left and kick_right. grab, which sends ground_pick, is "
+    "offered on no Huebot until its maker says what ground_pick does there and how the state "
+    "reports that the robot holds something. The transport refuses a robot.do for any name the "
+    "shim did not list without writing it, and a shim that lists none is offered none of the "
+    "three.",
 )
 STAND_UP_RPC = UpstreamRef(
     "stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen "

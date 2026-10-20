@@ -40,7 +40,7 @@ Read four rows of what the robot itself reported:
 - `shim` names the API version, the build and the revision the shim answered `hello` with.
 - `verbs` says how many of the description's verbs this robot has, and `not on this robot`
   names the rest: the four that need a camera, without `--camera-url`, and any of `sit`,
-  `stand`, `kick` and `grab` whose skills the shim did not list.
+  `stand` and `kick` whose skills the shim did not list.
 - `pickup_detection` should say `True`.
 
 > Abort if the handshake is refused: quackd prints why. A shim on an API version other than 41

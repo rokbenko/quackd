@@ -64,7 +64,7 @@ from quackd_huebot.verbs import SKILLS_OF, STAND_UP_POLL_S, STAND_UP_WAIT_S
 #: Every verb, for the tests that run them through an executor and its allowlist.
 EVERYTHING = parse_duck_text(
     "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
-    "  allow: [walk, go_to, search_scan, kick, grab, sit, stand, stand_up, quack, say, observe]\n"
+    "  allow: [walk, go_to, search_scan, kick, sit, stand, stand_up, quack, say, observe]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
 #: Every skill a verb sends, which a shim that has them all lists.
@@ -394,13 +394,13 @@ async def test_the_mock_is_the_description_whole() -> None:
 @pytest.mark.parametrize(
     ("skills", "offered"),
     [
-        (None, ["sit", "stand", "kick", "grab"]),
+        (None, ["sit", "stand", "kick"]),
         ([], []),
         (["kick_left"], []),
         (["kick_left", "kick_right"], ["kick"]),
         (["sit_toggle"], ["sit", "stand"]),
-        (["ground_pick", "roulade"], ["grab"]),
-        (ALL_SKILLS, ["sit", "stand", "kick", "grab"]),
+        (["ground_pick", "roulade"], []),
+        (ALL_SKILLS, ["sit", "stand", "kick"]),
     ],
     ids=["undescribed", "none", "one-kick", "both-kicks", "sit-toggle", "ground-pick", "all"],
 )
@@ -416,6 +416,26 @@ def test_a_skill_verb_is_offered_only_when_the_shim_lists_every_skill_it_sends(
         assert (verb in names) is (verb in offered), verb
         assert (verb in manifest.preconditions) is (verb in offered), verb
     assert {"stand_up", "quack", "say", "move"} <= names, "a verb that sends no skill stays"
+
+
+async def test_grab_is_offered_nowhere_even_to_a_shim_that_lists_ground_pick(
+    shim: FakeShim,
+) -> None:
+    """`grab` sends `ground_pick`, and nobody has said what that does on Huebot or how its state
+    would report holding something, so no Huebot is offered it: not the description, not the
+    mock, and not a robot whose shim lists `ground_pick`. `approach_and` says `e.g. kick`."""
+    assert "grab" not in HUEBOT_VERBS and "grab" not in SKILLS_OF
+    for backend in ("mock", "jsonrpc"):
+        described = describe(backend)
+        assert "grab" not in described.verb_names() and "grab" not in described.preconditions
+        (approach,) = [spec for spec in described.verbs if spec.name == "approach_and"]
+        assert approach.description == "walk_to a target, then run another verb (e.g. kick)."
+    assert "grab" not in (await make_adapter("huebot:mock").connect()).verb_names()
+    shim.skills = [*ALL_SKILLS, "ground_pick"]
+    adapter = await _connected(shim)
+    assert adapter.manifest is not None and "grab" not in adapter.manifest.verb_names()
+    assert {"sit", "stand", "kick"} <= set(adapter.manifest.verb_names())
+    await adapter.disconnect()
 
 
 def test_a_huebot_with_no_camera_has_no_verb_that_needs_one() -> None:

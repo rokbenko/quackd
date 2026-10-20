@@ -31,12 +31,12 @@ quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 There is no simulator: the Microduck's `sim2d` and `mujoco` backends model the Microduck's
 body and gait, which are not Huebot's.
 
-The adapter is the Microduck's, copied and renamed rather than imported, so the two can diverge
-as the robots do. It keeps the protocol, the version gate, the check that the robot took each
-twist, the posture allowlist, the hold on a walk once the robot stops standing, the heartbeat
-and the reliance on the robot's own deadman. It leaves out what the shim does not answer yet,
-`robot.look`, so there is no `gaze` and no `watch`, and the Microduck's camera, which comes from
-a daemon Huebot does not run.
+The adapter is the Microduck's, copied and renamed rather than imported, so the two can diverge as
+the robots do. It keeps the protocol, the version gate, the check that the robot took each twist,
+the posture allowlist, the hold on a walk once the robot stops standing, the heartbeat and the
+reliance on the robot's own deadman. It leaves out what the shim does not answer yet, `robot.look`,
+so there is no `gaze` and no `watch`, and the Microduck's camera, which comes from a daemon Huebot
+does not run. It has no `grab` either, until Huebot's maker says what `ground_pick` does on Huebot.
 
 ## What Huebot's shim must answer
 
@@ -105,7 +105,7 @@ without state nothing walks.
 
 ```json
 {"jsonrpc": "2.0", "id": 2, "method": "robot.subscribe", "params": {"hz": 10}}
-{"jsonrpc": "2.0", "id": 2, "result": {"accepted": true, "skills": ["sit_toggle", "kick_left", "kick_right", "ground_pick"]}}
+{"jsonrpc": "2.0", "id": 2, "result": {"accepted": true, "skills": ["sit_toggle", "kick_left", "kick_right"]}}
 ```
 
 `skills` lists every name `robot.do` answers to, and quackd offers a verb only for the skills
@@ -115,12 +115,15 @@ listed there:
 |---|---|---|
 | `sit`, `stand` | `robot.do {skill: "sit_toggle"}` | `sit_toggle` |
 | `kick` | `robot.do {skill: "kick_left"}` or `"kick_right"` | both `kick_left` and `kick_right` |
-| `grab` | `robot.do {skill: "ground_pick"}` | `ground_pick` |
 
-robotd keeps `sit_toggle` and `ground_pick` out of this list, since they are not configurable
-skills there. The shim should list them if Huebot has them, or quackd offers none of the four
-verbs that send them. An answer with no `skills` lists none. quackd reads nothing else in the
-answer, and shows the whole of it to the pilot in `extras.subscribed`.
+robotd keeps `sit_toggle` out of this list, since it is not a configurable skill there. The shim
+should list it if Huebot has it, or quackd offers neither `sit` nor `stand`. An answer with no
+`skills` lists none. quackd reads nothing else in the answer, and shows the whole of it to the pilot
+in `extras.subscribed`.
+
+`grab` is not offered at all, whatever the shim lists. It sends `ground_pick`, and it waits for
+Huebot's maker to say what `ground_pick` does on Huebot and how the state reports that the robot
+holds something.
 
 From then on the shim sends a `robot.state` notification at the rate asked for, 10 a second, on
 that connection, until it closes. A frame older than 1 s is not believed, and the robot reads as
@@ -303,9 +306,9 @@ with no JSON-RPC, and quackd does not speak it. Nothing here has been run agains
 | `robot.move` | **notification** `{vx, vy, vyaw}` m/s, rad/s, trunk frame, x forward, y left, +vyaw left | `move`, `go_to`, `search_scan`, re-sent every 100 ms. Never sent while posture is not `standing`, nor once the state has not shown one it was sent. Once the robot stops standing while a verb walks, or the shim stops showing its twists, `robot.move` is held back for every verb that has walked until each ends, and `extras.move_hold` says why |
 | `robot.state.move.requested` | the twist the robot was last asked for, as it was asked, which `robot.stop` zeroes and the deadman does not | the only place quackd can see a `robot.move` was taken. Three frames after the shim answered a later call, 0.3 s at the 10 Hz quackd subscribes at, without it, and the walk is held back. `extras.move_echo` keeps the last verdict, and `search_scan` counts the turns it says it made by the ones the state showed |
 | `robot.stop` | request; zero velocity, *not* limp | `stop`, every walk's end and every run's |
-| `robot.do` | request `{skill}` → `{accepted, reason?}`, answered on accept or refusal rather than on completion | `kick`, `grab`, `sit` and `stand`, only for skills the subscribe answer listed |
-| `ground_pick \| kick_left \| kick_right \| sit_toggle \| roulade` | the names a stock Microduck answers to. A robot's skills are config, and an unknown one is refused | the names quackd's verbs send |
-| `robot.subscribe -> SubscribeResult.skills` | the skills a robot has, and the names `robot.do` answers to | which of those four verbs a connected Huebot is offered, and which `robot.do` goes out |
+| `robot.do` | request `{skill}` → `{accepted, reason?}`, answered on accept or refusal rather than on completion | `kick`, `sit` and `stand`, only for skills the subscribe answer listed |
+| `ground_pick \| kick_left \| kick_right \| sit_toggle \| roulade` | the names a stock Microduck answers to. A robot's skills are config, and an unknown one is refused | the names quackd's verbs send: `sit_toggle` for `sit` and `stand`, and `kick_left` and `kick_right` for `kick`. Nothing sends `ground_pick` or `roulade` |
+| `robot.subscribe -> SubscribeResult.skills` | the skills a robot has, and the names `robot.do` answers to | which of `sit`, `stand` and `kick` a connected Huebot is offered, and which `robot.do` goes out |
 | `robot.sound` | request `{tag, hold?}`; tags `alarm \| greet \| inquire \| peck \| chirp \| coo \| wheee`, no TTS | `quack` and `say`, text mapped to a tag |
 | `robot.enable` | request `{on, toggle?}` → `{accepted, reason?}`. Policy execution, **not a flag**: it "can bring a limp robot up as a side effect of being asked to drive" | `stand_up` |
 | `robot.init` / `robot.relax` | power the joints and ramp to the home pose, moving every joint / torque **off**, and the robot collapses | **never sent by quackd** |
@@ -327,7 +330,7 @@ with no JSON-RPC, and quackd does not speak it. Nothing here has been run agains
 | `robot.look, which Huebot's shim does not answer yet` | the same email: `robot.look` is not on Huebot's side yet, and the head turns with four servos | refuses a look itself, before anything is written, offers no `gaze` and no `watch`, and waits for no glance to fade before `go_to` and `search_scan` steer |
 | `robot.state.joints in the Microduck's order, head_yaw at index 7, positive to the left` | his page names fifteen servos and neither their names nor their order | asks the shim for robotd's order, and reads index 7 as `extras.head_yaw_deg`, which nothing steers on |
 | `Huebot stops when robot.move notifications stop arriving` | assumed: a shim that answers robotd's calls need not stop as robotd does | relies on it whenever the link goes, and step 1 of the checklist tests it before anything walks |
-| `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is his to say | offers `sit`, `stand`, `kick` and `grab` only for the skills the shim lists, and refuses any other `robot.do` without writing it |
+| `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is his to say | offers `sit`, `stand` and `kick` only for the skills the shim lists, and refuses any other `robot.do` without writing it. `grab` is offered nowhere until he says what `ground_pick` does on Huebot |
 | `stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen Huebot up` | Huebot stands and steps, and the walk's balance is still being tuned. Getting up from a fall is not published | sends `robot.enable {on: true}` only to a robot that is down and nobody holds, waits up to 10 s for it to read standing, and every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
 
 ## What this robot is, as numbers

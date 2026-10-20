@@ -5,7 +5,8 @@ Microduck's `robotd` speaks, so this adapter is the Microduck's, copied and rena
 imported, since the two robots may diverge: the same protocol, the same version gate, the same
 hold on a walk the robot does not take, and the same reliance on the robot's own deadman. What
 it leaves out is what Huebot's shim does not answer yet, `robot.look`, so there is no `gaze` and
-no `watch`, and the Microduck's simulators, whose model and gait are not Huebot's. Two backends:
+no `watch`, and the Microduck's simulators, whose model and gait are not Huebot's. It has no
+`grab` either, until its maker says what `ground_pick` does on Huebot. Two backends:
 `mock`, the core's scripted body, and `jsonrpc`, the shim, which nobody has run
 (docs/adapters/huebot/README.md).
 """
@@ -47,7 +48,9 @@ _GO_TO_DESCRIPTION = (
     "Walk toward a detected target and stop at a distance. Closes the loop on the camera itself."
 )
 _SEARCH_SCAN_DESCRIPTION = "Rotate in steps, looking for a target. Returns where it was seen."
-_APPROACH_AND_DESCRIPTION = "walk_to a target, then run another verb (kick, grab)."
+# The core's wording offers `kick, grab`, and Huebot has no `grab`. Its `then` parameter still
+# says so, since a parameter's description is the core's and no manifest can change it.
+_APPROACH_AND_DESCRIPTION = "walk_to a target, then run another verb (e.g. kick)."
 BLURB = "a small biped robot (25 cm)"
 
 _MAKER_PAGE = "ce-net.com/huebot, read 2026-10-20"
@@ -138,7 +141,6 @@ def huebot_manifest(
     gated: dict[str, list[str]] = {
         "move": ["standing"],
         "kick": ["standing"],
-        "grab": ["standing"],
         "sit": ["not_fallen"],
         "stand": ["not_fallen"],
     }

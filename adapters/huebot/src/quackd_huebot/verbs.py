@@ -1,9 +1,12 @@
-"""Huebot's own verbs: the Microduck's, copied and renamed, less the two that turn the head.
+"""Huebot's own verbs: the Microduck's, copied and renamed, less `grab` and the two that turn
+the head.
 
 Each maps to an intent the transport understands and, on `jsonrpc`, to a call the protocol names
 (`quackd_huebot/upstream_api.py`). `gaze` and `watch` are not here: they send `robot.look`, which
-Huebot's shim does not answer yet, so a later release adds them once its maker says it does. The
-four that send `robot.do` are offered on a connected Huebot only for the skills its shim lists
+Huebot's shim does not answer yet, so a later release adds them once its maker says it does.
+`grab` is not here either: it sends `ground_pick`, and it waits for Huebot's maker to say what
+`ground_pick` does on Huebot and how its state reports that the robot holds something. The
+three that send `robot.do` are offered on a connected Huebot only for the skills its shim lists
 (`SKILLS_OF`). `say` is `quack` with its text required: the protocol has seven tones and no TTS,
 so text is mapped to the tone that fits the mood.
 """
@@ -19,20 +22,18 @@ from quackd.verbs.core import SayParams, send_or_fail
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd_huebot import upstream_api as up
 
-#: The skills `sit`, `stand`, `kick` and `grab` send through `robot.do`, by the names robotd
+#: The skills `sit`, `stand` and `kick` send through `robot.do`, by the names robotd
 #: answers to (`up.SKILLS`).
 SIT_TOGGLE = "sit_toggle"
 KICK_SKILLS: dict[str, Literal["kick_left", "kick_right"]] = {
     "left": "kick_left",
     "right": "kick_right",
 }
-GROUND_PICK = "ground_pick"
 
 SKILLS_OF: dict[str, tuple[str, ...]] = {
     "sit": (SIT_TOGGLE,),
     "stand": (SIT_TOGGLE,),
     "kick": tuple(KICK_SKILLS.values()),
-    "grab": (GROUND_PICK,),
 }
 """Each verb that sends `robot.do`, and every skill it can send. A connected Huebot offers one
 only when its shim's `robot.subscribe` answer lists every skill the verb sends, so `kick` needs
@@ -200,18 +201,6 @@ async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
     return VerbResult.success(f"kicked with {p.leg} leg")
 
 
-async def grab(ctx: VerbContext, _: NoParams) -> VerbResult:
-    if (fail := await send_or_fail(ctx, Intent.do(GROUND_PICK))) is not None:
-        return fail
-    await ctx.transport.sleep(3.0)
-    state = await ctx.transport.get_state()
-    if state.holding:
-        return VerbResult.success("scooped something up", holding=True)
-    return VerbResult.fail(
-        "scooped at the floor but holds nothing; reposition and retry", holding=False
-    )
-
-
 def _upright(state: DuckState) -> bool:
     """Whether a reading says the robot stands, and can be believed: something reports falls,
     nobody holds it, it has not fallen, and posture reads `standing`, which on `jsonrpc` is a
@@ -351,14 +340,6 @@ HUEBOT_VERBS: dict[str, Verb] = {
             KickParams,
             timeout_s=10,
             done_condition="the kick finished; the robot reports nothing about the ball.",
-        ),
-        Verb(
-            "grab",
-            "Scoop at the floor (open-loop). Works only with the object right under the robot.",
-            grab,
-            NoParams,
-            timeout_s=10,
-            done_condition="the scoop finished; the result says whether it holds something.",
         ),
         Verb(
             "stand_up",

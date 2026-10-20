@@ -34,15 +34,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   written, naming `ssh -L 9870:<socket> <huebot>` and `--address tcp://127.0.0.1:9870`. The shim
   does not answer `robot.look` yet, so there is no `gaze` and no `watch`, a look is refused inside
   quackd before anything is written, and `go_to` and `search_scan` wait for no glance to fade.
-  `sit`, `stand`, `kick` and `grab` are offered only when the shim's `robot.subscribe` answer lists
-  every skill each one sends, and quackd sends no `robot.do` for any other skill. The camera is
-  `--camera-url` alone, any HTTP still, and without a frame at connect the four verbs that need one
-  are not offered. A `multipart/*` stream, MJPEG among them, is refused by its type, and one fetch
-  reads at most 8 MB, within 3 s. `stand_up` reads the robot every 0.25 s after `robot.enable`,
-  sending nothing more, calls it upright as soon as it stands, stops waiting on a robot somebody
-  picks up, and says it may need a hand only after 10 s. The speed caps are quackd's own clamp,
-  0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s turning, and `search_scan` counts the turns it
-  made by the ones the shim's state showed.
+  `sit`, `stand` and `kick` are offered only when the shim's `robot.subscribe` answer lists every
+  skill each one sends, and quackd sends no `robot.do` for any other skill. `grab` is offered on no
+  Huebot until its maker says what `ground_pick` does there and how the state reports that the robot
+  holds something. The camera is `--camera-url` alone, any HTTP still, and without a frame at
+  connect the four verbs that need one are not offered. A `multipart/*` stream, MJPEG among them, is
+  refused by its type, and one fetch reads at most 8 MB, within 3 s. `stand_up` reads the robot
+  every 0.25 s after `robot.enable`, sending nothing more, calls it upright as soon as it stands,
+  stops waiting on a robot somebody picks up, and says it may need a hand only after 10 s. The speed
+  caps are quackd's own clamp, 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s turning, and
+  `search_scan` counts the turns it made by the ones the shim's state showed.
 - **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
   official from its maker's page as read on 2026-10-20, its mass not published, no arms, and a
   note that its maker said on 2026-10-15 that the walk's balance is still being tuned.

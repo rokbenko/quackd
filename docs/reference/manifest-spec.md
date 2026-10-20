@@ -154,7 +154,7 @@ with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
 | `xlerobot:mock` | wheeled / wheeled | twist, joint, gripper | observe, report_state, stop, move, move_joints, gripper, go_to, search_scan, approach_and |
 | `alohamini:mock` | wheeled / wheeled | twist, pose, joint, gripper | observe, report_state, stop, move, lift, move_joints, gripper, home_arms, go_to, search_scan, approach_and |
 | `toddlerbot:mock` | humanoid / legged | skill, gaze, twist | observe, report_state, stop, stand, perform, look, move, go_to, approach_and, search_scan |
-| `huebot:mock` | biped / legged | twist, skill, sound | report_state, stop, say, move, observe, go_to, search_scan, approach_and, sit, stand, kick, grab, stand_up, quack |
+| `huebot:mock` | biped / legged | twist, skill, sound | report_state, stop, say, move, observe, go_to, search_scan, approach_and, sit, stand, kick, stand_up, quack |
 
 What each body lacks is as important as what it has: the arm cannot `move`, neither the
 base nor the cart can `say`, and a `.duck` that `requires` one of those fails
