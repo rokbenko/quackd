@@ -137,16 +137,16 @@ that connection, until it closes. A frame older than 1 s is not believed, and th
 }
 ```
 
-- `safety.fallen`, a boolean, in every frame. A frame with no `safety` block, or one without
-  `fallen`, reads as `unknown`, and nothing walks: `fallen: false` from a frame that does not
-  say is not a fact about the robot.
-- `safety.picked_up`, a boolean, true while somebody holds the robot, in every frame. quackd
-  reads it before `fallen`, since a robot held at an angle reads as fallen, and sends nothing
-  that moves the robot while it is true. A shim that leaves it out cannot tell quackd that
-  somebody is holding Huebot: walks then go out to a robot in somebody's hands, `stand_up`
+- `safety.fallen`, a JSON boolean, `true` or `false`, in every frame. A frame with no `safety`
+  block, or one without `fallen`, reads as `unknown`, and nothing walks: `fallen: false` from a
+  frame that does not say is not a fact about the robot.
+- `safety.picked_up`, a JSON boolean, true while somebody holds the robot, in every frame.
+  quackd reads it before `fallen`, since a robot held at an angle reads as fallen, and sends
+  nothing that moves the robot while it is true. A shim that leaves it out cannot tell quackd
+  that somebody is holding Huebot: walks then go out to a robot in somebody's hands, `stand_up`
   refuses, and `quackd doctor` warns.
-- `safety.limp`, a boolean, true while the gains are dropped so the robot yields. It reads as
-  `unknown`.
+- `safety.limp`, a JSON boolean, true while the gains are dropped so the robot yields. It reads
+  as `unknown`.
 - `policy`, a string. `walk` or `stand` while the robot is on its feet and takes a twist, and
   `sit` while it is seated. Every other label reads as `unknown`, and nothing walks: a skill's
   own name while the skill runs, `held`, `homing`, or anything quackd has not read. Only these
@@ -164,6 +164,11 @@ that connection, until it closes. A frame older than 1 s is not believed, and th
   `head_yaw`, `head_roll`, `mouth`, `right_hip_yaw`, `right_hip_roll`, `right_hip_pitch`,
   `right_knee`, `right_ankle`. So `head_yaw` is at index 7, and it is positive when the head
   looks left. quackd reads that one joint, as `extras.head_yaw_deg`, and steers on none.
+
+The three `safety` flags have to be JSON booleans, `true` or `false`. quackd reads `null`, a
+number or a string in any of them exactly as the key being absent: as not reported. So a
+`fallen` that is neither stops every walk, a `picked_up` that is neither makes `stand_up`
+refuse and `quackd doctor` warn, and a `limp` that is neither is not limp.
 
 robotd's frame carries more than this, and quackd passes `odom` and `loop` on to the pilot when
 they are there. Nothing else in a frame is read.

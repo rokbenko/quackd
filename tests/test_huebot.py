@@ -121,6 +121,9 @@ class FakeShim:
         self.extra_state: dict[str, Any] = {}
         self.drop_state: set[str] = set()
         """Members left out of every state frame, as a shim that does not report one would."""
+        self.safety_block: dict[str, Any] | None = None
+        """Every frame's `safety` block exactly as given, in place of the one built from the
+        attributes, for a shim that writes something other than true or false there."""
         self.answers: dict[str, Any] = {}
         """What a call is answered with in place of the shim's own answer, by method."""
         self.twist = [0.0, 0.0, 0.0]
@@ -189,6 +192,8 @@ class FakeShim:
         safety: dict[str, Any] = {"fallen": self.fallen, "limp": self.limp, "gravity": [0, 0, -1]}
         if self.picked_up is not None:
             safety["picked_up"] = self.picked_up
+        if self.safety_block is not None:
+            safety = dict(self.safety_block)
         joints = [0.0] * len(up.JOINT_NAMES)
         joints[up.JOINT_NAMES.index("head_yaw")] = self.head_yaw
         params: dict[str, Any] = {
@@ -737,6 +742,82 @@ async def test_silence_and_a_frame_with_no_safety_block_are_not_a_standing_robot
         and "the link to the shim is gone" in state.extras["posture_reason"]
     )
     await adapter.disconnect()
+
+
+#: What a test leaves out of a `safety` block, as against a value it writes there.
+ABSENT = object()
+#: A robot on its feet, and one on the floor, each as a `safety` block every frame carries.
+UPRIGHT = {"fallen": False, "picked_up": False, "limp": False}
+DOWN_ON_THE_FLOOR = {"fallen": True, "picked_up": False, "limp": False}
+
+
+def _block(base: dict[str, Any], key: str, value: object) -> dict[str, Any]:
+    block = dict(base)
+    if value is ABSENT:
+        del block[key]
+    else:
+        block[key] = value
+    return block
+
+
+async def _what_quackd_makes_of(safety: dict[str, Any]) -> dict[str, Any]:
+    """What quackd makes of a robot whose every frame carries `safety`: the state it reads, and
+    whether a walk sent a `robot.move` and `stand_up` a `robot.enable`. The robot stands up a
+    moment after it is asked to, so a `stand_up` that asks ends quickly."""
+    fake = FakeShim()
+    fake.safety_block = safety
+    fake.stand_after_s = 0.3
+    await fake.start()
+    try:
+        adapter = await _connected(fake)
+        state = await adapter.get_state()
+        ex = _executor(adapter)
+        await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
+        await ex.run_verb("stand_up", {})
+        await _landed(_transport(adapter))
+        sent = fake.methods()
+        await adapter.disconnect()
+    finally:
+        await fake.stop()
+    return {
+        "posture": state.posture,
+        "fall_detection": state.extras["fall_detection"],
+        "pickup_detection": state.extras["pickup_detection"],
+        "picked_up": state.extras["picked_up"],
+        "walked": "robot.move" in sent,
+        "enabled": "robot.enable" in sent,
+    }
+
+
+@pytest.mark.parametrize("value", [None, "true"], ids=["null", "string"])
+@pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
+async def test_a_safety_flag_that_is_not_a_json_boolean_reads_as_the_key_being_absent(
+    key: str, value: object
+) -> None:
+    """`fallen`, `picked_up` and `limp` count only as JSON booleans. A null `fallen` used to read
+    as a fall detector saying all clear, and a null `picked_up` as a pick-up detector saying
+    nobody holds the robot, so walks went out and `stand_up` asked legs nobody could vouch for to
+    drive. Anything but true or false now reads exactly as the key being absent, on a robot on
+    its feet and on one on the floor."""
+    for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
+        given = await _what_quackd_makes_of(_block(base, key, value))
+        absent = await _what_quackd_makes_of(_block(base, key, ABSENT))
+        assert given == absent, (base, given, absent)
+
+
+async def test_a_null_fall_or_pick_up_flag_sends_nothing_its_absence_would_not() -> None:
+    """The two that move a robot nobody can vouch for, said outright. With `fallen` null nothing
+    reports falls, so no walk goes out and `stand_up` asks nothing. With `picked_up` null nothing
+    reports whether somebody holds the robot, so `stand_up` refuses a robot on the floor rather
+    than ask its legs to drive. `limp` null is not limp."""
+    blind = await _what_quackd_makes_of(_block(UPRIGHT, "fallen", None))
+    assert blind["fall_detection"] is False and blind["posture"] == "unknown"
+    assert not blind["walked"] and not blind["enabled"]
+    unheld = await _what_quackd_makes_of(_block(DOWN_ON_THE_FLOOR, "picked_up", None))
+    assert unheld["pickup_detection"] is False and unheld["picked_up"] is None
+    assert not unheld["enabled"]
+    loose = await _what_quackd_makes_of(_block(UPRIGHT, "limp", None))
+    assert loose["posture"] == "standing" and loose["walked"]
 
 
 async def test_an_unhealthy_shim_fails_the_heartbeat() -> None:

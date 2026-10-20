@@ -353,6 +353,16 @@ def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
     return str(reason) or type(reason).__name__, False
 
 
+def _flag(safety: dict[str, Any], key: str) -> bool | None:
+    """One flag of a state frame's `safety` block as the shim reported it: True or False when it
+    is a JSON boolean, and None for anything else, null, a number or a string included, which
+    reads exactly as the key being absent. A null `fallen` read as falsy was a fall detector
+    saying all clear, and a null `picked_up` was a pick-up detector saying nobody holds the
+    robot, when neither had said anything."""
+    value = safety.get(key)
+    return value if isinstance(value, bool) else None
+
+
 def posture_of(
     policy: str | None, safety: dict[str, Any], *, skills: Sequence[str] = ()
 ) -> tuple[Posture, str | None]:
@@ -366,13 +376,14 @@ def posture_of(
     robot held at an angle reads as fallen, and "fallen" points the pilot at `stand_up`, which
     asks the robot to drive legs that are in a person's hands. `fallen` comes before the label,
     because a robot on the floor is down whatever is driving it. `safety.limp`, the gains dropped
-    so the robot yields, is next, and then the label.
+    so the robot yields, is next, and then the label. Each flag counts only as the JSON boolean
+    true (`_flag`).
     """
-    if safety.get("picked_up"):
+    if _flag(safety, "picked_up") is True:
         return "unknown", "somebody is holding Huebot (safety.picked_up)"
-    if safety.get("fallen"):
+    if _flag(safety, "fallen") is True:
         return "fallen", None
-    if safety.get("limp"):
+    if _flag(safety, "limp") is True:
         return "unknown", "Huebot's gains are dropped so it yields (safety.limp)"
     # A skill reports its own name, so a skill called `walk` would otherwise stand the robot up
     # halfway through it. The robot's own list is read before the allowlist.
@@ -420,14 +431,16 @@ class StateRead(NamedTuple):
 
 
 def _pickup_detection(read: StateRead) -> bool | None:
-    """Whether a fresh frame's `safety` block carries `picked_up`, or None with no fresh frame.
+    """Whether a fresh frame's `safety` block reports `picked_up` as a JSON boolean, or None with
+    no fresh frame.
 
-    Its presence and not its value: a peer that has no pick-up detector leaves the key out, which
-    a reader takes for never picked up (`up.SAFETY_PICKED_UP`). That reading is exactly what
+    That it reports one and not which: a peer that has no pick-up detector leaves the key out,
+    which a reader takes for never picked up (`up.SAFETY_PICKED_UP`), and one that writes null or
+    anything else but true or false has said no more (`_flag`). That reading is exactly what
     quackd must not take on trust, since a robot in somebody's hands is then sent walks like any
     other."""
     safety = read.state.get("safety") if read.fresh else None
-    return ("picked_up" in safety) if isinstance(safety, dict) else None
+    return (_flag(safety, "picked_up") is not None) if isinstance(safety, dict) else None
 
 
 def parse_address(address: str) -> tuple[str, str, int | None]:
@@ -1044,26 +1057,34 @@ class JsonRpcUnixTransport:
         )
         state = (self._last_state or {}) if arriving else {}
         safety = state.get("safety")
+        told = safety if isinstance(safety, dict) else {}
         named = state.get("policy")
         policy = str(named or "unknown")
-        fallen = bool((safety or {}).get("fallen"))
+        fallen = _flag(told, "fallen") is True
         # Frames arriving is not the same as frames that say anything about falling. A frame
-        # without a safety block would otherwise read as "not fallen" on the strength of a key
-        # that was never there.
-        if not (arriving and isinstance(safety, dict) and "fallen" in safety):
+        # without a safety block, or whose `fallen` is not a JSON boolean, would otherwise read
+        # as "not fallen" on the strength of a key that was never there, or that said nothing.
+        if not (arriving and _flag(told, "fallen") is not None):
             if self._lost is not None:
                 silent = f"the link to the shim is gone ({self._lost})"
             elif age is None:
                 silent = "no robot.state frame has arrived"
             elif not arriving:
                 silent = f"the newest robot.state frame is {age:.1f} s old"
-            else:
+            elif not isinstance(safety, dict):
                 silent = "the shim's state frame carries no safety block"
+            elif "fallen" not in safety:
+                silent = "the shim's state frame carries no safety.fallen"
+            else:
+                silent = (
+                    f"the shim's state frame says safety.fallen is {json.dumps(safety['fallen'])}, "
+                    "not true or false, which quackd reads as not reported"
+                )
             return StateRead(state, age, False, policy, fallen, None, "unknown", silent)
-        posture, why = posture_of(str(named) if named else None, safety, skills=self._skills())
-        # Absent is not False: reading a missing key as "nobody holds the robot" is the reading
-        # `stand_up` refuses to act on.
-        picked_up = bool(safety["picked_up"]) if "picked_up" in safety else None
+        posture, why = posture_of(str(named) if named else None, told, skills=self._skills())
+        # Absent is not False, and neither is null: reading a key that says nothing as "nobody
+        # holds the robot" is the reading `stand_up` refuses to act on.
+        picked_up = _flag(told, "picked_up")
         return StateRead(state, age, True, policy, fallen, picked_up, posture, why)
 
     async def get_state(self) -> DuckState:
