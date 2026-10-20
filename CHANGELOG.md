@@ -7,7 +7,7 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [0.20.0] — 2026-10-19
+## [0.20.0] — 2026-10-20
 
 0.20.0 lets the decision LLM see, and gives the Microduck a head that keeps something in view. With
 `--decision-frames` the stepper shows its decision LLM the robot's primary camera beside the state,
