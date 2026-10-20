@@ -24,6 +24,7 @@ resolution-markers = [
 members = [
     "quackd",
     "quackd-alohamini",
+    "quackd-huebot",
     "quackd-lerobot",
     "quackd-microduck",
     "quackd-open-duck",
@@ -3806,6 +3807,16 @@ requires-dist = [
     { name = "pyzmq", specifier = ">=26" },
     { name = "quackd", editable = "." },
 ]
+
+[[package]]
+name = "quackd-huebot"
+source = { editable = "adapters/huebot" }
+dependencies = [
+    { name = "quackd" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quackd", editable = "." }]
 
 [[package]]
 name = "quackd-lerobot"

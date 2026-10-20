@@ -178,6 +178,7 @@ quackd-open-duck = { workspace = true }
 quackd-xlerobot = { workspace = true }
 quackd-alohamini = { workspace = true }
 quackd-toddlerbot = { workspace = true }
+quackd-huebot = { workspace = true }
 
 [tool.hatch.version]
 path = "quackd/__init__.py"
@@ -227,6 +228,7 @@ extend-exclude = ["runs"]
 known-first-party = [
   "quackd",
   "quackd_alohamini",
+  "quackd_huebot",
   "quackd_microduck",
   "quackd_lerobot",
   "quackd_open_duck",
