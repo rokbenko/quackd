@@ -25,7 +25,7 @@ body:
     attributes:
       label: Which robot provides it?
       description: >-
-        For an extension, the adapter whose manifest will declare it (any of the seven
+        For an extension, the adapter whose manifest will declare it (any of the eight
         `quackd list-adapters` prints, or a new one). For a core verb, what a manifest must
         have for it to appear (a camera, a twist intent, a sound intent).
       placeholder: e.g. lerobot, or for a core verb, needs a camera and a gaze intent

@@ -7,14 +7,14 @@ Legend: 🔨 in progress · ⬜ todo · ⏸ blocked (with reason)
 
 ## Only a human can
 
-Six bring-ups still need hardware quackd has never touched, one per body that has not met
-any: the other six of the seven. The seventh happened, an SO-101 arm running
+Seven bring-ups still need hardware quackd has never touched, one per body that has not met
+any: the other seven of the eight. The eighth happened, an SO-101 arm running
 `lerobot:real` on 2026-09-15, which flipped its row in
 [`docs/adapter-status.md`](docs/adapters/status.md), and the same arm ran again on 2026-09-23,
-registered as `arm-01`. Each of the six ends the same way: flip that backend's row, and not
+registered as `arm-01`. Each of the seven ends the same way: flip that backend's row, and not
 before.
 
-- ⏸ **An Open Duck Mini v2**, the most reachable of the six because you can build it. Run
+- ⏸ **An Open Duck Mini v2**, the most reachable of the seven because you can build it. Run
   `open_duck:bridge` against a duck you built, work through
   [docs/open-duck-hardware-checklist.md](docs/adapters/open_duck/hardware-checklist.md), and confirm
   the deadman by pulling Wi-Fi mid-walk. Then the five numbers at the end of that checklist:
@@ -51,6 +51,15 @@ before.
   host and point `alohamini-lookout` at it. What most needs a real robot: whether `+x` is
   physically forward, the camera colour order, how fast the lift travels in mm/s, and whether
   the wrapper really does leave the arms holding.
+- ⏸ **A Huebot**, a kit its maker ships in December. Its own API is closed, and quackd speaks
+  the Microduck's protocol to a shim its maker runs on it, which nobody has seen. Once the shim
+  answers `hello`, run `huebot:jsonrpc` through
+  [docs/adapters/huebot/hardware-checklist.md](docs/adapters/huebot/hardware-checklist.md), whose
+  first steps test the deadman and `robot.stop` with the feet off the ground. What most needs a
+  real robot: whether the shim answers what
+  [its page](docs/adapters/huebot/README.md#what-huebots-shim-must-answer) asks, the joint order
+  and the sign of the head yaw, which skills it lists, and how quackd gets a camera frame, which
+  is the maker's to say. `gaze` and `watch` wait for `robot.look` on Huebot's side.
 - ✅ **An SO-101 arm**, on 2026-09-15: calibrated with upstream's own tool, then
   `lerobot-lookout` and twelve free-form goals, on a USB webcam at `opencv://2`, piloted by
   `gpt-6-astra`. What that afternoon left open, each a bring-up of its own: the rest pose,
@@ -161,7 +170,7 @@ before.
   waits and no longer, what the doctor section reads off a real board's files, and the one that
   matters near a robot, whether a model server and the detector on a robot's own board leave its
   fifty hertz control loop alone, which on a humanoid is a fall if they do not. A ToddlerBot
-  carries the only Jetson any of the seven bodies has, so that is where the last one gets
+  carries the only Jetson any of the eight bodies has, so that is where the last one gets
   answered. What to send back from a board is listed at the end of
   [docs/jetson.md](docs/guides/jetson.md#status).
 

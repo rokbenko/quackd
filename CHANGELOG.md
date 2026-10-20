@@ -7,6 +7,49 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Added
+
+- **Huebot, an eighth robot: `quackd[huebot]`.** A 25 cm biped from Leif Rydenfalk
+  ([ce-net.com/huebot](https://ce-net.com/huebot)), which its maker describes as a Microduck
+  clone. Its own API is closed, and its maker runs a shim on the robot that answers the JSON-RPC
+  the Microduck's `robotd` speaks, so `huebot:jsonrpc` is the Microduck's transport, copied and
+  renamed rather than imported so that the two can diverge: the same protocol and version gate,
+  the same check that the robot took each twist, the same posture allowlist and hold on a walk
+  once the robot stops standing, and the same reliance on the robot's own deadman. `huebot:mock`
+  is the core's scripted body, and there is no simulator. The package is `quackd-huebot`,
+  imported as `quackd_huebot`, which makes quackd nine distributions. Nothing has run it against
+  a Huebot or against its shim, which nobody has seen
+  ([docs/adapters/huebot/README.md](docs/adapters/huebot/README.md)).
+- **What Huebot's shim must answer**, call by call, is the centre of its page, written for its
+  maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls he
+  named, `robot.do`, `robot.sound` and `robot.enable` for the verbs, a boolean `accepted` in
+  their answers, the fields of `robot.state` quackd reads, robotd's deadman, and a socket on the
+  robot reached through ssh and never an open port, since the protocol has no authentication. Its
+  [hardware checklist](docs/adapters/huebot/hardware-checklist.md) tests the deadman and
+  `robot.stop` with the feet off the ground before anything walks.
+- **Where Huebot differs from the Microduck.** `huebot:jsonrpc` has no default address, and a
+  connect without `--address` is refused before anything is opened, naming
+  `ssh -L 9870:<socket> <huebot>` and `--address tcp://127.0.0.1:9870`. The shim does not answer
+  `robot.look` yet, so there is no `gaze` and no `watch`, a look is refused inside quackd before
+  anything is written, and `go_to` and `search_scan` wait for no glance to fade. `sit`, `stand`,
+  `kick` and `grab` are offered only when the shim's `robot.subscribe` answer lists every skill
+  each one sends, and quackd sends no `robot.do` for any other skill. The camera is
+  `--camera-url` alone, any HTTP still, and without a frame at connect the four verbs that need
+  one are not offered. `stand_up` reads the robot every 0.25 s after `robot.enable`, sending
+  nothing more, calls it upright as soon as it stands, and says it may need a hand only after
+  10 s. The speed caps are quackd's own clamp, 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s
+  turning, and `search_scan` counts the turns it made by the ones the shim's state showed.
+- **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
+  official from its maker's page as read on 2026-10-20, its mass not published, no arms, and a
+  note that its maker said on 2026-10-15 that the walk's balance is still being tuned.
+- **Its upstream refs.** robotd's protocol stays VERIFIED at the Microduck's pin, `d818af5`, and
+  every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers
+  the calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the
+  skills, and what `robot.enable` does for a Huebot on the floor. A test holds the protocol refs
+  to the Microduck's for as long as the two read one pin.
+
 ## [0.20.0] — 2026-10-20
 
 0.20.0 lets the decision LLM see, and gives the Microduck a head that keeps something in view. With

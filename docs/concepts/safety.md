@@ -321,7 +321,7 @@ with a hand near the switch.
 
 ## On hardware
 
-One of the seven bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
+One of the eight bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
 follower arm ran `lerobot-lookout` and then a series of free-form `--goal` runs, piloted by
 OpenAI gpt-6-astra on Windows 11 with lerobot 0.6.1: it waved the wrist about 27 degrees either
 way, waved again from a raised pose, and opened and closed the gripper. **It also fell at the
@@ -332,7 +332,7 @@ parking, release and verdict changes on this page come from. None of those chang
 arm yet. [adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md) is the account, including
 what the first day did not measure, and most of what this page would want to know is on that list:
 whether the holding band is right, what a joint reads after ten minutes of work, and whether a stall
-is caught on purpose rather than by luck. The other six bodies have not been on hardware at all.
+is caught on purpose rather than by luck. The other seven bodies have not been on hardware at all.
 
 If the body is a Microduck, run the contract in the physics simulator first
 (`--robot microduck:mujoco`): it is the only place quackd can show you a body that undershoots,
@@ -686,6 +686,7 @@ quackd goes quiet" differs per body. Each manifest says so
 | Body | Native authority | What `stop` does | Never sent |
 |---|---|---|---|
 | Microduck (`microduck:*`) | `robotd_deadman`: velocity zeroes when intents stop | `robot.stop` | `robot.relax`, `robot.init` |
+| Huebot (`huebot:*`) | `robotd_deadman`, which the shim its maker runs on the robot is asked to keep: velocity zeroes when intents stop. Nobody has seen it, and step 3 of [its checklist](../adapters/huebot/hardware-checklist.md) tests it before anything walks | `robot.stop` | `robot.relax`, `robot.init`, and `robot.look` and `robot.head`, which the shim does not answer yet |
 | LeRobot arm (`lerobot:*`) | `torque_limit`: the gripper's torque and current caps and nothing on the five body joints (`extras.torque_limit_scope` is `gripper_only`), plus a capped step per action that quackd sets; no deadman, a position-controlled arm holds its goal | re-sends the present position as the goal (hold) for each of the five body joints that reads inside its travel, writes none for one that reads past it, and leaves the gripper's goal alone. The rest move that follows a run's last `stop` is the only thing that puts the arm down | `disable_torque`, of quackd's own accord: only a person holding the arm asks for it, with `--by-hand` at the rest pose, or with `quackd robot release` or the Enter a run offers when its last rest move missed, wherever the arm stands. LeRobot's own `disconnect()` still does, by its default, at the end of a session, but only where quackd's close asks it to, once the arm has been driven back to its recorded rest pose, or to the edge of its travel where that pose lies past it: an arm that did not get there is left holding itself up, with one line saying so, and so is an arm whose exit skipped the close. With no rest pose recorded, a clean session ends the way it always did and the arm sags |
 | rosbridge base (`rosbridge:*`) | `none`: neither rosbridge nor the driver has a deadman we verified | publishes a zero Twist; quackd also re-sends the Twist at 10 Hz while a verb runs | silence |
 | Open Duck Mini v2 (`open_duck:*`) | `none` in the robot, but quackd's own bridge daemon runs on it and zeroes the velocity after 300 ms of silence, inside the 50 Hz loop | zero velocity, head held, torque still on | anything that reaches torque, the head-control mode button, any direct servo or IMU read |

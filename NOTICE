@@ -134,6 +134,14 @@ This project builds on, interoperates with, and is grateful to:
     file and config names are cited as facts.
     https://github.com/hshi74/toddlerbot
 
+  * Huebot, by Leif Rydenfalk: the small biped the huebot adapter targets.
+    Its own API is closed, so quackd speaks to a shim its maker runs on the
+    robot, which answers the Microduck's JSON-RPC contract (duck-ipc-proto,
+    above), and imports none of his code. His walking-robot-kit, a daemon
+    for a servo bus, is Apache-2.0 and CC BY-SA 4.0, and quackd neither
+    uses nor distributes it. Names are cited as facts.
+    https://ce-net.com/huebot
+
 No logos, meshes, CAD, ONNX policies, keyframes, checkpoints, sounds,
 videos, or other brand assets from any of these projects are distributed
 with quackd. Where an upstream's design files are non-commercially

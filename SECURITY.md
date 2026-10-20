@@ -15,9 +15,12 @@ on the body, and each adapter declares it in its manifest's `safety_authority`
 joint targets inside the actuators' travel, detects falls, and zeroes the velocity when
 commands stall. On an Open Duck Mini the deadman is quackd's own daemon, running on the
 robot and zeroing the velocity inside the 50 Hz loop, so it is code we ship and therefore
-code we are answerable for. On the other five bodies upstream has no deadman that covers the
-whole body. A rosbridge base declares `native: none`, and a LeRobot arm has a torque limit
-on its gripper alone and holds its last goal.
+code we are answerable for. On a Huebot it is the shim its maker runs on the robot, which is
+asked to keep robotd's deadman and which nobody has seen. The protocol it answers has no
+authentication, so the shim is asked to listen on a unix socket or on the robot's own
+loopback, never on the network, and quackd reaches it through an ssh forward. On the other
+five bodies upstream has no deadman that covers the whole body. A rosbridge base declares
+`native: none`, and a LeRobot arm has a torque limit on its gripper alone and holds its last goal.
 An XLeRobot's host watchdog zeroes its wheels and leaves the arms holding, and an
 AlohaMini's covers the base and the lift and never the arms, so both are partial by
 construction. A ToddlerBot has no watchdog, timeout or e-stop anywhere upstream at all, and

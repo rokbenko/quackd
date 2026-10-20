@@ -76,7 +76,7 @@ only. Use `tegrastats`, whose `GR3D_FREQ` field is the GPU, or `jtop` from `jets
 for the same numbers with a screen around them. The host daemon reads one `tegrastats` line
 for `quackd doctor --host`.
 
-**One of quackd's seven bodies already carries a Jetson.** A ToddlerBot has one on its back,
+**One of quackd's eight bodies already carries a Jetson.** A ToddlerBot has one on its back,
 and `bridge/toddlerbot/` is the daemon that runs there
 ([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)). That is the case where the host
 daemon, and perhaps a model server, share a board with a robot's control loop, and it has a section
