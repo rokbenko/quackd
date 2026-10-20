@@ -51,9 +51,9 @@ before.
   host and point `alohamini-lookout` at it. What most needs a real robot: whether `+x` is
   physically forward, the camera colour order, how fast the lift travels in mm/s, and whether
   the wrapper really does leave the arms holding.
-- ⏸ **A Huebot**, a kit its maker ships in December. Its own API is closed, and quackd speaks
-  the Microduck's protocol to a shim its maker runs on it, which nobody has seen. Once the shim
-  answers `hello`, run `huebot:jsonrpc` through
+- ⏸ **A Huebot**, a kit every order of which its maker's page says ships before Christmas. Its
+  own API is closed, and quackd speaks the Microduck's protocol to a shim its maker is writing
+  for it, which nobody has seen. Once the shim answers `hello`, run `huebot:jsonrpc` through
   [docs/adapters/huebot/hardware-checklist.md](docs/adapters/huebot/hardware-checklist.md), whose
   first steps test the deadman and `robot.stop` with the feet off the ground. What most needs a
   real robot: whether the shim answers what

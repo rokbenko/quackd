@@ -1,26 +1,26 @@
-"""EXPERIMENTAL: a Huebot, over the shim its maker runs on it.
+"""EXPERIMENTAL: a Huebot, over the shim its maker is writing for it.
 
-Huebot's own API is closed. Its maker runs a shim on the robot that answers the JSON-RPC the
-Microduck's `robotd` speaks, and this is the Microduck's transport, copied and renamed, less what
-the shim does not answer and less the Microduck's camera. Every method name is robotd's, VERIFIED
-at the Microduck adapter's pin (see `upstream_api.py`), and nobody has seen the shim or run this
-against a Huebot. What is honest today: the handshake, which refuses a peer older than the
+Huebot's own API is closed. Its maker is writing a shim for the robot that is to answer the JSON-RPC
+the Microduck's `robotd` speaks, and this is the Microduck's transport, copied and renamed, less
+what the shim does not answer and less the Microduck's camera. Every method name is robotd's,
+VERIFIED at the Microduck adapter's pin (see `upstream_api.py`), and nobody has seen the shim or run
+this against a Huebot. What is honest today: the handshake, which refuses a peer older than the
 oldest protocol quackd has read and warns about any version but the one it read, the intent
 vocabulary, the deadman-friendly `move` notifications and the shim's own echo of them, the state
 subscription, the health poll, and posture, read off the policy label against the labels robotd's
 own source names and failing closed on every other. What is not is listed as UNVERIFIED in
 `upstream_api.py`: that the shim answers any of it as robotd does (`up.SHIM_CALLS`), the order of
-its joints (`up.JOINT_ORDER`), its deadman (`up.SHIM_DEADMAN`), its skills (`up.SHIM_SKILLS`),
-and what `stand_up`'s `robot.enable` does for a Huebot on the floor (`up.STAND_UP_RPC`), which
-every state lists in `extras.assumptions`.
+its joints (`up.JOINT_ORDER`), its deadman (`up.SHIM_DEADMAN`), its skills (`up.SHIM_SKILLS`), and
+what `stand_up`'s `robot.enable` does for a Huebot on the floor (`up.STAND_UP_RPC`), which every
+state lists in `extras.assumptions`.
 
 These rules run through this file, and each exists because the robot is on a floor and quackd
 is at the other end of an ssh tunnel:
 
-- **No address is assumed.** The shim is wherever its maker put it, so `--address` says where,
-  and a connect without one is refused, naming the ssh forward that reaches it. The protocol
-  has no authentication at all, so that forward, or a socket on the robot itself, is the only
-  way in, never a port open to the network.
+- **No address is assumed.** The shim is wherever its maker put it, so `--address` says where, and a
+  Huebot built or connected without one is refused, naming the ssh forward that reaches it. The
+  protocol has no authentication at all, so that forward, or a socket on the robot itself, is the
+  only way in, never a port open to the network.
 - **Silence is not consent.** A state frame that stops arriving, or arrives without a `safety`
   block, reads as `unknown` rather than as a standing robot, because `fallen: false` from a
   stream nobody is watching is not a fact about the robot. The preconditions refuse on

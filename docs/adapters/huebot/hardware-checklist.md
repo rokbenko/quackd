@@ -1,7 +1,7 @@
 # Huebot: the first hardware run
 
-Nobody has run quackd against a Huebot, and nobody has seen the shim its maker runs on it. If you
-have one, this page is the order to do it in. Every step that can go wrong has an abort
+Nobody has run quackd against a Huebot, and nobody has seen the shim its maker is writing for it. If
+you have one, this page is the order to do it in. Every step that can go wrong has an abort
 condition, and the first two that send a twist test what stops the robot, with its feet off the
 ground: the deadman, then `robot.stop`. The feet touch the ground at step 9 and not before.
 

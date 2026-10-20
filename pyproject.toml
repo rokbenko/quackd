@@ -126,8 +126,9 @@ xlerobot = ["quackd-xlerobot>=0.20.0,<0.21"]
 alohamini = ["quackd-alohamini>=0.20.0,<0.21"]
 open_duck = ["quackd-open-duck>=0.20.0,<0.21"]
 toddlerbot = ["quackd-toddlerbot>=0.20.0,<0.21"]
-# Huebot's own API is closed. Its maker runs a shim on the robot that answers the Microduck's
-# JSON-RPC, which quackd speaks with the standard library, so there is no robot library to pull.
+# Huebot's own API is closed. Its maker is writing a shim for the robot that is to answer the
+# Microduck's JSON-RPC, which quackd speaks with the standard library, so there is no robot
+# library to pull.
 huebot = ["quackd-huebot>=0.20.0,<0.21"]
 # The Microduck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
 # mediad also serves one PNG per GET /frame, which needs nothing installed, so this is for the

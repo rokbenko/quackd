@@ -65,7 +65,7 @@ at all, every command that needs a body refuses and names all eight.
 | | `toddlerbot:sim2d` | ✅ `toddlerbot-lookout` 10 of 10 seeds | | |
 | | `toddlerbot:bridge` | 🧪 every upstream name VERIFIED at the commit the v2.0.0 tag points at, the protocol and the daemon's own safety machinery exercised against a fake body over loopback, never run on a robot | [`adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py`](../../adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py) | |
 | Huebot | `huebot:mock` | ✅ | | [adapters/huebot/README.md](huebot/README.md) |
-| | `huebot:jsonrpc` | 🧪 experimental: robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker runs on the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
+| | `huebot:jsonrpc` | 🧪 experimental: robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker is writing for the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
 
 **The first real run, and what it does not prove.** One SO-101, one bench, one afternoon.
 The arm fell at the end of every run, because LeRobot's `disconnect()` disables torque by its

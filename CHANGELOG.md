@@ -12,15 +12,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 ### Added
 
 - **Huebot, an eighth robot: `quackd[huebot]`.** A 25 cm biped from Leif Rydenfalk
-  ([ce-net.com/huebot](https://ce-net.com/huebot)), which its maker describes as a Microduck
-  clone. Its own API is closed, and its maker runs a shim on the robot that answers the JSON-RPC
-  the Microduck's `robotd` speaks, so `huebot:jsonrpc` is the Microduck's transport, copied and
-  renamed rather than imported so that the two can diverge: the same protocol and version gate,
-  the same check that the robot took each twist, the same posture allowlist and hold on a walk
-  once the robot stops standing, and the same reliance on the robot's own deadman. `huebot:mock`
-  is the core's scripted body, and there is no simulator. The package is `quackd-huebot`,
-  imported as `quackd_huebot`, which makes quackd nine distributions. Nothing has run it against
-  a Huebot or against its shim, which nobody has seen
+  ([ce-net.com/huebot](https://ce-net.com/huebot)), with behaviour code of its own (needs, an LED
+  face, coming to your hand), which does not run the Microduck runtime. Its own API is closed, and
+  its maker is writing a shim for the robot that is to answer the same calls the Microduck's
+  `robotd` answers, the same way, as he wrote on 2026-10-15, so `huebot:jsonrpc` is the Microduck's
+  transport, copied and renamed rather than imported so that the two can diverge: the same protocol
+  and version gate, the same check that the robot took each twist, the same posture allowlist and
+  hold on a walk once the robot stops standing, and the same reliance on the robot's own deadman.
+  `huebot:mock` is the core's scripted body, and there is no simulator. The package is
+  `quackd-huebot`, imported as `quackd_huebot`, which makes quackd nine distributions. Nothing has
+  run it against a Huebot or against its shim, which nobody has seen
   ([docs/adapters/huebot/README.md](docs/adapters/huebot/README.md)).
 - **What Huebot's shim must answer**, call by call, is the centre of its page, written for its
   maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls he
@@ -48,8 +49,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   caps are quackd's own clamp, 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s turning, and
   `search_scan` counts the turns it made by the ones the shim's state showed.
 - **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
-  official from its maker's page as read on 2026-10-20, its mass not published, no arms, and a
-  note that its maker said on 2026-10-15 that the walk's balance is still being tuned.
+  official from its maker's page as read on 2026-10-20, its mass not published, no arms on that
+  page, and notes that its maker wrote on 2026-10-15 that the walk's balance is still being tuned
+  and that its head turns on four servos, and that `quack` and `say` send `robot.sound`, which he
+  has not named among the shim's calls.
 - **Its upstream refs.** robotd's protocol stays VERIFIED at the Microduck's pin, `d818af5`, and
   every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers
   the calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the

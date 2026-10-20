@@ -334,8 +334,8 @@ HUEBOT_VERBS: dict[str, Verb] = {
         Verb("stand", "Stand up from sitting.", stand, NoParams, timeout_s=10),
         Verb(
             "kick",
-            "Kick forward with one leg. Only connects if the ball is < 0.3 m away and "
-            "roughly ahead.",
+            "Kick forward with one leg, at a ball close and roughly ahead. Nobody has measured "
+            "how close on a Huebot: a Microduck's kick connects under 0.3 m.",
             kick,
             KickParams,
             timeout_s=10,

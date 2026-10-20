@@ -1,14 +1,14 @@
-"""The Huebot adapter: a small biped from Leif Rydenfalk, over the shim its maker runs on it.
+"""The Huebot adapter: a small biped from Leif Rydenfalk, over the shim its maker is writing.
 
-Huebot's own API is closed. Its maker runs a shim on the robot that answers the JSON-RPC the
-Microduck's `robotd` speaks, so this adapter is the Microduck's, copied and renamed rather than
-imported, since the two robots may diverge: the same protocol, the same version gate, the same
-hold on a walk the robot does not take, and the same reliance on the robot's own deadman. What
-it leaves out is what Huebot's shim does not answer yet, `robot.look`, so there is no `gaze` and
-no `watch`, and the Microduck's simulators, whose model and gait are not Huebot's. It has no
-`grab` either, until its maker says what `ground_pick` does on Huebot. Two backends:
-`mock`, the core's scripted body, and `jsonrpc`, the shim, which nobody has run
-(docs/adapters/huebot/README.md).
+Huebot does not run the Microduck runtime, and its own API is closed. Its maker is writing a shim
+for the robot that is to answer the same calls the Microduck's `robotd` answers, the same way, so
+this adapter is the Microduck's, copied and renamed rather than imported, since the two robots may
+diverge: the same protocol, the same version gate, the same hold on a walk the robot does not take,
+and the same reliance on the robot's own deadman. What it leaves out is what Huebot's shim does not
+answer yet, `robot.look`, so there is no `gaze` and no `watch`, and the Microduck's simulators,
+whose model and gait are not Huebot's. It has no `grab` either, until its maker says what
+`ground_pick` does on Huebot. Two backends: `mock`, the core's scripted body, and `jsonrpc`, the
+shim, which nobody has run (docs/adapters/huebot/README.md).
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ DATASHEET = Datasheet(
     manipulator="none",
     tethered=None,
     cannot=[
-        "carry or push anything: it has no arms",
+        "carry or push anything: its maker's page lists no arms",
         "climb or descend a step",
     ],
     notes=[
@@ -83,8 +83,11 @@ DATASHEET = Datasheet(
         "maximum: nobody has published one for Huebot",
         "Its maker said on 2026-10-15 that it stands and steps, and that the walk's balance is "
         "still being tuned",
-        "It has a speaker, which quack and say play duck tones through, and a 13 by 8 LED face, "
-        "which quackd does not drive",
+        "Its head turns on four servos, its maker wrote on 2026-10-15, and quackd turns none of "
+        "them: robot.look is not on Huebot's side yet",
+        "It has a speaker and a 13 by 8 LED face, its maker's page says. quack and say send "
+        "robot.sound, which its maker has not named among the shim's calls, and quackd does not "
+        "drive the face",
         "Its time-of-flight sensor is an 8 by 8 grid, which quackd does not read. The maker's "
         "page lists its battery as coming",
     ],

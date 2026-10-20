@@ -128,14 +128,14 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         summary="a small open-source humanoid",
         extra="quackd[toddlerbot]",
     ),
-    # Huebot's own API is closed, and its maker runs a shim on the robot that answers the
-    # Microduck's JSON-RPC, so the client is stdlib and there is no SDK to probe.
+    # Huebot's own API is closed, and its maker is writing a shim for the robot that is to answer
+    # the Microduck's JSON-RPC, so the client is stdlib and there is no SDK to probe.
     AdapterInfo(
         name="huebot",
         backends=("mock", "jsonrpc"),
         status=(
             "✅ in the package: mock · 🧪 jsonrpc (robotd's protocol, spoken to a shim its maker "
-            "runs on the robot, never run on a robot)"
+            "is writing for the robot, never run on a robot)"
         ),
         summary="a 25 cm biped from Leif Rydenfalk",
         extra="quackd[huebot]",

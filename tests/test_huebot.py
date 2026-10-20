@@ -1,13 +1,13 @@
 """Huebot's adapter against a fake of the shim its maker is asked to build.
 
-Huebot's own API is closed, and its maker runs a shim on the robot that answers the JSON-RPC the
-Microduck's robotd speaks. `FakeShim` answers what docs/adapters/huebot/README.md asks the shim
-to answer, as robotd does at the pin quackd read it at: `hello`, `robot.subscribe` and its stream
-of `robot.state`, `robot.move` as notifications with robotd's deadman, `robot.stop`,
+Huebot's own API is closed, and its maker is writing a shim for the robot that is to answer the
+JSON-RPC the Microduck's robotd speaks. `FakeShim` answers what docs/adapters/huebot/README.md asks
+the shim to answer, as robotd does at the pin quackd read it at: `hello`, `robot.subscribe` and its
+stream of `robot.state`, `robot.move` as notifications with robotd's deadman, `robot.stop`,
 `robot.health`, `robot.do` for the skills it lists, `robot.sound` and `robot.enable`. Every other
 call is `METHOD_NOT_FOUND`, `robot.look` and `robot.head` among them, since the shim has neither
-yet. So this proves quackd's half of that contract, and nothing about a real Huebot, which
-nobody has run.
+yet. So this proves quackd's half of that contract, and nothing about a real Huebot, which nobody
+has run.
 """
 
 from __future__ import annotations

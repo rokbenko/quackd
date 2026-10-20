@@ -1,10 +1,11 @@
 # Huebot
 
 A 25 cm biped from Leif Rydenfalk, in Shenzhen ([ce-net.com/huebot](https://ce-net.com/huebot)),
-installed with `quackd[huebot]`. Its maker describes it as a Microduck clone: fifteen servos, an
-Arduino UNO Q for a brain, and behaviour code of its own. Huebot's own API is closed, so its
-maker runs a shim on the robot that answers the JSON-RPC the Microduck's `robotd` speaks, and
-`huebot:jsonrpc` speaks that to it. `huebot:mock` is the core's scripted body.
+installed with `quackd[huebot]`: fifteen servos, an Arduino UNO Q for a brain, and behaviour code of
+its own (needs, an LED face, coming to your hand). It does not run the Microduck runtime, its maker
+wrote on 2026-10-15, and its own API is closed, so he is writing a shim for the robot that is to
+answer the same calls the Microduck's `robotd` answers, the same way. `huebot:jsonrpc` speaks that
+to it, and `huebot:mock` is the core's scripted body.
 
 **quackd has never run on a Huebot, and nobody has seen the shim.** Everything below is what
 quackd sends and reads, and what the shim is asked to answer for that to work. Every backend's
@@ -26,7 +27,7 @@ quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 | `--robot` | What it is | Status |
 |---|---|---|
 | `huebot:mock` | the core's scripted body, with Huebot's manifest and verbs | ✅ every verb runs offline in the test suite |
-| `huebot:jsonrpc` | the robot, over the shim its maker runs on it | 🧪 robotd's method names, VERIFIED at the Microduck's pin, exercised against a fake shim over loopback, **never run against Huebot's shim** |
+| `huebot:jsonrpc` | the robot, over the shim its maker is writing for it | 🧪 robotd's method names, VERIFIED at the Microduck's pin, exercised against a fake shim over loopback, **never run against Huebot's shim** |
 
 There is no simulator: the Microduck's `sim2d` and `mujoco` backends model the Microduck's
 body and gait, which are not Huebot's.
@@ -345,21 +346,24 @@ Its datasheet, which the pilot is shown and told to judge a task against before 
 |---|---|
 | Height | 0.25 m (official: ce-net.com/huebot, read 2026-10-20) |
 | Actuated joints | 15 (official: ce-net.com/huebot, read 2026-10-20; Feetech HD-1910 bus servos on one serial bus) |
+| Head | turned by four of those servos, its maker wrote on 2026-10-15, none of which quackd drives |
 | Not published | mass, endurance, the power source, the terrain it is rated for |
 
 And what it cannot do whatever the task says, in the words the pilot is shown:
 
-- carry or push anything: it has no arms
+- carry or push anything: its maker's page lists no arms
 - climb or descend a step
 
-The pilot is also told that the speed caps are quackd's own clamp and not a measured maximum,
-that its maker said on 2026-10-15 that it stands and steps and that the walk's balance is still
-being tuned, that it has a speaker and a 13 by 8 LED face, which quackd does not drive, and that
-its 8 by 8 time-of-flight sensor is not read. The maker's page lists the battery as coming. A
-figure nobody published is listed as not published, and the pilot is told to answer `uncertain`
-and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it
-for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
+The pilot is also told that the speed caps are quackd's own clamp and not a measured maximum, that
+its maker said on 2026-10-15 that it stands and steps and that the walk's balance is still being
+tuned, and that its head turns on four servos, none of which quackd turns. It is told that it has a
+speaker and a 13 by 8 LED face, that `quack` and `say` send `robot.sound`, which its maker has not
+named among the shim's calls, that quackd does not drive the face, and that its 8 by 8
+time-of-flight sensor is not read. The maker's page lists the battery as coming. A figure nobody
+published is listed as not published, and the pilot is told to answer `uncertain` and name it,
+rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in
+front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
 
-The maker's page also lists an Arduino UNO Q with a Huebot hat board, an IMX219 camera behind an
-M12 lens, a VL53L8CX time-of-flight sensor, an electret microphone, and a kit at $449 that ships
-in December.
+The maker's page also lists an Arduino UNO Q with a Huebot hat board, an IMX219 camera behind an M12
+lens, a VL53L8CX time-of-flight sensor, an electret microphone, and a kit at $449, every order of
+which it says ships before Christmas.
