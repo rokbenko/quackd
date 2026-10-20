@@ -11,7 +11,7 @@ import pytest
 from quackd.adapters.catalogue import BY_NAME
 
 ADAPTERS = tuple(BY_NAME)
-"""The seven quackd publishes, in the order every table that prints them uses."""
+"""The eight quackd publishes, in the order every table that prints them uses."""
 
 HEAVY = (
     "torch",
@@ -71,6 +71,7 @@ assert [r["name"] for r in rows] == [
     "xlerobot",
     "alohamini",
     "toddlerbot",
+    "huebot",
 ], rows
 # every adapter that needs a library reports itself unusable when that library is gone. Asked
 # through `sdk` rather than through `extra`, because an extra now also buys the adapter package
@@ -85,6 +86,7 @@ for adapter, backends in BACKENDS.items():
 make_adapter("microduck:mujoco")
 make_adapter("lerobot:real", address="COM5")
 make_adapter("rosbridge:ws", address="ws://robot.local:9090")
+make_adapter("huebot:jsonrpc", address="tcp://127.0.0.1:9870")
 # the arm simulator is built, cameras, faults and all, with or without a calibration file to
 # read at connect, and nothing here connects it
 make_adapter("lerobot:mujoco")
@@ -210,7 +212,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
     all without a single adapter present.
 
     Driven through the discovery seam rather than by uninstalling anything, because the suite
-    runs in an environment that has all seven and a test may not take them away from it."""
+    runs in an environment that has all eight and a test may not take them away from it."""
     import quackd.adapters.factory as factory
     from quackd.adapters.base import AdapterNotInstalled
     from quackd.adapters.factory import NoRobotNamed
@@ -253,7 +255,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         said = buf.getvalue()
         assert "no robot adapter is installed" in said, said
         assert "the simulator and the scripted pilot run here" not in said, said
-        assert "0/7 adapters installed" in " ".join(said.split()), said
+        assert "0/8 adapters installed" in " ".join(said.split()), said
 
         # a pilot flock does not reach past the refusal for a hardcoded duck either
         from quackd.flock.runner import member_specs
@@ -309,7 +311,7 @@ def test_a_verdict_speaks_only_for_the_robots_this_machine_has() -> None:
     try:
         factory._installed = lambda: {"lerobot": "quackd_lerobot"}  # type: ignore[assignment]
         assert [name for name, _ in factory.installed_manifests()] == ["lerobot"]
-        # the run-ending path itself: this used to raise AdapterNotInstalled for the six
+        # the run-ending path itself: this used to raise AdapterNotInstalled for the seven
         # bodies that are not here, turning a verdict into a crash
         hint = solo_hint({"payload_kg": 3}, None)
         assert "lerobot" in hint, hint

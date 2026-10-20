@@ -265,7 +265,7 @@ _REGISTRY_DIR = typer.Option(
 
 NEWLINE = "\n"
 
-_ADAPTER_HINT = "quackd list-adapters shows the seven that ship and their backends"
+_ADAPTER_HINT = "quackd list-adapters shows the eight that ship and their backends"
 
 
 def _expand(patterns: list[str]) -> list[str]:

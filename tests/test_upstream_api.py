@@ -14,6 +14,7 @@ from types import ModuleType
 import pytest
 
 from quackd_alohamini import upstream_api as alohamini_api
+from quackd_huebot import upstream_api as huebot_api
 from quackd_lerobot import upstream_api as lerobot_api
 from quackd_lerobot.policy import upstream_api as lerobot_policy_api
 from quackd_lerobot.sim import upstream_api as so_arm100_api
@@ -117,6 +118,16 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         ("https://github.com/hshi74/toddlerbot",),
     ),
     (
+        huebot_api,
+        {
+            "adapters/huebot/upstream_api.py",
+            "adapters/huebot/transports/jsonrpc_unix.py",
+        },
+        # robotd's protocol, read in the Microduck's source, and the maker's page for every claim
+        # about Huebot's side
+        ("https://github.com/pollen-robotics/microduck", "https://ce-net.com/huebot"),
+    ),
+    (
         microduck_rl_api,
         {
             "adapters/microduck/sim3d/upstream_api.py",
@@ -158,6 +169,7 @@ IDS = [
     "xlerobot",
     "alohamini",
     "toddlerbot",
+    "huebot",
     "microduck_rl",
     "so_arm100",
 ]
@@ -543,3 +555,74 @@ def test_the_arm_models_zero_and_sign_cite_lerobot_at_its_pin_and_leave_out_the_
         assert "five arm joints" in ref.note and "GRIPPER_MAP" in ref.note, ref
         assert "every joint" not in ref.note, ref
     assert "GRIPPER_MAP" in so_arm100_api.NEW_CALIB_ZERO.note
+
+
+def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at_the_maker() -> (
+    None
+):
+    """Huebot's shim answers the JSON-RPC robotd speaks, so the protocol refs are robotd's, read
+    in the Microduck's source at the pin and VERIFIED as facts about the protocol. Every claim
+    about Huebot's own side is the maker's word, UNVERIFIED and sourced to his page, and each of
+    the ones the design names has a ref of its own: that the shim answers the calls, that it has
+    no robot.look yet, the joint order, the deadman, the skills and robot.enable on the floor."""
+    api = huebot_api
+    assert len(api.PIN) == 40 and api.PIN.isalnum()
+    for ref in api.refs_by_status("VERIFIED"):
+        assert ref.source.startswith(f"{api.REPO}/blob/{api.PIN}/"), ref
+    for ref in api.refs_by_status("UNVERIFIED"):
+        assert ref.source == api.MAKER, ref
+    unverified = {
+        name
+        for name, value in vars(api).items()
+        if isinstance(value, api.UpstreamRef) and value.status == "UNVERIFIED"
+    }
+    assert unverified == {
+        "SHIM_CALLS",
+        "SHIM_LOOK",
+        "JOINT_ORDER",
+        "SHIM_DEADMAN",
+        "SHIM_SKILLS",
+        "STAND_UP_RPC",
+    }
+    for name in ("hello", "robot.move", "robot.stop", "robot.head", "robot.state", "robot.health"):
+        assert name in api.SHIM_CALLS.note, f"the maker named {name}"
+    assert "index 7" in api.JOINT_ORDER.name
+    assert api.JOINT_NAMES.index("head_yaw") == 7
+    assert f"{api.DEADMAN_S * 1000:g} ms by default" in api.DEADMAN.note
+
+
+def test_while_huebot_and_the_microduck_read_one_pin_they_agree_on_the_protocol() -> None:
+    """The protocol refs are copied rather than imported, so that the two robots can diverge. A
+    copy that went wrong is caught here: while both cite the same pin, every name, vocabulary and
+    number they share reads the same. A re-pin of either is a decision this test makes somebody
+    take on purpose."""
+    if huebot_api.PIN != upstream_api.PIN:
+        pytest.skip("the two adapters read robotd at different pins now")
+    shared = [
+        name
+        for name, value in vars(huebot_api).items()
+        if isinstance(value, huebot_api.UpstreamRef)
+        and value.status == "VERIFIED"
+        and isinstance(getattr(upstream_api, name, None), huebot_api.UpstreamRef)
+    ]
+    assert len(shared) >= 20, shared
+    for name in shared:
+        mine, theirs = getattr(huebot_api, name), getattr(upstream_api, name)
+        assert (mine.name, mine.source) == (theirs.name, theirs.source), name
+    for name in (
+        "JSONRPC_VERSION",
+        "RELEASE",
+        "READ_ON",
+        "HEAD_PARAMS",
+        "JOINT_NAMES",
+        "SOUND_TAG_LIST",
+        "ERR_METHOD_NOT_FOUND",
+        "ERR_INVALID_PARAMS",
+        "DEADMAN_S",
+        "STANDING_LABELS",
+        "SITTING_LABELS",
+        "UNWIND_SUFFIX",
+        "LIMP_FALL_LABELS",
+    ):
+        assert getattr(huebot_api, name) == getattr(upstream_api, name), name
+    assert set(huebot_api.NOT_STANDING_LABELS) == set(upstream_api.NOT_STANDING_LABELS)

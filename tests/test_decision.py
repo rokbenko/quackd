@@ -119,6 +119,15 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "search_scan": (None, "motion"),
         "stand": (1, "confirm"),
     },
+    "huebot": {
+        "grab": (1, "motion"),
+        "kick": (2, "motion"),
+        "quack": (1, "motion"),
+        "say": (None, "motion"),
+        "sit": (1, "motion"),
+        "stand": (1, "motion"),
+        "stand_up": (1, "motion"),
+    },
 }
 
 

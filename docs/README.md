@@ -47,6 +47,7 @@ to try a real one in.
 | XLeRobot | [adapters/xlerobot/README.md](adapters/xlerobot/README.md) | [hardware checklist](adapters/xlerobot/hardware-checklist.md) |
 | AlohaMini | [adapters/alohamini/README.md](adapters/alohamini/README.md) | [hardware checklist](adapters/alohamini/hardware-checklist.md) |
 | ToddlerBot | [adapters/toddlerbot/README.md](adapters/toddlerbot/README.md) | [hardware checklist](adapters/toddlerbot/hardware-checklist.md) |
+| Huebot | [adapters/huebot/README.md](adapters/huebot/README.md) | [hardware checklist](adapters/huebot/hardware-checklist.md) |
 
 - [Adapter status](adapters/status.md): what has run against its real target, and what has not.
 - [Writing an adapter](adapters/writing-an-adapter.md): the recipe for a robot quackd does not

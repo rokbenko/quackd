@@ -8,7 +8,7 @@ it). A test proves UNVERIFIED names stay inside the backend that needs them.
 `quackd doctor` prints every UNVERIFIED list on your machine.
 
 One row below has met hardware: `lerobot:real`, on a LeRobot SO-101 arm, on 2026-09-15 and again
-on 2026-09-23. Six of the seven bodies here have still never been driven by quackd, and the row
+on 2026-09-23. Seven of the eight bodies here have still never been driven by quackd, and the row
 that has was driven on one arm for two afternoons, the second on quackd 0.12.0. Nothing changed
 since that afternoon has run on it: the rest pose clipped into the travel,
 `quackd robot release`, the paced `move_joints` and the connect retries are exercised only
@@ -28,9 +28,10 @@ limitations). What the first afternoon did and did not settle is under the table
 | XLeRobot | `quackd[xlerobot]` | `quackd-xlerobot` |
 | AlohaMini | `quackd[alohamini]` | `quackd-alohamini` |
 | ToddlerBot | `quackd[toddlerbot]` | `quackd-toddlerbot` |
+| Huebot | `quackd[huebot]` | `quackd-huebot` |
 
 So `uv pip install "quackd[open_duck]"` buys the Open Duck Mini and nothing else, and
-`quackd[robots]` buys all seven, each with the SDK its real backend needs. Two extras buy the
+`quackd[robots]` buys all eight, each with the SDK its real backend needs. Two extras buy the
 duck and one heavy thing it can do: `quackd[mujoco]` is `quackd-microduck[mujoco]`, the duck
 with its physics simulator, and `quackd[microduck-camera]` is the duck with its WebRTC camera.
 One buys the arm's simulator: `quackd[lerobot-sim]` is `quackd-lerobot[sim]`, the arm with
@@ -39,7 +40,7 @@ MuJoCo and without LeRobot, so it installs on Python 3.11 as well.
 An adapter that is not installed keeps its row in `quackd list-adapters` and in
 `quackd doctor`, marked not installed. Naming one anyway refuses with the extra to type:
 `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`. With nothing installed
-at all, every command that needs a body refuses and names all seven.
+at all, every command that needs a body refuses and names all eight.
 
 | Adapter | `--robot` | Status | Upstream file | Page |
 |---|---|---|---|---|
@@ -63,6 +64,8 @@ at all, every command that needs a body refuses and names all seven.
 | ToddlerBot | `toddlerbot:mock` | ✅ | | [adapters/toddlerbot/README.md](toddlerbot/README.md) |
 | | `toddlerbot:sim2d` | ✅ `toddlerbot-lookout` 10 of 10 seeds | | |
 | | `toddlerbot:bridge` | 🧪 every upstream name VERIFIED at the commit the v2.0.0 tag points at, the protocol and the daemon's own safety machinery exercised against a fake body over loopback, never run on a robot | [`adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py`](../../adapters/toddlerbot/src/quackd_toddlerbot/upstream_api.py) | |
+| Huebot | `huebot:mock` | ✅ | | [adapters/huebot/README.md](huebot/README.md) |
+| | `huebot:jsonrpc` | 🧪 experimental: robotd's protocol, every method VERIFIED at the Microduck's pin, spoken to a shim Huebot's maker runs on the robot, which nobody has seen. Exercised against a fake shim over loopback, never run on a Huebot. The shim has to answer what [its page](huebot/README.md#what-huebots-shim-must-answer) lists | [`adapters/huebot/src/quackd_huebot/upstream_api.py`](../../adapters/huebot/src/quackd_huebot/upstream_api.py) | |
 
 **The first real run, and what it does not prove.** One SO-101, one bench, one afternoon.
 The arm fell at the end of every run, because LeRobot's `disconnect()` disables torque by its
@@ -111,7 +114,8 @@ allowlist moves a leg.
 
 Ran `--robot open_duck:bridge` against a duck you built, `toddlerbot:bridge` against a
 ToddlerBot on its stand, `xlerobot:zmq` against a cart, `alohamini:zmq` against an AlohaMini,
-`microduck:jsonrpc` against a real duck, or `rosbridge:ws` against a bridge?
+`microduck:jsonrpc` against a real duck, `huebot:jsonrpc` against a Huebot's shim, or
+`rosbridge:ws` against a bridge?
 Open an issue with `quackd doctor` output and the first lines of `transcript.jsonl`, whose
 `run_start` names the command that was typed and the version that ran it, so a report no longer
 rests on anyone remembering either. A run directory holds `terminal.txt` beside it, and that is

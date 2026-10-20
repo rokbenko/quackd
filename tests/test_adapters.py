@@ -270,6 +270,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "xlerobot",
         "alohamini",
         "toddlerbot",
+        "huebot",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
     assert rows[1]["extra"] == "quackd[lerobot]" and "real" in rows[1]["backends"]
@@ -296,6 +297,8 @@ PARKS_NOTHING = (
     "xlerobot:mock",
     "alohamini:mock",
     "toddlerbot:mock",
+    "huebot:mock",
+    "huebot:jsonrpc",
 )
 """Every adapter but lerobot: the bodies that hold their own posture when the power goes."""
 
@@ -307,6 +310,8 @@ ONE_CAMERA = (
     "xlerobot:mock",
     "alohamini:mock",
     "toddlerbot:mock",
+    "huebot:mock",
+    "huebot:jsonrpc",
     "lerobot:mock",
 )
 """Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real` and its

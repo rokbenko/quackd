@@ -12,7 +12,7 @@ no `watch`, and the Microduck's simulators, whose model and gait are not Huebot'
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Collection, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Sequence
 from typing import Any
 
 from PIL import Image
@@ -68,8 +68,8 @@ DATASHEET = Datasheet(
         "climb or descend a step",
     ],
     notes=[
-        "The speed caps are quackd's own clamp on the twists it sends, half the Microduck's, not "
-        "a measured hardware maximum: nobody has published one for Huebot",
+        "The speed caps are quackd's own clamp on the twists it sends, not a measured hardware "
+        "maximum: nobody has published one for Huebot",
         "Its maker said on 2026-10-15 that it stands and steps, and that the walk's balance is "
         "still being tuned",
         "It has a speaker, which quack and say play duck tones through, and a 13 by 8 LED face, "
@@ -270,6 +270,16 @@ class HuebotAdapter:
         needs, and Huebot has no `watch`: no camera quackd reads on it says either, so False on
         `jsonrpc`, and the mock's scripted frames say so of themselves."""
         return getattr(self.transport, "frames_upright", False) is True
+
+    @property
+    def twist_shown_since(self) -> Callable[[float], bool] | None:
+        """The transport's own `twist_shown_since` on `jsonrpc`, and None on the mock, which says
+        nothing of the kind. `search_scan` reads it off the object it was handed, this adapter
+        (`quackd.transport.base.twist_shown_since_of`), to count the turns it says it made by
+        the ones the shim's state showed it took, since nothing answers a `robot.move`. A method
+        here that answered for the mock would read as a body that took none of its turns."""
+        shown = getattr(self.transport, "twist_shown_since", None)
+        return shown if callable(shown) else None
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:
         return self.transport.subscribe(topic)
