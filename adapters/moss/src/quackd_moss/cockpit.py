@@ -111,6 +111,7 @@ ARM_PATH = "/arm"
 ARM_CYCLE_PATH = "/arm/cycle"
 ARM_CANCEL_PATH = "/arm/cancel"
 MISSION_PATH = "/mission"
+NAV_PATH = "/nav"
 KEEPALIVE_PATH = "/session/keepalive"
 FRAME_STAMP_HEADER = "X-Frame-Stamp"
 FRAME_AFTER_HEADER = "X-Frame-After-Request"
@@ -122,6 +123,8 @@ SESSION_MISSES = 3
 MAX_KEEPALIVE_S = 1.0
 """The longest period the bridge takes from a client, so the longest a session's window is."""
 STARTED = ("goal", "explore", "litter")
+NAV_KEYS = ("exploring", "explore_done", "goal", "goal_reached")
+"""What the bridge's nav says of the base stack, in the cockpit's own `nav` words."""
 """What quackd may have started through the cockpit, as the keepalive tells the bridge."""
 
 HEARTBEAT_S = 0.5
@@ -386,6 +389,11 @@ class BridgeClient:
 
     def mission(self) -> dict[str, Any]:
         _, doc = self._doc(self.slow, "GET", MISSION_PATH)
+        return dict(doc)
+
+    def nav(self) -> dict[str, Any]:
+        """The base stack's own navigation, read off the bus by the bridge."""
+        _, doc = self._doc(self.slow, "GET", NAV_PATH)
         return dict(doc)
 
     def frame(self, cam: str) -> tuple[bytes, bool, str | None]:
@@ -860,6 +868,12 @@ class MossCockpit:
                 extras |= {"bridge_up": True, "arm": arm}
                 if self.stack == "moss-litter":
                     extras["mission"] = await self._call(self.bridge.mission)
+                # the base stack's own navigation: the cockpit reads only the newest dimOS
+                # run, and a moss-arm started after the base hides the base from it
+                nav = await self._call(self.bridge.nav)
+                if nav.get("ok"):
+                    extras["cockpit_nav"] = extras["nav"]
+                    extras["nav"] = {k: nav.get(k) for k in NAV_KEYS}
             except (LinkDown, TransportError) as e:
                 extras |= {"bridge_up": False, "bridge_error": str(e)}
         return DuckState(
@@ -1297,6 +1311,7 @@ __all__ = [
     "HELLO_PATH",
     "KEEPALIVE_PATH",
     "MISSION_PATH",
+    "NAV_PATH",
     "PROTOCOL",
     "PROTOCOL_VERSION",
     "SESSION_MISSES",

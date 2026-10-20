@@ -146,8 +146,10 @@ def stack_refusal(
         )
     if blueprint == "moss-arm":
         return (
-            "the cockpit shows the moss-arm run, which hides the base stack from it: start "
-            "quackd's bridge on the rover, which reads both"
+            "the cockpit reads only the newest dimOS run, and that is moss-arm, which hides any "
+            "base stack from it: run quackd's bridge on the rover, which reads the base stack and "
+            "the arm's run apart, or with no base stack running, stop moss-arm, start the base "
+            f"stack first ({_START_ONE.split(' with ', 1)[1]}), then moss-arm"
         )
     if blueprint not in KNOWN_STACKS:
         return (
@@ -417,6 +419,16 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
     if state.x is None or state.y is None:
         return VerbResult.fail("drive_to needs the rover's pose, and the cockpit reports none")
     gx, gy = world_goal(state, p)
+    nav, seen = state.extras.get("nav") or {}, state.extras.get("cockpit_nav")
+    if nav.get("exploring") is True and isinstance(seen, dict) and not seen.get("exploring"):
+        # the base stack explores and the cockpit cannot see it: it reads only the newest dimOS
+        # run, a moss-arm started after the base, so it would send this goal straight under
+        # the explorer. drive_to stops the explorer itself, and waits out its own stay here
+        # goal, which the cockpit's deferral is for
+        stop = Intent(kind="do", params={"skill": SKILL_EXPLORE, "action": "stop"})
+        if (fail := await send_or_fail(ctx, stop)) is not None:
+            return fail
+        await ctx.transport.sleep(float(up.GOAL_AFTER_STOP_S.name))
     goal = Intent(kind="pose", params={"x": gx, "y": gy, "frame": "world"})
     if (fail := await send_or_fail(ctx, goal)) is not None:
         return fail

@@ -44,9 +44,11 @@ quackd run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904
 
 The mock takes the rover's shape from its address, which a test or a dry run uses to see what a
 rover without a bridge, an arm or a mission is offered:
-`--address "mock://rover?stack=moss-nav&bridge=0"`. It reads `stack`, `bridge`, `arm`,
-`mission`, `camera`, `stamps`, `wall` (a wall at that x, which stalls the tracks), `idle` (the
-idle stop's limit in seconds) and `litter` (how many pieces of litter to lay out ahead).
+`--address "mock://rover?stack=moss-nav&bridge=0&arm=0"`. With `arm` on, the mock's arm runs after
+the base stack, as on the rover, so its cockpit shows moss-arm, and with no bridge it is refused as
+the rover is. It reads `stack`, `bridge`, `arm`, `mission`, `camera`, `stamps`, `wall` (a wall at
+that x, which stalls the tracks), `idle` (the idle stop's limit in seconds) and `litter` (how many
+pieces of litter to lay out ahead).
 
 ## How quackd reaches it
 
@@ -138,15 +140,15 @@ against before anything connects. Connect narrows it to what answered:
 **Refused at connect**, each in a sentence that names the fix: no cockpit, a cockpit that answers
 its state with an error, a cockpit in `--demo` mode, a bridge that refuses the token or speaks
 another version of quackd's protocol, no stack, a stack that is not MOSS's or one of MOSS's that
-quackd does not know, `moss-gamepad` or `moss-base` (the pad and the base alone, with no
-odometry), the `moss-arm` run alone with no bridge to see the base stack behind it, a bus that
-is not LCM, and `moss-litter` without the bridge or without the mission's RPC answering. A bridge
-that answers but cannot publish on the rover's bus counts as no bridge, and says why. This is
-the mock's, refused as the rover would be:
+quackd does not know, `moss-gamepad` or `moss-base` (the pad and the base alone, with no odometry),
+a cockpit that shows the `moss-arm` run, the newest whenever the arm runs, with no bridge to see the
+base stack behind it, a bus that is not LCM, and `moss-litter` without the bridge or without the
+mission's RPC answering. A bridge that answers but cannot publish on the rover's bus counts as no
+bridge, and says why. This is the mock's, refused as the rover would be:
 
 ```
-✗ error: moss:mock at mock://rover?stack=moss-litter&bridge=0: moss: on moss-litter the mission listens to no stop the cockpit can send, and only quackd's bridge can call the mission's own: start the
-bridge on the rover (bridge/moss/README.md) (the mock was built with no bridge)
+✗ error: moss:mock at mock://rover?stack=moss-litter&bridge=0&arm=0: moss: on moss-litter the mission listens to no stop the cockpit can send, and only quackd's bridge can call the mission's own:
+start the bridge on the rover (bridge/moss/README.md) (the mock was built with no bridge)
 ```
 
 And this is a laptop with no tunnel up, on Windows:
@@ -313,14 +315,23 @@ declared and `--fov-deg` says it.
 
 ## Before it will answer
 
-On the rover, in the MOSS checkout, the arm's coordinator runs on its own, as MOSS's own
-docs/litter.md starts it, and MOSS's launcher runs its gates, the stack and the cockpit. Start the
-stack without `EXPLORE=1`, which would set the rover exploring before quackd asks:
+On the rover, in the MOSS checkout, MOSS's launcher runs its gates, the stack and the cockpit, and
+the arm's coordinator runs on its own, as MOSS's own docs/litter.md starts it. Start the launcher
+first, since its first gate refuses to start beside any dimOS run, the arm's included, and start
+the stack without `EXPLORE=1`, which would set the rover exploring before quackd asks:
 
 ```bash
-.venv/bin/dimos run moss-dimos.moss-arm     # in a terminal of its own: the arm verbs and moss-litter need it
-tools/moss-fly.sh explore                   # or map, or litter
+tools/moss-fly.sh explore                   # or map, or litter: first
+.venv/bin/dimos run moss-dimos.moss-arm     # then, in a terminal of its own: the arm verbs and moss-litter need it
 ```
+
+The cockpit reads only the newest dimOS run, which is then moss-arm, so it cannot see the base
+stack behind it: its own nav never shows an exploration, its goal never waits for the explorer
+to stop, and its idle stop counts no idle time. quackd's bridge reads the base stack and the
+arm's run apart, so with the bridge up quackd takes the base stack's navigation from the bridge
+(`GET /nav`), off the same channels the cockpit's own reads, and `drive_to` stops an exploration
+the cockpit cannot see before it sends its goal. Without the bridge, a cockpit that shows
+moss-arm is refused at connect.
 
 Then start quackd's bridge, which [`bridge/moss/README.md`](../../../bridge/moss/README.md)
 installs as a service with its token. On the laptop, read the token once and open one tunnel for

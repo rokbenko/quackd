@@ -40,6 +40,12 @@ Four things read at the pin shape everything below.
   maker's arm cycle with a cancel, and the litter mission's own stop. The bridge runs on the
   rover with MOSS's own interpreter, imports quackd nowhere, binds loopback, takes a token, and
   is reached with the cockpit through one ssh tunnel. quackd imports neither MOSS nor dimOS.
+- **The base stack's own navigation comes from the bridge.** MOSS's launcher refuses to start
+  beside any dimOS run, so moss-arm starts after the base stack, and the cockpit reads only the
+  newest run: with the arm up it shows no exploration and defers no goal. The bridge tells the
+  base stack from the arm's run and reads the base stack's nav channels itself, quackd takes its
+  nav from there, and `drive_to` stops an exploration the cockpit cannot see before its goal.
+  Without the bridge, a cockpit that shows moss-arm is refused at connect.
 - **The bridge shapes every twist on the rover**, and no core verb is overridden. An arc keeps
   `|wz|` at or under `2|vx| / track` with the stack's own track width, and a turn on the spot is
   the maker's own pulses, timed on the rover. After the firmware's 0.3 s with no new twist it

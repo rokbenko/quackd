@@ -28,7 +28,7 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor, Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.registry import registry_from_manifest
+from quackd.verbs.registry import VerbContext, registry_from_manifest
 from quackd_moss import MossAdapter
 from quackd_moss import cockpit as client
 from quackd_moss import mock as mock_module
@@ -73,6 +73,7 @@ def rover(request: pytest.FixtureRequest) -> Iterator[Rover]:
     blueprint = getattr(request, "param", "moss-explore")
     with FakeCockpit(blueprint=blueprint) as cockpit:
         bridge = B.fake_bridge(blueprint=blueprint, token=TOKEN, cycle_s=0.3, fps=10.0)
+        cockpit.bus = bridge.bus  # one LCM bus on the rover, which both read
         server = B.serve(bridge, "127.0.0.1", 0)
         bridge.start()
         try:
@@ -101,6 +102,7 @@ def _rover_with(blueprint: str = "moss-explore", **bridge_kw: Any) -> Iterator[R
     """The `rover` fixture's rig, with the bridge built as a test asks."""
     with FakeCockpit(blueprint=blueprint) as cockpit:
         bridge = B.fake_bridge(blueprint=blueprint, token=TOKEN, fps=10.0, **bridge_kw)
+        cockpit.bus = bridge.bus
         server = B.serve(bridge, "127.0.0.1", 0)
         bridge.start()
         try:
@@ -481,6 +483,38 @@ async def test_close_zeroes_its_own_twist_and_sends_nothing_it_did_not_start() -
         assert sent[0] == (0.1, 0.0) and sent[-1] == (0.0, 0.0), sent
         assert rover.cockpit.posted("stop") == [], "no soft stop: it started no goal"
         assert moving.close_note is None
+
+
+async def test_with_moss_arm_newest_drive_to_reads_the_base_stack_off_the_bridge() -> None:
+    """The documented start order runs moss-arm after the base stack, and the cockpit reads only
+    the newest run: its nav shows no exploration, and it would send a goal straight under the
+    explorer. The bridge reads the base stack's own nav off the bus, so drive_to sees the
+    exploration, stops it itself, waits out the explorer's own stay here goal, and its goal then
+    holds until the planner reaches it."""
+    with _rover_with() as rover:
+        rover.cockpit.newest = "moss-arm"
+        adapter = MossAdapter(rover.transport())
+        await adapter.connect()
+        start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+        assert (await adapter.send_intent(start)).accepted
+        state = await adapter.get_state()
+        assert state.extras["nav"]["exploring"] is True, "the bridge's reading of the base"
+        assert state.extras["cockpit_nav"]["exploring"] is False, "the cockpit's, of moss-arm"
+        params = moss_verbs.DriveToParams(x_m=0.5, y_m=0.0)
+        task = asyncio.ensure_future(moss_verbs.drive_to(VerbContext(transport=adapter), params))
+        deadline = time.monotonic() + 10.0
+        while not rover.cockpit.posted("goal"):
+            assert time.monotonic() < deadline and not task.done(), "no goal was sent"
+            await asyncio.sleep(0.1)
+        await asyncio.sleep(0.6)
+        rover.cockpit.reach_goal(True)
+        result = await asyncio.wait_for(task, 10.0)
+        assert result.ok, result.summary
+        actions = [r.body.get("action") for r in rover.cockpit.posted("explore") if r.body]
+        assert actions == ["start", "stop"], actions
+        stopped, sent = rover.cockpit.posted("explore")[-1].t, rover.cockpit.posted("goal")[0].t
+        assert sent - stopped >= float(client.up.GOAL_AFTER_STOP_S.name) - 0.1
+        await adapter.close()
 
 
 async def test_close_cancels_a_cycle_of_its_own_that_no_stop_ended() -> None:

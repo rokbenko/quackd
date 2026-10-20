@@ -260,7 +260,7 @@ def test_the_pick_poses_are_the_cycles_own() -> None:
         ({"blueprint": "unitree-go2"}, "not one of MOSS's"),
         ({"blueprint": "moss-gamepad"}, "the pad and the base alone"),
         ({"blueprint": "moss-base"}, "the pad and the base alone"),
-        ({"blueprint": "moss-arm"}, "hides the base stack"),
+        ({"blueprint": "moss-arm"}, "reads only the newest dimOS run, and that is moss-arm"),
         ({"blueprint": "moss-jev"}, "quackd knows moss-nav"),
         ({"bus": "zenoh"}, "speak LCM only"),
         ({"blueprint": "moss-litter", "bridge": False}, "only quackd's bridge"),
@@ -566,11 +566,28 @@ async def test_drive_to_reads_its_offset_in_the_frame_it_names(frame: str) -> No
 
 
 async def test_drive_to_waits_out_the_cockpits_deferral_while_exploring() -> None:
-    mock, _, ex = await _connected()
+    """With no arm's run newer than the base, the cockpit sees the exploration and defers."""
+    mock, _, ex = await _connected(arm=False)
     mock.exploring = True
     result = await ex.run_verb("drive_to", {"x_m": 0.4, "y_m": 0.0})
     assert result.ok, result.summary
     assert result.data["seconds"] >= float(up.GOAL_AFTER_STOP_S.name)
+    assert [i.params.get("action") for i in mock.intents_of("do")] == [], "the cockpit stopped it"
+
+
+async def test_drive_to_stops_an_exploration_the_cockpit_cannot_see() -> None:
+    """moss-arm runs after the base stack and the cockpit reads only the newest run: it sees no
+    exploration and would send the goal straight under the explorer, whose next frontier then
+    replaces it. The bridge reads the base stack's own nav, so drive_to sees the exploration,
+    stops it itself and waits out the explorer's stay here goal before it sends its own."""
+    mock, adapter, ex = await _connected()
+    mock.exploring = True
+    state = await adapter.get_state()
+    assert state.extras["nav"]["exploring"] and not state.extras["cockpit_nav"]["exploring"]
+    result = await ex.run_verb("drive_to", {"x_m": 0.4, "y_m": 0.0})
+    assert result.ok, result.summary
+    kinds = [(i.kind, i.params.get("action")) for i in mock.intents if i.kind in ("do", "pose")]
+    assert kinds[:2] == [("do", "stop"), ("pose", None)], kinds
 
 
 async def test_drive_to_fails_when_the_planner_gives_the_goal_up() -> None:

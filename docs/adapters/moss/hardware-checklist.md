@@ -24,8 +24,8 @@ stop contract above all.
 
 ## The cockpit and the bridge, with nothing moving
 
-On the rover, start the arm's coordinator and a stack, `moss-explore` for now and without
-`EXPLORE=1`, then quackd's bridge, as [the adapter's page](README.md#before-it-will-answer) and
+On the rover, start a stack first, `moss-explore` for now and without `EXPLORE=1`, then the arm's
+coordinator, then quackd's bridge, as [the adapter's page](README.md#before-it-will-answer) and
 [`bridge/moss/README.md`](../../../bridge/moss/README.md) say. On the laptop, the token and the
 tunnel:
 

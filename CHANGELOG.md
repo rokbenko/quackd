@@ -22,19 +22,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ([docs/adapters/moss/README.md](docs/adapters/moss/README.md),
   [ADR-0056](docs/adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 - **A bridge for the rover**, `bridge/moss/quackd_moss_bridge.py`, for what MOSS's cockpit has no
-  command for. A twist with a deadman of its own, sent again while it is fresh and then one zero
-  and silence, since every message on the pad's channel cancels MOSS's navigation. A frame that
-  says when it was taken. The maker's own arm cycle, run as his own mission runs it, with a cancel
-  that stops the script, cancels the trajectory and sees the arm hold, and a script that dies any
-  way but its own has its trajectory cancelled and the arm read too. And the litter mission's own
-  stop, the only stop the mission listens to, which comes with the end of the mission's own pick
-  script, since the mission's stop leaves that running. The bridge runs on the rover with MOSS's
-  own interpreter, imports quackd nowhere, binds loopback and takes a token. Each quackd session
-  has an id of its own and keeps itself alive from a thread of its own, so a prompt never reads
-  as a dead quackd, and three missed keepalives later the bridge halts what that session started
-  and nothing else, the whole stop on `moss-litter` only for a session that started the mission.
-  quackd's close halts only what its own session started, its own arm cycle by its id, so a
-  `quackd doctor` stops nothing. A systemd unit and its page sit beside it
+  command for. A twist with a deadman of its own, sent again while it is fresh and then one zero and
+  silence, since every message on the pad's channel cancels MOSS's navigation. A frame that says
+  when it was taken. The base stack's own navigation, read off the bus, since the cockpit reads only
+  the newest dimOS run and moss-arm starts after the base. The maker's own arm cycle, run as his own
+  mission runs it, with a cancel that stops the script, cancels the trajectory and sees the arm
+  hold, and a script that dies any way but its own has its trajectory cancelled and the arm read
+  too. And the litter mission's own stop, the only stop the mission listens to, which comes with the
+  end of the mission's own pick script, since the mission's stop leaves that running. The bridge
+  runs on the rover with MOSS's own interpreter, imports quackd nowhere, binds loopback and takes a
+  token. Each quackd session has an id of its own and keeps itself alive from a thread of its own,
+  so a prompt never reads as a dead quackd, and three missed keepalives later the bridge halts what
+  that session started and nothing else, the whole stop on `moss-litter` only for a session that
+  started the mission. quackd's close halts only what its own session started, its own arm cycle by
+  its id, so a `quackd doctor` stops nothing. A systemd unit and its page sit beside it
   ([bridge/moss/README.md](bridge/moss/README.md)).
 - **MOSS's own verbs.** `drive_to`, a goal at most 2 m away for MOSS's own planner. `explore`, its
   explorer for up to eight minutes. `pick_and_drop` and `stow_arm`, the maker's fixed arm cycle,

@@ -82,6 +82,9 @@ KEEPALIVE_S = 0.5
 (`cockpit.HEARTBEAT_S`)."""
 MAX_KEEPALIVE_S = 1.0
 """The longest period the bridge takes from a client (`cockpit.MAX_KEEPALIVE_S`)."""
+EXPLORER_REPLAN_S = 2.0
+"""quackd's own guess, for the mock, at how soon the explorer sends a goal of its own over one
+sent beside it. Nobody has timed its next frontier on a rover."""
 PICK_STARTUP_S = 2.0
 """quackd's own guess, for the mock, at how long the maker's script takes to import dimOS,
 build its client and read the joints before it sends its one trajectory. Nobody has measured
@@ -247,6 +250,10 @@ class MossMock:
         self.bus = bus
         self.bridge_up = bridge
         self.arm_up = bridge and arm
+        self.arm_run = arm
+        """The arm's own dimOS run is there. tools/moss-fly.sh refuses to start beside any run,
+        so the arm's starts after the base stack, and then it is the newest run, which is all
+        the cockpit reads."""
         self.mission_up = bridge and mission and stack == "moss-litter"
         self.camera_available = camera
         self.stamps = stamps
@@ -312,6 +319,8 @@ class MossMock:
         self._goal_done: tuple[float, float] | None = None
         self._pending_goal: tuple[tuple[float, float], float] | None = None
         """A goal the cockpit holds back while it stops the explorer (`up.GOAL_AFTER_STOP_S`)."""
+        self._beside: float | None = None
+        """When a goal went out beside an explorer the cockpit could not see, so never stopped."""
         self.exploring = False
         self.explore_done = False
         self._explore_at = 0.0
@@ -398,8 +407,18 @@ class MossMock:
             # MovementManager: any message on the pad's channel cancels navigation
             self.goal, self.exploring = None, False
 
+    @property
+    def cockpit_view(self) -> str:
+        """The blueprint the cockpit reads: the newest dimOS run, moss-arm whenever it runs."""
+        return "moss-arm" if self.arm_run else self.stack
+
     def _planner(self) -> tuple[float, float] | None:
         """The stack's own driving: the goal, the explorer, or the mission's servo."""
+        beside = self._beside
+        if beside is not None and self.exploring and self._t - beside >= EXPLORER_REPLAN_S:
+            # the explorer, never stopped, sends its next frontier over the goal
+            self.goal, self.goal_reached = (self.x + 1.5, self.y + 1.5), None
+            self._goal_at, self._beside = self._t, None
         if self._pending_goal is not None and self._t >= self._pending_goal[1]:
             self.goal, self._goal_at = self._pending_goal[0], self._t
             self._pending_goal = None
@@ -615,6 +634,7 @@ class MossMock:
 
     def _explore(self, *, start: bool) -> None:
         self.exploring = start and self.stack in ("moss-explore", "moss-litter")
+        self._beside = None
         if start:
             self.explore_done, self._explore_at = False, self._t
 
@@ -623,6 +643,7 @@ class MossMock:
         notice of it."""
         self.stop_log.append("cockpit.stop")
         self.soft_stops += 1
+        self._beside = None
         self._activity = self._t
         self.exploring, self.goal, self._pending_goal = False, None, None
         self._publish((0.0, 0.0))
@@ -735,7 +756,8 @@ class MossMock:
     async def connect(self) -> None:
         refusal = stack_refusal(
             running=self.stack_running,
-            blueprint=self.stack,
+            # the bridge reads the base stack apart from the arm's run, the cockpit the newest
+            blueprint=self.stack if self.bridge_up else self.cockpit_view,
             bus=self.bus,
             bridge=self.bridge_up,
             mission=self.mission_up,
@@ -866,6 +888,8 @@ class MossMock:
             }
         shown = self._nav_goal()
         goal = None if shown is None else {"x": round(shown[0], 3), "y": round(shown[1], 3)}
+        # the cockpit's own rule: only an explore stack explores, and it reads the newest run
+        cockpit_exploring = self.exploring and "explore" in self.cockpit_view
         extras = {
             "stack": self.stack,
             "bridge_up": self.bridge_up,
@@ -880,7 +904,7 @@ class MossMock:
             "stalled": self.stalled,
             "output_pct": [round(v) for v in self.out],
             "nav": {
-                "exploring": self.exploring,
+                "exploring": self.exploring if self.bridge_up else cockpit_exploring,
                 "explore_done": self.explore_done,
                 "goal": goal,
                 "goal_reached": self.goal_reached,
@@ -891,6 +915,9 @@ class MossMock:
             "started": self.started,
             "clipped": self.clipped,
         }
+        if self.bridge_up:
+            # the nav above is the bridge's reading of the base stack, and this the cockpit's
+            extras["cockpit_nav"] = {**extras["nav"], "exploring": cockpit_exploring}
         percent = None
         if self.battery_v is not None:
             empty, full = (float(v) for v in up.BATTERY_GAUGE.name.replace(" V", "").split(" to "))
@@ -954,11 +981,13 @@ class MossMock:
                 self.stalled = False
                 wanted = (float(p["x"]), float(p["y"]))
                 self.goal_reached, self._goal_done = None, None
-                if self.exploring:
+                if self.exploring and "explore" in self.cockpit_view:
                     # the cockpit stops the explorer and sends the goal after its deferral
                     self.exploring, self.goal = False, None
                     self._pending_goal = (wanted, self._t + GOAL_AFTER_STOP_S)
                 else:
+                    # an explorer the cockpit cannot see is not stopped, and goes on
+                    self._beside = self._t if self.exploring else None
                     self.goal, self._goal_at, self._pending_goal = wanted, self._t, None
                 return Ack()
             case "do":

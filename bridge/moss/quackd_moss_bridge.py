@@ -82,7 +82,8 @@ ARM_CYCLE_PATH = "/arm/cycle"
 ARM_CANCEL_PATH = "/arm/cancel"
 MISSION_PATH = "/mission"
 KEEPALIVE_PATH = "/session/keepalive"
-GET_PATHS = frozenset({HELLO_PATH, FRAME_PATH, ARM_PATH, MISSION_PATH})
+NAV_PATH = "/nav"
+GET_PATHS = frozenset({HELLO_PATH, FRAME_PATH, ARM_PATH, MISSION_PATH, NAV_PATH})
 POST_PATHS = frozenset({TWIST_PATH, STOP_PATH, ARM_CYCLE_PATH, ARM_CANCEL_PATH, KEEPALIVE_PATH})
 FRAME_STAMP_HEADER = "X-Frame-Stamp"
 FRAME_AFTER_HEADER = "X-Frame-After-Request"
@@ -109,6 +110,21 @@ PAD_STREAM_NAV = "cmd_vel"
 """moss-nav: the pad is remapped onto cmd_vel itself and there is no MovementManager."""
 STOP_EXPLORE_STREAM = "stop_explore_cmd"
 STOP_MOVEMENT_STREAM = "stop_movement"
+EXPLORE_STREAM = "explore_cmd"
+EXPLORE_DONE_STREAM = "explore_done"
+GOAL_REQUEST_STREAM = "goal_request"
+GOAL_REACHED_STREAM = "goal_reached"
+POSE_MSG = "geometry_msgs.PoseStamped"
+NAV_BOOL_STREAMS = (
+    EXPLORE_STREAM,
+    STOP_EXPLORE_STREAM,
+    EXPLORE_DONE_STREAM,
+    STOP_MOVEMENT_STREAM,
+    GOAL_REACHED_STREAM,
+)
+"""The base stack's own navigation, on the channels the cockpit's `_nav` reads (moss_cockpit.py
+CHANNELS). The cockpit shows only the newest dimOS run, and a moss-arm started after the base
+stack hides it, so the bridge reads them itself, for the stack it tells apart from the arm."""
 CAMERA_INFO_STREAM = "camera_info"
 BASE_STACKS = ("moss-nav", "moss-explore")
 LITTER_STACK = "moss-litter"
@@ -935,6 +951,8 @@ class ArmJobs:
 class Bus(Publisher, ArmBus, Protocol):
     frames: FrameStore
 
+    def nav_seen(self) -> dict[str, tuple[Any, float]]: ...
+
     def mission_status(self, timeout_s: float) -> dict[str, Any] | None: ...
 
     def mission_stop(self) -> None: ...
@@ -947,19 +965,24 @@ class LcmBus:
 
     def __init__(self, up: Upstream, frames: FrameStore, *, arm: bool, mission: bool) -> None:
         import lcm
-        from dimos_lcm.geometry_msgs import Twist, Vector3
+        from dimos_lcm.geometry_msgs import PoseStamped, Twist, Vector3
         from dimos_lcm.sensor_msgs import CameraInfo, Image
         from dimos_lcm.std_msgs import Bool
 
         self.up, self.frames = up, frames
         self._twist, self._vector, self._bool = Twist, Vector3, Bool
+        self._pose = PoseStamped
         self._image, self._camera_info = Image, CameraInfo
         self._lc = lcm.LCM()
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._nav: dict[str, tuple[Any, float]] = {}
         for cam, stream in CAMERA_STREAMS.items():
             self._lc.subscribe(channel(stream, IMAGE_MSG), self._on_image(cam))
         self._lc.subscribe(channel(CAMERA_INFO_STREAM, CAMERA_INFO_MSG), self._on_info)
+        for stream in NAV_BOOL_STREAMS:
+            self._lc.subscribe(channel(stream, BOOL_MSG), self._on_nav(stream))
+        self._lc.subscribe(channel(GOAL_REQUEST_STREAM, POSE_MSG), self._on_goal)
         threading.Thread(target=self._loop, name="moss-lcm", daemon=True).start()
         self._rpc: Any = None
         self._arm: Any = None
@@ -1002,6 +1025,23 @@ class LcmBus:
                 self.frames.errors[cam] = f"a {cam} frame did not decode: {e}"
 
         return handler
+
+    def _on_nav(self, stream: str) -> Callable[[str, bytes], None]:
+        def handler(_chan: str, raw: bytes) -> None:
+            received = time.monotonic()
+            with contextlib.suppress(Exception):
+                self._nav[stream] = (bool(self._bool.lcm_decode(raw).data), received)
+
+        return handler
+
+    def _on_goal(self, _chan: str, raw: bytes) -> None:
+        received = time.monotonic()
+        with contextlib.suppress(Exception):
+            p = self._pose.lcm_decode(raw).pose.position
+            self._nav[GOAL_REQUEST_STREAM] = ({"x": float(p.x), "y": float(p.y)}, received)
+
+    def nav_seen(self) -> dict[str, tuple[Any, float]]:
+        return dict(self._nav)
 
     def _on_info(self, _chan: str, raw: bytes) -> None:
         try:
@@ -1144,6 +1184,8 @@ class FakeBus:
         self.events: list[str] = []
         self.pick: FakePick | None = None
         self._pids = 40000
+        self.nav: dict[str, tuple[Any, float]] = {}
+        """The base stack's navigation as the bus last carried it, with when it arrived."""
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._stamps = stamps
@@ -1212,6 +1254,20 @@ class FakeBus:
         with self._lock:
             self.published.append((self.clock(), chan, (1.0,)))
             self.events.append(f"true {chan}")
+            # what the bridge publishes is on the bus, and its own reading of the nav sees it
+            for stream in NAV_BOOL_STREAMS:
+                if chan == channel(stream, BOOL_MSG):
+                    self.nav[stream] = (True, self.clock())
+
+    def nav_publish(self, stream: str, value: Any) -> None:
+        """A message on one of the base stack's nav channels, from the planner, the explorer or
+        the cockpit: a Bool's data, or a goal's {x, y}."""
+        with self._lock:
+            self.nav[stream] = (value, self.clock())
+
+    def nav_seen(self) -> dict[str, tuple[Any, float]]:
+        with self._lock:
+            return dict(self.nav)
 
     def _arm_silent(self) -> None:
         self.sleep(self.rpc_timeout_s)
@@ -1272,6 +1328,49 @@ class FakeBus:
 
     def close(self) -> None:
         self._stop.set()
+
+
+def _finite(value: Any) -> float | None:
+    if isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    return None
+
+
+def nav_state(seen: dict[str, tuple[Any, float]], blueprint: str | None) -> dict[str, Any]:
+    """exploring, explore_done, goal and goal_reached, derived from the same channels and by the
+    same rules as the cockpit's own `_nav`, for the base stack: an explore_cmd newer than any
+    stop, done or stop_movement is an exploration, only an explore stack explores, and a
+    goal_reached counts only when it came after the goal it answers."""
+
+    def got(stream: str) -> tuple[Any, float | None]:
+        return seen.get(stream, (None, None))
+
+    start, t_start = got(EXPLORE_STREAM)
+    _, t_stop = got(STOP_EXPLORE_STREAM)
+    done, t_done = got(EXPLORE_DONE_STREAM)
+    halt, t_halt = got(STOP_MOVEMENT_STREAM)
+    began = t_start if start else None
+    ended = max(
+        t_stop or -1.0, (t_done if done else None) or -1.0, (t_halt if halt else None) or -1.0
+    )
+    exploring = began is not None and began > ended
+    if blueprint is not None and "explore" not in blueprint:
+        exploring = False
+    explore_done = bool(done) and (began is None or (t_done or 0.0) > began)
+    pose, t_goal = got(GOAL_REQUEST_STREAM)
+    goal = None
+    if isinstance(pose, dict):
+        x, y = _finite(pose.get("x")), _finite(pose.get("y"))
+        if x is not None and y is not None:
+            goal = {"x": round(x, 3), "y": round(y, 3)}
+    reached, t_reached = got(GOAL_REACHED_STREAM)
+    after = t_reached is not None and (t_goal is None or t_reached > t_goal)
+    return {
+        "exploring": exploring,
+        "explore_done": explore_done,
+        "goal": goal,
+        "goal_reached": bool(reached) if after else None,
+    }
 
 
 # ── the bridge ──────────────────────────────────────────────────────────────────────────
@@ -1766,6 +1865,18 @@ class Bridge:
             errors.append("the arm still moved after its cancel: hold it or cut its power")
         return 200, {"ok": not errors, "cancelled": True, "arm": result, "errors": errors}
 
+    def nav_doc(self) -> dict[str, Any]:
+        """The base stack's own navigation, which the cockpit cannot show while a moss-arm run
+        started after the base is the newest run it reads."""
+        stack = self.stack()
+        if self.bus is None:
+            return {"ok": False, "reason": f"no bus: {self.bus_error or self.up_error}"}
+        return {
+            "ok": True,
+            "blueprint": stack.blueprint,
+            **nav_state(self.bus.nav_seen(), stack.blueprint),
+        }
+
     def mission_doc(self) -> dict[str, Any]:
         stack = self.stack()
         doc = self._mission_doc(stack) or {
@@ -2150,6 +2261,8 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                 self._json(200, bridge.arm_doc())
             elif path == MISSION_PATH:
                 self._json(200, bridge.mission_doc())
+            elif path == NAV_PATH:
+                self._json(200, bridge.nav_doc())
             else:
                 cam = parse_qs(query).get("cam", [NOSE])[0]
                 code, payload, headers = bridge.frame(cam)

@@ -167,7 +167,7 @@ async def test_moss_nav_with_no_bridge_has_nothing_that_moves(cockpit: FakeCockp
         ({"mode": "demo"}, "--demo mode"),
         ({"running": False}, "no stack is running"),
         ({"blueprint": "moss-gamepad"}, "the pad and the base alone"),
-        ({"blueprint": "moss-arm"}, "hides the base stack"),
+        ({"blueprint": "moss-arm"}, "reads only the newest dimOS run, and that is moss-arm"),
         ({"transport": "zenoh"}, "speak LCM only"),
         ({"blueprint": "moss-litter"}, "only quackd's bridge"),
     ],

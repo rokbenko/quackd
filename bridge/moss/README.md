@@ -29,6 +29,7 @@ So the bridge does those four things over HTTP and nothing else.
 | `/arm/cancel` | POST | `{id}`: that cycle of quackd's cancelled while it runs, and nothing else, which is what quackd's close sends |
 | `/arm` | GET | the job and how it ended, the joints, the jaw gap, and whether the arm is in its drive pose |
 | `/mission` | GET | the litter mission's own `mission_status` |
+| `/nav` | GET | the base stack's own navigation, read off the bus: `exploring`, `explore_done`, `goal`, `goal_reached`, which the cockpit cannot show while moss-arm is the newest run |
 | `/session/keepalive` | POST | `{session, keepalive_s, started, end}`: one session's keepalive, named by the id its client drew, with what that session started |
 
 **The twist.** On `moss-explore` it goes out on `/tele_cmd_vel`, and on `moss-nav` on `/cmd_vel`,
@@ -168,7 +169,9 @@ MOSS's cockpit stops an idle `moss-nav` or `moss-explore` stack after 300 s with
 adapter turns its torque off as its run ends. quackd sends the cockpit's keepalive while it
 is connected. Once it disconnects nothing does, and an arm left outside its drive pose drops
 when the idle stop fires. quackd's close note says so at the end of every run that moved the
-arm and leaves it out. `MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off.
+arm and leaves it out. `MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off. The cockpit
+counts idle time only while the newest dimOS run is `moss-nav` or `moss-explore`, so with moss-arm
+started after the base stack, as the launcher's first gate makes it, it counts none at all.
 
 ## Rules this file lives by
 

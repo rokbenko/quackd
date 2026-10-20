@@ -108,6 +108,18 @@ class FakeCockpit:
     building its state raises."""
     refuse: dict[str, tuple[int, str]] = field(default_factory=dict)
     """Command name to (status, error): the answer a command gets instead of its own."""
+    newest: str | None = None
+    """The newest dimOS run, when it is not the base stack: `moss-arm`, started after the base
+    as tools/moss-fly.sh's gate 0 makes it. The cockpit reads only the newest run
+    (stack_status), so then its stack, its nav's exploring, its goal deferral and its idle
+    stop all go by that run and not by the base."""
+    explorer_replan_s: float = 2.0
+    """How soon the explorer sends a goal of its own over one sent beside it: the fake's own
+    number, since nobody has timed the explorer's next frontier."""
+    bus: Any = None
+    """The bridge's fake bus beside this cockpit, which carries what the cockpit and the
+    planner publish on the rover's one LCM bus (`nav_publish`), as the real bus carries it to
+    the bridge."""
     requests: list[Request] = field(default_factory=list)
     viewers: int = 0
     idle_reset_at: float = field(default_factory=time.monotonic)
@@ -116,6 +128,8 @@ class FakeCockpit:
         self._lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
         self._pending: tuple[dict[str, float], float] | None = None
+        self._beside: float | None = None
+        """When a goal went out beside a running explorer the cockpit could not see."""
         self._stopping = threading.Event()
         self._conns: set[socket.socket] = set()
         """Every connection being served, so a cockpit that goes away drops them all, as a
@@ -123,13 +137,26 @@ class FakeCockpit:
 
     # ── what the cockpit says ───────────────────────────────────────────────────────
 
+    @property
+    def shown(self) -> str:
+        """The blueprint the cockpit reads: the newest run's."""
+        return self.newest or self.blueprint
+
+    def _sees_exploring(self) -> bool:
+        """The cockpit's own rule: only an explore stack can be exploring."""
+        return self.exploring and "explore" in self.shown
+
+    def _publish(self, stream: str, value: Any) -> None:
+        if self.bus is not None:
+            self.bus.nav_publish(stream, value)
+
     def stack_doc(self) -> dict[str, Any]:
         if not self.running:
             return {"running": False}
         return {
             "running": True,
             "run_id": self.run_id,
-            "blueprint": self.blueprint,
+            "blueprint": self.shown,
             "pid": 4242,
             "started_at": "2026-10-20T10:00:00+00:00",
             "uptime_s": 12.0,
@@ -138,7 +165,7 @@ class FakeCockpit:
 
     def idle_doc(self) -> dict[str, Any]:
         idle_s = round(time.monotonic() - self.idle_reset_at, 1)
-        counted = self.idle_enabled and self.blueprint in ("moss-nav", "moss-explore")
+        counted = self.idle_enabled and self.shown in ("moss-nav", "moss-explore")
         return {
             "enabled": self.idle_enabled,
             "idle_s": idle_s,
@@ -153,6 +180,12 @@ class FakeCockpit:
             if self._pending is not None and time.monotonic() >= self._pending[1]:
                 self.goal, self.goal_reached = self._pending[0], None
                 self._pending = None
+                self._publish("goal_request", dict(self.goal))
+            replan = self._beside is not None and self.exploring
+            if replan and time.monotonic() - (self._beside or 0.0) >= self.explorer_replan_s:
+                # the explorer, never stopped, sends its next frontier over the goal
+                self.goal, self.goal_reached, self._beside = {"x": 9.9, "y": 9.9}, None, None
+                self._publish("goal_request", dict(self.goal))
             return {
                 "ts": time.time(),
                 "mode": self.mode,
@@ -162,7 +195,7 @@ class FakeCockpit:
                 "topics": {"odom": {"age_s": 0.05, "hz": self.odom_hz}},
                 "base": dict(self.base),
                 "nav": {
-                    "exploring": self.exploring,
+                    "exploring": self._sees_exploring(),
                     "explore_done": self.explore_done,
                     "goal": self.goal,
                     "goal_reached": self.goal_reached,
@@ -191,7 +224,11 @@ class FakeCockpit:
                 return 409, {"ok": False, "error": "refused: not a MOSS stack"}
             with self._lock:
                 self.exploring = body["action"] == "start"
-                self._pending = None
+                self._pending, self._beside = None, None
+                if body["action"] == "start":
+                    self._publish("explore_cmd", True)
+                else:
+                    self._publish("stop_explore_cmd", True)
             return 200, {"ok": True, "sent": "/explore_cmd#std_msgs.Bool"}
         if name == "goal":
             try:
@@ -202,19 +239,26 @@ class FakeCockpit:
                 return 409, {"ok": False, "error": "refused: not a MOSS stack"}
             wanted = {"x": round(x, 3), "y": round(y, 3)}
             with self._lock:
-                if self.exploring:
+                if self._sees_exploring():
                     self.exploring = False
+                    self._publish("stop_explore_cmd", True)
                     self._pending = (wanted, time.monotonic() + self.goal_defer_s)
                     return 200, {
                         "ok": True,
                         "queued_s": self.goal_defer_s,
                         "goal": {"x": x, "y": y},
                     }
+                # an explorer the cockpit cannot see is not stopped: it goes on, and its next
+                # frontier replaces this goal
+                self._beside = time.monotonic() if self.exploring else None
                 self.goal, self.goal_reached = wanted, None
+                self._publish("goal_request", dict(wanted))
             return 200, {"ok": True, "sent": "/goal_request#geometry_msgs.PoseStamped"}
         if name == "stop":
             with self._lock:
-                self.exploring, self._pending = False, None
+                self.exploring, self._pending, self._beside = False, None, None
+                self._publish("stop_explore_cmd", True)
+                self._publish("stop_movement", True)
             return 200, {"ok": True, "sent": "/tele_cmd_vel#geometry_msgs.Twist"}
         return 404, {"ok": False, "error": f"unknown command {name!r}"}
 
@@ -224,6 +268,7 @@ class FakeCockpit:
         """The planner's verdict on the goal it has now."""
         with self._lock:
             self.goal_reached = ok
+            self._publish("goal_reached", ok)
 
     def posted(self, name: str) -> list[Request]:
         return [r for r in self.requests if r.method == "POST" and r.path == f"/cmd/{name}"]
