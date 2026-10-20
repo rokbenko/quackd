@@ -72,6 +72,7 @@ import json
 import logging
 import math
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -297,8 +298,17 @@ def _head_yaw(state: dict[str, Any]) -> float | None:
 #: roughly-once-a-second glance, and below what an ssh tunnel will carry.
 CAMERA_FPS = 5.0
 
-#: How long one snapshot may take before it counts as failed.
+#: How long one snapshot may take before it counts as failed: from its request to the last
+#: byte of its picture, and the longest any one read waits for its next bytes (`fetch_still`).
 SNAPSHOT_TIMEOUT_S = 3.0
+
+#: The most one snapshot may be, in bytes. A still from a camera on a robot this size is tens
+#: of kilobytes, so an answer past this is not one picture, and reading on would fill memory.
+SNAPSHOT_MAX_BYTES = 8_000_000
+
+#: The most one read of a snapshot asks for, and so how often a fetch looks at its deadline
+#: and at whether it was told to stop.
+SNAPSHOT_CHUNK_BYTES = 64 * 1024
 
 #: How long `connect()` waits for the camera's first frame, through the failures a camera that
 #: is coming up answers with (`_snapshot_failure`), before it reports no camera for the run.
@@ -338,17 +348,75 @@ def _first_line(answer: Any) -> str:
     return ""
 
 
+class NotAStill(ValueError):
+    """An HTTP camera whose answer is not one still image: a `multipart/*` stream, which never
+    ends, or more bytes than one picture has."""
+
+
+class StillTooSlow(TimeoutError):
+    """An HTTP camera whose one picture did not arrive whole within the deadline, however fast
+    its bytes were still coming."""
+
+
+def fetch_still(
+    url: str,
+    *,
+    deadline_s: float,
+    max_bytes: int,
+    stop: threading.Event | None = None,
+) -> bytes:
+    """The bytes of one still image from an HTTP camera, fetched in the calling thread.
+
+    Self-contained, the standard library and nothing else, so another transport can take it
+    whole. Three things end a fetch that would otherwise read for as long as the camera sends:
+    an answer whose type is `multipart/*`, an MJPEG stream among them, is refused before a byte
+    of its body is read (`NotAStill`); a body longer than `max_bytes` is refused (`NotAStill`);
+    and past `deadline_s` from the request the fetch gives up, however fast bytes are still
+    arriving (`StillTooSlow`). Each read waits at most `deadline_s` for its next bytes, so a
+    fetch is over within twice that whatever the camera does. `stop`, once set, ends it at its
+    next read (`ConnectionAbortedError`): a transport that closes sets it, so no fetch reads on
+    behind it, and none keeps `asyncio.run` waiting on its thread at exit.
+
+    An HTTP error status raises urllib's `HTTPError`, whose body the caller can still read."""
+    started = time.monotonic()
+    with urllib.request.urlopen(url, timeout=deadline_s) as answer:
+        kind = answer.headers.get_content_type()
+        if kind.startswith("multipart/"):
+            raise NotAStill(
+                f"the camera answers with a {kind} stream, not one still image: give "
+                "--camera-url a URL that returns one still image, a JPEG or a PNG, on each request"
+            )
+        body = bytearray()
+        while True:
+            if stop is not None and stop.is_set():
+                raise ConnectionAbortedError("the fetch was stopped: the transport closed")
+            if time.monotonic() - started > deadline_s:
+                raise StillTooSlow(f"no whole picture within {deadline_s:g} s")
+            chunk = answer.read1(SNAPSHOT_CHUNK_BYTES)
+            if not chunk:
+                return bytes(body)
+            body += chunk
+            if len(body) > max_bytes:
+                raise NotAStill(
+                    f"the camera sent more than {max_bytes / 1e6:g} MB for one picture, which no "
+                    "still image is: give --camera-url a URL that returns one still image, a JPEG "
+                    "or a PNG, on each request"
+                )
+
+
 def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
     """What to say about a snapshot that did not come, and whether `connect()` should wait for
     another.
 
     It waits through two failures, the two a camera that is coming up answers with: a 503, and a
     request that ran out of time. Any other is a URL with nothing behind it, a refused
-    connection, a 404 or a page that is not a picture, and waiting longer would only put off
-    saying so."""
+    connection, a 404, a stream, or a page that is not a picture, and waiting longer would
+    only put off saying so."""
     if isinstance(error, SnapshotRefused | urllib.error.HTTPError):
         return str(error), error.code == HTTPStatus.SERVICE_UNAVAILABLE
     reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, StillTooSlow):
+        return str(reason), True
     if isinstance(reason, TimeoutError):
         return f"no answer within {SNAPSHOT_TIMEOUT_S:g} s", True
     return str(reason) or type(reason).__name__, False
@@ -506,6 +574,9 @@ class JsonRpcUnixTransport:
         self._fetch_s = 0.0
         """How long the newest fetch took, answered or not, which the snapshot loop waits out
         before it asks again."""
+        self._camera_stop = threading.Event()
+        """What `close()` sets to end every fetch still reading, at its next read, and then
+        replaces, for the fetches after it (`fetch_still`)."""
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._pump: asyncio.Task[None] | None = None
@@ -700,6 +771,10 @@ class JsonRpcUnixTransport:
         return self._last_state_at is not None
 
     async def close(self) -> None:
+        # A fetch runs in a thread, which cancelling the camera's task does not end: this does,
+        # at its next read, so none reads on behind the close or holds `asyncio.run` at exit.
+        self._camera_stop.set()
+        self._camera_stop = threading.Event()
         if self._camera_task is not None:
             self._camera_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -943,11 +1018,13 @@ class JsonRpcUnixTransport:
 
     async def _fetch_frame(self) -> Image.Image:
         url = self.camera_url or ""
+        stop = self._camera_stop  # this one, which `close()` sets, and not the one after it
 
         def fetch() -> bytes:
             try:
-                with urllib.request.urlopen(url, timeout=SNAPSHOT_TIMEOUT_S) as resp:
-                    return resp.read()
+                return fetch_still(
+                    url, deadline_s=SNAPSHOT_TIMEOUT_S, max_bytes=SNAPSHOT_MAX_BYTES, stop=stop
+                )
             except urllib.error.HTTPError as e:
                 # read here, in the thread and while the answer is open: the body says why
                 raise SnapshotRefused(e.code, str(e.reason or ""), _first_line(e)) from e

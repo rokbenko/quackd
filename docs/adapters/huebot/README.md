@@ -257,11 +257,13 @@ which drops the torque.
 
 ### The camera
 
-The shim's socket carries no picture. quackd takes one from `--camera-url`: any HTTP address
-that answers each request with one still image, a JPEG or a PNG, pulled five times a second. A
-frame older than 2 s is not handed out. Without a frame at connect, `observe`, `go_to`,
-`search_scan` and `approach_and` are not offered, and the manifest lists no camera. How a frame
-gets off Huebot's IMX219 is the maker's to say, and the same forward reaches it:
+The shim's socket carries no picture. quackd takes one from `--camera-url`: any HTTP address that
+answers each request with one still image, a JPEG or a PNG, pulled five times a second. An address
+that answers with a stream instead, MJPEG or anything else whose type is `multipart/*`, is refused
+before quackd reads any of it, naming the type. One picture may be at most 8 MB and has to arrive
+whole within 3 s. A frame older than 2 s is not handed out. Without a frame at connect, `observe`,
+`go_to`, `search_scan` and `approach_and` are not offered, and the manifest lists no camera. How a
+frame gets off Huebot's IMX219 is the maker's to say, and the same forward reaches it:
 
 ```bash
 ssh -L 8080:127.0.0.1:<port> <user>@<huebot>
