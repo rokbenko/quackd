@@ -102,7 +102,8 @@ NO_ADDRESS = (
     "wherever its maker put it. Forward the shim's socket over ssh, "
     "`ssh -L 9870:<socket> <huebot>`, then pass --address tcp://127.0.0.1:9870"
 )
-"""Why a connect with no `--address` is refused, and the forward that fixes it."""
+"""Why a Huebot with no `--address` is refused, as it is built (`make_transport`) and again at
+a connect, and the forward that fixes it."""
 
 LOOK_REFUSED = "Huebot's shim does not answer robot.look yet, so quackd sends it no look"
 """What a look is answered with, here, before anything is written (`up.SHIM_LOOK`)."""
@@ -485,7 +486,8 @@ class JsonRpcUnixTransport:
         camera_wait_s: float = FIRST_FRAME_WAIT_S,
     ) -> None:
         self.address = address or None
-        """Where the shim listens, or None, which `connect()` refuses (`NO_ADDRESS`)."""
+        """Where the shim listens, or None, which `connect()` refuses (`NO_ADDRESS`). Built by
+        `make_transport`, which every run does, it is never None: that refuses first."""
         self.camera_url = camera_url
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s

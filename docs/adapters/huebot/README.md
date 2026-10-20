@@ -60,8 +60,8 @@ ssh -L 9870:127.0.0.1:<port> <user>@<huebot>          # or a port on the robot's
 quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 ```
 
-quackd has no default address for the shim. Without `--address` it refuses before it opens
-anything, and says what to do:
+quackd has no default address for the shim. Without `--address` it refuses as the robot is
+built, before anything is opened or a run directory written, and says what to do:
 
 ```text
 huebot:jsonrpc needs --address: quackd knows no default for Huebot's shim, which is wherever its

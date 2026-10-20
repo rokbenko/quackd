@@ -478,8 +478,6 @@ async def test_no_address_is_refused_naming_the_ssh_forward(address: str | None)
     assert "ssh -L 9870:<socket> <huebot>" in NO_ADDRESS
     assert "--address tcp://127.0.0.1:9870" in NO_ADDRESS
     assert t._writer is None and t._pump is None, "nothing was opened"
-    with pytest.raises(TransportError, match="needs --address"):
-        await make("jsonrpc", address=address).connect()
 
 
 def test_a_run_with_no_address_is_refused_before_anything_moves(tmp_path: Path) -> None:
@@ -495,6 +493,47 @@ def test_a_run_with_no_address_is_refused_before_anything_moves(tmp_path: Path) 
     said = " ".join(result.output.split())
     assert "huebot:jsonrpc needs --address" in said, said
     assert "ssh -L 9870:<socket> <huebot>" in said and "tcp://127.0.0.1:9870" in said
+    assert list(tmp_path.iterdir()) == [], "the refusal came before the run directory"
+
+
+@pytest.mark.parametrize("address", [None, ""])
+def test_no_address_is_refused_as_the_body_is_built(address: str | None) -> None:
+    """Refused as the body is built, before it connects, since a run and a pilot flock build
+    every body before they write anything: refused at the connect, a run left its directory
+    behind. A description builds no transport, so what `validate` and `doctor` read still
+    answers without an address."""
+    with pytest.raises(TransportError) as refused:
+        make_adapter("huebot:jsonrpc", address=address)
+    assert str(refused.value) == NO_ADDRESS
+    assert describe_spec(parse_robot_spec("huebot:jsonrpc")).backend == "jsonrpc"
+    assert describe("jsonrpc").backend == "jsonrpc"
+
+
+def test_a_pilot_flock_with_no_address_for_its_huebot_writes_nothing(tmp_path: Path) -> None:
+    """A pilot flock builds its members before its run directory exists, so a Huebot with no
+    address stored refuses the flock with nothing on disk."""
+    from quackd.registry import Registry, RobotEntry, StoredFlock
+
+    registry = Registry(tmp_path / "registry")
+    registry.add_robot(RobotEntry(name="hue", spec="huebot:jsonrpc"))
+    registry.add_robot(RobotEntry(name="duck", spec="microduck:mock"))
+    registry.add_flock(StoredFlock(name="pair", members=["hue", "duck"]))
+    result = CliRunner().invoke(
+        app,
+        [
+            *("run", "flock-hello", "--flock", "pair", "--llm", "fake", "--no-gif", "--no-log"),
+            *("--runs-dir", str(tmp_path / "runs"), "--memory-dir", str(tmp_path / "memory")),
+            *("--registry-dir", str(tmp_path / "registry")),
+        ],
+        env={"COLUMNS": "400"},
+    )
+    assert result.exit_code != 0
+    said = " ".join(result.output.split())
+    assert "huebot:jsonrpc needs --address" in said, said
+    runs = tmp_path / "runs"
+    assert not runs.exists() or list(runs.iterdir()) == [], (
+        "the refusal came after the run directory"
+    )
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the refusal is Windows' own")
