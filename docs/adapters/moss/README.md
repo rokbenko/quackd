@@ -20,8 +20,9 @@ rather than from docs. Every name quackd spells lives in
 [`adapters/moss/src/quackd_moss/upstream_api.py`](../../../adapters/moss/src/quackd_moss/upstream_api.py).
 
 **quackd has never driven a MOSS rover.** The `cockpit` backend is exercised against a fake of
-MOSS's cockpit and against quackd's own bridge in `--fake`, both over loopback, and once by hand
-against MOSS's own cockpit in its `--demo` mode ([below](#the-check-against-mosss-own-cockpit)).
+MOSS's cockpit and against quackd's own bridge in `--fake`, both over loopback, and by hand
+against MOSS's own cockpit in its `--demo` mode, on Windows and on Linux
+([below](#the-check-against-mosss-own-cockpit)).
 Nothing here has run on a rover.
 
 ```bash
@@ -39,7 +40,7 @@ quackd run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904
 | `--robot` | What it is | Status |
 |---|---|---|
 | `moss:mock` | the rover in memory: the tracks with their power floor and full power pivots, the ramp, the planner, the explorer, the arm cycle, the litter mission and the idle stop, with a synthetic nose and wrist camera | ✅ every verb runs offline in the test suite |
-| `moss:cockpit` | the real rover: MOSS's own cockpit over HTTP, and quackd's bridge on the rover for what the cockpit has no command for | 🧪 names VERIFIED at the pin, exercised against fakes over loopback and once against MOSS's `--demo` cockpit, **never run against a rover** |
+| `moss:cockpit` | the real rover: MOSS's own cockpit over HTTP, and quackd's bridge on the rover for what the cockpit has no command for | 🧪 names VERIFIED at the pin, exercised against fakes over loopback and against MOSS's `--demo` cockpit on Windows and on Linux, **never run against a rover** |
 
 The mock takes the rover's shape from its address, which a test or a dry run uses to see what a
 rover without a bridge, an arm or a mission is offered:
@@ -339,13 +340,24 @@ Python 3.11.8. `--demo` serves a synthetic rover with no bus and no stack behind
 | `MossCockpit.connect` | the same 500 | refused: "the cockpit at http://127.0.0.1:50982 answered, but not with the rover's state" |
 
 The 500 is the cockpit's machine metrics, which read `/proc/stat` and call `os.getloadavg`, and
-Windows has neither, so the cockpit's own state document and a connect to a cockpit that answers
-it are left for a Linux machine: this one's WSL has no distribution but Docker Desktop's. The demo
-answers commands with code of its own rather than the live cockpit's, so the check proved the
-HTTP side, the header, the framing and the refusals, and not the live cockpit's goal deferral
-while exploring. One thing the maker may want to know: the 500s left no line in the cockpit's
-log, because its handler logs failures through `log_error`, which the standard library sends
-through `log_message`, and the cockpit silences `log_message`.
+Windows has neither. The demo answers commands with code of its own rather than the live
+cockpit's, so the check proved the HTTP side, the header, the framing and the refusals, and not
+the live cockpit's goal deferral while exploring. One thing the maker may want to know: the 500s
+left no line in the cockpit's log, because its handler logs failures through `log_error`, which
+the standard library sends through `log_message`, and the cockpit silences `log_message`.
+
+The same day the same copy ran on Linux, in a `python:3.12-slim` container, Python 3.12.15 with
+numpy 2.5.4 the only package added, its port published on the laptop's loopback, and quackd's
+client read it from Windows:
+
+| Asked | The cockpit answered | quackd |
+|---|---|---|
+| `GET /state.json` | 200, the state document: `mode` `demo`, a running `moss-explore` stack, `bus.transport` `demo`, the base at 11.58 V and 58% with its telemetry 0.3 s old, and the odometry at 10 Hz | `get_state` read the pose, the battery, both ages, the stall flag and the base's mode |
+| `MossCockpit.connect` | the same document | refused by name: "moss: the cockpit at http://127.0.0.1:18904 is in --demo mode, a synthetic rover with no bus behind it: start it without --demo on the rover" |
+
+So quackd reads the cockpit's own state document as the cockpit writes it. A connect that gets
+past it needs a live cockpit, since a `--demo` one is refused on purpose, before the bridge is
+asked.
 
 ## Upstream API
 

@@ -55,7 +55,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **Nothing has run on a MOSS rover**, and quackd's bridge has never run on one. The client is
   exercised against a fake of the cockpit and against the bridge in its fake mode over loopback,
-  and once by hand against MOSS's own cockpit in its demo mode.
+  and by hand against MOSS's own cockpit in its demo mode, on Windows and in a Linux container,
+  where quackd read the cockpit's own state document and refused the demo at connect by name.
 - **How far one pulse of a turn on the spot turns the rover is unmeasured**, so `search_scan`'s
   angles are the ones it asked for. Step 6 of the hardware checklist measures it.
 - **A nose frame carries `frame_taken_at` only when its own stamp passes the bridge's check**

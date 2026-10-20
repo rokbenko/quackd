@@ -15,7 +15,8 @@ is those four things, and nothing else:
 - `POST /arm/cycle`: the maker's own `tools/moss_arm_play.py`, run as a subprocess exactly as
   MOSS's mission runs it, and a cancel that stops the script, cancels the trajectory through an
   RPC client of the bridge's own and reads the joints twice to see that they hold.
-  `POST /arm/cancel` is that cancel for the one cycle of quackd's its id names, and nothing else.
+  `POST /arm/cancel` is that cancel for one cycle of quackd's, the one its id names, and for
+  nothing else.
 - `POST /stop`: on moss-litter the mission's own stop first, then at once the arm's cancel and a
   zero twist, and only then the wait that confirms the mission's stop. And
   `POST /session/keepalive`, fed by quackd's heartbeat: three missed periods and the bridge

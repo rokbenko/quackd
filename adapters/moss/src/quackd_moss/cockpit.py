@@ -354,8 +354,8 @@ class BridgeClient:
         return status, doc
 
     def arm_cancel(self, job_id: str) -> dict[str, Any]:
-        """The cancel for the one cycle of quackd's `job_id` names, which may take as long as
-        the cancel inside a stop."""
+        """The cancel for one cycle of quackd's, the one `job_id` names, which may take as long
+        as the cancel inside a stop."""
         body = {"id": job_id}
         _, doc = self._doc(self.slow, "POST", ARM_CANCEL_PATH, body, timeout_s=STOP_TIMEOUT_S)
         return dict(doc)
