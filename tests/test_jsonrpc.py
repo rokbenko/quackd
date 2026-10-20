@@ -34,7 +34,13 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception import ASSUMED_LENS
 from quackd.perception.base import Detection
 from quackd.safety import Executor
-from quackd.transport.base import HeartbeatError, Intent, TransportError, frame_head_yaw_of
+from quackd.transport.base import (
+    HeartbeatError,
+    Intent,
+    TransportError,
+    frame_head_yaw_of,
+    twist_shown_since_of,
+)
 from quackd.transport.mock import MockTransport
 from quackd.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
 from quackd.verbs.registry import VerbRegistry
@@ -2205,7 +2211,9 @@ async def _over_a_slow_link(
 ) -> Any:
     """Run `verb` against `fake` through a link `periods` frame periods slow each way, connected
     over a quick one first, since the handshake is not what these tests are about, and return
-    its result. The head's fade wait is left out for the same reason."""
+    its result. The head's fade wait is left out for the same reason. The verb is handed the
+    adapter, as a run hands it over, and not the transport inside it: `search_scan` reads which
+    turns robotd took off the object it is handed, and the adapter used to hide it."""
     await fake.start()
     link = _DelayingLink(fake.port)
     await link.start()
@@ -2215,7 +2223,9 @@ async def _over_a_slow_link(
         assert t.camera_working and t.camera_fov_deg is not None
         t.head_fade_s = 0.0
         link.delay = periods / STATE_HZ
-        ex = Executor(registry, t, contract=MOVERS.frontmatter, detector=detector(t))
+        ex = Executor(
+            registry, MicroduckAdapter(t), contract=MOVERS.frontmatter, detector=detector(t)
+        )
         return await ex.run_verb(verb, params)
     finally:
         await t.close()
@@ -3368,6 +3378,16 @@ async def test_the_head_fade_is_robotds_on_a_robotd_that_glances(api: int, fade:
     finally:
         await fake.stop()
     assert MicroduckAdapter(MockTransport()).head_fade_s == 0.0
+
+
+def test_the_adapter_passes_on_which_turns_robotd_took() -> None:
+    """`search_scan` counts its turns by the ones robotd's state showed it took, and reads that
+    off what it is handed, which in a run is the adapter. The adapter did not pass it on, so a
+    run's scan counted the turns it sent. The mock says nothing of the kind, and must not read as
+    a body that took none."""
+    t = JsonRpcUnixTransport("tcp://127.0.0.1:1")
+    assert MicroduckAdapter(t).twist_shown_since == t.twist_shown_since
+    assert twist_shown_since_of(MicroduckAdapter(MockTransport()), 0.0) is None
 
 
 async def test_go_to_lets_a_glance_fade_before_it_steers(

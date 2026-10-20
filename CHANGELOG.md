@@ -46,6 +46,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `robot add` and `robot edit --spec` still refuse a spec that does not parse.
   `tests/test_robot_registry.py` and `tests/test_cli_robot.py` cover both kinds, and the second
   fails on 0.20.0 at its first `robot list`.
+- **A Microduck's `search_scan` counts the turns robotd took in a run, as 0.18.0 said it did.**
+  0.18.0 has the scan count the turns it made by the ones robotd's state showed it took, read off
+  what the verb is handed, which in a run is the Microduck's adapter. The adapter never passed that
+  on from the `jsonrpc` transport, so a run's scan counted the turns it sent: over a slow link, a
+  scan stopped on a robotd that took none of them said it stopped `after 1 of 10 turns`, a turn
+  robotd never took, where it now says the robot's own state did not confirm the turn sent to it.
+  The tests handed the verb the transport itself, which is why they passed. The slow-link tests in
+  `tests/test_jsonrpc.py` hand it the adapter now, as a run does, and the scan's test fails on the
+  two slower links without the fix.
 
 ## [0.20.0] — 2026-10-20
 

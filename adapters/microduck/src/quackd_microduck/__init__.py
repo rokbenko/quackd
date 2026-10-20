@@ -346,6 +346,18 @@ class MicroduckAdapter:
         return getattr(self.transport, "frames_upright", False) is True
 
     @property
+    def twist_shown_since(self) -> Callable[[float], bool] | None:
+        """The transport's own `twist_shown_since` on `jsonrpc`, and None on the simulators and
+        the mock, which say nothing of the kind. `search_scan` reads it off the object it was
+        handed, this adapter (`quackd.transport.base.twist_shown_since_of`), to count the turns
+        it made by the ones robotd's state showed it took, since nothing answers a `robot.move`.
+        This adapter did not pass it on before 0.21.0, so a run's scan counted the turns it sent:
+        over a slow link, one stopped on a robotd that took none of them said it had made a turn.
+        A method here that answered for every backend would read as a body that took none."""
+        shown = getattr(self.transport, "twist_shown_since", None)
+        return shown if callable(shown) else None
+
+    @property
     def head_pitches(self) -> bool:
         """Whether a look's pitch moves this duck's camera: on every backend but the cartoon,
         whose world is flat, so `watch` asks no `height` there."""
