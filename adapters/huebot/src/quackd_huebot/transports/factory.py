@@ -8,6 +8,7 @@ wherever its maker put it, so `--address` says where, and building it without on
 
 from __future__ import annotations
 
+from quackd.adapters.base import AdapterError
 from quackd.transport.base import DuckTransport, TransportError
 
 TRANSPORT_NAMES = ("mock", "jsonrpc")
@@ -29,8 +30,10 @@ def make_transport(
 
         # Refused here, as the body is built, and not at its connect: a run and a pilot flock
         # build every body before they write anything, so the refusal leaves nothing on disk.
-        # A description builds no transport, so `validate` and `doctor` answer without one.
+        # A description builds no transport, so `validate` and `doctor` answer without one. It
+        # is an adapter's refusal, which is a TransportError too, because `quackd robot release`
+        # and `rest-pose` build a robot catching only that, and anything else was a traceback.
         if not address:
-            raise TransportError(NO_ADDRESS)
+            raise AdapterError(NO_ADDRESS)
         return JsonRpcUnixTransport(address=address, camera_url=camera_url)
     raise TransportError(f"unknown transport {name!r}; choose one of {', '.join(TRANSPORT_NAMES)}")

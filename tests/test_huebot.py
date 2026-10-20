@@ -679,6 +679,30 @@ def test_a_pilot_flock_with_no_address_for_its_huebot_writes_nothing(tmp_path: P
     )
 
 
+@pytest.mark.parametrize(
+    ("command", "refusal"),
+    [("release", "huebot:jsonrpc needs --address"), ("rest-pose", "has no joints")],
+)
+def test_a_robot_command_refuses_a_huebot_with_no_address_in_one_line(
+    tmp_path: Path, command: str, refusal: str
+) -> None:
+    """`quackd robot release` builds the robot to ask whether it is an arm, and catches only an
+    adapter's refusal there, so a Huebot with no address went past it as a traceback. It is an
+    adapter's refusal now. `rest-pose` refuses a body with no joints before it builds one."""
+    from quackd.registry import Registry, RobotEntry
+
+    Registry(tmp_path).add_robot(RobotEntry(name="hue", spec="huebot:jsonrpc"))
+    result = CliRunner().invoke(
+        app,
+        ["robot", command, "hue", "--yes", "--registry-dir", str(tmp_path)],
+        env={"COLUMNS": "400"},
+    )
+    assert result.exit_code == 1, result.output
+    assert not isinstance(result.exception, TransportError), result.exception
+    said = " ".join(result.output.split())
+    assert refusal in said, said
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="the refusal is Windows' own")
 async def test_a_unix_socket_on_windows_names_the_forward() -> None:
     with pytest.raises(TransportError, match=r"ssh -L 9870:<socket> <huebot>"):
