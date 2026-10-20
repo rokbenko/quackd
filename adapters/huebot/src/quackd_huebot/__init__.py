@@ -366,7 +366,7 @@ __all__ = [
 
 
 # What this adapter reads from upstream, for `quackd doctor`: the protocol Huebot's shim answers,
-# read in the Microduck's source, beside what its maker says of his side. Declared here rather
+# read in the Microduck's source, beside what its maker says of Huebot. Declared here rather
 # than in a table in the core (ADR-0022).
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from quackd_huebot import upstream_api as shim

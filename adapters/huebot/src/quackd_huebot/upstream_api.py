@@ -1,7 +1,7 @@
 """The only file in quackd allowed to spell a method name Huebot's shim answers.
 
-Huebot's own API is closed. Its maker, Leif Rydenfalk, wrote to Rok Benko on 2026-10-15 that he
-will run a shim on the robot that answers the JSON-RPC the Microduck's `robotd` speaks, and named
+Huebot's own API is closed. Its maker, Leif Rydenfalk, wrote to Rok Benko on 2026-10-15 of a
+shim to run on the robot that answers the JSON-RPC the Microduck's `robotd` speaks, and named
 `hello`, `robot.move`, `robot.stop`, `robot.head`, `robot.state` and `robot.health`. So the
 protocol here is robotd's, read in the Microduck's own source at the pin the Microduck adapter
 reads it at, daemon-v0.16.1 (d818af5), and every ref that says what that protocol is stays
@@ -9,7 +9,7 @@ VERIFIED, as a fact about the protocol.
 
 Whether Huebot's shim answers it that way is another matter. Nobody has seen the shim, Huebot's
 own API is closed, and the maker's page publishes neither joint names nor a joint order, so every
-claim about Huebot's side is an UNVERIFIED ref, sourced to his email of 2026-10-15 and to his page,
+claim about Huebot is an UNVERIFIED ref, sourced to the maker's email of 2026-10-15 and page,
 ce-net.com/huebot, read on 2026-10-20: that the shim answers the calls quackd makes, that it does
 not answer `robot.look` yet, the order of its joints, its deadman, its skills, and what
 `robot.enable` does for a Huebot on the floor. `docs/adapters/huebot/README.md` is the human
@@ -19,7 +19,7 @@ the `jsonrpc` backend alone.
 
 The protocol refs are copied from `quackd_microduck.upstream_api` rather than imported from it,
 because the two robots may diverge: a Microduck re-read moves that file, and this one moves when
-Huebot's maker says his shim does. While both read the same pin, the facts they share agree, and
+Huebot's maker says the shim does. While both read the same pin, the facts they share agree, and
 a test holds them to it.
 
 The maker's own code, github.com/Leif-Rydenfalk/walking-robot-kit, is the servo bus alone: a
@@ -371,7 +371,7 @@ SHIM_CALLS = UpstreamRef(
     "Huebot's shim answers the calls quackd makes as robotd does",
     "UNVERIFIED",
     MAKER,
-    "Leif Rydenfalk's email of 2026-10-15 says the shim he will run on Huebot will answer the "
+    "Leif Rydenfalk's email of 2026-10-15 says the shim to run on Huebot will answer the "
     "JSON-RPC quackd speaks to robotd, and names hello, robot.move, robot.stop, robot.head, "
     "robot.state and robot.health. quackd also needs robot.subscribe, without which the connect "
     "fails as not robotd, and robot.do, robot.sound and robot.enable for its verbs, whose "

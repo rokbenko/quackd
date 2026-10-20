@@ -15,7 +15,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ([ce-net.com/huebot](https://ce-net.com/huebot)), with behaviour code of its own (needs, an LED
   face, coming to your hand), which does not run the Microduck runtime. Its own API is closed, and
   its maker is writing a shim for the robot that is to answer the same calls the Microduck's
-  `robotd` answers, the same way, as he wrote on 2026-10-15, so `huebot:jsonrpc` is the Microduck's
+  `robotd` answers, the same way, as written on 2026-10-15, so `huebot:jsonrpc` is the Microduck's
   transport, copied and renamed rather than imported so that the two can diverge: the same protocol
   and version gate, the same check that the robot took each twist, the same posture allowlist and
   hold on a walk once the robot stops standing, and the same reliance on the robot's own deadman.
@@ -24,8 +24,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   run it against a Huebot or against its shim, which nobody has seen
   ([docs/adapters/huebot/README.md](docs/adapters/huebot/README.md)).
 - **What Huebot's shim must answer**, call by call, is the centre of its page, written for its
-  maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls he
-  named, `robot.do`, `robot.sound` and `robot.enable` for the verbs, a boolean `accepted` in
+  maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls its
+  maker named, `robot.do`, `robot.sound` and `robot.enable` for the verbs, a boolean `accepted` in
   their answers, the fields of `robot.state` quackd reads, robotd's deadman, and a socket on the
   robot reached through ssh and never an open port, since the protocol has no authentication. Its
   [hardware checklist](docs/adapters/huebot/hardware-checklist.md) tests the deadman, with quackd
@@ -52,8 +52,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
   official from its maker's page as read on 2026-10-20, its mass not published, no arms on that
   page, and notes that its maker wrote on 2026-10-15 that the walk's balance is still being tuned
-  and that its head turns on four servos, and that `quack` and `say` send `robot.sound`, which he
-  has not named among the shim's calls.
+  and that its head turns on four servos, and that `quack` and `say` send `robot.sound`, which the
+  maker has not named among the shim's calls.
 - **Its upstream refs.** robotd's protocol stays VERIFIED at the Microduck's pin, `d818af5`, and
   every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers
   the calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the

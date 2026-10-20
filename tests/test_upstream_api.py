@@ -562,7 +562,7 @@ def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at
 ):
     """Huebot's shim answers the JSON-RPC robotd speaks, so the protocol refs are robotd's, read
     in the Microduck's source at the pin and VERIFIED as facts about the protocol. Every claim
-    about Huebot's own side is the maker's word, UNVERIFIED and sourced to his page, and each of
+    about Huebot's own side is the maker's word, UNVERIFIED and sourced to the maker, and each of
     the ones the design names has a ref of its own: that the shim answers the calls, that it has
     no robot.look yet, the joint order, the deadman, the skills and robot.enable on the floor."""
     api = huebot_api

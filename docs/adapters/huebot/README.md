@@ -3,9 +3,9 @@
 A 25 cm biped from Leif Rydenfalk, in Shenzhen ([ce-net.com/huebot](https://ce-net.com/huebot)),
 installed with `quackd[huebot]`: fifteen servos, an Arduino UNO Q for a brain, and behaviour code of
 its own (needs, an LED face, coming to your hand). It does not run the Microduck runtime, its maker
-wrote on 2026-10-15, and its own API is closed, so he is writing a shim for the robot that is to
-answer the same calls the Microduck's `robotd` answers, the same way. `huebot:jsonrpc` speaks that
-to it, and `huebot:mock` is the core's scripted body.
+wrote on 2026-10-15, and its own API is closed, so the maker is writing a shim for the robot that
+is to answer the same calls the Microduck's `robotd` answers, the same way. `huebot:jsonrpc`
+speaks that to it, and `huebot:mock` is the core's scripted body.
 
 **quackd has never run on a Huebot, and nobody has seen the shim.** Everything below is what
 quackd sends and reads, and what the shim is asked to answer for that to work. Every backend's
@@ -292,10 +292,10 @@ at. Every name quackd spells lives in
 copied from the Microduck's rather than imported, and a test holds the two to agree while they
 read one pin.
 
-Huebot's side is the maker's word: his email to Rok Benko of 2026-10-15, which is not public,
-and his page, [ce-net.com/huebot](https://ce-net.com/huebot), read on 2026-10-20. His public
-code, [walking-robot-kit](https://github.com/Leif-Rydenfalk/walking-robot-kit), Apache-2.0 and
-CC BY-SA 4.0, is the servo bus alone, a Rust daemon serving an HTTP control page on port 8938,
+Huebot's side is the maker's word: an email to Rok Benko of 2026-10-15, which is not public,
+and the maker's page, [ce-net.com/huebot](https://ce-net.com/huebot), read on 2026-10-20. The
+maker's public code, [walking-robot-kit](https://github.com/Leif-Rydenfalk/walking-robot-kit),
+Apache-2.0 and CC BY-SA 4.0, is the servo bus alone, a Rust daemon serving an HTTP control page on port 8938,
 with no JSON-RPC, and quackd does not speak it. Nothing here has been run against Huebot's shim.
 
 ### VERIFIED (robotd's protocol, read at the pin)
@@ -331,11 +331,11 @@ with no JSON-RPC, and quackd does not speak it. Nothing here has been run agains
 
 | Thing | The maker's word | What quackd does |
 |---|---|---|
-| `Huebot's shim answers the calls quackd makes as robotd does` | his email of 2026-10-15: the shim will answer the JSON-RPC quackd speaks to robotd, and he named `hello`, `robot.move`, `robot.stop`, `robot.head`, `robot.state` and `robot.health` | speaks robotd's protocol to it, and asks for four calls he did not name, `robot.subscribe`, `robot.do`, `robot.sound` and `robot.enable` ([above](#what-huebots-shim-must-answer)) |
+| `Huebot's shim answers the calls quackd makes as robotd does` | the maker's email of 2026-10-15: the shim will answer the JSON-RPC quackd speaks to robotd, and it names `hello`, `robot.move`, `robot.stop`, `robot.head`, `robot.state` and `robot.health` | speaks robotd's protocol to it, and asks for four calls it does not name, `robot.subscribe`, `robot.do`, `robot.sound` and `robot.enable` ([above](#what-huebots-shim-must-answer)) |
 | `robot.look, which Huebot's shim does not answer yet` | the same email: `robot.look` is not on Huebot's side yet, and the head turns with four servos | refuses a look itself, before anything is written, offers no `gaze` and no `watch`, and waits for no glance to fade before `go_to` and `search_scan` steer |
-| `robot.state.joints in the Microduck's order, head_yaw at index 7, positive to the left` | his page names fifteen servos and neither their names nor their order | asks the shim for robotd's order, and reads index 7 as `extras.head_yaw_deg`, which nothing steers on |
+| `robot.state.joints in the Microduck's order, head_yaw at index 7, positive to the left` | the maker's page names fifteen servos and neither their names nor their order | asks the shim for robotd's order, and reads index 7 as `extras.head_yaw_deg`, which nothing steers on |
 | `Huebot stops when robot.move notifications stop arriving` | assumed: a shim that answers robotd's calls need not stop as robotd does | relies on it whenever the link goes, and claims it in the manifest only once a Huebot has passed step 3 of the checklist, which tests it on a stand before anything walks on the floor |
-| `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is his to say | offers `sit`, `stand` and `kick` only for the skills the shim lists, and refuses any other `robot.do` without writing it. `grab` is offered nowhere until he says what `ground_pick` does on Huebot |
+| `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is the maker's to say | offers `sit`, `stand` and `kick` only for the skills the shim lists, and refuses any other `robot.do` without writing it. `grab` is offered nowhere until he says what `ground_pick` does on Huebot |
 | `stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen Huebot up` | Huebot stands and steps, and the walk's balance is still being tuned. Getting up from a fall is not published | sends `robot.enable {on: true}` only to a robot that is down and nobody holds, waits up to 10 s for it to read standing, and every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
 
 ## What this robot is, as numbers
