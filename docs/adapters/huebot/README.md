@@ -223,8 +223,9 @@ step of the [hardware checklist](hardware-checklist.md) tests it, before anythin
   robot that is down and that nobody holds. On robotd it is policy execution, which can bring a
   limp robot up as a side effect of being asked to drive, so quackd treats it as motion. After
   it, quackd reads the state every 0.25 s, sending nothing more, and calls the robot upright the
-  first time `policy` reads `walk` or `stand`, with `fallen` false and nobody holding it. After
-  10 s without that, it says the robot may need a hand. A refusal is a `stand_up` that failed.
+  first time `policy` reads `walk` or `stand`, with `fallen` false and nobody holding it. The wait
+  ends at once if somebody picks the robot up or nothing reports on it. After 10 s without any of
+  that, it says the robot may need a hand. A refusal is a `stand_up` that failed.
 
 ### A boolean `accepted`
 

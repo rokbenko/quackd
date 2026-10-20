@@ -916,8 +916,8 @@ async def test_a_camera_that_never_answers_is_no_camera(shim: FakeShim) -> None:
 
 async def test_stand_up_returns_as_soon_as_the_robot_stands_and_sends_nothing_meanwhile() -> None:
     """The robot gets up 1.2 s after `robot.enable`. A single read three seconds later, which
-    the Microduck's verb made, would have kept the pilot waiting; this one answers within a
-    poll of it, and nothing goes to the shim meanwhile but the reads it already makes."""
+    the Microduck's verb made before 0.21.0, would have kept the pilot waiting; this one answers
+    within a poll of it, and nothing goes to the shim meanwhile but the reads it already makes."""
     fake = FakeShim(fallen=True)
     fake.stand_after_s = 1.2
     await fake.start()
@@ -1008,22 +1008,41 @@ async def test_stand_up_calls_the_robot_upright_on_the_poll_it_stands() -> None:
     ("after", "summary"),
     [
         (_mock_state("unknown", policy="limp_pose", fallen=True), "still answering a fall itself"),
-        (_mock_state("unknown", fall_detection=False), "nothing reports whether it is upright"),
-        (_mock_state("unknown", picked_up=True), "but somebody is holding Huebot"),
         (_mock_state("unknown", policy="homing"), "10 s later posture is unknown"),
     ],
-    ids=["answering-a-fall", "blind", "held", "unknown"],
+    ids=["answering-a-fall", "unknown"],
 )
 async def test_stand_up_judges_the_last_reading_once_the_wait_is_up(
     after: DuckState, summary: str
 ) -> None:
-    """A robot still in its own answer to a fall is told to run the verb again, one nothing
-    reports on is not called upright, one somebody picked up meanwhile is said to be held, and
-    each only once the whole wait is up."""
+    """A robot still in its own answer to a fall is told to run the verb again, and one whose
+    posture is unknown says why, each only once the whole wait is up."""
     robot = _AfterEnable(DOWN, after)
     result = await _stand_up_on(robot)
     assert not result.ok and summary in result.summary, result.summary
     assert sum(robot.sleeps) == STAND_UP_WAIT_S
+
+
+@pytest.mark.parametrize(
+    ("after", "summary"),
+    [
+        (_mock_state("unknown", fall_detection=False), "nothing reports whether it is upright"),
+        (_mock_state("unknown", picked_up=True), "but somebody is holding Huebot"),
+        (_mock_state("standing", picked_up=True), "but somebody is holding Huebot"),
+    ],
+    ids=["blind", "held", "held-upright"],
+)
+async def test_stand_up_stops_waiting_for_a_robot_somebody_picks_up_or_nothing_reports_on(
+    after: DuckState, summary: str
+) -> None:
+    """A robot somebody picks up while `stand_up` waits is in their hands, and one nothing
+    reports on cannot be called upright, so the wait ends on the first reading that says so,
+    rather than running on to judge legs a person is holding. One held up in the air reads as
+    standing and is still not called upright."""
+    robot = _AfterEnable(DOWN, after)
+    result = await _stand_up_on(robot)
+    assert not result.ok and summary in result.summary, result.summary
+    assert robot.sleeps == [STAND_UP_POLL_S], robot.sleeps
 
 
 @pytest.mark.parametrize(

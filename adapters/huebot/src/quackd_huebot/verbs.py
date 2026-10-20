@@ -238,11 +238,13 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
     whether it is held at all, and one whose walk is held back for a verb still running.
 
     After the request it reads the robot every `STAND_UP_POLL_S`, sending nothing more, and
-    calls it upright the first time a reading says it stands. Only when `STAND_UP_WAIT_S` has
-    passed without one is the last reading judged: a robot still down may need a hand, and one
-    still in its own answer to a fall is told to run the verb again in a moment. A single read
-    three seconds after the request, as the Microduck's verb made, told a robot that took four
-    seconds to get up that it might need a hand."""
+    calls it upright the first time a reading says it stands. The wait ends at once on a robot
+    somebody picks up or nothing reports on, rather than running on to judge legs a person is
+    holding. Only when `STAND_UP_WAIT_S` has passed without either is the last reading judged: a
+    robot still down may need a hand, and one still in its own answer to a fall is told to run
+    the verb again in a moment. A single read three seconds after the request, as the
+    Microduck's verb made before 0.21.0, told a robot that took four seconds to get up that it
+    might need a hand."""
     state = await ctx.transport.get_state()
     if (held := _held(state)) is not None:
         return VerbResult.fail(f"cannot stand_up: {held}")
@@ -271,16 +273,18 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
         await ctx.transport.sleep(STAND_UP_POLL_S)
         state = await ctx.transport.get_state()
         waited = ctx.transport.now() - asked
+        if _blind(state):
+            # Reporting "upright" here is how a face-down robot could pass: nothing was
+            # reporting falls, so `fallen` was False, so this would have said it worked.
+            return VerbResult.fail(
+                "asked Huebot to drive, but nothing reports whether it is upright"
+            )
+        if (held := _held(state)) is not None:
+            return VerbResult.fail(f"asked Huebot to drive, but {held}")
         if _upright(state):
             return VerbResult.success(f"upright after {waited:.1f} s", waited_s=round(waited, 2))
         if waited >= STAND_UP_WAIT_S:
             break
-    if _blind(state):
-        # Reporting "upright" here is how a face-down robot could pass: nothing was reporting
-        # falls, so `fallen` was False, so this would have said it worked.
-        return VerbResult.fail("asked Huebot to drive, but nothing reports whether it is upright")
-    if (held := _held(state)) is not None:
-        return VerbResult.fail(f"asked Huebot to drive, but {held}")
     if (fall := _answering_a_fall(state)) is not None:
         # Read before `fallen`, which a robot being posed on the floor reads too.
         return VerbResult.fail(
