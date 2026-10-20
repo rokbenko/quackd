@@ -212,6 +212,22 @@ def alohamini_lookout_strategy(obs: Observation, step: int, history: list[Exchan
     )
 
 
+def moss_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """One frame, then the answer. MOSS has no head to turn and no voice quackd can use, so it
+    looks where its nose points, and the report has nowhere to go but the reason it succeeds
+    with. Nothing here moves a track or the arm."""
+    if _count_calls(history, "observe") == 0:
+        return ToolCall(name="observe", arguments={})
+    if balls := _detections(obs, "ball"):
+        return ToolCall(name="declare_success", arguments={"reason": _where(balls[0])})
+    return ToolCall(
+        name="declare_success",
+        arguments={
+            "reason": "nothing in view, and this task does not turn the rover to look further"
+        },
+    )
+
+
 def toddlerbot_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
     """Head only, no legs, and no voice to report with.
 
@@ -549,6 +565,7 @@ STRATEGIES: dict[str, Strategy] = {
     "alohamini-lookout": alohamini_lookout_strategy,
     "toddlerbot-lookout": toddlerbot_lookout_strategy,
     "lerobot-lookout": lerobot_lookout_strategy,
+    "moss-lookout": moss_lookout_strategy,
 }
 
 PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {

@@ -76,9 +76,11 @@ only. Use `tegrastats`, whose `GR3D_FREQ` field is the GPU, or `jtop` from `jets
 for the same numbers with a screen around them. The host daemon reads one `tegrastats` line
 for `quackd doctor --host`.
 
-**One of quackd's eight bodies already carries a Jetson.** A ToddlerBot has one on its back,
+**Two of quackd's nine bodies can carry a Jetson.** A ToddlerBot has one on its back,
 and `bridge/toddlerbot/` is the daemon that runs there
-([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)). That is the case where the host
+([adapters/toddlerbot/README.md](../adapters/toddlerbot/README.md)), and one of MOSS's builds puts
+a Jetson Orin Nano Super in the rover, where MOSS's own stack runs and quackd's bridge beside it
+([adapters/moss/README.md](../adapters/moss/README.md)). That is the case where the host
 daemon, and perhaps a model server, share a board with a robot's control loop, and it has a section
 of its own below. The Microduck's onboard computer is a Radxa Zero 3W on an alpha and Seeed's
 RK3566 board on a beta, and the Open Duck Mini's is a Raspberry Pi Zero 2 W, and none of them is

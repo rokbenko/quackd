@@ -1,4 +1,4 @@
-"""The eight robots quackd publishes, as data, importing none of them.
+"""The nine robots quackd publishes, as data, importing none of them.
 
 `factory.py` builds robots; this file only says which ones exist. The split matters because
 `quackd list-adapters` and `quackd doctor` have to render the whole table on a machine where
@@ -6,7 +6,7 @@ none of the adapters is installed, and a table that had to import an adapter to 
 not. Everything here is a string.
 
 An adapter that is installed also describes itself, through the `quackd.adapters` entry point
-group, and a third party's adapter is discovered that way and nowhere else. The eight below
+group, and a third party's adapter is discovered that way and nowhere else. The nine below
 are only the ones quackd ships and supports, listed in a fixed order because the tables that
 print them are order sensitive and `tests/test_adapters.py` pins it.
 """
@@ -139,6 +139,19 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         ),
         summary="a 25 cm biped from Leif Rydenfalk",
         extra="quackd[huebot]",
+    ),
+    # MOSS runs dimOS on the rover, and its only network surface is its own cockpit. quackd
+    # speaks the cockpit, and a bridge of its own on the rover for what the cockpit has no
+    # command for, both over HTTP with the standard library (ADR-0056).
+    AdapterInfo(
+        name="moss",
+        backends=("mock", "cockpit"),
+        status=(
+            "✅ in the package: mock · 🧪 cockpit (MOSS's own cockpit and quackd's own bridge "
+            "on the rover, never run against a rover)"
+        ),
+        summary="a small tracked rover that picks up litter",
+        extra="quackd[moss]",
     ),
 )
 

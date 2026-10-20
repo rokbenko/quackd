@@ -16,6 +16,9 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+
+from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.verbs.registry import VerbContext
 from quackd_moss import MossAdapter
 from quackd_moss.cockpit import (
     CMD_HEADER_NAME,
@@ -26,9 +29,6 @@ from quackd_moss.cockpit import (
     MossCockpit,
 )
 from quackd_moss.verbs import DriveToParams, MinutesParams, drive_to, explore
-
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.registry import VerbContext
 from tests.fake_moss_cockpit import FakeCockpit
 
 

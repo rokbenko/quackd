@@ -20,6 +20,7 @@ from quackd_lerobot.policy import upstream_api as lerobot_policy_api
 from quackd_lerobot.sim import upstream_api as so_arm100_api
 from quackd_microduck import upstream_api
 from quackd_microduck.sim3d import upstream_api as microduck_rl_api
+from quackd_moss import upstream_api as moss_api
 from quackd_open_duck import upstream_api as open_duck_api
 from quackd_rosbridge import upstream_api as rosbridge_api
 from quackd_toddlerbot import upstream_api as toddlerbot_api
@@ -128,6 +129,16 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         ("https://github.com/pollen-robotics/microduck", "https://ce-net.com/huebot"),
     ),
     (
+        moss_api,
+        {
+            "adapters/moss/upstream_api.py",
+            "adapters/moss/cockpit.py",
+        },
+        # MOSS at its pin, its maker's issue for the masses, and dimOS at the commit MOSS's own
+        # Software.md installs
+        ("https://github.com/metrox-eth/moss", "https://github.com/dimensionalOS/dimos"),
+    ),
+    (
         microduck_rl_api,
         {
             "adapters/microduck/sim3d/upstream_api.py",
@@ -170,6 +181,7 @@ IDS = [
     "alohamini",
     "toddlerbot",
     "huebot",
+    "moss",
     "microduck_rl",
     "so_arm100",
 ]

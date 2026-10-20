@@ -1,4 +1,4 @@
-"""Set quackd's version, in the eight places that have to agree.
+"""Set quackd's version, in the ten places that have to agree.
 
 The core and each adapter carry their own `__version__`, because an adapter's sdist contains
 only its own source and cannot read the core's. They are released together and must not

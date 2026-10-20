@@ -14,6 +14,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+from quackd.adapters.base import AdapterError, RobotAdapter
+from quackd.adapters.factory import make_adapter
+from quackd.duckfile.parser import load_duck, parse_duck_text
+from quackd.duckfile.schema import POLICY_VERBS
+from quackd.duckfile.validate import validate_duck
+from quackd.perception.color_blob import ColorBlobDetector
+from quackd.safety import ConfirmDenied, Executor, allow_all
+from quackd.transport.base import Intent, TransportError
+from quackd.verbs.core import CORE
+from quackd.verbs.core import MAX_VX as SCHEMA_VX
+from quackd.verbs.core import MAX_VY as SCHEMA_VY
+from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
+from quackd.verbs.registry import STOPPED, registry_from_manifest
 from quackd_moss import (
     DATASHEET,
     MossAdapter,
@@ -45,22 +59,6 @@ from quackd_moss.verbs import (
     moss_verbs,
     stack_refusal,
 )
-
-from quackd.adapters.base import AdapterError, RobotAdapter
-from quackd.adapters.factory import make_adapter
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.duckfile.schema import POLICY_VERBS
-from quackd.duckfile.validate import validate_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import ConfirmDenied, Executor, allow_all
-from quackd.transport.base import Intent, TransportError
-from quackd.upstream import UpstreamRef
-from quackd.verbs.core import CORE
-from quackd.verbs.core import MAX_VX as SCHEMA_VX
-from quackd.verbs.core import MAX_VY as SCHEMA_VY
-from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
-from quackd.verbs.registry import STOPPED, registry_from_manifest
-from tests.adapter_layout import canonical_rel, source_roots
 
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE = REPO / "adapters" / "moss" / "src" / "quackd_moss"
@@ -558,9 +556,8 @@ async def test_explore_ends_with_the_explorers_stop_and_a_soft_stop() -> None:
 
 
 async def test_explore_hears_a_brake_pulled_beside_it_within_a_second() -> None:
-    from quackd_moss.verbs import MinutesParams, explore
-
     from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import MinutesParams, explore
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -603,9 +600,8 @@ async def test_stow_arm_plays_the_cycle_from_its_return() -> None:
 
 
 async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds() -> None:
-    from quackd_moss.verbs import pick_and_drop
-
     from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import pick_and_drop
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -789,26 +785,6 @@ def test_every_ref_links_to_one_of_the_two_pinned_upstreams() -> None:
         if "/blob/" in ref.source:
             assert up.PIN in ref.source or up.DIMOS_PIN in ref.source, ref
     assert len(up.PIN) == len(up.DIMOS_PIN) == 40
-
-
-def test_unverified_refs_are_named_only_by_the_real_backend() -> None:
-    """tests/test_upstream_api.py's rule, for this package, until its row is added there."""
-    idents = [
-        n for n, v in vars(up).items() if isinstance(v, UpstreamRef) and v.status == "UNVERIFIED"
-    ]
-    assert idents, "expected at least one UNVERIFIED ref"
-    pattern = re.compile(r"\b(" + "|".join(map(re.escape, idents)) + r")\b")
-    allowed = {"adapters/moss/upstream_api.py", "adapters/moss/cockpit.py"}
-    offenders = []
-    for root in source_roots():
-        for path in root.rglob("*.py"):
-            rel = canonical_rel(path)
-            if rel in allowed or not rel.startswith(("adapters/moss/", "quackd/")):
-                continue
-            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if pattern.search(line):
-                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
-    assert not offenders, "\n".join(offenders)
 
 
 def test_the_page_names_every_ref_carries_the_pin_and_says_never() -> None:

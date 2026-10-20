@@ -127,6 +127,14 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "stand": (1, "motion"),
         "stand_up": (1, "motion"),
     },
+    "moss": {
+        # dangerous, so never a choice: a decision LLM cannot author it at any confidence
+        "collect_litter": (None, "never"),
+        "drive_to": (None, "motion"),
+        "explore": (None, "confirm"),
+        "pick_and_drop": (2, "confirm"),
+        "stow_arm": (1, "confirm"),
+    },
 }
 
 

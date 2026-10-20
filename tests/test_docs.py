@@ -35,7 +35,7 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.
 
-    Every other upstream in the project has a doc-completeness guard, the seven other adapter
+    Every other upstream in the project has a doc-completeness guard, the eight other adapter
     pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
     Without the second loop the newest table is the only one that can go stale in silence.
     """
@@ -465,7 +465,7 @@ def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
 
 @pytest.mark.parametrize(
     "adapter",
-    ["lerobot", "rosbridge", "open_duck", "xlerobot", "alohamini", "toddlerbot", "huebot"],
+    ["lerobot", "rosbridge", "open_duck", "xlerobot", "alohamini", "toddlerbot", "huebot", "moss"],
 )
 def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     api = adapter_module(adapter, "upstream_api")
@@ -1853,6 +1853,7 @@ _VERB_TABLE_ROWS = {
     "alohamini": "| AlohaMini |",
     "toddlerbot": "| ToddlerBot |",
     "huebot": "| Huebot |",
+    "moss": "| MOSS |",
 }
 
 _CORE_VERBS = frozenset(

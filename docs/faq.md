@@ -502,11 +502,11 @@ you choose the bodies:
 uv pip install "quackd[microduck]"    # the duck: the cartoon, the mock and the real one
 uv pip install "quackd[lerobot]"      # an SO-101 arm, with LeRobot on Python 3.12 or newer
 uv pip install "quackd[lerobot-sim]"  # the same arm's simulator, MuJoCo and no LeRobot
-uv pip install "quackd[robots]"       # all eight, each with the SDK its real backend needs
+uv pip install "quackd[robots]"       # all nine, each with the SDK its real backend needs
 ```
 
-The eight names are `microduck`, `lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`,
-`toddlerbot` and `huebot`. `quackd list-adapters` prints the whole table whether or not you have any of
+The nine names are `microduck`, `lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`,
+`toddlerbot`, `huebot` and `moss`. `quackd list-adapters` prints the whole table whether or not you have any of
 them, marking each row `installed` or `not installed`, so it is a shopping list before it is an
 inventory. A command that needs a body and finds none refuses by naming what to install rather
 than failing somewhere confusing. Install exactly one adapter and that one is the default, so
@@ -539,17 +539,17 @@ that reaches it end to end.
 
 **Can quackd drive something that is not a duck?** Since 0.4, yes: a robot is an adapter
 that returns a manifest, and the verbs come from the manifest. `quackd list-adapters`
-shows the eight that ship (Microduck, a LeRobot arm, any base over rosbridge, an Open
+shows the nine that ship (Microduck, a LeRobot arm, any base over rosbridge, an Open
 Duck Mini v2, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot
-humanoid, and a Huebot biped), `quackd list-verbs --robot microduck:sim2d` shows what one of them can do,
+humanoid, a Huebot biped, and a MOSS rover that picks up litter), `quackd list-verbs --robot microduck:sim2d` shows what one of them can do,
 and `quackd validate your.duck --robot lerobot:mock` tells you, field by field, whether
 your task fits that body. The rule never bends: a verb that is not in the manifest does
-not exist on that robot. Those eight are each their own package, and an adapter somebody else
+not exist on that robot. Those nine are each their own package, and an adapter somebody else
 publishes is found exactly the same way, through the `quackd.adapters` entry point group, with
 no pull request to this repository. Writing one:
 [adapters/writing-an-adapter.md](adapters/writing-an-adapter.md).
 
-**Is a Jetson one of the eight?** No, and it is not a ninth. A Jetson is a computer, not a
+**Is a Jetson one of the nine?** No, and it is not a tenth. A Jetson is a computer, not a
 body: it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
 `--robot jetson:...`, and there is no adapter to install for it
 ([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). quackd does not run on it either. It

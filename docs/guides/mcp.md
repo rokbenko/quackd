@@ -169,7 +169,7 @@ claude mcp add quackd -- uvx --from "quackd[microduck]" quackd serve-mcp --robot
 `--from "quackd[microduck]"` is what puts a duck in the environment `uvx` builds. The `quackd`
 on PyPI is the loop and no robot, so a bare `uvx quackd serve-mcp --robot microduck:sim2d`
 never reaches the tool list: it stops at `adapter 'microduck' needs an extra`. Swap the extra
-for the body you own, `quackd[lerobot]` or `quackd[rosbridge]` or any of the eight, and name
+for the body you own, `quackd[lerobot]` or `quackd[rosbridge]` or any of the nine, and name
 that robot after `--robot`.
 
 Then in Claude Code: *"List the duck's verbs, then find the ball and kick it."*
@@ -178,7 +178,7 @@ Then in Claude Code: *"List the duck's verbs, then find the ball and kick it."*
 > `uv run --no-sync` rather than `uvx` on purpose: it serves the code in your working tree
 > instead of the last release, and `--no-sync` keeps the launch from re-syncing the
 > environment while the previous server still holds `Scripts/quackd.exe` open on Windows.
-> Run `uv sync --extra dev` once first, which installs the core and all eight adapters as
+> Run `uv sync --extra dev` once first, which installs the core and all nine adapters as
 > editable workspace members. That is also why the repo's file carries no `--from`: every
 > robot is already in that environment. A server that is already running keeps the tools it
 > started with, so after changing a verb or upgrading quackd, restart it (`/mcp` in Claude

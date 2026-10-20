@@ -21,15 +21,15 @@ from types import ModuleType
 from typing import Any
 
 import pytest
-from quackd_moss import MossAdapter
-from quackd_moss import cockpit as client
-from quackd_moss import mock as mock_module
-from quackd_moss import verbs as moss_verbs
 
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor, allow_all
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import registry_from_manifest
+from quackd_moss import MossAdapter
+from quackd_moss import cockpit as client
+from quackd_moss import mock as mock_module
+from quackd_moss import verbs as moss_verbs
 from tests.conftest import REPO
 from tests.fake_moss_cockpit import FakeCockpit
 

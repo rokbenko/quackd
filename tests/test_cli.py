@@ -275,9 +275,10 @@ def test_a_verbose_line_survives_a_bracket_a_planner_logged(monkeypatch) -> None
 
 
 def test_validate_starter_ducks() -> None:
-    result = runner.invoke(app, ["validate", *[str(p) for p in sorted(DUCKS.glob("*.duck"))]])
+    files = sorted(DUCKS.glob("*.duck"))
+    result = runner.invoke(app, ["validate", *[str(p) for p in files]])
     assert result.exit_code == 0, result.output
-    assert "16 files valid" in result.output
+    assert f"{len(files)} files valid" in result.output
 
 
 def test_validate_expands_globs_itself() -> None:
@@ -1451,7 +1452,7 @@ def test_by_hand_is_refused_for_a_flock(tmp_path: Path) -> None:
 def test_by_hand_is_refused_on_a_body_that_is_not_the_arm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Seven of the eight bodies here have nothing to hand over: a walking duck with its torque
+    """Eight of the nine bodies here have nothing to hand over: a walking duck with its torque
     off is a duck on the floor. The refusal names the body, because the flag is right and the
     `--robot` beside it is the half to change.
 
@@ -1749,7 +1750,7 @@ def test_release_answered_no_never_connects(
 
 
 def test_release_refuses_a_body_that_is_not_the_arm(tmp_path: Path) -> None:
-    """A walking duck with its torque off is a duck on the floor, and seven bodies of eight are
+    """A walking duck with its torque off is a duck on the floor, and eight bodies of nine are
     never handed to a person at all: `supports_hand_off` is the arm's alone."""
     reg = tmp_path / "registry"
     added = runner.invoke(

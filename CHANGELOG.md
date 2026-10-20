@@ -7,6 +7,53 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Added
+
+- **MOSS, a ninth robot: `quackd[moss]`.** A small tracked rover that picks up litter, by Laurent
+  Genoud (Show Robotics) ([github.com/metrox-eth/moss](https://github.com/metrox-eth/moss)): two
+  tracks, a bin on top, and an arm derived from the SO-101 with a parallel gripper that drops what
+  it picks into the bin. Its software is `moss_dimos`, a blueprint package for dimOS, read at
+  `d288647` with dimOS at `a7d19f7`, and quackd imports neither. `moss:cockpit` speaks MOSS's own
+  cockpit over HTTP for the state, the pose, the battery, a goal for its planner, the explorer and
+  the soft stop, and `moss:mock` runs offline. The package is `quackd-moss`, imported as
+  `quackd_moss`, which makes quackd ten distributions
+  ([docs/adapters/moss/README.md](docs/adapters/moss/README.md),
+  [ADR-0056](docs/adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
+- **A bridge for the rover**, `bridge/moss/quackd_moss_bridge.py`, for what MOSS's cockpit has no
+  command for. A twist with a deadman of its own, sent again while it is fresh and then one zero
+  and silence, since every message on the pad's channel cancels MOSS's navigation. A frame that
+  says when it was taken. The maker's own arm cycle, run as his own mission runs it, with a cancel
+  that stops the script, cancels the trajectory and sees the arm hold. And the litter mission's own
+  stop, which the mission is the only thing it listens to. The bridge runs on the rover with MOSS's
+  own interpreter, imports quackd nowhere, binds loopback and takes a token, and after three missed
+  heartbeats it halts what quackd started and nothing else. A systemd unit and its page sit beside
+  it ([bridge/moss/README.md](bridge/moss/README.md)).
+- **MOSS's own verbs.** `drive_to`, a goal at most 2 m away for MOSS's own planner. `explore`, its
+  explorer for up to eight minutes. `pick_and_drop` and `stow_arm`, the maker's fixed arm cycle,
+  which reaches for nothing. And `collect_litter`, the rover handed to MOSS's own litter mission
+  for up to eight minutes, which is `dangerous`. Every twist is shaped on the rover: an arc never
+  reverses its inner track, and a turn on the spot goes out as the maker's own pulses, because the
+  base sends every turn on the spot at full power whatever was asked.
+- **`moss-lookout`**, the task to point at a real rover first, with nothing in its allowlist that
+  moves a track or the arm, and **what MOSS's cockpit would need to answer to retire the bridge**,
+  six things, written on its page for its maker.
+
+### Known limitations
+
+- **Nothing has run on a MOSS rover**, and quackd's bridge has never run on one. The client is
+  exercised against a fake of the cockpit and against the bridge in its fake mode over loopback,
+  and once by hand against MOSS's own cockpit in its demo mode.
+- **How far one pulse of a turn on the spot turns the rover is unmeasured**, so `search_scan`'s
+  angles are the ones it asked for. Step 6 of the hardware checklist measures it.
+- **A nose frame carries `frame_taken_at` only when its own stamp passes the bridge's check**
+  against the bridge's own receive time, because what clock the RealSense stamps on is
+  librealsense's to say and outside both pins.
+- **`collect_litter` runs once per stack start.** Every stop quackd sends on `moss-litter`, the one
+  at the end of every run among them, ends the litter mission, and it runs again only after the
+  owner restarts the stack.
+
 ## [0.21.0] — 2026-10-20
 
 0.21.0 adds Huebot, a 25 cm biped from Leif Rydenfalk, as the eighth robot quackd can drive. Its

@@ -1475,7 +1475,7 @@ if yours needed one, because that is the interesting case now.
 
 If your arm does something this one did not, change the row in
 [adapters/status.md](../status.md) and say in the same commit what it did. One SO-101 is
-one SO-101: seven of quackd's eight bodies have still never been near hardware of any kind, so
+one SO-101: eight of quackd's nine bodies have still never been near hardware of any kind, so
 most of that page is a description rather than a record.
 
 <br>

@@ -117,7 +117,7 @@ CORE_MODULES = (
 Progress = Any
 """`progress(message)`, or None: what the spinner says while a slow question is asked."""
 
-_ADAPTER_HINT = "quackd list-adapters shows the eight that ship and their backends"
+_ADAPTER_HINT = "quackd list-adapters shows the nine that ship and their backends"
 
 FLOCK_NOTE = (
     "flock mode (--flock, flock.roles): sim2d only, in-process bus by default. The MQTT bus "
@@ -2035,8 +2035,8 @@ def verdict(report: DoctorReport) -> Any:
     counters = [
         f"{sum(1 for e in report.extras if e.ok)}/{len(report.extras)} extras",
         # a fraction, not a total: since every adapter became its own package the number that
-        # matters is how many are here, and "8 adapters" beside a table of eight `not
-        # installed` rows reads as eight you have
+        # matters is how many are here, and "9 adapters" beside a table of nine `not
+        # installed` rows reads as nine you have
         f"{sum(1 for a in report.adapters if a.get('adapter_installed'))}/"
         f"{len(report.adapters)} adapters installed",
         f"{report.bundled_ducks} bundled ducks",

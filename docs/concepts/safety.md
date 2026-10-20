@@ -321,7 +321,7 @@ with a hand near the switch.
 
 ## On hardware
 
-One of the eight bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
+One of the nine bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
 follower arm ran `lerobot-lookout` and then a series of free-form `--goal` runs, piloted by
 OpenAI gpt-6-astra on Windows 11 with lerobot 0.6.1: it waved the wrist about 27 degrees either
 way, waved again from a raised pose, and opened and closed the gripper. **It also fell at the
@@ -332,7 +332,7 @@ parking, release and verdict changes on this page come from. None of those chang
 arm yet. [adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md) is the account, including
 what the first day did not measure, and most of what this page would want to know is on that list:
 whether the holding band is right, what a joint reads after ten minutes of work, and whether a stall
-is caught on purpose rather than by luck. The other seven bodies have not been on hardware at all.
+is caught on purpose rather than by luck. The other eight bodies have not been on hardware at all.
 
 If the body is a Microduck, run the contract in the physics simulator first
 (`--robot microduck:mujoco`): it is the only place quackd can show you a body that undershoots,

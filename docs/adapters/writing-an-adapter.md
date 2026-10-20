@@ -3,22 +3,22 @@
 An adapter is how a robot joins quackd. It answers one question, "what is this body and
 what can it do", as a `RobotManifest`, and it moves the body through intents the robot's
 own controllers execute. Everything else (the loop, the executor, the `.duck` contract,
-the MCP server) is shared. quackd ships eight: `microduck`,
-`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`, `toddlerbot` and `huebot`. This page is the recipe; [ADR-0017](../adr/0017-robot-adapters-and-manifest.md),
+the MCP server) is shared. quackd ships nine: `microduck`,
+`lerobot`, `rosbridge`, `open_duck`, `xlerobot`, `alohamini`, `toddlerbot`, `huebot` and `moss`. This page is the recipe; [ADR-0017](../adr/0017-robot-adapters-and-manifest.md),
 [ADR-0018](../adr/0018-core-verbs-extensions-aliases.md) and
 [ADR-0022](../adr/0022-per-adapter-upstream-refs.md) are the reasons.
 
 An adapter is its own distribution. `uv pip install quackd` installs the loop and no robot,
 and each body arrives as a package of its own: `quackd-microduck`, `quackd-lerobot`,
 `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`,
-`quackd-toddlerbot`, `quackd-huebot`, each fetched by the extra you already type
-(`quackd[lerobot]`, and `quackd[robots]` for all eight). An installed package announces itself through the
+`quackd-toddlerbot`, `quackd-huebot`, `quackd-moss`, each fetched by the extra you already type
+(`quackd[lerobot]`, and `quackd[robots]` for all nine). An installed package announces itself through the
 `quackd.adapters` entry point group, and that group is the only way the core finds one.
 
 > [!NOTE]
-> That entry point is the whole of the contract, so the eight above have no privileges you
+> That entry point is the whole of the contract, so the nine above have no privileges you
 > do not have. A robot quackd has never heard of can be published to PyPI by anyone, and
-> `quackd list-adapters` finds it the moment it is installed, listed after the eight. The
+> `quackd list-adapters` finds it the moment it is installed, listed after the nine. The
 > rest of this page is written for an adapter that lands in this repository, because that is
 > the longer version; [publishing one yourself](#publishing-one-yourself) says which of it
 > you can skip.
@@ -272,13 +272,15 @@ arms, the mock's cannot either. A mock that is easier than the body is a task th
 and fails there, and it is the only kind of bug this repository cannot catch for you.
 
 Then the real backend, and the shape of that depends entirely on what the robot gives you.
-Two of the eight adapters import an SDK. The others could not.
+Two of the nine adapters import an SDK. The others could not.
 
 | Route | When | Who does it | What it costs |
 |---|---|---|---|
 | **Import the SDK** | upstream ships an installable package with a client | `lerobot:real`, `rosbridge:ws` | an optional extra, a lazy import inside `connect()`, a lock around a synchronous SDK |
 | **Speak its wire** | upstream ships a host process but is not installable, or installing it would drag in torch and a Python floor | `xlerobot:zmq`, `alohamini:zmq` | reading the wire from source rather than the docs, and owning the framing yourself |
 | **Ship the robot side** | upstream has no network API of any kind | `open_duck:bridge`, `toddlerbot:bridge` | a daemon in `bridge/`, a protocol you define at both ends, and everything below |
+
+`moss:cockpit` takes two at once. MOSS's own cockpit is a wire quackd speaks for everything it does, and what it has no command for, a twist with a deadman, a timed frame, the arm cycle and the litter mission's stop, goes through a bridge quackd ships for the rover in `bridge/moss/`.
 
 Whichever route: import upstream **inside `connect()`** and raise
 `AdapterNotInstalled(name, "quackd[extra]")` on `ImportError`, so a machine without the extra
@@ -291,13 +293,13 @@ your own `[project.optional-dependencies] sdk`; for an adapter quackd publishes,
 `quackd[<name>]` extra in the core's `pyproject.toml` then points at `quackd-<name>[sdk]`, you
 run `uv lock`, and the module gets a row in `doctor.py`'s `EXTRAS` so that `quackd doctor`
 says whether it is here. An adapter whose
-robot side you ship needs no extra at all: `open_duck` and `toddlerbot` declare none.
+robot side you ship needs no extra at all: `open_duck`, `toddlerbot` and `moss` declare none.
 
 **And never send the body's go-limp call.** `disable_motors`, `disable_torque`, `relax`, an
 XLeRobot `disconnect()`: stop means stop, not collapse. This applies to teardown as much as to
-`stop`, and upstream's own `disconnect()` is usually where the trap is — four of these robots
-disable torque inside it (three by default, the ToddlerBot always), so `close()` has to stop
-and hold rather than delegate.
+`stop`, and upstream's own `disconnect()` is usually where the trap is — five of these robots
+disable torque inside it (three by default, the ToddlerBot and MOSS's arm always), so
+`close()` has to stop and hold rather than delegate.
 
 The one exception is a body that has been put somewhere it can be let go of. A LeRobot arm
 with a recorded rest pose is driven there first, or to the edge of its calibrated travel where
@@ -347,10 +349,10 @@ What the three rules above actually cost, beyond writing it:
 
 ### A simulator, if the cartoon world already draws the body
 
-Four of the eight bodies here ship a `sim2d` backend. The arena itself stayed in the core
+Four of the nine bodies here ship a `sim2d` backend. The arena itself stayed in the core
 (`quackd/sim2d/`, with `quackd/transport/mock.py` beside it) when the robots moved out into
 their own packages, because neither was ever one robot's: the Microduck uses `Sim2DTransport`
-as it is and the other three subclass it, and six of the eight mocks draw their synthetic
+as it is and the other three subclass it, and seven of the nine mocks draw their synthetic
 frame with `quackd/sim2d/render.py`. It is worth writing when the shared 2D world can represent the
 body honestly and the robot has a task worth running end to end; it is not worth writing for a
 body the world would have to lie about. It earns a ✅ only with a seeded acceptance sweep that
@@ -448,7 +450,7 @@ Then, for one quackd publishes:
    (the first is what `--robot <name>` means with no backend after it), the status line
    `list-adapters` prints, a one-line summary, the extra and the SDK to probe for. The
    catalogue is strings and imports nothing, which is what lets the table print the whole
-   eight on a machine with none of them installed, each marked "not installed". Append,
+   nine on a machine with none of them installed, each marked "not installed". Append,
    never insert: the tables that print these rows are order sensitive and a test pins them.
 7. A `quackd[<name>]` extra in the core's `pyproject.toml` pointing at `quackd-<name>` (with
    `[sdk]` if there is one), the package listed in the `dev` extra and in
@@ -469,7 +471,7 @@ machine where it is installed:
 
 | What happens | Why |
 |---|---|
-| `quackd list-adapters` shows your robot, after the eight and alphabetically among any others | `adapter_names()` reads the entry point group and appends what it does not publish |
+| `quackd list-adapters` shows your robot, after the nine and alphabetically among any others | `adapter_names()` reads the entry point group and appends what it does not publish |
 | `--robot <yours>:<backend>` builds the body | the factory imports your module and calls its `make()` |
 | `quackd list-verbs`, `quackd validate`, the MCP tool list and the prompt all know your verbs | they come from your manifest, the same as everyone's |
 | `quackd doctor` prints your upstream pins and your probes | from your `UPSTREAMS` and `doctor_rows()` |

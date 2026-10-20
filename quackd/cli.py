@@ -265,7 +265,7 @@ _REGISTRY_DIR = typer.Option(
 
 NEWLINE = "\n"
 
-_ADAPTER_HINT = "quackd list-adapters shows the eight that ship and their backends"
+_ADAPTER_HINT = "quackd list-adapters shows the nine that ship and their backends"
 
 
 def _expand(patterns: list[str]) -> list[str]:
@@ -3238,7 +3238,8 @@ _TOKEN = typer.Option(
     "--token",
     help="The bridge token for a robot that wants one. The Open Duck's installer writes one "
     "on the robot and QUACKD_DUCK_TOKEN carries it when the flag is absent. The ToddlerBot's "
-    "daemon has no installer and reads QUACKD_TODDLERBOT_TOKEN instead.",
+    "daemon has no installer and reads QUACKD_TODDLERBOT_TOKEN instead, and MOSS's bridge reads "
+    "QUACKD_MOSS_TOKEN.",
     rich_help_panel="Robot",
 )
 _CAMERA_URL: list[str] = typer.Option(
