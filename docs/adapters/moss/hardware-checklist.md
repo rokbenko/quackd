@@ -41,9 +41,8 @@ ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
    ```
 
    `doctor` connects, `list-verbs` does not. Read back which verbs exist, the stack it found and
-   whether the bridge was counted. A refusal names its fix. Run it on `moss-explore` or
-   `moss-nav`: on `moss-litter` its close is a stop, which ends the mission until the stack
-   restarts.
+   whether the bridge was counted. A refusal names its fix. It starts nothing, so its close
+   sends no stop, and on `moss-litter` the mission runs on.
 2. **The bridge's own word.** Through the same tunnel:
 
    ```bash
@@ -107,10 +106,10 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 13. **`collect_litter`, then stop it.** Start the stack with `tools/moss-fly.sh litter`, without
     `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it needs a
     `.duck` of your own that allows it, run in a terminal where you answer its confirm yourself.
-    Give it a minute with one can in view, then send `stop`. The mission ends first, then the arm
-    holds, then the base stops, and the run ends with a note that the mission is stopped and runs
-    again only after the stack restarts. If the note says the stop was not confirmed, stop the
-    stack on the rover with the arm supported.
+    Give it a minute with one can in view, then send `stop`. The mission's stop goes out first,
+    then at once the arm holds and the base stops, and the run ends with a note that the mission
+    is stopped and runs again only after the stack restarts. If the note says the stop was not
+    confirmed, stop the stack on the rover with the arm supported.
 
 ## What to report
 

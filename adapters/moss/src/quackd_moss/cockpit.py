@@ -25,7 +25,11 @@ Four properties of this rover decide what this file does, and each is read at th
   kept short (`verbs.DRIVE_TO_MAX_M`).
 
 `stop()` is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every time, each failure
-reported and neither skipping the other.
+reported and neither skipping the other. `close()` halts what this session started and nothing
+else: the whole stop once `collect_litter` ran, and otherwise its own arm cycle by its id, a
+twist of its own the bridge may still be repeating, and a goal or an exploration it started. A
+session that started nothing sends no stop, so a `quackd doctor` leaves the owner's mission and
+goal running.
 
 Never run against a rover by us.
 """
@@ -103,6 +107,7 @@ STOP_PATH = "/stop"
 FRAME_PATH = "/frame"
 ARM_PATH = "/arm"
 ARM_CYCLE_PATH = "/arm/cycle"
+ARM_CANCEL_PATH = "/arm/cancel"
 MISSION_PATH = "/mission"
 KEEPALIVE_PATH = "/session/keepalive"
 FRAME_STAMP_HEADER = "X-Frame-Stamp"
@@ -348,6 +353,13 @@ class BridgeClient:
         status, doc = self._doc(self.slow, "POST", ARM_CYCLE_PATH, body, repeatable=False)
         return status, doc
 
+    def arm_cancel(self, job_id: str) -> dict[str, Any]:
+        """The cancel for the one cycle of quackd's `job_id` names, which may take as long as
+        the cancel inside a stop."""
+        body = {"id": job_id}
+        _, doc = self._doc(self.slow, "POST", ARM_CANCEL_PATH, body, timeout_s=STOP_TIMEOUT_S)
+        return dict(doc)
+
     def mission(self) -> dict[str, Any]:
         _, doc = self._doc(self.slow, "GET", MISSION_PATH)
         return dict(doc)
@@ -524,8 +536,17 @@ class MossCockpit:
         self.mission_stop: str | None = None
         """What the bridge said of the litter mission at the last stop: stopped, unconfirmed."""
         self.arm_job_id: str | None = None
+        """The last arm cycle this session started, which close() cancels by this id."""
         self.started: str | None = None
         """What quackd has begun through the cockpit and not yet stopped, for the bridge."""
+        self.litter_started = False
+        """`collect_litter` started in this session, so close() stops the mission."""
+        self.stop_sent = False
+        """A stop ran in this session, so close() says what it did to the mission."""
+        self.twist_deadman_s = float(up.FIRMWARE_DEADMAN_S.name)
+        """How long the bridge repeats a twist with no new one, read from its hello."""
+        self._twist_at: float | None = None
+        """When the bridge took this session's last twist that was not a zero."""
         self.post_sleep: Callable[[], None] | None = None
         self._mjpeg: MjpegReader | None = None
         self._frames_task: asyncio.Task[None] | None = None
@@ -600,6 +621,9 @@ class MossCockpit:
         self.arm_seen = self.bridge_up and bool(arm.get("answering"))
         self.arm_up = self.arm_seen and bool(arm.get("cycle"))
         self.mission_up = self.bridge_up and bool((hello.get("mission") or {}).get("answering"))
+        deadman = _number((hello.get("shaping") or {}).get("deadman_s"))
+        if deadman is not None:
+            self.twist_deadman_s = deadman
         await self._cameras()
         base = state.get("base") or {}
         self.manifest_extras = {
@@ -846,6 +870,10 @@ class MossCockpit:
                 accepted=False, reason=f"the bridge at {self.bridge.url} stopped answering: {e}"
             )
         if status == 200 and doc.get("ok"):
+            # timed from the answer, which the bridge's own clock started before, so a close
+            # that reads this as fresh may send a zero the pump no longer needed, and never
+            # the reverse
+            self._twist_at = None if vx == 0.0 and wz == 0.0 else time.monotonic()
             return Ack()
         return Ack(accepted=False, reason=str(doc.get("reason") or f"the bridge answered {status}"))
 
@@ -885,6 +913,9 @@ class MossCockpit:
                         reason="the litter mission is not answering its RPC, so nothing could "
                         "stop it",
                     )
+                # before the start goes out: a start whose answer was lost may have handed the
+                # rover to the mission all the same, and close() must still end it
+                self.litter_started = True
             ok, doc = await self._call(self.cockpit.explore, action)
             if not ok:
                 return Ack(accepted=False, reason=f"the cockpit refused: {doc.get('error')}")
@@ -918,9 +949,12 @@ class MossCockpit:
         anywhere, and it never raises: a link that is down is a failure said in `stop_error`."""
         errors: list[str] = []
         self.mission_stop = None
+        self.stop_sent = True
         if self.bridge_up:
             try:
                 doc = await self._call(self.bridge.stop, timeout_s=STOP_TIMEOUT_S + 1.0)
+                # an answered stop zeroed the bridge's pump, whatever else it says failed
+                self._twist_at = None
                 said_mission = doc.get("mission")
                 self.mission_stop = str(said_mission) if said_mission is not None else None
                 if not doc.get("ok"):
@@ -983,6 +1017,28 @@ class MossCockpit:
                 await self._call(self.cockpit.keepalive)
                 self._last_cockpit_keepalive = now
 
+    async def check(self) -> None:
+        """The heartbeat's checks, for a probe such as `quackd doctor` that keeps no session.
+
+        A transport that had no session yet ends the one this opens at once, so the bridge
+        never halts anything for a probe that took its time before it closed. On moss-litter
+        that halt is the whole stop, and a probe started nothing."""
+        opened = self._last_beat is None
+        try:
+            await self.heartbeat()
+        finally:
+            if opened:
+                await self._end_session()
+
+    async def _end_session(self) -> None:
+        """The bridge's session, ended if this transport opened one, so the bridge halts
+        nothing for it after it has gone."""
+        if self.bridge_up and self._last_beat is not None:
+            beat = self._beat_s
+            with contextlib.suppress(Exception):
+                await self._call(lambda: self.bridge.keepalive(beat, None, end=True))
+        self._last_beat = None
+
     def _stack_gone(self, stack: dict[str, Any]) -> str:
         now = stack.get("blueprint") if stack.get("running") else "nothing"
         return (
@@ -993,17 +1049,68 @@ class MossCockpit:
 
     # ── teardown ────────────────────────────────────────────────────────────────────
 
+    def _twist_fresh(self) -> bool:
+        """Whether the bridge may still be repeating a twist of this session's."""
+        if self._twist_at is None:
+            return False
+        return time.monotonic() - self._twist_at <= self.twist_deadman_s
+
+    async def _halt_own(self) -> list[str]:
+        """close()'s halt when no `collect_litter` ran: what this session started and nothing
+        else. Its own arm cycle, by its id, a twist of its own the bridge may still repeat, and
+        a goal or an exploration it started, which the cockpit's soft stop ends. A session that
+        started none of them sends nothing, and each failure comes back to be said."""
+        errors: list[str] = []
+        if self.bridge_up and self.arm_job_id is not None:
+            job = self.arm_job_id
+            try:
+                doc = await self._call(
+                    lambda: self.bridge.arm_cancel(job), timeout_s=STOP_TIMEOUT_S + 1.0
+                )
+                if not doc.get("ok"):
+                    said = ", ".join(str(e) for e in doc.get("errors") or [])
+                    errors.append(f"its arm cycle's cancel: {said or doc.get('reason')}")
+            except Exception as e:
+                errors.append(f"its arm cycle's cancel: {e}")
+        if self.bridge_up and self._twist_fresh():
+            try:
+                status, doc = await self._call(self.bridge.twist, 0.0, 0.0)
+                if status == 200 and doc.get("ok"):
+                    self._twist_at = None
+                else:
+                    errors.append(f"its twist's zero: {doc.get('reason') or status}")
+            except Exception as e:
+                errors.append(f"its twist's zero: {e}")
+        if self.started in ("goal", "explore"):
+            try:
+                ok, doc = await self._call(self.cockpit.stop)
+                if not ok:
+                    errors.append(f"the cockpit's soft stop: {doc.get('error') or 'it said no'}")
+            except Exception as e:
+                errors.append(f"the cockpit's soft stop: {e}")
+            self.started = None
+        return errors
+
     async def close(self) -> None:
-        """Stop and hold, never a go-limp call. The session ends so the bridge halts nothing
-        after quackd has gone, and an arm left out of its drive pose is said."""
+        """Stop and hold what this session started, and nothing else, never a go-limp call.
+
+        After `collect_litter` it is the whole stop, the mission's own first. Otherwise it is
+        `_halt_own`, so a session that started nothing, a `quackd doctor` among them, sends no
+        stop at all and leaves a mission or a goal of the owner's running. The session ends so
+        the bridge halts nothing after quackd has gone. An arm this session moved and left out
+        of its drive pose is said, and so is what a stop of this session's did to the mission."""
         if self.connected:
-            await self.stop()
             note: list[str] = []
+            if self.litter_started:
+                await self.stop()
+            elif failed := await self._halt_own():
+                note.append(
+                    "what this session started may still be moving, since its halt failed: "
+                    + " and ".join(failed)
+                )
             if self.bridge_up:
-                with contextlib.suppress(Exception):
-                    beat = self._beat_s
-                    await self._call(lambda: self.bridge.keepalive(beat, None, end=True))
-                if self.arm_up:
+                await self._end_session()
+                if self.arm_up and (self.arm_job_id is not None or self.litter_started):
                     with contextlib.suppress(Exception):
                         arm = await self._call(self.bridge.arm)
                         if arm.get("answering") and arm.get("folded") is False:
@@ -1013,7 +1120,7 @@ class MossCockpit:
                                 "later end the arm's stack, and that turns its torque off: "
                                 "stow it first (stow_arm), or support it"
                             )
-            if self.stack == "moss-litter":
+            if self.stack == "moss-litter" and self.stop_sent:
                 if self.mission_stop == "stopped":
                     note.append(
                         "the litter mission is stopped, and runs again only after the stack "
@@ -1052,6 +1159,7 @@ class MossCockpit:
 
 
 __all__ = [
+    "ARM_CANCEL_PATH",
     "ARM_CYCLE_PATH",
     "ARM_PATH",
     "BRIDGE_PORT",

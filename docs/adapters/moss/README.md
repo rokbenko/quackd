@@ -185,8 +185,9 @@ None of them is named `pick`, which is a policy verb.
 
 `collect_litter` works **once per stack start**. Every stop quackd sends on `moss-litter` ends the
 mission, the `stop` verb's and the one at the end of every run among them, and a stopped mission
-stays stopped until the owner restarts the stack. So does a `quackd doctor` that connects to
-`moss-litter`: its close is a stop too, and doctor reports the stopped mission and exits 1.
+stays stopped until the owner restarts the stack. A session that started nothing sends no stop
+when it closes, so a `quackd doctor` on `moss-litter` leaves the mission running and reports
+the rover healthy.
 
 `collect_litter` is `dangerous`, so it runs only when a person answers its confirm at a terminal.
 Under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin nobody is asked, and
@@ -204,29 +205,41 @@ for one tool call, and `collect_litter` does not run there at all.
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | after three missed heartbeats the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels it, so the arm holds | no arm verbs exist |
-| the litter mission | the mission's own stop, confirmed, then the arm's cancel, then the zero and the soft stop | the bridge runs the whole stop | `moss-litter` is refused at connect |
+| the litter mission | the mission's own stop, then at once the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every
-  time. Each failure is kept and reported, and neither half skips the other.
-- **The mission's stop goes first.** A cycle cancelled under a mission still running makes the
-  maker's script exit on its lag watch, the mission marks the pick failed, and its next tick
-  sets the rover exploring again. The mock reproduces that race, and a test proves the order
-  prevents it.
+  time. Each failure is kept and reported, and neither half skips the other. The `stop` verb
+  sends it, and so does the end of every run and of every MCP session.
+- **`close()` halts what its session started, and nothing else.** After `collect_litter` it is
+  the whole stop. Otherwise it cancels the session's own arm cycle by its id, through the
+  bridge's `/arm/cancel`, zeroes a twist of its own that the bridge may still be repeating, and
+  sends the soft stop for a goal or an exploration it started. A session that started nothing
+  sends nothing when it closes, and one that sent no stop either, `quackd doctor` among them,
+  leaves no close note.
+- **The mission's stop goes out first, and the arm's cancel and the zero at once after it.** A
+  cycle cancelled under a mission not yet told to stop makes the maker's script exit on its lag
+  watch, the mission marks the pick failed, and its next tick sets the rover exploring again.
+  The mock reproduces that race, and a test proves the order prevents it. Nothing waits on the
+  mission before the arm is cancelled, and a test with a mission slow to stop proves that too.
 - **The mission's stop is confirmed by silence.** dimOS sends a module's stop without waiting
-  for an answer, because the module closes its RPC service as it stops. So the bridge waits up
-  to 4 s for `mission_status` to fall silent, and counts that silence only from a mission it
-  heard answer before. A stop it cannot confirm is reported as a failure, the close note says
-  the mission may still be running, and the arm's cancel and the zero go out either way.
-- **A session that started nothing halts nothing.** The bridge halts what quackd started and
-  nothing else, so a goal the owner clicked on the cockpit's own page is left alone.
+  for an answer, because the module closes its RPC service as it stops. So after the cancel and
+  the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop
+  went out, and counts that silence only from a mission it heard answer before, as it does
+  when quackd connects. A stop it cannot confirm is reported as a failure, the close note says
+  the mission may still be running, and the arm's cancel and the zero have gone out either way.
+- **A dropped session halts what quackd started.** After three missed heartbeats the bridge
+  halts what quackd started and nothing else, so a goal the owner clicked on the cockpit's own
+  page is left alone. On `moss-litter` it runs the whole stop, the one every run and every MCP
+  session ends with anyway. A probe such as `quackd doctor` ends its session as soon as its
+  health check has run, so nothing is halted for it.
 - **`close()` never sends a go limp call**, and **quackd never posts `/cmd/stack`**, whose stop
   ends every dimOS run and turns the arm's torque off. A test reads the package's source to
   prove no code path can send either.
-- **The arm and the idle stop.** A run that ends with the arm out of its drive pose leaves it
-  holding, and the close note says so: the cockpit's idle stop ends an idle `moss-nav` or
-  `moss-explore` after 300 s with `tools/moss-fly.sh stop`, which ends the arm's run too, and
-  the arm's adapter turns its torque off as its run ends. quackd sends the cockpit's keepalive
-  while it is connected, and nothing does after.
+- **The arm and the idle stop.** A run that moved the arm and ends with it out of its drive
+  pose leaves it holding, and the close note says so: the cockpit's idle stop ends an idle
+  `moss-nav` or `moss-explore` after 300 s with `tools/moss-fly.sh stop`, which ends the arm's
+  run too, and the arm's adapter turns its torque off as its run ends. quackd sends the
+  cockpit's keepalive while it is connected, and nothing does after.
 - **How long a stop takes** is the firmware's own ramp, which the bridge reads from the stack
   and reports: with MOSS's launcher, 5 ms per percent, half a second from full power.
 

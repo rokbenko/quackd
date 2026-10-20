@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from typer.testing import CliRunner
 
 from quackd.adapters.base import AdapterError, RobotAdapter
 from quackd.adapters.factory import make_adapter
+from quackd.cli import app
 from quackd.duckfile.parser import load_duck, parse_duck_text
 from quackd.duckfile.schema import POLICY_VERBS
 from quackd.duckfile.validate import validate_duck
@@ -758,22 +760,112 @@ async def test_the_idle_stop_ends_every_run_and_the_arms_torque_unless_kept_aliv
     assert left.idle_stopped and not left.stack_running and not left.arm_torque
 
 
-async def test_close_says_when_the_arm_is_left_holding_out_of_its_drive_pose() -> None:
-    mock, adapter, _ = await _connected()
-    mock.arm_folded = False
+async def test_close_says_when_the_arm_it_moved_is_left_holding_out_of_its_drive_pose() -> None:
+    mock, adapter, ex = await _connected(arm_lag_at_s=5.0)
+    result = await ex.run_verb("pick_and_drop", {})
+    assert not result.ok and not mock.arm_folded, "the lag left the arm out"
     await adapter.close()
     note = adapter.close_note or ""
     assert "idle stop" in note and "torque off" in note and "stow_arm" in note
+    untouched, other, _ = await _connected()
+    untouched.arm_folded = False  # left out before this session, which moves nothing
+    await other.close()
+    assert other.close_note is None, "an arm this session never moved is not its to report"
 
 
 @pytest.mark.parametrize(("fails", "said"), [(None, "is stopped"), ("bridge", "not confirmed")])
 async def test_close_on_moss_litter_says_the_mission_stopped_only_if_it_did(
     fails: str | None, said: str
 ) -> None:
+    """After the stop a run ends with, which is what ends the mission."""
     mock, adapter, _ = await _connected(stack="moss-litter", stop_fails=fails)
+    await adapter.stop()
     await adapter.close()
     assert said in (adapter.close_note or ""), adapter.close_note
     assert mock.mission_stopped is (fails is None)
+
+
+async def test_on_moss_litter_a_session_that_started_nothing_leaves_the_mission_running() -> None:
+    """A probe's connect, health and close, `quackd doctor`'s: no stop, no note, and no session
+    left for the bridge's deadman, which on moss-litter is the whole stop, however long the probe
+    takes to close."""
+    mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.6, 0.0)])
+    assert (await adapter.health()).ok
+    await mock.sleep(5.0)
+    await adapter.close()
+    assert adapter.close_note is None
+    assert mock.stop_log == [] and mock.session_halts == 0
+    assert mock.mission.running and not mock.mission_stopped
+
+
+async def test_on_moss_litter_close_stops_a_mission_this_session_started() -> None:
+    mock, adapter, _ = await _connected(stack="moss-litter")
+    start = Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+    assert (await adapter.send_intent(start)).accepted
+    await adapter.close()
+    assert mock.stop_log[0] == "mission.stop" and mock.mission_stopped
+    assert "litter mission is stopped" in (adapter.close_note or "")
+
+
+async def test_close_halts_its_own_twist_goal_and_cycle_and_nothing_else() -> None:
+    """What `_halt_own` sends, on the mock as on the rover: the zero for a twist still fresh,
+    the soft stop for a goal it set, the cancel for its own cycle, and for nothing it did not
+    start not a thing."""
+    mock, adapter, _ = await _connected()
+    assert (await adapter.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+    await adapter.close()
+    assert mock.stop_log == ["twist.zero"], "a zero, and no soft stop: it set no goal"
+    mock, adapter, _ = await _connected()
+    goal = Intent(kind="pose", params={"x": 1.0, "y": 0.0, "frame": "world"})
+    assert (await adapter.send_intent(goal)).accepted
+    await adapter.close()
+    assert mock.stop_log == ["cockpit.stop"] and mock.goal is None
+    mock, adapter, _ = await _connected()
+    cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
+    assert (await adapter.send_intent(cycle)).accepted
+    await adapter.close()
+    assert mock.stop_log == ["arm.cancel"] and mock.job is not None
+    assert (mock.job.state, mock.job.held) == ("cancelled", True)
+    mock, adapter, _ = await _connected()
+    mock.goal, mock.exploring = (1.0, 0.0), True  # the owner's, from the cockpit's own page
+    await adapter.close()
+    assert mock.stop_log == [] and mock.goal == (1.0, 0.0) and mock.exploring
+
+
+def test_doctor_on_moss_litter_is_healthy_and_leaves_the_mission_running() -> None:
+    result = CliRunner().invoke(
+        app, ["doctor", "--robot", "moss:mock", "--address", "mock://rover?stack=moss-litter"]
+    )
+    out = " ".join(result.output.split())
+    assert result.exit_code == 0, out[-3000:]
+    assert "litter mission is stopped" not in out and "was not confirmed" not in out
+
+
+def test_a_run_on_moss_litter_still_ends_with_the_missions_stop(tmp_path: Path) -> None:
+    """The run's own end sends a stop, and on moss-litter that ends the mission."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "moss-lookout",
+            "--robot",
+            "moss:mock",
+            "--address",
+            "mock://rover?stack=moss-litter",
+            "--llm",
+            "fake",
+            "--runs-dir",
+            str(tmp_path),
+            "--no-gif",
+        ],
+    )
+    out = " ".join(result.output.split())
+    assert result.exit_code == 0, out[-3000:]
+    from quackd.agent.transcript import Transcript
+
+    events = Transcript.read(next(tmp_path.rglob("transcript.jsonl")))
+    notes = [str(e.get("text")) for e in events if e["kind"] == "note"]
+    assert any(n.startswith("The litter mission is stopped, and runs again") for n in notes), notes
 
 
 # ── what quackd never sends ─────────────────────────────────────────────────────────────

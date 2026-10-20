@@ -310,6 +310,10 @@ class MossMock:
         self.mission_stopped = False
         # quackd's session with the bridge
         self.started: str | None = None
+        self.litter_started = False
+        """`collect_litter` started in this session, so close() stops the mission."""
+        self.stop_sent = False
+        """A stop ran in this session, so close() says what it did to the mission."""
         self._session_at: float | None = None
         self._session_s = 0.5
         self.session_halts = 0
@@ -587,6 +591,22 @@ class MossMock:
             self.exploring, self.goal, self._pending_goal = False, None, None
             self._publish((0.0, 0.0))
 
+    def _halt_own(self) -> None:
+        """close()'s halt when no `collect_litter` ran, as the real transport sends it: this
+        session's own arm cycle by its id, a twist of its own the bridge still repeats, and a
+        goal or an exploration it started. A session that started none of them sends nothing."""
+        job = self.job
+        if job is not None and job.owner == "quackd" and job.id == self.arm_job_id:
+            self._arm_cancel()
+        fresh = self._twist is not None and self._t - self._twist_at <= TWIST_DEADMAN_S
+        if fresh and self._twist != (0.0, 0.0):
+            self.stop_log.append("twist.zero")
+            self._twist, self._zero_sent = None, True
+            self._publish((0.0, 0.0))
+        if self.started in ("goal", "explore"):
+            self._cockpit_stop()
+            self.started = None
+
     # ── protocol ────────────────────────────────────────────────────────────────────
 
     async def connect(self) -> None:
@@ -607,21 +627,27 @@ class MossMock:
         self._activity = self._t
 
     async def close(self) -> None:
+        """What this session started, halted, and nothing else, as the real transport does it:
+        the whole stop after `collect_litter`, and otherwise `_halt_own`."""
         if self.connected:
-            await self.stop()
+            if self.litter_started:
+                await self.stop()
+            else:
+                self._halt_own()
             notes = []
-            if self.arm_up and self.arm_torque and not self.arm_folded:
+            moved_arm = self.arm_job_id is not None or self.litter_started
+            if moved_arm and self.arm_up and self.arm_torque and not self.arm_folded:
                 notes.append(
                     "The arm is holding where the run left it, out of its drive pose. The "
                     "cockpit's idle stop, or tools/moss-fly.sh stop, will later end the arm's "
                     "stack, and that turns its torque off: stow it first (stow_arm), or support it."
                 )
-            if self.stack == "moss-litter" and self.mission_stopped:
+            if self.stack == "moss-litter" and self.stop_sent and self.mission_stopped:
                 notes.append(
                     "The litter mission is stopped, and runs again only after the stack restarts "
                     "on the rover."
                 )
-            elif self.stack == "moss-litter":
+            elif self.stack == "moss-litter" and self.stop_sent:
                 notes.append(
                     "The litter mission's stop was not confirmed, so it may still be running: "
                     "stop the stack on the rover."
@@ -828,6 +854,8 @@ class MossMock:
             start = p.get("action", "start") == "start"
             if skill == SKILL_COLLECT and (self.mission_stopped or not self.mission.running):
                 return Ack(accepted=False, reason=MISSION_STOPPED)
+            if skill == SKILL_COLLECT and start:
+                self.litter_started = True
             self._explore(start=start)
             if start:
                 self.started = "litter" if skill == SKILL_COLLECT else "explore"
@@ -858,6 +886,7 @@ class MossMock:
     async def stop(self) -> None:
         """The bridge's stop, then the cockpit's soft stop, as the real transport sends them."""
         errors: list[str] = []
+        self.stop_sent = True
         if self.bridge_up:
             if self.stop_fails == "bridge":
                 errors.append("the bridge's stop: the mock was told to fail it")
@@ -886,6 +915,16 @@ class MossMock:
                 self.last_keepalive = self._t
                 self.cockpit_keepalives += 1
                 self._activity = self._t
+
+    async def check(self) -> None:
+        """The heartbeat's checks for a probe, as the real transport runs them: a session the
+        probe's keepalive opened is ended at once."""
+        opened = self._session_at is None
+        try:
+            await self.heartbeat()
+        finally:
+            if opened:
+                self._session_at = None
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self.connected:

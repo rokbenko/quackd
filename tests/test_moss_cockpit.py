@@ -297,6 +297,25 @@ async def test_a_goal_through_the_transport_says_it_was_started(cockpit: FakeCoc
     await transport.close()
 
 
+async def test_close_ends_a_goal_it_started_and_posts_nothing_when_it_started_nothing(
+    cockpit: FakeCockpit,
+) -> None:
+    """A close is a soft stop only for a goal or an exploration this session started. One that
+    started nothing posts nothing, so the owner's goal from the cockpit's page runs on."""
+    idle = _transport(cockpit)
+    await idle.connect()
+    cockpit.goal = {"x": 1.0, "y": 0.0}  # the owner's
+    await idle.close()
+    assert cockpit.posted("stop") == [] and cockpit.goal == {"x": 1.0, "y": 0.0}
+    assert idle.close_note is None
+    transport = _transport(cockpit)
+    await transport.connect()
+    goal = Intent(kind="pose", params={"x": 0.3, "y": 0.1, "frame": "world"})
+    assert (await transport.send_intent(goal)).accepted
+    await transport.close()
+    assert len(cockpit.posted("stop")) == 1 and transport.started is None
+
+
 async def test_with_no_bridge_a_twist_and_an_arm_cycle_are_refused_as_data(
     cockpit: FakeCockpit,
 ) -> None:

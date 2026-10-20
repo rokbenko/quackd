@@ -513,6 +513,7 @@ def test_the_stops_zero_goes_where_the_cockpits_own_soft_stop_sends_it(
 def test_on_moss_litter_the_mission_stops_first_then_the_arm_then_the_zero() -> None:
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     bus = bridge.bus
+    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
     bus.executing = True  # the mission's own pick is mid cycle
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
@@ -522,6 +523,74 @@ def test_on_moss_litter_the_mission_stops_first_then_the_arm_then_the_zero() -> 
     again = bridge.stop()
     assert again["ok"] and "the mission was already stopped" in again["did"]
     assert bus.mission_stops == 1, "stopped stays stopped: the stop is not sent twice"
+    bridge.close()
+
+
+def test_on_moss_litter_the_arm_is_cancelled_before_the_missions_stop_is_confirmed() -> None:
+    """A mission slow to confirm its stop holds nothing else back: its stop goes out first, the
+    arm's cancel and the zero follow at once, and only then does the bridge wait for the
+    mission's RPC to fall silent. This mission takes three quarters of the confirmation."""
+    clock = Clock()
+    slow = B.MISSION_CONFIRM_S * 0.75
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=slow)
+    _fake_time(bridge, clock)
+    bus = bridge.bus
+    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    bus.executing = True  # the mission's own pick is mid cycle
+    cancelled_at: list[float] = []
+    cancel = bus.arm_cancel
+
+    def timed() -> str:
+        cancelled_at.append(clock.t)
+        return str(cancel())
+
+    bus.arm_cancel = timed
+    doc = bridge.stop()
+    assert doc["ok"] and doc["mission"] == "stopped", doc
+    order = [" ".join(e.split()[:2]) for e in bus.events]
+    assert order[:3] == ["mission stop", "arm cancel", "twist /tele_cmd_vel#geometry_msgs.Twist"]
+    assert cancelled_at and cancelled_at[0] < slow <= clock.t, "the cancel waited on the mission"
+    bridge.close()
+
+
+def test_a_stop_whose_zeros_fail_still_confirms_the_missions_stop() -> None:
+    """A bus that refuses every twist: each zero's failure is said, and the stop still answers
+    with the mission's own word rather than raising before it was asked."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _fake_time(bridge, clock)
+    assert bridge.mission_doc()["answering"] is True
+
+    def refused(_chan: str, _vx: float, _wz: float) -> None:
+        raise OSError("the bus refused the publish")
+
+    bridge.bus.publish_twist = refused
+    doc = bridge.stop()
+    assert doc["mission"] == "stopped" and not doc["ok"], doc
+    assert any("the pump's zero" in e for e in doc["errors"]), doc["errors"]
+    bridge.close()
+
+
+def test_the_arm_cancel_route_cancels_its_own_cycle_and_nothing_else() -> None:
+    """quackd's close names the cycle it started. Another id, or a cycle that has ended, is left
+    alone, so a close never cancels a trajectory it did not send, and it sends nothing else."""
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bus = bridge.bus
+    code, started = bridge.arm_cycle({})
+    assert code == 200, started
+    _wait(lambda: bus.executing)
+    assert bridge.arm_cancel({})[0] == 400
+    code, doc = bridge.arm_cancel({"id": "a-cycle-of-another-session"})
+    assert code == 200 and doc["cancelled"] is False and bus.executing
+    assert "arm cancel" not in bus.events
+    code, doc = bridge.arm_cancel({"id": started["id"]})
+    assert code == 200 and doc["ok"] and doc["cancelled"] is True, doc
+    assert doc["arm"]["held"] is True and not bus.executing
+    _wait(lambda: bridge.jobs.doc()["state"] == "cancelled")
+    code, doc = bridge.arm_cancel({"id": started["id"]})
+    assert doc["cancelled"] is False, "a cycle that has ended is not cancelled again"
+    assert bus.events.count("arm cancel") == 1
+    assert not [e for e in bus.events if e.startswith(("twist", "true"))], "nothing else went out"
     bridge.close()
 
 

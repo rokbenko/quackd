@@ -11,6 +11,7 @@ that breaks this is a change to both. What it cannot catch is anything about a r
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import socket
 import sys
@@ -88,6 +89,22 @@ def _wait(predicate: Any, limit_s: float = 10.0) -> None:
         time.sleep(0.02)
 
 
+@contextlib.contextmanager
+def _rover_with(blueprint: str = "moss-explore", **bridge_kw: Any) -> Iterator[Rover]:
+    """The `rover` fixture's rig, with the bridge built as a test asks."""
+    with FakeCockpit(blueprint=blueprint) as cockpit:
+        bridge = B.fake_bridge(blueprint=blueprint, token=TOKEN, fps=10.0, **bridge_kw)
+        server = B.serve(bridge, "127.0.0.1", 0)
+        bridge.start()
+        try:
+            _wait(lambda: bridge.bus.frames.heard("nose")["heard"])
+            yield Rover(cockpit, bridge, int(server.server_address[1]))
+        finally:
+            server.shutdown()
+            server.server_close()
+            bridge.close()
+
+
 # ── the constants ───────────────────────────────────────────────────────────────────────
 
 
@@ -105,6 +122,7 @@ def test_both_sides_spell_the_protocol_the_same() -> None:
         "FRAME_PATH",
         "ARM_PATH",
         "ARM_CYCLE_PATH",
+        "ARM_CANCEL_PATH",
         "MISSION_PATH",
         "KEEPALIVE_PATH",
         "FRAME_STAMP_HEADER",
@@ -281,12 +299,64 @@ async def test_close_ends_the_session_so_nothing_is_halted_after_quackd_has_gone
     assert [e for e in rover.bridge.bus.events if e not in before] == []
 
 
-async def test_close_says_the_arm_holds_out_of_its_drive_pose(rover: Rover) -> None:
+@pytest.mark.parametrize("cycled", [True, False], ids=["it moved the arm", "it moved nothing"])
+async def test_close_says_the_arm_holds_out_of_its_drive_pose_after_moving_it(
+    rover: Rover, cycled: bool
+) -> None:
+    """The note is for an arm this session moved. One that was out of its drive pose before a
+    session that moved nothing is left as it was and not reported, so a probe stays healthy."""
     transport = rover.transport()
     await transport.connect()
+    if cycled:
+        cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
+        assert (await transport.send_intent(cycle)).accepted
+        _wait(lambda: (rover.bridge.jobs.doc() or {}).get("state") == "done")
     rover.bridge.bus.joints["arm/a"] = 1.0
     await transport.close()
-    assert transport.close_note and "out of its drive pose" in transport.close_note
+    if cycled:
+        assert transport.close_note and "out of its drive pose" in transport.close_note
+    else:
+        assert transport.close_note is None
+        assert "arm cancel" not in rover.bridge.bus.events
+
+
+async def test_close_zeroes_its_own_twist_and_sends_nothing_it_did_not_start() -> None:
+    """A session that started nothing sends nothing when it closes, so a goal the owner set on
+    the cockpit's page runs on. One whose twist the bridge still repeats sends its zero, and no
+    soft stop, since it started no goal. This bridge repeats a twist far longer than the test
+    runs, so the zero can only be the close's."""
+    from dataclasses import replace
+
+    with _rover_with(up=replace(B.FAKE_UPSTREAM, deadman_s=60.0)) as rover:
+        idle = rover.transport()
+        await idle.connect()
+        await idle.close()
+        assert idle.close_note is None
+        assert rover.bridge.bus.published == [] and rover.cockpit.posted("stop") == []
+        moving = rover.transport()
+        await moving.connect()
+        assert moving.twist_deadman_s == 60.0, "read from the bridge's hello"
+        assert (await moving.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
+        await moving.close()
+        sent = [v for _, _, v in rover.bridge.bus.published]
+        assert sent[0] == (0.1, 0.0) and sent[-1] == (0.0, 0.0), sent
+        assert rover.cockpit.posted("stop") == [], "no soft stop: it started no goal"
+        assert moving.close_note is None
+
+
+async def test_close_cancels_a_cycle_of_its_own_that_no_stop_ended() -> None:
+    """By the id the bridge gave it, through `/arm/cancel`, and the arm holds."""
+    with _rover_with(cycle_s=30.0) as rover:
+        transport = rover.transport()
+        await transport.connect()
+        cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
+        assert (await transport.send_intent(cycle)).accepted
+        _wait(lambda: rover.bridge.bus.executing)
+        await transport.close()
+        assert "arm cancel" in rover.bridge.bus.events and not rover.bridge.bus.executing
+        _wait(lambda: (rover.bridge.jobs.doc() or {}).get("state") == "cancelled")
+        assert rover.bridge.jobs.doc()["held"] is True
+        assert rover.cockpit.posted("stop") == [], "the cancel, and not a stop"
 
 
 async def test_a_stack_that_restarted_fails_the_heartbeat(rover: Rover) -> None:
@@ -343,11 +413,45 @@ async def test_on_moss_litter_the_stop_ends_the_mission_and_it_stays_ended(rover
     assert "litter mission is stopped" in (adapter.close_note or "")
 
 
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_running(
+    rover: Rover,
+) -> None:
+    """What `quackd doctor` does: connect, ask the rover's health and close. It started nothing,
+    so it stops nothing and says nothing, and it keeps no session the bridge could halt however
+    long it takes to close."""
+    adapter = MossAdapter(rover.transport())
+    await adapter.connect()
+    health = await adapter.health()
+    assert health.ok, health.reason
+    await asyncio.sleep(B.SESSION_MISSES * client.HEARTBEAT_S + 0.5)
+    await adapter.close()
+    assert adapter.close_note is None
+    assert "mission stop" not in rover.bridge.bus.events
+    assert rover.cockpit.posted("stop") == []
+    assert rover.bridge.session.halts == 0
+    assert rover.bridge.mission_doc()["stopped"] is False
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_on_moss_litter_close_stops_a_mission_this_session_started(rover: Rover) -> None:
+    """Only the start went out here, with no verb's own stop after it, so the close sends the
+    whole stop, the mission's first."""
+    adapter = MossAdapter(rover.transport())
+    await adapter.connect()
+    start = Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+    assert (await adapter.send_intent(start)).accepted
+    await adapter.close()
+    assert rover.bridge.bus.events[0] == "mission stop"
+    assert rover.bridge.mission_doc()["stopped"] is True
+    assert "litter mission is stopped" in (adapter.close_note or "")
+
+
 async def test_on_moss_litter_a_stop_left_unconfirmed_is_said_at_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A mission still answering after its stop: the bridge says so, and so does the run's
-    last word, which must not claim the mission ended."""
+    """A mission still answering after the stop a run ends with: the bridge says so, and so
+    does the run's last word, which must not claim the mission ended."""
     monkeypatch.setattr(B, "MISSION_CONFIRM_S", 0.4)
     with FakeCockpit(blueprint="moss-litter") as cockpit:
         bridge = B.fake_bridge(
@@ -360,6 +464,7 @@ async def test_on_moss_litter_a_stop_left_unconfirmed_is_said_at_close(
             transport = Rover(cockpit, bridge, int(server.server_address[1])).transport()
             adapter = MossAdapter(transport)
             await adapter.connect()
+            await adapter.stop()
             await adapter.close()
             assert transport.mission_stop == "unconfirmed"
             assert transport.stop_error is not None and "still answers" in transport.stop_error

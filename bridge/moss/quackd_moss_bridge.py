@@ -15,9 +15,11 @@ is those four things, and nothing else:
 - `POST /arm/cycle`: the maker's own `tools/moss_arm_play.py`, run as a subprocess exactly as
   MOSS's mission runs it, and a cancel that stops the script, cancels the trajectory through an
   RPC client of the bridge's own and reads the joints twice to see that they hold.
-- `POST /stop`: on moss-litter the mission's own stop first, then the arm's cancel, then a zero
-  twist. And `POST /session/keepalive`, fed by quackd's heartbeat: three missed periods and the
-  bridge halts whatever quackd started.
+  `POST /arm/cancel` is that cancel for the one cycle of quackd's its id names, and nothing else.
+- `POST /stop`: on moss-litter the mission's own stop first, then at once the arm's cancel and a
+  zero twist, and only then the wait that confirms the mission's stop. And
+  `POST /session/keepalive`, fed by quackd's heartbeat: three missed periods and the bridge
+  halts whatever quackd started.
 
 Rules this file lives by, the same as every daemon under `bridge/`:
 
@@ -75,10 +77,11 @@ STOP_PATH = "/stop"
 FRAME_PATH = "/frame"
 ARM_PATH = "/arm"
 ARM_CYCLE_PATH = "/arm/cycle"
+ARM_CANCEL_PATH = "/arm/cancel"
 MISSION_PATH = "/mission"
 KEEPALIVE_PATH = "/session/keepalive"
 GET_PATHS = frozenset({HELLO_PATH, FRAME_PATH, ARM_PATH, MISSION_PATH})
-POST_PATHS = frozenset({TWIST_PATH, STOP_PATH, ARM_CYCLE_PATH, KEEPALIVE_PATH})
+POST_PATHS = frozenset({TWIST_PATH, STOP_PATH, ARM_CYCLE_PATH, ARM_CANCEL_PATH, KEEPALIVE_PATH})
 FRAME_STAMP_HEADER = "X-Frame-Stamp"
 FRAME_AFTER_HEADER = "X-Frame-After-Request"
 SESSION_MISSES = 3
@@ -632,6 +635,11 @@ class ArmJobs:
     def running(self) -> bool:
         with self._lock:
             return self.job is not None and self.job.state in JOB_RUNNING
+
+    def running_id(self) -> str | None:
+        """The id of the cycle running now, or None."""
+        with self._lock:
+            return self.job.id if self.job is not None and self.job.state in JOB_RUNNING else None
 
     def start(self, pick_pose: str, from_phase: str | None) -> tuple[bool, str]:
         with self._lock:
@@ -1265,8 +1273,11 @@ class Bridge:
 
     def stop(self) -> dict[str, Any]:
         """Idempotent, never raises, and says what it did. On moss-litter the mission's stop
-        comes first: a cycle cancelled under a mission still running makes its script exit on
-        its lag watch, the mission marks the pick failed, and its next tick explores again."""
+        goes out first, then at once the arm's cancel and the zero, and only then is the
+        mission's stop confirmed. A cycle cancelled under a mission not yet told to stop makes
+        its script exit on its lag watch, the mission marks the pick failed, and its next tick
+        explores again. A cancel that waited for the confirmation would leave the arm moving
+        for as long as the confirmation took."""
         stack = self.stack()
         did: list[str] = []
         errors: list[str] = []
@@ -1281,8 +1292,7 @@ class Bridge:
             errors.append(f"no bus: {self.bus_error or self.up_error}")
             doc["ok"] = False
             return doc
-        if self._litter(stack):
-            doc["mission"] = self._stop_mission(stack, did, errors)
+        sent = self._send_mission_stop(stack, did, errors) if self._litter(stack) else None
         doc["arm"] = self._cancel_arm(did, errors)
         for chan in self._stop_twist_channels(stack):
             try:
@@ -1291,7 +1301,12 @@ class Bridge:
             except Exception as e:
                 errors.append(f"the zero twist on {chan}: {e}")
         if self.pump is not None:
-            self.pump.zero()
+            try:
+                self.pump.zero()
+            except Exception as e:  # said, and the mission's stop is still confirmed
+                errors.append(f"the pump's zero: {e}")
+        if sent is not None:
+            doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
         if self._litter(stack) and doc["mission"] == "stopped":
             # once more, after the mission's loop has ended, so the last word on the pad is ours
             with contextlib.suppress(Exception):
@@ -1299,21 +1314,39 @@ class Bridge:
         doc["ok"] = not errors
         return doc
 
-    def _stop_mission(self, stack: StackInfo, did: list[str], errors: list[str]) -> str:
+    def _send_mission_stop(
+        self, stack: StackInfo, did: list[str], errors: list[str]
+    ) -> tuple[str, float]:
+        """The mission's own stop, sent without waiting for an answer, as dimOS sends every
+        stop, and when it went out. `stopped` is a run whose stop this bridge saw run already,
+        `unconfirmed` a stop that did not go out, and `sent` one still to be confirmed."""
         assert self.bus is not None
         if self.mission_stopped_run is not None and self.mission_stopped_run == stack.run_id:
             did.append("the mission was already stopped")
-            return "stopped"
+            return "stopped", self.clock()
         try:
             self.bus.mission_stop()
             did.append(f"{MISSION_RPC}/stop sent")
         except Exception as e:
             errors.append(f"the mission's stop did not go out: {e}")
-            return "unconfirmed"
+            return "unconfirmed", self.clock()
+        return "sent", self.clock()
+
+    def _confirm_mission_stop(
+        self, stack: StackInfo, sent: tuple[str, float], did: list[str], errors: list[str]
+    ) -> str:
+        """A sent stop, confirmed by the mission's RPC falling silent, its own sign that its stop
+        has run. The silence counts only from a mission this bridge heard answer on this run,
+        as it does when quackd connects. The mission is asked at least once, however long the
+        arm's cancel took, and for no longer than MISSION_CONFIRM_S after its stop went out."""
+        assert self.bus is not None
+        state, sent_at = sent
+        if state != "sent":
+            return state
         run = stack.run_id or "unknown"
         heard = self.mission_heard_run == run
-        deadline = self.clock() + MISSION_CONFIRM_S
-        while self.clock() < deadline:
+        deadline = sent_at + MISSION_CONFIRM_S
+        while True:
             if self.bus.mission_status(MISSION_PROBE_S) is not None:
                 heard = True
                 self.mission_heard_run = run
@@ -1327,6 +1360,8 @@ class Bridge:
                     "cannot confirm its stop: stop the stack on the rover"
                 )
                 return "unconfirmed"
+            if self.clock() >= deadline:
+                break
             self.sleep(0.1)
         errors.append(
             f"the mission still answers {MISSION_CONFIRM_S:g} s after its stop: stop the stack "
@@ -1429,6 +1464,24 @@ class Bridge:
         if not started:
             return 409, {"ok": False, "reason": said}
         return 200, {"ok": True, "id": said}
+
+    def arm_cancel(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """The cancel for one cycle of quackd's, the one `id` names, while it still runs: what
+        quackd's close sends, which halts what its own session started and nothing else. A
+        cycle that has ended or that another id names is left alone, and so is a trajectory
+        this bridge did not start, which `/stop` would cancel."""
+        wanted = body.get("id")
+        if not isinstance(wanted, str) or not wanted:
+            return 400, {"ok": False, "reason": "an arm cancel names the cycle it cancels: {id}"}
+        if self.jobs is None or self.jobs.running_id() != wanted:
+            return 200, {"ok": True, "cancelled": False, "arm": None, "errors": []}
+        errors: list[str] = []
+        result = self.jobs.cancel()
+        if result.get("error"):
+            errors.append(f"the arm: {result['error']}")
+        elif result.get("held") is False:
+            errors.append("the arm still moved after its cancel: hold it or cut its power")
+        return 200, {"ok": not errors, "cancelled": True, "arm": result, "errors": errors}
 
     def mission_doc(self) -> dict[str, Any]:
         stack = self.stack()
@@ -1806,6 +1859,9 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                 self._json(200, bridge.stop())
             elif path == ARM_CYCLE_PATH:
                 code, doc = bridge.arm_cycle(body)
+                self._json(code, doc)
+            elif path == ARM_CANCEL_PATH:
+                code, doc = bridge.arm_cancel(body)
                 self._json(code, doc)
             else:
                 self._json(200, bridge.keepalive(body))

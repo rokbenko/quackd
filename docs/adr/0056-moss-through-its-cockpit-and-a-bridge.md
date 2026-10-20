@@ -45,15 +45,24 @@ Four things read at the pin shape everything below.
   the maker's own pulses, timed on the rover. After the firmware's 0.3 s with no new twist it
   sends one zero and then nothing, because of the second trap.
 - **The stop is both surfaces, every time**: the bridge's `/stop`, then the cockpit's soft stop.
-  On `moss-litter` the bridge stops the mission first, then cancels the arm, then sends the zero,
-  because a cycle cancelled under a mission still running is a failed pick and the mission
-  explores again. The mission's stop is confirmed by its RPC falling silent, counted only from a
-  mission the bridge heard answer before. quackd never posts the cockpit's `/cmd/stack`, and its
+  On `moss-litter` the bridge sends the mission's stop first and then at once cancels the arm
+  and sends the zero, because a cycle cancelled under a mission not yet told to stop is a failed
+  pick and the mission explores again. Only then does it confirm the mission's stop, by its RPC
+  falling silent, counted only from a mission the bridge heard answer before, so the arm is
+  never held back for the confirmation. quackd never posts the cockpit's `/cmd/stack`, and its
   close never sends a go limp call.
+- **The close halts what its session started.** After `collect_litter` it is the whole stop.
+  Otherwise it is the session's own arm cycle, cancelled by its id, a twist of its own the
+  bridge may still be repeating, and a goal or an exploration it started. A session that
+  started nothing sends nothing when it closes, and one that sent no stop either leaves no
+  note, so `quackd doctor` on `moss-litter` reports a healthy rover and leaves the mission
+  running.
 - **A session deadman.** quackd's heartbeat keeps a session open on the bridge, and after three
-  missed periods the bridge halts what quackd started through either surface and nothing else.
-  That gives `drive_to`, `explore` and `collect_litter` a deadman whenever the bridge is up, and
-  the manifest claims `deadman: true` only then.
+  missed periods the bridge halts what quackd started through either surface and nothing else,
+  and on `moss-litter` it runs the whole stop, the one every run ends with anyway. That gives
+  `drive_to`, `explore` and `collect_litter` a deadman whenever the bridge is up, and the
+  manifest claims `deadman: true` only then. A probe ends the session its health check opens
+  at once, so nothing is halted for it.
 - **What answered decides the verbs.** `describe()` declares every stack's verbs together, and
   connect narrows them to the stack that runs and what answered: twists and the arm need the
   bridge and a base stack, the planner's verbs need `moss-explore`, and `collect_litter` needs
@@ -82,10 +91,10 @@ Four things read at the pin shape everything below.
 ## Consequences
 
 - `collect_litter` runs once per stack start. Every stop quackd sends on `moss-litter` ends the
-  mission, the one at the end of every run and a `quackd doctor`'s close among them, and it stays
-  ended until the owner restarts the stack.
-- A run that ends with the arm out of its drive pose leaves it holding, and the cockpit's idle
-  stop will later end the arm's run and its torque. The close note says so.
+  mission, the one at the end of every run among them, and it stays ended until the owner
+  restarts the stack. A `quackd doctor` sends none.
+- A run that moved the arm and ends with it out of its drive pose leaves it holding, and the
+  cockpit's idle stop will later end the arm's run and its torque. The close note says so.
 - The pulses' turn rate, where the jaws close, the clock of a nose frame's stamp and whether an
   outside stop ends the mission cleanly are UNVERIFIED, each with what quackd does about it, and
   the hardware checklist measures the first.

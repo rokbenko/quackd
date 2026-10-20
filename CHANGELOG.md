@@ -28,8 +28,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   that stops the script, cancels the trajectory and sees the arm hold. And the litter mission's own
   stop, which the mission is the only thing it listens to. The bridge runs on the rover with MOSS's
   own interpreter, imports quackd nowhere, binds loopback and takes a token, and after three missed
-  heartbeats it halts what quackd started and nothing else. A systemd unit and its page sit beside
-  it ([bridge/moss/README.md](bridge/moss/README.md)).
+  heartbeats it halts what quackd started, and on `moss-litter` it runs the whole stop. quackd's
+  close halts only what its own session started, its own arm cycle by its id, so a
+  `quackd doctor` stops nothing. A systemd unit and its page sit beside it
+  ([bridge/moss/README.md](bridge/moss/README.md)).
 - **MOSS's own verbs.** `drive_to`, a goal at most 2 m away for MOSS's own planner. `explore`, its
   explorer for up to eight minutes. `pick_and_drop` and `stow_arm`, the maker's fixed arm cycle,
   which reaches for nothing. And `collect_litter`, the rover handed to MOSS's own litter mission
@@ -61,7 +63,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   librealsense's to say and outside both pins.
 - **`collect_litter` runs once per stack start.** Every stop quackd sends on `moss-litter`, the one
   at the end of every run among them, ends the litter mission, and it runs again only after the
-  owner restarts the stack.
+  owner restarts the stack. A session that started nothing sends none when it closes, so a
+  `quackd doctor` leaves the mission running.
 
 ## [0.21.0] — 2026-10-20
 

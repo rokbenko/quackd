@@ -405,8 +405,12 @@ class MossAdapter:
         return await self.transport.send_intent(intent)
 
     async def health(self) -> Health:
+        """The heartbeat's own checks, through `check`, which ends at once the session they open
+        on the bridge. A probe such as `quackd doctor` keeps no session, so the bridge's
+        deadman, which on moss-litter is the whole stop, never fires for it."""
+        check = getattr(self.transport, "check", None)
         try:
-            await self.transport.heartbeat()
+            await (check() if callable(check) else self.transport.heartbeat())
         except HeartbeatError as e:
             return Health(ok=False, reason=str(e))
         state = await self.transport.get_state()

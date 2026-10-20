@@ -26,6 +26,7 @@ So the bridge does those four things over HTTP and nothing else.
 | `/stop` | POST | idempotent, never raises, and says what it did and what failed |
 | `/frame?cam=nose` or `?cam=wrist` | GET | the first JPEG captured after the request arrived, with the image's own stamp |
 | `/arm/cycle` | POST | `{pick_pose, from_phase}`: the maker's cycle, as a job |
+| `/arm/cancel` | POST | `{id}`: that cycle of quackd's cancelled while it runs, and nothing else, which is what quackd's close sends |
 | `/arm` | GET | the job and how it ended, the joints, the jaw gap, and whether the arm is in its drive pose |
 | `/mission` | GET | the litter mission's own `mission_status` |
 | `/session/keepalive` | POST | fed by quackd's heartbeat, with what quackd started through the cockpit |
@@ -44,21 +45,27 @@ exactly as MOSS's own mission does, and reads its progress from the script's own
 exit code. The cancel is three steps in this order: stop the script, call `cancel_trajectory`
 on the arm's coordinator, then read the joints twice to see that they hold. Killing the script
 alone cancels nothing: the whole cycle is one trajectory that the coordinator plays to its end.
-`from_phase: back_to_clear` is the stow.
+`from_phase: back_to_clear` is the stow. `/arm/cancel` runs the same three steps for the one
+cycle its `id` names, the id `/arm/cycle` answered with, and does nothing for a cycle that has
+ended or that another id names, so quackd's close never cancels a trajectory it did not start.
 
-**The stop.** On `moss-litter` the mission's own `stop` goes first, then the arm's cancel, then
-a zero twist. The order matters: a cycle cancelled under a mission still running makes the
-maker's script exit on its lag watch, the mission marks the pick failed, and its next tick sets
-the rover exploring again. The mission's stop is sent without an answer, as dimOS sends every
-stop, so the bridge confirms it by the mission's RPC falling silent, and only for a mission it
-heard answer before. A stop it cannot confirm in 4 s is reported as a failure, and the arm's
-cancel and the zero go out either way.
+**The stop.** On `moss-litter` the mission's own `stop` goes first, then at once the arm's
+cancel and a zero twist, and only then the wait that confirms the mission's stop. The order
+matters: a cycle cancelled under a mission not yet told to stop makes the maker's script exit
+on its lag watch, the mission marks the pick failed, and its next tick sets the rover exploring
+again, while a cancel that waited for the confirmation would leave the arm moving meanwhile.
+The mission's stop is sent without an answer, as dimOS sends every stop, so the bridge confirms
+it by the mission's RPC falling silent, and only for a mission it heard answer before. A stop
+it cannot confirm within 4 s of sending it is reported as a failure, and the arm's cancel and
+the zero have gone out either way.
 
 **The session.** quackd posts a keepalive every half second. After three missed periods the
 bridge halts what quackd started and nothing else: a goal or an exploration started through
-the cockpit is ended with `stop_explore_cmd`, `stop_movement` and a zero, an arm cycle is
-cancelled, and on `moss-litter` the whole stop above runs. A session that started nothing
-halts nothing, so a goal the owner clicked on the cockpit's page is left alone.
+the cockpit is ended with `stop_explore_cmd`, `stop_movement` and a zero, and an arm cycle is
+cancelled. A session that started nothing halts nothing there, so a goal the owner clicked on
+the cockpit's page is left alone. On `moss-litter` the whole stop above runs, the stop every
+run and every MCP session ends with anyway. A probe such as `quackd doctor` ends its session as
+soon as its health check has run, so the bridge halts nothing for it.
 
 ## Install it on the rover
 
@@ -145,8 +152,8 @@ MOSS's cockpit stops an idle `moss-nav` or `moss-explore` stack after 300 s with
 `tools/moss-fly.sh stop`, which ends every dimOS run, the arm's included, and the arm's
 adapter turns its torque off as its run ends. quackd sends the cockpit's keepalive while it
 is connected. Once it disconnects nothing does, and an arm left outside its drive pose drops
-when the idle stop fires. quackd's close note says so at the end of every run that
-leaves the arm out. `MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off.
+when the idle stop fires. quackd's close note says so at the end of every run that moved the
+arm and leaves it out. `MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off.
 
 ## Rules this file lives by
 
