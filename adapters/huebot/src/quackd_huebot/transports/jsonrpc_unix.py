@@ -372,10 +372,13 @@ def fetch_still(
     an answer whose type is `multipart/*`, an MJPEG stream among them, is refused before a byte
     of its body is read (`NotAStill`); a body longer than `max_bytes` is refused (`NotAStill`);
     and past `deadline_s` from the request the fetch gives up, however fast bytes are still
-    arriving (`StillTooSlow`). Each read waits at most `deadline_s` for its next bytes, so a
-    fetch is over within twice that whatever the camera does. `stop`, once set, ends it at its
-    next read (`ConnectionAbortedError`): a transport that closes sets it, so no fetch reads on
-    behind it, and none keeps `asyncio.run` waiting on its thread at exit.
+    arriving (`StillTooSlow`). Each read waits at most `deadline_s` for its next bytes, and the
+    deadline is looked at between reads of the body, so once the headers are in a fetch is over
+    within twice `deadline_s` whatever the camera sends. The request and the headers, which
+    urllib reads, are bounded by that wait for each next byte alone. `stop`, once set, ends a
+    fetch at its next read of the body (`ConnectionAbortedError`): a transport that closes sets
+    it, so no fetch reads a body on behind it, and none keeps `asyncio.run` waiting on its
+    thread at exit.
 
     An HTTP error status raises urllib's `HTTPError`, whose body the caller can still read."""
     started = time.monotonic()
