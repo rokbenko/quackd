@@ -49,6 +49,7 @@ from quackd_moss.verbs import (
     SKILL_EXPLORE,
     STOW_FROM_PHASE,
     TELEMETRY_LIMIT_S,
+    arm_note,
     stack_refusal,
     stale_after_s,
 )
@@ -237,6 +238,7 @@ class MossMock:
         goal_refused: bool = False,
         explore_done_after_s: float | None = None,
         arm_lag_at_s: float | None = None,
+        arm_dies_at_s: float | None = None,
         bus: str = "lcm",
         fail_heartbeat_after: int | None = None,
         stop_fails: str | None = None,
@@ -273,6 +275,11 @@ class MossMock:
         self.goal_refused = goal_refused
         self.explore_done_after_s = explore_done_after_s
         self.arm_lag_at_s = arm_lag_at_s
+        self.arm_dies_at_s = arm_dies_at_s
+        """The maker's script dies this far into a cycle of quackd's, any way but its own (an
+        exception, a signal), and its one trajectory plays on until something cancels it."""
+        self.arm_moving = False
+        """A trajectory playing with no script left to watch it."""
         self._fail_after = fail_heartbeat_after
         self.stop_fails = stop_fails
         self.connected = False
@@ -481,6 +488,12 @@ class MossMock:
                 self.arm_folded = False
             return
         elapsed = self._t - job.started
+        dies = self.arm_dies_at_s
+        if job.owner == "quackd" and dies is not None and elapsed >= dies:
+            job.state, job.exit, job.reason = "failed", -9, "the script exited -9"
+            self.arm_moving, self.arm_folded = True, False
+            self._after_a_death(job)
+            return
         if self.arm_lag_at_s is not None and elapsed >= self.arm_lag_at_s:
             job.state, job.exit, job.held = "lag", 4, True
             job.reason = "ARM LAG: a joint fell behind, the trajectory was cancelled"
@@ -491,6 +504,13 @@ class MossMock:
             job.state, job.exit, job.reason = "done", 0, "done"
             self.arm_folded = True
             self._job_ended(job, ok=True)
+
+    def _after_a_death(self, job: _Job) -> None:
+        """The bridge reads the script's exit, cancels the trajectory it left playing and reads
+        the arm, before the job ends and a twist or a new cycle may start."""
+        self.stop_log.append("arm.cancel")
+        self.arm_moving = False
+        job.held = True
 
     def _job_ended(self, job: _Job, *, ok: bool) -> None:
         if job.owner != "mission":
@@ -742,11 +762,8 @@ class MossMock:
             notes = []
             moved_arm = self.arm_job_id is not None or self.litter_started
             if moved_arm and self.arm_up and self.arm_torque and not self.arm_folded:
-                notes.append(
-                    "The arm is holding where the run left it, out of its drive pose. The "
-                    "cockpit's idle stop, or tools/moss-fly.sh stop, will later end the arm's "
-                    "stack, and that turns its torque off: stow it first (stow_arm), or support it."
-                )
+                said = arm_note(None if self.job is None else self.job.held)
+                notes.append(said[0].upper() + said[1:] + ".")
             if self.stack == "moss-litter" and self.stop_sent and self.mission_stopped:
                 notes.append(
                     "The litter mission is stopped, and runs again only after the stack restarts "
@@ -915,6 +932,8 @@ class MossMock:
                     return Ack(accepted=False, reason="on moss-litter the mission owns the base")
                 if self.job is not None and self.job.state in ("starting", "running"):
                     return Ack(accepted=False, reason="the arm is playing a cycle")
+                if self.arm_moving:
+                    return Ack(accepted=False, reason="the arm is still moving")
                 vx, wz, clipped = shape_twist(float(p.get("vx", 0.0)), float(p.get("wz", 0.0)))
                 if clipped:
                     self.clipped += 1

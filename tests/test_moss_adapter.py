@@ -59,6 +59,7 @@ from quackd_moss.verbs import (
     PICK_POSE_NAMES,
     DriveToParams,
     PickAndDropParams,
+    arm_note,
     moss_verbs,
     stack_refusal,
 )
@@ -623,6 +624,33 @@ async def test_pick_and_drop_reports_an_arm_lag_as_its_ending() -> None:
     result = await ex.run_verb("pick_and_drop", {"pick_pose": "pick_low"})
     assert not result.ok and "ended lag" in result.summary
     assert mock.intents_of("do")[-1].params["pick_pose"] == "pick_low"
+    assert mock.stop_log[-1] == "cockpit.stop", "and the body stopped after it"
+
+
+async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_read() -> None:
+    """The script dies any way but its own and its trajectory plays on: the bridge cancels it
+    and reads the arm, and the verb stops the body before it says how the cycle ended."""
+    mock, _, ex = await _connected(arm_dies_at_s=3.0)
+    result = await ex.run_verb("pick_and_drop", {})
+    assert not result.ok and "ended failed" in result.summary, result.summary
+    assert "The arm holds where it stopped." in result.summary
+    assert not mock.arm_moving and mock.job is not None and mock.job.held is True
+    assert mock.stop_log[-2:] == ["twist.zero", "cockpit.stop"], "the body stopped after it"
+
+
+@pytest.mark.parametrize(
+    ("held", "said", "unsaid"),
+    [
+        (True, "holding where the run left it", "nobody read"),
+        (False, "still moving when it was last read", "holding"),
+        (None, "nobody read whether it holds", "holding"),
+    ],
+)
+def test_the_close_says_holding_only_after_the_hold_was_read(
+    held: bool | None, said: str, unsaid: str
+) -> None:
+    note = arm_note(held)
+    assert said in note and unsaid not in note
 
 
 async def test_stow_arm_plays_the_cycle_from_its_return() -> None:

@@ -839,6 +839,9 @@ class ArmJobs:
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                    # a session of its own: a Ctrl-C on the bridge's terminal, or a signal
+                    # to its group, never kills the script behind the bridge's back
+                    start_new_session=True,
                 )
             except OSError as e:
                 return False, f"the arm script did not start: {e}"
@@ -863,12 +866,23 @@ class ArmJobs:
                 self.on_running(job)
         code = proc.wait()
         with self._lock:
+            ending, cancelled = ending_of(code, job.cancelled), job.cancelled
+        after: dict[str, Any] | None = None
+        if ending not in ("done", "refused") and not cancelled:
+            # the script is gone and its trajectory may be playing on, with nothing watching
+            # it for lag: an ARM LAG cancelled it itself, but an exception, an exit of its own
+            # or a signal did not. So it is cancelled here and the hold read, before the job
+            # ends and a twist or a new cycle may start
+            after = cancel_and_read(self.bus, self.up, self.sleep)
+        with self._lock:
             job.exit = code
-            job.state = ending_of(code, job.cancelled)
+            job.state = ending
             if not job.reason:
                 job.reason = f"the script exited {code}"
-            if job.state == "lag":
-                job.held = True  # the script itself cancelled, and the coordinator holds
+            if after is not None:
+                job.held = after["held"]
+                if after.get("error"):
+                    job.reason += f". The cancel after it: {after['error']}"
             if self._proc is proc:
                 self._proc = None
         if self.on_end is not None:

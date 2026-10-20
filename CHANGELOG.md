@@ -25,7 +25,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   command for. A twist with a deadman of its own, sent again while it is fresh and then one zero
   and silence, since every message on the pad's channel cancels MOSS's navigation. A frame that
   says when it was taken. The maker's own arm cycle, run as his own mission runs it, with a cancel
-  that stops the script, cancels the trajectory and sees the arm hold. And the litter mission's own
+  that stops the script, cancels the trajectory and sees the arm hold, and a script that dies any
+  way but its own has its trajectory cancelled and the arm read too. And the litter mission's own
   stop, the only stop the mission listens to, which comes with the end of the mission's own pick
   script, since the mission's stop leaves that running. The bridge runs on the rover with MOSS's
   own interpreter, imports quackd nowhere, binds loopback and takes a token. Each quackd session

@@ -563,6 +563,38 @@ async def collect_litter(ctx: VerbContext, p: MinutesParams) -> VerbResult:
     )
 
 
+def _hold_sentence(held: Any) -> str:
+    """What a reading of the arm after its cancel says, and nothing a reading did not."""
+    if held is True:
+        return " The arm holds where it stopped."
+    if held is False:
+        return " The arm was still moving when it was read: support it, or cut its power."
+    return " Whether the arm holds was not read: support it."
+
+
+def arm_note(held: Any) -> str:
+    """The close's word on an arm this session moved and left out of its drive pose:
+    holding only after the hold was read, and otherwise what reading there was."""
+    later = (
+        "The cockpit's idle stop, or tools/moss-fly.sh stop, will later end the arm's stack, "
+        "and that turns its torque off"
+    )
+    if held is True:
+        return (
+            "the arm is holding where the run left it, out of its drive pose. "
+            f"{later}: stow it first (stow_arm), or support it"
+        )
+    if held is False:
+        return (
+            "the arm is out of its drive pose and was still moving when it was last read: "
+            "support it, or cut its power"
+        )
+    return (
+        "the arm is out of its drive pose, and nobody read whether it holds there. "
+        f"{later}: support it, or stow it (stow_arm)"
+    )
+
+
 async def _arm_cycle(
     ctx: VerbContext, what: str, pick_pose: str, from_phase: str | None
 ) -> VerbResult:
@@ -594,8 +626,7 @@ async def _arm_cycle(
     if ended is not None:
         await ctx.transport.stop()
         held = (_arm(await ctx.transport.get_state()).get("job") or {}).get("held")
-        hold = " The arm holds where it stopped." if held is True else ""
-        return VerbResult.fail(f"{what} was stopped: {ended}.{hold}", job=job)
+        return VerbResult.fail(f"{what} was stopped: {ended}.{_hold_sentence(held)}", job=job)
     ending = str(job.get("state"))
     reason = str(job.get("reason") or "")
     if ending == "done":
@@ -606,7 +637,12 @@ async def _arm_cycle(
             job=job,
             folded=folded,
         )
-    return VerbResult.fail(f"{what} ended {ending}: {reason or 'no reason given'}", job=job)
+    # whatever else ended the cycle, the body is stopped before the verb says so: a script that
+    # died may have left its trajectory playing, and the stop cancels it and reads the arm
+    await ctx.transport.stop()
+    held = (_arm(await ctx.transport.get_state()).get("job") or {}).get("held")
+    said = f"{what} ended {ending}: {reason or 'no reason given'}.{_hold_sentence(held)}"
+    return VerbResult.fail(said, job=job)
 
 
 async def pick_and_drop(ctx: VerbContext, p: PickAndDropParams) -> VerbResult:

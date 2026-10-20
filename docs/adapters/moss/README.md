@@ -206,7 +206,7 @@ for one tool call, and `collect_litter` does not run there at all.
 | a twist, through the bridge | a zero on the pad channel, then the soft stop | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, at most 1.5 s at quackd's own 0.5 s period, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
-| the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels it, so the arm holds | no arm verbs exist |
+| the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
 | the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every
@@ -253,10 +253,11 @@ for one tool call, and `collect_litter` does not run there at all.
   ends every dimOS run and turns the arm's torque off. A test reads the package's source to
   prove no code path can send either.
 - **The arm and the idle stop.** A run that moved the arm and ends with it out of its drive
-  pose leaves it holding, and the close note says so: the cockpit's idle stop ends an idle
-  `moss-nav` or `moss-explore` after 300 s with `tools/moss-fly.sh stop`, which ends the arm's
-  run too, and the arm's adapter turns its torque off as its run ends. quackd sends the
-  cockpit's keepalive while it is connected, and nothing does after.
+  pose leaves it there, and the close note says so. It says the arm is holding only when the
+  arm was read to hold after its cancel, and otherwise what reading there was. The cockpit's
+  idle stop ends an idle `moss-nav` or `moss-explore` after 300 s with `tools/moss-fly.sh stop`,
+  which ends the arm's run too, and the arm's adapter turns its torque off as its run ends.
+  quackd sends the cockpit's keepalive while it is connected, and nothing does after.
 - **How long a stop takes** is the firmware's own ramp, which the bridge reads from the stack
   and reports: with MOSS's launcher, 5 ms per percent, half a second from full power.
 

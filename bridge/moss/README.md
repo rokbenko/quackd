@@ -48,6 +48,11 @@ alone cancels nothing: the whole cycle is one trajectory that the coordinator pl
 `from_phase: back_to_clear` is the stow. `/arm/cancel` runs the same three steps for the one
 cycle its `id` names, the id `/arm/cycle` answered with, and does nothing for a cycle that has
 ended or that another id names, so quackd's close never cancels a trajectory it did not start.
+A script that ends any other way than done or refused, by an exception, an exit of its own or a
+signal, has the trajectory it sent cancelled and the arm read before its job ends, since nothing
+else would watch that trajectory for lag. The script runs in a session of its own, so a Ctrl-C
+on the bridge's terminal never reaches it, and the bridge's own shutdown cancels a cycle still
+running.
 
 **The stop.** On `moss-litter` the mission's own `stop` goes first, then at once the end of the
 mission's own pick, the arm's cancel and a zero twist, and only then the wait that confirms the

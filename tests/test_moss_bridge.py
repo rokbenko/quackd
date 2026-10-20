@@ -469,6 +469,68 @@ def test_a_bridge_closed_mid_cycle_cancels_the_cycle(session: bool) -> None:
     assert "arm cancel" in bus.events and not bus.executing
 
 
+DIES = (
+    "import sys, time\n"
+    "print('cycle: fake', flush=True)\n"
+    "print('running: fake trajectory', flush=True)\n"
+    "time.sleep(0.3)\n"
+    "raise RuntimeError('get_joint_positions returned nothing')\n"
+)
+"""A maker's script that dies after its trajectory went out, any way but its own."""
+
+
+def test_a_script_that_dies_mid_cycle_has_its_trajectory_cancelled_and_the_arm_read() -> None:
+    """Its one trajectory plays on with nothing watching it for lag. The bridge cancels it as
+    soon as it reads the exit, reads the hold, and only then ends the job, so no twist or new
+    cycle goes out under a moving arm."""
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bus = bridge.bus
+    bridge.jobs.argv_for = lambda pose, phase: [sys.executable, "-c", DIES]
+    assert bridge.arm_cycle({})[0] == 200
+    _wait(lambda: (bridge.jobs.doc() or {}).get("state") == "failed")
+    job = bridge.jobs.doc()
+    assert job["exit"] == 1 and job["held"] is True, job
+    assert bus.cancels >= 1 and not bus.executing, "the trajectory it left playing was cancelled"
+    bridge.close()
+
+
+def test_a_script_killed_by_a_signal_has_its_trajectory_cancelled_too() -> None:
+    """A Ctrl-C on the bridge's terminal no longer reaches the script, which has a session of
+    its own. A signal that does reach it, the OOM killer's say, is an ending like any other
+    death, and the bridge cancels and reads the arm after it."""
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bus = bridge.bus
+    assert bridge.arm_cycle({})[0] == 200
+    _wait(lambda: bus.executing)
+    proc = bridge.jobs._proc
+    assert proc is not None
+    proc.terminate()
+    _wait(lambda: (bridge.jobs.doc() or {}).get("state") == "failed")
+    assert bridge.jobs.doc()["held"] is True and not bus.executing
+    assert "start_new_session=True" in BRIDGE.read_text(encoding="utf-8")
+    bridge.close()
+
+
+@pytest.mark.parametrize(
+    ("code", "cancelled", "ending"),
+    [
+        (0, False, "done"),
+        (2, False, "refused"),
+        (3, False, "refused"),
+        (4, False, "lag"),
+        (1, False, "failed"),
+        (-9, False, "failed"),
+        (-15, False, "failed"),
+        (-15, True, "cancelled"),
+    ],
+)
+def test_every_ending_but_done_and_refused_leaves_a_trajectory_to_cancel(
+    code: int, cancelled: bool, ending: str
+) -> None:
+    """A negative exit is a signal, and a signal is a death like any other."""
+    assert B.ending_of(code, cancelled) == ending
+
+
 def test_the_arm_and_the_tracks_never_move_together() -> None:
     bridge = B.fake_bridge(cycle_s=30.0, fps=0)
     assert bridge.twist({"vx": 0.1, "wz": 0.0})[0] == 200

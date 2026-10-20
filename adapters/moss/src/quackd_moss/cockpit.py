@@ -68,6 +68,7 @@ from quackd_moss.verbs import (
     SKILL_COLLECT,
     SKILL_EXPLORE,
     TELEMETRY_LIMIT_S,
+    arm_note,
     stack_refusal,
     stale_after_s,
 )
@@ -1241,12 +1242,7 @@ class MossCockpit:
                 with contextlib.suppress(Exception):
                     arm = await self._call(self.bridge.arm)
                     if arm.get("answering") and arm.get("folded") is False:
-                        note.append(
-                            "the arm is holding where the run left it, out of its drive pose. "
-                            "The cockpit's idle stop, or tools/moss-fly.sh stop, will later end "
-                            "the arm's stack, and that turns its torque off: stow it first "
-                            "(stow_arm), or support it"
-                        )
+                        note.append(arm_note((arm.get("job") or {}).get("held")))
             if self.stack == "moss-litter" and self.stop_sent:
                 if self.mission_stop == "stopped":
                     note.append(

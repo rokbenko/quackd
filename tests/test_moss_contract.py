@@ -453,6 +453,7 @@ async def test_close_says_the_arm_holds_out_of_its_drive_pose_after_moving_it(
     await transport.close()
     if cycled:
         assert transport.close_note and "out of its drive pose" in transport.close_note
+        assert "nobody read whether it holds" in transport.close_note, "a done cycle read none"
     else:
         assert transport.close_note is None
         assert "arm cancel" not in rover.bridge.bus.events
