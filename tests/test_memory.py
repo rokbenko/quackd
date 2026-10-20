@@ -96,13 +96,21 @@ def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
     """docs/guides/memory.md promises a note saved from Claude Desktop is read by the next
     `quackd run` on the same robot. That is only true while these two expressions agree,
     and they are written in two files that know nothing about each other."""
-    from quackd.adapters.base import adapter_name, backend_name
+    from quackd.adapters.base import AdapterError, adapter_name, backend_name
     from quackd.adapters.factory import BACKENDS, RobotSpec, make_adapter, resolve_robot
 
     for adapter, backends in BACKENDS.items():
         for backend in backends:
             cli_key = resolve_robot(f"{adapter}:{backend}").key  # quackd/cli.py
-            transport = make_adapter(RobotSpec(adapter, backend, "member"))
+            spec = RobotSpec(adapter, backend, "member")
+            try:
+                transport = make_adapter(spec)
+            except AdapterError as e:
+                # a body with no default address, as Huebot's shim has none, is refused as it is
+                # built; nothing here connects, so any address builds it
+                if "needs --address" not in str(e):
+                    raise
+                transport = make_adapter(spec, address="tcp://127.0.0.1:9")
             # quackd/mcp_server.py, for a fleet member whose name is not the adapter's
             mcp_key = f"{adapter_name(transport) or 'member'}:{backend_name(transport)}"
             assert cli_key == mcp_key, f"{adapter}:{backend} would use two memory files"

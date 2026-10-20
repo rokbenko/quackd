@@ -32,10 +32,12 @@ standing no walk, though none of it has run on a real Microduck yet. 0.19's was 
 its pilot a part to play, acted out with the body it has and judged by whether this body can act it
 out, and that OpenAI's Decisions API is the second wire format a decision LLM speaks, behind
 `--decision-llm openai`, though no played run has reached the arm and no request has reached
-OpenAI's Decisions API yet. **0.20's is that the decision LLM can be shown the robot's camera, at
+OpenAI's Decisions API yet. 0.20's was that the decision LLM can be shown the robot's camera, at
 OpenAI's own hosts alone and with each frame on the record before it goes, and that a Microduck's
 head can keep a described thing in view the way OpenAI's launch video showed, though neither has met
-OpenAI or a real duck yet.**
+OpenAI or a real duck yet. **0.21's is that quackd can drive an eighth robot, Huebot, through a shim
+its maker is writing to answer the calls a Microduck's robotd answers, though nobody has seen the
+shim answer and nothing has run on a Huebot.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

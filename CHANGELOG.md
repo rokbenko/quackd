@@ -7,7 +7,26 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.21.0] — 2026-10-20
+
+0.21.0 adds Huebot, a 25 cm biped from Leif Rydenfalk, as the eighth robot quackd can drive. Its
+own API is closed, so quackd speaks to a shim its maker is writing, which is to answer the calls a
+Microduck's `robotd` answers, the same way. `huebot:jsonrpc` is the Microduck's transport, copied
+and renamed so that the two can diverge, and it needs `--address`, a forward to that shim, while
+`huebot:mock` runs offline. Its speed caps are 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s
+of turn, and it has no `gaze`, no `watch` and no `grab` until its maker says that `robot.look`
+works on it and what `ground_pick` does there. Its page says what the shim must answer, call by
+call, written to be sent to its maker.
+
+Nothing has run on a Huebot, and nobody has seen its shim answer. Its hardware checklist is the
+first thing to run once it does, and until a Huebot has passed the checklist's deadman step,
+`huebot:jsonrpc` claims no deadman.
+
+A Microduck turns at 1.0 rad/s at most now, the turn upstream's walking policy was trained on, and
+`stand_up` waits up to ten seconds for the duck to stand rather than reading it once at three. A
+run's `search_scan` counts the turns robotd took, which 0.18.0 said it did and only the tests ever
+saw, and a registered robot this quackd cannot build no longer makes every `quackd robot` command
+refuse the whole registry.
 
 ### Added
 
@@ -7337,7 +7356,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/rokbenko/quackd/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/rokbenko/quackd/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/rokbenko/quackd/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rokbenko/quackd/compare/v0.18.1...v0.19.0
