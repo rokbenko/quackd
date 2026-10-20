@@ -36,7 +36,14 @@ from quackd.cli import app
 from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.base import Detection
 from quackd.safety import Executor
-from quackd.transport.base import DuckState, Intent, TransportError, twist_shown_since_of
+from quackd.transport.base import (
+    Ack,
+    DuckState,
+    Intent,
+    Posture,
+    TransportError,
+    twist_shown_since_of,
+)
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import registry_from_manifest
 from quackd_huebot import (
@@ -483,6 +490,94 @@ def test_the_head_fades_for_nobody() -> None:
     assert HuebotAdapter(MockTransport()).head_fade_s == 0.0
     assert HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1")).head_fade_s == 0.0
     assert HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1")).frames_upright is False
+
+
+# ── every verb, offline ─────────────────────────────────────────────────────────────────
+
+
+class _Body(MockTransport):
+    """The core's scripted body with a posture of its own, so each verb can be seen to do what
+    it says rather than only to send something: `sit_toggle` sits a standing robot and stands a
+    seated one, and `robot.enable` stands a fallen one up."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.posture: Posture = "standing"
+
+    async def get_state(self) -> DuckState:
+        state = await super().get_state()
+        return state.model_copy(
+            update={"posture": self.posture, "fallen": self.posture == "fallen"}
+        )
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        ack = await super().send_intent(intent)
+        if intent.kind == "do" and intent.params.get("skill") == "sit_toggle":
+            self.posture = "sitting" if self.posture == "standing" else "standing"
+        elif intent.kind == "enable" and intent.params.get("on") and self.posture == "fallen":
+            self.posture = "standing"
+        return ack
+
+
+class _BallUnderfoot:
+    """Sees the ball dead ahead and close enough that `go_to` has arrived and `search_scan` has
+    found it on the first frame either looks at."""
+
+    name = "ball_underfoot"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [
+            Detection(label="ball", cx=0.5, cy=0.5, area=0.01, bearing_deg=0.0, est_distance_m=0.1)
+        ]
+
+
+async def test_every_verb_runs_offline_through_the_executor() -> None:
+    """Every verb `huebot:mock` offers runs through the executor and its allowlist, each doing
+    what it says on a body that sits, stands and gets up as it is asked to, which is what the
+    backends table on Huebot's page says of the mock. A verb the manifest gains fails this until
+    it is run here too."""
+    body = _Body()
+    adapter = HuebotAdapter(body)
+    manifest = await adapter.connect()
+    assert manifest.backend == "mock"
+    every = manifest.verb_names()
+    contract = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+        f"  allow: [{', '.join(every)}]\nsuccess: [x]\n---\n# Task\nx\n"
+    )
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=contract.frontmatter,
+        manifest=manifest,
+        detector=_BallUnderfoot(),
+    )
+    ran: list[str] = []
+
+    async def run(verb: str, **params: Any) -> str:
+        result = await ex.run_verb(verb, params)
+        assert result.ok, (verb, result.summary)
+        ran.append(verb)
+        return result.summary
+
+    await run("report_state")
+    await run("observe")
+    await run("say", text="hello")
+    await run("quack")
+    await run("move", vx=0.1, duration_s=0.4)
+    assert body.intents_of("move"), "the walk sent no twist"
+    await run("search_scan", target="ball")
+    await run("go_to", target="ball")
+    await run("kick", leg="left")
+    await run("approach_and", target="ball", then="kick")
+    assert [i.params["skill"] for i in body.intents_of("do")] == ["kick_left", "kick_right"]
+    assert await run("sit") == "now sitting" and body.posture == "sitting"
+    assert await run("stand") == "now standing" and body.posture == "standing"
+    body.posture = "fallen"
+    assert (await run("stand_up")).startswith("upright after") and body.posture == "standing"
+    await run("stop")
+    assert sorted(ran) == sorted(every), set(every) ^ set(ran)
+    await adapter.disconnect()
 
 
 # ── the connect ─────────────────────────────────────────────────────────────────────────
