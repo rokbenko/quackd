@@ -41,6 +41,14 @@ contains."""
 
 BACKENDS = ("mock", "jsonrpc")
 
+DEADMAN_SEEN = False
+"""Whether a Huebot has passed step 3 of docs/adapters/huebot/hardware-checklist.md, which is
+where its legs are seen to stop once `robot.move` stops arriving, on a stand. Until one has, the
+description of a real Huebot claims no deadman, as the Open Duck's bridge and the ToddlerBot's
+daemon claim none they have not reported, and quackd relies on the shim's all the same, as the
+deadman's UNVERIFIED ref in `upstream_api.py` says: nothing else stops a walk whose link died.
+The mock is not a robot, and claims what every offline backend claims."""
+
 _MOVE_DESCRIPTION = (
     "Walk with a velocity for a duration. Use small values; the robot is 25 cm tall."
 )
@@ -147,6 +155,8 @@ def huebot_manifest(
     if camera:
         gated |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
     declared = {spec.name for spec in core + extensions}
+    # The claim is about hardware, and no Huebot has shown its deadman yet (`DEADMAN_SEEN`).
+    deadman = backend == "mock" or DEADMAN_SEEN
     preconditions = {verb: names for verb, names in gated.items() if verb in declared}
     return RobotManifest(
         id=robot_id,
@@ -158,7 +168,9 @@ def huebot_manifest(
         sensors=sensors,
         verbs=core + extensions,
         preconditions=preconditions,
-        safety_authority=SafetyAuthority(native="robotd_deadman", deadman=True, heartbeat_hz=2.0),
+        safety_authority=SafetyAuthority(
+            native="robotd_deadman" if deadman else "none", deadman=deadman, heartbeat_hz=2.0
+        ),
         frame=Frame(reference="body"),
         limits={"max_vx": 0.15, "max_vy": 0.1, "max_wz": 0.75},
         backend=backend,

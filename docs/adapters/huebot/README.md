@@ -189,11 +189,14 @@ A notification: metres a second forward and to the left, and radians a second of
 to the left, in the trunk's frame. quackd sends one every 100 ms for as long as a verb walks, and
 never more than 0.15 m/s forward, 0.1 m/s sideways or 0.75 rad/s of turn.
 
-**The deadman is the shim's.** Once no `robot.move` has arrived for 500 ms, robotd's default,
-the robot stops. quackd relies on that and nothing else when the link goes: a tunnel pulled out,
-a laptop shut, a process killed. When quackd holds a walk back it sends nothing in its place, not
-even a zero, and a `robot.stop` it cannot deliver leaves the deadman to stop the robot. The first
-step of the [hardware checklist](hardware-checklist.md) tests it, before anything walks.
+**The deadman is the shim's.** Once no `robot.move` has arrived for 500 ms, robotd's default, the
+robot stops. quackd relies on that and nothing else when the link goes: a tunnel pulled out, a
+laptop shut, a process killed. When quackd holds a walk back it sends nothing in its place, not even
+a zero, and a `robot.stop` it cannot deliver leaves the deadman to stop the robot. Step 3 of the
+[hardware checklist](hardware-checklist.md) tests it, on a stand, before anything walks on the
+floor. The manifest claims it once a Huebot has passed that step: until then `huebot:jsonrpc`
+describes its `safety_authority` as `native: none` with no deadman, and quackd relies on the shim's
+deadman all the same, since nothing else stops a walk whose link died.
 
 ### `robot.stop` and `robot.health`
 
@@ -329,7 +332,7 @@ with no JSON-RPC, and quackd does not speak it. Nothing here has been run agains
 | `Huebot's shim answers the calls quackd makes as robotd does` | his email of 2026-10-15: the shim will answer the JSON-RPC quackd speaks to robotd, and he named `hello`, `robot.move`, `robot.stop`, `robot.head`, `robot.state` and `robot.health` | speaks robotd's protocol to it, and asks for four calls he did not name, `robot.subscribe`, `robot.do`, `robot.sound` and `robot.enable` ([above](#what-huebots-shim-must-answer)) |
 | `robot.look, which Huebot's shim does not answer yet` | the same email: `robot.look` is not on Huebot's side yet, and the head turns with four servos | refuses a look itself, before anything is written, offers no `gaze` and no `watch`, and waits for no glance to fade before `go_to` and `search_scan` steer |
 | `robot.state.joints in the Microduck's order, head_yaw at index 7, positive to the left` | his page names fifteen servos and neither their names nor their order | asks the shim for robotd's order, and reads index 7 as `extras.head_yaw_deg`, which nothing steers on |
-| `Huebot stops when robot.move notifications stop arriving` | assumed: a shim that answers robotd's calls need not stop as robotd does | relies on it whenever the link goes, and step 1 of the checklist tests it before anything walks |
+| `Huebot stops when robot.move notifications stop arriving` | assumed: a shim that answers robotd's calls need not stop as robotd does | relies on it whenever the link goes, and claims it in the manifest only once a Huebot has passed step 3 of the checklist, which tests it on a stand before anything walks on the floor |
 | `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is his to say | offers `sit`, `stand` and `kick` only for the skills the shim lists, and refuses any other `robot.do` without writing it. `grab` is offered nowhere until he says what `ground_pick` does on Huebot |
 | `stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen Huebot up` | Huebot stands and steps, and the walk's balance is still being tuned. Getting up from a fall is not published | sends `robot.enable {on: true}` only to a robot that is down and nobody holds, waits up to 10 s for it to read standing, and every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
 

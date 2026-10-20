@@ -405,7 +405,9 @@ SHIM_DEADMAN = UpstreamRef(
     "re-sends robot.move every 100 ms, a twist quackd holds back is not replaced by a zero, and "
     "a stop that cannot be delivered leaves the robot's deadman to stop it. That the shim keeps "
     "one is an assumption: answering robotd's calls is not the same as stopping as robotd does. "
-    "It is the first thing the hardware checklist tests, before any walk.",
+    "Step 3 of the hardware checklist tests it, on a stand, before any walk on the floor, and "
+    "the description of a real Huebot claims a deadman only once a Huebot has passed that step "
+    "(DEADMAN_SEEN).",
 )
 SHIM_SKILLS = UpstreamRef(
     "the skills Huebot's robot.do answers to are the ones its robot.subscribe lists",

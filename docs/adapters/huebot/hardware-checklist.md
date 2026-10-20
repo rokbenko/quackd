@@ -122,6 +122,10 @@ the honest outcome when the link is the thing that broke.
 > link dies: a tunnel that drops, a laptop that sleeps, every run over MCP. Nothing else quackd
 > does matters if it is not there. Tell the maker, and go no further.
 
+Both halves passing on a Huebot is what lets quackd's description of `huebot:jsonrpc` claim a
+deadman. Until somebody reports that they did (step 10), it claims none, and quackd relies on
+the shim's all the same.
+
 ## 4. `stop`, mid-walk, on a stand
 
 Bring the tunnel back, and run the same walk, still on the stand. Once the legs are moving,

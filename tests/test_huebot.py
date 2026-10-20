@@ -438,6 +438,28 @@ async def test_grab_is_offered_nowhere_even_to_a_shim_that_lists_ground_pick(
     await adapter.disconnect()
 
 
+async def test_a_real_huebot_claims_no_deadman_until_one_has_been_seen(
+    shim: FakeShim, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Huebot's deadman is the shim's, which nobody has seen (`up.SHIM_DEADMAN`), so the
+    description of a real Huebot claims none, connected or not, as the Open Duck's bridge and the
+    ToddlerBot's daemon claim none they have not reported. The mock claims what every offline
+    backend claims. Once a Huebot has passed step 3 of its checklist, `DEADMAN_SEEN` makes the
+    claim."""
+    real = describe("jsonrpc").safety_authority
+    assert (real.native, real.deadman) == ("none", False)
+    adapter = await _connected(shim)
+    assert adapter.manifest is not None
+    live = adapter.manifest.safety_authority
+    assert (live.native, live.deadman) == ("none", False)
+    await adapter.disconnect()
+    mock = describe("mock").safety_authority
+    assert (mock.native, mock.deadman) == ("robotd_deadman", True)
+    monkeypatch.setattr("quackd_huebot.DEADMAN_SEEN", True)
+    seen = describe("jsonrpc").safety_authority
+    assert (seen.native, seen.deadman) == ("robotd_deadman", True)
+
+
 def test_a_huebot_with_no_camera_has_no_verb_that_needs_one() -> None:
     blind = huebot_manifest("jsonrpc", camera=False)
     needs_eyes = {"observe", "go_to", "search_scan", "approach_and"}
