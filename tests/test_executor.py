@@ -636,6 +636,90 @@ async def test_whether_anybody_is_there_is_asked_when_the_question_is_put(
     ]
 
 
+# ── a dangerous verb needs a person (ADR-0056) ──────────────────────────────────────────
+
+
+def _dangerous(registry: VerbRegistry) -> list[str]:
+    """A verb in the `dangerous` class, which records each time it really runs."""
+    ran: list[str] = []
+
+    async def nuke(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        ran.append("nuke")
+        return VerbResult.success("nuked")
+
+    registry.register(Verb("nuke", "dangerous", nuke, safety_class="dangerous"))
+    return ran
+
+
+def _counting(asker: Any, calls: list[str]) -> Any:
+    """`asker`, with its mark, recording that it was put the question at all."""
+
+    def asks(name: str, params: dict[str, Any]) -> bool:
+        calls.append(name)
+        return bool(asker(name, params))
+
+    if hasattr(asker, "asks_a_person"):
+        asks.asks_a_person = asker.asks_a_person  # type: ignore[attr-defined]
+    return asks
+
+
+@pytest.mark.parametrize(
+    "asker",
+    [allow_all, deny_all, _confirm_asker(True), _confirm_asker(True, person=False)],
+    ids=[
+        "--yes and a flock's standing answer",
+        "the MCP server without --yes",
+        "an asker nobody marked",
+        "a pipe on stdin",
+    ],
+)
+async def test_a_dangerous_verb_is_refused_where_nobody_is_asked(
+    registry: VerbRegistry, mock_transport: MockTransport, asker: Any
+) -> None:
+    """`--yes`, a flock's standing answer, the MCP server and a pipe answer without anybody
+    there, so a dangerous verb is refused before its question is even put, with a gate that
+    names the fix, and it never runs."""
+    ran = _dangerous(registry)
+    calls: list[str] = []
+    ex, seen = logged(registry, mock_transport, allow="nuke")
+    ex.confirm = _counting(asker, calls)
+    with pytest.raises(VerbNotAllowed, match="only a person can clear it") as refusal:
+        await ex.run_verb("nuke")
+    assert "run it from a terminal, without --yes" in str(refusal.value)
+    assert ran == [] and calls == [], "refused before the question was put"
+    assert gates(seen) == [("confirm", "refused")]
+    assert not [e for e in seen if e.kind == "prompt"], "nobody was asked, so nothing says so"
+
+
+async def test_a_dangerous_verb_runs_when_a_person_answers_yes_and_not_when_they_say_no(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    ran = _dangerous(registry)
+    ex, seen = logged(registry, mock_transport, allow="nuke")
+    ex.confirm = _confirm_asker(True, person=True)
+    assert (await ex.run_verb("nuke")).ok
+    assert ran == ["nuke"]
+    assert gates(seen) == [("confirm", "allowed")]
+    assert [e.data["answer"] for e in seen if e.kind == "prompt"] == [True]
+
+    ex2, seen2 = logged(registry, mock_transport, allow="nuke")
+    ex2.confirm = _confirm_asker(False, person=True)
+    with pytest.raises(ConfirmDenied):
+        await ex2.run_verb("nuke")
+    assert ran == ["nuke"], "a person who says no is still a no"
+    assert gates(seen2) == [("confirm", "denied")]
+
+
+async def test_a_confirm_verb_still_opens_on_a_standing_yes(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """The rule is the dangerous class's alone: a `confirm` verb under `--yes` runs as it did."""
+    ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
+    ex.confirm = allow_all
+    assert (await ex.run_verb("kick")).ok
+    assert gates(seen) == [("confirm", "allowed")]
+
+
 async def test_the_budget_gate_fires_before_anything_is_sent(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:

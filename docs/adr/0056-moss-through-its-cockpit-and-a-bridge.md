@@ -1,6 +1,6 @@
 # ADR-0056: MOSS is reached through its own cockpit and a bridge of quackd's
 
-**Status:** accepted · **Date:** 2026-10-20 · Follows [ADR-0037](0037-adapters-are-their-own-packages.md) (the adapter is its own package, `quackd-moss`) and [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) (quackd stays on the laptop and reaches what runs on the robot) · Decides a rule for the executor's `dangerous` class ([ADR-0012](0012-safety-executor.md)) that lands with the adapter's registration · Implemented in `adapters/moss/` and `bridge/moss/quackd_moss_bridge.py` · Documented in [docs/adapters/moss/README.md](../adapters/moss/README.md) and its [hardware checklist](../adapters/moss/hardware-checklist.md)
+**Status:** accepted · **Date:** 2026-10-20 · Follows [ADR-0037](0037-adapters-are-their-own-packages.md) (the adapter is its own package, `quackd-moss`) and [ADR-0046](0046-the-jetson-is-reached-not-run-on.md) (quackd stays on the laptop and reaches what runs on the robot) · Amends [ADR-0012](0012-safety-executor.md): a verb of the `dangerous` class needs a person to answer its confirm · Implemented in `adapters/moss/` and `bridge/moss/quackd_moss_bridge.py`, and the rule in `quackd/safety.py` · Documented in [docs/adapters/moss/README.md](../adapters/moss/README.md) and its [hardware checklist](../adapters/moss/hardware-checklist.md)
 
 ## Context
 
@@ -63,8 +63,7 @@ Four things read at the pin shape everything below.
   `confirm`. With this release a `dangerous` verb runs only when a person actually answered its
   confirm: `--yes`, a flock's standing answer, the MCP server and a piped `yes` all refuse it,
   with a gate that names the fix. No verb shipped before `collect_litter` was `dangerous`. The
-  rule is decided here and is written into the executor with the adapter's registration, after
-  0.21.0.
+  executor refuses one before its confirm wherever `a_person_was_asked` says nobody was.
 
 ## Why not
 

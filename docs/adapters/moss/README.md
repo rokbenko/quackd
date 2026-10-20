@@ -188,15 +188,13 @@ mission, the `stop` verb's and the one at the end of every run among them, and a
 stays stopped until the owner restarts the stack. So does a `quackd doctor` that connects to
 `moss-litter`: its close is a stop too, and doctor reports the stopped mission and exits 1.
 
-Today the executor gives a `dangerous` verb the confirm a `confirm` verb gets, and leaves it out
-of what may run with no task file, so `collect_litter` needs a `.duck` that allows it. The rule
-that a `dangerous` verb runs only when a person actually answered, and never on `--yes`, a
-standing answer or a client that answers for itself, is decided in
-[ADR-0056](../../adr/0056-moss-through-its-cockpit-and-a-bridge.md) and lands with this adapter's
-registration.
+`collect_litter` is `dangerous`, so it runs only when a person answers its confirm at a terminal.
+Under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin nobody is asked, and
+it is refused before its question is put. With no task file it is not allowed at all, so it needs
+a `.duck` that allows it ([ADR-0056](../../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 
-Over MCP, a verb that runs for minutes, `explore` and `collect_litter` among them, may outlast the
-client's own timeout for one tool call.
+Over MCP, a verb that runs for minutes, `explore` among them, may outlast the client's own timeout
+for one tool call, and `collect_litter` does not run there at all.
 
 ## The stop contract
 

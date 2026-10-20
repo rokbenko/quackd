@@ -21,7 +21,7 @@ from quackd.duckfile.parser import load_duck, parse_duck_text
 from quackd.duckfile.schema import POLICY_VERBS
 from quackd.duckfile.validate import validate_duck
 from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import ConfirmDenied, Executor, allow_all
+from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
 from quackd.transport.base import Intent, TransportError
 from quackd.verbs.core import CORE
 from quackd.verbs.core import MAX_VX as SCHEMA_VX
@@ -94,11 +94,23 @@ def _executor(
     )
 
 
-async def _connected(allow: str | None = None, **kw: Any) -> tuple[MossMock, MossAdapter, Executor]:
+def _a_person(answer: bool) -> Any:
+    """A confirm marked the way the CLI marks the prompt a person at a terminal answers."""
+
+    def says(_name: str, _params: dict[str, Any]) -> bool:
+        return answer
+
+    says.asks_a_person = True  # type: ignore[attr-defined]
+    return says
+
+
+async def _connected(
+    allow: str | None = None, confirm: Any = allow_all, **kw: Any
+) -> tuple[MossMock, MossAdapter, Executor]:
     mock = MossMock(**kw)
     adapter = MossAdapter(mock)
     manifest = await adapter.connect()
-    return mock, adapter, _executor(adapter, manifest, allow=allow)
+    return mock, adapter, _executor(adapter, manifest, confirm=confirm, allow=allow)
 
 
 LITTER_ALLOW = "observe, report_state, stop, collect_litter"
@@ -363,6 +375,7 @@ async def test_the_gated_verbs_ask_and_a_no_stops_them() -> None:
         asked.append(name)
         return False
 
+    refuse.asks_a_person = True  # type: ignore[attr-defined]
     _, adapter, _ = await _connected(stack="moss-explore")
     ex = _executor(adapter, adapter.manifest, confirm=refuse)
     for verb in ("explore", "pick_and_drop", "stow_arm"):
@@ -373,6 +386,23 @@ async def test_the_gated_verbs_ask_and_a_no_stops_them() -> None:
     with pytest.raises(ConfirmDenied, match="collect_litter"):
         await ex.run_verb("collect_litter", {})
     assert asked == ["explore", "pick_and_drop", "stow_arm", "collect_litter"]
+
+
+@pytest.mark.parametrize("asker", [allow_all, _a_person(True)], ids=["--yes", "a person"])
+async def test_collect_litter_runs_only_when_a_person_answers_it(asker: Any) -> None:
+    """The one dangerous verb quackd ships: `--yes`, a flock's standing answer and the MCP
+    server never clear it, and nothing is started for the mission before it is refused. A
+    person at a terminal does clear it."""
+    mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
+    ex = _executor(adapter, adapter.manifest, confirm=asker, allow=LITTER_ALLOW)
+    if asker is allow_all:
+        with pytest.raises(VerbNotAllowed, match="only a person can clear it"):
+            await ex.run_verb("collect_litter", {"minutes": 1})
+        assert mock.started is None and not mock.mission_stopped, "nothing was started"
+    else:
+        result = await ex.run_verb("collect_litter", {"minutes": 1})
+        assert result.ok, result.summary
+        assert mock.mission_stopped
 
 
 async def test_a_dangerous_verb_is_out_of_a_session_with_no_task_file() -> None:
@@ -688,7 +718,9 @@ async def test_the_soft_stop_does_not_end_the_mission() -> None:
 
 
 async def test_collect_litter_runs_once_per_stack_start() -> None:
-    mock, _, ex = await _connected(LITTER_ALLOW, stack="moss-litter", litter=[(0.4, 0.0)])
+    mock, _, ex = await _connected(
+        LITTER_ALLOW, confirm=_a_person(True), stack="moss-litter", litter=[(0.4, 0.0)]
+    )
     first = await ex.run_verb("collect_litter", {"minutes": 1})
     assert first.ok, first.summary
     assert "runs again only after the stack restarts" in first.summary

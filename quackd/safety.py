@@ -548,6 +548,20 @@ class Executor:
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
 
         if self.needs_confirm(verb):
+            # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
+            # flock's standing answer, the MCP server and a pipe on stdin all answer without
+            # asking anybody, so the verb is refused before its confirm is put, and only a
+            # person at a terminal can run it (ADR-0056). Refused rather than denied: nobody
+            # said no, and the fix is a terminal, not `--yes`.
+            if verb.safety_class == "dangerous" and not a_person_was_asked(self.confirm):
+                reason = (
+                    f"{name} is a dangerous verb, and only a person can clear it, while nobody "
+                    "is asked here (--yes, a flock's standing answer, the MCP server or a "
+                    "pipe): run it from a terminal, without --yes, and answer its confirm "
+                    "yourself"
+                )
+                self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
+                raise VerbNotAllowed(reason)
             try:
                 answer = bool(self.confirm(name, parsed.model_dump()))
             except Exception as e:

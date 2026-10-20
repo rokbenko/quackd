@@ -363,5 +363,7 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   ends the way it always did. Recording one is `quackd robot rest-pose NAME`
   ([guides/registry.md](registry.md)).
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
-  there is no terminal to ask on. The refusal text tells the model why.
+  there is no terminal to ask on. The refusal text tells the model why. A `dangerous` verb is
+  refused even then, since `--yes` is nobody being asked: it runs only from a terminal, where a
+  person answers it.
 - What stops the body when quackd goes quiet is the body's job, not the server's, and it differs per robot. Read [concepts/safety.md](../concepts/safety.md) before an MCP session drives hardware.

@@ -39,7 +39,8 @@ OpenAI or a real duck yet. 0.21's was that quackd can drive an eighth robot, Hue
 its maker is writing to answer the calls a Microduck's robotd answers, though nobody has seen the
 shim answer and nothing has run on a Huebot. **0.22's is that quackd can drive a ninth robot, MOSS,
 a tracked rover that picks up litter, through its own cockpit and a bridge quackd ships for the
-rover, though nothing has run on a MOSS rover yet.**
+rover, and that a `dangerous` verb runs only when a person answers it, though nothing has run on
+a MOSS rover yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

@@ -38,7 +38,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect` and `watch` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it | nothing: the model calls `assess_task` |
 | `params` | the arguments fit the verb's schema | the call. This is feedback to the model, not a crash |
-| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes` | answer y, or pass `--yes` |
+| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
 | `abort_when` | the battery threshold, and consecutive failures once the result is in | the `.duck`'s `abort_when`, or the robot |
@@ -49,6 +49,16 @@ the log and the transcript print, so a refusal tells you which row you are on.
 Execution races a **timeout** against the abort, so a kill switch cancels the verb that is
 running. A verb that times out or raises stops the robot and comes back as a failed result
 rather than an abort.
+
+**The three classes.** A verb is `safe`, `confirm` or `dangerous`, and the manifest says which.
+A `safe` verb runs once the gates above pass. A `confirm` verb asks first, and `--yes` or a
+standing answer may answer for you. A `dangerous` verb asks too, and only a person can answer
+it: wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe
+on stdin, it is refused before its question is put, with a `confirm` gate whose reason says to
+run it from a terminal. A person who answers n stops it as before, and with no task file loaded
+it is not allowed at all. `collect_litter`, which hands a MOSS rover to its own litter mission,
+is the first verb quackd ships in that class
+([ADR-0056](../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 
 The `cancelled` row is the one worth knowing about: that path used to return at once and leave
 the legs moving with nothing to halt them, which is the failure this page exists to rule out.

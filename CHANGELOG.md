@@ -40,6 +40,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   moves a track or the arm, and **what MOSS's cockpit would need to answer to retire the bridge**,
   six things, written on its page for its maker.
 
+### Changed
+
+- **A `dangerous` verb runs only when a person answered its confirm.** Under `--yes`, a flock's
+  standing answer, the MCP server or a pipe on stdin nobody is asked, so a `dangerous` verb is
+  refused there before its question is put, with a `confirm` gate whose reason says to run it from
+  a terminal without `--yes`. A person who answers y still runs it, and one who answers n still
+  stops it. No verb quackd shipped before `collect_litter` was `dangerous`, so nothing that ran
+  before refuses now ([docs/concepts/safety.md](docs/concepts/safety.md)).
+
 ### Known limitations
 
 - **Nothing has run on a MOSS rover**, and quackd's bridge has never run on one. The client is
