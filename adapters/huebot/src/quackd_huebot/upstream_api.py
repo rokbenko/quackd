@@ -7,15 +7,15 @@ protocol here is robotd's, read in the Microduck's own source at the pin the Mic
 reads it at, daemon-v0.16.1 (d818af5), and every ref that says what that protocol is stays
 VERIFIED, as a fact about the protocol.
 
-Whether Huebot's shim answers it that way is another matter. Nobody has seen the shim, Huebot's
-own API is closed, and the maker's page publishes neither joint names nor a joint order, so every
-claim about Huebot is an UNVERIFIED ref, sourced to the maker's email of 2026-10-15 and page,
+Whether Huebot's shim answers it that way is another matter. Nobody has seen the shim, Huebot's own
+API is closed, and the maker's page publishes neither joint names nor a joint order, so every claim
+about Huebot is an UNVERIFIED ref, sourced to the maker's email of 2026-10-15 and page,
 ce-net.com/huebot, read on 2026-10-20: that the shim answers the calls quackd makes, that it does
-not answer `robot.look` yet, the order of its joints, its deadman, its skills, and what
-`robot.enable` does for a Huebot on the floor. `docs/adapters/huebot/README.md` is the human
-readable version of this file, and its section on what the shim must answer is what the maker is
-asked to build. `tests/test_upstream_api.py` proves that the UNVERIFIED names are reachable from
-the `jsonrpc` backend alone.
+not answer `robot.look` yet, the order of its joints, its deadman, its skills, that its own
+behaviour code is off while the shim is driven, and what `robot.enable` does for a Huebot on the
+floor. `docs/adapters/huebot/README.md` is the human readable version of this file, and its section
+on what the shim must answer is what the maker is asked to build. `tests/test_upstream_api.py`
+proves that the UNVERIFIED names are reachable from the `jsonrpc` backend alone.
 
 The protocol refs are copied from `quackd_microduck.upstream_api` rather than imported from it,
 because the two robots may diverge: a Microduck re-read moves that file, and this one moves when
@@ -421,6 +421,19 @@ SHIM_SKILLS = UpstreamRef(
     "reports that the robot holds something. The transport refuses a robot.do for any name the "
     "shim did not list without writing it, and a shim that lists none is offered none of the "
     "three.",
+)
+SHIM_BEHAVIOURS = UpstreamRef(
+    "Huebot's own behaviour code is off while quackd drives it through the shim",
+    "UNVERIFIED",
+    MAKER,
+    "The maker's email of 2026-10-15 says Huebot runs behaviour code of its own: needs, an LED "
+    "face, coming to your hand. That code can move the robot without quackd, and what it does "
+    "while the shim is driven is the maker's to say. quackd assumes it is off, since nothing "
+    "it reads tells that motion from its own. The shim is asked to report a policy label other "
+    "than walk or stand while anything but quackd's twists drives the legs, which quackd reads "
+    "as unknown and sends nothing on, and to stop whatever moves the robot on robot.stop. The "
+    "hardware checklist switches the behaviours off, and sees that they are off, before its "
+    "step 1.",
 )
 STAND_UP_RPC = UpstreamRef(
     "stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen "

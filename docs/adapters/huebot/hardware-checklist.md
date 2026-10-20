@@ -25,6 +25,21 @@ quackd run hello-world --robot huebot:mock --llm fake --no-memory
 each task's allowlist and reading a run's log while it happens. It touches nothing below: no
 socket, no handshake, no deadman. There is no simulator of Huebot's body or gait.
 
+## Before step 1: Huebot's own behaviours off
+
+Huebot runs behaviour code of its own, the maker wrote on 2026-10-15: needs, an LED face, coming to
+your hand. That code can move the robot without quackd, and nothing quackd reads tells that motion
+from its own: a robot that turned to your hand in the middle of step 3 would look like a deadman
+that failed. quackd assumes the code is off whenever the shim is driven.
+
+Switch the behaviours off the way the maker says, then see that they are off before anything
+connects. With quackd not running, put Huebot on its stand, watch it for a minute, and hold a
+hand out in front of it. Nothing should move.
+
+> Abort if anything moves, and ask the maker the two questions on
+> [its page](README.md#huebots-own-behaviours): how the behaviour code is suspended while the
+> shim is driven, and how its motion appears in `robot.state`.
+
 ## 1. Reach the shim, and ask it what it is
 
 The shim listens on a unix socket or on a port of the robot's own loopback, never on the

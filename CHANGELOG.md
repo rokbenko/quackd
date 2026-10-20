@@ -27,13 +27,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls its
   maker named, `robot.do`, `robot.sound` and `robot.enable` for the verbs, a boolean `accepted` in
   their answers, the fields of `robot.state` quackd reads, robotd's deadman, and a socket on the
-  robot reached through ssh and never an open port, since the protocol has no authentication. Its
-  [hardware checklist](docs/adapters/huebot/hardware-checklist.md) tests the deadman, with quackd
-  frozen and with the tunnel pulled, and `robot.stop` with the feet off the ground before anything
-  walks, lifts the robot off its stand to see a walk refused, runs `stand_up` and each listed skill
-  on the stand, and sends the first `robot.enable` to the robot on its back on a mat, before the
-  feet go down. Until a Huebot has passed the deadman's step, the description of `huebot:jsonrpc`
-  claims no deadman.
+  robot reached through ssh and never an open port, since the protocol has no authentication. Since
+  Huebot runs behaviour code of its own, the shim is asked to report a `policy` other than `walk` or
+  `stand` while anything but quackd drives the legs, and to stop it on `robot.stop`, and the page
+  carries two questions for the maker on how that code is suspended and shows. Its
+  [hardware checklist](docs/adapters/huebot/hardware-checklist.md) switches Huebot's own
+  behaviours off and sees that they are, tests the deadman, with quackd frozen and with the tunnel
+  pulled, and `robot.stop` with the feet off the ground before anything walks, lifts the robot off
+  its stand to see a walk refused, runs `stand_up` and each listed skill on the stand, and sends
+  the first `robot.enable` to the robot on its back on a mat, before the feet go down. Until a
+  Huebot has passed the deadman's step, the description of `huebot:jsonrpc` claims no deadman.
 - **Where Huebot differs from the Microduck.** `huebot:jsonrpc` has no default address, and a run
   without `--address` is refused as the robot is built, before anything is opened or a run directory
   written, naming `ssh -L 9870:<socket> <huebot>` and `--address tcp://127.0.0.1:9870`. The shim
@@ -56,10 +59,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and that its head turns on four servos, and that `quack` and `say` send `robot.sound`, which the
   maker has not named among the shim's calls.
 - **Its upstream refs.** robotd's protocol stays VERIFIED at the Microduck's pin, `d818af5`, and
-  every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers
-  the calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the
-  skills, and what `robot.enable` does for a Huebot on the floor. A test holds the protocol refs
-  to the Microduck's for as long as the two read one pin.
+  every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers the
+  calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the skills,
+  that its own behaviour code is off while the shim is driven, and what `robot.enable` does for a
+  Huebot on the floor. A test holds the protocol refs to the Microduck's for as long as the two read
+  one pin.
 
 ## [0.20.0] — 2026-10-20
 

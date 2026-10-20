@@ -564,7 +564,8 @@ def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at
     in the Microduck's source at the pin and VERIFIED as facts about the protocol. Every claim
     about Huebot's own side is the maker's word, UNVERIFIED and sourced to the maker, and each of
     the ones the design names has a ref of its own: that the shim answers the calls, that it has
-    no robot.look yet, the joint order, the deadman, the skills and robot.enable on the floor."""
+    no robot.look yet, the joint order, the deadman, the skills, that its own behaviour code is
+    off while the shim is driven, and robot.enable on the floor."""
     api = huebot_api
     assert len(api.PIN) == 40 and api.PIN.isalnum()
     for ref in api.refs_by_status("VERIFIED"):
@@ -582,6 +583,7 @@ def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at
         "JOINT_ORDER",
         "SHIM_DEADMAN",
         "SHIM_SKILLS",
+        "SHIM_BEHAVIOURS",
         "STAND_UP_RPC",
     }
     for name in ("hello", "robot.move", "robot.stop", "robot.head", "robot.state", "robot.health"):
@@ -589,6 +591,8 @@ def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at
     assert "index 7" in api.JOINT_ORDER.name
     assert api.JOINT_NAMES.index("head_yaw") == 7
     assert f"{api.DEADMAN_S * 1000:g} ms by default" in api.DEADMAN.note
+    assert "email of 2026-10-15" in api.SHIM_BEHAVIOURS.note
+    assert "needs, an LED face, coming to your hand" in api.SHIM_BEHAVIOURS.note
 
 
 def test_while_huebot_and_the_microduck_read_one_pin_they_agree_on_the_protocol() -> None:

@@ -10,8 +10,9 @@ vocabulary, the deadman-friendly `move` notifications and the shim's own echo of
 subscription, the health poll, and posture, read off the policy label against the labels robotd's
 own source names and failing closed on every other. What is not is listed as UNVERIFIED in
 `upstream_api.py`: that the shim answers any of it as robotd does (`up.SHIM_CALLS`), the order of
-its joints (`up.JOINT_ORDER`), its deadman (`up.SHIM_DEADMAN`), its skills (`up.SHIM_SKILLS`), and
-what `stand_up`'s `robot.enable` does for a Huebot on the floor (`up.STAND_UP_RPC`), which every
+its joints (`up.JOINT_ORDER`), its deadman (`up.SHIM_DEADMAN`), its skills (`up.SHIM_SKILLS`),
+that Huebot's own behaviour code is off while it drives (`up.SHIM_BEHAVIOURS`), and what
+`stand_up`'s `robot.enable` does for a Huebot on the floor (`up.STAND_UP_RPC`), which every
 state lists in `extras.assumptions`.
 
 These rules run through this file, and each exists because the robot is on a floor and quackd

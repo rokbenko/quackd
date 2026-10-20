@@ -156,8 +156,9 @@ that connection, until it closes. A frame older than 1 s is not believed, and th
   as `unknown`.
 - `policy`, a string. `walk` or `stand` while the robot is on its feet and takes a twist, and
   `sit` while it is seated. Every other label reads as `unknown`, and nothing walks: a skill's
-  own name while the skill runs, `held`, `homing`, or anything quackd has not read. Only these
-  three are read as a posture.
+  own name while the skill runs, `held`, `homing`, anything that drives the legs other than
+  quackd's twists ([Huebot's own behaviours](#huebots-own-behaviours)), or anything quackd has
+  not read. Only these three are read as a posture.
 - `move.requested`, `[vx, vy, vyaw]`, exactly as the newest `robot.move` asked for it, unrounded.
   `robot.stop` zeroes it, and the deadman does not. `robot.move` is a notification, so this is
   the only place quackd can see that a twist was taken. A twist the state has not shown three
@@ -254,6 +255,28 @@ and a `reason` beside it when it is false. An answer without one is read as a re
 a yes: a skill the robot refused must not be reported as done. robotd writes `accepted` in its
 answers to `robot.stop` and `robot.subscribe` too, and the shim may as well.
 
+### Huebot's own behaviours
+
+Huebot runs behaviour code of its own, the maker wrote on 2026-10-15: needs, an LED face, coming to
+your hand. That code can move the robot without quackd, and nothing quackd reads tells that motion
+from its own, so quackd assumes the code is off while the shim is driven, an assumption with a
+[row of its own below](#unverified-huebots-side-and-what-we-do), and the
+[hardware checklist](hardware-checklist.md) switches it off before its step 1. If any of it can
+still move the robot, the shim is asked for two things:
+
+- While anything but quackd's twists drives the legs, the frame's `policy` names something other
+  than `walk` or `stand`, the behaviour's own name for example. quackd then reads posture as
+  `unknown` and sends nothing that moves the robot, as it does while a skill runs.
+- `robot.stop` stops whatever is moving the robot, the behaviour code included, and not only the
+  twist quackd sent.
+
+Two questions for the maker, which nothing quackd can read answers:
+
+1. How is the behaviour code suspended while the shim is driven, and how can somebody standing
+   at the robot see that it is?
+2. How does motion the behaviour code makes appear in `robot.state`: under which `policy` label,
+   and does `move.requested` show it?
+
 ### Not needed yet
 
 `robot.look`, which points the head at a point and answers with the head joints it chose, and
@@ -339,6 +362,7 @@ with no JSON-RPC, and quackd does not speak it. Nothing here has been run agains
 | `robot.state.joints in the Microduck's order, head_yaw at index 7, positive to the left` | the maker's page names fifteen servos and neither their names nor their order | asks the shim for robotd's order, and reads index 7 as `extras.head_yaw_deg`, which nothing steers on |
 | `Huebot stops when robot.move notifications stop arriving` | assumed: a shim that answers robotd's calls need not stop as robotd does | relies on it whenever the link goes, and claims it in the manifest only once a Huebot has passed step 3 of the checklist, which tests it on a stand before anything walks on the floor |
 | `the skills Huebot's robot.do answers to are the ones its robot.subscribe lists` | Huebot runs behaviour code of its own, and which skills the shim lists is the maker's to say | offers `sit`, `stand` and `kick` only for the skills the shim lists, and refuses any other `robot.do` without writing it. `grab` is offered nowhere until the maker says what `ground_pick` does on Huebot |
+| `Huebot's own behaviour code is off while quackd drives it through the shim` | the email of 2026-10-15: Huebot runs behaviour code of its own, needs, an LED face, coming to your hand. What it does while the shim is driven is not said | assumes it is off, asks the shim for a `policy` other than `walk` or `stand` while anything else drives the legs and for a `robot.stop` that stops it, and has the checklist switch it off before step 1 ([two questions for the maker](#huebots-own-behaviours)) |
 | `stand_up asks Huebot's shim to drive (robot.enable), which nobody has said gets a fallen Huebot up` | Huebot stands and steps, and the walk's balance is still being tuned. Getting up from a fall is not published | sends `robot.enable {on: true}` only to a robot that is down and nobody holds, waits up to 10 s for it to read standing, and every state lists this in `extras.assumptions`, which the pilot is told not to take for the robot's own work |
 
 ## What this robot is, as numbers
