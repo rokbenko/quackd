@@ -1013,6 +1013,30 @@ async def test_a_safety_flag_that_is_not_a_json_boolean_reads_as_the_key_being_a
         assert given == absent, (base, given, absent)
 
 
+@pytest.mark.parametrize(
+    ("safety", "policy"),
+    [({"fallen": "x" * 5000, "picked_up": False}, "walk"), (None, "p" * 5000)],
+    ids=["fallen", "policy"],
+)
+async def test_a_reason_quotes_no_more_than_a_short_piece_of_what_the_shim_sent(
+    safety: dict[str, Any] | None, policy: str
+) -> None:
+    """`posture_reason` goes into every refusal that quotes it and into the log, and a frame can
+    carry a value of any size: a `safety.fallen` or a `policy` of a megabyte was quoted whole."""
+    fake = FakeShim(policy=policy)
+    fake.safety_block = safety
+    await fake.start()
+    try:
+        adapter = await _connected(fake)
+        state = await adapter.get_state()
+        reason = state.extras["posture_reason"]
+        assert state.posture == "unknown" and len(reason) < 200, reason
+        assert reason.count("x") + reason.count("p") < 100, reason
+        await adapter.disconnect()
+    finally:
+        await fake.stop()
+
+
 async def test_a_null_fall_or_pick_up_flag_sends_nothing_its_absence_would_not() -> None:
     """The two that move a robot nobody can vouch for, said outright. With `fallen` null nothing
     reports falls, so no walk goes out and `stand_up` asks nothing. With `picked_up` null nothing

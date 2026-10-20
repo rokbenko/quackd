@@ -508,6 +508,17 @@ def _snapshot_failure(error: BaseException) -> tuple[str, bool]:
     return str(reason) or type(reason).__name__, False
 
 
+#: The most of a value from a state frame a sentence quotes.
+QUOTED_CHARS = 60
+
+
+def _quoted(said: str) -> str:
+    """A value the shim sent, as a sentence quotes it, cut to `QUOTED_CHARS`: a frame can carry
+    a value of any size, and the sentence goes into `posture_reason`, every refusal that quotes
+    it and the log."""
+    return said if len(said) <= QUOTED_CHARS else said[: QUOTED_CHARS - 3] + "..."
+
+
 def _flag(safety: dict[str, Any], key: str) -> bool | None:
     """One flag of a state frame's `safety` block as the shim reported it: True or False when it
     is a JSON boolean, and None for anything else, null, a number or a string included, which
@@ -555,7 +566,7 @@ def _not_standing_because(policy: str | None, skills: Sequence[str]) -> str:
     """Why a label that neither stands nor seats the robot leaves its posture unknown."""
     if not policy:
         return "the shim's state frame names no policy"
-    said = f"the shim reports policy {policy!r}"
+    said = f"the shim reports policy {_quoted(repr(policy))}"
     if policy in skills:
         if policy in up.STANDING_LABELS or policy in up.SITTING_LABELS:
             return f"{said}, which is also one of its skills, so quackd cannot tell which it is"
@@ -1248,7 +1259,8 @@ class JsonRpcUnixTransport:
                 silent = "the shim's state frame carries no safety.fallen"
             else:
                 silent = (
-                    f"the shim's state frame says safety.fallen is {json.dumps(safety['fallen'])}, "
+                    "the shim's state frame says safety.fallen is "
+                    f"{_quoted(json.dumps(safety['fallen']))}, "
                     "not true or false, which quackd reads as not reported"
                 )
             return StateRead(state, age, False, policy, fallen, None, "unknown", silent)
