@@ -30,9 +30,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   robot reached through ssh and never an open port, since the protocol has no authentication. Its
   [hardware checklist](docs/adapters/huebot/hardware-checklist.md) tests the deadman, with quackd
   frozen and with the tunnel pulled, and `robot.stop` with the feet off the ground before anything
-  walks, lifts the robot off its stand to see a walk refused, and runs `stand_up` and each listed
-  skill on the stand before the feet go down. Until a Huebot has passed the deadman's step, the
-  description of `huebot:jsonrpc` claims no deadman.
+  walks, lifts the robot off its stand to see a walk refused, runs `stand_up` and each listed skill
+  on the stand, and sends the first `robot.enable` to the robot on its back on a mat, before the
+  feet go down. Until a Huebot has passed the deadman's step, the description of `huebot:jsonrpc`
+  claims no deadman.
 - **Where Huebot differs from the Microduck.** `huebot:jsonrpc` has no default address, and a run
   without `--address` is refused as the robot is built, before anything is opened or a run directory
   written, naming `ssh -L 9870:<socket> <huebot>` and `--address tcp://127.0.0.1:9870`. The shim

@@ -3,7 +3,8 @@
 Nobody has run quackd against a Huebot, and nobody has seen the shim its maker is writing for it. If
 you have one, this page is the order to do it in. Every step that can go wrong has an abort
 condition, and the first two that send a twist test what stops the robot, with its feet off the
-ground: the deadman, then `robot.stop`. The feet touch the ground at step 9 and not before.
+ground: the deadman, then `robot.stop`. It lies on a mat at step 9, and its feet touch the floor
+at step 10 and not before.
 
 **Know what stops Huebot before anything moves.** quackd's own `stop` is a `robot.stop` over the
 socket, which Ctrl-C or `q` in the terminal running quackd sends. When the socket is the thing
@@ -123,7 +124,7 @@ the honest outcome when the link is the thing that broke.
 > does matters if it is not there. Tell the maker, and go no further.
 
 Both halves passing on a Huebot is what lets quackd's description of `huebot:jsonrpc` claim a
-deadman. Until somebody reports that they did (step 10), it claims none, and quackd relies on
+deadman. Until somebody reports that they did (step 11), it claims none, and quackd relies on
 the shim's all the same.
 
 ## 4. `stop`, mid-walk, on a stand
@@ -208,7 +209,29 @@ quackd doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
 > camera, `observe`, `go_to`, `search_scan` and `approach_and` are not offered, and every other
 > verb still is.
 
-## 9. Feet down
+## 9. `stand_up` from its back, on a mat
+
+Step 7's `stand_up` found the robot standing, answered `already upright` and sent nothing. So
+the first `robot.enable` a Huebot gets would otherwise go to a robot that has fallen on the
+floor. Send it here instead: lay Huebot on its back on a soft mat, with nothing within its reach
+and a hand ready to take hold of it, and run `stand_up` on its own:
+
+```bash
+quackd run --goal "run stand_up once, then report your state and stop" \
+    --robot huebot:jsonrpc --address tcp://127.0.0.1:9870 \
+    --llm anthropic --max-steps 4 --no-memory
+```
+
+What should happen: the state reads the robot as fallen, with nobody holding it, and `stand_up`
+sends `robot.enable {on: true}`. It answers `upright after` so many seconds once the robot reads
+standing, or says after 10 s that it may need a hand. Write down what the robot did, and how
+long it took against the 10 s quackd waits.
+
+> Abort and take hold of it if it thrashes: legs driving against the mat without getting it
+> anywhere, or anything moving harder than getting up needs. Stop it the way its maker says, and
+> tell the maker before anything walks.
+
+## 10. Feet down
 
 Now, and only now, put Huebot on the floor and run a short walk, with a hand ready to catch it.
 Its maker says the walk's balance is still being tuned.
@@ -226,7 +249,7 @@ stops the robot at its next twist and fails with `Huebot's shim has not taken ro
 > `robot.enable {on: true}`, only for a robot nobody holds, and calls it upright only if it
 > reads standing within 10 s. Whether Huebot gets up from a fall is not published.
 
-## 10. Tell everyone
+## 11. Tell everyone
 
 `huebot:jsonrpc` is 🧪 in [`docs/adapters/status.md`](../status.md) because nobody has done this.
 What flips it is a `quackd doctor` output and `runs/<timestamp>-<name>/terminal.txt`, in an
@@ -247,6 +270,6 @@ What is most worth writing down, because it is what nobody can check without a H
 - what `extras.move_echo` said of a walk: how long after a twist went out the shim's state
   showed it, which is the number the echo window (three state frames) was set without
 - what the shim listed in `skills`, and what each skill did
-- whether a fallen Huebot got up after `stand_up`, and how long that took against the 10 s it
-  waits
+- what step 9 showed: what Huebot did after `stand_up` sent `robot.enable` to it on its back,
+  and how long it took against the 10 s quackd waits
 - whether `extras.head_yaw_deg` agreed with where the head visibly pointed
