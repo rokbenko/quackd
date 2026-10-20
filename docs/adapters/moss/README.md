@@ -120,8 +120,9 @@ test demonstrated yet.
 `max_vx` is quackd's schema cap of 0.3 m/s, which binds, since MOSS's full power is 0.32.
 `max_wz` is MOSS's own `SERVO_W_MAX`, the litter mission's fastest servo turn. `deadman: true`
 is claimed only when the bridge answers and can publish on the rover's bus, and
-`extras.deadman_scope` says what its deadman covers: its own twist deadman, the arm cycle it
-runs, and after three missed heartbeats whatever quackd started through the cockpit.
+`extras.deadman_scope` says what its deadman covers: its own twist deadman, and three missed
+keepalives after a session goes quiet, the arm cycle and whatever that session started through
+the cockpit.
 
 `quackd list-verbs` describes every stack's verbs together, which is what a task is validated
 against before anything connects. Connect narrows it to what answered:
@@ -203,10 +204,10 @@ for one tool call, and `collect_litter` does not run there at all.
 | What is moving | quackd's `stop` | A dropped link, with the bridge | Without the bridge |
 |---|---|---|---|
 | a twist, through the bridge | a zero on the pad channel, then the soft stop | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
-| a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | after three missed heartbeats the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
+| a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, at most 1.5 s at quackd's own 0.5 s period, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels it, so the arm holds | no arm verbs exist |
-| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop | `moss-litter` is refused at connect |
+| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every
   time. Each failure is kept and reported, and neither half skips the other. The `stop` verb
@@ -235,11 +236,19 @@ for one tool call, and `collect_litter` does not run there at all.
   went out, and counts that silence only from a mission it heard answer before, as it does
   when quackd connects. A stop it cannot confirm is reported as a failure, the close note says
   the mission may still be running, and the arm's cancel and the zero have gone out either way.
-- **A dropped session halts what quackd started.** After three missed heartbeats the bridge
-  halts what quackd started and nothing else, so a goal the owner clicked on the cockpit's own
-  page is left alone. On `moss-litter` it runs the whole stop, the one every run and every MCP
-  session ends with anyway. A probe such as `quackd doctor` ends its session as soon as its
-  health check has run, so nothing is halted for it.
+- **A dropped session halts what that session started.** The transport keeps its session alive
+  from a thread of its own, at its configured 0.5 s, whatever the event loop is doing, so a
+  prompt on the terminal never reads as a dead quackd: only a dead process or a dead link stops
+  the keepalives. Each session is named by an id its transport draws at random, and it declares
+  that configured period, never a measured one, which the bridge caps at 1 s. Three missed
+  keepalives later the bridge halts what that session said it started and nothing else: its own
+  arm cycle, and a goal or an exploration it started, with `stop_explore_cmd`, `stop_movement`
+  and a zero. A start is said to the bridge before it goes out, and a start whose answer is lost
+  is kept and stopped, so a quackd that dies the instant after is still covered. A doctor or a
+  second quackd beside a run never touches the run's session. On `moss-litter` the whole stop
+  runs only for a session that started the mission: a run that only watched the owner's
+  mission, or a `quackd doctor`, leaves it running when its link drops, and an explicit stop,
+  the end of every run among them, still ends it.
 - **`close()` never sends a go limp call**, and **quackd never posts `/cmd/stack`**, whose stop
   ends every dimOS run and turns the arm's torque off. A test reads the package's source to
   prove no code path can send either.

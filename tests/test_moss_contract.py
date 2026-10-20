@@ -23,8 +23,10 @@ from typing import Any
 
 import pytest
 
+import quackd.cli as cli
+from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, allow_all
+from quackd.safety import Executor, Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import registry_from_manifest
 from quackd_moss import MossAdapter
@@ -89,6 +91,11 @@ def _wait(predicate: Any, limit_s: float = 10.0) -> None:
         time.sleep(0.02)
 
 
+def _block_the_loop(seconds: float) -> None:
+    """What a prompt on the terminal does to the event loop: nothing on it runs meanwhile."""
+    time.sleep(seconds)
+
+
 @contextlib.contextmanager
 def _rover_with(blueprint: str = "moss-explore", **bridge_kw: Any) -> Iterator[Rover]:
     """The `rover` fixture's rig, with the bridge built as a test asks."""
@@ -128,6 +135,7 @@ def test_both_sides_spell_the_protocol_the_same() -> None:
         "FRAME_STAMP_HEADER",
         "FRAME_AFTER_HEADER",
         "SESSION_MISSES",
+        "MAX_KEEPALIVE_S",
         "STARTED",
     ):
         assert getattr(client, name) == getattr(B, name), name
@@ -135,6 +143,8 @@ def test_both_sides_spell_the_protocol_the_same() -> None:
     assert (client.NOSE, client.WRIST) == (B.NOSE, B.WRIST)
     assert moss_verbs.JOB_RUNNING == B.JOB_RUNNING and moss_verbs.JOB_ENDINGS == B.JOB_ENDINGS
     assert mock_module.SESSION_MISSES == B.SESSION_MISSES
+    assert mock_module.KEEPALIVE_S == client.HEARTBEAT_S
+    assert mock_module.MAX_KEEPALIVE_S == B.MAX_KEEPALIVE_S
 
 
 @pytest.mark.parametrize("track", [mock_module.TRACK_M, 0.3])
@@ -268,21 +278,26 @@ def _closed_port() -> int:
 # ── the session ─────────────────────────────────────────────────────────────────────────
 
 
-async def test_the_heartbeat_feeds_the_bridge_and_its_silence_halts_what_quackd_started(
+def _dies(transport: client.MossCockpit) -> None:
+    """quackd killed where it stands: its keepalive thread stops with nothing else sent."""
+    transport._beats_stop.set()
+
+
+async def test_the_keepalive_thread_feeds_the_bridge_and_its_death_halts_what_quackd_started(
     rover: Rover,
 ) -> None:
     transport = rover.transport()
     await transport.connect()
     await transport.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
     assert rover.cockpit.exploring and transport.started == "explore"
+    session = rover.bridge.sessions[transport.session_id]
+    assert session.started == "explore" and session.keepalive_s == client.HEARTBEAT_S
     await transport.heartbeat()
-    session = rover.bridge.hello()["session"]
-    assert session["active"] and session["started"] == "explore"
-    assert session["keepalive_s"] >= client.HEARTBEAT_S
+    _dies(transport)
     bus = rover.bridge.bus
     _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
     assert "true /stop_movement#std_msgs.Bool" in bus.events
-    assert rover.bridge.session.halts == 1
+    assert rover.bridge.halts == 1
     await transport.close()
 
 
@@ -295,8 +310,131 @@ async def test_close_ends_the_session_so_nothing_is_halted_after_quackd_has_gone
     await transport.close()
     before = list(rover.bridge.bus.events)
     await asyncio.sleep(B.SESSION_MISSES * client.HEARTBEAT_S + 0.5)
-    assert rover.bridge.session.halts == 0
+    assert rover.bridge.halts == 0 and rover.bridge.sessions == {}
     assert [e for e in rover.bridge.bus.events if e not in before] == []
+
+
+async def test_a_loop_blocked_on_a_prompt_never_reads_as_a_dead_quackd(rover: Rover) -> None:
+    """A confirm on the terminal blocks the event loop for as long as the person reads it. The
+    keepalives come from the transport's own thread, so the bridge's deadman never fires on a
+    quackd that is alive and waiting."""
+    transport = rover.transport()
+    await transport.connect()
+    await transport.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
+    _block_the_loop(B.SESSION_MISSES * client.HEARTBEAT_S * 2)
+    assert rover.bridge.halts == 0 and transport.session_id in rover.bridge.sessions
+    assert "true /stop_explore_cmd#std_msgs.Bool" not in rover.bridge.bus.events
+    await transport.heartbeat()
+    await transport.close()
+
+
+async def test_a_doctor_beside_a_run_never_strips_the_runs_deadman(rover: Rover) -> None:
+    """Each transport draws its own session id, so a probe's keepalive and its end are its own,
+    and the run's exploration is still halted when the run dies."""
+    run = rover.transport()
+    await run.connect()
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await run.send_intent(start)).accepted
+    doctor = MossAdapter(rover.transport())
+    await doctor.connect()
+    assert (await doctor.health()).ok
+    await doctor.close()
+    assert rover.bridge.sessions[run.session_id].started == "explore"
+    _dies(run)
+    bus = rover.bridge.bus
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
+    assert rover.bridge.halts == 1
+    await run.close()
+
+
+async def test_a_start_is_said_to_the_bridge_before_it_goes_out(rover: Rover) -> None:
+    """A quackd killed the instant after its explore start: the bridge already has its word,
+    because the keepalive that carried it went out first."""
+    transport = rover.transport()
+    await transport.connect()
+    original = rover.cockpit.command
+    seen: list[str | None] = []
+
+    def watching(name: str, body: dict[str, Any]) -> Any:
+        if name == "explore":
+            seen.append(rover.bridge.sessions[transport.session_id].started)
+        return original(name, body)
+
+    rover.cockpit.command = watching  # type: ignore[method-assign]
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    assert seen == ["explore"], "the bridge knew before the cockpit was asked"
+    _dies(transport)
+    bus = rover.bridge.bus
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
+    await transport.close()
+
+
+async def test_a_start_whose_answer_is_lost_is_kept_and_stopped(rover: Rover) -> None:
+    """The cockpit applied the start and its answer never came: the session keeps its word that
+    it started, so the deadman still covers it, and a stop goes out for it at once."""
+    transport = rover.transport()
+    await transport.connect()
+    original = rover.cockpit.command
+
+    def lost(name: str, body: dict[str, Any]) -> Any:
+        got = original(name, body)
+        if name == "explore" and body.get("action") == "start":
+            time.sleep(client.CALL_TIMEOUT_S * 2 + 0.5)  # applied, and the answer lost
+        return got
+
+    rover.cockpit.command = lost  # type: ignore[method-assign]
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    ack = await transport.send_intent(start)
+    assert not ack.accepted and "quackd sent a stop" in (ack.reason or ""), ack
+    assert rover.cockpit.posted("stop"), "the stop went out for the start it could not see"
+    assert not rover.cockpit.exploring
+    await transport.close()
+
+
+async def test_a_slow_cockpit_never_widens_the_deadmans_window(rover: Rover) -> None:
+    """The period a session declares is the configured one, never a measured round trip, and
+    the bridge caps it, so a cockpit that takes a second to answer leaves the window as it was."""
+    original = rover.cockpit.state
+
+    def slow() -> Any:
+        time.sleep(1.0)
+        return original()
+
+    transport = rover.transport()
+    await transport.connect()
+    rover.cockpit.state = slow  # type: ignore[method-assign]
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    for _ in range(3):
+        await transport.heartbeat()
+    session = rover.bridge.sessions[transport.session_id]
+    assert session.keepalive_s == client.HEARTBEAT_S <= B.MAX_KEEPALIVE_S
+    _dies(transport)
+    last = session.last
+    bus = rover.bridge.bus
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.MAX_KEEPALIVE_S * 4)
+    assert time.monotonic() - last <= B.SESSION_MISSES * B.MAX_KEEPALIVE_S + 0.5
+    await transport.close()
+
+
+async def test_a_stop_lost_to_a_blip_keeps_its_word_for_the_close(rover: Rover) -> None:
+    """Both halves of a stop failed: the session still says it started the exploration, so a
+    close once the link is back sends the soft stop for it, and the deadman covered it
+    meanwhile."""
+    transport = rover.transport()
+    await transport.connect()
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    good_cockpit, good_bridge = transport.cockpit, transport.bridge
+    transport.cockpit = client.CockpitClient("127.0.0.1", _closed_port())
+    transport.bridge = client.BridgeClient("127.0.0.1", _closed_port(), TOKEN)
+    await transport.stop()
+    assert transport.stop_error is not None and transport.started == "explore"
+    transport.cockpit, transport.bridge = good_cockpit, good_bridge
+    stops = len(rover.cockpit.posted("stop"))
+    await transport.close()
+    assert len(rover.cockpit.posted("stop")) == stops + 1 and not rover.cockpit.exploring
 
 
 @pytest.mark.parametrize("cycled", [True, False], ids=["it moved the arm", "it moved nothing"])
@@ -434,6 +572,52 @@ async def test_on_moss_litter_a_stop_ends_the_missions_own_pick_and_the_arm_neve
     assert "litter mission is stopped" in (adapter.close_note or "")
 
 
+class _PersonReading:
+    """The CLI's kill switch as a person at the terminal is: `ask` blocks the loop's own thread
+    until the line is typed (`quackd.safety.KillSwitch.ask`)."""
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    def ask(self, prompt: str) -> str:
+        _block_the_loop(self.seconds)
+        return "y"
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_collect_litter_survives_a_person_reading_its_confirm(
+    rover: Rover, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The confirm blocks the event loop while the person reads it, longer than the bridge's
+    window. The session's keepalives come from the transport's own thread, so the bridge never
+    takes the reading person for a dead quackd, and the mission is the verb's to run."""
+    monkeypatch.setattr(cli, "_SWITCH", _PersonReading(B.SESSION_MISSES * client.HEARTBEAT_S * 2))
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    duck = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, report_state, "
+        "stop, collect_litter]\n  confirm: []\nsuccess: [x]\nabort_when: []\n---\n# Task\nx\n"
+    ).frontmatter
+    adapter = MossAdapter(rover.transport())
+    manifest = await adapter.connect()
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=duck,
+        detector=ColorBlobDetector(),
+        confirm=cli._confirm_prompt,
+        manifest=manifest,
+    )
+    beat = Heartbeat(adapter, asyncio.Event(), period_s=client.HEARTBEAT_S)
+    beat.start()
+    try:
+        result = await ex.run_verb("collect_litter", {"minutes": 0.05})
+    finally:
+        await beat.stop()
+    assert rover.bridge.halts == 0, "the bridge never halted the session of the person reading"
+    assert result.ok, result.summary
+    await adapter.close()
+
+
 @pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
 async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_running(
     rover: Rover,
@@ -450,7 +634,7 @@ async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_ru
     assert adapter.close_note is None
     assert "mission stop" not in rover.bridge.bus.events
     assert rover.cockpit.posted("stop") == []
-    assert rover.bridge.session.halts == 0
+    assert rover.bridge.halts == 0
     assert rover.bridge.mission_doc()["stopped"] is False
 
 

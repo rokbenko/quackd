@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import secrets
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -75,6 +76,11 @@ CYCLE_S = float(up.CYCLE_TIMED_S.name)
 GOAL_AFTER_STOP_S = float(up.GOAL_AFTER_STOP_S.name)
 SESSION_MISSES = 3
 """As quackd's bridge counts them (`cockpit.SESSION_MISSES`)."""
+KEEPALIVE_S = 0.5
+"""The period the real transport's keepalive thread beats at and declares
+(`cockpit.HEARTBEAT_S`)."""
+MAX_KEEPALIVE_S = 1.0
+"""The longest period the bridge takes from a client (`cockpit.MAX_KEEPALIVE_S`)."""
 PICK_STARTUP_S = 2.0
 """quackd's own guess, for the mock, at how long the maker's script takes to import dimOS,
 build its client and read the joints before it sends its one trajectory. Nobody has measured
@@ -322,8 +328,16 @@ class MossMock:
         """`collect_litter` started in this session, so close() stops the mission."""
         self.stop_sent = False
         """A stop ran in this session, so close() says what it did to the mission."""
+        # quackd's session with the bridge, kept by the transport's own keepalive thread
+        self.session_id = secrets.token_hex(8)
         self._session_at: float | None = None
-        self._session_s = 0.5
+        """When the bridge took this session's last keepalive, None while it has none."""
+        self._session_s = min(MAX_KEEPALIVE_S, KEEPALIVE_S)
+        """The declared, configured period, capped as the bridge caps it."""
+        self._beat_started: str | None = None
+        """What that last keepalive said this session started: what its halt halts."""
+        self.link_down = False
+        """Set by `drop_link`: nothing of quackd's reaches the rover any more."""
         self.session_halts = 0
         self.stop_log: list[str] = []
         self.stop_error: str | None = None
@@ -522,6 +536,26 @@ class MossMock:
                     startup_s=PICK_STARTUP_S,
                 )
 
+    def _keepalive_step(self) -> None:
+        """The transport's keepalive thread: while connected and the link is up, a keepalive
+        every period, carrying what the session has started, and the cockpit's idle keepalive
+        when it is due, whatever the event loop is doing."""
+        if not self.connected or self.link_down:
+            return
+        if self.bridge_up and (
+            self._session_at is None or self._t - self._session_at >= self._session_s
+        ):
+            self._beat()
+        if self.idle_limit_s > 0:
+            due = self.idle_limit_s / 3.0
+            if self.last_keepalive is None or self._t - self.last_keepalive >= due:
+                self.last_keepalive = self._t
+                self.cockpit_keepalives += 1
+                self._activity = self._t
+
+    def _beat(self) -> None:
+        self._session_at, self._beat_started = self._t, self.started
+
     def _session_step(self) -> None:
         if self._session_at is None:
             return
@@ -553,6 +587,7 @@ class MossMock:
         self._mission_step()
         self._base(dt)
         self._arm_step()
+        self._keepalive_step()
         self._session_step()
         self._idle_step()
 
@@ -624,18 +659,40 @@ class MossMock:
         return []
 
     def _session_halt(self) -> None:
-        """Three missed heartbeats: halt what quackd started, and nothing it did not."""
+        """Three missed keepalives: halt what the last one the bridge took said this session
+        started, and nothing it did not. On moss-litter the whole stop only for a session that
+        started the mission: one that only watched the owner's mission leaves it running."""
         self.stop_log.append("session.halt")
+        started = self._beat_started
         if self.stack == "moss-litter":
-            self._bridge_stop()
+            if started == "litter":
+                self._bridge_stop()
             return
         job = self.job
         if job is not None and job.owner == "quackd":
             self._arm_cancel()
-        if self.started in ("goal", "explore"):
+        if started in ("goal", "explore"):
             self.stop_log.append("halt.started")
             self.exploring, self.goal, self._pending_goal = False, None, None
             self._publish((0.0, 0.0))
+
+    def _announce(self, started: str) -> str | None:
+        """Tell the bridge first, as the real transport does: a keepalive that carries what is
+        about to start, so the deadman halts it even if quackd dies the instant after."""
+        if self.link_down:
+            return (
+                f"the bridge did not take this session's word that it is starting {started}, "
+                "so nothing was started: the link is down"
+            )
+        self.started = started
+        if self.bridge_up:
+            self._beat()
+        return None
+
+    def drop_link(self) -> None:
+        """quackd's process died, or its link to the rover dropped: no keepalive of this
+        session reaches the bridge any more, and nothing quackd sends arrives."""
+        self.link_down = True
 
     def _halt_own(self) -> None:
         """close()'s halt when no `collect_litter` ran, as the real transport sends it: this
@@ -671,6 +728,8 @@ class MossMock:
             raise TransportError(f"moss: {refusal}")
         self.connected = True
         self._activity = self._t
+        if self.bridge_up:
+            self._beat()  # the session is open before anything can be started in it
 
     async def close(self) -> None:
         """What this session started, halted, and nothing else, as the real transport does it:
@@ -835,6 +894,8 @@ class MossMock:
 
     async def send_intent(self, intent: Intent) -> Ack:
         self.intents.append(intent)
+        if self.link_down:
+            return Ack(accepted=False, reason="moss: the link to the rover is down")
         if not self.connected or not self.stack_running:
             return Ack(accepted=False, reason="moss: the stack is not running")
         p = intent.params
@@ -869,6 +930,8 @@ class MossMock:
             case "pose":
                 if self.stack != "moss-explore":
                     return Ack(accepted=False, reason=f"{self.stack} has no planner")
+                if (why := self._announce("goal")) is not None:
+                    return Ack(accepted=False, reason=why)
                 self.stalled = False
                 wanted = (float(p["x"]), float(p["y"]))
                 self.goal_reached, self._goal_done = None, None
@@ -878,7 +941,6 @@ class MossMock:
                     self._pending_goal = (wanted, self._t + GOAL_AFTER_STOP_S)
                 else:
                     self.goal, self._goal_at, self._pending_goal = wanted, self._t, None
-                self.started = "goal"
                 return Ack()
             case "do":
                 return self._skill(p)
@@ -900,12 +962,14 @@ class MossMock:
             start = p.get("action", "start") == "start"
             if skill == SKILL_COLLECT and (self.mission_stopped or not self.mission.running):
                 return Ack(accepted=False, reason=MISSION_STOPPED)
+            if start:
+                why = self._announce("litter" if skill == SKILL_COLLECT else "explore")
+                if why is not None:
+                    return Ack(accepted=False, reason=why)
             if skill == SKILL_COLLECT and start:
                 self.litter_started = True
             self._explore(start=start)
-            if start:
-                self.started = "litter" if skill == SKILL_COLLECT else "explore"
-            elif self.started in ("explore", "litter"):
+            if not start and self.started in ("explore", "litter"):
                 self.started = None
             return Ack()
         if skill == SKILL_ARM_CYCLE:
@@ -933,6 +997,11 @@ class MossMock:
         """The bridge's stop, then the cockpit's soft stop, as the real transport sends them."""
         errors: list[str] = []
         self.stop_sent = True
+        if self.link_down:
+            self.stop_error = (
+                "the bridge's stop: the link is down and the cockpit's soft stop: the link is down"
+            )
+            return
         if self.bridge_up:
             if self.stop_fails == "bridge":
                 errors.append("the bridge's stop: the mock was told to fail it")
@@ -942,35 +1011,21 @@ class MossMock:
             errors.append("the cockpit's soft stop: the mock was told to fail it")
         else:
             self._cockpit_stop()
-        self.started = None
+        if not errors:
+            # a stop that failed keeps what the session started, as the real transport does
+            self.started = None
         self.stop_error = " and ".join(errors) if errors else None
 
     async def heartbeat(self) -> None:
         self.heartbeats += 1
         if self._fail_after is not None and self.heartbeats > self._fail_after:
             raise HeartbeatError("mock moss heartbeat failure (scripted)")
+        if self.link_down:
+            raise HeartbeatError("moss: the mock's link to the rover is down")
         if not self.stack_running:
             raise HeartbeatError(
                 f"moss: the stack quackd connected to ({self.stack}) is not running any more"
             )
-        if self.bridge_up:
-            self._session_at = self._t
-        if self.idle_limit_s > 0:
-            due = self.idle_limit_s / 3.0
-            if self.last_keepalive is None or self._t - self.last_keepalive >= due:
-                self.last_keepalive = self._t
-                self.cockpit_keepalives += 1
-                self._activity = self._t
-
-    async def check(self) -> None:
-        """The heartbeat's checks for a probe, as the real transport runs them: a session the
-        probe's keepalive opened is ended at once."""
-        opened = self._session_at is None
-        try:
-            await self.heartbeat()
-        finally:
-            if opened:
-                self._session_at = None
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self.connected:

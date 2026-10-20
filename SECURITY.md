@@ -381,12 +381,14 @@ Also in scope:
   compares its token with `hmac.compare_digest`, refuses to start on a named token file that is
   missing or empty, and warns when it is bound wide with no token. On `moss-litter` its stop
   also ends the mission's own run of the maker's arm script, with SIGTERM and then SIGKILL, and
-  it signals no other process. Anything that lets an unauthenticated peer move the tracks or the
-  arm, defeat its twist deadman or its session halt, or reach past the routes its protocol
-  exposes is a security issue, and so is any path that sends MOSS's own `/cmd/stack`, whose stop
-  ends every dimOS run and turns the arm's torque off. MOSS's own cockpit, on port 8904, is not
-  quackd's code and has **no authentication at all**: it binds `0.0.0.0`, and anything that
-  reaches it reads the rover and commands it. Reach both through an ssh tunnel.
+  it signals no other process. Each quackd session is named by an id its client draws at random,
+  and its keepalive, end and halt touch only that session. Anything that lets an unauthenticated
+  peer move the tracks or the arm, defeat its twist deadman or a session's halt, or reach past the
+  routes its protocol exposes is a security issue, and so is any path that sends MOSS's own
+  `/cmd/stack`, whose stop ends every dimOS run and turns the arm's torque off. MOSS's own
+  cockpit, on port 8904, is not quackd's code and has **no authentication at all**: it binds
+  `0.0.0.0`, and anything that reaches it reads the rover and commands it. Reach both through an
+  ssh tunnel.
 - The recommended deployment for all of them is an ssh tunnel
   (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 -L 9873:127.0.0.1:9873 -L 9874:127.0.0.1:9874`,
   `-L 9875:127.0.0.1:9875` for a policy server on another machine, and

@@ -19,8 +19,8 @@ is those four things, and nothing else:
   nothing else.
 - `POST /stop`: on moss-litter the mission's own stop first, then at once the arm's cancel and a
   zero twist, and only then the wait that confirms the mission's stop. And
-  `POST /session/keepalive`, fed by quackd's heartbeat: three missed periods and the bridge
-  halts whatever quackd started.
+  `POST /session/keepalive`, one per quackd session, each named by its own id: three missed
+  periods and the bridge halts what that session started.
 
 Rules this file lives by, the same as every daemon under `bridge/`:
 
@@ -87,6 +87,11 @@ POST_PATHS = frozenset({TWIST_PATH, STOP_PATH, ARM_CYCLE_PATH, ARM_CANCEL_PATH, 
 FRAME_STAMP_HEADER = "X-Frame-Stamp"
 FRAME_AFTER_HEADER = "X-Frame-After-Request"
 SESSION_MISSES = 3
+MAX_KEEPALIVE_S = 1.0
+"""The longest keepalive period the bridge takes from a client. A session ends three of its
+declared periods after its last keepalive, so even a client that declares a long one is
+halted within three seconds of its last word."""
+SESSION_ID_MAX = 64
 STARTED = ("goal", "explore", "litter")
 JOB_RUNNING = ("starting", "running")
 JOB_ENDINGS = ("done", "lag", "refused", "cancelled", "failed")
@@ -719,6 +724,8 @@ class Job:
     held: bool | None = None
     lines: deque[str] = field(default_factory=lambda: deque(maxlen=12))
     cancelled: bool = False
+    session: str | None = None
+    """The session that started it, whose halt cancels it."""
 
     def doc(self, now: float) -> dict[str, Any]:
         return {
@@ -809,12 +816,20 @@ class ArmJobs:
         with self._lock:
             return self.job.id if self.job is not None and self.job.state in JOB_RUNNING else None
 
-    def start(self, pick_pose: str, from_phase: str | None) -> tuple[bool, str]:
+    def running_session(self) -> str | None:
+        """The session that started the cycle running now, or None."""
+        with self._lock:
+            running = self.job is not None and self.job.state in JOB_RUNNING
+            return self.job.session if running and self.job is not None else None
+
+    def start(
+        self, pick_pose: str, from_phase: str | None, session: str | None = None
+    ) -> tuple[bool, str]:
         with self._lock:
             if self.job is not None and self.job.state in JOB_RUNNING:
                 return False, "another arm job is running: wait for it, or stop"
             self._count += 1
-            job = Job(f"job-{self._count}", "starting", self.clock())
+            job = Job(f"job-{self._count}", "starting", self.clock(), session=session)
             try:
                 proc = subprocess.Popen(
                     self.argv_for(pick_pose, from_phase),
@@ -1250,11 +1265,14 @@ class FakeBus:
 
 @dataclass
 class Session:
+    """One client's session, named by an id the client drew at random. It keeps its own
+    period, its own word of what it started and its own expiry, and its halt touches nothing
+    another session started."""
+
+    id: str
     keepalive_s: float = 0.5
     started: str | None = None
-    last: float | None = None
-    halted: str | None = None
-    halts: int = 0
+    last: float = 0.0
 
 
 class Bridge:
@@ -1305,7 +1323,10 @@ class Bridge:
                     on_running=getattr(bus, "job_running", None),
                     on_end=getattr(bus, "job_ended", None),
                 )
-        self.session = Session()
+        self.sessions: dict[str, Session] = {}
+        self.halts = 0
+        """How many sessions this bridge has halted for missing their keepalives."""
+        self.last_halt: str | None = None
         self.mission_stopped_run: str | None = None
         """The run whose mission this bridge stopped: stopped stays stopped until a new run."""
         self.mission_heard_run: str | None = None
@@ -1454,7 +1475,7 @@ class Bridge:
             },
             "cameras": {cam: frames.heard(cam) for cam in CAMERA_STREAMS} if frames else {},
             "fov_deg": None if frames is None else frames.fov_deg,
-            "session": self._session_doc(),
+            "sessions": self._sessions_doc(),
         }
 
     def twist(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -1703,7 +1724,12 @@ class Bridge:
             return 503, {"ok": False, "reason": self.arm_error}
         pick_pose = str(body.get("pick_pose") or "pick")
         phase = body.get("from_phase")
-        started, said = self.jobs.start(pick_pose, None if phase is None else str(phase))
+        session = body.get("session")
+        started, said = self.jobs.start(
+            pick_pose,
+            None if phase is None else str(phase),
+            session if isinstance(session, str) and session else None,
+        )
         if not started:
             return 409, {"ok": False, "reason": said}
         return 200, {"ok": True, "id": said}
@@ -1736,57 +1762,76 @@ class Bridge:
         }
         return {"ok": True, **doc}
 
-    def keepalive(self, body: dict[str, Any]) -> dict[str, Any]:
+    def keepalive(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """One keepalive of one session, named by the id its client drew. Each session keeps
+        its own period, capped at MAX_KEEPALIVE_S, its own word of what it started and its own
+        end, so one client's keepalive or end never touches another's."""
+        sid = body.get("session")
+        if not isinstance(sid, str) or not sid or len(sid) > SESSION_ID_MAX:
+            return 400, {
+                "ok": False,
+                "reason": "a keepalive names its session: {session, keepalive_s, started, end}",
+            }
         try:
             period = float(body.get("keepalive_s") or 0.5)
         except (TypeError, ValueError):
             period = 0.5
+        if not math.isfinite(period):
+            period = MAX_KEEPALIVE_S
         started = body.get("started")
+        mine: dict[str, Any] | None = None
         with self._lock:
             if body.get("end"):
-                self.session = Session(halts=self.session.halts)
+                self.sessions.pop(sid, None)
             else:
-                self.session.keepalive_s = max(0.05, period)
-                self.session.started = str(started) if started in STARTED else None
-                self.session.last = self.clock()
-                self.session.halted = None
-        return {"ok": True, "stack": self.stack().doc(), "session": self._session_doc()}
-
-    def _session_doc(self) -> dict[str, Any]:
-        s = self.session
-        return {
-            "active": s.last is not None,
-            "keepalive_s": s.keepalive_s,
-            "started": s.started,
-            "halted": s.halted,
-            "halts": s.halts,
+                s = self.sessions.setdefault(sid, Session(sid))
+                s.keepalive_s = min(MAX_KEEPALIVE_S, max(0.05, period))
+                s.started = str(started) if started in STARTED else None
+                s.last = self.clock()
+                mine = {"id": s.id, "keepalive_s": s.keepalive_s, "started": s.started}
+        return 200, {
+            "ok": True,
+            "stack": self.stack().doc(),
+            "session": mine,
+            "sessions": self._sessions_doc(),
         }
+
+    def _sessions_doc(self) -> dict[str, Any]:
+        return {"live": len(self.sessions), "halts": self.halts, "last_halt": self.last_halt}
 
     # ── the watchdogs ───────────────────────────────────────────────────────────────
 
-    def session_tick(self) -> dict[str, Any] | None:
-        """Three missed periods and what quackd started is halted, and nothing it did not."""
+    def session_tick(self) -> list[dict[str, Any]]:
+        """Each session three of its own periods past its last keepalive is ended, and what it
+        said it started is halted, and nothing any other session started."""
+        now = self.clock()
         with self._lock:
-            s = self.session
-            if s.last is None or self.clock() - s.last <= SESSION_MISSES * s.keepalive_s:
-                return None
-            started = s.started
-            self.session = Session(halts=s.halts + 1)
-        return self.halt(f"quackd missed {SESSION_MISSES} heartbeats", started)
+            late = [
+                s for s in self.sessions.values() if now - s.last > SESSION_MISSES * s.keepalive_s
+            ]
+            for s in late:
+                del self.sessions[s.id]
+                self.halts += 1
+        return [self.halt(f"session {s.id} missed {SESSION_MISSES} keepalives", s) for s in late]
 
-    def halt(self, why: str, started: str | None) -> dict[str, Any]:
+    def halt(self, why: str, session: Session) -> dict[str, Any]:
+        """What one session started, halted, and nothing it did not. On moss-litter the whole
+        stop, the mission's own included, only for a session that started the mission: one
+        that only watched the owner's mission leaves it running. Elsewhere, the cycle that
+        session started is cancelled, and a goal or an exploration it started is ended with
+        stop_explore_cmd, stop_movement and a zero."""
         stack = self.stack()
-        log.warning("halting what quackd started: %s", why)
-        if self._litter(stack):
+        log.warning("halting what session %s started: %s", session.id, why)
+        if self._litter(stack) and session.started == "litter":
             doc = self.stop()
         else:
             did: list[str] = []
             errors: list[str] = []
             doc = {"ok": True, "did": did, "errors": errors, "arm": None}
             if self.bus is not None and self.up is not None:
-                if self.jobs is not None and self.jobs.running():
+                if self.jobs is not None and self.jobs.running_session() == session.id:
                     doc["arm"] = self._cancel_arm(did, errors)
-                if started in ("goal", "explore"):
+                if session.started in ("goal", "explore"):
                     for stream in (STOP_EXPLORE_STREAM, STOP_MOVEMENT_STREAM):
                         with contextlib.suppress(Exception):
                             self.bus.publish_true(channel(stream, BOOL_MSG))
@@ -1797,7 +1842,7 @@ class Bridge:
                             did.append(f"zero twist on {chan}")
             doc["ok"] = not errors
         with self._lock:
-            self.session.halted = why
+            self.last_halt = why
         return doc
 
     def start(self) -> None:
@@ -1820,12 +1865,15 @@ class Bridge:
         return thread
 
     def close(self) -> None:
-        """Halt what quackd started, then let go of the bus. Never a go-limp call. A cycle of
-        quackd's is cancelled even with no session left to say it was started."""
+        """Halt what every live session started, cancel a cycle of quackd's still running
+        whichever session started it, then let go of the bus. Never a go-limp call."""
         with contextlib.suppress(Exception):
-            if self.session.last is not None:
-                self.halt("the bridge is shutting down", self.session.started)
-            elif self.jobs is not None and self.jobs.running() and self.bus is not None:
+            with self._lock:
+                live = list(self.sessions.values())
+                self.sessions.clear()
+            for session in live:
+                self.halt("the bridge is shutting down", session)
+            if self.jobs is not None and self.jobs.running() and self.bus is not None:
                 self._cancel_arm([], [])
         self._stop.set()
         for thread in self._threads:
@@ -2109,7 +2157,8 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                 code, doc = bridge.arm_cancel(body)
                 self._json(code, doc)
             else:
-                self._json(200, bridge.keepalive(body))
+                code, doc = bridge.keepalive(body)
+                self._json(code, doc)
 
         def _bytes(
             self,

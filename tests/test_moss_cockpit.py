@@ -332,30 +332,43 @@ async def test_with_no_bridge_a_twist_and_an_arm_cycle_are_refused_as_data(
 # ── the keepalives ──────────────────────────────────────────────────────────────────────
 
 
+def _wait(predicate: Any, limit_s: float = 5.0) -> None:
+    deadline = time.monotonic() + limit_s
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out waiting"
+        time.sleep(0.02)
+
+
+def _block_the_loop(seconds: float) -> None:
+    """What a prompt on the terminal does to the event loop: nothing on it runs meanwhile."""
+    time.sleep(seconds)
+
+
 @pytest.mark.parametrize("limit", [30.0, 120.0])
 async def test_the_idle_keepalive_follows_the_cockpits_own_limit(
     cockpit: FakeCockpit, limit: float
 ) -> None:
+    """Three times inside the cockpit's own limit, from the transport's own thread, so a loop
+    blocked on a prompt never lets the idle stop end the stack under a connected quackd."""
     cockpit.idle_limit_s = limit
     transport = _transport(cockpit)
     await transport.connect()
-    transport._last_cockpit_keepalive = time.monotonic() - limit / 3 - 0.1
-    await transport.heartbeat()
-    assert len(cockpit.posted("keepalive")) == 1
-    await transport.heartbeat()
+    _wait(lambda: len(cockpit.posted("keepalive")) == 1)
+    _block_the_loop(1.2)
     assert len(cockpit.posted("keepalive")) == 1, "not again until a third of the limit has gone"
-    transport._last_cockpit_keepalive = time.monotonic() - limit / 3 + 1.0
-    await transport.heartbeat()
-    assert len(cockpit.posted("keepalive")) == 1
+    transport._last_cockpit_keepalive = time.monotonic() - limit / 3 - 0.1
+    _wait(lambda: len(cockpit.posted("keepalive")) == 2)
     await transport.close()
+    sent = len(cockpit.posted("keepalive"))
+    _block_the_loop(1.2)
+    assert len(cockpit.posted("keepalive")) == sent, "and nothing after the close"
 
 
 async def test_no_idle_keepalive_when_the_idle_stop_is_off(cockpit: FakeCockpit) -> None:
     cockpit.idle_enabled = False
     transport = _transport(cockpit)
     await transport.connect()
-    transport._last_cockpit_keepalive = 0.0
-    await transport.heartbeat()
+    await asyncio.sleep(1.2)
     assert cockpit.posted("keepalive") == []
     await transport.close()
 

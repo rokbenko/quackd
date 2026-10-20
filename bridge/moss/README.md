@@ -25,11 +25,11 @@ So the bridge does those four things over HTTP and nothing else.
 | `/twist` | POST | `{vx, wz}` published on the stack's pad channel, shaped as below |
 | `/stop` | POST | idempotent, never raises, and says what it did and what failed |
 | `/frame?cam=nose` or `?cam=wrist` | GET | the first JPEG captured after the request arrived, with the image's own stamp |
-| `/arm/cycle` | POST | `{pick_pose, from_phase}`: the maker's cycle, as a job |
+| `/arm/cycle` | POST | `{pick_pose, from_phase, session}`: the maker's cycle, as a job of that session's |
 | `/arm/cancel` | POST | `{id}`: that cycle of quackd's cancelled while it runs, and nothing else, which is what quackd's close sends |
 | `/arm` | GET | the job and how it ended, the joints, the jaw gap, and whether the arm is in its drive pose |
 | `/mission` | GET | the litter mission's own `mission_status` |
-| `/session/keepalive` | POST | fed by quackd's heartbeat, with what quackd started through the cockpit |
+| `/session/keepalive` | POST | `{session, keepalive_s, started, end}`: one session's keepalive, named by the id its client drew, with what that session started |
 
 **The twist.** On `moss-explore` it goes out on `/tele_cmd_vel`, and on `moss-nav` on `/cmd_vel`,
 which is the cockpit's own rule. It is sent again at the mission's own 10 Hz while it is fresh.
@@ -65,13 +65,17 @@ it by the mission's RPC falling silent, and only for a mission it heard answer b
 it cannot confirm within 4 s of sending it is reported as a failure, and the arm's cancel and
 the zero have gone out either way.
 
-**The session.** quackd posts a keepalive every half second. After three missed periods the
-bridge halts what quackd started and nothing else: a goal or an exploration started through
-the cockpit is ended with `stop_explore_cmd`, `stop_movement` and a zero, and an arm cycle is
-cancelled. A session that started nothing halts nothing there, so a goal the owner clicked on
-the cockpit's page is left alone. On `moss-litter` the whole stop above runs, the stop every
-run and every MCP session ends with anyway. A probe such as `quackd doctor` ends its session as
-soon as its health check has run, so the bridge halts nothing for it.
+**The sessions.** Every quackd transport draws a session id of its own and posts a keepalive
+every half second from a thread of its own, so a prompt that blocks quackd's event loop never
+reads as a dead quackd. Each session keeps its own period, which the bridge caps at 1 s, its
+own word of what it started and its own end, so a doctor or a second quackd never touches a
+run's session. Three missed periods after a session's last keepalive the bridge halts what
+that session started and nothing else: a goal or an exploration it started through the cockpit
+is ended with `stop_explore_cmd`, `stop_movement` and a zero, and an arm cycle it started is
+cancelled. A session that started nothing halts nothing, so a goal the owner clicked on the
+cockpit's page is left alone. On `moss-litter` the whole stop above runs only for a session
+that started the mission, and a session that only watched the owner's mission leaves it
+running. The bridge's own shutdown halts what every live session started.
 
 ## Install it on the rover
 

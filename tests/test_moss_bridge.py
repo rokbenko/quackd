@@ -462,7 +462,7 @@ def test_a_bridge_closed_mid_cycle_cancels_the_cycle(session: bool) -> None:
     bridge = B.fake_bridge(cycle_s=30.0, fps=0)
     bus = bridge.bus
     if session:
-        bridge.keepalive({"keepalive_s": 0.5, "started": None})
+        _beat(bridge, "run", 0.5, None)
     bridge.arm_cycle({})
     _wait(lambda: bus.executing)
     bridge.close()
@@ -879,21 +879,27 @@ def test_the_bus_rule_refuses_another_bus_and_another_address(
 # ── the session ─────────────────────────────────────────────────────────────────────────
 
 
+def _beat(bridge: Any, session: str, period: float = 0.1, started: str | None = None) -> Any:
+    code, doc = bridge.keepalive({"session": session, "keepalive_s": period, "started": started})
+    assert code == 200, doc
+    return doc
+
+
 @pytest.mark.parametrize("period", [0.05, 0.1])
-def test_three_missed_heartbeats_halt_a_started_exploration(period: float) -> None:
+def test_three_missed_keepalives_halt_a_started_exploration(period: float) -> None:
     clock = Clock()
     bridge = B.fake_bridge(fps=0)
     bridge.clock = clock
     bus = bridge.bus
-    bridge.keepalive({"keepalive_s": period, "started": "explore"})
+    _beat(bridge, "run", period, "explore")
     clock.t += B.SESSION_MISSES * period * 0.9
-    assert bridge.session_tick() is None
+    assert bridge.session_tick() == []
     clock.t += B.SESSION_MISSES * period * 0.2
-    doc = bridge.session_tick()
-    assert doc is not None and doc["ok"]
+    docs = bridge.session_tick()
+    assert len(docs) == 1 and docs[0]["ok"]
     assert ("true /stop_explore_cmd#std_msgs.Bool") in bus.events
     assert ("true /stop_movement#std_msgs.Bool") in bus.events
-    assert bridge.session.halts == 1 and bridge.session.last is None
+    assert bridge.halts == 1 and bridge.sessions == {}
     bridge.close()
 
 
@@ -901,9 +907,9 @@ def test_a_session_that_started_nothing_halts_nothing_of_the_owners() -> None:
     clock = Clock()
     bridge = B.fake_bridge(fps=0)
     bridge.clock = clock
-    bridge.keepalive({"keepalive_s": 0.1, "started": None})
+    _beat(bridge, "probe")
     clock.t += 1.0
-    assert bridge.session_tick() is not None
+    assert len(bridge.session_tick()) == 1
     assert bridge.bus.events == [], "no zero twist: that would cancel the owner's own goal"
     bridge.close()
 
@@ -912,10 +918,70 @@ def test_a_session_ended_by_its_client_halts_nothing() -> None:
     clock = Clock()
     bridge = B.fake_bridge(fps=0)
     bridge.clock = clock
-    bridge.keepalive({"keepalive_s": 0.1, "started": "goal"})
-    bridge.keepalive({"end": True})
+    _beat(bridge, "run", started="goal")
+    bridge.keepalive({"session": "run", "end": True})
     clock.t += 5.0
-    assert bridge.session_tick() is None and bridge.bus.events == []
+    assert bridge.session_tick() == [] and bridge.bus.events == []
+    bridge.close()
+
+
+def test_a_keepalive_names_its_session() -> None:
+    bridge = B.fake_bridge(fps=0)
+    for body in ({"keepalive_s": 0.5}, {"session": "", "keepalive_s": 0.5}, {"session": 7}):
+        code, doc = bridge.keepalive(body)
+        assert code == 400 and "names its session" in doc["reason"], body
+    assert bridge.sessions == {}
+    bridge.close()
+
+
+def test_one_sessions_keepalive_or_end_never_touches_another() -> None:
+    """A doctor beside a run, or a second quackd that started nothing: neither can strip the
+    run's deadman, by overwriting what it started or by ending it."""
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    bridge.clock = clock
+    _beat(bridge, "run", 0.1, "explore")
+    _beat(bridge, "doctor", 0.1, None)
+    bridge.keepalive({"session": "doctor", "end": True})
+    assert bridge.sessions["run"].started == "explore"
+    for _ in range(10):  # the second quackd beats on, having started nothing
+        clock.t += 0.1
+        _beat(bridge, "second", 0.1, None)
+        bridge.session_tick()
+    assert bridge.halts == 1, "the run that went quiet was halted, the one beating was not"
+    assert "true /stop_explore_cmd#std_msgs.Bool" in bridge.bus.events
+    assert set(bridge.sessions) == {"second"}
+    bridge.close()
+
+
+@pytest.mark.parametrize("declared", [2.5, 30.0, float("inf"), float("nan")])
+def test_a_declared_period_is_capped_so_the_window_stays_short(declared: float) -> None:
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    bridge.clock = clock
+    doc = _beat(bridge, "slow", declared, "explore")
+    assert doc["session"]["keepalive_s"] == B.MAX_KEEPALIVE_S
+    clock.t += B.SESSION_MISSES * B.MAX_KEEPALIVE_S + 0.1
+    assert len(bridge.session_tick()) == 1, "halted three capped periods after its last word"
+    bridge.close()
+
+
+def test_a_dropped_session_halts_only_the_cycle_that_session_started() -> None:
+    clock = Clock()
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bridge.clock = clock
+    bus = bridge.bus
+    code, doc = bridge.arm_cycle({"pick_pose": "pick", "session": "theirs"})
+    assert code == 200, doc
+    _wait(lambda: bus.executing)
+    _beat(bridge, "mine", 0.1, None)
+    clock.t += 1.0
+    assert len(bridge.session_tick()) == 1
+    assert "arm cancel" not in bus.events and bus.executing, "another session's cycle plays on"
+    _beat(bridge, "theirs", 0.1, None)
+    clock.t += 1.0
+    assert len(bridge.session_tick()) == 1
+    assert "arm cancel" in bus.events and not bus.executing
     bridge.close()
 
 
@@ -926,15 +992,29 @@ def _fake_time(bridge: Any, clock: Clock) -> None:
     bridge.sleep = lambda s: setattr(clock, "t", clock.t + s)
 
 
-def test_a_dropped_session_on_moss_litter_is_the_whole_stop() -> None:
+def test_a_dropped_session_that_started_the_mission_is_the_whole_stop() -> None:
     clock = Clock()
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     _fake_time(bridge, clock)
-    bridge.keepalive({"keepalive_s": 0.1, "started": "litter"})
+    _beat(bridge, "collector", 0.1, "litter")
     clock.t += 1.0
-    doc = bridge.session_tick()
-    assert doc is not None and doc["mission"] == "stopped", doc
+    docs = bridge.session_tick()
+    assert len(docs) == 1 and docs[0]["mission"] == "stopped", docs
     assert bridge.bus.events[0] == "mission stop"
+    bridge.close()
+
+
+def test_on_moss_litter_a_dropped_session_that_only_watched_leaves_the_mission_running() -> None:
+    """A run that only looked, or a probe, started nothing: when its link drops, the owner's
+    mission goes on. Only an explicit stop, the end of every run among them, ends it."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _fake_time(bridge, clock)
+    _beat(bridge, "watcher", 0.1, None)
+    clock.t += 1.0
+    assert len(bridge.session_tick()) == 1 and bridge.halts == 1
+    assert "mission stop" not in bridge.bus.events and bridge.bus.mission_stops == 0
+    assert bridge.mission_doc()["answering"] is True
     bridge.close()
 
 
@@ -1005,10 +1085,13 @@ def test_the_protocol_end_to_end_over_loopback(served: Any) -> None:
     _wait(lambda: _ask(port, "GET", "/arm")[1]["job"]["state"] == "done")
     status, doc = _ask(port, "POST", "/stop", {})
     assert status == 200 and doc["ok"]
-    status, doc = _ask(port, "POST", "/session/keepalive", {"keepalive_s": 0.5, "started": "goal"})
+    beat = {"session": "s1", "keepalive_s": 0.5, "started": "goal"}
+    status, doc = _ask(port, "POST", "/session/keepalive", beat)
     assert status == 200 and doc["session"]["started"] == "goal" and doc["stack"]["running"]
-    status, doc = _ask(port, "POST", "/session/keepalive", {"end": True})
-    assert status == 200 and doc["session"]["active"] is False
+    status, doc = _ask(port, "POST", "/session/keepalive", {"session": "s1", "end": True})
+    assert status == 200 and doc["session"] is None and doc["sessions"]["live"] == 0
+    status, doc = _ask(port, "POST", "/session/keepalive", {"keepalive_s": 0.5})
+    assert status == 400 and "names its session" in doc["reason"]
 
 
 def test_the_pump_runs_on_its_own_thread_at_the_missions_rate(served: Any) -> None:

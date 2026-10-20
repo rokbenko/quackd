@@ -85,9 +85,11 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
    rover actually stopped.
 8. **`explore` for one minute,** in a room. The launcher keeps the explorer within 4 m of where
    exploring started unless you set `MOSS_EXPLORE_RADIUS_M`.
-9. **Kill quackd mid `explore`.** The bridge halts the exploration after three missed
-   heartbeats, about a second and a half: `stop_explore_cmd`, `stop_movement` and a zero.
-   Without the bridge nothing would, and the explorer would go on to its radius.
+9. **Kill quackd mid `explore`.** The bridge halts the exploration three missed keepalives
+   after the last one, at most a second and a half at quackd's own 0.5 s period and never more
+   than three seconds, since the bridge caps a declared period at 1 s: `stop_explore_cmd`,
+   `stop_movement` and a zero. Without the bridge nothing would, and the explorer would go on
+   to its radius.
 
 ## The arm, in the simulator, then on blocks
 
@@ -98,8 +100,9 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 11. **Stop it mid cycle.** Send `stop` while the arm is out. The bridge stops the script, cancels
     the trajectory and reads the joints twice: the arm should hold where it was, under torque.
     `stow_arm` then brings it home along the cycle's own return.
-12. **Kill quackd mid cycle.** The bridge cancels the cycle after three missed heartbeats, and
-    the arm holds. Then `stow_arm` from a fresh session, or support the arm and stop its run.
+12. **Kill quackd mid cycle.** The bridge cancels the cycle that session started three missed
+    keepalives later, and the arm holds. Then `stow_arm` from a fresh session, or support the
+    arm and stop its run.
 
 ## The litter mission, last
 

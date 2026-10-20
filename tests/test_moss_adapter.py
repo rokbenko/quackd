@@ -174,7 +174,7 @@ def test_the_deadman_is_claimed_only_where_the_bridge_runs_one() -> None:
     assert with_bridge.safety_authority.deadman is True
     assert without.safety_authority.deadman is False, "a wrong deadman: true is not honest"
     assert with_bridge.safety_authority.native == without.safety_authority.native == "none"
-    assert "three missed heartbeats" in with_bridge.extras["deadman_scope"]
+    assert "three missed keepalives" in with_bridge.extras["deadman_scope"]
     assert without.extras["deadman_scope"].startswith("none")
     assert any("finishes a goal" in a for a in without.extras["assumptions"])
 
@@ -751,30 +751,43 @@ async def test_collect_litter_runs_once_per_stack_start() -> None:
 
 
 async def test_a_dropped_link_halts_what_quackd_started_and_nothing_else() -> None:
+    """The bridge halts what the last keepalive it took said the session started. The start
+    was said before it went out, so a link that drops the instant after still halts it."""
     mock, adapter, _ = await _connected()
-    await adapter.heartbeat()
     await adapter.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
     assert mock.exploring and mock.started == "explore"
-    await mock.sleep(2.0)  # quackd went quiet: no heartbeat for four periods
+    mock.drop_link()
+    await mock.sleep(2.0)  # past the session's window
     assert mock.session_halts == 1 and not mock.exploring
     assert mock.stop_log[-2:] == ["session.halt", "halt.started"]
     idle, _, _ = await _connected()
-    await idle.heartbeat()
     idle.exploring = True  # the owner's own exploration, from the cockpit's page
+    idle.drop_link()
     await idle.sleep(2.0)
+    assert idle.session_halts == 1
     assert idle.exploring, "an exploration quackd did not start is not quackd's to halt"
+
+
+async def test_a_session_kept_by_its_thread_never_reads_as_dead() -> None:
+    """No heartbeat at all from the loop, a prompt blocking it, and the session lives on: its
+    keepalives are the transport's own thread's. Only a dead link or process ends it."""
+    mock, adapter, _ = await _connected()
+    await adapter.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
+    await mock.sleep(10.0)
+    assert mock.session_halts == 0 and mock.exploring
 
 
 @pytest.mark.parametrize("limit", [30.0, 90.0])
 async def test_the_idle_stop_ends_every_run_and_the_arms_torque_unless_kept_alive(
     limit: float,
 ) -> None:
-    kept, adapter, _ = await _connected(idle_limit_s=limit)
-    for _ in range(int(limit * 3)):
-        await adapter.heartbeat()
-        await kept.sleep(0.5)
+    """quackd sends the cockpit's keepalive while it is connected, from its own thread, and
+    nothing does once it has gone."""
+    kept, _, _ = await _connected(idle_limit_s=limit)
+    await kept.sleep(limit * 1.5)
     assert kept.stack_running and kept.cockpit_keepalives >= 4
-    left, _, _ = await _connected(idle_limit_s=limit)
+    left, adapter, _ = await _connected(idle_limit_s=limit)
+    await adapter.close()
     await left.sleep(limit + 1.0)
     assert left.idle_stopped and not left.stack_running and not left.arm_torque
 

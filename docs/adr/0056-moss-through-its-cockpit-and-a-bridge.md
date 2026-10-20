@@ -59,12 +59,14 @@ Four things read at the pin shape everything below.
   started nothing sends nothing when it closes, and one that sent no stop either leaves no
   note, so `quackd doctor` on `moss-litter` reports a healthy rover and leaves the mission
   running.
-- **A session deadman.** quackd's heartbeat keeps a session open on the bridge, and after three
-  missed periods the bridge halts what quackd started through either surface and nothing else,
-  and on `moss-litter` it runs the whole stop, the one every run ends with anyway. That gives
-  `drive_to`, `explore` and `collect_litter` a deadman whenever the bridge is up, and the
-  manifest claims `deadman: true` only then. A probe ends the session its health check opens
-  at once, so nothing is halted for it.
+- **A session deadman, one per session.** Each quackd transport draws a session id and keeps it
+  alive from a thread of its own at its configured 0.5 s, whatever its event loop is doing, so
+  a prompt never reads as a dead quackd. It declares that configured period, which the bridge
+  caps at 1 s, and three missed periods later the bridge halts what that session said it
+  started through either surface and nothing else. A start is said to the bridge before it goes
+  out. On `moss-litter` the whole stop runs only for a session that started the mission. That
+  gives `drive_to`, `explore` and `collect_litter` a deadman whenever the bridge is up, and the
+  manifest claims `deadman: true` only then.
 - **What answered decides the verbs.** `describe()` declares every stack's verbs together, and
   connect narrows them to the stack that runs and what answered: twists and the arm need the
   bridge and a base stack, the planner's verbs need `moss-explore`, and `collect_litter` needs

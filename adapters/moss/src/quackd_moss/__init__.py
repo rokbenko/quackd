@@ -283,9 +283,9 @@ def moss_manifest(
     if litter:
         assumptions.append(_ASSUMPTION_LITTER)
     scope = (
-        "the bridge's own twist deadman, the arm cycle it runs, and after three missed "
-        "heartbeats whatever quackd started through the cockpit: a goal, an exploration, the "
-        "litter mission"
+        "the bridge's own twist deadman, and three missed keepalives after this session goes "
+        "quiet, the arm cycle it started and whatever it started through the cockpit: a goal, "
+        "an exploration, the litter mission"
         if bridge
         else "none: nothing on the rover halts a goal or an exploration quackd started"
     )
@@ -405,12 +405,11 @@ class MossAdapter:
         return await self.transport.send_intent(intent)
 
     async def health(self) -> Health:
-        """The heartbeat's own checks, through `check`, which ends at once the session they open
-        on the bridge. A probe such as `quackd doctor` keeps no session, so the bridge's
-        deadman, which on moss-litter is the whole stop, never fires for it."""
-        check = getattr(self.transport, "check", None)
+        """The heartbeat's own checks. A probe such as `quackd doctor` holds a session of its own
+        on the bridge while it is connected, and a session that started nothing halts nothing
+        when it ends or expires, on moss-litter as anywhere."""
         try:
-            await (check() if callable(check) else self.transport.heartbeat())
+            await self.transport.heartbeat()
         except HeartbeatError as e:
             return Health(ok=False, reason=str(e))
         state = await self.transport.get_state()
