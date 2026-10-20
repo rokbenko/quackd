@@ -35,9 +35,11 @@ before.
   goes limp when it predicts a fall, and from daemon-v0.17.3 it reports API v44, which quackd serves
   with a warning. 0.20.0's `watch` has never turned a real duck's head: there it needs `mediad`'s
   `/frame`, since the WebRTC track says nothing of when a frame was taken, and the numbers its head
-  is held to are starting values to measure on the duck. Re-read `robotd` at the release the duck
-  arrives on before its first walk. Pre-orders opened 2026-08-27, earliest arrivals estimated around
-  Christmas 2026 and later orders four to six months out.
+  is held to are starting values to measure on the duck. 0.21.0's `stand_up` waits up to ten
+  seconds for the duck to stand, and how long the policy takes to get a real duck up is the number
+  to measure against it. Re-read `robotd` at the release the duck arrives on before its first walk.
+  Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026 and later orders
+  four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
   through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really
