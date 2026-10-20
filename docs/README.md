@@ -59,7 +59,7 @@ to try a real one in.
 
 - [The `.duck` file](reference/duck-spec.md): the task format, spec v0 to v4. It is normative.
 - [The robot manifest](reference/manifest-spec.md): what a connected robot is and can do, as data.
-- [Licenses](reference/licenses.md): the eight distributions, every upstream they reach, and on
+- [Licenses](reference/licenses.md): the nine distributions, every upstream they reach, and on
   what terms.
 
 ## Concepts

@@ -279,7 +279,7 @@ before.
   measured have changed since, in the abort path and in the arena's geometry, so nothing here can
   re-run it. Locally it is `python web/serve.py`, then <http://localhost:8000/simulator/>.
 - ⬜ The coordinator flock does not know `open_duck` yet (`flock/runner.py` knows one adapter).
-  A pilot flock knows all seven. A hardware flock of either kind waits on robots shipping.
+  A pilot flock knows all eight. A hardware flock of either kind waits on robots shipping.
 - ⏸ **A real model recording**, in either simulator, to replace a scripted-pilot asset and drop
   the label (see [docs/assets](docs/assets/README.md)). Needs a key.
 - ⬜ **The browser demo is not at parity with the backend.** Seven of the manifest's fifteen
