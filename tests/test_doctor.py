@@ -25,6 +25,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from quackd import doctor
+from quackd.adapters.factory import ADAPTER_NAMES
 from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, PROVIDER_NAMES
 from quackd.cli import app
 from quackd.doctor import PlacementRow
@@ -160,7 +161,7 @@ def test_collect_answers_in_data_with_no_styling_in_it() -> None:
         assert tag not in blob, tag
     assert report.ok is True
     assert [c.name for c in report.core] == ["pydantic", "mcp", "opencv", "numpy", "Pillow"]
-    assert len(report.adapters) == 7
+    assert len(report.adapters) == len(ADAPTER_NAMES), "one row for every adapter quackd ships"
     assert report.bundled_ducks > 0
     assert {p.upstream for p in report.pins} >= {"microduck", "lerobot", "microduck_rl"}
     assert report.assumptions, "there are unverified assumptions and doctor says so"
