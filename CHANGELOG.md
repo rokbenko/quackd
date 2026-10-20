@@ -39,8 +39,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `--camera-url` alone, any HTTP still, and without a frame at connect the four verbs that need
   one are not offered. `stand_up` reads the robot every 0.25 s after `robot.enable`, sending
   nothing more, calls it upright as soon as it stands, stops waiting on a robot somebody picks up,
-  and says it may need a hand only after 10 s. The speed caps are quackd's own clamp, 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s
-  turning, and `search_scan` counts the turns it made by the ones the shim's state showed.
+  and says it may need a hand only after 10 s. The speed caps are quackd's own clamp, 0.15 m/s
+  forward, 0.1 m/s sideways and 0.75 rad/s turning, and `search_scan` counts the turns it made by
+  the ones the shim's state showed.
 - **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
   official from its maker's page as read on 2026-10-20, its mass not published, no arms, and a
   note that its maker said on 2026-10-15 that the walk's balance is still being tuned.
