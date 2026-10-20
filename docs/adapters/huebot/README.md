@@ -172,10 +172,12 @@ that connection, until it closes. A frame older than 1 s is not believed, and th
   `right_knee`, `right_ankle`. So `head_yaw` is at index 7, and it is positive when the head
   looks left. quackd reads that one joint, as `extras.head_yaw_deg`, and steers on none.
 
-The three `safety` flags have to be JSON booleans, `true` or `false`. quackd reads `null`, a
-number or a string in any of them exactly as the key being absent: as not reported. So a
-`fallen` that is neither stops every walk, a `picked_up` that is neither makes `stand_up`
-refuse and `quackd doctor` warn, and a `limp` that is neither is not limp.
+The three `safety` flags have to be JSON booleans, `true` or `false`. quackd reads `null` in any of
+them exactly as the key being absent, as not reported: a null `fallen` stops every walk, a null
+`picked_up` makes `stand_up` refuse and `quackd doctor` warn, and a null `limp` is not limp.
+Anything else in a flag, a number, a string, an object or a list, is a flag quackd cannot read: the
+robot reads as `unknown`, `posture_reason` and `extras.safety_unread` quote the value, and every
+walk and every `stand_up` is refused until the frames say `true`, `false` or `null` again.
 
 robotd's frame carries more than this, and quackd passes `odom` and `loop` on to the pilot when
 they are there. Nothing else in a frame is read.
@@ -241,8 +243,9 @@ deadman all the same, since nothing else stops a walk whose link died.
   limp robot up as a side effect of being asked to drive, so quackd treats it as motion. After
   it, quackd reads the state every 0.25 s, sending nothing more, and calls the robot upright the
   first time `policy` reads `walk` or `stand`, with `fallen` false and nobody holding it. The wait
-  ends at once if somebody picks the robot up or nothing reports on it. After 10 s without any of
-  that, it says the robot may need a hand. A refusal is a `stand_up` that failed.
+  ends at once if somebody picks the robot up, nothing reports on it, or a `safety` flag stops
+  being one quackd can read. After 10 s without any of that, it says the robot may need a hand. A
+  refusal is a `stand_up` that failed.
 
 ### A boolean `accepted`
 

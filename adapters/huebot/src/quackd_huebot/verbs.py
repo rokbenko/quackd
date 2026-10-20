@@ -94,6 +94,14 @@ def _held(state: DuckState) -> str | None:
     return None
 
 
+def _unread(state: DuckState) -> str | None:
+    """Why the robot's own safety flags cannot be read just now, or None when they can. Only
+    `jsonrpc` says, in `safety_unread`: a flag the shim sent that is neither a JSON boolean
+    nor null, which also makes posture `unknown`, so every verb that walks refuses on it."""
+    unread = state.extras.get("safety_unread")
+    return str(unread) if unread else None
+
+
 def _walk_held(state: DuckState) -> str | None:
     """Why a walk is held back for a verb that is still running, or None when none is.
 
@@ -242,6 +250,8 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
             "cannot stand_up: nothing is reporting whether Huebot is down or in somebody's "
             "hands, so quackd will not ask it to drive"
         )
+    if (unread := _unread(state)) is not None:
+        return VerbResult.fail(f"cannot stand_up: {unread}, so quackd will not ask it to drive")
     if state.posture == "standing":
         return VerbResult.success("already upright")
     if state.posture == "sitting":
@@ -270,6 +280,8 @@ async def stand_up(ctx: VerbContext, _: NoParams) -> VerbResult:
             )
         if (held := _held(state)) is not None:
             return VerbResult.fail(f"asked Huebot to drive, but {held}")
+        if (unread := _unread(state)) is not None:
+            return VerbResult.fail(f"asked Huebot to drive, but {unread}")
         if _upright(state):
             return VerbResult.success(f"upright after {waited:.1f} s", waited_s=round(waited, 2))
         if waited >= STAND_UP_WAIT_S:

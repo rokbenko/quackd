@@ -529,6 +529,23 @@ def _flag(safety: dict[str, Any], key: str) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def _unreadable(safety: dict[str, Any]) -> str | None:
+    """Why a fresh frame's `safety` block cannot be read, or None when it can: a flag that is
+    there and is neither a JSON boolean nor null. Null is a flag not reported, read exactly as
+    the key being absent (`_flag`), but a number, a string, an object or a list is a flag
+    reported in a shape quackd cannot read. Read as absent, a `picked_up` of 1 let a walk out to
+    a robot somebody may have been holding, so the robot reads as `unknown` instead, with this
+    as the reason, and `stand_up` refuses while it is set (`extras.safety_unread`)."""
+    for key in ("picked_up", "fallen", "limp"):
+        value = safety.get(key)
+        if value is not None and not isinstance(value, bool):
+            return (
+                f"the shim's state frame says safety.{key} is {_quoted(json.dumps(value))}, "
+                "which is not true, false or null"
+            )
+    return None
+
+
 def posture_of(
     policy: str | None, safety: dict[str, Any], *, skills: Sequence[str] = ()
 ) -> tuple[Posture, str | None]:
@@ -543,10 +560,13 @@ def posture_of(
     asks the robot to drive legs that are in a person's hands. `fallen` comes before the label,
     because a robot on the floor is down whatever is driving it. `safety.limp`, the gains dropped
     so the robot yields, is next, and then the label. Each flag counts only as the JSON boolean
-    true (`_flag`).
+    true (`_flag`), and a flag that is neither a boolean nor null makes the robot `unknown`
+    after a robot somebody holds and before anything else (`_unreadable`).
     """
     if _flag(safety, "picked_up") is True:
         return "unknown", "somebody is holding Huebot (safety.picked_up)"
+    if (unread := _unreadable(safety)) is not None:
+        return "unknown", unread
     if _flag(safety, "fallen") is True:
         return "fallen", None
     if _flag(safety, "limp") is True:
@@ -1257,12 +1277,13 @@ class JsonRpcUnixTransport:
                 silent = "the shim's state frame carries no safety block"
             elif "fallen" not in safety:
                 silent = "the shim's state frame carries no safety.fallen"
-            else:
+            elif safety["fallen"] is None:
                 silent = (
-                    "the shim's state frame says safety.fallen is "
-                    f"{_quoted(json.dumps(safety['fallen']))}, "
-                    "not true or false, which quackd reads as not reported"
+                    "the shim's state frame says safety.fallen is null, which quackd reads "
+                    "as not reported"
                 )
+            else:
+                silent = _unreadable({"fallen": safety["fallen"]}) or ""
             return StateRead(state, age, False, policy, fallen, None, "unknown", silent)
         posture, why = posture_of(str(named) if named else None, told, skills=self._skills())
         # Absent is not False, and neither is null: reading a key that says nothing as "nobody
@@ -1279,6 +1300,8 @@ class JsonRpcUnixTransport:
 
         read = self._read()
         battery = _battery_percent(health)
+        safety = read.state.get("safety")
+        unread = _unreadable(safety) if isinstance(safety, dict) else None
         hold = self._hold_record()
         posture, reason = read.posture, read.reason
         if hold is not None and posture == "standing":
@@ -1311,6 +1334,9 @@ class JsonRpcUnixTransport:
                 # Whether the shim reports safety.picked_up at all. None while no fresh frame
                 # says either way.
                 "pickup_detection": _pickup_detection(read),
+                # Why a safety flag in the newest frame cannot be read, one that is neither a
+                # JSON boolean nor null, or None. `stand_up` refuses while it is set.
+                "safety_unread": unread,
                 # What the shim answered hello with, beside what quackd read, and the warning
                 # when the two differ.
                 "shim": self.shim,

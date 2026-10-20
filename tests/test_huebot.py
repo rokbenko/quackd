@@ -989,6 +989,7 @@ async def _what_quackd_makes_of(safety: dict[str, Any]) -> dict[str, Any]:
         await fake.stop()
     return {
         "posture": state.posture,
+        "reason": state.extras["posture_reason"],
         "fall_detection": state.extras["fall_detection"],
         "pickup_detection": state.extras["pickup_detection"],
         "picked_up": state.extras["picked_up"],
@@ -997,19 +998,19 @@ async def _what_quackd_makes_of(safety: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("value", [None, "true"], ids=["null", "string"])
 @pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
-async def test_a_safety_flag_that_is_not_a_json_boolean_reads_as_the_key_being_absent(
-    key: str, value: object
-) -> None:
+async def test_a_null_safety_flag_reads_as_the_key_being_absent(key: str) -> None:
     """`fallen`, `picked_up` and `limp` count only as JSON booleans. A null `fallen` used to read
     as a fall detector saying all clear, and a null `picked_up` as a pick-up detector saying
     nobody holds the robot, so walks went out and `stand_up` asked legs nobody could vouch for to
-    drive. Anything but true or false now reads exactly as the key being absent, on a robot on
-    its feet and on one on the floor."""
+    drive. Null now reads exactly as the key being absent, as not reported, on a robot on its
+    feet and on one on the floor."""
     for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
-        given = await _what_quackd_makes_of(_block(base, key, value))
+        given = await _what_quackd_makes_of(_block(base, key, None))
         absent = await _what_quackd_makes_of(_block(base, key, ABSENT))
+        # the reason may say which of the two it read, and nothing else may differ
+        reason, _ = given.pop("reason"), absent.pop("reason")
+        assert key != "fallen" or "safety.fallen is null" in reason, reason
         assert given == absent, (base, given, absent)
 
 
@@ -1032,6 +1033,53 @@ async def test_a_reason_quotes_no_more_than_a_short_piece_of_what_the_shim_sent(
         reason = state.extras["posture_reason"]
         assert state.posture == "unknown" and len(reason) < 200, reason
         assert reason.count("x") + reason.count("p") < 100, reason
+        await adapter.disconnect()
+    finally:
+        await fake.stop()
+
+
+@pytest.mark.parametrize(
+    "value", [1, "true", {"held": True}, [True]], ids=["1", "string", "object", "list"]
+)
+@pytest.mark.parametrize("key", ["fallen", "picked_up", "limp"])
+async def test_a_safety_flag_quackd_cannot_read_stops_every_walk_and_stand_up(
+    key: str, value: object
+) -> None:
+    """Null is a flag not reported, but `1`, `"true"`, an object or a list is a flag sent in a
+    shape quackd cannot read, and reading it as absent let a walk out: `picked_up: 1` beside
+    `policy: walk` read as standing and sent three robot.move, and so did `limp: "true"`. The
+    robot reads as `unknown` now, the reason quotes the value, and nothing that moves it goes
+    out, on its feet or on the floor."""
+    for base in (UPRIGHT, DOWN_ON_THE_FLOOR):
+        made = await _what_quackd_makes_of(_block(base, key, value))
+        assert made["posture"] == "unknown", (base, made)
+        assert f"safety.{key} is {json.dumps(value)}" in made["reason"], made["reason"]
+        assert not made["walked"] and not made["enabled"], (base, made)
+
+
+async def test_stand_up_stops_waiting_once_a_safety_flag_cannot_be_read() -> None:
+    """A flag the shim stops sending as a boolean while `stand_up` waits ends the wait at once,
+    as a robot somebody picks up does, rather than leaving it to judge for 10 s legs nobody can
+    vouch for."""
+    fake = FakeShim()
+    fake.safety_block = dict(DOWN_ON_THE_FLOOR)
+    await fake.start()
+    try:
+        adapter = await _connected(fake)
+
+        async def unreadable_once_enabled() -> None:
+            for _ in range(500):
+                if "robot.enable" in fake.methods():
+                    fake.safety_block = {**DOWN_ON_THE_FLOOR, "limp": "true"}
+                    return
+                await asyncio.sleep(0.02)
+
+        garbling = asyncio.create_task(unreadable_once_enabled())
+        started = time.monotonic()
+        result = await _executor(adapter).run_verb("stand_up", {})
+        await garbling
+        assert not result.ok and 'safety.limp is "true"' in result.summary, result.summary
+        assert time.monotonic() - started < 5.0, "the wait ran on"
         await adapter.disconnect()
     finally:
         await fake.stop()
