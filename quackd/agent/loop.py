@@ -600,6 +600,22 @@ class AgentLoop:
         with contextlib.suppress(Exception):
             self.transcript.close()
 
+    async def _wait_out_pause(self) -> None:
+        """Hold still until a pause granted to a robot met is over, before a move that reaches
+        the body without passing the gate that keeps it: the rest move, and the hand-back that
+        opens a gripper. A second Ctrl-C while waiting ends the wait, and the rest of the
+        teardown still runs, as it does for every other wait in it."""
+        held = self.executor.paused_until - time.monotonic()
+        if held <= 0:
+            return
+        self._note(f"holding still {held:.0f} s more first, for a pause a robot nearby asked")
+        try:
+            while held > 0:  # until it is over: asyncio may wake a clock tick early
+                await asyncio.sleep(held)
+                held = self.executor.paused_until - time.monotonic()
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self._note("stopped waiting out the pause: interrupted")
+
     async def _rest(self) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
 
@@ -618,14 +634,7 @@ class AgentLoop:
         cfg = self.cfg
         if cfg.dry_run or getattr(cfg.transport, "rest_pose", None) is None:
             return None
-        held = self.executor.paused_until - time.monotonic()
-        if held > 0:
-            # a pause granted to a robot met is a promise to hold still, and the rest move
-            # reaches the body without passing the gate that keeps it
-            self._note(f"holding still {held:.0f} s more first, for a pause a robot nearby asked")
-            while held > 0:  # until it is over: asyncio may wake a clock tick early
-                await asyncio.sleep(held)
-                held = self.executor.paused_until - time.monotonic()
+        await self._wait_out_pause()
         in_hand = getattr(cfg.transport, "in_hand", None) is True
         if not in_hand:
             self._note("moving to the rest pose")
@@ -2529,6 +2538,10 @@ class AgentLoop:
                 # a take-hold that stop made over an arm in a person's hands, and was refused,
                 # said to them and put on the record, which the stop itself does neither of
                 self._refused_in_the_stop()
+            # the hand-back opens a gripper and the rest move folds the arm, and neither
+            # passes the gate a granted pause keeps
+            with contextlib.suppress(Exception):
+                await self._wait_out_pause()
             if self._handed_over:
                 # between the stop, which is holding the arm where the run left it, and the
                 # rest move, which folds it: the one moment where opening the gripper is

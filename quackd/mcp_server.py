@@ -413,9 +413,12 @@ class RobotSession:
             # gated; then between the stop and the close, which is the only window where
             # putting the arm down changes whether it falls when torque is released
             held = self.executor.paused_until - time.monotonic()
-            while held > 0:  # until it is over: asyncio may wake a clock tick early
-                await asyncio.sleep(held)
-                held = self.executor.paused_until - time.monotonic()
+            try:
+                while held > 0:  # until it is over: asyncio may wake a clock tick early
+                    await asyncio.sleep(held)
+                    held = self.executor.paused_until - time.monotonic()
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                pass  # the arm still goes down, and the transport still closes
             with contextlib.suppress(Exception):
                 await go_to_rest_if_any(self.transport)
         with contextlib.suppress(Exception):

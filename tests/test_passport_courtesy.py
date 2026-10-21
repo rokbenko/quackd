@@ -25,8 +25,8 @@ from quackd.passport.talk import Endpoint, read_message
 from quackd.passport_courtesy import Courtesy, Decision
 from quackd.passport_store import PassportStore
 from quackd.passport_talk import Talker
-from quackd.safety import Budget, Budgets, Executor, VerbNotAllowed
-from quackd.transport.base import Ack, Intent
+from quackd.safety import Aborted, Budget, Budgets, Executor, VerbNotAllowed
+from quackd.transport.base import Ack, DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import Verb, VerbContext, VerbResult, default_registry
 
@@ -169,6 +169,85 @@ def test_a_pause_ends_a_learned_verb_whatever_it_is_called(
     assert "move" in body.sent[:first_stop] and set(body.sent[first_stop:]) == {"STOP"}
 
 
+def test_a_verb_admitted_just_before_a_pause_is_held_once_its_state_read_returns() -> None:
+    class SlowToReport(Body):
+        async def get_state(self) -> DuckState:
+            await asyncio.sleep(0.3)  # the last await between the gates and the verb itself
+            return await super().get_state()
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        body = SlowToReport()
+        run(loop, body.connect())
+        executor = Executor(default_registry(), body, contract=contract())
+        executor.open_to_peers = True
+        walking = asyncio.run_coroutine_threadsafe(
+            executor.run_verb("move", {"vx": 0.2, "duration_s": 1.0}), loop
+        )
+        time.sleep(0.1)  # past the gates, waiting on the state read: nothing yet to end
+        assert Courtesy(executor, loop).decide("known", "pause", {"seconds": 3}).result == "ok"
+        with pytest.raises(VerbNotAllowed, match="a pause this robot granted"):
+            walking.result(5)
+        assert "move" not in body.sent
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(5)
+
+
+def test_a_verb_a_pause_ended_is_not_the_pilots_failure(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    executor.contract = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
+        "success: [x]\nabort_when:\n  - Same verb fails 2 times in a row\n---\n# Task\nx\n"
+    ).frontmatter
+    clock = Clock()
+    courtesy = Courtesy(executor, loop, clock=clock)
+    for _ in range(2):
+        walking = asyncio.run_coroutine_threadsafe(
+            executor.run_verb("move", {"vx": 0.2, "duration_s": 3.0}), loop
+        )
+        time.sleep(0.3)
+        assert courtesy.decide("known", "pause", {"seconds": 1}).result == "ok"
+        assert not walking.result(5).ok
+        clock.now += 61  # the next pause a minute on
+        executor.paused_until = 0.0  # and this one over
+    # two in a row of `move` used to end the run on `abort_when`, for something a robot met did
+    assert not executor.abort.is_set()
+
+
+def test_an_ask_that_crosses_a_closing_window_is_answered_later_and_sets_no_pause(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    courtesy = Courtesy(executor, loop)
+    executor.open_to_peers = False  # closed after the handler read it, before the loop ran it
+    assert run(loop, courtesy._paused(3)).result == "later"
+    assert run(loop, courtesy._identified()).result == "later"
+    assert executor.paused_until == 0.0 and "STOP" not in executor.transport.sent  # type: ignore[attr-defined]
+
+
+def test_an_abort_that_lands_with_a_pause_is_what_leaves(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    walking = asyncio.run_coroutine_threadsafe(
+        executor.run_verb("move", {"vx": 0.2, "duration_s": 3.0}), loop
+    )
+    time.sleep(0.3)
+
+    async def both() -> None:
+        executor.abort.set()
+        executor.pause_for(2)
+
+    run(loop, both())
+    with pytest.raises(Aborted):
+        walking.result(5)
+
+
 def test_a_robot_a_person_is_holding_is_never_paused(
     on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
 ) -> None:
@@ -296,7 +375,8 @@ def test_a_courtesy_its_task_does_not_allow_is_refused_by_the_executors_own_gate
     executor, loop = on_a_loop
     executor.contract = contract("move, stop, report_state")  # a task with no voice in it
     refused = Courtesy(executor, loop).decide("known", "identify", {})
-    assert refused.result == "no" and "allowlist" in refused.reason
+    # in this robot's own words: the executor's would name the task's allowlist to a stranger
+    assert refused == Decision("no", "the task this robot is on does not allow it")
 
 
 # ── a robot met asks, and is answered ───────────────────────────────────────────────────

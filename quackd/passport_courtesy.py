@@ -59,6 +59,23 @@ def _no(reason: str) -> Decision:
     return Decision("no", reason)
 
 
+def _why_not(e: Exception) -> str:
+    """A refusal as a robot met reads it: this robot's own words, never an exception's, which
+    can name a port, a host or the task's allowlist."""
+    from quackd.safety import ConfirmDenied, SafetyStop, VerbNotAllowed
+
+    if isinstance(e, VerbNotAllowed):
+        return "the task this robot is on does not allow it"
+    if isinstance(e, ConfirmDenied):
+        return "a person here did not allow it"
+    if isinstance(e, SafetyStop):
+        return "this robot has stopped its run"
+    return "it could not do it just now"
+
+
+CLOSED = Decision("later", "this robot is not taking courtesies while it starts or stops")
+
+
 class Courtesy:
     """One robot's courtesies, over the executor that runs its verbs and the loop it runs on."""
 
@@ -99,7 +116,7 @@ class Courtesy:
         if not getattr(self.executor, "open_to_peers", False):
             # a run that is parking its arm, or handing it to a person, moves it where no gate
             # sees, so a pause granted then could not be kept (`Executor.open_to_peers`)
-            return Decision("later", "this robot is not taking courtesies while it starts or stops")
+            return CLOSED
         if skill == "pause":
             return self._pause(tier, args)
         return self._identify(tier, args)
@@ -156,7 +173,7 @@ class Courtesy:
             future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
         except RuntimeError:  # the loop has closed: the run is over
             coroutine.close()
-            return Decision("later", "this robot is not taking courtesies while it starts or stops")
+            return CLOSED
         try:
             result: Decision = future.result(timeout=ANSWER_WITHIN_S)
         except concurrent.futures.TimeoutError:
@@ -167,6 +184,10 @@ class Courtesy:
         return result
 
     async def _paused(self, seconds: int) -> Decision:
+        # The window read again here, on the loop: the handler read it on the thread the ask
+        # came on, and a run that closed it since has begun to fold its arm where no gate sees.
+        if not self.executor.open_to_peers:
+            return CLOSED
         # The hold first: it ends whatever verb is moving the body and refuses the next, so the
         # stop after it is the last intent the body gets. In the other order a verb still
         # running sent its next twist after the stop and started the body again.
@@ -174,18 +195,20 @@ class Courtesy:
         try:
             result = await self.executor.run_verb("stop", source="peer")
         except Exception as e:  # a refusal, or a link that dropped
-            return _no(f"it could not stop: {e}")
+            return _no(f"it could not stop: {_why_not(e)}")
         if not result.ok:
-            return _no(f"it could not stop: {result.summary}")
+            return _no("it could not stop")
         return Decision("ok", f"stopped, and holding still for {seconds} s")
 
     async def _identified(self) -> Decision:
+        if not self.executor.open_to_peers:
+            return CLOSED
         try:
             result = await self.executor.run_verb("say", {"text": "here"}, source="peer")
         except Exception as e:  # a refusal, or a link that dropped
-            return _no(str(e))
+            return _no(_why_not(e))
         if not result.ok:
-            return _no(f"it could not make a sound: {result.summary}")
+            return _no("it could not make a sound")
         return Decision("ok", "identified itself by sound")
 
 

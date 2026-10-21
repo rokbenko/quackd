@@ -20,7 +20,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from pydantic import ValidationError
 
@@ -57,6 +57,9 @@ CANCELLED_BY_ABORT = "abort"
 CANCELLED_BY_TIMEOUT = "timeout"
 CANCELLED_FROM_OUTSIDE = "cancel"
 CANCELLED_BY_PAUSE = "pause"
+PAUSE_ENDED = "pause"
+"""`ended_by` in the result of a verb a granted pause ended (`Executor._ended_by_pause`), which
+`abort_when`'s count of failures in a row passes over."""
 """Why the executor cancelled a running verb, as the message of the `CancelledError` the verb is
 handed (`Executor._execute`): the abort it races, a pause granted to a robot met, the verb's own
 timeout, or the caller going
@@ -379,6 +382,22 @@ class Executor:
                 return True
         return verb.safety_class in ("confirm", "dangerous")
 
+    def _may_move(self, canonical: str, verb: Verb) -> bool:
+        """Whether a verb may move the body, which a pause refuses and ends: anything outside
+        `WHILE_PAUSED`, and a learned verb whatever it is called, since it is an unproven policy."""
+        return canonical not in WHILE_PAUSED or verb.kind == "learned"
+
+    def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
+        """The `paused` gate: refuse a verb that may move the body while a pause holds."""
+        held = self.paused_until - time.monotonic()
+        if held > 0 and self._may_move(canonical, verb):
+            reason = (
+                f"{name} waits: a pause this robot granted a robot it met holds {held:.1f} s "
+                "more, and until it ends only stop and the verbs that move nothing run"
+            )
+            self._emit("gate", name=name, gate="paused", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
+
     def pause_for(self, seconds: float) -> None:
         """Hold the body still for `seconds` (docs/passport/talk.md#what-quackd-does-with-an-ask):
         every verb already moving it is ended now, as an abort ends one, and the `paused` gate
@@ -578,14 +597,7 @@ class Executor:
         looks = (canonical in BEFORE_VERDICT and verb.kind != "learned") or (
             verb.read_only and canonical not in MOVES_THE_BODY
         )
-        held = self.paused_until - time.monotonic()
-        if held > 0 and (canonical not in WHILE_PAUSED or verb.kind == "learned"):
-            reason = (
-                f"{name} waits: a pause this robot granted a robot it met holds {held:.1f} s "
-                "more, and until it ends only stop and the verbs that move nothing run"
-            )
-            self._emit("gate", name=name, gate="paused", outcome="refused", reason=reason)
-            raise VerbNotAllowed(reason)
+        self._hold_still_for(name, canonical, verb)
         if self.require_verdict and not looks and not self.cleared:
             why = (
                 self.verdict.blocking_reason()
@@ -727,6 +739,11 @@ class Executor:
             with contextlib.suppress(Exception):
                 await self.logged_transport().stop()
             raise
+        # Read again after the last await before the verb is tracked as moving. A pause
+        # granted while this verb waited on that state read, or on a person's confirm before
+        # it, found nothing to end, and the gate it had already passed is not asked twice, so
+        # the verb used to run in full after the stop a robot met was promised.
+        self._hold_still_for(name, canonical, verb)
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
@@ -828,9 +845,7 @@ class Executor:
         if interruptible:
             abort_task = asyncio.ensure_future(self.abort.wait())
             waiting.add(abort_task)
-            # the same two halves as the `paused` gate: a learned verb is an unproven policy,
-            # whatever it is called, so a pause ends it too
-            if self.registry.canonical(verb.name) not in WHILE_PAUSED or verb.kind == "learned":
+            if self._may_move(self.registry.canonical(verb.name), verb):
                 self._moving.add(verb_task)
         done: set[asyncio.Future[Any]] = set()
         finished = False
@@ -864,36 +879,43 @@ class Executor:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await verb_task
             if not finished:
-                self._emit(
-                    "gate",
-                    name=called,
-                    gate="cancelled",
-                    outcome="fired",
-                    reason="the call was cancelled; the verb was cancelled and a stop was sent",
-                )
+                if not halted:  # one a pause ended is said once, by the call that holds it
+                    self._emit(
+                        "gate",
+                        name=called,
+                        gate="cancelled",
+                        outcome="fired",
+                        reason="the call was cancelled; the verb was cancelled and a stop was sent",
+                    )
                 with contextlib.suppress(Exception):
                     await self.logged_transport().stop()
         if halted:
+            if self.abort.is_set():  # an abort that landed with the pause is what leaves
+                await self._aborted_mid_verb(called)
             return await self._ended_by_pause(called)
         if verb_task in done:
             return verb_task.result()
         if abort_task is not None and abort_task in done:
-            self._emit(
-                "gate",
-                name=called,
-                gate="abort",
-                outcome="fired",
-                reason="aborted mid-verb: the verb was cancelled and a stop was sent",
-            )
-            # the abort is what leaves here, even when the stop after it failed: a heartbeat that
-            # lost the link sets it, and that stop's own error used to leave in its place
-            if (unstopped := await self._stop_after()) is not None:
-                raise Aborted(
-                    f"aborted mid-verb; the verb was cancelled, and the stop sent after it failed: "
-                    f"{unstopped}"
-                )
-            raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
+            await self._aborted_mid_verb(called)
         raise TimeoutError
+
+    async def _aborted_mid_verb(self, called: str) -> NoReturn:
+        """What a verb the abort cancelled comes to: a stop after it, and `Aborted`."""
+        self._emit(
+            "gate",
+            name=called,
+            gate="abort",
+            outcome="fired",
+            reason="aborted mid-verb: the verb was cancelled and a stop was sent",
+        )
+        # the abort is what leaves here, even when the stop after it failed: a heartbeat that
+        # lost the link sets it, and that stop's own error used to leave in its place
+        if (unstopped := await self._stop_after()) is not None:
+            raise Aborted(
+                f"aborted mid-verb; the verb was cancelled, and the stop sent after it failed: "
+                f"{unstopped}"
+            )
+        raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
 
     async def _ended_by_pause(self, called: str) -> VerbResult:
         """What a verb a granted pause ended comes to: a stop after it, and a result saying why,
@@ -910,7 +932,8 @@ class Executor:
         return VerbResult.fail(
             f"{called} ended: a robot this one met asked it to pause, and it is holding still "
             f"for {held:.0f} s more"
-            + (f"; the stop sent after it failed: {unstopped}" if unstopped else "")
+            + (f"; the stop sent after it failed: {unstopped}" if unstopped else ""),
+            ended_by=PAUSE_ENDED,
         )
 
     # ── abort conditions the executor enforces itself ───────────────────────────────
@@ -920,6 +943,10 @@ class Executor:
         key = self.registry.canonical(name)  # `walk` and `move` failures count together
         if result.ok:
             self.consecutive_failures[key] = 0
+        elif result.data.get("ended_by") == PAUSE_ENDED:
+            # not the verb's failure, nor the pilot's: two pauses a robot met asked for used
+            # to make two in a row of `move`, and `abort_when` ended the run on them
+            pass
         else:
             n = self.consecutive_failures.get(key, 0) + 1
             self.consecutive_failures[key] = n

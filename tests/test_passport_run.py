@@ -8,6 +8,7 @@ glue together and never a fake of either.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -16,12 +17,15 @@ from typing import Any
 from quackd.adapters.base import RestResult
 from quackd.agent.loop import AgentLoop, RunConfig
 from quackd.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
+from quackd.agent.providers.fake import FakeProvider
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.parser import parse_duck_text
 from quackd.passport import PassportError, SigningKey, document
 from quackd.passport.talk import Endpoint, read_message
+from quackd.passport_courtesy import Courtesy
 from quackd.passport_store import PassportStore
 from quackd.passport_talk import HEADING, Talker
+from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
 
 DUCK_FILE = (
@@ -158,6 +162,113 @@ async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: 
     parked = await loop._rest()
     assert parked is not None and parked.reached
     assert arm.parked_at - asked >= 0.3  # the arm folded only once the pause was over
+
+
+ARM_DUCK = (
+    "---\nduck: 1\nname: lift-the-mug\ndescription: Pick up the mug.\nverbs:\n"
+    "  allow: [observe, report_state, stop]\nsuccess: [The mug is up.]\n---\n# Task\nPick it up.\n"
+)
+
+
+class Person:
+    """Somebody at the terminal of a `--by-hand` run, who answers every question at once."""
+
+    asks_a_person = False
+
+    def say(self, text: str) -> None:
+        pass
+
+    async def wait(
+        self, text: str, *, timeout_s: float | None = None, until_abort: bool = True
+    ) -> bool:
+        return True
+
+
+async def test_a_pause_on_the_pilots_last_turn_holds_the_gripper_and_the_fold_until_it_ends(
+    tmp_path: Path,
+) -> None:
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import REST, LeRobotMock
+
+    class Arm(LeRobotMock):
+        def __init__(self) -> None:
+            super().__init__(rest_pose=REST)
+            self.when: dict[str, float] = {}
+
+        async def send_intent(self, intent: Intent) -> Ack:
+            if intent.kind == "gripper":
+                self.when["gripper"] = time.monotonic()
+            return await super().send_intent(intent)
+
+        async def go_to_rest(self) -> Any:
+            self.when["rest"] = time.monotonic()  # the last is the teardown's
+            return await super().go_to_rest()
+
+    arm = Arm()
+    provider = FakeProvider(script=[DONE])
+    cfg = RunConfig(
+        duck=parse_duck_text(ARM_DUCK),
+        provider=provider,
+        transport=LeRobotAdapter(arm),
+        hand_off=Person(),
+        runs_dir=tmp_path,
+    )
+    loop = AgentLoop(cfg)
+    courtesy = Courtesy(loop.executor, asyncio.get_running_loop())
+    granted: list[str] = []
+    step = provider.step
+
+    async def stepping(*args: Any) -> ProviderTurn:
+        if not granted:  # a robot met asks for a pause while the pilot thinks
+            granted.append((await courtesy._paused(1)).result)
+        return await step(*args)
+
+    provider.step = stepping  # type: ignore[method-assign,assignment]
+    await loop.run()
+    held_until = loop.executor.paused_until
+    assert granted == ["ok"]
+    assert arm.when["gripper"] >= held_until and arm.when["rest"] >= held_until
+
+
+async def test_a_second_ctrl_c_while_waiting_out_a_pause_still_lets_the_arm_fold(
+    tmp_path: Path,
+) -> None:
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import REST, LeRobotMock
+
+    class Arm(LeRobotMock):
+        def __init__(self) -> None:
+            super().__init__(rest_pose=REST)
+            self.stopped = asyncio.Event()
+
+        async def stop(self) -> None:
+            await super().stop()
+            self.stopped.set()  # the teardown's: the run sent no verb before it
+
+    arm = Arm()
+    provider = FakeProvider(script=[DONE])
+    cfg = RunConfig(
+        duck=parse_duck_text(ARM_DUCK),
+        provider=provider,
+        transport=LeRobotAdapter(arm),
+        runs_dir=tmp_path,
+    )
+    loop = AgentLoop(cfg)
+    step = provider.step
+
+    async def stepping(*args: Any) -> ProviderTurn:
+        loop.executor.pause_for(3)  # granted on the pilot's last turn
+        return await step(*args)
+
+    provider.step = stepping  # type: ignore[method-assign,assignment]
+    running = asyncio.ensure_future(loop.run())
+    await asyncio.wait_for(arm.stopped.wait(), 10)  # the teardown's stop: the wait comes next
+    await asyncio.sleep(0.3)
+    running.cancel()  # a second Ctrl-C, which asyncio's runner turns into a cancel
+    await running
+    assert arm.sequence[-2:] == ["rest", "close"]  # the arm still folded, and was closed
+    kinds = [r["kind"] for r in Transcript.read(loop.run_dir / "transcript.jsonl")]
+    assert "run_end" in kinds
 
 
 async def test_a_pilot_sees_a_stranger_nearby_and_a_person_reads_its_words(tmp_path: Path) -> None:
