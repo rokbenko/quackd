@@ -10,11 +10,13 @@ this can prove is anything about MOSS: nothing here has run on a rover.
 from __future__ import annotations
 
 import ast
+import contextlib
 import http.client
 import importlib.util
 import itertools
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -1768,6 +1770,32 @@ def test_every_route_wants_the_token(served: Any) -> None:
         status, doc = _ask(port, method, path, {} if method == "POST" else None, token=None)
         assert status == 401 and doc["reason"] == "bad or missing token"
         assert _ask(port, method, path, {} if method == "POST" else None, token="nope")[0] == 401
+
+
+def test_a_token_refusal_reaches_a_client_whose_body_comes_after_its_headers(
+    served: Any,
+) -> None:
+    """A POST refused for its token has its body read and dropped before the refusal goes, as
+    one refused for its length does: a close with the body unread, or still to come, resets
+    the connection, and the refusal is lost to a client that reads it a moment later."""
+    _, port = served
+    body = b'{"session": "s1"}'
+    head = (
+        f"POST {B.STOP_PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\n{B.TOKEN_HEADER}: nope\r\n"
+        f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n"
+    ).encode()
+    got = b""
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+        s.sendall(head)
+        time.sleep(0.2)  # the body after its headers, as a client's two sends may land
+        with contextlib.suppress(OSError):
+            s.sendall(body)
+        time.sleep(0.2)  # and the answer read a moment later
+        with contextlib.suppress(OSError):
+            while chunk := s.recv(65536):
+                got += chunk
+    status = got.split(b"\r\n", 1)[0]
+    assert b" 401 " in status and b"bad or missing token" in got, got[:120]
 
 
 def test_refusals_are_json_with_a_reason(served: Any) -> None:

@@ -2601,6 +2601,10 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
         def _route(self, method: str) -> None:
             path, _, query = self.path.partition("?")
             if not bridge.authorised(self.headers.get(TOKEN_HEADER)):
+                # its body read and dropped first, as one refused for its length is: a close
+                # with a body unread, or still to come, resets the connection, and the
+                # refusal is lost to a client that reads it a moment later
+                self._drop_body()
                 self._json(401, {"ok": False, "reason": "bad or missing token"}, close=True)
                 return
             if path in GET_PATHS and method == "GET":
@@ -2614,6 +2618,16 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                 self._json(405, {"ok": False, "reason": f"{path} answers {allowed}, not {method}"})
             else:
                 self._json(404, {"ok": False, "reason": f"nothing at {path}"})
+
+        def _drop_body(self) -> None:
+            """A declared body of at most DRAIN_LIMIT_BYTES, read and dropped."""
+            try:
+                length = int(self.headers.get("Content-Length") or "0")
+            except ValueError:
+                return
+            if 0 < length <= DRAIN_LIMIT_BYTES:
+                with contextlib.suppress(OSError):
+                    self.rfile.read(length)
 
         def _body(self) -> dict[str, Any] | None:
             declared = self.headers.get("Content-Length")
