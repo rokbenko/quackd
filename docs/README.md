@@ -72,6 +72,35 @@ to try a real one in.
   protect against.
 - [Learned verbs](concepts/learned-verbs.md): a reserved extension point. Nothing in it runs yet.
 
+## Robot Passport
+
+A small open protocol for two robots that have never met, from any maker, to say who they are, who
+vouches for them, what they can and cannot do, how a person stops them and how to reach them. It
+has a folder of its own, [passport/](passport/README.md), because it is written to leave quackd
+one day, whole.
+
+| Page | What it covers |
+|---|---|
+| [Robot Passport](passport/README.md) | the hub: the three layers, the status, and every page in reading order |
+| [Why](passport/why.md) | the problem, five meetings it is for, the principles, and why not something that exists |
+| [How it works](passport/how-it-works.md) | one meeting step by step, a passport's life, and what happens when something fails |
+| [Quickstart](passport/quickstart.md) | a passport for any robot in five minutes, and for a robot quackd drives |
+| [The passport](passport/passport.md) | the document, member by member |
+| [Discovery](passport/discovery.md) | the beacon: the well-known URL, QR, DNS-SD, MQTT, ROS 2, and Bluetooth later |
+| [Trust](passport/trust.md) | keys, signatures, stamps, pinning and the four tiers |
+| [Talk](passport/talk.md) | the six messages, the three-step `hello`, and courtesies |
+| [Security](passport/security.md) | the threat model |
+| [Privacy](passport/privacy.md) | what each layer reveals, and taking part without being discoverable |
+| [Compatibility](passport/compatibility.md) | the ladder from a sticker to a talking robot, recipes and translators |
+| [In quackd](passport/quackd.md) | what quackd does with it: commands, files, what a pilot sees |
+| [Specification](passport/spec.md) | the normative text, version 0.1, with its [schemas](passport/schema/passport.schema.json) |
+| [Test vectors](passport/vectors/README.md) | the conformance suite, each vector with its expected result |
+| [Naming](passport/naming.md) | what the name means, and every identifier |
+| [Prior art](passport/prior-art.md) | what it borrowed and what it avoided |
+| [Glossary](passport/glossary.md) | every term |
+| [FAQ](passport/faq.md) | the questions people ask |
+| [Roadmap](passport/roadmap.md) | the status, the phases and the decisions taken |
+
 ## History
 
 - [adr/](adr/): one record per decision, numbered, each with what was decided and why.
@@ -98,7 +127,9 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
 - `concepts/` for how quackd works, and why.
+- `passport/` for anything about Robot Passport, the protocol and quackd's part in it, kept in one
+  folder so it can leave quackd whole.
 - `adr/` for a decision, numbered after the last one.
 
 Then link it from this page. A test fails while any page under `guides/`, `adapters/`,
-`reference/` or `concepts/` is missing from it.
+`reference/`, `concepts/` or `passport/` is missing from it.

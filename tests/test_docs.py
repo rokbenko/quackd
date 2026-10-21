@@ -2239,8 +2239,10 @@ def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> No
 
     Twenty six pages once sat side by side in docs/, a guide beside a spec beside one robot's
     checklist. The map is how they stay found now that each kind has a folder of its own, and
-    the map says this test holds it to every page in those four folders. The ADRs and the
-    design notes are reached through their folders, which the map links."""
+    the map says this test holds it to every page in those folders. Robot Passport's pages are
+    held to it too: they have a folder of their own because the protocol is meant to leave quackd
+    one day, which is no reason for a page to go unlinked meanwhile. The ADRs and the design notes
+    are reached through their folders, which the map links."""
     index = REPO / "docs" / "README.md"
     linked = {
         (index.parent / target.partition("#")[0]).resolve()
@@ -2249,7 +2251,7 @@ def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> No
     }
     pages = [
         page
-        for folder in ("guides", "adapters", "reference", "concepts")
+        for folder in ("guides", "adapters", "reference", "concepts", "passport")
         for page in sorted((REPO / "docs" / folder).rglob("*.md"))
     ]
     assert len(pages) > 20, "the folders under docs/ moved, so this test is checking nothing"

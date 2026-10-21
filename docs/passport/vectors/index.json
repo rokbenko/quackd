@@ -1,0 +1,15 @@
+{
+  "passport": "0.1",
+  "robots": [
+    {
+      "name": "duck-01",
+      "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+      "url": "/robots/duck-01/robot-passport.json"
+    },
+    {
+      "name": "cart-01",
+      "id": "did:key:z6Mkgxj2R3HLtQRpPnvfvpuKEceSqf3tZHBjdmZ3fFz3JHGG",
+      "url": "/robots/cart-01/robot-passport.json"
+    }
+  ]
+}

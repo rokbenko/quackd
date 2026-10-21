@@ -1,0 +1,54 @@
+{
+  "passport": "0.1",
+  "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+  "name": "duck-01",
+  "maker": {
+    "vendor": "pollen-robotics",
+    "model": "microduck"
+  },
+  "software": {
+    "name": "quackd",
+    "version": "0.23.0"
+  },
+  "owner": {
+    "label": "Example lab",
+    "contact": "https://example.org/robots/duck-01"
+  },
+  "body": {
+    "embodiment": "hexapod",
+    "mobility": "legged",
+    "sensors": [
+      "sonar"
+    ]
+  },
+  "skills": [
+    "stop",
+    "observe",
+    "say",
+    "move",
+    "go_to",
+    "search_scan",
+    "kick",
+    "gaze"
+  ],
+  "courtesy": [
+    "pause",
+    "identify"
+  ],
+  "cannot": [
+    "carry, hold or push anything",
+    "climb or descend a step"
+  ],
+  "safety": {
+    "stops_on_silence": true,
+    "estop": "power",
+    "how_to_stop": "the power switch"
+  },
+  "talk": [
+    {
+      "via": "http",
+      "url": "http://192.0.2.10:8790/robot-passport/inbox"
+    }
+  ],
+  "issued": "2026-10-21T00:00:00Z"
+}
