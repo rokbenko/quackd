@@ -160,9 +160,6 @@ SCRIPT_GRACE_S = 2.0
 """How long the arm script has to end after a terminate before it is killed."""
 PROC_POLL_S = 0.05
 """Between two looks at whether a signalled process has ended."""
-ARM_READ_FRESH_S = 2.0
-"""How recent the bridge's last reading of the joints must be for a brake to compare one read
-against it, quackd's own bound: the client reads the arm with every state it asks."""
 MISSION_RESEND_FIRST_S = 0.2
 """When the mission's stop first goes out again, while it still answers, the gap doubling each
 time after, so a few go in the confirmation's window rather than one every probe."""
@@ -177,7 +174,8 @@ execute_trajectory: importing dimOS, reaching the arm's coordinator and reading 
 (ARM_PLAY_STARTUP in quackd's upstream_api, UNVERIFIED), so the hardware checklist reads it
 off a cycle."""
 ARM_GUARD_S = ARM_PLAY_STARTUP_S + RPC_TIMEOUT_S
-"""How long the arm is watched after a stop cancelled it, counted from that stop's last
+"""How long the arm is watched after a stop whose cancel found a trajectory executing, or
+that ended a cycle of quackd's or a pick of the mission's, counted from that stop's last
 cancel. A pick the stop's looks did not find, one started as the stop went out, sends its
 trajectory at most ARM_PLAY_STARTUP_S after it started, and a trajectory once sent lands
 within RPC_TIMEOUT_S, quackd's bound on any one RPC to the coordinator: so a trajectory that
@@ -939,6 +937,10 @@ class Job:
         }
 
 
+NOTHING_EXECUTING = ("ALREADY_STOPPED", "NO_TRAJECTORY_TASK")
+"""What cancel_trajectory answers when no trajectory was executing."""
+
+
 def arm_holds(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> bool | None:
     """Two reads of the joints: True when every joint moved slower than the maker's own still
     rule between them, False when one moved faster, None when the arm did not answer."""
@@ -968,16 +970,25 @@ def _moved(up: Upstream, first: dict[str, float], second: dict[str, float], gap_
     return False
 
 
-def cancel_and_read(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> dict[str, Any]:
+def cancel_and_read(
+    bus: ArmBus, up: Upstream, sleep: Callable[[float], None], *, always_read: bool = True
+) -> dict[str, Any]:
     """cancel_trajectory, the joints read twice, and a second cancel that must find nothing
     executing: a trajectory in one of its pauses reads as still too, so two still reads alone
     never say the arm holds. A cancel that still finds a trajectory, or reads that moved, are a
-    cancel and two reads more."""
+    cancel and two reads more.
+
+    With always_read off, a first cancel that finds nothing executing is the end of it, with
+    no reads: its caller turns it off only when nothing of quackd's, a cycle or a pick of the
+    mission's, was starting or running, so nothing of quackd's can be about to land."""
     out: dict[str, Any] = {"cancel": None, "held": None}
     try:
         out["cancel"] = bus.arm_cancel()
     except Exception as e:
         out["error"] = f"cancel_trajectory did not answer: {type(e).__name__}: {e}"
+        return out
+    if not always_read and out["cancel"] in NOTHING_EXECUTING:
+        out["executing"] = False
         return out
     held = _held_after(bus, up, sleep, out)
     if held is False:
@@ -1002,7 +1013,7 @@ def _held_after(
     out["confirm"] = confirm
     if confirm == "CANCELLED":
         return False  # still executing: a pause read as still
-    return True if confirm in ("ALREADY_STOPPED", "NO_TRAJECTORY_TASK") else None
+    return True if confirm in NOTHING_EXECUTING else None
 
 
 def ending_of(code: int | None, cancelled: bool) -> str:
@@ -1726,8 +1737,6 @@ class Bridge:
         self._stops = 0
         """How many stops this bridge has run: a start that a stop overtook does not happen."""
         self._make_bus = make_bus
-        self._last_joints: tuple[float, dict[str, float]] | None = None
-        """The joints as this bridge last read them, and when, for a brake's one read."""
         self.arm_guard_s = arm_guard_s
         """How long the arm is watched after a stop cancelled it: ARM_GUARD_S, but in a test."""
         self._guard: dict[str, Any] | None = None
@@ -1943,9 +1952,7 @@ class Bridge:
             self.pump.chan = self._pad_channel(stack)
             return 200, self.pump.post(vx, wz)
 
-    def stop(
-        self, run: str | None = None, session: str | None = None, *, brake: bool = False
-    ) -> dict[str, Any]:
+    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
         """Idempotent, never raises, and says what it did. On moss-litter the mission's stop
         goes out first, then at once the zero, so the base stops whatever the rest takes, then
         the end of the mission's own pick and the arm's cancel, and only then is the mission's
@@ -1962,10 +1969,8 @@ class Bridge:
         a cycle that session started, and says why. A stop that names no run stops whatever
         runs, and one that names no session cancels any cycle of quackd's.
 
-        `brake` is a verb's own stop at its end, which off moss-litter skips the arm's cancel
-        and its reads when no cycle of quackd's runs and one read of the joints finds them
-        where the bridge last read them. The stop verb itself is never a brake, and cancels
-        the arm whatever it reads."""
+        Every stop does the same arm step (_cancel_arm), whoever sends it: a cancel that finds
+        nothing executing, with nothing of quackd's in play, reads nothing and watches nothing."""
         stack = self.stack()
         did: list[str] = []
         errors: list[str] = []
@@ -2014,13 +2019,7 @@ class Bridge:
             cancelled_at = self.clock()
         else:
             self._zeros(stack, did, errors)
-            if brake and self._arm_still_for_a_brake():
-                did.append(
-                    "a verb's own brake, no cycle of quackd's running and the arm where it "
-                    "was last read: no cancel"
-                )
-            else:
-                doc["arm"] = self._cancel_arm(did, errors)
+            doc["arm"] = self._cancel_arm(did, errors)
         if sent is not None:
             doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
         if litter:
@@ -2061,33 +2060,6 @@ class Bridge:
         first = doc.get("arm")
         word = {"held": late.get("held"), "read_still": late.get("read_still", False)}
         doc["arm"] = {**first, **word} if isinstance(first, dict) else late
-
-    def _arm_still_for_a_brake(self) -> bool:
-        """Whether a brake may leave the arm alone: no cycle of quackd's runs, and one read of
-        the joints finds every one moving slower than the maker's still rule since the bridge
-        last read them, no longer ago than ARM_READ_FRESH_S. Anything else, an arm that did
-        not answer among it, is the whole cancel."""
-        if self.bus is None or self.up is None:
-            return False
-        if self.jobs is not None and self.jobs.running():
-            return False
-        last = self._last_joints
-        if last is None or self.clock() - last[0] > ARM_READ_FRESH_S:
-            return False
-        try:
-            now = self.bus.arm_joints()
-        except Exception:
-            return False
-        at = self.clock()
-        self._last_joints = (at, dict(now))
-        gap = max(at - last[0], 1e-3)
-        for name in self.up.arm_joints:
-            if name not in now or name not in last[1]:
-                return False
-            speed = abs(now[name] - last[1][name]) * self.up.ticks_per_rad / gap
-            if speed >= self.up.still_ticks_per_s:
-                return False
-        return True
 
     def _zeros(self, stack: StackInfo, did: list[str], errors: list[str]) -> None:
         """A zero on every channel the cockpit's own soft stop zeroes, and the pump's own."""
@@ -2233,9 +2205,13 @@ class Bridge:
     def _cancel_arm(
         self, did: list[str], errors: list[str], *, picked: bool = False
     ) -> dict[str, Any] | None:
-        """cancel_trajectory, the joints read twice, and a second cancel if they still moved.
-        Skipped only when nothing can be moving the arm: no cycle of quackd's, no pick of the
-        mission's just ended, and no moss-arm run for a cancel to reach."""
+        """The arm's step, the same at every stop, the stop verb's, a verb's own at its end, the
+        abort's and a halt's alike: cancel_trajectory, and when it finds nothing executing and
+        nothing of quackd's was starting or running, that is all, with no reads and no watch.
+        A trajectory cancelled, a cycle of quackd's, or a pick of the mission's just ended has
+        the joints read twice, a second cancel if they still moved, and the arm watched for
+        arm_guard_s. Skipped only when nothing can be moving the arm: no cycle of quackd's, no
+        pick of the mission's just ended, and no moss-arm run for a cancel to reach."""
         assert self.bus is not None and self.up is not None
         ours = self.jobs is not None and self.jobs.running()
         if not ours and not picked and self.stack().arm_run is None:
@@ -2243,10 +2219,10 @@ class Bridge:
             # cancel sent to it would hold this stop for the RPC's whole timeout
             did.append("no moss-arm run, and no cycle of quackd's: nothing to cancel")
             return None
-        if self.jobs is not None:
+        if ours and self.jobs is not None:
             result = self.jobs.cancel()
         else:
-            result = cancel_and_read(self.bus, self.up, self.sleep)
+            result = cancel_and_read(self.bus, self.up, self.sleep, always_read=picked)
         if result.get("error"):
             if ours or picked:
                 errors.append(f"the arm: {result['error']}")
@@ -2254,6 +2230,9 @@ class Bridge:
                 did.append("the arm's coordinator did not answer, and no cycle of quackd's ran")
             return result
         did.append(f"cancel_trajectory: {result.get('cancel')}")
+        if result.get("executing") is False:
+            did.append("nothing was executing and nothing of quackd's was in play: no reads")
+            return result
         if result.get("held") is False:
             errors.append(
                 "the arm did not hold after its cancel, read moving or still executing: "
@@ -2382,7 +2361,6 @@ class Bridge:
         if ok and self.bus is not None and self.up is not None:
             with contextlib.suppress(Exception):
                 joints = self.bus.arm_joints()
-                self._last_joints = (self.clock(), dict(joints))
                 doc["joints"] = {k: round(v, 4) for k, v in joints.items()}
                 doc["gap_m"] = joints.get(self.up.gripper_joint)
                 off = max(
@@ -2982,7 +2960,6 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                     bridge.stop(
                         run if isinstance(run, str) and run else None,
                         sid if isinstance(sid, str) and sid else None,
-                        brake=body.get("brake") is True,
                     ),
                 )
             elif path == ARM_CYCLE_PATH:

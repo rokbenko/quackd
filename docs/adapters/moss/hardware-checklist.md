@@ -107,7 +107,8 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 11. **Stop it mid cycle.** Send `stop` while the arm is out. The bridge stops the script, cancels
     the trajectory and reads the joints twice: the arm should hold where it was, under torque.
     The bridge then watches it for 12 s and refuses a cycle meanwhile, so `stow_arm` after that
-    brings it home along the cycle's own return.
+    brings it home along the cycle's own return. A stop whose cancel finds nothing executing,
+    the end of a `move` among them, starts no watch: `pick_and_drop` right after a `move` runs.
 12. **Kill quackd mid cycle.** The bridge cancels the cycle that session started three missed
     keepalives later, and the arm holds. Then `stow_arm` from a fresh session, or support the
     arm and stop its run.

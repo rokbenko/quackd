@@ -666,8 +666,9 @@ async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_
     mock, _, ex = await _connected(arm_dies_at_s=3.0)
     result = await ex.run_verb("pick_and_drop", {})
     assert not result.ok and "ended failed" in result.summary, result.summary
-    assert "the bridge watches it" in result.summary, result.summary
+    assert "The arm holds where it stopped." in result.summary, result.summary
     assert not mock.arm_moving and mock.job is not None and mock.job.held is True
+    assert mock._guard_doc() is None, "the stop after it found nothing executing"
     assert mock.stop_log[-3:] == [
         "twist.zero",
         "arm.cancel",
@@ -844,20 +845,13 @@ async def test_the_arm_and_a_twist_never_run_together() -> None:
 
 
 async def test_stop_is_the_bridges_zero_then_its_cancel_and_the_soft_stop_every_time() -> None:
-    """The stop verb's stop is sent whole, and cancels the arm whatever it reads. A verb's own
-    brake leaves a still arm alone when no cycle runs, as the bridge's does."""
-    from quackd_moss.verbs import FULL_STOP
-
-    mock, adapter, _ = await _connected()
-    token = FULL_STOP.set(True)
-    try:
-        await adapter.stop()
-    finally:
-        FULL_STOP.reset(token)
-    assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
+    """Every stop does the same arm step, as the bridge's: the cancel goes out every time, a
+    verb's own at its end among them, and one that finds nothing executing, with nothing of
+    quackd's in play, starts no watch."""
     mock, adapter, _ = await _connected()
     await adapter.stop()
-    assert mock.stop_log[-2:] == ["twist.zero", "cockpit.stop"], "a brake, and a still arm"
+    assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
+    assert mock._guard_doc() is None, "nothing was executing, so nothing is watched"
 
 
 @pytest.mark.parametrize("fails", ["bridge", "cockpit"])
@@ -894,6 +888,7 @@ async def test_on_moss_litter_a_stop_ends_the_missions_pick_while_its_script_is_
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
     await _picking(mock, "starting")
     await adapter.stop()
+    assert (mock._guard_doc() or {}).get("watching") is True, "a pick it ended is watched"
     await mock.sleep(PICK_STARTUP_S + 5.0)
     assert mock.job is not None and mock.job.state == "failed", mock.job
     assert mock.arm_folded, "the trajectory never went out, so the arm never left its pose"
@@ -1236,4 +1231,4 @@ def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:
     m = describe("cockpit")
     named = {c for gates in m.preconditions.values() for c in gates}
     assert named <= set(conditions())
-    assert set(implementations()) == OWN | {"stop"}, "the stop verb, sent whole"
+    assert set(implementations()) == OWN

@@ -78,7 +78,10 @@ before it cancels. The script is found among the stack's own descendants in `/pr
 it, a shell's child among them, and no other process is ever signalled. A `MOSS_PICK_CMD` of
 one argument is refused, since a program alone is what the stack's own workers may run too:
 the hello and every stop on `moss-litter` say so, and only the maker's script is looked for.
-After every cancel the joints are read twice, and a hold is never claimed without that reading.
+Every stop does the same arm step, whoever sends it: `cancel_trajectory`, and when it finds
+nothing executing, with no cycle of quackd's and no pick of the mission's in play, that is all,
+with no reads and no watch. After any other cancel the joints are read twice, and a hold is
+never claimed without that reading.
 Two still reads are not a hold on their own, since a trajectory in one of its pauses reads
 still: a last cancel must find nothing executing. A cycle cancelled while it was still starting
 is cancelled once more half a second later, for a trajectory its script sent just before it was
@@ -95,14 +98,13 @@ same breath, since with both silent the bus itself may be down. A stop it cannot
 4 s of sending it is reported as a failure, and the arm's cancel and the zero have gone out
 either way. With every RPC on the rover answering at its timeout a stop answers within
 `STOP_WORST_S`, and quackd waits that long for it and two seconds more, and its stop verb's own
-timeout covers that wait. A stop with `brake` set, a verb's own stop at its end, skips the arm's
-cancel and its reads off `moss-litter` when no cycle of quackd's runs and one read finds the
-joints where the bridge last read them, within `ARM_READ_FRESH_S`. Any other stop cancels the
-arm whatever it reads. After any stop that cancelled the arm the bridge watches the joints for
+timeout covers that wait. After a stop whose cancel found a trajectory executing, or that ended
+a cycle of quackd's or a pick of the mission's, the bridge watches the joints for
 `ARM_GUARD_S`, 12 s from the stop's last cancel, the maker's script's startup bound and one RPC's
 timeout, since a pick its looks did not find, or a trajectory sent before the stop, can still
 land: joints that move inside it are cancelled again, the arm is called held only once it has
-passed, and meanwhile `/arm` says it watches and `/arm/cycle` is refused.
+passed, and meanwhile `/arm` says it watches and `/arm/cycle` is refused. A routine stop whose
+cancel finds nothing executing, a verb's own at its end among them, starts no watch.
 
 **The run.** quackd's stop names the base run it connected to, and so does every keepalive,
 and the bridge goes by whether that run is still alive among dimOS's runs, not by which is

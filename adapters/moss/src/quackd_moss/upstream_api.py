@@ -1033,8 +1033,9 @@ ARM_PLAY_STARTUP = UpstreamRef(
     "how long the maker's script takes from its start to its one execute_trajectory: importing "
     "dimOS, reaching the coordinator and reading the joints (lines 86 to 111). Nothing at the "
     "pin bounds it and no run has timed it. The bridge takes 10 s as its bound, and after a "
-    "stop that cancelled the arm it watches the joints that long and one RPC's timeout more, "
-    "cancelling again if they move. The hardware checklist's step 10 reads it off a cycle.",
+    "stop that cancelled a trajectory, or ended a cycle or a pick, it watches the joints that "
+    "long and one RPC's timeout more, cancelling again if they move. The hardware "
+    "checklist's step 10 reads it off a cycle.",
 )
 PIDS_NOT_REUSED = UpstreamRef(
     "PIDS_NOT_REUSED",

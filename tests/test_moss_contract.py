@@ -314,9 +314,10 @@ class _BusyArm(B.FakeBus):
 
 
 async def test_the_stop_verb_waits_out_a_slow_stop_and_never_sends_a_second() -> None:
-    """Every RPC to the arm takes a second and a half, so the bridge's stop takes longer than
-    the core stop verb's own 5 s. The stop verb is waited out, reports ok, and the bridge saw
-    one stop and no second from the executor."""
+    """Every RPC to the arm takes a second and a half, and a trajectory plays, so the bridge's
+    stop cancels it and reads the arm and takes longer than the core stop verb's own 5 s. The
+    stop verb is waited out, reports ok, and the bridge saw one stop and no second from the
+    executor."""
     bus = _BusyArm(B.FAKE_UPSTREAM, B.FrameStore(), fps=10.0)
     stack = B.StackInfo(
         running=True,
@@ -352,6 +353,7 @@ async def test_the_stop_verb_waits_out_a_slow_stop_and_never_sends_a_second() ->
                 confirm=allow_all,
                 manifest=manifest,
             )
+            bus.executing = True  # a trajectory playing, which the stop cancels and reads after
             began = time.monotonic()
             result = await ex.run_verb("stop", {})
             took = time.monotonic() - began
@@ -397,31 +399,36 @@ async def test_close_after_a_stop_still_halts_what_was_started_since(rover: Rove
     assert not rover.cockpit.exploring, "the close ended what was started after the stop"
 
 
-async def test_a_moves_own_brake_leaves_a_still_arm_alone_and_the_stop_verb_never_does(
-    rover: Rover,
-) -> None:
-    """Every move ends with a stop of its own. On a base stack, with no cycle of this
-    session's and the arm reading still, that brake sends the zero and skips the arm's two
-    cancels and two reads. The stop verb is sent whole, and cancels the arm whatever it
-    reads."""
-    adapter = MossAdapter(rover.transport())
-    manifest = await adapter.connect()
-    ex = Executor(
-        registry_from_manifest(manifest, adapter),
-        adapter,
-        contract=None,
-        detector=ColorBlobDetector(),
-        confirm=allow_all,
-        manifest=manifest,
-    )
-    ex.require_verdict = False
-    bus = rover.bridge.bus
-    moved = await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.5})
-    assert moved.ok, moved.summary
-    assert "arm cancel" not in bus.events, "the move's own brake left the still arm alone"
-    stopped = await ex.run_verb("stop", {})
-    assert stopped.ok and "arm cancel" in bus.events, stopped.summary
-    await adapter.close()
+async def test_a_long_move_and_then_pick_and_drop_both_run() -> None:
+    """A move that reads no state for 3 s ends with a stop of its own, whose cancel finds the
+    arm executing nothing: that is the whole arm step, it starts no watch, and the
+    pick_and_drop after it runs, with the bridge's own window. The stop verb's stop does the
+    same."""
+    with _rover_with(cycle_s=0.3, arm_guard_s=B.ARM_GUARD_S) as rover:
+        transport = rover.transport()
+        adapter = MossAdapter(transport)
+        manifest = await adapter.connect()
+        beat = _alive(transport)  # the session kept alive while the verbs run, as a run's is
+        ex = Executor(
+            registry_from_manifest(manifest, adapter),
+            adapter,
+            contract=None,
+            detector=ColorBlobDetector(),
+            confirm=allow_all,
+            manifest=manifest,
+        )
+        ex.require_verdict = False
+        bus = rover.bridge.bus
+        moved = await ex.run_verb("move", {"vx": 0.1, "duration_s": 3.0})
+        assert moved.ok, moved.summary
+        assert "arm cancel" in bus.events, "its stop sent the cancel"
+        assert rover.bridge.arm_doc()["guard"] is None, "and started no watch"
+        picked = await ex.run_verb("pick_and_drop", {"pick_pose": "pick"})
+        assert picked.ok, picked.summary
+        stopped = await ex.run_verb("stop", {})
+        assert stopped.ok and rover.bridge.arm_doc()["guard"] is None, stopped.summary
+        await beat.stop()
+        await adapter.close()
 
 
 async def test_the_soft_stop_goes_out_beside_a_bridge_stop_that_waits_on_the_arm(

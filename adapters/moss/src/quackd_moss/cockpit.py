@@ -63,7 +63,6 @@ from quackd_moss import upstream_api as up
 from quackd_moss.verbs import (
     BATTERY_FLOOR_V,
     FIRMWARE_LIMIT_S,
-    FULL_STOP,
     MIN_STALE_S,
     MISSION_STOPPED,
     SKILL_ARM_CYCLE,
@@ -354,20 +353,15 @@ class BridgeClient:
         status, doc = self._doc(self.control, "POST", TWIST_PATH, {"vx": vx, "wz": wz})
         return status, doc
 
-    def stop(
-        self, run: str | None = None, session: str | None = None, *, brake: bool = False
-    ) -> dict[str, Any]:
+    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
         """The bridge's stop, for the base run quackd connected to: a run started since is not
         touched, and of the arm only a cycle `session` started is cancelled under it. No run
-        stops whatever runs. A brake, a verb's own stop, may leave alone an arm that reads
-        still with no cycle of quackd's running."""
+        stops whatever runs."""
         body: dict[str, Any] = {}
         if run:
             body["run"] = run
         if session:
             body["session"] = session
-        if brake:
-            body["brake"] = True
         _, doc = self._doc(self.slow, "POST", STOP_PATH, body, timeout_s=STOP_TIMEOUT_S)
         return dict(doc)
 
@@ -1125,15 +1119,13 @@ class MossCockpit:
         """The run the bridge found running instead of the one quackd connected to."""
         soft_sent: list[bool] = []
         run, sid = self.run_id, self.session_id
-        # the stop verb's stop is sent whole, and every other is a verb's own brake
-        brake = not FULL_STOP.get() and self.arm_job_id is None
 
         async def bridge_half() -> None:
             if not self.bridge_up:
                 return
             try:
                 doc = await self._call(
-                    lambda: self.bridge.stop(run, sid, brake=brake), timeout_s=STOP_TIMEOUT_S + 1.0
+                    lambda: self.bridge.stop(run, sid), timeout_s=STOP_TIMEOUT_S + 1.0
                 )
             except Exception as e:
                 bridge_errors.append(f"the bridge's stop: {e}")

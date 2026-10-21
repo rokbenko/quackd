@@ -1120,32 +1120,25 @@ def test_a_mission_still_answering_is_sent_its_stop_again_less_and_less_often() 
     bridge.close()
 
 
-def test_a_brake_leaves_alone_an_arm_that_reads_still_and_the_stop_verb_never_does() -> None:
-    """A verb's own stop at its end, on a base stack, with no cycle of quackd's running and the
-    arm where the bridge last read it, sends the zero and leaves the arm's cancel and reads
-    out. An arm that moved since, and a reading too old to tell, are cancelled and read, and
-    so is every stop that is not a brake, the stop verb's own among them."""
+def test_every_stop_cancels_and_reads_and_watches_only_what_was_in_play() -> None:
+    """Every stop does the same arm step, a verb's own at its end as much as the stop verb's.
+    cancel_trajectory goes out, and when it finds nothing executing, with nothing of quackd's
+    in play, that is the whole step: no reads and no watch, so the next cycle is not refused.
+    A trajectory it cancels, the owner's own in one of its pauses among them, has the arm read
+    and watched."""
     clock = Clock()
-    bridge = B.fake_bridge(fps=0)
+    bridge = B.fake_bridge(fps=0, arm_still_while_executing=True)
     _all_on(clock, bridge)
     bus = bridge.bus
-    bridge.arm_doc()  # the client reads the arm with every state it asks
-    clock.t += 0.5
-    doc = bridge.stop(brake=True)
-    assert "arm cancel" not in bus.events and doc["arm"] is None, doc
-    assert any(v == (0.0, 0.0) for _, _, v in bus.published), "the zero went out all the same"
-    bridge.stop()
-    assert "arm cancel" in bus.events, "a stop that is not a brake always cancels the arm"
-    bus.events.clear()
-    bridge.arm_doc()
-    bus.executing = True  # a trajectory of the owner's, playing
-    clock.t += 0.5
-    bridge.stop(brake=True)
-    assert "arm cancel" in bus.events, "an arm that moved since it was read is cancelled"
-    bus.events.clear()
-    clock.t += B.ARM_READ_FRESH_S + 1.0
-    bridge.stop(brake=True)
-    assert "arm cancel" in bus.events, "a reading too old says nothing of now"
+    asks = bus.arm_asks
+    doc = bridge.stop()
+    assert bus.cancels == 1 and bus.arm_asks == asks + 1, "one cancel, and no reads"
+    assert doc["arm"]["executing"] is False and bridge.arm_doc()["guard"] is None, doc["arm"]
+    assert any(v == (0.0, 0.0) for _, _, v in bus.published), "the zero went out first"
+    bus.executing = True  # the owner's own trajectory, in one of its pauses
+    doc = bridge.stop()
+    assert doc["arm"]["cancel"] == "CANCELLED" and "confirm" in doc["arm"], doc["arm"]
+    assert bridge.arm_doc()["guard"]["watching"] is True
     bridge.close()
 
 
@@ -1321,10 +1314,11 @@ def test_on_moss_litter_a_trajectory_that_lands_after_the_first_cancel_is_cancel
 
 
 def test_a_trajectory_landing_after_the_late_cancel_is_cancelled_inside_the_window() -> None:
-    """A trajectory sent before the stop can land later than the late cancel, which then
-    found nothing and read the arm still. The bridge watches the arm for ARM_GUARD_S from the
-    stop's last cancel: joints that start to move are cancelled again at the look that sees
-    them, and no hold is claimed before the window has passed."""
+    """A pick of the mission's that the stop ends just after it sent its trajectory leaves
+    that trajectory to land later than the late cancel, which then found nothing and read the
+    arm still. The bridge watches the arm for ARM_GUARD_S from the stop's last cancel: joints
+    that start to move are cancelled again at the look that sees them, and no hold is claimed
+    before the window has passed."""
     clock = Clock()
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     _all_on(clock, bridge)
@@ -1339,7 +1333,9 @@ def test_a_trajectory_landing_after_the_late_cancel_is_cancelled_inside_the_wind
         return answer
 
     bus.arm_cancel = first_then_one_landing_late
+    bus.start_mission_pick(startup_s=60.0)  # its script, its trajectory already sent
     doc = bridge.stop()
+    assert doc["pick"]["terminated"], doc
     assert doc["arm"]["held"] is None and doc["arm"]["read_still"] is True, doc["arm"]
     assert bridge.arm_doc()["guard"]["watching"] is True
     word, executing = _watch_to_its_end(bridge, clock)

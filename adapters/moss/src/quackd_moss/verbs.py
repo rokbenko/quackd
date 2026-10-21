@@ -19,15 +19,13 @@ what the rover reports about itself. The numbers that are quackd's own are said 
 
 from __future__ import annotations
 
-import dataclasses
 import math
-from contextvars import ContextVar
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
-from quackd.verbs.core import CORE, send_or_fail
+from quackd.verbs.core import send_or_fail
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd_moss import upstream_api as up
 
@@ -114,10 +112,6 @@ STOP_VERB_TIMEOUT_S = STOP_TIMEOUT_S + 5.0
 """The stop verb's own executor timeout: the transport's whole wait, the link's second beyond
 it and a margin, so a slow stop is waited out and never times out into a second stop that
 nothing bounds."""
-FULL_STOP: ContextVar[bool] = ContextVar("moss_full_stop", default=False)
-"""Set while the stop verb runs, so the transport sends that stop whole. Every other stop is a
-verb's own brake, which on a base stack leaves alone an arm this session never moved that
-reads still."""
 VERB_MARGIN_S = 80.0
 """What a verb's executor timeout keeps beyond the verb's own give up, so the verb's own stop
 runs and reports rather than the executor's. That stop is the transport's, which waits up to
@@ -793,20 +787,7 @@ def moss_verbs() -> dict[str, Verb]:
             safety_class="confirm",
         ),
     ]
-    # the core stop verb, sent whole: the arm cancelled and read whatever it reads
-    verbs.append(dataclasses.replace(CORE["stop"], execute=_stop_whole))
     return {v.name: v for v in verbs}
-
-
-async def _stop_whole(ctx: VerbContext, p: NoParams) -> VerbResult:
-    """The core stop verb, with the transport told it is the stop verb's: a verb's own brake
-    may skip an arm this session never moved that reads still, and this never does, so the
-    pilot's stop always cancels the arm."""
-    token = FULL_STOP.set(True)
-    try:
-        return await CORE["stop"].execute(ctx, p)
-    finally:
-        FULL_STOP.reset(token)
 
 
 __all__ = [
