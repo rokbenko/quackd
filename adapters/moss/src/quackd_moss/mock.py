@@ -242,6 +242,7 @@ class MossMock:
         explore_done_after_s: float | None = None,
         arm_lag_at_s: float | None = None,
         arm_dies_at_s: float | None = None,
+        arm_ignores_cancel: bool = False,
         bus: str = "lcm",
         fail_heartbeat_after: int | None = None,
         stop_fails: str | None = None,
@@ -285,6 +286,9 @@ class MossMock:
         self.arm_dies_at_s = arm_dies_at_s
         """The maker's script dies this far into a cycle of quackd's, any way but its own (an
         exception, a signal), and its one trajectory plays on until something cancels it."""
+        self.arm_ignores_cancel = arm_ignores_cancel
+        """The coordinator plays a trajectory on through its cancel, so the bridge's reads find
+        it moving or still executing, and nothing says the arm holds."""
         self.arm_moving = False
         """A trajectory playing with no script left to watch it."""
         self._fail_after = fail_heartbeat_after
@@ -528,6 +532,9 @@ class MossMock:
         """The bridge reads the script's exit, cancels the trajectory it left playing and reads
         the arm, before the job ends and a twist or a new cycle may start."""
         self.stop_log.append("arm.cancel")
+        if self.arm_ignores_cancel:
+            job.held = False
+            return
         self.arm_moving = False
         job.held = True
 
@@ -659,8 +666,21 @@ class MossMock:
             return None
         # sent whenever the arm's coordinator is there, as the bridge sends it
         self.stop_log.append("arm.cancel")
+        if self.arm_moving and not running:
+            # a trajectory playing on with no script behind it: the cancel reaches it, unless
+            # the coordinator plays on through it
+            if self.arm_ignores_cancel:
+                return False
+            self.arm_moving = False
+            return True
         if job is None or not running or (job.owner == "mission" and job.state == "starting"):
             return None
+        if self.arm_ignores_cancel and job.state == "running":
+            job.state, job.held, job.exit = "cancelled", False, None
+            job.reason = "cancelled, and the arm did not hold after it"
+            self.arm_moving, self.arm_folded = True, False
+            self._job_ended(job, ok=False)
+            return False
         job.state, job.held, job.exit = "cancelled", True, None
         job.reason = "cancelled: the coordinator holds the last commanded position"
         self.arm_folded = False
@@ -695,11 +715,16 @@ class MossMock:
             self.mission_stopped = True
         if litter:
             self._end_mission_script()
-            self._arm_cancel()
+            held = self._arm_cancel()
             self._zero()
         else:
             self._zero()
-            self._arm_cancel()
+            held = self._arm_cancel()
+        if held is False:
+            return [
+                "the bridge's stop: the arm did not hold after its cancel, read moving or still "
+                "executing: support it or cut its power"
+            ]
         return []
 
     def _zero(self) -> None:

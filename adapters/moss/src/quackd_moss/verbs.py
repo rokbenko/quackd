@@ -592,7 +592,10 @@ def _hold_sentence(held: Any) -> str:
     if held is True:
         return " The arm holds where it stopped."
     if held is False:
-        return " The arm was still moving when it was read: support it, or cut its power."
+        return (
+            " The arm did not hold after its cancel, read moving or still executing: support it, "
+            "or cut its power."
+        )
     return " Whether the arm holds was not read: support it."
 
 
@@ -610,8 +613,8 @@ def arm_note(held: Any) -> str:
         )
     if held is False:
         return (
-            "the arm is out of its drive pose and was still moving when it was last read: "
-            "support it, or cut its power"
+            "the arm is out of its drive pose and did not hold after its cancel, read moving or "
+            "still executing: support it, or cut its power"
         )
     return (
         "the arm is out of its drive pose, and nobody read whether it holds there. "

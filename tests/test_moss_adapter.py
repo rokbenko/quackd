@@ -676,7 +676,7 @@ async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_
     ("held", "said", "unsaid"),
     [
         (True, "holding where the run left it", "nobody read"),
-        (False, "still moving when it was last read", "holding"),
+        (False, "did not hold after its cancel", "holding"),
         (None, "nobody read whether it holds", "holding"),
     ],
 )
@@ -685,6 +685,35 @@ def test_the_close_says_holding_only_after_the_hold_was_read(
 ) -> None:
     note = arm_note(held)
     assert said in note and unsaid not in note
+
+
+async def test_an_arm_that_plays_on_through_its_cancel_is_never_said_to_hold() -> None:
+    """The mock's coordinator can ignore a cancel, as the fake bus's can: the stop then says
+    the arm did not hold, the verb says so rather than that it holds, and so does the close
+    note."""
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import pick_and_drop
+
+    mock = MossMock(arm_ignores_cancel=True)
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    asked = {"n": 0}
+
+    def interrupted() -> str | None:
+        asked["n"] += 1
+        return STOPPED if asked["n"] > 6 else None
+
+    result = await pick_and_drop(
+        VerbContext(transport=adapter, interrupted=interrupted), PickAndDropParams()
+    )
+    assert not result.ok and "did not hold after its cancel" in result.summary, result.summary
+    assert "holds where it stopped" not in result.summary
+    assert mock.job is not None and (mock.job.state, mock.job.held) == ("cancelled", False)
+    assert mock.arm_moving, "the trajectory plays on through its cancel"
+    await adapter.stop()
+    assert "did not hold after its cancel" in (mock.stop_error or ""), mock.stop_error
+    await adapter.close()
+    assert "did not hold after its cancel" in (mock.close_note or ""), mock.close_note
 
 
 async def test_stow_arm_plays_the_cycle_from_its_return() -> None:
