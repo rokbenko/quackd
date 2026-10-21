@@ -39,7 +39,7 @@ is judged at **2026-10-21T00:00:00Z**.
 | [missing-name.json](missing-name.json) | refused | no `name` (rule 3) |
 | [major-version.json](major-version.json) | refused | MAJOR `1` is unknown to a 0.x reader (rule 4) |
 | [duplicate-member.json](duplicate-member.json) | refused | `name` appears twice (rule 2) |
-| [long-name.json](long-name.json) | refused | a 65-character `name` (rule 5) |
+| [long-name.json](long-name.json) | refused | a 65-character `name` is not well formed (rule 3) |
 | [oversized.json](oversized.json) | refused | 8,330 bytes, over the 8,192 a reader must accept (rule 1) |
 | [bad-id.json](bad-id.json) | refused | a `did:web` id (rule 3, section 4.1) |
 | [index.json](index.json) | valid index | two robots on one host (section 2.7) |
