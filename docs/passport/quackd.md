@@ -58,7 +58,7 @@ $ quackd passport show --robot duck-01
 │ stamp     owner 9bdc6799888c2473, your own owner key, until 2027-10-21      │
 │ tier      flock: one of the robots this quackd drives                       │
 │ maker     pollen-robotics microduck                                         │
-│ software  quackd 0.21.0                                                     │
+│ software  quackd 0.23.0                                                     │
 │ owner     Example lab, https://example.org/robots                           │
 │ body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    │
 │           m/s at most                                                       │
@@ -73,7 +73,7 @@ $ quackd passport show --robot duck-01
 │           hold a heading for long without a landmark: the IMU has no        │
 │           magnetometer, so heading drifts                                   │
 │ safety    stops on silence, e-stop: power, the power switch on its back     │
-│ digest    63ebc3f7acd754cc                                                  │
+│ digest    32c8fdf98e91f528                                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -138,9 +138,9 @@ digest, because the JWS's payload is the JSON's bytes:
 
 ```
 $ quackd passport show --robot duck-01 --out robot-passport.jws
-wrote robot-passport.jws: 2380 bytes, digest 63ebc3f7acd754cc
+wrote robot-passport.jws: 2380 bytes, digest 32c8fdf98e91f528
 $ quackd passport show --robot duck-01 --out robot-passport.json
-wrote robot-passport.json: 1609 bytes, digest 63ebc3f7acd754cc
+wrote robot-passport.json: 1609 bytes, digest 32c8fdf98e91f528
 ```
 
 The JSON alone is only a claim, and `check` says so, even of your own robot:
@@ -229,7 +229,7 @@ robot passports on the LAN (1)
 ┌─────────┬──────────────────┬─────────────────────────────┬──────────────────┐
 │ name    │ short id         │ url                         │ digest           │
 ├─────────┼──────────────────┼─────────────────────────────┼──────────────────┤
-│ duck-01 │ ac8b2b47ac2ce9c0 │ http://192.168.100.123:8790 │ 63ebc3f7acd754cc │
+│ duck-01 │ ac8b2b47ac2ce9c0 │ http://192.168.100.123:8790 │ 32c8fdf98e91f528 │
 │         │                  │ /.well-known/robot-passport │                  │
 │         │                  │ .json                       │                  │
 └─────────┴──────────────────┴─────────────────────────────┴──────────────────┘
