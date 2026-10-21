@@ -828,7 +828,9 @@ class Executor:
         if interruptible:
             abort_task = asyncio.ensure_future(self.abort.wait())
             waiting.add(abort_task)
-            if self.registry.canonical(verb.name) not in WHILE_PAUSED:
+            # the same two halves as the `paused` gate: a learned verb is an unproven policy,
+            # whatever it is called, so a pause ends it too
+            if self.registry.canonical(verb.name) not in WHILE_PAUSED or verb.kind == "learned":
                 self._moving.add(verb_task)
         done: set[asyncio.Future[Any]] = set()
         finished = False

@@ -28,7 +28,7 @@ from quackd.passport_talk import Talker
 from quackd.safety import Budget, Budgets, Executor, VerbNotAllowed
 from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import default_registry
+from quackd.verbs.registry import Verb, VerbContext, VerbResult, default_registry
 
 DUCK, CART = SigningKey.generate(), SigningKey.generate()
 STEP = {"vx": 0.1, "duration_s": 0.1}
@@ -141,6 +141,32 @@ def test_a_pause_ends_a_verb_already_moving_the_body_and_nothing_follows_its_sto
     first_stop = body.sent.index("STOP")
     assert "move" in body.sent[:first_stop]  # it was moving
     assert set(body.sent[first_stop:]) == {"STOP"}  # and nothing but stops came after
+
+
+def test_a_pause_ends_a_learned_verb_whatever_it_is_called(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    body = executor.transport
+    assert isinstance(body, Body)
+
+    async def sways(ctx: VerbContext, _params: Any) -> VerbResult:
+        for _ in range(30):
+            await ctx.transport.send_intent(Intent.move(vx=0.1))
+            await asyncio.sleep(0.1)
+        return VerbResult.success("swayed")
+
+    # an unproven policy somebody named after a verb that only looks
+    executor.registry.register(
+        Verb("observe", "a learned policy", sways, kind="learned"), replace=True
+    )
+    executor.contract = contract("observe, stop, report_state")
+    swaying = asyncio.run_coroutine_threadsafe(executor.run_verb("observe"), loop)
+    time.sleep(0.3)
+    assert Courtesy(executor, loop).decide("known", "pause", {"seconds": 3}).result == "ok"
+    assert not swaying.result(5).ok
+    first_stop = body.sent.index("STOP")
+    assert "move" in body.sent[:first_stop] and set(body.sent[first_stop:]) == {"STOP"}
 
 
 def test_a_robot_a_person_is_holding_is_never_paused(
