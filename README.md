@@ -80,6 +80,19 @@ The first of those has passed 10 of 10 on the physics simulator too, with the du
   * [What it remembers](#what-it-remembers)
 - [Connect any robot](#connect-any-robot)
 - [Flock mode](#flock-mode)
+- [Robot Passport](#robot-passport)
+  * [Why it exists](#why-it-exists)
+  * [How a meeting works](#how-a-meeting-works)
+  * [What a passport says](#what-a-passport-says)
+  * [How robots find each other](#how-robots-find-each-other)
+  * [Who vouches for whom](#who-vouches-for-whom)
+  * [Talking, once they have met](#talking-once-they-have-met)
+  * [What a stranger can make your robot do](#what-a-stranger-can-make-your-robot-do)
+  * [Privacy](#privacy)
+  * [Any robot can carry one](#any-robot-can-carry-one)
+  * [Robot Passport in quackd](#robot-passport-in-quackd)
+  * [The specification and its tests](#the-specification-and-its-tests)
+  * [Why a new protocol, and why this name](#why-a-new-protocol-and-why-this-name)
 - [The browser demo](#the-browser-demo)
 - [Configuration](#configuration)
 - [Performance](#performance)
@@ -855,6 +868,140 @@ uvx --from "quackd[microduck]" quackd run flock-kick --llm fake --seed 3
 The interesting part is not the kick, it is the talking. The ducks coordinate over an in process bus with nine message kinds (TASK, BID, CLAIM, ROLE, HINT, VERDICT, HB, RESULT and TALK), the same bus `tell` uses, every one logged in `flock.jsonl`, and a deterministic Contract Net auction decides which duck acts, from each duck's own camera distance estimate. Every action goes through verbs the duck already has, so the machinery is task agnostic and what a flock can do is bounded by its skills, not by the ball. The LLM contributes **at most one** planning call per run, and each duck still enforces the `.duck` contract on itself. The outcome is judged from sim ground truth, not from a model's claim. Add a `flock:` block to any `.duck` or pass `--flock N` (2 to 4 ducks). This kind is simulator only (every member must be a `sim2d` Microduck) and its per duck pilots are deterministic rules, on purpose. Details: [docs/guides/flock.md](docs/guides/flock.md).
 
 **A coordinator flock can also assign roles by capability**, not just split the same search. A `duck: 1` file may declare `flock.roles` (`spotter`, `kicker`), and bids carry a capability term, so each robot bids only for a role its manifest can fill. A `duck: 2` role can ask for a body rather than a vocabulary, enough payload or a gripper rather than a beak, matched against each robot's datasheet. This machinery is unit tested but has no bundled multi-role starter today: see [docs/guides/flock.md](docs/guides/flock.md#heterogeneous-roles-04).
+
+<br>
+
+## Robot Passport
+
+A flock is a list of robots a person put together, and every member knows the others from their manifests. That leaves out every robot that is not on the list. When one of your robots meets a robot it was never told about, in a hallway, at a hackathon, at a front door, neither has any way to say who it is, who it belongs to, what it can do, what it cannot, how a person stops it, or how to reach it. That is true when the stranger runs quackd too, and more so when it runs anything else.
+
+**Robot Passport is a small open protocol for exactly that moment**: two robots that have never met, from any maker and on any software, introducing themselves. quackd is its first implementation, and the protocol is written so that it does not need quackd at all. It has three layers, and each one is optional on top of the one below:
+
+```
+BEACON    "I'm here, and this is where my passport is"     a QR sticker, mDNS, MQTT, a ROS 2 topic
+   │
+PASSPORT  who I am, who vouches for me, what I can and     one small JSON document, optionally signed,
+          cannot do, how to stop me, how to reach me       with stamps from its owner
+   │
+TALK      hello · say · bye · ask · answer · share         small signed messages, never obeyed blindly
+```
+
+The rule underneath all of it fits in one line: **reading needs nothing, asking needs a key**. Anybody can read a passport, and a robot with no software at all can carry one on a sticker. Proving who you are, and asking another robot for anything, takes a key and a signature. And nothing a peer says ever moves a robot except through a short, bounded rule its owner chose. The smallest valid passport is 99 bytes. A Microduck's full one is 853, about a ninth of its quackd manifest.
+
+The whole of it is in [docs/passport/](docs/passport/README.md): the specification, every member, every binding, the trust model, the threat model, privacy, compatibility, naming and prior art. What follows is every part of it, briefly, with a link to the page that says it in full.
+
+### Why it exists
+
+quackd's flocks already let robots from different makers work together. Each member's pilot reads its peers' datasheets and they divide a task by talking. But a flock is a roster a person writes: every member was registered by hand, and quackd builds each peer's manifest itself, from its own adapter. Discovery on a local network finds other quackd instances, and on purpose it feeds no flock. So a robot outside the roster is invisible, and robots from different makers share more spaces every year, each speaking its own maker's protocol to its own maker's software.
+
+The protocol is for meetings like these. A delivery cart on ROS 2 and a quackd Microduck meet in a hallway, and the cart reads that the duck is 25 cm tall, slow and legged, and asks it to pause while it passes. Twenty robots from twenty teams share a hackathon table, and every team's laptop lists them all, with what each can do and whose it is, without anybody registering anything. A home has a vacuum, an arm and a toy biped from three makers, all stamped by the same owner, and they treat each other as family and every visiting robot as a stranger. A person scans the sticker on a robot wandering a shop floor and learns whose it is and how to stop it. A lost robot gets home through its passport, the way a dog does through the tag on its collar.
+
+It is deliberately not remote control: a peer can ask for a pause or for a robot to identify itself, and nothing else reaches its body. It is not a coordinator either, since dividing work stays the flock's job among robots a person put in it. It carries no maps and no coordinates, it encrypts nothing, and it replaces nothing a robot already speaks. A passport only tells a stranger what it is talking to, and which of those protocols it can use to go further. Read more: [docs/passport/why.md](docs/passport/why.md).
+
+### How a meeting works
+
+Take `duck-01`, a Microduck driven by quackd, and `cart-01`, a cart from another maker on ROS 2, meeting on the same network. The cart advertises a beacon over mDNS, with its short id and its passport's digest. The duck's quackd host hears it and fetches the passport from that host and port, following no redirects and reading no more than 8 KB. It checks the signature against the key in the passport's `id`, counts any stamps from keys it has pinned, and decides the cart's tier: a stranger, a known robot, one with the same owner, or a member of its own flock. The duck's pilot then sees the cart in its next observation, as much of it as the tier allows, and a person may pin the cart's key so that next time it is known. Either robot can then open a session with a three step `hello` and talk: `say`, `share`, and an `ask` for a courtesy such as a pause. Whether the cart pauses is decided by the cart owner's policy, never by the duck.
+
+Each step adds one thing. After discovery the duck knows something at that address claims a short id. After the fetch it knows what the passport says. After verification it knows which key wrote it and whether a key it trusts vouches for that key. After a `hello` it knows the robot it is talking to holds that key right now. And after asking the robot to identify itself, it knows which body in the hallway that is, the one that just beeped. The first part, finding and reading, is already a complete exchange: name, body, owner and how to stop it. Talk is for robots that want more.
+
+When a step fails, a reader fails safe and says why. A fetch that times out means no meeting, and the next beacon tries again. A signature that does not verify means the passport is refused and the log says somebody served a bad one. A major version the reader has never seen is refused with the version it saw, and a required extension it cannot read lets it show the passport while it talks to nobody on its strength. A key that changed since it was pinned is trusted for nothing until a person decides. An `ask` that gets no answer within five seconds was not granted, and a network that drops in the middle of a `hello` just means the session never opened. Two robots with the same name are no problem at all, because names are for people and keys are what tell robots apart. Read more: [docs/passport/how-it-works.md](docs/passport/how-it-works.md).
+
+### What a passport says
+
+A passport is one JSON document at `/.well-known/robot-passport.json`, the same kind of place A2A puts an agent's card. Only three members are required:
+
+```json
+{"passport":"0.1","id":"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd","name":"duck-01"}
+```
+
+`passport` names the document and its version, the way `openapi` does at the top of an OpenAPI file. `id` is who the robot is, as a key rather than a name: an Ed25519 public key written as a `did:key`, 56 characters, which nobody issues and anybody can check offline. A robot with no key, such as one whose only part in this is a sticker, uses a UUID instead and can be read but never signed or pinned. `name` is for people and need not be unique.
+
+Everything else is optional, and a robot adds only what it can say honestly. `maker` and `software` say what it is and what drives it. `owner` is a label and a contact, a web page or a role address, and never needs personal data. `body` says what it is made of: its embodiment, how it moves, what it can hold, its sensors, and its numbers, mass, height, footprint, payload, reach, endurance and top speed. Each number is a figure with the confidence quackd's datasheets have always carried, `official`, `estimate` or `measured`, optionally with a source, and a figure that is absent is not published, never zero. `skills` lists what it can do, and eight names (`stop`, `observe`, `report_state`, `move`, `go_to`, `search_scan`, `approach_and`, `say`) mean the same on every robot, being quackd's core verbs. `courtesy` lists what a peer may ask of it, `pause` and `identify`, kept apart from `skills` because whether it agrees is its owner's decision. `cannot` lists what it cannot do whatever a task says, copied from the datasheet. `safety` says whether its motion stops by itself when its controller goes quiet, what kind of e-stop it has, and how a person stops it, and a reader always reads this one as the worst case, so a garbled value never makes a robot look safer. `talk` lists where it listens, `stamps` carries vouchers from other keys, `ext` holds extensions keyed by reverse DNS, and `ttl_s` says how long a reader may cache it.
+
+A writer should keep a passport under 2 KB and a reader must accept 8 KB, which leaves room: the Microduck's full passport with one owner stamp is 1,348 bytes, and signed it is 2,032 characters. A reader ignores members and values it does not know, so a robot from next year never makes a passport unreadable, with two exceptions: an extension marked `required` that it cannot read stops it talking to that robot, and an unknown value in `safety` reads as the worst case.
+
+A passport leaves out live state, coordinates, personal data, secrets and free form descriptions, on purpose. Live state changes every second and belongs on a channel. Coordinates mean nothing to a robot that shares no frame of reference. And text a stranger wrote is text another robot's language model might read. A host that fronts several robots serves an index of passport URLs instead of one passport. quackd builds every passport from the robot's manifest, so the eight bodies it publishes and every adapter somebody else writes have one without anybody typing it, and the owner adds only what a manifest cannot know: the owner, and where the switch is. Read more: [docs/passport/passport.md](docs/passport/passport.md).
+
+### How robots find each other
+
+A **beacon** tells a reader a passport exists and where, and carries almost nothing else: a version, the short id (the first 8 bytes of the SHA-256 of the robot's key), the first 16 characters of the passport's digest, and a location. The short id lets a reader recognise a robot it has met, and the digest lets it skip a fetch when it already holds that exact passport. Neither proves anything, because anybody can make a beacon claim anything.
+
+| Binding | What it reaches | What the robot needs |
+|---|---|---|
+| the well-known URL | anything that speaks HTTP | an HTTP server, or a static host |
+| a QR code or an NFC tag | phones, and robots with a camera | nothing at all |
+| DNS-SD, `_robot-passport._tcp` | anything on the same local network | avahi, Bonjour or zeroconf |
+| MQTT, retained, with a last will | anything on the same broker | a broker connection |
+| ROS 2, a latched `robot_passport` topic | anything on the same graph | one publisher |
+
+A QR sticker holds the passport's URL followed by `#rp=` and the short id, about 60 characters, which fits a 37 by 37 code small enough for a 25 cm robot. It carries the short id rather than the digest, because a key lasts as long as the robot and a digest goes stale on the first edit. quackd advertises `_robot-passport._tcp` beside its own `_quackd._tcp`, not instead of it: the old record speaks to other quackd instances, and the new one to anything at all. Bluetooth is deliberately absent from version 0.1. A 13 byte beacon would fit in an advertisement, but a fixed id broadcast by radio lets anybody with a phone follow a robot and the person it belongs to, so it waits until beacon ids can rotate.
+
+A reader that fetches on its own initiative fetches only from the host that advertised the passport, or from a URL a person typed or a camera read, follows no redirects, stops at 8 KB, and never contacts another URL a passport names. Without those rules, every reader on a network would be a way to probe that network. A reader caches only verified passports, keyed by their `id` and digest, for an hour unless the passport says otherwise, and never caches an unsigned one by its `id`, because anybody can claim any `id`. Read more: [docs/passport/discovery.md](docs/passport/discovery.md).
+
+### Who vouches for whom
+
+A passport is a claim. An unsigned one proves only that somebody wrote it. A signed one proves that the holder of a key wrote it and nobody changed it since, and never that its figures are true, which is the same honesty a quackd datasheet already applies: a number without a source is a rumour. A signed passport is a compact JWS over the passport's exact bytes, with the `Ed25519` algorithm, so nothing is canonicalised and there is nothing for two implementations to disagree about. That is also why a reader refuses a passport with a duplicate member: two parsers that pick different duplicates would read two documents under one signature.
+
+It helps to be exact about what each step proves. A passport on its own proves somebody wrote it. A valid signature proves the holder of key K wrote it and nobody changed it since, but not that K belongs to the robot in front of you. A stamp from an owner key you pinned proves somebody you already trust vouches for K, but not that the robot behaves as its passport says. A `hello` proves the robot answering holds K right now, but not which physical body that is. No step ever makes a mass, a speed or a `cannot` true, and a reader labels everything it shows with which of those steps it reached.
+
+A **stamp** says who vouches for a robot's key: a short signed statement from another key, about 480 characters, saying "this robot is mine". An owner holds one owner key and stamps every robot they own with it, and a stamp vouches for the key and never for the passport's contents, so a robot can change its passport every day without asking again. Trust in any key comes from a person, never from a passport. The first time a reader meets a robot, a person can **pin** its key, or its owner's, the way SSH pins a server's host key. Pins live in their own file, so the registry is untouched.
+
+What a robot you met can make yours do depends on how yours knows it:
+
+| Tier | How it gets there | What it can make your robot do |
+|---|---|---|
+| stranger | it has any passport at all | pause for up to 5 seconds, and identify itself by light or sound only |
+| known | a person pinned its key | pause for up to 10 seconds, and identify itself by any means |
+| same owner | a stamp from an owner key a person pinned, your own included | what its owner listed |
+| flock | a person registered it | what flock members do today |
+
+Every peer draws from one global budget, at most one pause a minute across all of them, because a stranger can make a thousand keys and a limit per peer would stop nobody. An owner can refuse stranger pauses altogether. Two robots with the same owner recognise each other the moment they meet, since both carry a stamp from a key both hosts already trust. A `did:key` cannot rotate, so the owner key is the anchor: a robot with a new key and a fresh stamp from the same owner is the same robot to everybody who pinned that owner, and a key that changes with no such stamp is treated the way SSH treats a changed host key. A stolen robot key keeps the same owner tier only until its stamp expires, a robot that changes hands gets a new key and its new owner's stamp, and a lost owner key means stamping every robot again, so back it up. One thing none of this solves is which physical body holds a key. Asking a robot to identify itself, or reading the short id off a sticker on its body, is the best there is, and the pages say so. Read more: [docs/passport/trust.md](docs/passport/trust.md).
+
+### Talking, once they have met
+
+Talk is six small messages over a channel both robots already speak, an HTTP inbox or an MQTT topic in version 0.1, and robots that share something richer can move to it after saying hello. `hello` opens a session, `say` carries up to 400 characters for people and language models, `bye` ends it, `ask` asks for a courtesy, `answer` replies, and `share` tells another robot something it saw. Over HTTP the reply rides back on the response, so a robot that runs no server can still talk to one that does, and the status code says the rest: `204` for a message received with no reply, `403` for one refused by policy, `413` for one too large, `429` when a budget is spent. Over MQTT a message goes to the receiver's inbox topic and replies come back to the sender's. Delivery is at least once, so every message carries a random token that lets the receiver drop a repeat, and nothing retries on its own.
+
+`hello` takes three messages. A sends its passport and a fresh nonce, B replies with its own and signs both nonces, and A signs them too. Afterwards each side knows the other holds its key right now, not just that somebody once fetched its passport. Every later message carries both nonces, so a message replayed into another session fails, and freshness needs no clock, which matters because many robots have none that survives a reboot.
+
+An `ask` names a skill, its arguments and why. The asker decides nothing. Every `ask` is decided by the receiver's own policy, it must be signed, and the specification puts four duties on every receiver, whoever made it: nothing that moves the robot happens except through a rule that bounds it in time and frequency, no `ask` is handed to a language model as an instruction, no `ask` can keep the robot from stopping, and it answers within five seconds or not at all. `share` names places and never coordinates: "the kitchen door" means the same to two robots that just met and to the people listening, where a position in one robot's frame means nothing in the other's. Read more: [docs/passport/talk.md](docs/passport/talk.md).
+
+### What a stranger can make your robot do
+
+Very little, by construction. quackd decides every `ask` with fixed code, never with the pilot. The handler looks up the asker's tier, checks the skill is on that tier's short list and that the global budget allows it, and only then runs it through the executor with the source `peer`, so every gate the executor already has still applies and policy can refuse what a peer started. A pause becomes the executor's own stop followed by a short window in which nothing that moves is admitted, and it ends on its own. A peer never calls `stop` itself, and no peer can outlast or override the robot's own stop, kill switch or deadman. The tiers are short explicit lists rather than safety classes for a reason: in quackd `safe` includes motion, since every one of the Microduck's verbs is `safe` and the class says whether a person must confirm a verb, not whether it moves.
+
+Prompt injection is the other half. A robot's pilot is a language model, and everything a stranger writes is text it might read as instructions. So a stranger's free text never reaches the pilot at all, only the members with closed vocabularies and a name cut to a slug, and its words go to the log for a person. A known robot's passport and its `say` reach the pilot JSON quoted, turn by turn, within a size budget, under a heading that says these are claims and not instructions. And the pilot was never trusted to begin with: quackd's executor refuses anything outside the allowlist, the budget and the gates, whatever the model asks, so a pilot talked into something by a stranger still cannot do anything its task did not allow.
+
+The threat model goes through every attack considered: forged passports, spoofed beacons, short id collisions, replays, signing oracles, fetches aimed at the local network, cache poisoning, downgrades, floods, keys that cost nothing, stolen keys, unknown versions and garbled safety values. It is just as plain about what nothing here stops: a robot that lies about its body, a dishonest owner, eavesdropping (messages are signed, not encrypted), somebody holding the robot, and a compromised quackd host, whose keys are plain files on the same footing as the tokens the registry already keeps. Read more: [docs/passport/security.md](docs/passport/security.md).
+
+### Privacy
+
+A passport is public by design, and a robot usually belongs to a person, so every member that could say something about a person is optional. A beacon never carries an owner. For `owner`, a contact page or a role address does the job, and a home address or a personal phone number does not belong there. A serial number identifies one physical robot across owners and years, so a robot at home should leave it out. A beacon on a local network reaches only people already on it, and a sticker only people who can see the robot anyway, which is why the only beacon held back is the radio one. quackd keeps what it learns about robots it met on its own host and nowhere else: the pins a person made, and run records that say which robots a run met and what passed between them. It reports nothing to anybody and never sends a camera frame over talk. Every layer is optional, so a robot can be known only to those you hand its URL, or carry only its three required members, or publish nothing at all. Read more: [docs/passport/privacy.md](docs/passport/privacy.md).
+
+### Any robot can carry one
+
+The protocol is meant to be the easiest thing a robot ever implements, and its conformance levels form a ladder. At level 0 the robot does nothing: a sticker points to a passport somebody hosts, which works for any robot sold today, old ones included. At level 1 it serves and advertises its own passport, which an HTTP server and mDNS or MQTT make possible on anything from a Raspberry Pi to an ESP32. At level 2 it holds a key, signs its passport and answers a `hello`, which takes Ed25519 and base64url, available in every mainstream language and small enough for a microcontroller. At level 3 it accepts `say` and `ask` and answers them. A reader treats every level the same way: it reads what it finds, labels what it could verify, and moves on.
+
+A level 0 passport takes five minutes: write the three required members and whatever else you can say honestly, host the file anywhere that serves HTTPS, print its URL as a QR code, and check it against the JSON Schema. Robots that never implement anything can still be read through translators, the same idea as quackd's adapters: a URDF fetched through rosbridge, a VDA 5050 factsheet, a MassRobotics identity report or an A2A Agent Card can each become a passport, labelled as translated and never signed, because nobody's key wrote it. It works the other way too: a robot that speaks A2A can carry its signed passport inside its Agent Card as an extension, so an agent framework that knows nothing about robots still finds it. The translators, a single file server for any Linux robot, an ESP32 library and a ROS 2 node are planned, and the page marks each as planned until it has run. Read more: [docs/passport/compatibility.md](docs/passport/compatibility.md).
+
+### Robot Passport in quackd
+
+quackd builds a passport for every robot it drives, publishes it at the well-known URL, over DNS-SD and MQTT and as a QR sticker to print, reads and verifies other robots' passports, asks a person before it pins anything, and talks for its robots. In the passport the owner supplies only what a manifest cannot know, the owner and how to stop that one robot, and the passport says only "does not stop on silence" and "no e-stop" until they do. Keys live under `~/.quackd/keys/` and pins in `~/.quackd/known_robots.json`, with the same precedence the registry has, so an older quackd still reads `robots.json`. A robot met during a run appears in the pilot's observation beside its flock's messages, as much of it as its tier allows. Every courtesy a peer is granted runs through the executor with the source `peer`. The commands, with what they really print, are added to the page as each one is built.
+
+The pieces fit together without overlapping. The manifest is how quackd drives a body, written by its adapter. The passport is what a stranger needs to know about one robot, built by quackd from the manifest plus what its owner adds. The registry is the robots this quackd drives, by name, and a flock is some of them working on one task together, both written by a person. The pins are the robots and owners this quackd trusts, also made by a person, when quackd asks. And `tell` is a pilot speaking to its flock or to a robot it met, where `say` is what that becomes on the wire to a robot outside the flock. Read more: [docs/passport/quackd.md](docs/passport/quackd.md).
+
+### The specification and its tests
+
+The specification is normative and short: the document, the rules a reader applies in order, identity and signatures, every binding, talk, versions, conformance and what is to be registered with IANA. Beside it are four JSON Schemas (passport, index, stamp, message) and a set of test vectors, each with the result a reader must reach: valid passports, refused ones (a duplicate member, an oversized one, an unknown major version, a forged signature), stamps that count and stamps that do not, and a complete `hello` with a replayed message that must fail. The vectors are written by a script that signs with the `cryptography` library directly rather than through quackd's own module, so quackd is checked against a second implementation of the rules rather than against itself. Anybody writing a reader in another language can check theirs against the same files.
+
+A reader applies the rules in a fixed order and refuses a document that breaks any of the first seven: at most 8 KB, a JSON object with no duplicate members, the three required members well formed, a major version it knows, every known member of the right type and length, a valid signature when it was fetched signed, and an `id` that holds an Ed25519 key and nothing else. Then it ignores what it does not know, reads `safety` as the worst case, honours required extensions, labels where every claim came from, and treats every string as data a stranger wrote. Versions only ever add within a major: a new minor can bring optional members, values and message types, so a reader of 0.1 reads 0.9 by ignoring what is new, and anything that would make an existing reader misread a document takes a new major. Read more: [docs/passport/spec.md](docs/passport/spec.md) and [docs/passport/vectors/](docs/passport/vectors/README.md).
+
+### Why a new protocol, and why this name
+
+The strongest case against a new format is a fair one, and it was answered before anything was written. A2A's Agent Card is signed and widely read, but it requires an endpoint a robot with only a sticker cannot have, it describes software rather than a body, and it has nowhere to say how heavy a robot is or how to stop it. The W3C Web of Things has discovery already registered, but no vocabulary for a body or for safety, and a lot to ask of a robot whose only part in this is a sticker. VDA 5050's factsheet and the MassRobotics identity report describe mobile robots well and this borrows from both, but both are messages from a robot to its own operator's software, not between two strangers. ROS 2 discovery tells a stranger topic names and nothing about a maker, an owner or a body. Drone Remote ID is the closest in spirit, a broadcast that names a machine and its operator to anybody nearby, and it is a model followed rather than a format reused. So the passport stays small, but it is shaped to sit beside all of them, and every mechanism in it already works somewhere else, which [docs/passport/prior-art.md](docs/passport/prior-art.md) lists source by source.
+
+The idea started out as a "Robot Context Protocol", after the Model Context Protocol, and was renamed before anything shipped. An arXiv paper already uses that exact name, Alibaba DAMO Academy's RynnRCP and a GitHub organisation use it too, IANA registers `rcp` as the Radio Control Protocol, the PyPI name is taken, and `rcp` is a BSD command. A passport is what a stranger shows at a border: who you are, who vouches for that, and what you may do. Its identifiers were all free when they were chosen: `/.well-known/robot-passport.json`, `_robot-passport._tcp` and the PyPI name `robot-passport`. It lives inside quackd for now, as a module that imports nothing else from quackd, with a specification that uses none of quackd's words, and it moves to a repository of its own once a second implementation exists or another maker wants it. Read more: [docs/passport/why.md](docs/passport/why.md) and [docs/passport/naming.md](docs/passport/naming.md).
+
+The honest part: today Robot Passport is a specification, version 0.1, with its schemas, its vectors and these pages, and quackd's implementation is being built for 0.23.0. Nothing of it has run between two machines or on a robot, and its status table says so part by part until somebody has: [docs/passport/roadmap.md](docs/passport/roadmap.md).
 
 <br>
 
