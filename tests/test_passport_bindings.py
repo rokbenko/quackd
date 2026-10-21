@@ -159,7 +159,7 @@ def test_with_no_inbox_a_post_is_404_and_with_one_it_is_handed_the_body() -> Non
         silent.close()
     seen: list[tuple[bytes, str]] = []
 
-    def inbox(body: bytes, kind: str) -> tuple[int, bytes | None, str]:
+    def inbox(body: bytes, kind: str, address: str) -> tuple[int, bytes | None, str]:
         seen.append((body, kind))
         return 204, None, "text/plain"
 

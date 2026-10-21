@@ -26,6 +26,8 @@ MAJOR = 0
 #: What a reader must accept, and what a writer should stay under (spec 2.1).
 MAX_BYTES = 8192
 WRITER_BYTES = 2048
+#: The most stamps a passport carries (spec 2.2).
+MAX_STAMPS = 4
 PASSPORT_TYP = "robot-passport+jws"
 DEFAULT_TTL_S = 3600
 MAX_TTL_S = 86_400
@@ -235,7 +237,7 @@ def validate(doc: object) -> dict[str, Any]:
         for i, channel in enumerate(_array(doc["talk"], "talk", 8)):
             _validate_channel(_object(channel, f"talk[{i}]"), f"talk[{i}]")
     if "stamps" in doc:
-        for i, token in enumerate(_array(doc["stamps"], "stamps", 4)):
+        for i, token in enumerate(_array(doc["stamps"], "stamps", MAX_STAMPS)):
             _text(token, f"stamps[{i}]", 1024)
             if not _JWS.match(token):
                 raise _refuse("rule 5", f"stamps[{i}] is not a compact JWS")

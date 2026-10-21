@@ -38,8 +38,8 @@
           "body": {
             "properties": {
               "passport": {
-                "description": "The sender's passport: a compact JWS, the JSON text of an unsigned passport, or an object with url and sha.",
-                "type": ["string", "object"]
+                "description": "The sender's passport, carried in the hello itself: a compact JWS, or the JSON text of an unsigned passport from a robot that holds no key. Its id is the hello's from.",
+                "type": "string"
               },
               "nonce": { "$ref": "#/$defs/nonce" }
             }

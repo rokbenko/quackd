@@ -294,10 +294,17 @@ Also in scope:
   was given, follows no redirects, reads no more than 12 KB in five seconds however slowly a host
   sends, and prints whatever a passport says as text, so a passport cannot drive the terminal.
   `quackd meet ros://` opens a bridge, reads one message and closes it without publishing
-  anything to that robot. What would be a security issue: a key, the owner key above all,
+  anything to that robot. With `--talk`, `quackd passport serve`, `quackd run` and
+  `quackd serve-mcp` also take talk messages at `/robot-passport/inbox`: a three-step `hello`,
+  `say` and `bye`, each signed by the robot that sends it, at most 16 KB, with at most 64
+  sessions and 64 half-finished hellos at once. Nothing a robot says moves anything, every `ask`
+  is answered no in this version, and a reply goes only to the host the other robot's passport
+  or hello came from. A stranger's words reach the terminal and the transcript, for a person,
+  and never a pilot or an MCP client. What would be a security issue: a key, the owner key above all,
   reaching any output, log, transcript or passport, a passport's text acting on the terminal it is
-  shown on, a fetch to any host but the one named, or a robot placed in a tier above stranger
-  without the pin or the stamp that tier needs.
+  shown on, a fetch to any host but the one named, a robot placed in a tier above stranger
+  without the pin or the stamp that tier needs, a stranger's words reaching a pilot or an MCP
+  client, or anything a robot says or asks moving a body.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
   quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,

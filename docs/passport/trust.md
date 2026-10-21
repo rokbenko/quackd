@@ -126,7 +126,7 @@ the rest to each owner ([spec section 6.5](spec.md#65-ask-and-answer)).
 
 | Tier | How a robot gets there | What it can make your robot do | What the pilot sees |
 |---|---|---|---|
-| stranger | it has any passport at all | `pause` for up to 5 s, and `identify` by light or sound only, both out of one global budget | its closed-vocabulary fields and a slugged name. Its free text goes to the log, for a person. |
+| stranger | it has any passport at all | `pause` for up to 5 s, and `identify` by light or sound only, both out of one global budget | its closed-vocabulary fields, under a name made from its key. Its free text, its name included, goes to the log, for a person. |
 | known | a person pinned its key | `pause` for up to 10 s and `identify` by any means, out of the same budget | its passport and its `say`, JSON-quoted |
 | same owner | it carries a stamp from an owner key a person pinned, your own included | what its owner listed, run by the same handler | the same |
 | flock | a person registered it with `quackd robot add` | what flock members do today, over the flock bus | the same as in any flock |

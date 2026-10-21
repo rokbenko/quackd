@@ -1,0 +1,310 @@
+"""Talk, step one (spec 6.1 to 6.4): messages, the three-step hello, and a session's say and bye.
+
+The talk vectors were written by scripts/passport_vectors.py, which signs with `cryptography`
+directly. Given the same keys and the same nonces an endpoint here writes every one of them byte
+for byte, so the hello is checked against a second implementation, not against itself. The rest
+are the attacks the hello exists to stop: a replay into another session, a signature lifted from
+one handshake into another, an unsigned word from a robot that holds a key, and a flood.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable, Iterator
+from pathlib import Path
+
+import pytest
+
+from quackd.passport import PassportError, SigningKey, document, jws, strict
+from quackd.passport.talk import (
+    HELLO_S,
+    IDLE_S,
+    MAX_MESSAGE_BYTES,
+    MAX_PENDING,
+    Endpoint,
+    VersionUnknown,
+    envelope,
+    open_session,
+    read_message,
+    seal,
+    version_answer,
+)
+
+VECTORS = Path(__file__).resolve().parents[1] / "docs" / "passport" / "vectors"
+KEYS = json.loads((VECTORS / "keys.json").read_text(encoding="utf-8"))["keys"]
+A = SigningKey(bytes.fromhex(KEYS["robot-a"]["seed_hex"]))
+B = SigningKey(bytes.fromhex(KEYS["robot-b"]["seed_hex"]))
+INTRUDER = SigningKey(bytes.fromhex(KEYS["intruder"]["seed_hex"]))
+
+
+def nonce(label: str) -> str:
+    """The vectors' fixed nonces, as the script makes them. Real ones are random."""
+    return jws.b64url(hashlib.sha256(label.encode()).digest()[:16])
+
+
+def vector(name: str) -> str:
+    return (VECTORS / name).read_text(encoding="utf-8").strip()
+
+
+def passport_of(key: SigningKey, name: str) -> str:
+    return document.sign({"passport": "0.1", "id": key.did, "name": name}, key)
+
+
+def tokens(*labels: str) -> Callable[[], str]:
+    supply: Iterator[str] = iter([nonce(label) for label in labels])
+    return lambda: next(supply)
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def pair(clock: Clock | None = None) -> tuple[Endpoint, Endpoint]:
+    when = clock or Clock()
+    return (
+        Endpoint(A.did, passport_of(A, "duck-01"), A, clock=when),
+        Endpoint(B.did, passport_of(B, "cart-01"), B, clock=when),
+    )
+
+
+def handshake(a: Endpoint, b: Endpoint) -> tuple[str, str, str]:
+    first = a.hello(b.me)
+    second = b.receive(read_message(first))
+    assert second.status == 200 and second.wire is not None
+    third = a.receive(read_message(second.wire))
+    assert third.status == 200 and third.wire is not None and third.event is not None
+    done = b.receive(read_message(third.wire))
+    assert done.status == 204 and done.event is not None and done.event.kind == "met"
+    return first, second.wire, third.wire
+
+
+# ── against the vectors ─────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "name", ["hello-1.jws", "hello-2.jws", "hello-3.jws", "say-in-session.jws", "ask-pause.jws"]
+)
+def test_every_valid_talk_vector_reads(name: str) -> None:
+    message = read_message(vector(name))
+    assert message.signed and message.sender in (A.did, B.did)
+
+
+def test_an_unsigned_ask_is_refused_as_the_vectors_say() -> None:
+    with pytest.raises(PassportError) as caught:
+        read_message(vector("ask-unsigned.json"))
+    assert caught.value.rule == "6.1"
+
+
+def test_two_endpoints_write_the_vectors_hello_byte_for_byte() -> None:
+    a = Endpoint(
+        A.did, passport_of(A, "duck-01"), A, token=tokens("robot-a/session-1", "msg-1", "msg-3")
+    )
+    b = Endpoint(
+        B.did, passport_of(B, "cart-01"), B, token=tokens("robot-b/session-1", "msg-2", "msg-4")
+    )
+    first = a.hello(B.did)
+    assert first == vector("hello-1.jws")
+    second = b.receive(read_message(first))
+    assert second.wire == vector("hello-2.jws")
+    third = a.receive(read_message(vector("hello-2.jws")))
+    assert third.wire == vector("hello-3.jws")
+    assert third.event is not None and third.event.kind == "met"
+    opened = b.receive(read_message(vector("hello-3.jws")))
+    assert opened.status == 204 and opened.event is not None
+    assert opened.event.session.nonces == (nonce("robot-a/session-1"), nonce("robot-b/session-1"))
+    said = b.say(A.did, "cart-01 here, heading for the kitchen door")
+    assert said == vector("say-in-session.jws")
+    heard = a.receive(read_message(said))
+    assert (
+        heard.event is not None and heard.event.text == "cart-01 here, heading for the kitchen door"
+    )
+    replayed = a.receive(read_message(vector("say-replayed.jws")))
+    assert replayed.status == 403 and "match no session" in replayed.reason
+
+
+# ── what the hello is for ───────────────────────────────────────────────────────────────
+
+
+def test_a_third_step_replayed_into_another_session_is_refused() -> None:
+    a, b = pair()
+    _first, _second, third = handshake(a, b)
+    a2, b2 = pair()
+    b2.receive(read_message(a2.hello(B.did)))
+    assert b2.receive(read_message(third)).status == 403
+
+
+def test_a_second_step_lifted_from_one_handshake_into_another_is_refused() -> None:
+    """B's signature over A's first nonce proves B is there now, and only for that hello."""
+    a, b = pair()
+    _first, second, _third = handshake(a, b)
+    a.hello(B.did)  # a new hello, with a new nonce, that B never answered
+    lifted = a.receive(read_message(second))
+    assert lifted.status in (204, 403)  # a repeat of a message already seen, or no hello of its
+    assert len(a.sessions) == 1
+
+
+def test_only_the_robot_a_hello_was_sent_to_can_answer_it() -> None:
+    a = Endpoint(A.did, passport_of(A, "duck-01"), A)
+    intruder = Endpoint(INTRUDER.did, passport_of(INTRUDER, "cart-01"), INTRUDER)
+    answer = intruder.receive(read_message(a.hello(B.did)))
+    assert answer.status == 403  # the hello is addressed to B, not to the intruder
+    first = a.hello(B.did)
+    doc = json.loads(jws.b64url_decode(first.split(".")[1], rule="6.1"))
+    doc["to"] = "*"  # even an answer to a hello for anyone must come from B
+    forged = intruder.receive(read_message(seal(doc, A)))
+    assert forged.wire is not None
+    assert a.receive(read_message(forged.wire)).status == 403
+
+
+def test_a_word_from_another_robot_with_this_sessions_nonces_is_refused() -> None:
+    a, b = pair()
+    handshake(a, b)
+    session = b.session_with(A.did)
+    assert session is not None
+    doc = envelope("say", INTRUDER.did, {"text": "it is me, duck-01"}, nonces=session.nonces)
+    refused = b.receive(read_message(seal(doc, INTRUDER)))
+    assert refused.status == 403
+
+
+def test_an_unsigned_message_naming_a_did_key_is_refused() -> None:
+    doc = envelope("say", A.did, {"text": "hi"}, nonces=(nonce("x"), nonce("y")))
+    with pytest.raises(PassportError, match="anybody can write that"):
+        read_message(strict.dumps(doc))
+
+
+def test_a_message_signed_by_a_key_its_from_does_not_hold_is_refused() -> None:
+    doc = envelope("say", A.did, {"text": "hi"}, nonces=(nonce("x"), nonce("y")))
+    forged = jws.sign(strict.dumps(doc), INTRUDER, "robot-passport-msg+jws")
+    with pytest.raises(PassportError, match="other than the one its from holds"):
+        read_message(forged)
+
+
+def test_a_passport_signature_never_passes_as_a_message() -> None:
+    with pytest.raises(PassportError, match="typ"):
+        read_message(passport_of(A, "duck-01"))
+
+
+def test_a_repeated_message_is_dropped_and_a_repeated_hello_answered_again() -> None:
+    a, b = pair()
+    first = a.hello(B.did)
+    answer = b.receive(read_message(first))
+    again = b.receive(read_message(first))
+    assert again.status == 200 and again.wire == answer.wire
+    assert answer.wire is not None
+    third = a.receive(read_message(answer.wire))
+    assert third.wire is not None
+    b.receive(read_message(third.wire))
+    said = a.say(B.did, "hello")
+    assert b.receive(read_message(said)).event is not None
+    assert b.receive(read_message(said)).reason == "a repeat, dropped"
+
+
+def test_a_session_ends_after_ten_quiet_minutes_and_a_hello_after_half_a_minute() -> None:
+    clock = Clock()
+    a, b = pair(clock)
+    handshake(a, b)
+    clock.now += IDLE_S + 1
+    assert [s.peer for s in b.expire()] == [A.did]
+    with pytest.raises(PassportError, match="no session"):
+        a.say(B.did, "still there?")
+    pending = a.hello(B.did)
+    answer = b.receive(read_message(pending))
+    clock.now += HELLO_S + 1
+    assert answer.wire is not None
+    assert a.receive(read_message(answer.wire)).status == 403
+
+
+def test_a_flood_of_hellos_is_refused_once_the_table_is_full() -> None:
+    b = Endpoint(B.did, passport_of(B, "cart-01"), B)
+    for _ in range(MAX_PENDING):
+        stranger = SigningKey.generate()
+        hello = Endpoint(stranger.did, passport_of(stranger, "x"), stranger).hello(B.did)
+        assert b.receive(read_message(hello)).status == 200
+    late = SigningKey.generate()
+    hello = Endpoint(late.did, passport_of(late, "x"), late).hello(B.did)
+    assert b.receive(read_message(hello)).status == 429
+
+
+def test_a_robot_with_no_key_opens_a_session_that_says_so_and_can_never_ask() -> None:
+    robot = "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10"
+    plain = strict.dumps({"passport": "0.1", "id": robot, "name": "toy"}).decode()
+    toy = Endpoint(robot, plain)
+    b = Endpoint(B.did, passport_of(B, "cart-01"), B)
+    answer = b.receive(read_message(toy.hello(B.did)))
+    assert answer.wire is not None
+    third = toy.receive(read_message(answer.wire))
+    assert third.wire is not None and third.event is not None
+    opened = b.receive(read_message(third.wire))
+    assert opened.event is not None and opened.event.session.authenticated is False
+    assert b.receive(read_message(toy.say(B.did, "beep"))).event is not None
+    ask = envelope("ask", robot, {"skill": "pause"}, nonces=opened.event.session.nonces)
+    with pytest.raises(PassportError, match="must be signed"):
+        read_message(seal(ask, None))
+
+
+def test_a_message_in_a_version_this_robot_does_not_read_is_answered_with_the_versions() -> None:
+    doc = envelope("say", A.did, {"text": "hi"}, nonces=(nonce("x"), nonce("y")))
+    doc["passport"] = "1.0"
+    with pytest.raises(VersionUnknown) as caught:
+        read_message(seal(doc, A))
+    answer = read_message(version_answer(caught.value, B.did, B))
+    assert answer.type == "answer" and answer.body["versions"] == ["0.1"]
+    assert answer.re == doc["msg"] and answer.to == A.did
+
+
+def test_a_message_is_held_to_its_size_and_a_hello_may_carry_a_large_passport() -> None:
+    a, b = pair()
+    handshake(a, b)
+    session = a.session_with(B.did)
+    assert session is not None
+    long_say = envelope("say", A.did, {"text": "x" * 400, "pad": "y" * MAX_MESSAGE_BYTES})
+    long_say["nonces"] = list(session.nonces)
+    with pytest.raises(PassportError, match="any message but a hello"):
+        read_message(seal(long_say, A))
+    doc = {"passport": "0.1", "id": A.did, "name": "duck-01", "padding": ""}
+    doc["padding"] = "x" * (document.MAX_BYTES - len(strict.dumps(doc)))
+    big = Endpoint(A.did, document.sign(doc, A), A).hello(B.did)
+    assert len(big) > MAX_MESSAGE_BYTES
+    assert read_message(big).type == "hello"
+
+
+def test_an_ask_is_answered_no_until_courtesies_are_decided() -> None:
+    a, b = pair()
+    handshake(a, b)
+    session = a.session_with(B.did)
+    assert session is not None
+    ask = envelope("ask", A.did, {"skill": "pause", "args": {"seconds": 5}}, nonces=session.nonces)
+    answer = b.receive(read_message(seal(ask, A)))
+    assert answer.status == 200 and answer.wire is not None
+    assert read_message(answer.wire).body["result"] == "no"
+
+
+def test_bye_ends_the_session_on_both_sides() -> None:
+    a, b = pair()
+    handshake(a, b)
+    left = b.receive(read_message(a.bye(B.did)))
+    assert left.event is not None and left.event.kind == "left"
+    assert a.session_with(B.did) is None and b.session_with(A.did) is None
+
+
+def test_open_session_runs_the_hello_over_a_channel_whose_reply_rides_back() -> None:
+    a, b = pair()
+
+    def post(wire: str) -> tuple[int, str | None]:
+        reply = b.receive(read_message(wire))
+        return reply.status, reply.wire
+
+    session = open_session(a, B.did, post)
+    assert session.peer == B.did and session.authenticated
+    assert b.session_with(A.did) is not None
+
+    refused = Endpoint(A.did, passport_of(A, "duck-01"), A)
+    replies = iter([(200, None), (403, None)])
+    with pytest.raises(PassportError, match="not with a hello"):
+        open_session(refused, B.did, lambda _wire: next(replies))
+    assert refused.sessions == {}

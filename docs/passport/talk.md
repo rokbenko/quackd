@@ -1,8 +1,10 @@
 # Talk: what two robots say once they have met
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run.
+> Spec draft 0.1. quackd speaks step one, `hello`, `say` and `bye`, over an HTTP inbox, which
+> has run between processes on one machine ([quackd.md](quackd.md#talking)). `ask`, `answer`,
+> `share` and the courtesy handler are being built for 0.23.0, and [roadmap.md](roadmap.md) says
+> what of it is built and what has run.
 
 Reading each other's passports is already an exchange, and for many robots it is all they need.
 Talk is the optional layer above it: six small messages for two robots that want to prove who they
@@ -42,10 +44,12 @@ Every message has the same envelope:
 A signed message is a compact JWS of that object, with `typ` `robot-passport-msg+jws` in its header.
 The `typ` matters: a robot signs passports, stamps and messages with one key, and the three `typ`s
 mean a signature made for one of them can never pass as another. A message is at most 4,096 bytes,
-or what the receiving channel's `max_bytes` says.
+or what the receiving channel's `max_bytes` says, except a `hello`, which carries a whole passport
+and may be up to 16,384 bytes.
 
-A robot that holds no key sends plain JSON, and only `hello`, `say`, `share` and `bye`. An `ask`
-must be signed, always.
+A robot that holds no key sends plain JSON, and only `hello`, `say`, `share` and `bye`. A robot
+that holds one signs everything it sends, so an unsigned message naming a `did:key` is refused:
+anybody can write an id. An `ask` must be signed, always.
 
 ## Channels
 

@@ -41,11 +41,11 @@ from quackd.agent.prompts import (
     META_TOOLS,
     REMEMBER,
     REMEMBER_NAME,
-    TELL,
     TELL_NAME,
     build_observation_text,
     build_system_prompt,
     observation_features,
+    tell_tool,
 )
 from quackd.agent.providers.base import (
     JUDGE_FEATURE,
@@ -123,6 +123,22 @@ class FlockLinkLike(Protocol):
     def prompt_section(self) -> str: ...
 
     def describe(self) -> dict[str, Any]: ...
+
+
+class NearbyLike(Protocol):
+    """The robots this pilot met over Robot Passport (`quackd.passport_talk.Talker`).
+
+    Structural for the same reason the flock link is: `quackd.agent` imports nothing from the
+    passport glue. The loop knows the robots nearby can be read out turn by turn, as what
+    happened since the last turn and as the lines a pilot is shown, and told something."""
+
+    def drain(self) -> list[Any]: ...
+
+    def lines(self, heard: Sequence[Any] | None = None) -> list[str]: ...
+
+    def say(self, who: str, text: str) -> None: ...
+
+    def session_named(self, who: str) -> Any: ...
 
 
 @runtime_checkable
@@ -229,6 +245,10 @@ class RunConfig:
     link: FlockLinkLike | None = None
     """This pilot's end of a flock bus. None is a solo run: no `tell` tool, no flock section
     in the prompt, and no inbox in any observation."""
+    nearby: NearbyLike | None = None
+    """The robots this pilot met over Robot Passport, and the end of talk it speaks through
+    (`quackd run --talk`). None is every run without it: no `Robots nearby` block in any
+    observation, and `tell` reaches the flock alone, or is not offered at all."""
     decision: DecisionMode = "off"
     """How much a decision LLM may do with the turns that are a choice (`--decision-mode`).
 
@@ -1228,6 +1248,7 @@ class AgentLoop:
         # reuses these features rather than observing again
         link = self.cfg.link
         inbox = link.drain() if link is not None else None
+        near = self._nearby_lines()
         text = build_observation_text(
             step=self.budget.steps,
             max_steps=self.fm.budgets.max_steps,
@@ -1240,6 +1261,7 @@ class AgentLoop:
             inbox_for=link.name if link is not None else None,
             cameras=cameras if len(cameras) > 1 else None,
             stepped=stepped,
+            nearby=near,
         )
         features = observation_features(
             state=state,
@@ -1249,6 +1271,7 @@ class AgentLoop:
             allowed=self.executor.allowed,
             inbox=inbox,
             flock=link.describe() if link is not None else None,
+            nearby=near,
         )
         images = (
             await asyncio.to_thread(
@@ -1618,6 +1641,26 @@ class AgentLoop:
             f"remembered for future runs: {entry.text}", notes=len(memory.notes())
         )
 
+    def _nearby_lines(self) -> list[str] | None:
+        """The `Robots nearby` block for this turn, and every robot met, word said and session
+        ended since the last one written to the transcript, for a person: a stranger's words
+        included, since they go to the log rather than to the pilot."""
+        nearby = self.cfg.nearby
+        if nearby is None:
+            return None
+        heard = nearby.drain()
+        for item in heard:
+            self._emit(
+                "nearby",
+                step=self.budget.steps,
+                event=item.kind,
+                robot=item.name,
+                calls_itself=item.passport_name,
+                tier=item.tier,
+                text=item.text,
+            )
+        return nearby.lines(heard) or None
+
     def _tell(self, arguments: dict[str, Any]) -> VerbResult:
         """One sentence to another pilot. Not a verb: nothing is sent to any robot.
 
@@ -1625,16 +1668,40 @@ class AgentLoop:
         nothing behind, and a message to a peer in the same dry run is neither: the peer is
         equally pretending, and a flock that could not talk would not be a dry run of a flock
         at all."""
-        link = self.cfg.link
-        if link is None:
-            return VerbResult.fail("you are not in a flock; there is nobody to tell")
+        link, nearby = self.cfg.link, self.cfg.nearby
         to = str(arguments.get("to") or "").strip()
         text = str(arguments.get("text") or "")
+        if nearby is not None and to and to != "all":
+            try:
+                nearby.session_named(to)
+            except Exception:  # no such robot nearby, so perhaps a flock member's name
+                pass
+            else:
+                return self._tell_nearby(nearby, to, text)
+        if link is None:
+            if nearby is not None:
+                return VerbResult.fail(f"no robot in Robots nearby is called {to!r}")
+            return VerbResult.fail("you are not in a flock; there is nobody to tell")
         try:
             link.send(to, text)
         except ValueError as e:
             return VerbResult.fail(str(e))
         return VerbResult.success(f"told {to or 'all'}: {' '.join(text.split())}")
+
+    def _tell_nearby(self, nearby: NearbyLike, to: str, text: str) -> VerbResult:
+        """One sentence to a robot met over Robot Passport, as a `say`. Unlike a word to the
+        flock it goes to a real robot outside this run, so a dry run says what it would have
+        said and sends nothing."""
+        said = " ".join(text.split())
+        if not 0 < len(text) <= 400:
+            return VerbResult.fail("a word to a robot nearby is 1 to 400 characters")
+        if self.cfg.dry_run:
+            return VerbResult.success(f"would tell {to}: {said} (a dry run sends nothing to it)")
+        try:
+            nearby.say(to, text)
+        except Exception as e:  # the robot left, refused it, or cannot be reached
+            return VerbResult.fail(f"could not tell {to}: {e}")
+        return VerbResult.success(f"told {to}: {said}")
 
     def _cost_of_a_failed_call(self, error: BaseException) -> dict[str, Any]:
         """What a call that ended in an error cost, as fields for its `llm` record, if anything.
@@ -1879,8 +1946,11 @@ class AgentLoop:
             # executor's check are all read off this one registry from now on.
             narrow_policy_verb(registry, self.fm, cfg.transport)
             tools = registry.tool_schemas(allow) + META_TOOLS
-            if cfg.link is not None:
-                tools = [*tools, TELL]
+            if cfg.link is not None or cfg.nearby is not None:
+                tools = [
+                    *tools,
+                    tell_tool(flock=cfg.link is not None, nearby=cfg.nearby is not None),
+                ]
             memory_text: str | None = None
             if cfg.memory is not None:
                 tools = [*tools, REMEMBER]

@@ -332,8 +332,10 @@ different digest.
 
 ### 6.1 Messages
 
-A message is a JSON object of at most 4,096 bytes, or what a channel's `max_bytes` allows, and
-its members are ([schema/message.schema.json](schema/message.schema.json)):
+A message is a JSON object of at most 4,096 bytes, or what a channel's `max_bytes` allows. A
+`hello`, which carries a whole passport, may be up to 16,384 bytes, the most the JWS of the largest
+passport takes once it is inside a message. Its members are
+([schema/message.schema.json](schema/message.schema.json)):
 
 | Member | Rule |
 |---|---|
@@ -351,7 +353,8 @@ A signed message is a compact JWS whose payload is that object, and whose protec
 receiver MUST check `typ`, so a signature made for one purpose is never accepted for another.
 
 A sender whose `id` is a `urn:uuid` sends plain JSON, and only `hello`, `say`, `share` and `bye`.
-A receiver MUST refuse an unsigned `ask`.
+A receiver MUST refuse an unsigned `ask`, and MUST refuse an unsigned message whose `from` is a
+`did:key`: a robot that holds a key signs everything it sends, and anybody can write an id.
 
 ### 6.2 Channels
 
@@ -371,8 +374,10 @@ A passport's `talk` lists where its robot listens. Two `via` values are defined 
 A hello takes three messages, so that each side proves it holds its key and neither proof can be
 replayed. Nonces are 16 random bytes in base64url.
 
-1. A sends `hello` with `body` `{passport, nonce}`: its passport, as its JWS, the JSON of an
-   unsigned one, or `{url, sha}`; and its nonce `nA`.
+1. A sends `hello` with `body` `{passport, nonce}`: its passport, as its JWS, or as the JSON
+   text of an unsigned one when A holds no key; and its nonce `nA`. The passport travels in the
+   hello itself, since a receiver fetches nothing a message names (section 5.7), and its `id`
+   MUST be the hello's `from`.
 2. B replies `hello` with `re` the first `msg`, `nonces` `[nA, nB]` and `body` `{passport}`,
    signed by B.
 3. A sends `hello` with `re` the second `msg`, `nonces` `[nA, nB]` and an empty `body`, signed

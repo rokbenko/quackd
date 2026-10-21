@@ -32,8 +32,9 @@ READ_S = 5.0
 CONNECTION_S = 10.0
 CONNECTIONS = 32
 
-#: What a talk inbox is: the request's body and content type in, a status and a body out.
-Inbox = Callable[[bytes, str], tuple[int, bytes | None, str]]
+#: What a talk inbox is: the request's body, its content type and the address it came from in,
+#: a status, a body and its content type out.
+Inbox = Callable[[bytes, str, str], tuple[int, bytes | None, str]]
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,10 @@ class PassportServer:
     def update(self, robots: Sequence[Served]) -> None:
         """Serve these passports from now on: one assignment, so a request sees old or new."""
         self._routes = routes(robots)
+
+    def listen(self, inbox: Inbox) -> None:
+        """Take talk messages at `INBOX_PATH` from now on, handing each to `inbox`."""
+        self._inbox = inbox
 
     def start(self) -> PassportServer:
         self._thread = threading.Thread(
@@ -177,7 +182,7 @@ class PassportServer:
                     return
                 body = self.rfile.read(length)
                 kind = (self.headers.get("Content-Type") or "").split(";")[0].strip()
-                status, reply, reply_kind = server._inbox(body, kind)
+                status, reply, reply_kind = server._inbox(body, kind, self.client_address[0])
                 self._send(status, reply or b"", reply_kind)
 
             def log_message(self, format: str, *args: Any) -> None:

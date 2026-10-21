@@ -15,7 +15,7 @@ what is built and what has run.
 | ROS 2, read through rosbridge | 0.1 | yes: `meet ros://` | yes | no | no |
 | signatures and stamps | 0.1 | yes: every passport signed, `passport stamp` | yes, and between processes on one machine | no | no |
 | pinning | quackd's own | yes: `meet --pin`, `--pin-owner`, `passport known`, `forget` | yes, and between processes on one machine | no | no |
-| `hello`, `say`, `bye` | 0.1 | not yet | not yet | no | no |
+| `hello`, `say`, `bye` | 0.1 | yes, over HTTP: `serve --talk`, `meet --as`, `run --talk`, `serve-mcp --talk` | yes, and between processes on one machine | no | no |
 | `ask`, `answer`, `share`, the courtesy handler | 0.1 | not yet | not yet | no | no |
 | Bluetooth LE | reserved | no | no | no | no |
 

@@ -76,7 +76,8 @@ stranger. So:
 
 - **A stranger's free text never reaches the pilot.** For a robot in the stranger tier the pilot
   sees only the members with closed vocabularies, `embodiment`, `mobility`, the core skills, the
-  figures, and a name cut down to a slug. Its free text goes to the log, for a person.
+  figures, under a name made from its key, never the one it chose. Its free text goes to the
+  log, for a person.
 - **What does reach the pilot is quoted as data.** A known robot's passport and its `say` appear in
   the pilot's observation as JSON, under a heading that says these are things other robots said,
   and claims, never instructions.

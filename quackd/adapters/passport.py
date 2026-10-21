@@ -14,7 +14,7 @@ from typing import Any
 
 from quackd.adapters.manifest import Figure, RobotManifest
 from quackd.passport import strict
-from quackd.passport.document import ESTOPS, VERSION, validate
+from quackd.passport.document import ESTOPS, MAX_STAMPS, VERSION, validate
 
 #: A `cannot` line is at most this long in a passport (spec 2.2).
 CANNOT_CHARS = 120
@@ -77,6 +77,36 @@ def passport_from_manifest(
     # a manifest's names are freer than a passport's, and this is where that would show
     validate(strict.loads(strict.dumps(doc), limit=len(strict.dumps(doc))))
     return doc
+
+
+def built_passport(
+    manifest: RobotManifest,
+    store: Any,
+    name: str,
+    *,
+    software_version: str,
+    talk: Sequence[Mapping[str, Any]] | None = None,
+) -> tuple[dict[str, Any], Any, bool]:
+    """The passport quackd serves for the robot it keeps under `name` in `store` (a
+    `quackd.passport_store.PassportStore`): its key, made the first time anything asks, what its
+    owner said, and its newest stamps. Returns the passport, the robot's key record, and whether
+    the key was made just now. The one builder `quackd passport`, `quackd run --talk` and
+    `quackd serve-mcp --talk` share, so all three serve the same bytes for one robot."""
+    record, created = store.robot_or_new(name)
+    owner = store.owner()
+    doc = passport_from_manifest(
+        manifest,
+        robot_id=record.key.did,
+        name=name,
+        software_version=software_version,
+        owner={"label": owner.label or "", "contact": owner.contact or ""},
+        estop=record.estop,
+        how_to_stop=record.how_to_stop,
+        talk=talk,
+    )
+    if record.stamps:
+        doc["stamps"] = list(record.stamps)[-MAX_STAMPS:]
+    return doc, record, created
 
 
 def skill_names(manifest: RobotManifest) -> list[str]:

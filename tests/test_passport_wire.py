@@ -170,7 +170,7 @@ def with_inbox() -> Iterator[PassportServer]:
     server = PassportServer(
         [Served("duck-01", PASSPORT)],
         host="127.0.0.1",
-        inbox=lambda body, kind: (204, None, "text/plain"),
+        inbox=lambda body, kind, address: (204, None, "text/plain"),
     ).start()
     try:
         yield server

@@ -526,7 +526,9 @@ def flock_caption(kind: str, d: Mapping[str, Any]) -> tuple[str, str] | None:
         # the one flock line a person actually reads for its content rather than its verdict,
         # so it carries the words and not a summary of them
         refused = "" if d.get("ok", True) else f" (refused: {d.get('summary')})"
-        return "TALK", f"{d.get('src')} -> {d.get('to')}: {d.get('text')}{refused}"
+        # a run with robots nearby and no flock has no member name to speak under
+        who = d.get("src") or "the pilot"
+        return "TALK", f"{who} -> {d.get('to')}: {d.get('text')}{refused}"
     if kind == "bid_rejected":
         why = d.get("why") or f"missing {', '.join(d.get('missing') or [])}"
         return "BID", f"{d.get('src')} for {d.get('role')} rejected: {why}"
@@ -955,7 +957,24 @@ def render_events(
         if d.get("budget"):
             text += f" budget: {d['budget']}"
         return [LogLine("done", text, "dim", mark="ok" if d.get("ok") else "fail")]
+    if k == "nearby":
+        return [LogLine("nearby", _nearby_text(d), "cyan", mark="note")]
     return []
+
+
+def _nearby_text(d: Mapping[str, Any]) -> str:
+    """A robot met over Robot Passport, for the person watching a run: the name it gave itself,
+    its tier, the name the pilot knows it by, and what it said. The name and the words are text
+    a stranger wrote, so both are printed as text, escapes and all (`ui.printable`)."""
+    from quackd.ui import printable
+
+    robot = printable(str(d.get("calls_itself") or d.get("robot")))
+    what = {"met": "met", "said": "said", "left": "said bye", "quiet": "went quiet"}
+    event = str(d.get("event"))
+    text = f"{robot} ({d.get('tier')}, {d.get('robot')} to the pilot) {what.get(event, event)}"
+    if d.get("text"):
+        text += f": {printable(str(d['text']))}"
+    return text
 
 
 def _watch_line(d: Mapping[str, Any]) -> LogLine:

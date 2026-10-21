@@ -56,6 +56,7 @@ bounded rule its owner chose.
 | the most a reader must accept | 8,192 bytes |
 | the most a reader reads of one off the network, signed | 12,288 bytes |
 | a talk message, at most | 4,096 bytes |
+| a `hello`, which carries a passport, at most | 16,384 bytes |
 | a QR code for a passport URL | 37×37 modules |
 
 The decision record behind all of it is

@@ -66,6 +66,35 @@ def target(text: str) -> Target:
 def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEOUT_S) -> bytes:
     """The body at `url`, at most `limit` bytes and all of it within `timeout` seconds, or a
     `PassportError` saying why not."""
+    status, reason, headers, body = _exchange("GET", url, None, "", limit, timeout)
+    if status in _REDIRECTS:
+        where = headers.get("location", "somewhere else")
+        raise PassportError("5.7", f"it redirects to {where}, and a reader follows no redirects")
+    if status != 200:
+        raise HttpStatus(url, status, reason)
+    if len(body) > limit:
+        raise PassportError("rule 1", f"{url} sent more than the {limit} bytes a reader accepts")
+    return body
+
+
+def post(
+    url: str, data: bytes, kind: str, *, limit: int, timeout: float = FETCH_TIMEOUT_S
+) -> tuple[int, bytes]:
+    """`data` posted to a talk inbox at `url` (spec 6.2): the status and the reply, whatever the
+    status, since 204, 403 and 429 are answers and not failures. The same clock and budget hold
+    as for a fetch, and a redirect is refused the same way."""
+    status, _reason, headers, body = _exchange("POST", url, data, kind, limit, timeout)
+    if status in _REDIRECTS:
+        where = headers.get("location", "somewhere else")
+        raise PassportError("6.2", f"it redirects to {where}, and talk follows no redirects")
+    if len(body) > limit:
+        raise PassportError("6.1", f"{url} answered with more than the {limit} bytes a reply has")
+    return status, body
+
+
+def _exchange(
+    method: str, url: str, data: bytes | None, kind: str, limit: int, timeout: float
+) -> tuple[int, str, dict[str, str], bytes]:
     parts = urlsplit(url)
     try:
         port = parts.port
@@ -82,10 +111,13 @@ def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEO
     authority = f"[{host}]" if ":" in host else host
     if port is not None:
         authority += f":{port}"
-    request = (
-        f"GET {path} HTTP/1.0\r\nHost: {authority}\r\n"
-        "Accept: application/jose, application/json\r\nUser-Agent: quackd\r\n\r\n"
-    ).encode("ascii")
+    head = (
+        f"{method} {path} HTTP/1.0\r\nHost: {authority}\r\n"
+        "Accept: application/jose, application/json\r\nUser-Agent: quackd\r\n"
+    )
+    if data is not None:
+        head += f"Content-Type: {kind}\r\nContent-Length: {len(data)}\r\n"
+    request = (head + "\r\n").encode("ascii") + (data or b"")
     deadline = time.monotonic() + timeout
     try:
         raw = socket.create_connection(
@@ -98,7 +130,7 @@ def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEO
                 # the TLS socket takes over the connection, so it is the one to close
                 sock = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
             sock.sendall(request)
-            data = _read(sock, HEADER_BYTES + limit + 1, deadline, url, timeout)
+            answer = _read(sock, HEADER_BYTES + limit + 1, deadline, url, timeout)
         finally:
             sock.close()
             raw.close()
@@ -106,15 +138,7 @@ def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEO
         raise
     except OSError as e:
         raise PassportError("5.7", f"{url} could not be reached: {e}") from e
-    status, reason, headers, body = _parse(data, url)
-    if status in _REDIRECTS:
-        where = headers.get("location", "somewhere else")
-        raise PassportError("5.7", f"it redirects to {where}, and a reader follows no redirects")
-    if status != 200:
-        raise HttpStatus(url, status, reason)
-    if len(body) > limit:
-        raise PassportError("rule 1", f"{url} sent more than the {limit} bytes a reader accepts")
-    return body
+    return _parse(answer, url)
 
 
 def _read(sock: socket.socket, budget: int, deadline: float, url: str, timeout: float) -> bytes:
