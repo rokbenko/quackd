@@ -822,9 +822,13 @@ async def test_close_says_the_arm_holds_out_of_its_drive_pose_after_moving_it(
     transport = rover.transport()
     await transport.connect()
     if cycled:
+        beat = _alive(transport)  # the session kept alive while the cycle runs, as a run's is
         cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
         assert (await transport.send_intent(cycle)).accepted
-        _wait(lambda: (rover.bridge.jobs.doc() or {}).get("state") == "done")
+        await asyncio.to_thread(
+            _wait, lambda: (rover.bridge.jobs.doc() or {}).get("state") == "done"
+        )
+        await beat.stop()
     rover.bridge.bus.joints["arm/a"] = 1.0
     await transport.close()
     if cycled:
@@ -898,9 +902,11 @@ async def test_close_cancels_a_cycle_of_its_own_that_no_stop_ended() -> None:
     with _rover_with(cycle_s=30.0) as rover:
         transport = rover.transport()
         await transport.connect()
+        beat = _alive(transport)  # the session kept alive while the cycle starts, as a run's is
         cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
         assert (await transport.send_intent(cycle)).accepted
-        _wait(lambda: rover.bridge.bus.executing)
+        await asyncio.to_thread(_wait, lambda: rover.bridge.bus.executing)
+        await beat.stop()
         await transport.close()
         assert "arm cancel" in rover.bridge.bus.events and not rover.bridge.bus.executing
         _wait(lambda: (rover.bridge.jobs.doc() or {}).get("state") == "cancelled")
@@ -921,8 +927,10 @@ async def test_a_stack_that_restarted_fails_the_heartbeat(rover: Rover) -> None:
 
 
 async def test_pick_and_drop_runs_the_cycle_on_the_bridge(rover: Rover) -> None:
-    adapter = MossAdapter(rover.transport())
+    transport = rover.transport()
+    adapter = MossAdapter(transport)
     manifest = await adapter.connect()
+    beat = _alive(transport)  # the session kept alive while the verb runs, as a run's is
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
@@ -932,6 +940,7 @@ async def test_pick_and_drop_runs_the_cycle_on_the_bridge(rover: Rover) -> None:
         manifest=manifest,
     )
     result = await ex.run_verb("pick_and_drop", {"pick_pose": "pick_low"})
+    await beat.stop()
     assert result.ok, result.summary
     assert result.data["job"]["exit"] == 0
     await adapter.close()

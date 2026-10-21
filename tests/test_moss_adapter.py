@@ -746,6 +746,51 @@ async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds() -> None:
     assert "arm.cancel" in mock.stop_log
 
 
+async def test_a_stop_while_drive_to_waits_on_the_explorer_sends_no_goal() -> None:
+    """drive_to stops an exploration the cockpit cannot see and waits out the explorer's own
+    stay here goal before it sends its own. A stop asked for beside it during that wait is
+    heard there, and no goal goes out after it."""
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import drive_to
+
+    mock = MossMock(arm=True)
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    assert mock.cockpit_view == up.ARM_STACK, "moss-arm the newest, as the launcher makes it"
+    await adapter.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
+    asked = {"n": 0}
+
+    def interrupted() -> str | None:
+        asked["n"] += 1
+        return STOPPED if asked["n"] > 2 else None
+
+    began = mock.now()
+    result = await drive_to(
+        VerbContext(transport=adapter, interrupted=interrupted), DriveToParams(x_m=0.5, y_m=0.0)
+    )
+    assert not result.ok and "No goal was sent" in result.summary, result.summary
+    assert mock.intents_of("pose") == [], "no goal went out after the stop"
+    waited = float(up.GOAL_AFTER_STOP_S.name)
+    assert mock.now() - began < waited, "the wait ended at the stop, not after it"
+
+
+async def test_a_stop_asked_for_before_drive_to_sends_its_goal_sends_no_goal() -> None:
+    """With no explorer to wait out, the check just before the goal hears a stop asked for
+    while drive_to read the pose."""
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import drive_to
+
+    mock = MossMock()
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    result = await drive_to(
+        VerbContext(transport=adapter, interrupted=lambda: STOPPED),
+        DriveToParams(x_m=0.5, y_m=0.0),
+    )
+    assert not result.ok and "No goal was sent" in result.summary, result.summary
+    assert mock.intents_of("pose") == []
+
+
 async def test_the_arm_and_a_twist_never_run_together() -> None:
     mock, adapter, _ = await _connected()
     assert (await adapter.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted

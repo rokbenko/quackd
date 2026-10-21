@@ -429,6 +429,11 @@ def world_goal(state: DuckState, p: DriveToParams) -> tuple[float, float]:
     return x + c * p.x_m - s * p.y_m, y + s * p.x_m + c * p.y_m
 
 
+def _no_goal(why: str) -> VerbResult:
+    """drive_to ended before its goal went out: no goal was sent, so nothing of it drives."""
+    return VerbResult.fail(f"drive_to stopped before its goal went out: {why}. No goal was sent.")
+
+
 async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
     """A goal for MOSS's own planner, and a wait for the planner's own word on it.
 
@@ -454,7 +459,16 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
         stop = Intent(kind="do", params={"skill": SKILL_EXPLORE, "action": "stop"})
         if (fail := await send_or_fail(ctx, stop)) is not None:
             return fail
-        await ctx.transport.sleep(float(up.GOAL_AFTER_STOP_S.name))
+        waited, wait = 0.0, float(up.GOAL_AFTER_STOP_S.name)
+        while waited < wait:
+            # a stop asked for beside the verb while it waits is heard here, not after the goal
+            if (why := ctx.interrupted()) is not None:
+                return _no_goal(why)
+            step = min(DRIVE_TO_POLL_S, wait - waited)
+            await ctx.transport.sleep(step)
+            waited += step
+    if (why := ctx.interrupted()) is not None:
+        return _no_goal(why)
     goal = Intent(kind="pose", params={"x": gx, "y": gy, "frame": "world"})
     if (fail := await send_or_fail(ctx, goal)) is not None:
         return fail
