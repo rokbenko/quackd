@@ -78,8 +78,11 @@ process is ever signalled. After every cancel the joints are read twice, and a h
 claimed without that reading. Two still reads are not a hold on their own, since a trajectory
 in one of its pauses reads still: a last cancel must find nothing executing. A cycle cancelled
 while it was still starting is cancelled once more half a second later, for a trajectory its
-script sent just before it was ended. Off `moss-litter` the zero goes first and the arm's
-cancel after it, so a coordinator that hangs never holds back the zero.
+script sent just before it was ended. On `moss-litter`, once the mission's stop has had its
+time, the stack's picks are looked for again and ended, for one the mission's last tick
+started after the first look, and the arm is cancelled and read once more, no sooner than half
+a second after the first cancel. Off `moss-litter` the zero goes first and the arm's cancel
+after it, so a coordinator that hangs never holds back the zero.
 The mission's stop is sent without an answer, as dimOS sends every stop, so the bridge confirms
 it by the mission's RPC falling silent, and only for a mission it heard answer before. Each
 probe that still hears the mission sends the stop again, since one sent without an answer may

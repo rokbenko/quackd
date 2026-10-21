@@ -219,7 +219,7 @@ for one tool call, and `collect_litter` does not run there at all.
   once, every time. Each failure is kept and reported, and neither half skips the other or
   waits for it. Off `moss-litter` the bridge sends its zero first and cancels the arm after it,
   so a coordinator that hangs never holds back the zero that ends a twist or a planner goal.
-  quackd waits 46 s for the bridge's answer, which covers the bridge's own worst case with
+  quackd waits 67 s for the bridge's answer, which covers the bridge's own worst case with
   every RPC on the rover answering at its timeout, and a stop not answered by then is reported
   as not delivered. The `stop` verb sends it, and so does the end of every run, a run refused
   before it moved anything among them, and of every MCP session. On `moss-litter` that ends the
@@ -254,7 +254,10 @@ for one tool call, and `collect_litter` does not run there at all.
   Two still reads are not a hold on their own either, since a trajectory in one of its pauses
   reads still: a last cancel must find nothing executing. A cycle of quackd's cancelled while
   it was still starting is cancelled once more half a second later, for an `execute_trajectory`
-  its script sent just before it was ended.
+  its script sent just before it was ended. On `moss-litter`, once the mission's stop has had
+  its time, the stack's picks are looked for again and ended, for one the mission's last tick
+  started after the first look, and the arm is cancelled and read once more, no sooner than
+  half a second after the first cancel. That reading is the stop's word on the arm.
 - **The mission's stop is confirmed by silence.** dimOS sends a module's stop without waiting
   for an answer, because the module closes its RPC service as it stops. So after the cancel and
   the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop

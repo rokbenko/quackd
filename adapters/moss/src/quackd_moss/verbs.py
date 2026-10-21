@@ -104,7 +104,7 @@ ARM_GIVE_UP_S = float(up.PICK_TIMEOUT_S.name)
 """The mission gives one pick this long, and quackd gives a cycle the same."""
 ARM_POLL_S = 0.5
 
-VERB_MARGIN_S = 60.0
+VERB_MARGIN_S = 80.0
 """What a verb's executor timeout keeps beyond the verb's own give up, so the verb's own stop
 runs and reports rather than the executor's. That stop is the transport's, which waits up to
 the bridge's own worst case for its answer, and the contract tests hold this above that wait,

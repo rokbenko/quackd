@@ -137,7 +137,7 @@ quackd waits for one, beyond its own call timeout."""
 FIRST_FRAME_S = 2 * float(up.FIRST_FRAME_WAIT_S.name)
 """How long connect() waits for the cockpit's first nose frame when there is no bridge: the
 cockpit's own wait for a camera, twice."""
-STOP_TIMEOUT_S = 46.0
+STOP_TIMEOUT_S = 67.0
 """How long the bridge's stop may take to answer. It is bounded on the rover, and this covers
 its worst case, every RPC there timing out (the bridge's STOP_WORST_S, which the contract
 tests hold this to): a stop never answered in time is a stop reported as not delivered."""

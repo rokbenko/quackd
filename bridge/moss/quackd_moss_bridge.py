@@ -178,6 +178,9 @@ STOP_WORST_S = (
     )
     + MISSION_PROBE_S  # the mission is asked at least once after the cancel
     + RPC_TIMEOUT_S  # and the arm's coordinator, to tell its silence from a dead bus
+    + _PICK_END_WORST_S  # after the mission's stop, its picks looked for and ended again
+    + STARTING_RECANCEL_S
+    + _CANCEL_AND_READ_WORST_S  # and the arm cancelled and read once more
 )
 """The longest a stop can take on moss-litter with every RPC on the rover answering at its
 timeout, the longest of the stacks. The confirmation's window starts when the mission's stop
@@ -1861,21 +1864,54 @@ class Bridge:
             return doc
         litter = self._litter(stack)
         sent = self._send_mission_stop(stack, did, errors) if litter else None
+        cancelled_at = self.clock()
         if litter:
             doc["pick"] = self._end_mission_pick(stack, did, errors)
             doc["arm"] = self._cancel_arm(did, errors, picked=bool(doc["pick"]))
+            cancelled_at = self.clock()
             self._zeros(stack, did, errors)
         else:
             self._zeros(stack, did, errors)
             doc["arm"] = self._cancel_arm(did, errors)
         if sent is not None:
             doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
+        if litter:
+            self._after_the_mission(stack, doc, did, errors, cancelled_at)
         if self._litter(stack) and doc["mission"] == "stopped":
             # once more, after the mission's loop has ended, so the last word on the pad is ours
             with contextlib.suppress(Exception):
                 self.bus.publish_twist(channel(PAD_STREAM_EXPLORE, TWIST_MSG), 0.0, 0.0)
+        # a failure met by both looks is said once
+        errors[:] = list(dict.fromkeys(errors))
         doc["ok"] = not errors
         return doc
+
+    def _after_the_mission(
+        self,
+        stack: StackInfo,
+        doc: dict[str, Any],
+        did: list[str],
+        errors: list[str],
+        cancelled_at: float,
+    ) -> None:
+        """The arm once more, once the mission's stop has had its time. The mission's last tick
+        can start a pick after the first look and before its stop takes effect, and a pick ended
+        just after it sent its trajectory leaves that trajectory to land after the first cancel.
+        So the stack's picks are looked for again and ended, and no sooner than
+        STARTING_RECANCEL_S after the first cancel the arm is cancelled and read again, and that
+        reading is the stop's word on the arm."""
+        late_pick = self._end_mission_pick(stack, did, errors)
+        wait = cancelled_at + STARTING_RECANCEL_S - self.clock()
+        if wait > 0:
+            self.sleep(wait)
+        late = self._cancel_arm(did, errors, picked=bool(doc["pick"] or late_pick))
+        doc["late"] = {"pick": late_pick, "arm": late}
+        if late is None or late.get("error"):
+            return
+        if late.get("cancel") == "CANCELLED":
+            did.append("a trajectory that landed after the first cancel was cancelled")
+        first = doc.get("arm")
+        doc["arm"] = {**first, "held": late.get("held")} if isinstance(first, dict) else late
 
     def _zeros(self, stack: StackInfo, did: list[str], errors: list[str]) -> None:
         """A zero on every channel the cockpit's own soft stop zeroes, and the pump's own."""

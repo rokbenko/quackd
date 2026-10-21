@@ -1157,6 +1157,61 @@ def test_on_moss_litter_a_pick_already_playing_is_ended_and_its_trajectory_cance
     bridge.close()
 
 
+def test_on_moss_litter_a_pick_started_after_the_first_look_is_ended_too() -> None:
+    """The mission's last tick can start a pick after the bridge looked for one and before
+    the mission's stop took effect, and that pick's trajectory would go out after every
+    cancel. Once the stop has had its time the bridge looks again, ends it while it is still
+    starting, and cancels and reads the arm once more."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    bus = bridge.bus
+    looks = bus.picks
+
+    def a_tick_too_late(stack: Any) -> list[int]:
+        found = looks(stack)
+        if bus.pick is None:  # none yet, and the mission's last tick starts one right after
+            bus.start_mission_pick(startup_s=1.0)
+        return list(found)
+
+    bus.picks = a_tick_too_late
+    doc = bridge.stop()
+    clock.t += 5.0  # long past the late pick's startup
+    bus.arm_joints()
+    assert not bus.executing, "the late pick never sent its trajectory"
+    assert doc["pick"] is None and doc["late"]["pick"]["terminated"], doc
+    assert doc["arm"]["held"] is True and doc["mission"] == "stopped", doc
+    bridge.close()
+
+
+def test_on_moss_litter_a_trajectory_that_lands_after_the_first_cancel_is_cancelled() -> None:
+    """A pick ended just after it sent its trajectory leaves that trajectory to land after
+    the first cancel, which found nothing. The cancel that follows the mission's stop, no
+    sooner than STARTING_RECANCEL_S after the first, finds it and ends it."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    bus = bridge.bus
+    cancel = bus.arm_cancel
+
+    def first_then_one_in_flight() -> str:
+        answer = str(cancel())
+        if bus.cancels == 1:
+            bus.in_flight(B.STARTING_RECANCEL_S / 2)
+        return answer
+
+    bus.arm_cancel = first_then_one_in_flight
+    doc = bridge.stop()
+    clock.t += 5.0
+    bus.arm_joints()
+    assert not bus.executing, "the trajectory that landed late was cancelled"
+    assert "a trajectory that landed after the first cancel was cancelled" in doc["did"], doc
+    assert doc["arm"]["held"] is True, doc["arm"]
+    bridge.close()
+
+
 def test_a_pick_script_that_outlives_its_sigterm_is_killed_after_its_grace() -> None:
     bridge, clock = _litter_on_fake_time()
     bus = bridge.bus
@@ -1186,8 +1241,10 @@ def test_a_pick_that_outlives_both_signals_is_said_and_the_arm_is_still_cancelle
     bridge, _ = _litter_on_fake_time()
     bridge.procs = Stubborn()
     doc = bridge.stop()
-    assert doc["pick"]["left"] == [4321] and len(bridge.procs.sent) == 2
-    assert not doc["ok"] and any("outlived SIGKILL" in e for e in doc["errors"]), doc["errors"]
+    assert doc["pick"]["left"] == [4321] and doc["late"]["pick"]["left"] == [4321]
+    assert len(bridge.procs.sent) == 4, "both signals, and both again after the mission's stop"
+    outlived = [e for e in doc["errors"] if "outlived SIGKILL" in e]
+    assert not doc["ok"] and len(outlived) == 1, doc["errors"]
     assert "arm cancel" in bridge.bus.events, "the cancel goes out all the same"
     bridge.close()
 
