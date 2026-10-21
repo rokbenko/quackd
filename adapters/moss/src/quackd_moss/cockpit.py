@@ -1228,8 +1228,10 @@ class MossCockpit:
                 f"for {window:g} s: {self._session_error or 'no answer'}"
             )
         stack = self._session_doc.get("stack") or {}
-        if not stack.get("running") or (
-            self.run_id is not None and str(stack.get("run_id")) != self.run_id
+        alive = (self._session_doc.get("session") or {}).get("run_alive") is True
+        if not alive and (
+            not stack.get("running")
+            or (self.run_id is not None and str(stack.get("run_id")) != self.run_id)
         ):
             raise HeartbeatError(self._stack_gone(stack))
 
@@ -1288,15 +1290,19 @@ class MossCockpit:
     async def _run_now(self) -> str | None:
         """The base run running now when it is another than the one this session connected
         to, or None for the same run and for any run that cannot be told, all of which are
-        stopped. With the bridge up, its last keepalive answer says, which is at most one
-        period old and costs the stop no round trip. Without it, the cockpit's own state says,
-        and the arm's own run there, which the cockpit shows whenever it is the newest, tells
-        nothing of the base's."""
+        stopped. With the bridge up, its last keepalive answer says whether the run this
+        session connected to still runs, a newer run beside it notwithstanding, which is at
+        most one period old and costs the stop no round trip. Without it, the cockpit's own
+        state says, which shows only the newest run: a newer run of the same blueprint is a
+        restart, and one of any other, moss-arm's or one started by hand, tells nothing of the
+        base's."""
         if self.run_id is None:
             return None
         if self.bridge_up:
             window = SESSION_MISSES * MAX_KEEPALIVE_S
             fresh = self._session_at is not None and time.monotonic() - self._session_at <= window
+            if fresh and (self._session_doc.get("session") or {}).get("run_alive") is True:
+                return None  # the run it connected to still runs, whatever runs beside it
             stack = (self._session_doc.get("stack") or {}) if fresh else {}
         else:
             try:
@@ -1304,7 +1310,9 @@ class MossCockpit:
             except Exception:
                 return None  # a cockpit that does not answer is told to stop all the same
             stack = state.get("stack") or {}
-            if stack.get("blueprint") == up.ARM_STACK:
+            if stack.get("blueprint") != self.stack:
+                # another blueprint newest, moss-arm or a run started by hand, says nothing of
+                # the run quackd connected to, which may run behind it: it is stopped all the same
                 return None
         now = stack.get("run_id")
         if now is None or str(now) == self.run_id:

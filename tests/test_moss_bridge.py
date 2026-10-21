@@ -1633,6 +1633,70 @@ def test_a_session_that_started_nothing_halts_nothing_of_the_owners() -> None:
     bridge.close()
 
 
+def _registered(root: Path, name: str, blueprint: str, run_id: str, started: str) -> None:
+    """One run in dimOS's own registry, as `dimos run` writes it."""
+    named = f"moss-dimos.{blueprint}" if blueprint.startswith("moss") else blueprint
+    entry = {"pid": os.getpid(), "blueprint": named, "run_id": run_id, "started_at": started}
+    (root / f"{name}.json").write_text(json.dumps(entry), encoding="utf-8")
+
+
+@pytest.fixture
+def two_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The run quackd connected to, and a second dimOS run started by hand after it."""
+    monkeypatch.setattr(B, "proc_environ", lambda pid: {"DIMOS_TRANSPORT": "lcm"})
+    monkeypatch.setattr(B, "proc_cmdline", lambda pid: ())
+    _registered(tmp_path, "a", "moss-explore", "run-explore", "2026-10-21T10:00:00Z")
+    _registered(tmp_path, "b", "unitree-go2-sim", "run-other", "2026-10-21T10:05:00Z")
+    return tmp_path
+
+
+def test_a_stop_reaches_the_run_quackd_connected_to_while_it_runs_beside_a_newer_one(
+    two_runs: Path,
+) -> None:
+    """A second dimOS run started by hand, of any blueprint, is the newest, and the run quackd
+    connected to still runs behind it: quackd's stop is for that run and reaches it. Once that
+    run has ended, the stop touches nothing of the other."""
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    bridge = B.Bridge(
+        stack=lambda: B.read_stack(str(two_runs)), up=B.FAKE_UPSTREAM, bus=bus, procs=bus
+    )
+    assert bridge.stack().run_id == "run-other", "the newest run is the other one"
+    doc = bridge.stop("run-explore", "s1")
+    assert not doc.get("run_changed"), doc
+    zeros = [chan for _, chan, v in bus.published if v == (0.0, 0.0)]
+    assert "/tele_cmd_vel#geometry_msgs.Twist" in zeros, "the explore run's own channel"
+    assert any("still runs beside the newer run" in d for d in doc["did"]), doc["did"]
+    code, said = bridge.keepalive({"session": "s1", "keepalive_s": 1.0, "run": "run-explore"})
+    assert code == 200 and said["session"]["run_alive"] is True
+    (two_runs / "a.json").unlink()  # the explore run ended
+    published = len(bus.published)
+    gone = bridge.stop("run-explore", "s1")
+    assert gone["run_changed"] and len(bus.published) == published, gone
+    code, said = bridge.keepalive({"session": "s1", "keepalive_s": 1.0, "run": "run-explore"})
+    assert said["session"]["run_alive"] is False
+    bridge.close()
+
+
+def test_a_session_whose_run_runs_beside_a_newer_one_has_its_exploration_halted(
+    two_runs: Path,
+) -> None:
+    clock = Clock()
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    bridge = B.Bridge(
+        stack=lambda: B.read_stack(str(two_runs)), up=B.FAKE_UPSTREAM, bus=bus, procs=bus
+    )
+    bridge.clock = clock
+    code, _ = bridge.keepalive(
+        {"session": "s1", "keepalive_s": 0.1, "started": "explore", "run": "run-explore"}
+    )
+    assert code == 200
+    clock.t += 1.0
+    docs = bridge.session_tick()
+    assert docs and docs[0]["halted"] == ["its exploration"], docs
+    assert "true /stop_explore_cmd#std_msgs.Bool" in bus.events
+    bridge.close()
+
+
 def test_a_dropped_session_of_a_run_that_has_gone_halts_nothing_of_the_new_one() -> None:
     """A session kept on a run the owner has since restarted: when it drops, what it
     started went with the old run, and nothing of the new one is halted for it."""

@@ -97,11 +97,13 @@ cancel and its reads off `moss-litter` when no cycle of quackd's runs and one re
 joints where the bridge last read them, within `ARM_READ_FRESH_S`. Any other stop cancels the
 arm whatever it reads.
 
-**The run.** quackd's stop names the base run it connected to, and so does every keepalive.
-When the owner has restarted the stack since, the stop sends the new run nothing, no mission
-stop and no zero, cancels only an arm cycle the stopping session started, and says why. A
-session kept on a run that has gone halts nothing of the new one. A stop that names no run
-stops whatever runs.
+**The run.** quackd's stop names the base run it connected to, and so does every keepalive,
+and the bridge goes by whether that run is still alive among dimOS's runs, not by which is
+newest: a second run started beside it by hand changes nothing, and every keepalive answer
+says `run_alive`. When that run has ended, the owner having restarted the stack, the stop
+sends the new run nothing, no mission stop and no zero, cancels only an arm cycle the stopping
+session started, and says why. A session kept on a run that has gone halts nothing of the new
+one. A stop that names no run stops whatever runs.
 
 **The sessions.** Every quackd transport draws a session id of its own and posts a keepalive
 every half second from its loop's own heartbeat, so a dead process, a dead link and a wedged

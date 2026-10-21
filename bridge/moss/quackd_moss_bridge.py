@@ -365,6 +365,9 @@ class StackInfo:
     error: str | None = None
     arm_env: dict[str, str] | None = None
     """The moss-arm run's own environment, from its /proc entry, None when unreadable."""
+    runs: tuple[Run, ...] = ()
+    """Every live dimOS run read with it, the oldest first, so a run that still runs beside a
+    newer one can be found by its id."""
 
     def arm_environ(self) -> dict[str, str] | None:
         """The environment of the run that holds the arm, the one the maker's script and the
@@ -477,7 +480,7 @@ def read_stack(directory: str | None = None) -> StackInfo:
     base = next((r for r in reversed(runs) if r.blueprint != ARM_STACK), None)
     arm_env = proc_environ(arm_run.pid) if arm_run is not None else None
     if base is None:
-        return StackInfo(running=False, arm_run=arm_run, arm_env=arm_env)
+        return StackInfo(running=False, arm_run=arm_run, arm_env=arm_env, runs=tuple(runs))
     env = proc_environ(base.pid)
     return StackInfo(
         running=True,
@@ -487,10 +490,36 @@ def read_stack(directory: str | None = None) -> StackInfo:
         env=env or {},
         arm_run=arm_run,
         arm_env=arm_env,
+        runs=tuple(runs),
         error=None
         if env is not None
         else f"the stack's environment (pid {base.pid}) is unreadable",
     )
+
+
+def run_alive(stack: StackInfo, run_id: str) -> StackInfo | None:
+    """The run `run_id` as a stack of its own while it is still alive, whether or not it is the
+    newest: a second dimOS run started beside it by hand leaves it the run a stop of its
+    session is for. None once it has gone."""
+    if stack.running and stack.run_id == run_id:
+        return stack
+    for run in stack.runs:
+        if run.run_id == run_id and run.blueprint != ARM_STACK:
+            env = proc_environ(run.pid)
+            return StackInfo(
+                running=True,
+                blueprint=run.blueprint,
+                pid=run.pid,
+                run_id=run.run_id,
+                env=env or {},
+                arm_run=stack.arm_run,
+                arm_env=stack.arm_env,
+                runs=stack.runs,
+                error=None
+                if env is not None
+                else f"the stack's environment (pid {run.pid}) is unreadable",
+            )
+    return None
 
 
 def _runs_of(stack: StackInfo) -> tuple[str | None, str | None]:
@@ -1874,6 +1903,13 @@ class Bridge:
         with self._lock:
             self._stops += 1
         if run is not None and stack.run_id is not None and run != stack.run_id:
+            own = run_alive(stack, run)
+            if own is not None:
+                # the run quackd connected to still runs, beside a newer one started by hand: it is
+                # the one this stop is for
+                did.append(f"run {run} still runs beside the newer run {stack.run_id}: stopping it")
+                stack = own
+        if run is not None and stack.run_id is not None and run != stack.run_id:
             doc["run_changed"], doc["run"] = True, stack.run_id
             errors.append(
                 f"the stack quackd connected to (run {run}) is not running any more, and run "
@@ -2284,6 +2320,7 @@ class Bridge:
             period = MAX_KEEPALIVE_S
         started = body.get("started")
         mine: dict[str, Any] | None = None
+        stack = self.stack()
         with self._lock:
             if body.get("end"):
                 self.sessions.pop(sid, None)
@@ -2300,10 +2337,11 @@ class Bridge:
                     "keepalive_s": s.keepalive_s,
                     "started": s.started,
                     "halted": self.halted.get(sid),
+                    "run_alive": s.run is None or run_alive(stack, s.run) is not None,
                 }
         return 200, {
             "ok": True,
-            "stack": self.stack().doc(),
+            "stack": stack.doc(),
             "session": mine,
             "sessions": self._sessions_doc(),
         }
@@ -2352,6 +2390,9 @@ class Bridge:
         stack = self.stack()
         log.warning("halting what session %s started: %s", session.id, why)
         halted: list[str] = []
+        if session.run is not None and stack.run_id not in (None, session.run):
+            own = run_alive(stack, session.run)
+            stack = own if own is not None else stack
         moved_on = session.run is not None and stack.run_id not in (None, session.run)
         if moved_on:
             # the stack the session was kept on has gone: nothing of the new run is its
@@ -2364,7 +2405,7 @@ class Bridge:
             did.append(f"run {session.run} is gone, and nothing of run {stack.run_id} is halted")
             doc["ok"] = not errors
         elif self._litter(stack) and session.started == "litter":
-            doc = self.stop()
+            doc = self.stop(session.run)
             halted.append("the litter mission it started")
         else:
             did = []

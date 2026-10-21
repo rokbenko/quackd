@@ -465,6 +465,37 @@ async def test_a_stop_after_the_stack_restarted_touches_nothing_of_the_new_run(
     assert "restarted as run restarted-run" in (transport.close_note or "")
 
 
+async def test_a_second_run_beside_the_connected_one_neither_fails_nor_skips_the_soft_stop(
+    rover: Rover,
+) -> None:
+    """A dimOS run of another blueprint started by hand is the newest, and the run quackd
+    connected to still runs behind it: the bridge says so in every keepalive answer, so the
+    heartbeat goes on, and the stop's soft stop and the bridge's stop both reach the run it
+    started its exploration on."""
+    from dataclasses import replace
+
+    transport = rover.transport()
+    await transport.connect()
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    old = rover.bridge.stack()
+    runs = (
+        B.Run(pid=os.getpid(), blueprint="moss-explore", run_id="fake-run", started=0.0),
+        B.Run(pid=os.getpid(), blueprint="unitree-go2-sim", run_id="other-run", started=1.0),
+    )
+    newer = replace(old, blueprint="unitree-go2-sim", run_id="other-run", runs=runs)
+    rover.bridge._stack = lambda: newer
+    await transport.heartbeat()  # its run still runs, so this does not fail
+    await transport.stop()
+    assert transport.stop_error is None, transport.stop_error
+    assert rover.cockpit.posted("stop"), "the soft stop went out"
+    bus = rover.bridge.bus
+    assert any(
+        c == "/tele_cmd_vel#geometry_msgs.Twist" and v == (0.0, 0.0) for _, c, v in bus.published
+    )
+    await transport.close()
+
+
 async def test_a_stop_reports_a_bridge_that_went_away_and_still_sends_the_soft_stop(
     rover: Rover,
 ) -> None:

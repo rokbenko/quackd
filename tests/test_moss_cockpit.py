@@ -372,6 +372,20 @@ async def test_with_no_bridge_a_stop_after_the_stack_restarted_sends_no_soft_sto
     await transport.close()
 
 
+async def test_with_no_bridge_a_newer_run_of_another_blueprint_is_stopped_all_the_same(
+    cockpit: FakeCockpit,
+) -> None:
+    """The cockpit shows only the newest run: one of another blueprint, started by hand, says
+    nothing of whether the run quackd connected to still runs behind it, so the soft stop goes
+    out all the same."""
+    transport = _transport(cockpit)
+    await transport.connect()
+    cockpit.newest, cockpit.newest_run_id = "unitree-go2-sim", "20261021-other"
+    await transport.stop()
+    assert len(cockpit.posted("stop")) == 1, transport.stop_error
+    await transport.close()
+
+
 async def test_with_no_bridge_close_after_a_restart_leaves_the_new_runs_goal_alone(
     cockpit: FakeCockpit,
 ) -> None:

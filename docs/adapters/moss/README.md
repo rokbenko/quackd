@@ -231,13 +231,17 @@ for one tool call, and `collect_litter` does not run there at all.
   that ends the mission whoever started it, and that is by plan: the mission runs again once the
   owner restarts the stack.
 - **A stop is for the run quackd connected to.** The stop and every keepalive name the base
-  stack's run. When the owner has restarted the stack since, the bridge's stop sends the new
-  run no mission stop and no zero, cancels only an arm cycle the stopping session started,
-  and says why, and the cockpit's soft stop is not sent either. The bridge's last keepalive
-  answer says which run runs, and with no bridge the cockpit's own state does. A moss-arm run
-  the cockpit shows over the base says nothing of the base's run, so the soft stop then goes
-  out. A stop that names no run stops whatever runs. A session kept on a run that has gone
-  halts nothing of the new one when it drops, and its close note says the stack restarted.
+  stack's run, and the bridge goes by whether that run is still alive, not by which run is
+  newest: a second dimOS run started beside it by hand changes nothing, and the stop and a
+  halt still reach it. Once it has ended, the owner having restarted the stack, the bridge's
+  stop sends the new run no mission stop and no zero, cancels only an arm cycle the stopping
+  session started, and says why, and the cockpit's soft stop is not sent either. The bridge's
+  last keepalive answer says whether the run still runs. With no bridge the cockpit's own
+  state says, which shows only the newest run: a newer run of the same blueprint is taken as
+  a restart, and one of any other, moss-arm's among them, says nothing of the base's run, so
+  the soft stop then goes out. A stop that names no run stops whatever runs. A session kept
+  on a run that has gone halts nothing of the new one when it drops, and its close note says
+  the stack restarted.
 - **`close()` halts what its session started, and nothing else.** After `collect_litter` it is
   the whole stop. Otherwise it cancels the session's own arm cycle by its id, through the
   bridge's `/arm/cancel`, zeroes a twist of its own that the bridge may still be repeating, and
