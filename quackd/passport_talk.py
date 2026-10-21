@@ -102,6 +102,9 @@ class Talker:
         self.name = name
         #: where this robot listens for talk, when it does: its passport names it
         self.inbox: str | None = None
+        #: this robot's end of a broker when it talks over one, a `PassportPublisher` from
+        #: `quackd.lan.passport_mqtt` with its inbox subscribed to `inbox_mqtt`
+        self.mqtt: Any = None
         self.endpoint = Endpoint(key.did, passport, key, clock=clock)
         self.store = store
         self._send = send
@@ -109,6 +112,7 @@ class Talker:
         self._tiers: dict[str, Judgement] = {}
         self._unread: list[Heard] = []
         self._lock = threading.RLock()
+        self._met = threading.Condition(self._lock)
 
     @property
     def id(self) -> str:
@@ -116,24 +120,99 @@ class Talker:
 
     # ── what arrives ────────────────────────────────────────────────────────────────────
 
-    def receive(self, message: Message, *, address: str | None = None) -> Reply:
+    def receive(
+        self, message: Message, *, address: str | None = None, broker: bool = False
+    ) -> Reply:
         """A message for this robot, already read: handled, and what a person or a pilot should
-        know of it kept. `address` is where it came from, the only host a reply may later go to
-        when the robot that sent it opened the session."""
+        know of it kept. `address` is where it came from over HTTP, the only host a reply may
+        later go to when the robot that sent it opened the session; `broker` says it came over
+        this robot's broker, where a reply goes to the inbox the sender's id names."""
         reply = self.endpoint.receive(message)
         if reply.event is not None:
-            if reply.event.kind == "met" and reply.event.session.route is None:
-                reply.event.session.route = _route_back(reply.event.session.passport, address)
+            session = reply.event.session
+            if reply.event.kind == "met" and session.route is None:
+                session.route = (
+                    self._mqtt_route(session.peer)
+                    if broker
+                    else _route_back(session.passport, address)
+                )
             self._note(reply.event)
         return reply
+
+    def inbox_mqtt(self, payload: bytes) -> None:
+        """A message that came to this robot's inbox on its broker: handled, and any reply sent
+        back over the same broker, to the inbox of the robot that sent it, the topic its id
+        names (spec 5.4). A message nobody could read is dropped: over a broker there is no
+        status code to refuse it with."""
+        try:
+            message = read_message(payload)
+        except VersionUnknown as e:
+            if e.sender:
+                self._publish(e.sender, version_answer(e, self.id, self.endpoint.key))
+            return
+        except PassportError:
+            return
+        reply = self.receive(message, broker=True)
+        if reply.wire is not None:
+            self._publish(message.sender, reply.wire)
+
+    def _mqtt_route(self, peer: str) -> Route | None:
+        if self.mqtt is None:
+            return None
+        from quackd.lan.passport_mqtt import inbox_url
+
+        return inbox_url(self.mqtt.host, self.mqtt.port, peer)
+
+    def _publish(self, peer: str, wire: str) -> None:
+        route = self._mqtt_route(peer)
+        if route is not None:
+            self._deliver(route, wire)
+
+    def _deliver(self, route: Route, wire: str) -> tuple[int, str | None]:
+        """A message on its way: posted to an HTTP inbox, whose reply rides back on the
+        response, or published to an inbox on this robot's own broker, and never to a topic on
+        any other broker, which a passport is no reason to connect to (spec 5.7)."""
+        if not route.startswith("mqtt://"):
+            return self._send(route, wire)
+        if self.mqtt is None:
+            raise PassportError("6.2", "that robot listens on a broker, and this one is on none")
+        from quackd.lan.passport_mqtt import inbox_topic
+
+        parts = urlsplit(route)
+        if ((parts.hostname or "").lower(), parts.port or 1883) != (
+            str(self.mqtt.host).lower(),
+            int(self.mqtt.port),
+        ):
+            raise PassportError("5.7", "that robot listens on another broker than this one's")
+        self.mqtt.send(inbox_topic(route), wire.encode("utf-8"))
+        return 204, None
 
     # ── what this robot says ────────────────────────────────────────────────────────────
 
     def meet(self, reading: Reading, route: Route) -> Session:
         """Say hello to the robot whose passport is `reading`, at its inbox `route`."""
+        if route.startswith("mqtt://"):
+            return self.meet_mqtt(reading, route)
         session = open_session(self.endpoint, reading.id, lambda wire: self._send(route, wire))
         session.route = route
         self._note(Event("met", session))
+        return session
+
+    def meet_mqtt(self, reading: Reading, route: Route, *, timeout: float = 5.0) -> Session:
+        """Say hello over a broker, where the second step comes to this robot's own inbox rather
+        than in a reply: send the first, and wait for the session `inbox_mqtt` opens with it,
+        sending the third step on its way."""
+        self._deliver(route, self.endpoint.hello(reading.id))
+        with self._met:
+            opened = self._met.wait_for(
+                lambda: self.endpoint.session_with(reading.id) is not None, timeout
+            )
+            session = self.endpoint.session_with(reading.id)
+        if not opened or session is None:
+            raise PassportError(
+                "6.3", f"{reading.name} did not answer the hello within {timeout:g} s"
+            )
+        session.route = route
         return session
 
     def say(self, who: str, text: str) -> None:
@@ -143,7 +222,7 @@ class Talker:
             raise PassportError(
                 "6.2", f"{who} listens nowhere this robot may reach, so it can only be answered"
             )
-        status, _reply = self._send(session.route, self.endpoint.say(session.peer, text))
+        status, _reply = self._deliver(session.route, self.endpoint.say(session.peer, text))
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
@@ -153,7 +232,7 @@ class Talker:
         session = self.session_named(who)
         wire = self.endpoint.bye(session.peer)
         if session.route is not None:
-            self._send(session.route, wire)
+            self._deliver(session.route, wire)
         self._note(Event("left", session))
 
     def session_named(self, who: str) -> Session:
@@ -287,6 +366,8 @@ class Talker:
             self._unread.append(heard)
             if len(self._unread) > 64:  # a pilot that never looks still holds a bounded list
                 self._unread.pop(0)
+            if event.kind == "met":
+                self._met.notify_all()
         if self._on_heard is not None:
             self._on_heard(heard)
 
@@ -354,4 +435,30 @@ def route_to(passport: Reading, came_from: str) -> Route:
     )
 
 
-__all__ = ["HEADING", "Heard", "Talker", "Talkers", "post_wire", "route_to", "stranger_name"]
+def route_on_broker(passport: Reading, host: str, port: int) -> Route:
+    """The inbox to say hello to, for a passport read off the broker at `host`: an MQTT channel
+    it names on that same broker, for the same reason as `route_to`."""
+    for channel in passport.channels():
+        parts = urlsplit(str(channel["url"]))
+        if channel["via"] == "mqtt" and ((parts.hostname or "").lower(), parts.port or 1883) == (
+            host.lower(),
+            port,
+        ):
+            return str(channel["url"])
+    raise PassportError(
+        "5.7",
+        f"{passport.name} names no talk channel on {host}:{port}, the broker its passport came "
+        "from, and a reader contacts no other",
+    )
+
+
+__all__ = [
+    "HEADING",
+    "Heard",
+    "Talker",
+    "Talkers",
+    "post_wire",
+    "route_on_broker",
+    "route_to",
+    "stranger_name",
+]

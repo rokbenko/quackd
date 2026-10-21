@@ -253,7 +253,7 @@ def test_say_needs_a_robot_to_say_it_as_and_a_file_has_no_host_to_talk_to(
         app, ["meet", str(path), "--as", "lerobot:mock", "--registry-dir", str(tmp_path / "r")]
     )
     assert from_file.exit_code == 1
-    assert "came from no web host" in " ".join(from_file.output.split())
+    assert "came from neither" in " ".join(from_file.output.split())
 
 
 def test_serve_with_talk_names_the_inbox_it_listens_on(tmp_path: Path) -> None:

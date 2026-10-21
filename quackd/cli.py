@@ -6751,12 +6751,24 @@ def passport_serve(
         return
     address = local_ip() if bind in ("0.0.0.0", "") else bind
     inbox = f"http://{address}:{server.port}{INBOX_PATH}"
+    if mqtt and not (mqtt.partition(":")[2] or "1883").isdigit():
+        server.close()
+        _fail(f"--mqtt {mqtt!r} is not BROKER[:PORT]")
+    broker, _, broker_port_text = (mqtt or "").partition(":")
+    broker_port = int(broker_port_text or 1883)
     built = []
-    talkers = []
+    talkers: dict[str, Any] = {}
     for robot in robots:
-        doc, (store, name, record), created = _passport_for(
-            robot, registry_dir, talk=[{"via": "http", "url": inbox}] if talk else None
-        )
+        doc, (store, name, record), created = _passport_for(robot, registry_dir)
+        if talk:
+            from quackd.lan.passport_mqtt import inbox_url
+
+            channels = [{"via": "http", "url": inbox}]
+            if mqtt:
+                channels.append(
+                    {"via": "mqtt", "url": inbox_url(broker, broker_port, record.key.did)}
+                )
+            doc, (store, name, record), _made = _passport_for(robot, registry_dir, talk=channels)
         if created:
             ui.err_console.print(
                 Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
@@ -6764,10 +6776,10 @@ def passport_serve(
         token = document.sign(doc, record.key)
         built.append((name, record, strict.dumps(doc), token))
         if talk:
-            talkers.append(Talker(name, record.key, token, store, on_heard=_heard_line(name)))
+            talkers[name] = Talker(name, record.key, token, store, on_heard=_heard_line(name))
     server.update([Served(name, raw, token) for name, _record, raw, token in built])
     if talkers:
-        server.listen(Talkers(talkers).inbox)
+        server.listen(Talkers(list(talkers.values())).inbox)
     if announce and (address.startswith("127.") or address == "::1"):
         server.close()
         _fail(
@@ -6775,9 +6787,6 @@ def passport_serve(
             "to announce",
             hint="--bind 0.0.0.0, or an address on the network, serves it to others",
         )
-    if mqtt and not (mqtt.partition(":")[2] or "1883").isdigit():
-        server.close()
-        _fail(f"--mqtt {mqtt!r} is not BROKER[:PORT]")
     closers: list[Any] = [server]
     rows: list[tuple[str, Any]] = []
     try:
@@ -6803,15 +6812,17 @@ def passport_serve(
             if mqtt:
                 from quackd.lan.passport_mqtt import PassportPublisher
 
-                broker, _, broker_port = mqtt.partition(":")
-                closers.append(
-                    PassportPublisher(
-                        record.key.short_id,
-                        token.encode("ascii"),
-                        host=broker,
-                        port=int(broker_port or 1883),
-                    ).start()
+                talker = talkers.get(name)
+                publisher = PassportPublisher(
+                    record.key.short_id,
+                    token.encode("ascii"),
+                    host=broker,
+                    port=broker_port,
+                    on_inbox=talker.inbox_mqtt if talker is not None else None,
                 )
+                if talker is not None:
+                    talker.mqtt = publisher
+                closers.append(publisher.start())
     except (LanNotInstalled, OSError, ValueError) as e:
         for closer in reversed(closers):
             with contextlib.suppress(Exception):
@@ -6823,6 +6834,8 @@ def passport_serve(
     rows.append(("dns-sd", "announced as _robot-passport._tcp" if announce else "off"))
     rows.append(("mqtt", f"retained on {mqtt}" if mqtt else "off"))
     rows.append(("talk", inbox if talk else "off"))
+    if talk and mqtt:
+        rows.append(("", f"and each robot's inbox on {mqtt}, robot-passport/<short id>/inbox"))
     ui.console.print(
         ui.run_header(
             f"serving {len(built)} passport{'s' if len(built) > 1 else ''}",
@@ -6888,6 +6901,7 @@ class _Found:
     url: str | None = None
     promise: str | None = None
     rule: str = "5.2"
+    broker: tuple[str, int] | None = None
 
 
 _PICTURES = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
@@ -6911,7 +6925,8 @@ def _meet_source(source: str) -> _Found:
             raise PassportError("5.4", "an mqtt:// source ends with the robot's key")
         if not host or not (mqtt_port or "1883").isdigit():
             raise PassportError("5.4", f"{source!r} is not mqtt://BROKER[:PORT]/KEY")
-        return _Found(read_passport(host, key, port=int(mqtt_port or 1883)), None, key, "5.4")
+        port = int(mqtt_port or 1883)
+        return _Found(read_passport(host, key, port=port), None, key, "5.4", (host, port))
     if source.startswith("ros://"):
         try:
             from quackd_rosbridge.ws import read_passport as read_ros
@@ -7094,24 +7109,36 @@ def _talk_to(
 ) -> None:
     """Say hello to the robot `meet` read, as `as_robot`, perhaps say one thing, and say bye.
 
-    The hello goes only to a talk channel the passport names on the host it came from, since a
-    passport is no reason to contact any other (spec 5.7), so a passport read from a file, a
-    broker or a ROS robot, which came from no web host, cannot be talked to this way."""
+    The hello goes only to a talk channel the passport names on the host or broker it came
+    from, since a passport is no reason to contact any other (spec 5.7), so a passport read
+    from a file or a ROS robot cannot be talked to this way. Over a broker this robot visits
+    with an inbox of its own for as long as the talk lasts, and retains nothing there."""
     from quackd.passport import PassportError, document
-    from quackd.passport_talk import Talker, route_to
+    from quackd.passport_talk import Talker, route_on_broker, route_to
 
     if not reading.signed:
         _fail("an unsigned passport cannot be talked to: nothing would show who answers")
-    if found.url is None:
+    if found.url is None and found.broker is None:
         _fail(
-            "talk goes to the host a passport came from, and this one came from no web host",
-            hint="meet the robot at its URL or HOST[:PORT]",
+            "talk goes to the host or broker a passport came from, and this one came from neither",
+            hint="meet the robot at its URL, HOST[:PORT] or mqtt://BROKER/KEY",
         )
     told = ui.err_console if as_json else ui.console
     doc, (store, name, record), _created = _passport_for(as_robot, registry_dir)
     talker = Talker(name, record.key, document.sign(doc, record.key), store)
+    visit = None
     try:
-        route = route_to(reading, found.url)
+        if found.broker is not None:
+            from quackd.lan.passport_mqtt import PassportPublisher
+
+            host, port = found.broker
+            route = route_on_broker(reading, host, port)
+            visit = PassportPublisher(
+                record.key.short_id, None, host=host, port=port, on_inbox=talker.inbox_mqtt
+            ).start()
+            talker.mqtt = visit
+        else:
+            route = route_to(reading, found.url)
         session = talker.meet(reading, route)
         shown = ui.printable(reading.name)
         told.print(Text(f"hello: {shown} proved it holds its key, and so did {name}"))
@@ -7122,6 +7149,9 @@ def _talk_to(
         told.print(Text(f"bye: {name} ended the session"))
     except PassportError as e:
         _fail(f"refused under {e.rule}: {ui.printable(str(e))}", hint="docs/passport/talk.md")
+    finally:
+        if visit is not None:
+            visit.close()
 
 
 def _pin_after_meeting(

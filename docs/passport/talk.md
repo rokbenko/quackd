@@ -1,8 +1,8 @@
 # Talk: what two robots say once they have met
 
 > [!NOTE]
-> Spec draft 0.1. quackd speaks step one, `hello`, `say` and `bye`, over an HTTP inbox, which
-> has run between processes on one machine ([quackd.md](quackd.md#talking)). `ask`, `answer`,
+> Spec draft 0.1. quackd speaks step one, `hello`, `say` and `bye`, over an HTTP inbox and an
+> MQTT broker, which has run between processes on one machine ([quackd.md](quackd.md#talking)). `ask`, `answer`,
 > `share` and the courtesy handler are being built for 0.23.0, and [roadmap.md](roadmap.md) says
 > what of it is built and what has run.
 

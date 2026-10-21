@@ -295,7 +295,8 @@ Also in scope:
   sends, and prints whatever a passport says as text, so a passport cannot drive the terminal.
   `quackd meet ros://` opens a bridge, reads one message and closes it without publishing
   anything to that robot. With `--talk`, `quackd passport serve`, `quackd run` and
-  `quackd serve-mcp` also take talk messages at `/robot-passport/inbox`: a three-step `hello`,
+  `quackd serve-mcp` also take talk messages at `/robot-passport/inbox`, and `serve --mqtt
+  --talk` on each robot's inbox topic on that broker: a three-step `hello`,
   `say` and `bye`, each signed by the robot that sends it, at most 16 KB, with at most 64
   sessions and 64 half-finished hellos at once. Nothing a robot says moves anything, every `ask`
   is answered no in this version, and a reply goes only to the host the other robot's passport

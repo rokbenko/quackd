@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from quackd.lan import LanNotInstalled
 from quackd.passport.document import MAX_BYTES
 from quackd.passport.errors import PassportError
+from quackd.passport.keys import short_id_of
+from quackd.passport.talk import MAX_HELLO_BYTES
 
 TOPIC_PREFIX = "robot-passport"
 QOS = 1
@@ -35,6 +39,16 @@ def key_for(robot_id: str, short_id: str | None) -> str:
     return robot_id.removeprefix("urn:uuid:").replace("-", "").lower()
 
 
+def inbox_url(host: str, port: int, robot_id: str) -> str:
+    """The talk channel a passport names for a robot's inbox on a broker (spec 6.2)."""
+    return f"mqtt://{host}:{port}/{topics(key_for(robot_id, short_id_of(robot_id)))[2]}"
+
+
+def inbox_topic(url: str) -> str:
+    """The topic an `mqtt://` talk channel names."""
+    return urlsplit(url).path.lstrip("/")
+
+
 def _paho_client(client_id: str) -> Any:
     try:
         import paho.mqtt.client as mqtt
@@ -44,33 +58,60 @@ def _paho_client(client_id: str) -> Any:
 
 
 class PassportPublisher:
-    """One robot's passport, retained on a broker for as long as this is open."""
+    """One robot on a broker: its passport retained for as long as this is open, and with
+    `on_inbox` its talk inbox too (spec 6.2), every message to it handed over as it arrives.
+
+    A robot that only visits, saying hello to one that lives on the broker, has no passport to
+    retain: `payload` None keeps the inbox and nothing else, and leaves no will behind."""
 
     def __init__(
-        self, key: str, payload: bytes, *, host: str, port: int = 1883, client: Any = None
+        self,
+        key: str,
+        payload: bytes | None,
+        *,
+        host: str,
+        port: int = 1883,
+        client: Any = None,
+        on_inbox: Callable[[bytes], None] | None = None,
     ) -> None:
         self.passport_topic, self.status_topic, self.inbox_topic = topics(key)
         self._payload = payload
-        self._host, self._port = host, port
+        self.host, self.port = host, port
+        self._on_inbox = on_inbox
         self._client = client or _paho_client(f"quackd-passport-{uuid.uuid4().hex[:8]}")
         self.started = False
 
     def start(self) -> PassportPublisher:
-        # the will is part of the CONNECT packet, so it has to be set before connecting
-        self._client.will_set(self.status_topic, b"offline", qos=QOS, retain=True)
-        self._client.connect(self._host, self._port, 60)
+        if self._on_inbox is not None:
+            self._client.on_message = self._message
+        if self._payload is not None:
+            # the will is part of the CONNECT packet, so it has to be set before connecting
+            self._client.will_set(self.status_topic, b"offline", qos=QOS, retain=True)
+        self._client.connect(self.host, self.port, 60)
         self._client.loop_start()
-        self._client.publish(self.passport_topic, self._payload, qos=QOS, retain=True)
-        self._client.publish(self.status_topic, b"online", qos=QOS, retain=True)
+        if self._payload is not None:
+            self._client.publish(self.passport_topic, self._payload, qos=QOS, retain=True)
+            self._client.publish(self.status_topic, b"online", qos=QOS, retain=True)
+        if self._on_inbox is not None:
+            self._client.subscribe(self.inbox_topic, qos=QOS)
         self.started = True
         return self
+
+    def send(self, topic: str, payload: bytes) -> None:
+        """A talk message to another robot's inbox on this broker: QoS 1, never retained."""
+        self._client.publish(topic, payload, qos=QOS, retain=False)
+
+    def _message(self, _client: Any, _userdata: Any, message: Any) -> None:
+        if message.topic == self.inbox_topic and self._on_inbox is not None:
+            self._on_inbox(bytes(message.payload)[: MAX_HELLO_BYTES + 1])
 
     def close(self) -> None:
         """Leave the passport retained and say `offline` ourselves: a last will fires only
         when a connection drops, and this one is closing on purpose."""
         if not self.started:
             return
-        self._client.publish(self.status_topic, b"offline", qos=QOS, retain=True)
+        if self._payload is not None:
+            self._client.publish(self.status_topic, b"offline", qos=QOS, retain=True)
         self._client.loop_stop()
         self._client.disconnect()
         self.started = False
@@ -106,4 +147,4 @@ def read_passport(
     return box[0]
 
 
-__all__ = ["PassportPublisher", "key_for", "read_passport", "topics"]
+__all__ = ["PassportPublisher", "inbox_topic", "inbox_url", "key_for", "read_passport", "topics"]

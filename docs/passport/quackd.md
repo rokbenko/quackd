@@ -4,8 +4,9 @@
 > quackd 0.23.0 is being built to implement Robot Passport, and this page fills in as each part
 > lands. Built so far: a signed passport for every robot from its manifest, owner stamps, pins,
 > `quackd passport show`, `check`, `set`, `owner`, `stamp`, `known`, `forget`, `serve` and `qr`,
-> `quackd meet`, passports in `quackd discover`, and talk's first step over HTTP: `hello`, `say`
-> and `bye`, `Robots nearby` in a run, `tell` to a robot met, and `robot_nearby` over MCP. The
+> `quackd meet`, passports in `quackd discover`, and talk's first step, over HTTP and a broker:
+> `hello`, `say` and `bye`, `Robots nearby` in a run, `tell` to a robot met, and `robot_nearby`
+> over MCP. The
 > courtesy handler is described below as what it will do. [roadmap.md](roadmap.md) tracks it.
 
 quackd is the first implementation of Robot Passport. It does four things with it:
@@ -340,8 +341,8 @@ Cyrillic `с` warn like `duck-01`. Nothing is trusted on a name, and a person de
 
 Talk is how two robots that read each other's passports go further: a three-step `hello` in which
 each proves it holds its key, then `say` and `bye` ([talk.md](talk.md)). quackd speaks it over an
-HTTP inbox. `quackd passport serve --talk` names an inbox in each passport it serves and listens on
-it, and tells the person at its terminal what every robot says. `quackd meet --as NAME --say TEXT`
+HTTP inbox and over an MQTT broker. `quackd passport serve --talk` names an inbox in each passport
+it serves and listens on it, and tells the person at its terminal what every robot says. `quackd meet --as NAME --say TEXT`
 says hello as one of your robots, says one thing, and says bye. From the cart's host, to the duck
 served with `--talk`:
 
@@ -371,12 +372,30 @@ cart-01 (stranger) to duck-01: passing on your left
 cart-01 (stranger) said bye to duck-01
 ```
 
+With `--mqtt BROKER` as well, each passport also names the robot's inbox on that broker, and a
+robot that read the passport there talks over it. From the cart's host again, to the duck served
+with `quackd passport serve --robot duck-01 --mqtt 192.168.100.123 --talk`:
+
+```
+$ quackd meet mqtt://192.168.100.123/2a40702360f939fe --as cart-01 --say "passing on your left"
+hello: duck-01 proved it holds its key, and so did cart-01
+cart-01 to duck-01: passing on your left
+bye: cart-01 ended the session
+```
+
+after the panel, whose `talk` rows now name both inboxes, and the duck's host says the same three
+lines as before. Over a broker the second step of the hello comes to the visitor's own inbox
+rather than in a reply, so `meet` visits with an inbox of its own for as long as the talk lasts,
+and retains nothing there. Every reply goes to the inbox the sender's id names on the same broker,
+and a passport that names an inbox on another broker is not contacted. A run and `serve-mcp` talk
+over HTTP.
+
 A person reads a stranger's words. Its name and what it said are printed as text, escapes and
 all, and only a pilot is kept from them. A hello goes only to a talk channel the passport names on
 the host it was read from, since a passport is no reason to contact any other
 ([discovery.md](discovery.md#fetch-rules)), so a passport read from a file, a broker or a ROS
-robot cannot be talked to with `--as`. An unsigned passport cannot be talked to at all, because
-nothing would show who answered.
+robot cannot be talked to with `--as`, and one read off a broker is talked to over that broker.
+An unsigned passport cannot be talked to at all, because nothing would show who answered.
 
 ### In a run
 
@@ -489,8 +508,9 @@ for two hosts: `quackd passport serve --announce --mqtt` in one process, and in 
 discover` finding the beacon over real zeroconf (0.151.5), `quackd meet` reading the signed passport
 over HTTP and from a real amqtt (0.12.1) broker through paho (2.1.0), then pinning the robot, then
 its owner, and reading it as known and as the same owner's. Every output on this page is from such a
-run, made again the same day once two reviews had changed what a panel shows. It has not run
-between two machines, or on a robot.
+run, made again the same day once two reviews had changed what a panel shows. Talk ran the same
+way: `hello`, `say` and `bye` over HTTP and through a real amqtt broker, and two `nearby-hello`
+runs that met and said hello. It has not run between two machines, or on a robot.
 
 ## Where quackd keeps what
 

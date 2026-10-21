@@ -159,7 +159,9 @@ def test_serve_announces_and_retains_when_asked(
             pass
 
     class Publisher:
-        def __init__(self, key: str, payload: bytes, *, host: str, port: int = 1883) -> None:
+        def __init__(
+            self, key: str, payload: bytes, *, host: str, port: int = 1883, **_kw: Any
+        ) -> None:
             from quackd.passport import document
 
             # what goes on a broker is the signed passport, so a subscriber can verify it
