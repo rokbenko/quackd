@@ -205,15 +205,30 @@ for one tool call, and `collect_litter` does not run there at all.
 
 | What is moving | quackd's `stop` | A dropped link, with the bridge | Without the bridge |
 |---|---|---|---|
-| a twist, through the bridge | a zero on the pad channel, then the soft stop | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
+| a twist, through the bridge | a zero on the pad channel before anything else, and the soft stop beside it | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, at most 1.5 s at quackd's own 0.5 s period, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
-| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed and the soft stop | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
+| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed, and the soft stop beside it all | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
 
-- **The transport's `stop()`** is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every
-  time. Each failure is kept and reported, and neither half skips the other. The `stop` verb
-  sends it, and so does the end of every run and of every MCP session.
+- **The transport's `stop()`** is the bridge's `/stop` and the cockpit's `/cmd/stop`, sent at
+  once, every time. Each failure is kept and reported, and neither half skips the other or
+  waits for it. Off `moss-litter` the bridge sends its zero first and cancels the arm after it,
+  so a coordinator that hangs never holds back the zero that ends a twist or a planner goal.
+  quackd waits 46 s for the bridge's answer, which covers the bridge's own worst case with
+  every RPC on the rover answering at its timeout, and a stop not answered by then is reported
+  as not delivered. The `stop` verb sends it, and so does the end of every run, a run refused
+  before it moved anything among them, and of every MCP session. On `moss-litter` that ends the
+  mission whoever started it, and that is by plan: the mission runs again once the owner
+  restarts the stack.
+- **A stop is for the run quackd connected to.** The stop and every keepalive name the base
+  stack's run. When the owner has restarted the stack since, the bridge's stop sends the new
+  run no mission stop and no zero, cancels only an arm cycle the stopping session started,
+  and says why, and the cockpit's soft stop is not sent either. The bridge's last keepalive
+  answer says which run runs, and with no bridge the cockpit's own state does. A moss-arm run
+  the cockpit shows over the base says nothing of the base's run, so the soft stop then goes
+  out. A stop that names no run stops whatever runs. A session kept on a run that has gone
+  halts nothing of the new one when it drops, and its close note says the stack restarted.
 - **`close()` halts what its session started, and nothing else.** After `collect_litter` it is
   the whole stop. Otherwise it cancels the session's own arm cycle by its id, through the
   bridge's `/arm/cancel`, zeroes a twist of its own that the bridge may still be repeating, and
@@ -232,12 +247,19 @@ for one tool call, and `collect_litter` does not run there at all.
   own processes, or the stack's `MOSS_PICK_CMD`, sends it SIGTERM, then SIGKILL if it outlives
   its grace, and only then cancels the trajectory and reads the arm twice. A hold is always a
   reading: an arm whose joints did not answer after the cancel is reported unread, never held.
+  Two still reads are not a hold on their own either, since a trajectory in one of its pauses
+  reads still: a last cancel must find nothing executing. A cycle of quackd's cancelled while
+  it was still starting is cancelled once more half a second later, for an `execute_trajectory`
+  its script sent just before it was ended.
 - **The mission's stop is confirmed by silence.** dimOS sends a module's stop without waiting
   for an answer, because the module closes its RPC service as it stops. So after the cancel and
   the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop
   went out, and counts that silence only from a mission it heard answer before, as it does
-  when quackd connects. A stop it cannot confirm is reported as a failure, the close note says
-  the mission may still be running, and the arm's cancel and the zero have gone out either way.
+  when quackd connects. Each probe that still hears the mission sends its stop again, since a
+  stop sent without an answer may never have arrived. The silence counts only when the arm's
+  coordinator answers in the same breath: with both silent the bus itself may be down. A stop
+  it cannot confirm is reported as a failure, the close note says the mission may still be
+  running, and the arm's cancel and the zero have gone out either way.
 - **A dropped session halts what that session started.** The transport keeps its session alive
   from a thread of its own, at its configured 0.5 s, whatever the event loop is doing, so a
   prompt on the terminal never reads as a dead quackd: only a dead process or a dead link stops

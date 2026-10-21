@@ -685,19 +685,28 @@ class MossMock:
 
     def _bridge_stop(self) -> list[str]:
         """The bridge's `/stop`: on moss-litter the mission's own stop first, then the end of
-        the mission's own pick script, then the arm's cancel, then a zero twist, which also
-        cancels any goal the planner has."""
-        if self.stack == "moss-litter" and self.mission.running:
+        the mission's own pick script, the arm's cancel and a zero twist. Elsewhere the zero
+        first, which also cancels any goal the planner has, and then the arm's cancel, so the
+        tracks stop whatever the arm's coordinator takes to answer."""
+        litter = self.stack == "moss-litter"
+        if litter and self.mission.running:
             self.stop_log.append("mission.stop")
             self.mission.running = False
             self.mission_stopped = True
-        if self.stack == "moss-litter":
+        if litter:
             self._end_mission_script()
-        self._arm_cancel()
+            self._arm_cancel()
+            self._zero()
+        else:
+            self._zero()
+            self._arm_cancel()
+        return []
+
+    def _zero(self) -> None:
+        """The bridge's zero twist, and its pump left silent."""
         self.stop_log.append("twist.zero")
         self._twist, self._zero_sent = None, True
         self._publish((0.0, 0.0))
-        return []
 
     def _session_halt(self) -> None:
         """Three missed keepalives: halt what the last one the bridge took said this session
@@ -1042,7 +1051,9 @@ class MossMock:
         return Ack(accepted=False, reason=f"MOSS has no skill called {skill!r}")
 
     async def stop(self) -> None:
-        """The bridge's stop, then the cockpit's soft stop, as the real transport sends them."""
+        """The bridge's stop and the cockpit's soft stop. The real transport sends both at once
+        and either can land first. The mock runs the bridge's first, which is one of the
+        orders the rover can see, and leaves the same rover behind as the other."""
         errors: list[str] = []
         self.stop_sent = True
         if self.link_down:

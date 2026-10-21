@@ -113,6 +113,8 @@ class FakeCockpit:
     as tools/moss-fly.sh's gate 0 makes it. The cockpit reads only the newest run
     (stack_status), so then its stack, its nav's exploring, its goal deferral and its idle
     stop all go by that run and not by the base."""
+    newest_run_id: str = "20261020-arm-run"
+    """The newest run's own id, which stack_status gives with its blueprint."""
     explorer_replan_s: float = 2.0
     """How soon the explorer sends a goal of its own over one sent beside it: the fake's own
     number, since nobody has timed the explorer's next frontier."""
@@ -155,7 +157,7 @@ class FakeCockpit:
             return {"running": False}
         return {
             "running": True,
-            "run_id": self.run_id,
+            "run_id": self.newest_run_id if self.newest else self.run_id,
             "blueprint": self.shown,
             "pid": 4242,
             "started_at": "2026-10-20T10:00:00+00:00",

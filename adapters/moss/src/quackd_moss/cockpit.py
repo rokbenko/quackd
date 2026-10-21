@@ -137,9 +137,10 @@ quackd waits for one, beyond its own call timeout."""
 FIRST_FRAME_S = 2 * float(up.FIRST_FRAME_WAIT_S.name)
 """How long connect() waits for the cockpit's first nose frame when there is no bridge: the
 cockpit's own wait for a camera, twice."""
-STOP_TIMEOUT_S = 8.0
-"""How long the bridge's stop may take to answer: on moss-litter it waits for the mission's own
-stop to be confirmed before it answers, and that wait is bounded on the rover."""
+STOP_TIMEOUT_S = 46.0
+"""How long the bridge's stop may take to answer. It is bounded on the rover, and this covers
+its worst case, every RPC there timing out (the bridge's STOP_WORST_S, which the contract
+tests hold this to): a stop never answered in time is a stop reported as not delivered."""
 
 
 class LinkDown(TransportError):
@@ -348,19 +349,35 @@ class BridgeClient:
         status, doc = self._doc(self.control, "POST", TWIST_PATH, {"vx": vx, "wz": wz})
         return status, doc
 
-    def stop(self) -> dict[str, Any]:
-        _, doc = self._doc(self.slow, "POST", STOP_PATH, {}, timeout_s=STOP_TIMEOUT_S)
+    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
+        """The bridge's stop, for the base run quackd connected to: a run started since is not
+        touched, and of the arm only a cycle `session` started is cancelled under it. No run
+        stops whatever runs."""
+        body: dict[str, Any] = {}
+        if run:
+            body["run"] = run
+        if session:
+            body["session"] = session
+        _, doc = self._doc(self.slow, "POST", STOP_PATH, body, timeout_s=STOP_TIMEOUT_S)
         return dict(doc)
 
     def keepalive(
-        self, session: str, keepalive_s: float, started: str | None, *, end: bool = False
+        self,
+        session: str,
+        keepalive_s: float,
+        started: str | None,
+        *,
+        end: bool = False,
+        run: str | None = None,
     ) -> dict[str, Any]:
-        """One keepalive of `session`, on its own link. Raises when the bridge did not take it."""
+        """One keepalive of `session`, on its own link, for the base run it connected to.
+        Raises when the bridge did not take it."""
         body = {
             "session": session,
             "keepalive_s": keepalive_s,
             "started": started,
             "end": end,
+            "run": run,
         }
         status, doc = self._doc(self.beat, "POST", KEEPALIVE_PATH, body)
         if status != 200:
@@ -579,6 +596,9 @@ class MossCockpit:
         """`collect_litter` started in this session, so close() stops the mission."""
         self.stop_sent = False
         """A stop ran in this session, so close() says what it did to the mission."""
+        self.run_moved: str | None = None
+        """The base run a stop or a halt of this session found running instead of the one it
+        connected to, which it then left alone."""
         self.twist_deadman_s = float(up.FIRMWARE_DEADMAN_S.name)
         """How long the bridge repeats a twist with no new one, read from its hello."""
         self._twist_at: float | None = None
@@ -1056,33 +1076,75 @@ class MossCockpit:
         return Ack(accepted=False, reason=f"MOSS has no skill called {skill!r}")
 
     async def stop(self) -> None:
-        """The bridge's stop, then the cockpit's soft stop, every time, each failure kept.
+        """The bridge's stop and the cockpit's soft stop, both at once, every time, each failure
+        kept.
 
-        On moss-litter the bridge stops the mission first, then cancels the arm, then sends a
-        zero twist. On the other stacks it cancels the arm and sends the zero. The cockpit's
-        soft stop then ends the explorer and any goal. Safe to call any number of times, from
-        anywhere, and it never raises: a link that is down is a failure said in `stop_error`."""
-        errors: list[str] = []
+        On moss-litter the bridge stops the mission first, then ends the mission's own pick,
+        cancels the arm and sends a zero twist. On the other stacks it sends the zero first and
+        then cancels the arm. The cockpit's soft stop goes out beside it, not after its answer,
+        and ends the explorer and any goal. Both are for the base run quackd connected to: a
+        stack restarted since is another run, and neither half touches it. Safe to call any
+        number of times, from anywhere, and it never raises: a link that is down is a failure
+        said in `stop_error`."""
+        bridge_errors: list[str] = []
+        cockpit_errors: list[str] = []
         self.mission_stop = None
         self.stop_sent = True
-        if self.bridge_up:
+        found: list[str] = []
+        """The run the bridge found running instead of the one quackd connected to."""
+        soft_sent: list[bool] = []
+        run, sid = self.run_id, self.session_id
+
+        async def bridge_half() -> None:
+            if not self.bridge_up:
+                return
             try:
-                doc = await self._call(self.bridge.stop, timeout_s=STOP_TIMEOUT_S + 1.0)
+                doc = await self._call(
+                    lambda: self.bridge.stop(run, sid), timeout_s=STOP_TIMEOUT_S + 1.0
+                )
+            except Exception as e:
+                bridge_errors.append(f"the bridge's stop: {e}")
+                return
+            if doc.get("run_changed"):
+                found.append(str(doc.get("run") or "another"))
+                self.run_moved = found[0]
+            else:
                 # an answered stop zeroed the bridge's pump, whatever else it says failed
                 self._twist_at = None
-                said_mission = doc.get("mission")
-                self.mission_stop = str(said_mission) if said_mission is not None else None
-                if not doc.get("ok"):
-                    said = ", ".join(str(e) for e in doc.get("errors") or []) or "it said no"
-                    errors.append(f"the bridge's stop: {said}")
+            said_mission = doc.get("mission")
+            self.mission_stop = str(said_mission) if said_mission is not None else None
+            if not doc.get("ok"):
+                said = ", ".join(str(e) for e in doc.get("errors") or []) or "it said no"
+                bridge_errors.append(f"the bridge's stop: {said}")
+
+        async def cockpit_half() -> None:
+            now = await self._run_now()
+            if now is not None:
+                self.run_moved = now
+                cockpit_errors.append(
+                    f"the cockpit's soft stop was not sent, since run {now} runs now and "
+                    f"quackd connected to run {run}: it would have ended that run's explorer"
+                )
+                return
+            soft_sent.append(True)
+            try:
+                ok, doc = await self._call(self.cockpit.stop)
+                if not ok:
+                    cockpit_errors.append(
+                        f"the cockpit's soft stop: {doc.get('error') or 'it said no'}"
+                    )
             except Exception as e:
-                errors.append(f"the bridge's stop: {e}")
-        try:
-            ok, doc = await self._call(self.cockpit.stop)
-            if not ok:
-                errors.append(f"the cockpit's soft stop: {doc.get('error') or 'it said no'}")
-        except Exception as e:
-            errors.append(f"the cockpit's soft stop: {e}")
+                cockpit_errors.append(f"the cockpit's soft stop: {e}")
+
+        await asyncio.gather(bridge_half(), cockpit_half())
+        errors = bridge_errors + cockpit_errors
+        if found and soft_sent:
+            # the run changed after the last keepalive said which runs, so the soft stop that
+            # went out beside the bridge's reached the new run, and the owner is told
+            errors.append(
+                f"the cockpit's soft stop went out before the bridge found run {found[0]} "
+                "running, so it ended that run's explorer and goal"
+            )
         if not errors:
             # only a stop that reached both surfaces ends what this session started. One that
             # failed keeps it, so the session still says so to the bridge's deadman and a later
@@ -1146,7 +1208,9 @@ class MossCockpit:
         Raises when the bridge did not take it, and keeps its answer for the heartbeat."""
         with self._beat_lock:
             try:
-                doc = self.bridge.keepalive(self.session_id, self.heartbeat_floor_s, self.started)
+                doc = self.bridge.keepalive(
+                    self.session_id, self.heartbeat_floor_s, self.started, run=self.run_id
+                )
             except Exception as e:
                 self._session_error = str(e)
                 raise
@@ -1181,6 +1245,32 @@ class MossCockpit:
                 await self._call(lambda: self.bridge.keepalive(sid, period, None, end=True))
         self._session_open = False
 
+    async def _run_now(self) -> str | None:
+        """The base run running now when it is another than the one this session connected
+        to, or None for the same run and for any run that cannot be told, all of which are
+        stopped. With the bridge up, its last keepalive answer says, which is at most one
+        period old and costs the stop no round trip. Without it, the cockpit's own state says,
+        and the arm's own run there, which the cockpit shows whenever it is the newest, tells
+        nothing of the base's."""
+        if self.run_id is None:
+            return None
+        if self.bridge_up:
+            window = SESSION_MISSES * self.heartbeat_floor_s
+            fresh = self._session_at is not None and time.monotonic() - self._session_at <= window
+            stack = (self._session_doc.get("stack") or {}) if fresh else {}
+        else:
+            try:
+                state = await self._call(self.cockpit.state)
+            except Exception:
+                return None  # a cockpit that does not answer is told to stop all the same
+            stack = state.get("stack") or {}
+            if stack.get("blueprint") == "moss-arm":
+                return None
+        now = stack.get("run_id")
+        if now is None or str(now) == self.run_id:
+            return None
+        return str(now)
+
     def _stack_gone(self, stack: dict[str, Any]) -> str:
         now = stack.get("blueprint") if stack.get("running") else "nothing"
         return (
@@ -1201,8 +1291,11 @@ class MossCockpit:
         """close()'s halt when no `collect_litter` ran: what this session started and nothing
         else. Its own arm cycle, by its id, a twist of its own the bridge may still repeat, and
         a goal or an exploration it started, which the cockpit's soft stop ends. A session that
-        started none of them sends nothing, and each failure comes back to be said."""
+        started none of them sends nothing, and each failure comes back to be said. A base
+        stack restarted since is another run: its twist and its explorer are not this
+        session's, so only the arm cycle is cancelled, and that is said."""
         errors: list[str] = []
+        now = await self._run_now()
         if self.bridge_up and self.arm_job_id is not None:
             job = self.arm_job_id
             try:
@@ -1214,6 +1307,12 @@ class MossCockpit:
                     errors.append(f"its arm cycle's cancel: {said or doc.get('reason')}")
             except Exception as e:
                 errors.append(f"its arm cycle's cancel: {e}")
+        if now is not None and (self._twist_fresh() or self.started in ("goal", "explore")):
+            # its arm cycle is its own whatever runs, but its twist and its goal went to the old
+            # run, and went with it
+            self.run_moved = now
+            self.started = None
+            return errors
         if self.bridge_up and self._twist_fresh():
             try:
                 status, doc = await self._call(self.bridge.twist, 0.0, 0.0)
@@ -1250,6 +1349,12 @@ class MossCockpit:
                     "what this session started may still be moving, since its halt failed: "
                     + " and ".join(failed)
                 )
+            if self.run_moved is not None:
+                note.append(
+                    f"the base stack was restarted as run {self.run_moved} after quackd "
+                    f"connected to run {self.run_id}, so this session's stop and halt sent "
+                    "nothing to the new run"
+                )
             await self._end_session()
             moved_arm = self.arm_job_id is not None or self.litter_started
             if self.bridge_up and self.arm_up and moved_arm:
@@ -1257,7 +1362,7 @@ class MossCockpit:
                     arm = await self._call(self.bridge.arm)
                     if arm.get("answering") and arm.get("folded") is False:
                         note.append(arm_note((arm.get("job") or {}).get("held")))
-            if self.stack == "moss-litter" and self.stop_sent:
+            if self.stack == "moss-litter" and self.stop_sent and self.run_moved is None:
                 if self.mission_stop == "stopped":
                     note.append(
                         "the litter mission is stopped, and runs again only after the stack "

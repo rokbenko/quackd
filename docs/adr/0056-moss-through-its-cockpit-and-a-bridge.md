@@ -50,7 +50,10 @@ Four things read at the pin shape everything below.
   `|wz|` at or under `2|vx| / track` with the stack's own track width, and a turn on the spot is
   the maker's own pulses, timed on the rover. After the firmware's 0.3 s with no new twist it
   sends one zero and then nothing, because of the second trap.
-- **The stop is both surfaces, every time**: the bridge's `/stop`, then the cockpit's soft stop.
+- **The stop is both surfaces, every time**: the bridge's `/stop` and the cockpit's soft stop,
+  sent at once, so neither waits for the other. Off `moss-litter` the bridge's zero goes before
+  its arm cancel, so a hung coordinator never holds back the zero, and every stop and keepalive
+  names the base run quackd connected to, so a stack the owner restarted since is left alone.
   On `moss-litter` the bridge sends the mission's stop first and then at once cancels the arm
   and sends the zero, because a cycle cancelled under a mission not yet told to stop is a failed
   pick and the mission explores again. Only then does it confirm the mission's stop, by its RPC

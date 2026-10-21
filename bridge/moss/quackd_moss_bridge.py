@@ -148,10 +148,45 @@ MISSION_CONFIRM_S = MISSION_JOIN_S + RPC_TIMEOUT_S
 """How long a stop waits for the mission's RPC service to fall silent, its own sign that it
 has stopped."""
 MISSION_PROBE_S = 0.5
+MISSION_POLL_S = 0.1
+"""Between two probes of a mission still answering after its stop."""
 ARM_HOLD_GAP_S = 0.2
 """Between the two joint reads that check an arm holds after a cancel."""
 SCRIPT_GRACE_S = 2.0
 """How long the arm script has to end after a terminate before it is killed."""
+PROC_POLL_S = 0.05
+"""Between two looks at whether a signalled process has ended."""
+STARTING_RECANCEL_S = 0.5
+"""quackd's own allowance for an execute_trajectory already in flight when a cycle still
+starting is cancelled: its script is ended first, but a request it sent just before can land
+after the cancel, so a second cancel follows this long after the first."""
+_CANCEL_AND_READ_WORST_S = 2 * (RPC_TIMEOUT_S + 2 * RPC_TIMEOUT_S + ARM_HOLD_GAP_S + RPC_TIMEOUT_S)
+"""cancel_and_read with every RPC answering at its timeout: a cancel, two reads with their gap
+and a confirming cancel, and all of that once more when the arm still moved."""
+_PICK_END_WORST_S = 2 * (SCRIPT_GRACE_S + PROC_POLL_S)
+"""The mission's pick ended: SIGTERM and its grace, SIGKILL and its grace, each to the poll."""
+_CYCLE_CANCEL_WORST_S = (
+    2 * SCRIPT_GRACE_S + _CANCEL_AND_READ_WORST_S + STARTING_RECANCEL_S + _CANCEL_AND_READ_WORST_S
+)
+"""A cycle of quackd's cancelled while still starting: its script terminated and killed, the
+cancel and its reads, and the late cancel and its reads."""
+STOP_WORST_S = (
+    max(
+        _PICK_END_WORST_S + _CYCLE_CANCEL_WORST_S,
+        MISSION_CONFIRM_S + MISSION_POLL_S,  # the confirmation's own window, to its last poll
+    )
+    + MISSION_PROBE_S  # the mission is asked at least once after the cancel
+    + RPC_TIMEOUT_S  # and the arm's coordinator, to tell its silence from a dead bus
+)
+"""The longest a stop can take on moss-litter with every RPC on the rover answering at its
+timeout, the longest of the stacks. The confirmation's window starts when the mission's stop
+goes out, before the pick and the arm, so the two overlap. The client's own wait for a stop
+is held to this by the contract tests."""
+TRACK_MIN_M = 0.05
+TRACK_MAX_M = 1.0
+"""No rover's tracks sit closer than 5 cm or further than a metre apart. A track width outside
+that is a misread profile, and the arc clip it would give is wrong, so the twist is refused
+rather than shaped by it."""
 MIN_STALE_S = 2.0
 STALE_PERIODS = 4
 """A camera reading older than four of its own periods, at least two seconds, is not a picture
@@ -525,7 +560,7 @@ def end_processes(
             left = [p for p in left if procs.alive(p)]
             if not left or clock() >= deadline:
                 return left
-            sleep(0.05)
+            sleep(PROC_POLL_S)
 
     for pid in pids:
         with contextlib.suppress(OSError):
@@ -630,7 +665,8 @@ def shape(vx: float, wz: float, up: Upstream) -> tuple[float, float, str, dict[s
             sent = math.copysign(up.max_wz, wz)
             return 0.0, sent, "spin", {"wz_asked": wz, "wz_sent": sent}
         return 0.0, wz, "spin", None
-    limit = 2.0 * abs(vx) / up.track_m
+    # a track width that is not a rover's never divides: the twist route refuses it first
+    limit = 2.0 * abs(vx) / up.track_m if up.track_m > 0 else 0.0
     if abs(wz) > limit:
         sent = math.copysign(limit, wz)
         return vx, sent, "arc", {"wz_asked": wz, "wz_sent": sent}
@@ -774,20 +810,40 @@ def arm_holds(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> bool
 
 
 def cancel_and_read(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> dict[str, Any]:
-    """cancel_trajectory, then the joints read twice, then once more of each if they moved."""
+    """cancel_trajectory, the joints read twice, and a second cancel that must find nothing
+    executing: a trajectory in one of its pauses reads as still too, so two still reads alone
+    never say the arm holds. A cancel that still finds a trajectory, or reads that moved, are a
+    cancel and two reads more."""
     out: dict[str, Any] = {"cancel": None, "held": None}
     try:
         out["cancel"] = bus.arm_cancel()
     except Exception as e:
         out["error"] = f"cancel_trajectory did not answer: {type(e).__name__}: {e}"
         return out
-    held = arm_holds(bus, up, sleep)
+    held = _held_after(bus, up, sleep, out)
     if held is False:
         with contextlib.suppress(Exception):
             out["cancel_again"] = bus.arm_cancel()
-        held = arm_holds(bus, up, sleep)
+        held = _held_after(bus, up, sleep, out)
     out["held"] = held
     return out
+
+
+def _held_after(
+    bus: ArmBus, up: Upstream, sleep: Callable[[float], None], out: dict[str, Any]
+) -> bool | None:
+    """Two reads, and if they read still, a cancel that finds nothing to cancel."""
+    held = arm_holds(bus, up, sleep)
+    if held is not True:
+        return held
+    try:
+        confirm = bus.arm_cancel()
+    except Exception:
+        return None
+    out["confirm"] = confirm
+    if confirm == "CANCELLED":
+        return False  # still executing: a pause read as still
+    return True if confirm in ("ALREADY_STOPPED", "NO_TRAJECTORY_TASK") else None
 
 
 def ending_of(code: int | None, cancelled: bool) -> str:
@@ -930,8 +986,18 @@ class ArmJobs:
         The hold is always read, whatever the cancel answered: ALREADY_STOPPED says nothing was
         executing at that instant, not that nothing is about to, and an arm whose joints were
         not read twice is reported unread (None), never held."""
+        with self._lock:
+            starting = self.job is not None and self.job.state == "starting"
         out: dict[str, Any] = {"script": self._stop_script()}
         out.update(cancel_and_read(self.bus, self.up, self.sleep))
+        if starting and not out.get("error"):
+            # an execute_trajectory the script sent just before it was ended can land after
+            # the cancel, and nothing would cancel it: once more, a little later
+            self.sleep(STARTING_RECANCEL_S)
+            late = cancel_and_read(self.bus, self.up, self.sleep)
+            out["late"] = late
+            if late.get("cancel") == "CANCELLED" or late.get("held") is not True:
+                out["held"] = late.get("held")
         self._mark(out["held"])
         return out
 
@@ -1160,6 +1226,7 @@ class FakeBus:
         fps: float = 5.0,
         mission_stop_s: float = 0.2,
         arm_ignores_cancel: bool = False,
+        arm_still_while_executing: bool = False,
         mission_ignores_stop: bool = False,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
@@ -1173,6 +1240,8 @@ class FakeBus:
         self.joints: dict[str, float] = {name: 0.0 for name in (*up.arm_joints, up.gripper_joint)}
         self.executing = False
         self.arm_ignores_cancel = arm_ignores_cancel
+        self.arm_still_while_executing = arm_still_while_executing
+        """A trajectory in one of its pauses: executing, and the joints read as still."""
         self.arm_answers = True
         self.cancels = 0
         self.mission_answers = True
@@ -1183,6 +1252,8 @@ class FakeBus:
         self.mission = {"state": "EXPLORING", "target": None, "picked": 0, "skipped": 0}
         self.events: list[str] = []
         self.pick: FakePick | None = None
+        self._lands_at: float | None = None
+        """When an execute_trajectory already on the bus lands, whatever ended its sender."""
         self._pids = 40000
         self.nav: dict[str, tuple[Any, float]] = {}
         """The base stack's navigation as the bus last carried it, with when it arrived."""
@@ -1205,8 +1276,20 @@ class FakeBus:
             self.events.append("the mission's pick starts")
             return self.pick.pid
 
+    def in_flight(self, lands_in_s: float) -> None:
+        """An execute_trajectory already sent, which lands `lands_in_s` from now whatever
+        becomes of the script that sent it: a cancel the coordinator handles before it finds
+        nothing to cancel, and the trajectory then plays."""
+        with self._lock:
+            self._lands_at = self.clock() + lands_in_s
+
     def _advance(self) -> None:
-        """With the lock held: the script's trajectory goes out once its startup is over."""
+        """With the lock held: the script's trajectory goes out once its startup is over, and
+        one already in flight lands when it is due."""
+        if self._lands_at is not None and self.clock() >= self._lands_at:
+            self._lands_at = None
+            self.executing = True
+            self.events.append("a trajectory in flight lands")
         p = self.pick
         if p is not None and p.alive and not p.sent and self.clock() >= p.started + p.startup_s:
             p.sent = True
@@ -1279,7 +1362,7 @@ class FakeBus:
             self._arm_silent()
         with self._lock:
             self._advance()
-            if self.executing:
+            if self.executing and not self.arm_still_while_executing:
                 for name in self.up.arm_joints:
                     # well past the still rule, so a moving arm reads as moving
                     self.joints[name] += 10 * self.up.still_ticks_per_s / self.up.ticks_per_rad
@@ -1386,6 +1469,8 @@ class Session:
     keepalive_s: float = 0.5
     started: str | None = None
     last: float = 0.0
+    run: str | None = None
+    """The base run its client connected to, which its halt is scoped to."""
 
 
 class Bridge:
@@ -1405,6 +1490,7 @@ class Bridge:
         token: str | None = None,
         fake: bool = False,
         reread: Callable[[StackInfo], tuple[Upstream | None, str | None]] | None = None,
+        make_bus: Callable[[Upstream], Bus] | None = None,
         procs: Procs | None = None,
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
@@ -1423,19 +1509,9 @@ class Bridge:
         self.started_stack = stack()
         self.pump: TwistPump | None = None
         self.jobs: ArmJobs | None = None
+        self._arm_argv = arm_argv
         if bus is not None and up is not None:
-            self.pump = TwistPump(bus, up, self._pad_channel(self.started_stack), clock)
-            if arm_argv is not None:
-                self.jobs = ArmJobs(
-                    bus,
-                    up,
-                    arm_argv,
-                    moss_dir,
-                    clock,
-                    sleep,
-                    on_running=getattr(bus, "job_running", None),
-                    on_end=getattr(bus, "job_ended", None),
-                )
+            self._build(bus, up, self.started_stack)
         self.sessions: dict[str, Session] = {}
         self.halts = 0
         """How many sessions this bridge has halted for missing their keepalives."""
@@ -1452,8 +1528,29 @@ class Bridge:
         """Why the running stack is one this bridge cannot publish to, or None."""
         self._settle_lock = threading.Lock()
         self._lock = threading.Lock()
+        self._motion = threading.Lock()
+        """Held across the check and the start of a twist and of a cycle, so the two never both
+        pass their check and run together."""
+        self._stops = 0
+        """How many stops this bridge has run: a start that a stop overtook does not happen."""
+        self._make_bus = make_bus
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
+
+    def _build(self, bus: Bus, up: Upstream, stack: StackInfo) -> None:
+        """The twist pump and the arm's job runner, on a bus this bridge can publish to."""
+        self.pump = TwistPump(bus, up, self._pad_channel(stack), self.clock)
+        if self._arm_argv is not None:
+            self.jobs = ArmJobs(
+                bus,
+                up,
+                self._arm_argv,
+                self.moss_dir,
+                self.clock,
+                self.sleep,
+                on_running=getattr(bus, "job_running", None),
+                on_end=getattr(bus, "job_ended", None),
+            )
 
     # ── the stack ───────────────────────────────────────────────────────────────────
 
@@ -1478,6 +1575,16 @@ class Bridge:
                 log.warning("the running stack %s: %s", stack.run_id, error)
                 return
             self.up = up
+            if self.bus is None and self._make_bus is not None:
+                # started beside a stack it could not publish to, it builds its bus when one
+                # it can reach starts
+                try:
+                    self.bus = self._make_bus(up)
+                except Exception as e:
+                    self.bus_error = f"the LCM bus did not open: {type(e).__name__}: {e}"
+                else:
+                    self.bus_error = None
+                    self._build(self.bus, up, stack)
             if self.pump is not None:
                 self.pump.up = up
             if self.jobs is not None:
@@ -1598,6 +1705,7 @@ class Bridge:
             return 400, {"ok": False, "reason": "a twist needs numbers vx and wz"}
         if not (math.isfinite(vx) and math.isfinite(wz)):
             return 400, {"ok": False, "reason": "a twist must be finite"}
+        stops = self._stops
         stack = self.stack()
         self._settle(stack)
         if self.pump is None:
@@ -1611,12 +1719,23 @@ class Bridge:
             return 409, {"ok": False, "reason": "on moss-litter the mission owns the base"}
         if stack.blueprint not in BASE_STACKS:
             return 409, {"ok": False, "reason": f"no twist on {stack.blueprint or 'no stack'}"}
-        if self.jobs is not None and self.jobs.running():
-            return 409, {"ok": False, "reason": "the arm is playing a cycle: stop it first"}
-        self.pump.chan = self._pad_channel(stack)
-        return 200, self.pump.post(vx, wz)
+        track = self.pump.up.track_m
+        if not (math.isfinite(track) and TRACK_MIN_M <= track <= TRACK_MAX_M):
+            return 503, {
+                "ok": False,
+                "reason": f"the stack's track width reads {track} m, which is no rover's: the "
+                "arc clip would be wrong, so no twist goes out until MOSS's robot profile "
+                f"gives one between {TRACK_MIN_M:g} and {TRACK_MAX_M:g} m",
+            }
+        with self._motion:
+            if self.jobs is not None and self.jobs.running():
+                return 409, {"ok": False, "reason": "the arm is playing a cycle: stop it first"}
+            if self._stops != stops:
+                return 409, {"ok": False, "reason": "a stop came in while this twist was asked"}
+            self.pump.chan = self._pad_channel(stack)
+            return 200, self.pump.post(vx, wz)
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
         """Idempotent, never raises, and says what it did. On moss-litter the mission's stop
         goes out first, then at once the end of the mission's own pick, the arm's cancel and
         the zero, and only then is the mission's stop confirmed. A cycle cancelled under a
@@ -1624,7 +1743,13 @@ class Bridge:
         the pick failed, and its next tick explores again. The mission's stop leaves its pick
         running, and a pick still starting sends its trajectory after any cancel, so its script
         is ended first. A cancel that waited for the confirmation would leave the arm moving for
-        as long as the confirmation took."""
+        as long as the confirmation took. Off moss-litter the zero goes first, so a twist and a
+        planner goal end at once whatever the arm's coordinator takes to answer.
+
+        `run` is the base run the caller connected to, and `session` the caller's session. A
+        stack restarted since is another run, and the stop touches nothing of it, cancels only
+        a cycle that session started, and says why. A stop that names no run stops whatever
+        runs, and one that names no session cancels any cycle of quackd's."""
         stack = self.stack()
         did: list[str] = []
         errors: list[str] = []
@@ -1640,10 +1765,42 @@ class Bridge:
             errors.append(f"no bus: {self.bus_error or self.up_error}")
             doc["ok"] = False
             return doc
-        sent = self._send_mission_stop(stack, did, errors) if self._litter(stack) else None
-        if self._litter(stack):
+        with self._lock:
+            self._stops += 1
+        if run is not None and stack.run_id is not None and run != stack.run_id:
+            doc["run_changed"], doc["run"] = True, stack.run_id
+            errors.append(
+                f"the stack quackd connected to (run {run}) is not running any more, and run "
+                f"{stack.run_id} runs now: this stop touches nothing of it"
+            )
+            mine = session is None or (
+                self.jobs is not None and self.jobs.running_session() == session
+            )
+            if self.jobs is not None and self.jobs.running() and mine:
+                doc["arm"] = self._cancel_arm(did, errors)
+            doc["ok"] = False
+            return doc
+        litter = self._litter(stack)
+        sent = self._send_mission_stop(stack, did, errors) if litter else None
+        if litter:
             doc["pick"] = self._end_mission_pick(stack, did, errors)
-        doc["arm"] = self._cancel_arm(did, errors, picked=bool(doc["pick"]))
+            doc["arm"] = self._cancel_arm(did, errors, picked=bool(doc["pick"]))
+            self._zeros(stack, did, errors)
+        else:
+            self._zeros(stack, did, errors)
+            doc["arm"] = self._cancel_arm(did, errors)
+        if sent is not None:
+            doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
+        if self._litter(stack) and doc["mission"] == "stopped":
+            # once more, after the mission's loop has ended, so the last word on the pad is ours
+            with contextlib.suppress(Exception):
+                self.bus.publish_twist(channel(PAD_STREAM_EXPLORE, TWIST_MSG), 0.0, 0.0)
+        doc["ok"] = not errors
+        return doc
+
+    def _zeros(self, stack: StackInfo, did: list[str], errors: list[str]) -> None:
+        """A zero on every channel the cockpit's own soft stop zeroes, and the pump's own."""
+        assert self.bus is not None
         for chan in self._stop_twist_channels(stack):
             try:
                 self.bus.publish_twist(chan, 0.0, 0.0)
@@ -1655,14 +1812,6 @@ class Bridge:
                 self.pump.zero()
             except Exception as e:  # said, and the mission's stop is still confirmed
                 errors.append(f"the pump's zero: {e}")
-        if sent is not None:
-            doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
-        if self._litter(stack) and doc["mission"] == "stopped":
-            # once more, after the mission's loop has ended, so the last word on the pad is ours
-            with contextlib.suppress(Exception):
-                self.bus.publish_twist(channel(PAD_STREAM_EXPLORE, TWIST_MSG), 0.0, 0.0)
-        doc["ok"] = not errors
-        return doc
 
     def _send_mission_stop(
         self, stack: StackInfo, did: list[str], errors: list[str]
@@ -1700,9 +1849,25 @@ class Bridge:
             if self.bus.mission_status(MISSION_PROBE_S) is not None:
                 heard = True
                 self.mission_heard_run = run
+                # still answering: the stop goes out again, since a stop sent without an answer
+                # on a lossy bus may never have arrived
+                with contextlib.suppress(Exception):
+                    self.bus.mission_stop()
             elif heard:
+                silent = self._second_module_answers(stack)
+                if silent is False:
+                    errors.append(
+                        "the mission fell silent, and so did the arm's coordinator in the same "
+                        "breath, so the bus itself may be down and the silence confirms nothing: "
+                        "stop the stack on the rover"
+                    )
+                    return "unconfirmed"
                 self.mission_stopped_run = run
                 did.append("the mission's RPC fell silent: its stop has run")
+                if silent is None:
+                    did.append(
+                        "no second module answers here to tell a stopped mission from a dead bus"
+                    )
                 return "stopped"
             else:
                 errors.append(
@@ -1712,12 +1877,25 @@ class Bridge:
                 return "unconfirmed"
             if self.clock() >= deadline:
                 break
-            self.sleep(0.1)
+            self.sleep(MISSION_POLL_S)
         errors.append(
             f"the mission still answers {MISSION_CONFIRM_S:g} s after its stop: stop the stack "
             "on the rover"
         )
         return "unconfirmed"
+
+    def _second_module_answers(self, stack: StackInfo) -> bool | None:
+        """Whether another module on the bus answers in the same breath as a silent mission:
+        the arm's coordinator. True says the bus carries RPCs and the silence is the mission's
+        own, False that the bus may be down, and None that there is no module to ask."""
+        assert self.bus is not None
+        if stack.arm_run is None:
+            return None
+        try:
+            self.bus.arm_joints()
+        except Exception:
+            return False
+        return True
 
     def _end_mission_pick(
         self, stack: StackInfo, did: list[str], errors: list[str]
@@ -1769,7 +1947,10 @@ class Bridge:
             return result
         did.append(f"cancel_trajectory: {result.get('cancel')}")
         if result.get("held") is False:
-            errors.append("the arm still moved after its cancel: hold it or cut its power")
+            errors.append(
+                "the arm did not hold after its cancel, read moving or still executing: "
+                "support it or cut its power"
+            )
         return result
 
     def frame(self, cam: str) -> tuple[int, Any, dict[str, str]]:
@@ -1817,6 +1998,7 @@ class Bridge:
         return doc
 
     def arm_cycle(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        stops = self._stops
         stack = self.stack()
         self._settle(stack)
         if self.jobs is None:
@@ -1828,21 +2010,26 @@ class Bridge:
             return 503, {"ok": False, "reason": self.run_error}
         if self._litter(stack):
             return 409, {"ok": False, "reason": "on moss-litter the mission owns the arm"}
-        if self.pump is not None and self.pump.fresh():
-            return 409, {"ok": False, "reason": "a twist is running: stop first"}
-        ok, why = self._arm_answering()
-        if not ok:
-            return 503, {"ok": False, "reason": why}
         if self.arm_error:
             return 503, {"ok": False, "reason": self.arm_error}
         pick_pose = str(body.get("pick_pose") or "pick")
         phase = body.get("from_phase")
         session = body.get("session")
-        started, said = self.jobs.start(
-            pick_pose,
-            None if phase is None else str(phase),
-            session if isinstance(session, str) and session else None,
-        )
+        # the check that no twist runs and the start, under one lock: a twist asked during the
+        # coordinator's round trip waits for it, and then sees the cycle
+        with self._motion:
+            if self.pump is not None and self.pump.fresh():
+                return 409, {"ok": False, "reason": "a twist is running: stop first"}
+            ok, why = self._arm_answering()
+            if not ok:
+                return 503, {"ok": False, "reason": why}
+            if self._stops != stops:
+                return 409, {"ok": False, "reason": "a stop came in while this cycle was asked"}
+            started, said = self.jobs.start(
+                pick_pose,
+                None if phase is None else str(phase),
+                session if isinstance(session, str) and session else None,
+            )
         if not started:
             return 409, {"ok": False, "reason": said}
         return 200, {"ok": True, "id": said}
@@ -1862,7 +2049,10 @@ class Bridge:
         if result.get("error"):
             errors.append(f"the arm: {result['error']}")
         elif result.get("held") is False:
-            errors.append("the arm still moved after its cancel: hold it or cut its power")
+            errors.append(
+                "the arm did not hold after its cancel, read moving or still executing: "
+                "support it or cut its power"
+            )
         return 200, {"ok": not errors, "cancelled": True, "arm": result, "errors": errors}
 
     def nav_doc(self) -> dict[str, Any]:
@@ -1913,6 +2103,8 @@ class Bridge:
                 s.keepalive_s = min(MAX_KEEPALIVE_S, max(0.05, period))
                 s.started = str(started) if started in STARTED else None
                 s.last = self.clock()
+                given = body.get("run")
+                s.run = str(given) if isinstance(given, str) and given else None
                 mine = {"id": s.id, "keepalive_s": s.keepalive_s, "started": s.started}
         return 200, {
             "ok": True,
@@ -1947,11 +2139,21 @@ class Bridge:
         stop_explore_cmd, stop_movement and a zero."""
         stack = self.stack()
         log.warning("halting what session %s started: %s", session.id, why)
-        if self._litter(stack) and session.started == "litter":
-            doc = self.stop()
-        else:
+        moved_on = session.run is not None and stack.run_id not in (None, session.run)
+        if moved_on:
+            # the stack the session was kept on has gone: nothing of the new run is its
             did: list[str] = []
             errors: list[str] = []
+            doc = {"ok": True, "did": did, "errors": errors, "arm": None}
+            if self.jobs is not None and self.jobs.running_session() == session.id:
+                doc["arm"] = self._cancel_arm(did, errors)
+            did.append(f"run {session.run} is gone, and nothing of run {stack.run_id} is halted")
+            doc["ok"] = not errors
+        elif self._litter(stack) and session.started == "litter":
+            doc = self.stop()
+        else:
+            did = []
+            errors = []
             doc = {"ok": True, "did": did, "errors": errors, "arm": None}
             if self.bus is not None and self.up is not None:
                 if self.jobs is not None and self.jobs.running_session() == session.id:
@@ -2114,6 +2316,7 @@ def live_bridge(*, moss: str | None, token: str | None, runs: str | None = None)
         arm_error=arm_error,
         token=token,
         reread=reread if up is not None else None,
+        make_bus=lambda u: LcmBus(u, FrameStore(), arm=True, mission=True),
     )
 
 
@@ -2276,7 +2479,14 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                 code, doc = bridge.twist(body)
                 self._json(code, doc)
             elif path == STOP_PATH:
-                self._json(200, bridge.stop())
+                run, sid = body.get("run"), body.get("session")
+                self._json(
+                    200,
+                    bridge.stop(
+                        run if isinstance(run, str) and run else None,
+                        sid if isinstance(sid, str) and sid else None,
+                    ),
+                )
             elif path == ARM_CYCLE_PATH:
                 code, doc = bridge.arm_cycle(body)
                 self._json(code, doc)

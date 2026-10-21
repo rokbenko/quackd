@@ -652,7 +652,11 @@ async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_
     assert not result.ok and "ended failed" in result.summary, result.summary
     assert "The arm holds where it stopped." in result.summary
     assert not mock.arm_moving and mock.job is not None and mock.job.held is True
-    assert mock.stop_log[-2:] == ["twist.zero", "cockpit.stop"], "the body stopped after it"
+    assert mock.stop_log[-3:] == [
+        "twist.zero",
+        "arm.cancel",
+        "cockpit.stop",
+    ], "the body stopped after it"
 
 
 @pytest.mark.parametrize(
@@ -718,10 +722,10 @@ async def test_the_arm_and_a_twist_never_run_together() -> None:
 # ── the stop contract ───────────────────────────────────────────────────────────────────
 
 
-async def test_stop_is_the_bridges_then_the_cockpits_every_time() -> None:
+async def test_stop_is_the_bridges_zero_then_its_cancel_and_the_soft_stop_every_time() -> None:
     mock, adapter, _ = await _connected()
     await adapter.stop()
-    assert mock.stop_log[-2:] == ["twist.zero", "cockpit.stop"]
+    assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
 
 
 @pytest.mark.parametrize("fails", ["bridge", "cockpit"])

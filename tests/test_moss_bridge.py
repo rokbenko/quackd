@@ -17,7 +17,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -67,9 +69,30 @@ class Recorder:
 
 
 def _up(**kw: Any) -> Any:
-    from dataclasses import replace
-
     return replace(B.FAKE_UPSTREAM, **kw)
+
+
+def _all_on(clock: Clock, bridge: Any) -> None:
+    """The bridge, its job runner and the fake bus behind them on the test's clock, which
+    every sleep of theirs moves, a silent RPC's wait among them."""
+
+    def advance(s: float) -> None:
+        clock.t += s
+
+    bridge.clock, bridge.sleep = clock, advance
+    bridge.bus.clock, bridge.bus.sleep = clock, advance
+    if bridge.jobs is not None:
+        bridge.jobs.clock, bridge.jobs.sleep = clock, advance
+
+
+def _at_its_timeout(clock: Clock, fn: Any, seconds: float) -> Any:
+    """`fn`, answering only as its timeout runs out, the slowest an RPC can answer."""
+
+    def slow(*args: Any) -> Any:
+        clock.t += seconds
+        return fn(*args)
+
+    return slow
 
 
 def _wait(predicate: Any, limit_s: float = 10.0) -> None:
@@ -310,6 +333,27 @@ def test_an_arc_is_clipped_so_its_inner_track_never_reverses(
     assert inner >= -1e-12, "the inner track would reverse into a full power pivot"
 
 
+@pytest.mark.parametrize("track_m", [0.0, B.TRACK_MIN_M / 2, B.TRACK_MAX_M * 2, float("nan")])
+def test_a_track_width_no_rover_has_refuses_the_twist_and_never_divides(track_m: float) -> None:
+    """The arc clip divides by the track width, and a misread profile gives one no rover
+    has: the twist is refused with a sentence, nothing goes out, and shaping never divides
+    by zero."""
+    stacks = _Stacks(B.StackInfo(running=False))
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    bridge = B.Bridge(
+        stack=stacks,
+        up=B.FAKE_UPSTREAM,
+        bus=bus,
+        reread=lambda stack: (_up(track_m=track_m), None),
+    )
+    stacks.info = _running("run-1")
+    code, doc = bridge.twist({"vx": 0.1, "wz": 0.5})
+    assert code == 503 and "track width" in doc["reason"], doc
+    assert bus.published == [], "nothing went out shaped by a track no rover has"
+    assert B.shape(0.1, 0.5, _up(track_m=0.0)) is not None
+    bridge.close()
+
+
 def test_a_spin_keeps_to_the_makers_ceiling_and_a_still_twist_is_a_zero() -> None:
     up = _up(max_wz=0.5)
     assert B.shape(0.0, 0.0, up)[2] == "zero"
@@ -444,12 +488,47 @@ def test_a_cancel_stops_the_script_then_cancels_then_reads_the_arm_holding() -> 
     bridge.close()
 
 
+def test_a_cycle_cancelled_while_starting_is_cancelled_again_for_a_trajectory_in_flight() -> None:
+    """A script ended while it starts may already have sent its execute_trajectory, and a
+    request still in flight lands after the cancel that found nothing: the cancel goes out
+    once more a little later, so that trajectory does not play."""
+    clock = Clock()
+    stack = B.StackInfo(
+        running=True,
+        blueprint="moss-explore",
+        pid=os.getpid(),
+        run_id="r",
+        env={"DIMOS_TRANSPORT": "lcm"},
+        arm_run=B.Run(pid=os.getpid(), blueprint="moss-arm", run_id="a", started=0.0),
+    )
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    bridge = B.Bridge(
+        stack=lambda: stack,
+        up=B.FAKE_UPSTREAM,
+        bus=bus,
+        # a script still importing, so its cycle is still starting when the stop comes
+        arm_argv=lambda pose, phase: [sys.executable, "-c", "import time; time.sleep(30)"],
+    )
+    _all_on(clock, bridge)
+    assert bridge.arm_cycle({})[0] == 200
+    assert bridge.jobs.doc()["state"] == "starting"
+    bus.in_flight(B.STARTING_RECANCEL_S / 2)
+    doc = bridge.stop()
+    assert doc["arm"]["cancel"] == "ALREADY_STOPPED", "the first cancel found nothing"
+    assert doc["arm"]["late"]["cancel"] == "CANCELLED", doc["arm"]
+    assert doc["arm"]["held"] is True, doc["arm"]
+    clock.t += 5.0
+    bus.arm_joints()
+    assert not bus.executing, "the trajectory that landed after the first cancel is cancelled"
+    bridge.close()
+
+
 def test_an_arm_that_moves_on_after_its_cancel_is_said_and_cancelled_again() -> None:
     bridge = B.fake_bridge(cycle_s=30.0, fps=0, arm_ignores_cancel=True)
     bridge.arm_cycle({})
     _wait(lambda: bridge.bus.executing)
     doc = bridge.stop()
-    assert not doc["ok"] and any("still moved" in e for e in doc["errors"])
+    assert not doc["ok"] and any("did not hold after its cancel" in e for e in doc["errors"])
     assert doc["arm"]["held"] is False and doc["arm"]["cancel_again"] == "CANCELLED"
     assert bridge.bus.cancels == 2
     bridge.close()
@@ -546,6 +625,34 @@ def test_the_arm_and_the_tracks_never_move_together() -> None:
     bridge.close()
 
 
+def test_a_twist_asked_while_a_cycle_asks_the_coordinator_waits_and_is_refused() -> None:
+    """The cycle checks that no twist runs, asks the coordinator, then starts: a twist that
+    lands during that round trip waits for the cycle's start, then sees it, so the arm and
+    the tracks never both pass their check."""
+    bridge = B.fake_bridge(cycle_s=5.0, fps=0)
+    bus = bridge.bus
+    joints = bus.arm_joints
+    asking = threading.Event()
+
+    def slow() -> dict[str, float]:
+        asking.set()
+        time.sleep(0.3)  # the coordinator's round trip on a loaded rover
+        return dict(joints())
+
+    bus.arm_joints = slow
+    out: dict[str, Any] = {}
+    cycle = threading.Thread(target=lambda: out.setdefault("cycle", bridge.arm_cycle({})))
+    cycle.start()
+    assert asking.wait(5.0)
+    out["twist"] = bridge.twist({"vx": 0.2, "wz": 0.0})
+    cycle.join()
+    assert out["cycle"][0] == 200, out
+    assert out["twist"][0] == 409 and "cycle" in out["twist"][1]["reason"], out
+    assert all(values == (0.0, 0.0) for _, _, values in bus.published), "no twist went out"
+    bridge.stop()
+    bridge.close()
+
+
 def test_on_moss_litter_the_mission_owns_the_base_and_the_arm() -> None:
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0)
     assert bridge.twist({"vx": 0.1})[0] == 409
@@ -575,6 +682,169 @@ def test_the_stops_zero_goes_where_the_cockpits_own_soft_stop_sends_it(
     bridge.close()
 
 
+def test_off_moss_litter_the_zero_goes_before_an_arm_that_does_not_answer() -> None:
+    """The zero ends a twist and a planner goal at once. An arm whose coordinator hangs holds
+    its cancel for the RPC's whole timeout, so the cancel comes after the zero, never before
+    it."""
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    _all_on(clock, bridge)
+    bus = bridge.bus
+    bus.arm_answers = False
+    doc = bridge.stop()
+    zeros = [t for t, _, values in bus.published if values == (0.0, 0.0)]
+    assert zeros and zeros[0] == 0.0, f"the first zero went out at {zeros[:1]}"
+    assert clock.t >= B.RPC_TIMEOUT_S, "the arm's cancel waited out its timeout after it"
+    assert "the arm's coordinator did not answer, and no cycle of quackd's ran" in doc["did"]
+    bridge.close()
+
+
+def test_an_arm_that_reads_still_mid_trajectory_is_never_said_to_hold() -> None:
+    """A trajectory in one of its pauses reads as still twice running. The cancel that
+    confirms the hold finds it still executing, so the arm is not said to hold, however
+    still it read."""
+    bridge = B.fake_bridge(fps=0, arm_ignores_cancel=True, arm_still_while_executing=True)
+    bridge.bus.executing = True
+    doc = bridge.stop()
+    assert doc["arm"]["held"] is False and not doc["ok"], doc
+    assert any("did not hold after its cancel" in e for e in doc["errors"]), doc["errors"]
+    bridge.close()
+
+
+def test_a_mission_stop_lost_on_the_bus_is_sent_again_while_the_mission_answers() -> None:
+    """A stop goes out without an answer, so a lossy bus can drop it. Each probe that still
+    hears the mission sends it again, and the second one stops it."""
+    bridge, clock = _litter_on_fake_time()
+    bus = bridge.bus
+    sent = bus.mission_stop
+    asked: list[float] = []
+
+    def lossy() -> None:
+        asked.append(clock.t)
+        if len(asked) > 1:  # the first one never arrived
+            sent()
+
+    bus.mission_stop = lossy
+    doc = bridge.stop()
+    assert doc["mission"] == "stopped" and doc["ok"], doc
+    assert len(asked) >= 2 and bus.mission_stops >= 1
+    bridge.close()
+
+
+def test_a_cancel_with_every_rpc_at_its_timeout_takes_its_named_worst_case() -> None:
+    """Each RPC answering only as its timeout runs out, reads that stay still, and a
+    coordinator that still runs the trajectory at every confirming cancel: the slowest a
+    cancel and its reads can be, which the stop's own bound adds up."""
+    clock = Clock()
+    bus = B.FakeBus(
+        B.FAKE_UPSTREAM,
+        B.FrameStore(),
+        fps=0,
+        arm_ignores_cancel=True,
+        arm_still_while_executing=True,
+        clock=clock,
+    )
+    bus.executing = True
+    bus.arm_cancel = _at_its_timeout(clock, bus.arm_cancel, B.RPC_TIMEOUT_S)
+    bus.arm_joints = _at_its_timeout(clock, bus.arm_joints, B.RPC_TIMEOUT_S)
+
+    def advance(s: float) -> None:
+        clock.t += s
+
+    out = B.cancel_and_read(bus, B.FAKE_UPSTREAM, advance)
+    assert out["held"] is False and out["confirm"] == "CANCELLED", out
+    assert clock.t == pytest.approx(B._CANCEL_AND_READ_WORST_S)
+
+
+def test_the_slowest_litter_stop_answers_inside_the_bound_the_client_waits_for() -> None:
+    """A pick that outlives both signals, every RPC answering at its timeout, an arm that
+    never holds and a mission whose probe waits its whole timeout: the stop still answers
+    inside STOP_WORST_S, the bound the client's own wait for a stop is held to."""
+
+    class Stubborn:
+        def picks(self, stack: Any) -> list[int]:
+            return [4321]
+
+        def alive(self, pid: int) -> bool:
+            return True
+
+        def signal(self, pid: int, sig: int) -> None:
+            pass
+
+    clock = Clock()
+    bridge = B.fake_bridge(
+        blueprint="moss-litter",
+        fps=0,
+        mission_stop_s=0.2,
+        arm_ignores_cancel=True,
+        arm_still_while_executing=True,
+    )
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    bridge.procs = Stubborn()
+    bus = bridge.bus
+    bus.executing = True
+    bus.arm_cancel = _at_its_timeout(clock, bus.arm_cancel, B.RPC_TIMEOUT_S)
+    bus.arm_joints = _at_its_timeout(clock, bus.arm_joints, B.RPC_TIMEOUT_S)
+    status = bus.mission_status
+    bus.mission_status = lambda timeout_s: _at_its_timeout(clock, status, timeout_s)(timeout_s)
+    doc = bridge.stop()
+    assert doc["pick"]["left"] == [4321] and doc["arm"]["held"] is False, doc
+    assert 0.0 < clock.t <= B.STOP_WORST_S, clock.t
+    bridge.close()
+
+
+def test_a_mission_that_falls_silent_with_the_arm_is_a_bus_down_not_a_stop() -> None:
+    """Silence confirms the mission's stop only when another module answers in the same
+    breath: with the arm's coordinator silent too, the bus itself may be down, and the stop
+    is unconfirmed."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    bus = bridge.bus
+
+    def down() -> None:
+        bus.mission_answers = False
+        bus.arm_answers = False
+
+    bus.mission_stop = down
+    doc = bridge.stop()
+    assert doc["mission"] == "unconfirmed" and not doc["ok"], doc
+    assert any("the bus itself may be down" in e for e in doc["errors"]), doc["errors"]
+    bridge.close()
+
+
+def test_a_stop_for_a_run_that_has_gone_touches_nothing_of_the_new_one() -> None:
+    """The owner restarted the stack. quackd's stop names the run it connected to, and the
+    new run is sent no mission stop and no zero, and says why. Its arm cycle is cancelled
+    only for the session that started it. A stop that names the run running, or none,
+    stops as ever."""
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bus = bridge.bus
+    code, started = bridge.arm_cycle({"session": "the-new-runs"})
+    assert code == 200, started
+    _wait(lambda: bus.executing)
+    doc = bridge.stop("the-run-before", "the-old-session")
+    assert doc["run_changed"] and doc["run"] == "fake-run" and not doc["ok"], doc
+    assert any("touches nothing of it" in e for e in doc["errors"]), doc["errors"]
+    assert bus.published == [] and bus.events == [], "nothing went out to the new run"
+    assert bus.executing and bridge.jobs.running(), "another session's cycle plays on"
+    mine = bridge.stop("the-run-before", "the-new-runs")
+    assert mine["arm"]["cancel"] == "CANCELLED" and not bus.executing, mine
+    assert not [e for e in bus.events if e.startswith("twist")], "still no zero"
+    assert bridge.stop("fake-run")["ok"] and bus.published, "the run running is stopped"
+    bridge.close()
+
+
+def test_on_moss_litter_a_stop_for_a_run_that_has_gone_sends_no_mission_stop() -> None:
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0)
+    doc = bridge.stop("the-run-before")
+    assert doc["run_changed"] and bridge.bus.mission_stops == 0, doc
+    assert bridge.mission_doc()["stopped"] is False
+    bridge.close()
+
+
 def test_on_moss_litter_the_mission_stops_first_then_the_arm_then_the_zero() -> None:
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     bus = bridge.bus
@@ -582,12 +852,16 @@ def test_on_moss_litter_the_mission_stops_first_then_the_arm_then_the_zero() -> 
     bus.executing = True  # the mission's own pick is mid cycle
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
-    order = [e.split()[0] + " " + e.split()[1] for e in bus.events]
-    assert order[:3] == ["mission stop", "arm cancel", "twist /tele_cmd_vel#geometry_msgs.Twist"]
+    assert _sends(bus.events)[:3] == [
+        "mission stop",
+        "arm cancel",
+        "twist /tele_cmd_vel#geometry_msgs.Twist",
+    ]
     assert bridge.mission_doc()["stopped"] is True
+    sent = bus.mission_stops
     again = bridge.stop()
     assert again["ok"] and "the mission was already stopped" in again["did"]
-    assert bus.mission_stops == 1, "stopped stays stopped: the stop is not sent twice"
+    assert bus.mission_stops == sent, "stopped stays stopped: the stop is not sent again"
     bridge.close()
 
 
@@ -612,8 +886,11 @@ def test_on_moss_litter_the_arm_is_cancelled_before_the_missions_stop_is_confirm
     bus.arm_cancel = timed
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
-    order = [" ".join(e.split()[:2]) for e in bus.events]
-    assert order[:3] == ["mission stop", "arm cancel", "twist /tele_cmd_vel#geometry_msgs.Twist"]
+    assert _sends(bus.events)[:3] == [
+        "mission stop",
+        "arm cancel",
+        "twist /tele_cmd_vel#geometry_msgs.Twist",
+    ]
     assert cancelled_at and cancelled_at[0] < slow <= clock.t, "the cancel waited on the mission"
     bridge.close()
 
@@ -637,6 +914,12 @@ def test_a_stop_whose_zeros_fail_still_confirms_the_missions_stop() -> None:
 
 
 # ── the mission's own pick, which its stop leaves running ───────────────────────────────
+
+
+def _sends(events: list[str]) -> list[str]:
+    """What went out, in order, each kind once however many times in a row it was sent."""
+    kinds = [" ".join(e.split()[:2]) for e in events]
+    return [k for i, k in enumerate(kinds) if i == 0 or kinds[i - 1] != k]
 
 
 def _litter_on_fake_time() -> tuple[Any, Clock]:
@@ -780,7 +1063,7 @@ def test_the_arm_cancel_route_cancels_its_own_cycle_and_nothing_else() -> None:
     _wait(lambda: bridge.jobs.doc()["state"] == "cancelled")
     code, doc = bridge.arm_cancel({"id": started["id"]})
     assert doc["cancelled"] is False, "a cycle that has ended is not cancelled again"
-    assert bus.events.count("arm cancel") == 1
+    assert bus.events.count("arm cancel") == 2, "its cancel, and the one that found it stopped"
     assert not [e for e in bus.events if e.startswith(("twist", "true"))], "nothing else went out"
     bridge.close()
 
@@ -887,6 +1170,37 @@ def test_a_stack_started_after_the_bridge_is_driven_with_its_own_track(track_m: 
     bridge.close()
 
 
+def test_a_bridge_started_with_no_bus_builds_one_when_a_stack_it_can_reach_starts() -> None:
+    """Started at boot beside a stack on another bus, or none, the bridge has no bus to
+    publish to. When an LCM stack on its own address starts, it opens one, and drives that
+    stack, as its page says it does."""
+    stacks = _Stacks(B.StackInfo(running=False))
+    built: list[Any] = []
+
+    def make_bus(up: Any) -> Any:
+        bus = B.FakeBus(up, B.FrameStore(), fps=0)
+        built.append(bus)
+        return bus
+
+    bridge = B.Bridge(
+        stack=stacks,
+        up=None,
+        bus=None,
+        up_error="no stack ran when the bridge started",
+        make_bus=make_bus,
+        reread=lambda stack: (B.FAKE_UPSTREAM, None),
+    )
+    assert bridge.twist({"vx": 0.1})[0] == 503
+    stacks.info = _running("run-1")
+    code, doc = bridge.twist({"vx": 0.1, "wz": 0.0})
+    assert code == 200, doc
+    assert len(built) == 1 and built[0].published, "the new bus carried the twist"
+    assert bridge.stop()["ok"]
+    bridge.twist({"vx": 0.1, "wz": 0.0})
+    assert len(built) == 1, "one bus, built once"
+    bridge.close()
+
+
 @pytest.mark.parametrize(
     "refusal",
     ["the stack runs on zenoh, and this bridge speaks LCM only", "another address, say"],
@@ -973,6 +1287,24 @@ def test_a_session_that_started_nothing_halts_nothing_of_the_owners() -> None:
     clock.t += 1.0
     assert len(bridge.session_tick()) == 1
     assert bridge.bus.events == [], "no zero twist: that would cancel the owner's own goal"
+    bridge.close()
+
+
+def test_a_dropped_session_of_a_run_that_has_gone_halts_nothing_of_the_new_one() -> None:
+    """A session kept on a run the owner has since restarted: when it drops, what it
+    started went with the old run, and nothing of the new one is halted for it."""
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    bridge.clock = clock
+    code, _ = bridge.keepalive(
+        {"session": "old", "keepalive_s": 0.1, "started": "explore", "run": "the-run-before"}
+    )
+    assert code == 200
+    clock.t += 1.0
+    docs = bridge.session_tick()
+    assert len(docs) == 1 and docs[0]["ok"], docs
+    assert bridge.bus.events == [] and bridge.bus.published == [], "the new run untouched"
+    assert any("nothing of run fake-run is halted" in d for d in docs[0]["did"]), docs
     bridge.close()
 
 

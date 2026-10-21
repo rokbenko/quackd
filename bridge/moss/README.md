@@ -23,7 +23,7 @@ So the bridge does those four things over HTTP and nothing else.
 |---|---|---|
 | `/hello` | GET | the protocol and its version, the stack it found, what loaded and why anything did not, the track width, the stop ramp, the shaping it applies and the cameras it has heard |
 | `/twist` | POST | `{vx, wz}` published on the stack's pad channel, shaped as below |
-| `/stop` | POST | idempotent, never raises, and says what it did and what failed |
+| `/stop` | POST | idempotent, never raises, and says what it did and what failed. `{run, session}` scopes it to the base run its caller connected to |
 | `/frame?cam=nose` or `?cam=wrist` | GET | the first JPEG captured after the request arrived, with the image's own stamp |
 | `/arm/cycle` | POST | `{pick_pose, from_phase, session}`: the maker's cycle, as a job of that session's |
 | `/arm/cancel` | POST | `{id}`: that cycle of quackd's cancelled while it runs, and nothing else, which is what quackd's close sends |
@@ -65,11 +65,25 @@ sends its one trajectory after any cancel, so the bridge sends the maker's scrip
 SIGKILL if it outlives its grace, before it cancels. The script is found among the stack's own
 descendants in `/proc`, by `tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and no other
 process is ever signalled. After every cancel the joints are read twice, and a hold is never
-claimed without that reading.
+claimed without that reading. Two still reads are not a hold on their own, since a trajectory
+in one of its pauses reads still: a last cancel must find nothing executing. A cycle cancelled
+while it was still starting is cancelled once more half a second later, for a trajectory its
+script sent just before it was ended. Off `moss-litter` the zero goes first and the arm's
+cancel after it, so a coordinator that hangs never holds back the zero.
 The mission's stop is sent without an answer, as dimOS sends every stop, so the bridge confirms
-it by the mission's RPC falling silent, and only for a mission it heard answer before. A stop
-it cannot confirm within 4 s of sending it is reported as a failure, and the arm's cancel and
-the zero have gone out either way.
+it by the mission's RPC falling silent, and only for a mission it heard answer before. Each
+probe that still hears the mission sends the stop again, since one sent without an answer may
+never have arrived, and the silence counts only when the arm's coordinator answers in the same
+breath, since with both silent the bus itself may be down. A stop it cannot confirm within 4 s
+of sending it is reported as a failure, and the arm's cancel and the zero have gone out either
+way. With every RPC on the rover answering at its timeout a stop answers within
+`STOP_WORST_S`, and quackd waits that long for it and two seconds more.
+
+**The run.** quackd's stop names the base run it connected to, and so does every keepalive.
+When the owner has restarted the stack since, the stop sends the new run nothing, no mission
+stop and no zero, cancels only an arm cycle the stopping session started, and says why. A
+session kept on a run that has gone halts nothing of the new one. A stop that names no run
+stops whatever runs.
 
 **The sessions.** Every quackd transport draws a session id of its own and posts a keepalive
 every half second from a thread of its own, so a prompt that blocks quackd's event loop never

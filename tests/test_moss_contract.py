@@ -242,7 +242,7 @@ async def test_a_bridge_of_another_protocol_version_is_refused_by_name(
 # ── the stop, across both ───────────────────────────────────────────────────────────────
 
 
-async def test_a_twist_reaches_the_pad_channel_and_a_stop_is_the_bridges_then_the_cockpits(
+async def test_a_twist_reaches_the_pad_channel_and_a_stop_sends_both_halves(
     rover: Rover,
 ) -> None:
     transport = rover.transport()
@@ -253,10 +253,61 @@ async def test_a_twist_reaches_the_pad_channel_and_a_stop_is_the_bridges_then_th
     assert any(c == "/tele_cmd_vel#geometry_msgs.Twist" for _, c, _ in bus.published)
     await transport.stop()
     assert transport.stop_error is None
-    zeros = [t for t, _, v in bus.published if v == (0.0, 0.0)]
-    soft = rover.cockpit.posted("stop")[-1].t
-    assert zeros and min(z for z in zeros if z <= soft) <= soft, "the bridge's zero comes first"
+    assert any(v == (0.0, 0.0) for _, _, v in bus.published), "the bridge's zero"
+    assert rover.cockpit.posted("stop"), "and the cockpit's soft stop, beside it"
     await transport.close()
+
+
+def test_the_clients_wait_for_a_stop_covers_the_bridges_worst_case() -> None:
+    """The bridge bounds its stop, every RPC on the rover answering at its timeout, and the
+    client waits that long and two seconds more for the link: a stop it gave up on early
+    would be said not delivered while the bridge was still delivering it."""
+    assert client.STOP_TIMEOUT_S >= B.STOP_WORST_S + 2.0
+
+
+async def test_the_soft_stop_goes_out_beside_a_bridge_stop_that_waits_on_the_arm(
+    rover: Rover,
+) -> None:
+    """A moss-arm run whose coordinator hangs holds the bridge's cancel for the RPC's whole
+    timeout. The bridge's zero and the cockpit's soft stop go out at once all the same: a
+    goal or an exploration never drives on while the arm is asked."""
+    transport = rover.transport()
+    await transport.connect()
+    bus = rover.bridge.bus
+    bus.arm_answers = False
+    began = time.monotonic()
+    await transport.stop()
+    took = time.monotonic() - began
+    soft = rover.cockpit.posted("stop")[-1].t - began
+    zero = min(t for t, _, v in bus.published if v == (0.0, 0.0) and t >= began) - began
+    assert took >= B.RPC_TIMEOUT_S, "the bridge's stop waited on the arm"
+    assert soft < B.RPC_TIMEOUT_S / 2 and zero < B.RPC_TIMEOUT_S / 2, (soft, zero, took)
+    await transport.close()
+
+
+async def test_a_stop_after_the_stack_restarted_touches_nothing_of_the_new_run(
+    rover: Rover,
+) -> None:
+    """The owner restarted the base stack: the bridge reads another run, and says so in the
+    keepalive answer. quackd's stop names the run it connected to, so neither the bridge's
+    stop nor the cockpit's soft stop touches the new run, and both say why."""
+    from dataclasses import replace
+
+    transport = rover.transport()
+    await transport.connect()
+    assert transport.run_id == "fake-run"
+    old = rover.bridge.stack()
+    rover.bridge._stack = lambda: replace(old, run_id="restarted-run")
+    _wait(lambda: (transport._session_doc.get("stack") or {}).get("run_id") == "restarted-run")
+    bus = rover.bridge.bus
+    published, events = len(bus.published), len(bus.events)
+    await transport.stop()
+    assert rover.cockpit.posted("stop") == [], "no soft stop to the new run"
+    assert len(bus.published) == published and len(bus.events) == events, "no zero either"
+    said = transport.stop_error or ""
+    assert "restarted-run" in said and "touches nothing of it" in said, said
+    await transport.close()
+    assert "restarted as run restarted-run" in (transport.close_note or "")
 
 
 async def test_a_stop_reports_a_bridge_that_went_away_and_still_sends_the_soft_stop(

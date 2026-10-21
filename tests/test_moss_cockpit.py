@@ -316,6 +316,48 @@ async def test_close_ends_a_goal_it_started_and_posts_nothing_when_it_started_no
     assert len(cockpit.posted("stop")) == 1 and transport.started is None
 
 
+async def test_with_no_bridge_a_stop_after_the_stack_restarted_sends_no_soft_stop(
+    cockpit: FakeCockpit,
+) -> None:
+    """The owner restarted the stack since quackd connected, and the cockpit names another
+    run, whose explorer quackd's soft stop would end: none is sent, and the stop says why.
+    A moss-arm run the cockpit shows over the base tells nothing of the base's run, so that
+    stop goes out."""
+    transport = _transport(cockpit)
+    await transport.connect()
+    connected = transport.run_id
+    assert connected == cockpit.run_id
+    cockpit.run_id = "20261021-restarted"
+    await transport.stop()
+    assert cockpit.posted("stop") == [], "nothing went to the new run"
+    said = transport.stop_error or ""
+    assert "20261021-restarted" in said and connected in said, said
+    cockpit.run_id, cockpit.newest = connected, "moss-arm"
+    await transport.stop()
+    assert len(cockpit.posted("stop")) == 1, "the base may be the one it connected to"
+    await transport.close()
+
+
+async def test_with_no_bridge_close_after_a_restart_leaves_the_new_runs_goal_alone(
+    cockpit: FakeCockpit,
+) -> None:
+    """A goal quackd started went with the run it was sent to. Its close sends the new run
+    no soft stop, which would end that run's own goal, and its note says why."""
+    transport = _transport(cockpit)
+    await transport.connect()
+    connected = transport.run_id
+    ack = await transport.send_intent(
+        Intent(kind="pose", params={"x": 0.3, "y": 0.1, "frame": "world"})
+    )
+    assert ack.accepted and transport.started == "goal"
+    cockpit.run_id = "20261021-restarted"
+    before = len(cockpit.posted("stop"))
+    await transport.close()
+    assert len(cockpit.posted("stop")) == before, "the new run's explorer and goal untouched"
+    note = transport.close_note or ""
+    assert "restarted as run 20261021-restarted" in note and connected in note, note
+
+
 async def test_with_no_bridge_a_twist_and_an_arm_cycle_are_refused_as_data(
     cockpit: FakeCockpit,
 ) -> None:
