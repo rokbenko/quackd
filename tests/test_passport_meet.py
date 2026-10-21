@@ -145,7 +145,10 @@ def test_serve_announces_and_retains_when_asked(
 
     class Publisher:
         def __init__(self, key: str, payload: bytes, *, host: str, port: int = 1883) -> None:
-            retained.append((key, host, port, json.loads(payload)["name"]))
+            from quackd.passport import document
+
+            # what goes on a broker is the signed passport, so a subscriber can verify it
+            retained.append((key, host, port, document.read_jws(payload.decode()).name))
 
         def start(self) -> Closer:
             return Closer()

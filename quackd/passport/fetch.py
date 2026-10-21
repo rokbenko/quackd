@@ -20,6 +20,14 @@ WELL_KNOWN_JWS = "/.well-known/robot-passport.jws"
 FETCH_TIMEOUT_S = 5.0
 
 
+class HttpStatus(PassportError):
+    """A host that answered, with a status other than 200."""
+
+    def __init__(self, url: str, status: int, reason: str) -> None:
+        super().__init__("5.7", f"{url} answered {status} {reason}")
+        self.status = status
+
+
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any
@@ -60,10 +68,27 @@ def fetch(url: str, *, limit: int = MAX_BYTES, timeout: float = FETCH_TIMEOUT_S)
     except PassportError:
         raise
     except urllib.error.HTTPError as e:
-        raise PassportError("5.7", f"{url} answered {e.code} {e.reason}") from e
+        raise HttpStatus(url, e.code, str(e.reason)) from e
     except (urllib.error.URLError, OSError) as e:
         reason = getattr(e, "reason", e)
         raise PassportError("5.7", f"{url} could not be reached: {reason}") from e
     if len(body) > limit:
         raise PassportError("rule 1", f"{url} sent more than the {limit} bytes a reader accepts")
     return body
+
+
+def fetch_passport(url: str, *, timeout: float = FETCH_TIMEOUT_S) -> bytes:
+    """A passport at `url`, signed when it can be: for a `robot-passport.json`, the `.jws` beside
+    it on the same host is asked for first, since a reader that verifies uses the JWS (spec 5.1),
+    and the JSON is fetched only when the host has no JWS. Nothing else is ever fetched."""
+    parts = urlsplit(url)
+    if parts.path.endswith("robot-passport.json"):
+        signed = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path[: -len("json")] + "jws", parts.query, "")
+        )
+        try:
+            return fetch(signed, timeout=timeout)
+        except HttpStatus as e:
+            if e.status != 404:
+                raise
+    return fetch(url, timeout=timeout)

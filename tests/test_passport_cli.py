@@ -41,7 +41,8 @@ def test_show_builds_a_registered_robots_passport_and_makes_its_key_once(tmp_pat
     first = runner.invoke(app, ["passport", "show", "--robot", "duck-a", *_reg(tmp_path)])
     assert first.exit_code == 0, first.output
     assert "made a key for duck-a" in first.output
-    assert "passport duck-a" in first.output and "unsigned: a claim" in first.output
+    assert "passport duck-a" in first.output and "signed by its own key" in first.output
+    assert "flock: one of the robots this quackd drives" in first.output
     again = runner.invoke(app, ["passport", "show", "--robot", "duck-a", *_reg(tmp_path)])
     assert "made a key" not in again.output
 

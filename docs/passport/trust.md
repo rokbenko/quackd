@@ -85,11 +85,15 @@ is a small JWS, about 480 characters, signed by another key, whose claims are:
 
 A stamp vouches for the key, never for the passport's contents. The robot can change its passport
 every day without asking its owner again, and the stamp still holds, because what the owner said
-is only "this key is my robot".
+is only "this key is my robot". That is also why a stamp counts only on a signed passport: on an
+unsigned one, nothing shows the key wrote it, and anybody can copy an id and a stamp into a
+document of their own.
 
-An owner holds one owner key and stamps every robot they own with it, from a laptop, in a second
-([quackd.md](quackd.md)). A reader that has pinned that owner key then trusts every robot it
-stamps, which is the whole point: you decide once about a person, not once per robot.
+An owner holds one owner key and stamps every robot they own with it, from a laptop, in a second:
+`quackd passport stamp --robot NAME`, or `--did` for a robot whose key lives on the robot itself
+([quackd.md](quackd.md#stamping-your-robots)). A reader that has pinned that owner key then trusts
+every robot it stamps, which is the whole point: you decide once about a person, not once per
+robot.
 
 A stamp from a maker, "key K is a genuine Model M", would let a reader trust a robot's `maker` the
 way Matter devices prove their vendor and product. That needs makers to hold keys and publish them,
@@ -105,7 +109,8 @@ contact, approved by a person, is the best anchor available.
 
 A pin is only ever made by a person. quackd asks before it pins, and keeps pins in their own file,
 `~/.quackd/known_robots.json`, so the registry's `robots.json` is untouched and an older quackd
-still reads it ([quackd.md](quackd.md)).
+still reads it. `quackd meet SOURCE --pin` pins a robot, `--pin-owner` its owner, and
+`quackd passport known` and `forget` list and remove pins ([quackd.md](quackd.md#pinning)).
 
 ## The four tiers
 

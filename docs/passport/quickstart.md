@@ -64,30 +64,33 @@ sticker knows what it is, whose it is and how to stop it.
 
 ## A robot quackd drives
 
-quackd builds the passport from the robot's manifest, so there is nothing to write. You say only
-what a manifest cannot know, who owns the robot and how a person stops it, and quackd makes the
-robot a key the first time it is asked:
+quackd builds the passport from the robot's manifest and signs it with a key it makes for the
+robot, so there is nothing to write. You say only what a manifest cannot know, who owns the robot
+and how a person stops it, and stamp it with your owner key:
 
 ```
 $ quackd robot add duck-01 microduck:mock
 $ quackd passport owner --label "Example lab" --contact https://example.org/robots
 $ quackd passport set --robot duck-01 --estop power --how-to-stop "the power switch on its back"
-$ quackd passport show --robot duck-01 --out robot-passport.json
-wrote robot-passport.json: 1114 bytes, digest 56b01f1026a48a58
-$ quackd passport check robot-passport.json
+$ quackd passport stamp --robot duck-01
+$ quackd passport show --robot duck-01 --out robot-passport.jws
+wrote robot-passport.jws: 2380 bytes, digest 91b878449a8f5224
+$ quackd passport check robot-passport.jws
 ┌─ 🦆 checked duck-01 ────────────────────────────────────────────────────────┐
-│ id        did:key:z6Mkv3hxGH5oXSMGTXerm5dLqrxNzYQ4ZzkTVhuxyJhqFSUo  (short  │
-│           id 84032200fad67519)                                              │
-│ claim     unsigned: a claim                                                 │
+│ id        did:key:z6MkqisBNpEaavy8qdcpaALJxLdWiHZidVQBvDpkucrYuXqH  (short  │
+│           id aeba427349a73697)                                              │
+│ claim     signed by its own key, 1 of 1 stamps count                        │
+│ tier      flock: one of the robots this quackd drives                       │
 │ maker     pollen-robotics microduck                                         │
 │ software  quackd 0.21.0                                                     │
 │ owner     Example lab, https://example.org/robots                           │
-│ body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    │
 ```
 
-To publish it from the robot's own host instead of a web page, `quackd passport serve --robot
-duck-01 --announce` serves it at the well-known URL and advertises it on the local network, and
-`quackd passport qr` prints its sticker ([quackd.md](quackd.md#serving-passports)).
+The first `set` makes the robot's key and the first `stamp` makes your owner key, which you should
+back up. For a web page, write both files, `--out robot-passport.jws` and `--out
+robot-passport.json`, and serve them side by side. To publish from the robot's own host instead,
+`quackd passport serve --robot duck-01 --announce` serves both at the well-known URL and advertises
+them on the local network, and `quackd passport qr` prints the sticker
+([quackd.md](quackd.md#serving-passports)).
 
-The rest of that panel is in [quackd.md](quackd.md#a-robots-passport), with what every command
-prints. Signing the passport and stamping it with your owner key come with the rest of 0.23.0.
+The rest of that panel, and what every command prints, is in [quackd.md](quackd.md#a-robots-passport).

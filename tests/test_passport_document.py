@@ -236,3 +236,16 @@ def test_a_stamp_issued_in_the_future_or_backwards_does_not_count() -> None:
 def test_a_signing_keys_repr_never_shows_its_seed() -> None:
     assert KEY.seed.hex() not in repr(KEY)
     assert KEY.did in repr(KEY)
+
+
+def test_a_stamp_on_an_unsigned_passport_never_counts() -> None:
+    """The stamp checks out, but it vouches for a key, and nothing shows that key wrote an
+    unsigned passport: anybody could have copied the id and the stamp into it."""
+    stamp = stamps.make(OWNER, KEY.did, now=NOW)
+    copied = document.read(raw(passport(stamps=[stamp])), now=NOW)
+    assert isinstance(copied, document.Reading)
+    assert [s.counts for s in copied.stamps] == [False]
+    assert copied.stamps[0].reason == document.UNSIGNED_STAMP
+    signed = document.read(document.sign(passport(stamps=[stamp]), KEY), now=NOW)
+    assert isinstance(signed, document.Reading)
+    assert [s.counts for s in signed.stamps] == [True]

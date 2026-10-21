@@ -217,12 +217,15 @@ A stamp is a compact JWS whose protected header has `alg` as section 4.4 gives i
 | `exp` | expires at, seconds since the epoch, after `iat`. At most a year is RECOMMENDED. |
 
 A stamp says one thing: the holder of `iss` vouches that `sub` is its robot. It says nothing about
-the passport's other members, so a robot can change its passport without a new stamp.
+the passport's other members, so a robot can change its passport without a new stamp. On an
+unsigned passport it proves nothing at all, because nothing shows that key `sub` wrote that
+passport: anybody can copy an `id` and a stamp into a document of their own.
 
-A reader counts a stamp only when its signature verifies with the key `iss` holds, `sub` equals
-the passport's `id`, `rel` is one the reader knows, `exp` is in the future and `iat` is no more
-than five minutes ahead of the reader's clock. Whether to trust `iss` at all is the reader's own
-decision ([trust.md](trust.md)), and nothing in a passport can make it.
+A reader counts a stamp only when the passport carrying it is signed, its signature verifies with
+the key `iss` holds, `sub` equals the passport's `id`, `rel` is one the reader knows, `exp` is in
+the future and `iat` is no more than five minutes ahead of the reader's clock. Whether to trust
+`iss` at all is the reader's own decision ([trust.md](trust.md)), and nothing in a passport can
+make it.
 
 ## 5. Beacons and bindings
 

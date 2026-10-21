@@ -12,7 +12,7 @@ import hashlib
 import math
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, TypeGuard
 
@@ -68,6 +68,8 @@ FIGURES = (
     "max_speed_mps",
 )
 VIAS = ("http", "mqtt")
+#: Why a stamp that checks out still does not count on an unsigned passport (spec 4.5).
+UNSIGNED_STAMP = "the passport is unsigned, so nothing shows the key it stamps wrote it"
 #: The extensions quackd understands, so a required one of these does not stop it talking.
 KNOWN_EXTENSIONS = frozenset({"org.quackd"})
 
@@ -528,8 +530,15 @@ def _readings(doc: dict[str, Any]) -> tuple[list[str], bool]:
 def _reading(doc: dict[str, Any], raw: bytes, *, signed: bool, now: int | None) -> Reading:
     notes, talk_allowed = _readings(doc)
     moment = int(time.time()) if now is None else now
-    judged = tuple(stamps.check(t, subject=doc["id"], now=moment) for t in doc.get("stamps", []))
-    return Reading(doc, raw, signed, judged, tuple(notes), talk_allowed)
+    judged: list[Stamp] = []
+    for token in doc.get("stamps", []):
+        stamp = stamps.check(token, subject=doc["id"], now=moment)
+        if stamp.counts and not signed:
+            # a stamp vouches for a key, and nothing shows that key wrote an unsigned passport:
+            # anybody can copy an id and a stamp into one (spec 4.5)
+            stamp = replace(stamp, counts=False, reason=UNSIGNED_STAMP)
+        judged.append(stamp)
+    return Reading(doc, raw, signed, tuple(judged), tuple(notes), talk_allowed)
 
 
 def read_json(raw: bytes, *, now: int | None = None) -> Reading:

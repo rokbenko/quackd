@@ -6131,6 +6131,8 @@ def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
     if view["stamps"]:
         claim += f", {len(counted)} of {len(view['stamps'])} stamps count"
     rows.append(("claim", claim))
+    if "tier" in view:
+        rows.append(("tier", f"{view['tier']}: {view['tier_why']}"))
     maker = view["maker"]
     if maker:
         rows.append(("maker", " ".join(str(maker[k]) for k in ("vendor", "model") if k in maker)))
@@ -6175,10 +6177,30 @@ def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
 
 def _print_reading(view: dict[str, Any], *, title: str) -> None:
     ui.console.print(ui.run_header(f"{title} {view['name']}", _passport_rows(view)))
+    for warning in view.get("warnings", []):
+        ui.console.print(_warn_line(warning), soft_wrap=True)
     if not view["talk_allowed"]:
         ui.console.print(_warn_line("a required extension is not understood, so no talk"))
     for note in view["notes"]:
         ui.console.print(Text(f"  {note}", style=ui.STYLES["muted"]), soft_wrap=True)
+
+
+def _judged_view(reading: Any, registry_dir: str | None) -> dict[str, Any]:
+    """A reading's view, with the tier this quackd places it in and why
+    (docs/passport/trust.md#the-four-tiers)."""
+    from quackd.passport_store import PassportStore, StoreError
+    from quackd.passport_trust import judge
+
+    view: dict[str, Any] = reading.view()
+    try:
+        judgement = judge(reading, PassportStore(registry_dir))
+    except StoreError as e:
+        _fail(str(e))
+        raise  # unreachable: _fail exits
+    view["tier"] = judgement.tier
+    view["tier_why"] = judgement.why
+    view["warnings"] = list(judgement.warnings)
+    return view
 
 
 @passport_app.command("show")
@@ -6191,41 +6213,53 @@ def passport_show(
         help="The passport itself, as one line of compact JSON on stdout, for a script.",
         rich_help_panel="Output",
     ),
+    as_jws: bool = typer.Option(
+        False,
+        "--jws",
+        help="The signed passport, as its compact JWS on stdout, for a script.",
+        rich_help_panel="Output",
+    ),
     out: Path | None = typer.Option(
         None,
         "--out",
         help="Write the passport to this file as exactly the bytes quackd serves, so it has the "
-        "same digest, for a static host or a sticker to point at.",
+        "same digest: the signed JWS for a name ending .jws, the JSON otherwise. A static host "
+        "serves both, under robot-passport.json and robot-passport.jws.",
         rich_help_panel="Output",
     ),
 ) -> None:
-    """Show the passport quackd builds for a robot, from its manifest and what you said."""
+    """Show the passport quackd builds for a robot, signed with the robot's own key."""
     from quackd.passport import document, strict
 
-    doc, (store, name, _record), created = _passport_for(robot, registry_dir)
+    doc, (store, name, record), created = _passport_for(robot, registry_dir)
     if created:
         ui.err_console.print(
             Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
         )
     raw = strict.dumps(doc)
+    token = document.sign(doc, record.key)
     if out is not None:
+        body = token.encode("ascii") if out.suffix == ".jws" else raw
         try:
-            out.write_bytes(raw)
+            out.write_bytes(body)
         except OSError as e:
             _fail(f"could not write {out}: {e}")
         ui.err_console.print(
             Text(
-                f"wrote {out}: {len(raw)} bytes, digest {hashlib.sha256(raw).hexdigest()[:16]}",
+                f"wrote {out}: {len(body)} bytes, digest {hashlib.sha256(raw).hexdigest()[:16]}",
                 style=ui.STYLES["muted"],
             )
         )
     if as_json:
         print(raw.decode("utf-8"))
         return
+    if as_jws:
+        print(token)
+        return
     if out is not None:
         return
-    reading = document.read_json(raw)
-    _print_reading(reading.view(), title="passport")
+    reading = document.read_jws(token)
+    _print_reading(_judged_view(reading, registry_dir), title="passport")
     if len(raw) > document.WRITER_BYTES:
         ui.console.print(
             _warn_line(
@@ -6240,6 +6274,7 @@ def passport_check(
         ..., help="A passport to check: a file, - for stdin, or an http(s) URL."
     ),
     as_json: bool = _JSON,
+    registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Check a passport the way a reader would, and show what it proves and what it claims.
 
@@ -6252,7 +6287,7 @@ def passport_check(
         if source.startswith(("http://", "https://")):
             aim = fetch.target(source)
             promised = aim.short_id
-            data = fetch.fetch(aim.url)
+            data = fetch.fetch_passport(aim.url)
         elif source == "-":
             data = sys.stdin.buffer.read(document.MAX_BYTES + 1)
         else:
@@ -6281,7 +6316,7 @@ def passport_check(
             f"refused under 5.2: the URL promised short id {promised}, and this passport's is "
             f"{reading.short_id or 'none'}"
         )
-    view = reading.view()
+    view = _judged_view(reading, registry_dir)
     if as_json:
         print(json.dumps(view))
         return
@@ -6360,13 +6395,138 @@ def passport_owner(
     except StoreError as e:
         _fail(str(e))
         return
-    ui.console.print(
-        ui.run_header(
-            "owner",
-            [("label", owner.label or "not said"), ("contact", owner.contact or "not said")],
-            hint=str(store.owner_path),
+    rows: list[tuple[str, Any]] = [
+        ("label", owner.label or "not said"),
+        ("contact", owner.contact or "not said"),
+    ]
+    if owner.key is not None:
+        rows.append(("key", Text(f"{owner.key.did}  (short id {owner.key.short_id})")))
+    else:
+        rows.append(("key", "none yet: quackd passport stamp makes one"))
+    ui.console.print(ui.run_header("owner", rows, hint=str(store.owner_path)))
+
+
+@passport_app.command("stamp")
+def passport_stamp(
+    robot: str | None = typer.Option(
+        None, "--robot", "-r", help="A robot this quackd drives: its stamp goes in its passport."
+    ),
+    did: str | None = typer.Option(
+        None,
+        "--did",
+        help="Stamp another robot's key instead, one that lives on the robot itself, and print "
+        "the stamp for it to carry.",
+    ),
+    days: int = typer.Option(
+        365, "--days", min=1, max=365, help="How long the stamp holds, a year at most."
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Stamp a robot's key with your owner key: this robot is mine.
+
+    A stamp vouches for the key, never for the passport's contents, so the robot can change
+    its passport without a new one. Two robots that carry your stamp know each other on sight.
+    Your owner key is made the first time you stamp anything: back it up."""
+    from quackd.passport import PassportError, stamps
+    from quackd.passport_store import PassportStore, StoreError
+
+    if (robot is None) == (did is None):
+        _fail("stamp one robot: --robot NAME for one this quackd drives, or --did for another")
+    store = PassportStore(registry_dir)
+    try:
+        owner_key, made = store.owner_key_or_new()
+    except StoreError as e:
+        _fail(str(e))
+        raise  # unreachable: _fail exits
+    if made:
+        ui.err_console.print(
+            Text(
+                f"made your owner key in {store.owner_path}: back it up, since losing it means "
+                "stamping every robot again",
+                style=ui.STYLES["warn"],
+            )
         )
+    if did is not None:
+        try:
+            token = stamps.make(owner_key, did, days=days)
+        except PassportError as e:
+            _fail(f"refused under {e.rule}: {e}")
+            return
+        print(token)
+        return
+    assert robot is not None
+    _doc, (store, name, record), created = _passport_for(robot, registry_dir)
+    if created:
+        ui.err_console.print(
+            Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
+        )
+    token = stamps.make(owner_key, record.key.did, days=days)
+    # one stamp per owner key: a fresh one replaces the old, so a passport never carries two
+    record.stamps = [
+        s
+        for s in record.stamps
+        if stamps.check(s, subject=record.key.did).iss not in (owner_key.did, None)
+    ] + [token]
+    try:
+        store.save_robot(name, record)
+    except StoreError as e:
+        _fail(str(e))
+    ui.console.print(
+        Text(f"stamped {name} with your owner key {owner_key.short_id}, for {days} days")
     )
+
+
+@passport_app.command("known")
+def passport_known(
+    as_json: bool = _JSON,
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """List the robots and owners you pinned."""
+    from quackd.passport.keys import short_id_of
+    from quackd.passport_store import PassportStore, StoreError
+
+    store = PassportStore(registry_dir)
+    try:
+        pins = store.known()
+    except StoreError as e:
+        _fail(str(e))
+        return
+    if as_json:
+        for p in pins:
+            print(json.dumps({"id": p.id, "name": p.name, "kind": p.kind, "pinned": p.pinned}))
+        return
+    if not pins:
+        ui.console.print(
+            Text("nothing pinned: quackd meet SOURCE --pin pins a robot", style=ui.STYLES["muted"])
+        )
+        return
+    t = ui.table(f"pinned ({len(pins)})")
+    for column in ("name", "kind", "short id", "pinned"):
+        t.add_column(column)
+    for p in pins:
+        t.add_row(p.name, p.kind, short_id_of(p.id) or "", p.pinned[:10])
+    ui.console.print(t)
+
+
+@passport_app.command("forget")
+def passport_forget(
+    which: str = typer.Argument(..., help="A pinned robot's or owner's name, short id or id."),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Forget a pin: the next meeting with that robot, or that owner's robots, starts again as
+    a stranger's."""
+    from quackd.passport_store import PassportStore, StoreError
+
+    store = PassportStore(registry_dir)
+    try:
+        gone = store.forget(which)
+    except StoreError as e:
+        _fail(str(e))
+        return
+    if not gone:
+        _fail(f"nothing pinned is called {which}", hint="quackd passport known lists the pins")
+    for p in gone:
+        ui.console.print(Text(f"forgot {p.kind} {p.name} ({p.id})"))
 
 
 @passport_app.command("serve")
@@ -6405,7 +6565,7 @@ def passport_serve(
 
     from quackd.lan import LanNotInstalled
     from quackd.lan.announce import local_ip
-    from quackd.passport import strict
+    from quackd.passport import document, strict
     from quackd.passport.beacon import WELL_KNOWN_JSON
     from quackd.passport.serve import PassportServer, Served, robot_paths
 
@@ -6418,8 +6578,8 @@ def passport_serve(
             ui.err_console.print(
                 Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
             )
-        built.append((name, record, strict.dumps(doc)))
-    served = [Served(name, raw) for name, _record, raw in built]
+        built.append((name, record, strict.dumps(doc), document.sign(doc, record.key)))
+    served = [Served(name, raw, token) for name, _record, raw, token in built]
     try:
         server = PassportServer(served, host=bind, port=port).start()
     except OSError as e:
@@ -6429,7 +6589,7 @@ def passport_serve(
     closers: list[Any] = [server]
     rows: list[tuple[str, Any]] = []
     try:
-        for name, record, raw in built:
+        for name, record, raw, token in built:
             path = WELL_KNOWN_JSON if len(built) == 1 else robot_paths(name)[0]
             digest = hashlib.sha256(raw).hexdigest()
             rows.append((name, f"http://{address}:{server.port}{path}"))
@@ -6454,7 +6614,7 @@ def passport_serve(
                 closers.append(
                     PassportPublisher(
                         record.key.short_id,
-                        raw,
+                        token.encode("ascii"),
                         host=broker,
                         port=int(broker_port or 1883),
                     ).start()
@@ -6532,7 +6692,7 @@ def _meet_source(source: str) -> tuple[bytes, str | None]:
 
     if source.startswith(("http://", "https://")):
         aim = fetch.target(source)
-        return fetch.fetch(aim.url), aim.short_id
+        return fetch.fetch_passport(aim.url), aim.short_id
     if source.startswith("mqtt://"):
         from quackd.lan.passport_mqtt import read_passport
 
@@ -6558,10 +6718,10 @@ def _meet_source(source: str) -> tuple[bytes, str | None]:
         from quackd.passport_qr import read_qr
 
         aim = fetch.target(read_qr(picture))
-        return fetch.fetch(aim.url), aim.short_id
+        return fetch.fetch_passport(aim.url), aim.short_id
     host, _, host_port = source.partition(":")
     aim = fetch.target(f"http://{host}:{host_port or PASSPORT_PORT}")
-    return fetch.fetch(aim.url), aim.short_id
+    return fetch.fetch_passport(aim.url), aim.short_id
 
 
 @app.command(rich_help_panel="Robots")
@@ -6572,11 +6732,23 @@ def meet(
         "sticker, mqtt://BROKER[:PORT]/KEY, or ros://HOST[:PORT] for a robot on rosbridge.",
     ),
     as_json: bool = _JSON,
+    pin: bool = typer.Option(
+        False, "--pin", help="Pin this robot's key once you have read it, so next time it is known."
+    ),
+    pin_owner: bool = typer.Option(
+        False,
+        "--pin-owner",
+        help="Pin the owner key that stamped this robot, so every robot it stamps is trusted as "
+        "the same owner's.",
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Pin without asking first."),
+    registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Meet a robot: find its passport, read it the way a reader would, and show it.
 
     The passport is fetched only from where you pointed, with no redirects and nothing past
-    8 KB, and every claim is labelled with what it proves. Nothing about the robot is kept."""
+    8 KB, and every claim is labelled with what it proves. Nothing about the robot is kept unless
+    you pin it, and only a signed passport can be pinned."""
     from quackd.lan import LanNotInstalled
     from quackd.passport import PassportError, document
 
@@ -6604,11 +6776,50 @@ def meet(
             f"refused under 5.2: {source} promised short id {promised}, and this passport's is "
             f"{reading.short_id or 'none'}"
         )
-    view = reading.view()
+    view = _judged_view(reading, registry_dir)
     if as_json:
         print(json.dumps(view))
-        return
-    _print_reading(view, title="met")
+    else:
+        _print_reading(view, title="met")
+    if pin or pin_owner:
+        _pin_after_meeting(
+            reading, pin=pin, pin_owner=pin_owner, yes=yes, registry_dir=registry_dir
+        )
+
+
+def _pin_after_meeting(
+    reading: Any, *, pin: bool, pin_owner: bool, yes: bool, registry_dir: str | None
+) -> None:
+    """Pin what `meet` was asked to, after a person said yes: a robot's own key, the owner key
+    that stamped it, or both. A pin is the one thing in Robot Passport only a person makes."""
+    from quackd.passport_store import PassportStore, Pin, StoreError
+
+    if not reading.signed:
+        _fail(
+            "an unsigned passport cannot be pinned: anybody can copy an id, and only a signature "
+            "says who wrote it"
+        )
+    store = PassportStore(registry_dir)
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    wanted: list[Pin] = []
+    if pin:
+        wanted.append(Pin(reading.id, reading.name, "robot", now))
+    if pin_owner:
+        owners = [s for s in reading.counted_stamps() if s.rel == "owner" and s.iss]
+        if not owners:
+            _fail(f"{reading.name} carries no owner stamp that counts, so there is no owner to pin")
+        label = reading.document.get("owner", {}).get("label") or f"the owner of {reading.name}"
+        wanted.append(Pin(owners[0].iss, label, "owner", now))
+    for item in wanted:
+        what = f"{item.kind} {item.name} ({item.id})"
+        if not yes and not typer.confirm(f"pin {what}?", default=False):
+            ui.console.print(Text(f"not pinned: {what}", style=ui.STYLES["muted"]))
+            continue
+        try:
+            store.pin(item)
+        except StoreError as e:
+            _fail(str(e))
+        ui.console.print(Text(f"pinned {what} in {store.known_path}"))
 
 
 @app.command(rich_help_panel="LAN")

@@ -25,7 +25,9 @@ from quackd.registry import registry_dir
 KEYS_DIR = "keys"
 ROBOTS_DIR = "robots"
 OWNER_FILE = "owner.json"
+KNOWN_FILE = "known_robots.json"
 VERSION = 1
+PIN_KINDS = ("robot", "owner")
 
 #: A registered name, or the slug a bare `adapter:backend` keys its memory by.
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -47,10 +49,23 @@ class RobotRecord:
 
 @dataclass
 class OwnerRecord:
-    """Whoever owns the robots this quackd drives, as they want to be named in a passport."""
+    """Whoever owns the robots this quackd drives, as they want to be named in a passport, and
+    the owner key that stamps those robots, once there is one."""
 
     label: str | None = None
     contact: str | None = None
+    key: SigningKey | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class Pin:
+    """A key a person decided to trust: a robot's own, or an owner's, which covers every robot
+    that owner stamps (docs/passport/trust.md#pinning-trust-on-first-use)."""
+
+    id: str
+    name: str
+    kind: str
+    pinned: str
 
 
 class PassportStore:
@@ -97,6 +112,18 @@ class PassportStore:
         self.save_robot(name, record)
         return record, True
 
+    def robots(self) -> dict[str, RobotRecord]:
+        """Every robot this quackd has made a key for, by name."""
+        folder = self.keys / ROBOTS_DIR
+        if not folder.is_dir():
+            return {}
+        out: dict[str, RobotRecord] = {}
+        for path in sorted(folder.glob("*.json")):
+            record = self.robot(path.stem) if _NAME_RE.match(path.stem) else None
+            if record is not None:
+                out[path.stem] = record
+        return out
+
     def save_robot(self, name: str, record: RobotRecord) -> None:
         payload: dict[str, Any] = {
             "version": VERSION,
@@ -122,9 +149,20 @@ class PassportStore:
             return OwnerRecord()
         raw = _read(self.owner_path)
         label, contact = raw.get("label"), raw.get("contact")
+        key: SigningKey | None = None
+        if "seed" in raw:
+            try:
+                key = SigningKey(bytes.fromhex(str(raw["seed"])))
+            except ValueError as e:
+                raise StoreError(
+                    f"{self.owner_path}: no readable seed: fix it or move it aside"
+                ) from e
+            if raw.get("did") not in (None, key.did):
+                raise StoreError(f"{self.owner_path}: its did is not the key its seed makes")
         return OwnerRecord(
             label if isinstance(label, str) and label else None,
             contact if isinstance(contact, str) and contact else None,
+            key,
         )
 
     def save_owner(self, owner: OwnerRecord) -> None:
@@ -135,7 +173,76 @@ class PassportStore:
                 payload[name] = value
             else:
                 payload.pop(name, None)
+        if owner.key is not None:
+            payload["did"] = owner.key.did
+            payload["seed"] = owner.key.seed.hex()
         _write_secret(self.owner_path, payload)
+
+    def owner_key_or_new(self) -> tuple[SigningKey, bool]:
+        """The owner key, made the first time something needs to stamp. The flag says which."""
+        owner = self.owner()
+        if owner.key is not None:
+            return owner.key, False
+        owner.key = SigningKey.generate()
+        self.save_owner(owner)
+        return owner.key, True
+
+    # ── pins ────────────────────────────────────────────────────────────────────────
+
+    @property
+    def known_path(self) -> Path:
+        return self.base / KNOWN_FILE
+
+    def known(self) -> list[Pin]:
+        """Every pin, robots and owners, in the order they were made."""
+        if not self.known_path.exists():
+            return []
+        raw = _read(self.known_path)
+        pins = raw.get("pins") or {}
+        if not isinstance(pins, dict):
+            raise StoreError(f"{self.known_path}: pins must be an object of id -> pin")
+        out: list[Pin] = []
+        for pin_id, entry in pins.items():
+            if not isinstance(entry, dict) or entry.get("kind") not in PIN_KINDS:
+                raise StoreError(f"{self.known_path}: {pin_id} is not a robot or an owner pin")
+            out.append(
+                Pin(
+                    pin_id,
+                    str(entry.get("name", "")),
+                    str(entry["kind"]),
+                    str(entry.get("pinned", "")),
+                )
+            )
+        return sorted(out, key=lambda p: p.pinned)
+
+    def pin(self, pin: Pin) -> None:
+        if pin.kind not in PIN_KINDS:
+            raise StoreError(f"a pin is a robot or an owner, not {pin.kind!r}")
+        pins = {p.id: p for p in self.known()}
+        pins[pin.id] = pin
+        self._write_pins(pins.values())
+
+    def forget(self, which: str) -> list[Pin]:
+        """Remove the pins whose id, short id or name is `which`, and say which went."""
+        from quackd.passport.keys import short_id_of
+
+        kept: list[Pin] = []
+        gone: list[Pin] = []
+        for pin in self.known():
+            if which in (pin.id, pin.name) or which == short_id_of(pin.id):
+                gone.append(pin)
+            else:
+                kept.append(pin)
+        if gone:
+            self._write_pins(kept)
+        return gone
+
+    def _write_pins(self, pins: Any) -> None:
+        payload = {
+            "version": VERSION,
+            "pins": {p.id: {"name": p.name, "kind": p.kind, "pinned": p.pinned} for p in pins},
+        }
+        _write_secret(self.known_path, payload)
 
 
 def _read(path: Path) -> dict[str, Any]:
