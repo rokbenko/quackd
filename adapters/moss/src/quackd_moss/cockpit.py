@@ -274,7 +274,7 @@ class CockpitClient:
         if name == NEVER_POSTED:
             raise ValueError(
                 "quackd never posts /cmd/stack: its stop ends every dimOS run and drops the "
-                "arm's torque. Stop the stack on the rover with tools/moss-fly.sh stop"
+                f"arm's torque. Stop the stack on the rover with {up.FLY_STOP.name}"
             )
         path = f"{CMD_PREFIX}{name}"
         repeatable = name in ("stop", "keepalive")
@@ -651,7 +651,7 @@ class MossCockpit:
         except LinkDown as e:
             raise TransportError(
                 f"moss: nothing answers at {self.cockpit.url}{STATE_PATH} ({e}). Start the cockpit "
-                "on the rover (tools/moss-fly.sh cockpit) and reach it through the tunnel: ssh -L "
+                f"on the rover ({up.FLY_COCKPIT}) and reach it through the tunnel: ssh -L "
                 f"{COCKPIT_PORT}:127.0.0.1:{COCKPIT_PORT} -L {BRIDGE_PORT}:127.0.0.1:{BRIDGE_PORT} "
                 "<rover>"
             ) from e
@@ -892,7 +892,7 @@ class MossCockpit:
             try:
                 arm = await self._call(self.bridge.arm)
                 extras |= {"bridge_up": True, "arm": arm}
-                if self.stack == "moss-litter":
+                if self.stack == up.LITTER_STACK:
                     extras["mission"] = await self._call(self.bridge.mission)
                 # the base stack's own navigation: the cockpit reads only the newest dimOS
                 # run, and a moss-arm started after the base hides the base from it
@@ -1270,7 +1270,7 @@ class MossCockpit:
             except Exception:
                 return None  # a cockpit that does not answer is told to stop all the same
             stack = state.get("stack") or {}
-            if stack.get("blueprint") == "moss-arm":
+            if stack.get("blueprint") == up.ARM_STACK:
                 return None
         now = stack.get("run_id")
         if now is None or str(now) == self.run_id:
@@ -1281,7 +1281,7 @@ class MossCockpit:
         now = stack.get("blueprint") if stack.get("running") else "nothing"
         return (
             f"moss: the stack quackd connected to ({self.stack}) is not running any more, and the "
-            f"rover runs {now} now. The cockpit's idle stop, or tools/moss-fly.sh stop, ends every "
+            f"rover runs {now} now. The cockpit's idle stop, or {up.FLY_STOP.name}, ends every "
             "dimOS run, the arm's included"
         )
 
@@ -1368,7 +1368,7 @@ class MossCockpit:
                     arm = await self._call(self.bridge.arm)
                     if arm.get("answering") and arm.get("folded") is False:
                         note.append(arm_note((arm.get("job") or {}).get("held")))
-            if self.stack == "moss-litter" and self.stop_sent and self.run_moved is None:
+            if self.stack == up.LITTER_STACK and self.stop_sent and self.run_moved is None:
                 if self.mission_stop == "stopped":
                     note.append(
                         "the litter mission is stopped, and runs again only after the stack "

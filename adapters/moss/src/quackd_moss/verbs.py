@@ -36,7 +36,7 @@ SKILL_COLLECT = "collect_litter"
 SKILL_ARM_CYCLE = "arm_cycle"
 MISSION_STOPPED = (
     "the mission is stopped until the stack restarts: support the arm, then restart the stack "
-    "on the rover with tools/moss-fly.sh stop and tools/moss-fly.sh litter"
+    f"on the rover with {up.FLY_STOP.name} and {up.FLY_LITTER}"
 )
 """What a stopped mission says, wherever it is met: the stop that ends the stack ends the
 arm's run too, and with it the arm's torque."""
@@ -109,10 +109,10 @@ runs rather than the executor's."""
 
 # ── which stacks quackd connects to ─────────────────────────────────────────────────────
 
-KNOWN_STACKS = ("moss-nav", "moss-explore", "moss-litter")
+KNOWN_STACKS = (up.NAV_STACK, up.EXPLORE_STACK, up.LITTER_STACK)
 
 
-_START_ONE = "start one with tools/moss-fly.sh map, explore or litter"
+_START_ONE = f"start one with {up.FLY_STARTS}"
 """The launcher's own words for the three stacks quackd drives (moss-fly.sh usage)."""
 
 
@@ -134,43 +134,44 @@ def stack_refusal(
             f"no stack is running on the rover: {_START_ONE}, without EXPLORE=1, which would "
             "set the rover exploring before quackd asks"
         )
-    if not blueprint.startswith("moss"):
+    if not blueprint.startswith(up.BLUEPRINT_PREFIX):
         return (
             f"the running stack is {blueprint or 'unnamed'}, which is not one of MOSS's: "
             f"stop it and {_START_ONE}"
         )
-    if blueprint in ("moss-gamepad", "moss-base"):
+    if blueprint in (up.GAMEPAD_STACK, up.BASE_STACK):
         return (
             f"{blueprint} is the pad and the base alone, with no odometry for quackd to read: "
-            "start moss-nav or moss-explore (tools/moss-fly.sh map or explore)"
+            f"start {up.NAV_STACK} or {up.EXPLORE_STACK} ({up.FLY_BASE_STARTS})"
         )
-    if blueprint == "moss-arm":
+    if blueprint == up.ARM_STACK:
         return (
-            "the cockpit reads only the newest dimOS run, and that is moss-arm, which hides any "
-            "base stack from it: run quackd's bridge on the rover, which reads the base stack and "
-            "the arm's run apart, or with no base stack running, stop moss-arm, start the base "
-            f"stack first ({_START_ONE.split(' with ', 1)[1]}), then moss-arm"
+            f"the cockpit reads only the newest dimOS run, and that is {up.ARM_STACK}, which hides "
+            "any base stack from it: run quackd's bridge on the rover, which reads the base stack "
+            f"and the arm's run apart, or with no base stack running, stop {up.ARM_STACK}, start "
+            f"the base stack first ({up.FLY_STARTS}), then {up.ARM_STACK}"
         )
     if blueprint not in KNOWN_STACKS:
         return (
-            f"quackd knows moss-nav, moss-explore and moss-litter, not {blueprint}: stop it and "
+            f"quackd knows {up.NAV_STACK}, {up.EXPLORE_STACK} and {up.LITTER_STACK}, not "
+            f"{blueprint}: stop it and "
             f"{_START_ONE}"
         )
     if bus != "lcm":
         return (
             f"the stack's bus is {bus or 'unknown'}, and the cockpit and quackd's bridge speak "
-            "LCM only: set DIMOS_TRANSPORT and TRANSPORT to lcm, or unset both"
+            f"LCM only: set {up.BUS_VAR_NAMES[0]} and {up.BUS_VAR_NAMES[1]} to lcm, or unset both"
         )
-    if blueprint == "moss-litter" and not bridge:
+    if blueprint == up.LITTER_STACK and not bridge:
         why = f" ({bridge_error})" if bridge_error else ""
         return (
-            "on moss-litter the mission listens to no stop the cockpit can send, and only "
+            f"on {up.LITTER_STACK} the mission listens to no stop the cockpit can send, and only "
             "quackd's bridge can call the mission's own: start the bridge on the rover "
             f"(bridge/moss/README.md){why}"
         )
-    if blueprint == "moss-litter" and not mission:
+    if blueprint == up.LITTER_STACK and not mission:
         return (
-            "on moss-litter the mission's RPC does not answer the bridge "
+            f"on {up.LITTER_STACK} the mission's RPC does not answer the bridge "
             f"({mission_error or 'no reason given'}), so nothing could stop it: restart the stack"
         )
     return None
@@ -223,8 +224,8 @@ class MinutesParams(BaseModel):
 class PickAndDropParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pick_pose: Literal["pick", "pick_low"] = Field(
-        default="pick",
+    pick_pose: up.PickPose = Field(
+        default=up.PICK_POSE,
         description=(
             "Where the jaws close: pick for an object standing up, pick_low for one lying on "
             "the floor. Either way it is one fixed point in front of the rover."
@@ -250,7 +251,7 @@ def _cockpit_fresh(state: DuckState) -> str | None:
     if age is None:
         return (
             "the cockpit has no base telemetry from the coordinator, so nothing says the tracks "
-            "would answer: is the stack's base connected (tools/moss-fly.sh log)?"
+            f"would answer: is the stack's base connected ({up.FLY_LOG})?"
         )
     limit = _number(state.extras.get("telemetry_limit_s")) or TELEMETRY_LIMIT_S
     if age > limit:
@@ -343,11 +344,11 @@ def _arm_folded(state: DuckState) -> str | None:
     if not arm.get("answering"):
         return None
     if arm.get("folded") is False:
-        if state.extras.get("stack") == "moss-litter":
+        if state.extras.get("stack") == up.LITTER_STACK:
             return (
-                "the arm is out of its drive pose, and on moss-litter the mission owns the arm, "
-                "so quackd stows nothing there: stow it on the rover with the maker's own cycle, "
-                "tools/moss_arm_play.py --from back_to_clear in the MOSS checkout, then ask again"
+                f"the arm is out of its drive pose, and on {up.LITTER_STACK} the mission owns the "
+                "arm, so quackd stows nothing there: stow it on the rover with the maker's own "
+                f"cycle, {up.ARM_STOW} in the MOSS checkout, then ask again"
             )
         return (
             "the arm is out of its drive pose: stow_arm first, so the rover does not drive with "
@@ -358,11 +359,11 @@ def _arm_folded(state: DuckState) -> str | None:
 
 def _explore_stack(state: DuckState) -> str | None:
     stack = state.extras.get("stack")
-    if stack == "moss-explore":
+    if stack == up.EXPLORE_STACK:
         return None
     return (
-        f"the running stack is {stack or 'unknown'}, and only moss-explore has the planner and "
-        "the explorer: tools/moss-fly.sh explore"
+        f"the running stack is {stack or 'unknown'}, and only {up.EXPLORE_STACK} has the planner "
+        f"and the explorer: {up.FLY_EXPLORE}"
     )
 
 
@@ -572,7 +573,7 @@ async def collect_litter(ctx: VerbContext, p: MinutesParams) -> VerbResult:
         why = undelivered or "the bridge could not confirm it"
         return VerbResult.fail(
             f"the mission ran {seconds:g} s and picked {picked}, but its stop was not confirmed "
-            f"({why}). Stop the stack on the rover with tools/moss-fly.sh stop, and support "
+            f"({why}). Stop the stack on the rover with {up.FLY_STOP.name}, and support "
             "the arm first: that stop ends the arm's run too, which turns its torque off",
             **data,
         )
@@ -596,7 +597,7 @@ def arm_note(held: Any) -> str:
     """The close's word on an arm this session moved and left out of its drive pose:
     holding only after the hold was read, and otherwise what reading there was."""
     later = (
-        "The cockpit's idle stop, or tools/moss-fly.sh stop, will later end the arm's stack, "
+        f"The cockpit's idle stop, or {up.FLY_STOP.name}, will later end the arm's stack, "
         "and that turns its torque off"
     )
     if held is True:

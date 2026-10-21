@@ -1,4 +1,4 @@
-"""The only file in quackd allowed to spell a MOSS or dimOS name.
+"""The only file in quackd whose code spells a MOSS or dimOS name.
 
 Every constant is tagged VERIFIED (read from upstream source at the pin, link given) or
 UNVERIFIED (an assumption of ours, with what quackd does about it). The human-readable version
@@ -17,10 +17,19 @@ goes through quackd's own bridge on the rover (`bridge/moss/`), which is the one
 imports MOSS and dimOS, lazily, in MOSS's own virtual environment. The bridge's protocol is
 quackd's own at both ends, so it is not in here: its names are pinned by source string tests.
 
+Every blueprint, launcher command, script, pose and camera name the rest of the package acts
+on or says comes from a ref here, through the names at the end of this file, and a test scans
+the package's code for any other spelling. Prose in the other files' docstrings and comments
+may name them.
+
 Nothing here has been run against a MOSS rover.
 """
 
 from __future__ import annotations
+
+import os
+import re
+from typing import Literal, cast
 
 from quackd.upstream import UpstreamRef
 
@@ -52,6 +61,7 @@ _ARM_PLAY = "tools/moss_arm_play.py"
 _POSES = "config/arm_drop_poses.json"
 _PREFLIGHT = "tools/moss_preflight.py"
 _FLY = "tools/moss-fly.sh"
+_PYPROJECT = "pyproject.toml"
 
 _MOVEMENT = "dimos/navigation/movement_manager/movement_manager.py"
 _MODULE = "dimos/core/module.py"
@@ -772,6 +782,27 @@ BMS_CUT_V = UpstreamRef(
 
 # ── the hard stop quackd never sends ────────────────────────────────────────────────────
 
+BLUEPRINTS = UpstreamRef(
+    '"moss-base", "moss-gamepad", "moss-nav", "moss-explore", "moss-arm", "moss-litter"',
+    "VERIFIED",
+    src(_PYPROJECT, 32),
+    "the blueprints moss_dimos registers with dimOS, by the names dimos run and the run registry "
+    "give them (the entry points, lines 32 to 37). A run's blueprint is the last part of "
+    "moss-dimos.<name>.",
+)
+FLY_LAUNCHER = UpstreamRef(
+    "tools/moss-fly.sh",
+    "VERIFIED",
+    src(_FLY, 66),
+    "MOSS's launcher, run from the checkout, which starts and stops the stacks.",
+)
+FLY_COMMANDS = UpstreamRef(
+    '"check", "map", "explore", "litter", "stop", "log", "cockpit"',
+    "VERIFIED",
+    src(_FLY, 66),
+    "the launcher's commands, as its usage line names them. map starts moss-nav, explore "
+    "moss-explore and litter moss-litter (lines 247 to 251).",
+)
 FLY_STOP = UpstreamRef(
     "tools/moss-fly.sh stop",
     "VERIFIED",
@@ -986,6 +1017,44 @@ ARM_UNSEEN_WITHOUT_MOSS_ARM = UpstreamRef(
     "with no moss-arm run nothing holds the arm and nothing reports it. quackd drives the base "
     "as if it were folded, offers no arm verb, and says so in the manifest's assumptions.",
 )
+
+
+# ── the names the rest of the package spells, each from a ref above ──────────────────────
+
+
+def quoted(ref: UpstreamRef) -> tuple[str, ...]:
+    """The names a ref lists in double quotes, in its own order."""
+    return tuple(re.findall(r'"([^"]+)"', ref.name))
+
+
+BASE_STACK, GAMEPAD_STACK, NAV_STACK, EXPLORE_STACK, ARM_STACK, LITTER_STACK = quoted(BLUEPRINTS)
+BLUEPRINT_PREFIX = os.path.commonprefix(list(quoted(BLUEPRINTS)))
+"""What every one of MOSS's blueprints starts with."""
+NOSE, WRIST = quoted(CAMERAS)
+PickPose = Literal["pick", "pick_low"]
+"""pick_and_drop's pick_pose as a type, which a test holds to PICK_POSES."""
+PICK_POSE, PICK_LOW_POSE = cast("tuple[PickPose, PickPose]", quoted(PICK_POSES))
+
+
+def _fly(words: str) -> str:
+    """The launcher with words its usage line names (FLY_COMMANDS), as a sentence gives them."""
+    named = set(quoted(FLY_COMMANDS))
+    unnamed = [w for w in re.findall(r"[a-z]+", words) if w not in named | {"or"}]
+    if unnamed:
+        raise ValueError(f"the launcher names no command {unnamed}")
+    return f"{FLY_LAUNCHER.name} {words}"
+
+
+FLY_COCKPIT = _fly("cockpit")
+FLY_EXPLORE = _fly("explore")
+FLY_LITTER = _fly("litter")
+FLY_LOG = _fly("log")
+FLY_BASE_STARTS = _fly("map or explore")
+FLY_STARTS = _fly("map, explore or litter")
+"""The launcher's own words for the three stacks quackd drives."""
+ARM_STOW = f"{ARM_PLAY.name} --from {CYCLE_FROM_BACK_TO_CLEAR.name}"
+"""The maker's own stow, as a person runs it from the MOSS checkout."""
+BUS_VAR_NAMES = tuple(v.strip() for v in BUS_VARS.name.split(","))
 
 
 def all_refs() -> list[UpstreamRef]:

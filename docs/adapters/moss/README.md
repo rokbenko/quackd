@@ -16,8 +16,10 @@ read at
 [`a7d19f7`](https://github.com/dimensionalOS/dimos/tree/a7d19f76158b01739b26e7a17390f89764aaef83),
 the commit MOSS's own Software.md installs. Neither has a software release, and MOSS's CHANGELOG
 says nothing is frozen, so a commit is the only honest pin, and every name was read from code
-rather than from docs. Every name quackd spells lives in
-[`adapters/moss/src/quackd_moss/upstream_api.py`](../../../adapters/moss/src/quackd_moss/upstream_api.py).
+rather than from docs. Every name quackd's package spells in its code lives in
+[`adapters/moss/src/quackd_moss/upstream_api.py`](../../../adapters/moss/src/quackd_moss/upstream_api.py),
+and a test scans the package for any other spelling. The bridge imports nothing of quackd, so it
+spells its own, and its tests pin them to those refs.
 
 **quackd has never driven a MOSS rover.** The `cockpit` backend is exercised against a fake of
 MOSS's cockpit and against quackd's own bridge in `--fake`, both over loopback, and by hand
@@ -514,6 +516,9 @@ asked.
 | Cancel result | `TrajectoryCancellationStatus` | the name `/stop` reports |
 | Launch floor | `10.8` | V, `battery_ok` |
 | BMS cut | `10.2` | V |
+| Blueprints | `"moss-base", "moss-gamepad", "moss-nav", "moss-explore", "moss-arm", "moss-litter"` | every stack name quackd reads, refuses or drives |
+| Launcher | `tools/moss-fly.sh` | the commands quackd's sentences tell a person to run |
+| Launcher commands | `"check", "map", "explore", "litter", "stop", "log", "cockpit"` | those sentences, each command one the launcher names |
 | Hard stop | `tools/moss-fly.sh stop` | never sent by quackd, and what the idle stop runs |
 | RPC names | `serve_module_rpc` | `LitterMission/stop` and `LitterMission/mission_status` |
 | A stop sent without an answer | `call_nowait` | why the stop is confirmed by silence |

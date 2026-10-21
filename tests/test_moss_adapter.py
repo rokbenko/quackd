@@ -8,10 +8,11 @@ real client against a fake cockpit is `tests/test_moss_cockpit.py`, the bridge o
 
 from __future__ import annotations
 
+import ast
 import math
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from typer.testing import CliRunner
@@ -993,6 +994,71 @@ def test_no_code_path_sends_a_go_limp_call_or_ends_a_dimos_run() -> None:
 
 
 # ── upstream names ──────────────────────────────────────────────────────────────────────
+
+
+def _code_strings(path: Path) -> list[tuple[int, str]]:
+    """Every string a module's code holds, the parts of its f-strings among them, and none of
+    its prose: a string that stands alone as a statement is a docstring."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    prose = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
+    return [
+        (node.lineno, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in prose
+    ]
+
+
+def test_only_upstream_api_spells_an_upstream_name_in_code() -> None:
+    """upstream_api.py's own first line, held: every blueprint, launcher, script, RPC, channel,
+    environment variable, pose and camera name the package acts on or says comes from a ref
+    there. Prose in docstrings and comments may name them."""
+    rpcs = (up.CANCEL_TRAJECTORY, up.GET_JOINT_POSITIONS, up.MISSION_STATUS_RPC)
+    words = {
+        *up.quoted(up.BLUEPRINTS),
+        up.FLY_LAUNCHER.name,
+        up.ARM_PLAY.name,
+        up.ARM_COORDINATOR_NAME.name,
+        up.CYCLE_FROM_BACK_TO_CLEAR.name,
+        up.MISSION_STOP_RPC.name.split(".")[0],
+        up.CANCEL_TRAJECTORY.name.split(".")[0],
+        *(ref.name.rsplit(".", 1)[-1] for ref in rpcs),
+        *re.findall(r"\.(\w+)\(", up.ARM_PLAY_ONE_TRAJECTORY.name),
+        *up.quoted(up.EXPLORE_CHANNELS),
+        *up.quoted(up.NAV_PAD_ON_CMD_VEL),
+        *up.BUS_VAR_NAMES,
+        up.RAMP_MS.name,
+        up.MISSION_AUTOSTART.name,
+        up.MISSION_PICK_CMD.name,
+        up.ARM_CALIBRATION_ENV.name,
+        up.LAUNCHER_EXPLORE_RADIUS.name,
+    }
+    exact = {*up.quoted(up.PICK_POSES), *up.quoted(up.CAMERAS)}
+    found = []
+    for path in sorted(PACKAGE.glob("*.py")):
+        if path.name == "upstream_api.py":
+            continue
+        for line, text in _code_strings(path):
+            spelled = [w for w in words if re.search(rf"(?<![\w-]){re.escape(w)}(?![\w-])", text)]
+            spelled += [text] if text in exact else []
+            if spelled:
+                found.append(f"{path.name}:{line} spells {sorted(spelled)}")
+    assert not found, found
+
+
+def test_the_names_the_package_spells_are_the_refs_own() -> None:
+    assert get_args(up.PickPose) == up.quoted(up.PICK_POSES) == (up.PICK_POSE, up.PICK_LOW_POSE)
+    assert up.quoted(up.CAMERAS) == (up.NOSE, up.WRIST)
+    assert up.LITTER_STACK in up.quoted(up.BLUEPRINTS) and up.BLUEPRINT_PREFIX
+    assert all(b.startswith(up.BLUEPRINT_PREFIX) for b in up.quoted(up.BLUEPRINTS))
+    for fly in (up.FLY_COCKPIT, up.FLY_EXPLORE, up.FLY_LITTER, up.FLY_LOG, up.FLY_STARTS):
+        assert fly.startswith(up.FLY_LAUNCHER.name + " "), fly
+    assert up.FLY_STOP.name == f"{up.FLY_LAUNCHER.name} stop"
+    with pytest.raises(ValueError, match="names no command"):
+        up._fly("launch")
 
 
 def test_every_ref_links_to_one_of_the_two_pinned_upstreams() -> None:

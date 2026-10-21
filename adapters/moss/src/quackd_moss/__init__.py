@@ -56,6 +56,7 @@ from quackd.transport.base import (
 )
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
+from quackd_moss import upstream_api as up
 from quackd_moss.verbs import (
     ARM_GIVE_UP_S,
     MAX_VX,
@@ -74,9 +75,9 @@ contains."""
 BACKENDS = ("mock", "cockpit")
 DEFAULT_ID = "moss-01"
 
-BASE_STACKS = ("moss-nav", "moss-explore")
+BASE_STACKS = (up.NAV_STACK, up.EXPLORE_STACK)
 """The stacks quackd drives the base on: the pad's channel is quackd's twist's channel."""
-LITTER_STACK = "moss-litter"
+LITTER_STACK = up.LITTER_STACK
 STACKS = (*BASE_STACKS, LITTER_STACK)
 """Every stack quackd connects to. moss-gamepad and moss-base are the pad and the bare base,
 with no odometry and no cockpit state worth reading, and are refused by name."""
@@ -149,12 +150,13 @@ _ASSUMPTIONS_ALWAYS = [
     "the nose lens is uncalibrated unless the stack publishes its camera_info",
 ]
 _ASSUMPTION_NO_ARM = (
-    "with no moss-arm run nothing holds the arm and nothing reports it, so quackd drives the "
+    f"with no {up.ARM_STACK} run nothing holds the arm and nothing reports it, so quackd drives "
+    "the "
     "base as if it were folded"
 )
 _ASSUMPTION_NO_CYCLE = (
     "the arm's coordinator answers and the arm is watched, but the bridge found none of the "
-    "maker's cycle to play (tools/moss_arm_play.py), so no arm verb is offered"
+    f"maker's cycle to play ({up.ARM_PLAY.name}), so no arm verb is offered"
 )
 _ASSUMPTION_NO_BRIDGE = (
     "without quackd's bridge nothing on the rover halts what quackd started when it goes "
@@ -192,7 +194,7 @@ def moss_manifest(
     arm: bool = True,
     mission: bool = True,
     camera: bool = True,
-    cameras: Sequence[str] = ("nose", "wrist"),
+    cameras: Sequence[str] = (up.NOSE, up.WRIST),
     fov_deg: float | None = None,
     extras: dict[str, Any] | None = None,
     arm_seen: bool | None = None,
@@ -204,7 +206,7 @@ def moss_manifest(
     own = moss_verbs()
     stacks = STACKS if stack is None else (stack,)
     on_base = any(s in BASE_STACKS for s in stacks)
-    planner = "moss-explore" in stacks
+    planner = up.EXPLORE_STACK in stacks
     litter = LITTER_STACK in stacks
     twists = bridge and on_base
     arm_verbs = bridge and arm and on_base

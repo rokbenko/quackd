@@ -209,7 +209,7 @@ class MossMock:
 
         litter = int(number("litter") or 0)
         return cls(
-            stack=query.get("stack", ["moss-explore"])[0],
+            stack=query.get("stack", [up.EXPLORE_STACK])[0],
             bridge=flag("bridge", True),
             arm=flag("arm", True),
             mission=flag("mission", True),
@@ -223,7 +223,7 @@ class MossMock:
     def __init__(
         self,
         *,
-        stack: str = "moss-explore",
+        stack: str = up.EXPLORE_STACK,
         bridge: bool = True,
         arm: bool = True,
         mission: bool = True,
@@ -254,11 +254,11 @@ class MossMock:
         """The arm's own dimOS run is there. tools/moss-fly.sh refuses to start beside any run,
         so the arm's starts after the base stack, and then it is the newest run, which is all
         the cockpit reads."""
-        self.mission_up = bridge and mission and stack == "moss-litter"
+        self.mission_up = bridge and mission and stack == up.LITTER_STACK
         self.camera_available = camera
         self.stamps = stamps
         self.camera_keys: list[str] = (
-            ["nose", "wrist"] if (camera and bridge) else (["nose"] if camera else [])
+            [up.NOSE, up.WRIST] if (camera and bridge) else ([up.NOSE] if camera else [])
         )
         self.camera_error: str | None = None if camera else "the mock was built with no camera"
         self.fov_deg = fov_deg
@@ -403,14 +403,14 @@ class MossMock:
 
     def _publish(self, twist: tuple[float, float]) -> None:
         self._cmd, self._cmd_at = twist, self._t
-        if self.stack in ("moss-explore", "moss-litter"):
+        if self.stack in (up.EXPLORE_STACK, up.LITTER_STACK):
             # MovementManager: any message on the pad's channel cancels navigation
             self.goal, self.exploring = None, False
 
     @property
     def cockpit_view(self) -> str:
         """The blueprint the cockpit reads: the newest dimOS run, moss-arm whenever it runs."""
-        return "moss-arm" if self.arm_run else self.stack
+        return up.ARM_STACK if self.arm_run else self.stack
 
     def _planner(self) -> tuple[float, float] | None:
         """The stack's own driving: the goal, the explorer, or the mission's servo."""
@@ -422,7 +422,7 @@ class MossMock:
         if self._pending_goal is not None and self._t >= self._pending_goal[1]:
             self.goal, self._goal_at = self._pending_goal[0], self._t
             self._pending_goal = None
-        if self.goal is not None and self.stack != "moss-nav":
+        if self.goal is not None and self.stack != up.NAV_STACK:
             gx, gy = self.goal
             if self.goal_refused and self._t - self._goal_at > 1.0:
                 self.goal, self.goal_reached = None, False
@@ -546,7 +546,7 @@ class MossMock:
 
     def _mission_step(self) -> None:
         m = self.mission
-        if self.stack != "moss-litter" or not m.running or not self.stack_running:
+        if self.stack != up.LITTER_STACK or not m.running or not self.stack_running:
             return
         if m.state in ("EXPLORING", "RESUMING"):
             if m.state == "RESUMING" and self._t - m.since < 1.0:
@@ -633,7 +633,7 @@ class MossMock:
     # ── the surfaces ────────────────────────────────────────────────────────────────
 
     def _explore(self, *, start: bool) -> None:
-        self.exploring = start and self.stack in ("moss-explore", "moss-litter")
+        self.exploring = start and self.stack in (up.EXPLORE_STACK, up.LITTER_STACK)
         self._beside = None
         if start:
             self.explore_done, self._explore_at = False, self._t
@@ -688,7 +688,7 @@ class MossMock:
         the mission's own pick script, the arm's cancel and a zero twist. Elsewhere the zero
         first, which also cancels any goal the planner has, and then the arm's cancel, so the
         tracks stop whatever the arm's coordinator takes to answer."""
-        litter = self.stack == "moss-litter"
+        litter = self.stack == up.LITTER_STACK
         if litter and self.mission.running:
             self.stop_log.append("mission.stop")
             self.mission.running = False
@@ -714,7 +714,7 @@ class MossMock:
         started the mission: one that only watched the owner's mission leaves it running."""
         self.stop_log.append("session.halt")
         started = self._beat_started
-        if self.stack == "moss-litter":
+        if self.stack == up.LITTER_STACK:
             if started == "litter":
                 self._bridge_stop()
             return
@@ -795,12 +795,12 @@ class MossMock:
             if moved_arm and self.arm_up and self.arm_torque and not self.arm_folded:
                 said = arm_note(None if self.job is None else self.job.held)
                 notes.append(said[0].upper() + said[1:] + ".")
-            if self.stack == "moss-litter" and self.stop_sent and self.mission_stopped:
+            if self.stack == up.LITTER_STACK and self.stop_sent and self.mission_stopped:
                 notes.append(
                     "The litter mission is stopped, and runs again only after the stack restarts "
                     "on the rover."
                 )
-            elif self.stack == "moss-litter" and self.stop_sent:
+            elif self.stack == up.LITTER_STACK and self.stop_sent:
                 notes.append(
                     "The litter mission's stop was not confirmed, so it may still be running: "
                     "stop the stack on the rover."
@@ -840,10 +840,10 @@ class MossMock:
 
     async def get_frames(self) -> list[CameraFrame]:
         nose = await self.get_frame()
-        frames = [] if nose is None else [CameraFrame("nose", nose, primary=True)]
-        if nose is not None and "wrist" in self.camera_keys:
+        frames = [] if nose is None else [CameraFrame(up.NOSE, nose, primary=True)]
+        if nose is not None and up.WRIST in self.camera_keys:
             size = self._frame_size
-            frames.append(CameraFrame("wrist", Image.new("RGB", (size, size), FLOOR)))
+            frames.append(CameraFrame(up.WRIST, Image.new("RGB", (size, size), FLOOR)))
         return frames
 
     def frame_taken_at(self) -> float | None:
@@ -881,7 +881,7 @@ class MossMock:
             else None
         )
         mission = None
-        if self.stack == "moss-litter" and self.bridge_up:
+        if self.stack == up.LITTER_STACK and self.bridge_up:
             m = self.mission
             mission = {
                 "answering": m.running,
@@ -964,8 +964,10 @@ class MossMock:
                     return Ack(
                         accepted=False, reason="MOSS runs on tracks and cannot slide sideways"
                     )
-                if self.stack == "moss-litter":
-                    return Ack(accepted=False, reason="on moss-litter the mission owns the base")
+                if self.stack == up.LITTER_STACK:
+                    return Ack(
+                        accepted=False, reason=f"on {up.LITTER_STACK} the mission owns the base"
+                    )
                 if self.job is not None and self.job.state in ("starting", "running"):
                     return Ack(accepted=False, reason="the arm is playing a cycle")
                 if self.arm_moving:
@@ -983,7 +985,7 @@ class MossMock:
                 await self.stop()
                 return Ack(accepted=self.stop_error is None, reason=self.stop_error)
             case "pose":
-                if self.stack != "moss-explore":
+                if self.stack != up.EXPLORE_STACK:
                     return Ack(accepted=False, reason=f"{self.stack} has no planner")
                 if (why := self._announce("goal")) is not None:
                     return Ack(accepted=False, reason=why)
@@ -1034,8 +1036,8 @@ class MossMock:
                 return Ack(
                     accepted=False, reason="the arm's coordinator is not answering the bridge"
                 )
-            if self.stack == "moss-litter":
-                return Ack(accepted=False, reason="on moss-litter the mission owns the arm")
+            if self.stack == up.LITTER_STACK:
+                return Ack(accepted=False, reason=f"on {up.LITTER_STACK} the mission owns the arm")
             if self.job is not None and self.job.state in ("starting", "running"):
                 return Ack(accepted=False, reason="another arm job is running")
             if self._twist is not None and self._t - self._twist_at <= TWIST_DEADMAN_S:
