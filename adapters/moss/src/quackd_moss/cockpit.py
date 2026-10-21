@@ -1276,8 +1276,9 @@ class MossCockpit:
         halt = (doc.get("session") or {}).get("halted")
         if isinstance(halt, dict) and halt.get("halted"):
             what = " and ".join(str(h) for h in halt["halted"])
+            did = "is halting" if halt.get("done") is False else "halted"
             raise HeartbeatError(
-                f"moss: quackd's bridge halted {what} after this session went quiet "
+                f"moss: quackd's bridge {did} {what} after this session went quiet "
                 f"({halt.get('why')}), so quackd stops here rather than go on as if it ran"
             )
         return doc

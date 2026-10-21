@@ -2553,7 +2553,11 @@ class Bridge:
         stop, the mission's own included, only for a session that started the mission: one
         that only watched the owner's mission leaves it running. Elsewhere, the cycle that
         session started is cancelled, and a goal or an exploration it started is ended with
-        stop_explore_cmd, stop_movement and a zero."""
+        stop_explore_cmd, stop_movement and a zero.
+
+        Its record is written as it starts, with what it acts on and done false, and finished
+        when it ends: a halt on moss-litter is the whole stop, which can take a minute, and a
+        session back meanwhile reads it at its first keepalive."""
         stack = self.stack()
         log.warning("halting what session %s started: %s", session.id, why)
         halted: list[str] = []
@@ -2561,6 +2565,21 @@ class Bridge:
             own = run_alive(stack, session.run)
             stack = own if own is not None else stack
         moved_on = session.run is not None and stack.run_id not in (None, session.run)
+        cycling = self.jobs is not None and self.jobs.running_session() == session.id
+        if self._litter(stack) and session.started == "litter" and not moved_on:
+            acting = ["the litter mission it started"]
+        else:
+            acting = ["its arm cycle"] if cycling else []
+            if session.started in ("goal", "explore") and not moved_on:
+                acting.append("its goal" if session.started == "goal" else "its exploration")
+        with self._lock:
+            self.halted[session.id] = {
+                "why": why,
+                "started": session.started,
+                "halted": acting,
+                "ok": None,
+                "done": False,
+            }
         if moved_on:
             # the stack the session was kept on has gone: nothing of the new run is its
             did: list[str] = []
@@ -2594,7 +2613,13 @@ class Bridge:
                             did.append(f"zero twist on {chan}")
             doc["ok"] = not errors
         doc["halted"] = halted
-        record = {"why": why, "started": session.started, "halted": halted, "ok": doc["ok"]}
+        record = {
+            "why": why,
+            "started": session.started,
+            "halted": halted,
+            "ok": doc["ok"],
+            "done": True,
+        }
         with self._lock:
             self.last_halt = why
             if halted:

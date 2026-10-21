@@ -842,6 +842,7 @@ class MossMock:
         self.session_halted = {
             "why": f"session {self.session_id} missed {SESSION_MISSES} keepalives",
             "halted": halted,
+            "done": True,  # the mock halts in no time, so its record is born finished
         }
 
     def _announce(self, started: str) -> str | None:

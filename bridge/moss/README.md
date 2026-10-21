@@ -126,8 +126,9 @@ cycle it started is cancelled. A session that started nothing halts nothing, so 
 clicked on the cockpit's page is left alone. On `moss-litter` the whole stop above runs only for
 a session that started the mission, and a session that only watched the owner's mission leaves
 it running. Every keepalive answer of a session that was halted says what its halt halted, an
-empty list for none, and only a halt that halted something is counted in `/hello`. The bridge's
-own shutdown halts what every live session started.
+empty list for none, from the moment the halt starts, with `done` false until it has ended, so
+a session back while a long halt runs reads it at once. Only a halt that halted something is
+counted in `/hello`. The bridge's own shutdown halts what every live session started.
 
 ## Install it on the rover
 

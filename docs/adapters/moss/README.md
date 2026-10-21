@@ -303,7 +303,8 @@ mission's stop to be confirmed, at most 4 s after it went out.
   nothing. Three missed periods later the bridge halts what that session said it started and
   nothing else: its own arm cycle, and a goal or an exploration it started, with
   `stop_explore_cmd`, `stop_movement` and a zero. Every keepalive answer after says what was
-  halted, and a halt of something the session started fails its heartbeat, which stops the run
+  halted, from the moment the halt starts, so a session back while a long halt runs reads it at
+  once, and a halt of something the session started fails its heartbeat, which stops the run
   with the reason. A prompt on the terminal holds the loop too, and nothing is started while a
   question is on the screen, so a halt then halts nothing and is no event. A start is said to
   the bridge before it goes out, and a start whose answer is lost is kept and stopped, so a

@@ -1820,7 +1820,7 @@ def test_a_long_halt_never_holds_back_another_sessions_expiry() -> None:
         began = time.monotonic()
         _wait(lambda: "watcher" in bridge.halted, B.MISSION_CONFIRM_S / 2)
         assert time.monotonic() - began < B.MISSION_CONFIRM_S / 2
-        assert "collector" not in bridge.halted, "while the litter halt still runs"
+        assert bridge.halted["collector"]["done"] is False, "while the litter halt still runs"
     finally:
         bridge.close()
 
@@ -1901,6 +1901,41 @@ def _fake_time(bridge: Any, clock: Clock) -> None:
     bridge.clock = clock
     bridge.bus.clock = clock
     bridge.sleep = lambda s: setattr(clock, "t", clock.t + s)
+
+
+def test_a_session_back_mid_halt_reads_what_is_being_halted_at_once() -> None:
+    """A halt on moss-litter is the whole stop, which can take a minute. Its record is written
+    as it starts, with what it acts on, and finished when it ends, so a session that comes
+    back while it runs reads it at its first keepalive, and not a minute later."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _fake_time(bridge, clock)
+    _beat(bridge, "collector", 0.1, "litter")
+    inside, release = threading.Event(), threading.Event()
+    whole_stop = bridge.stop
+
+    def slow_stop(*args: Any, **kw: Any) -> dict[str, Any]:
+        inside.set()
+        release.wait(10.0)
+        return dict(whole_stop(*args, **kw))
+
+    bridge.stop = slow_stop
+    clock.t += 1.0
+    ((why, session),) = bridge._expired_now()
+    halting = threading.Thread(target=bridge.halt, args=(why, session), daemon=True)
+    halting.start()
+    assert inside.wait(5.0), "the halt is under way"
+    try:
+        _, doc = bridge.keepalive({"session": "collector", "keepalive_s": 1.0, "started": "litter"})
+        said = doc["session"]["halted"]
+        assert said and said["halted"] == ["the litter mission it started"], doc
+        assert said["done"] is False
+    finally:
+        release.set()
+        halting.join(10.0)
+    _, doc = bridge.keepalive({"session": "collector", "keepalive_s": 1.0, "started": "litter"})
+    assert doc["session"]["halted"]["done"] is True and doc["session"]["halted"]["ok"] is True
+    bridge.close()
 
 
 def test_a_dropped_session_that_started_the_mission_is_the_whole_stop() -> None:
