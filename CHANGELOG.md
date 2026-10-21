@@ -7,7 +7,21 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.22.0] — 2026-10-21
+
+0.22.0 adds MOSS, a small tracked rover by Laurent Genoud (Show Robotics) that picks up litter,
+as the ninth robot quackd can drive. quackd speaks the rover's own cockpit for its state, its
+pose, its battery, a goal for its planner, its explorer and its soft stop, and ships a bridge that
+runs on the rover for what the cockpit has no command for: a twist with a deadman, frames that say
+when they were taken, the maker's own arm cycle, and the litter mission's own stop. `moss:cockpit`
+reaches a real rover, and `moss:mock` runs offline.
+
+Nothing has run on a MOSS rover, and the bridge has never run on one. Its hardware checklist is the
+first thing to run once one is in reach, on blocks, as its maker says.
+
+A `dangerous` verb now runs only when a person answers its confirm. `--yes`, a flock's standing
+answer, the MCP server and a pipe on stdin all refuse it, and `collect_litter` is the first verb
+quackd ships in that class.
 
 ### Added
 
@@ -7424,7 +7438,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/rokbenko/quackd/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/rokbenko/quackd/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/rokbenko/quackd/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/rokbenko/quackd/compare/v0.19.0...v0.19.1
