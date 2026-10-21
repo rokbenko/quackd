@@ -102,3 +102,11 @@ def test_no_owner_leaves_owner_out_and_no_estop_reads_as_the_worst_case() -> Non
     assert "owner" not in doc
     reading = document.read_json(strict.dumps(doc))
     assert reading.safety() == document.Safety(False, "none", None)
+
+
+def test_the_same_robot_builds_the_same_bytes_every_time() -> None:
+    """A reader caches by digest (spec 5.8), so a passport whose robot has not changed must not
+    change either: no build time inside it, nothing that differs from one build to the next."""
+    first = strict.dumps(_built("microduck"))
+    assert strict.dumps(_built("microduck")) == first
+    assert "issued" not in json.loads(first)

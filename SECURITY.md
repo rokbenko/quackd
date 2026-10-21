@@ -282,6 +282,14 @@ Also in scope:
   to anything on the network, and the MQTT flock bus carries messages that command robots
   with no authentication of its own. Both are off by default and neither has a threat model
   yet, so treat them as trusted-network only.
+- **Robot Passport** ([docs/passport/security.md](docs/passport/security.md) is its whole threat
+  model). `quackd passport serve` listens on every interface on port 8790 unless told otherwise,
+  because a passport is a public document meant to be read, and it serves passports and nothing
+  else: no other path answers and it fetches nothing. A passport never holds a token or a key.
+  Each robot's private key is a plain file under `~/.quackd/keys/`, on the same footing as the
+  tokens in `robots.json`. Reading a passport fetches only the URL it was given, follows no
+  redirects and reads no more than 8 KB, and `quackd meet ros://` opens a bridge, reads one
+  message and closes it without publishing anything to that robot.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
   quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,

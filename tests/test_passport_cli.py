@@ -60,6 +60,21 @@ def test_show_json_is_the_compact_passport_and_nothing_else(tmp_path: Path) -> N
     assert key is not None and reading.id == key.key.did
 
 
+def test_out_writes_exactly_the_bytes_quackd_serves(tmp_path: Path) -> None:
+    """A trailing newline is a different byte sequence and so a different digest, which is why
+    a file for a static host comes from --out rather than from redirecting --json."""
+    out = tmp_path / "robot-passport.json"
+    wrote = runner.invoke(
+        app, ["passport", "show", "--robot", "microduck:mock", "--out", str(out), *_reg(tmp_path)]
+    )
+    assert wrote.exit_code == 0, wrote.output
+    printed = runner.invoke(
+        app, ["passport", "show", "--robot", "microduck:mock", "--json", *_reg(tmp_path)]
+    )
+    assert out.read_bytes() == printed.stdout.rstrip("\n").encode("utf-8")
+    assert not out.read_bytes().endswith(b"\n")
+
+
 def test_set_and_owner_reach_the_passport(tmp_path: Path) -> None:
     owner = runner.invoke(
         app,

@@ -60,6 +60,20 @@ zeroconf path was exercised once by us on one Windows 11 machine between two pro
 (announce a mock manifest in a child, discover it from the parent, digest matched); it has
 not been exercised between two machines.
 
+## Robot passports (`_robot-passport._tcp.local.`)
+
+Beside its own record, quackd can advertise a robot's [Robot Passport](../passport/README.md):
+`quackd passport serve --robot NAME --announce` serves the passport at the well-known URL and
+advertises `_robot-passport._tcp`, a record for anything at all, quackd or not, where
+`_quackd._tcp` speaks to other quackd instances. Its TXT keys are `v`, `id` (the robot's short
+id), `sha` (the passport's digest) and `path`, and its port is one that really serves the
+passport, which `_quackd._tcp`'s port 0 never did. `quackd discover` lists both, and `quackd meet`
+reads what it finds. [docs/passport/discovery.md](../passport/discovery.md) has the whole binding,
+and [docs/passport/quackd.md](../passport/quackd.md) the commands and what they print.
+
+**Status.** Tested on fakes in the suite, and run once between separate processes on one Windows
+11 machine with real zeroconf. It has not run between two machines.
+
 ## The MQTT flock bus
 
 `quackd.flock.mqtt_bus.MqttBus` implements the same two-method `Bus` protocol as the

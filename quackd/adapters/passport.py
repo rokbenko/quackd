@@ -64,8 +64,10 @@ def passport_from_manifest(
     if talk:
         doc["talk"] = [dict(channel) for channel in talk]
     doc["ext"] = {"org.quackd": {"sha": manifest.digest()}}
-    moment = issued if issued is not None else datetime.now(UTC)
-    doc["issued"] = moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # no `issued` unless asked: stamping the build time would give the same passport a new
+    # digest every time it is built, and a reader caches by digest (spec 5.8)
+    if issued is not None:
+        doc["issued"] = issued.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return doc
 
 

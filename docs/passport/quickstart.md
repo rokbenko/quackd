@@ -42,17 +42,17 @@ what no schema can, a duplicate member or a file too large:
 
 ```
 $ quackd passport check vacuum.json
-+- checked vacuum-01 ---------------------------------------------------------+
-| id      urn:uuid:7d4a2f0e-31c5-4f8a-9b62-0c1e5d8a4b37  (short id none: it   |
-|         holds no key)                                                       |
-| claim   unsigned: a claim                                                   |
-| maker   example-robotics sweeper-3                                          |
-| owner   Example lab, https://example.org/robots                             |
-| body    wheeled, nothing to hold with, 0.4 m/s at most                      |
-| cannot  climb or descend a step                                             |
-| safety  does not stop on silence, e-stop: button, the red button on its top |
-| digest  b292373ac4377183                                                    |
-+-----------------------------------------------------------------------------+
+┌─ 🦆 checked vacuum-01 ──────────────────────────────────────────────────────┐
+│ id      urn:uuid:7d4a2f0e-31c5-4f8a-9b62-0c1e5d8a4b37  (short id none: it   │
+│         holds no key)                                                       │
+│ claim   unsigned: a claim                                                   │
+│ maker   example-robotics sweeper-3                                          │
+│ owner   Example lab, https://example.org/robots                             │
+│ body    wheeled, nothing to hold with, 0.4 m/s at most                      │
+│ cannot  climb or descend a step                                             │
+│ safety  does not stop on silence, e-stop: button, the red button on its top │
+│ digest  b292373ac4377183                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 It says `does not stop on silence` because the passport did not say it does, and a reader always
@@ -72,18 +72,22 @@ robot a key the first time it is asked:
 $ quackd robot add duck-01 microduck:mock
 $ quackd passport owner --label "Example lab" --contact https://example.org/robots
 $ quackd passport set --robot duck-01 --estop power --how-to-stop "the power switch on its back"
-$ quackd passport show --robot duck-01 --json > robot-passport.json
+$ quackd passport show --robot duck-01 --out robot-passport.json
+wrote robot-passport.json: 1114 bytes, digest 56b01f1026a48a58
 $ quackd passport check robot-passport.json
-+- checked duck-01 -----------------------------------------------------------+
-| id        did:key:z6MkoPSK5k3tpjp2SU2mpT4kLE7izPK2uzFbR2ufGKa9NXzs  (short  |
-|           id f47c3f5173a64263)                                              |
-| claim     unsigned: a claim                                                 |
-| maker     pollen-robotics microduck                                         |
-| software  quackd 0.21.0                                                     |
-| owner     Example lab, https://example.org/robots                           |
-| body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    |
+┌─ 🦆 checked duck-01 ────────────────────────────────────────────────────────┐
+│ id        did:key:z6Mkv3hxGH5oXSMGTXerm5dLqrxNzYQ4ZzkTVhuxyJhqFSUo  (short  │
+│           id 84032200fad67519)                                              │
+│ claim     unsigned: a claim                                                 │
+│ maker     pollen-robotics microduck                                         │
+│ software  quackd 0.21.0                                                     │
+│ owner     Example lab, https://example.org/robots                           │
+│ body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    │
 ```
 
+To publish it from the robot's own host instead of a web page, `quackd passport serve --robot
+duck-01 --announce` serves it at the well-known URL and advertises it on the local network, and
+`quackd passport qr` prints its sticker ([quackd.md](quackd.md#serving-passports)).
+
 The rest of that panel is in [quackd.md](quackd.md#a-robots-passport), with what every command
-prints. Signing the passport, serving it, advertising it and printing its sticker come with the
-rest of 0.23.0.
+prints. Signing the passport and stamping it with your owner key come with the rest of 0.23.0.

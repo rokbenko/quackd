@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import errno
 import glob
+import hashlib
 import json
 import os
 import re
@@ -6072,6 +6073,9 @@ passport_app = typer.Typer(
 )
 app.add_typer(passport_app, name="passport", rich_help_panel="Robots")
 
+#: Where `quackd passport serve` listens, and where `quackd meet HOST` looks, unless told.
+PASSPORT_PORT = 8790
+
 _PASSPORT_ROBOT = typer.Option(
     ..., "--robot", "-r", help="A registered name, or <adapter>:<backend>."
 )
@@ -6184,7 +6188,14 @@ def passport_show(
     as_json: bool = typer.Option(
         False,
         "--json",
-        help="The passport itself, one line of compact JSON: the exact bytes quackd serves.",
+        help="The passport itself, as one line of compact JSON on stdout, for a script.",
+        rich_help_panel="Output",
+    ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help="Write the passport to this file as exactly the bytes quackd serves, so it has the "
+        "same digest, for a static host or a sticker to point at.",
         rich_help_panel="Output",
     ),
 ) -> None:
@@ -6197,8 +6208,21 @@ def passport_show(
             Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
         )
     raw = strict.dumps(doc)
+    if out is not None:
+        try:
+            out.write_bytes(raw)
+        except OSError as e:
+            _fail(f"could not write {out}: {e}")
+        ui.err_console.print(
+            Text(
+                f"wrote {out}: {len(raw)} bytes, digest {hashlib.sha256(raw).hexdigest()[:16]}",
+                style=ui.STYLES["muted"],
+            )
+        )
     if as_json:
         print(raw.decode("utf-8"))
+        return
+    if out is not None:
         return
     reading = document.read_json(raw)
     _print_reading(reading.view(), title="passport")
@@ -6345,25 +6369,293 @@ def passport_owner(
     )
 
 
+@passport_app.command("serve")
+def passport_serve(
+    robots: list[str] = typer.Option(
+        ...,
+        "--robot",
+        "-r",
+        help="A registered name or <adapter>:<backend>. Repeat it to serve several robots, "
+        "each under /robots/<name>/ with an index at the well-known URL.",
+    ),
+    bind: str = typer.Option("0.0.0.0", "--bind", help="The address to listen on."),
+    port: int = typer.Option(PASSPORT_PORT, "--port", help="The port to serve on."),
+    announce: bool = typer.Option(
+        False,
+        "--announce",
+        help=r"Advertise each passport over DNS-SD as _robot-passport._tcp (needs quackd\[lan]).",
+    ),
+    mqtt: str | None = typer.Option(
+        None,
+        "--mqtt",
+        help=r"HOST[:PORT] of an MQTT broker to keep each passport retained on (needs "
+        r"quackd\[lan]).",
+    ),
+    for_s: float | None = typer.Option(
+        None, "--for", help="Seconds to serve (default: until Ctrl-C)."
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Serve robots' passports at the well-known URL, for any robot or person to read.
+
+    Nothing but the passports is served, and nothing is fetched. --announce adds a DNS-SD
+    beacon per robot beside quackd's own, and --mqtt keeps each passport retained on a broker
+    with an online status whose last will is offline."""
+    import time
+
+    from quackd.lan import LanNotInstalled
+    from quackd.lan.announce import local_ip
+    from quackd.passport import strict
+    from quackd.passport.beacon import WELL_KNOWN_JSON
+    from quackd.passport.serve import PassportServer, Served, robot_paths
+
+    if len(set(robots)) != len(robots):
+        _fail("each --robot once")
+    built = []
+    for robot in robots:
+        doc, (store, name, record), created = _passport_for(robot, registry_dir)
+        if created:
+            ui.err_console.print(
+                Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
+            )
+        built.append((name, record, strict.dumps(doc)))
+    served = [Served(name, raw) for name, _record, raw in built]
+    try:
+        server = PassportServer(served, host=bind, port=port).start()
+    except OSError as e:
+        _fail(f"cannot serve on {bind}:{port}: {e}", hint="--port picks another")
+        return
+    address = local_ip() if bind in ("0.0.0.0", "") else bind
+    closers: list[Any] = [server]
+    rows: list[tuple[str, Any]] = []
+    try:
+        for name, record, raw in built:
+            path = WELL_KNOWN_JSON if len(built) == 1 else robot_paths(name)[0]
+            digest = hashlib.sha256(raw).hexdigest()
+            rows.append((name, f"http://{address}:{server.port}{path}"))
+            if announce:
+                from quackd.lan.passports import announce_passport, passport_record
+
+                closers.append(
+                    announce_passport(
+                        passport_record(
+                            instance=name,
+                            port=server.port,
+                            short_id=record.key.short_id,
+                            digest=digest,
+                            path=path,
+                        )
+                    )
+                )
+            if mqtt:
+                from quackd.lan.passport_mqtt import PassportPublisher
+
+                broker, _, broker_port = mqtt.partition(":")
+                closers.append(
+                    PassportPublisher(
+                        record.key.short_id,
+                        raw,
+                        host=broker,
+                        port=int(broker_port or 1883),
+                    ).start()
+                )
+    except (LanNotInstalled, OSError, ValueError) as e:
+        for closer in reversed(closers):
+            with contextlib.suppress(Exception):
+                closer.close()
+        _fail(str(e))
+        return
+    if len(built) > 1:
+        rows.append(("index", f"http://{address}:{server.port}{WELL_KNOWN_JSON}"))
+    rows.append(("dns-sd", "announced as _robot-passport._tcp" if announce else "off"))
+    rows.append(("mqtt", f"retained on {mqtt}" if mqtt else "off"))
+    ui.console.print(
+        ui.run_header(
+            f"serving {len(built)} passport{'s' if len(built) > 1 else ''}",
+            rows,
+            hint="Ctrl-C to stop" if for_s is None else f"stopping in {for_s:g} s",
+        )
+    )
+    try:
+        with ui.spinner("serving passports"):
+            if for_s is None:
+                while True:
+                    time.sleep(1.0)
+            else:
+                time.sleep(for_s)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for closer in reversed(closers):
+            with contextlib.suppress(Exception):
+                closer.close()
+        ui.console.print(Text("stopped", style=ui.STYLES["muted"]))
+
+
+@passport_app.command("qr")
+def passport_qr(
+    robot: str = _PASSPORT_ROBOT,
+    url: str = typer.Option(
+        ..., "--url", help="Where the passport is served, the http(s) URL the sticker leads to."
+    ),
+    out: Path | None = typer.Option(
+        None, "--out", help="The PNG to write (default: <name>-passport.png here)."
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Write a QR sticker for a robot: its passport's URL, with #rp= and its short id.
+
+    A reader that scans it checks the passport it finds has that short id, so a sticker moved
+    to another robot, or a passport moved under a sticker, is noticed."""
+    from quackd.passport import PassportError
+    from quackd.passport.beacon import sticker_url
+    from quackd.passport_qr import write_qr
+
+    _doc, (_store, name, record), _created = _passport_for(robot, registry_dir)
+    try:
+        text = sticker_url(url, record.key.short_id)
+        target = out if out is not None else Path(f"{name}-passport.png")
+        modules, pixels = write_qr(text, target)
+    except (PassportError, OSError) as e:
+        _fail(str(e))
+        return
+    ui.console.print(
+        Text(f"wrote {target}: a {modules}x{modules} QR code, {pixels} px a side, holding {text}")
+    )
+
+
+def _meet_source(source: str) -> tuple[bytes, str | None]:
+    """What `quackd meet` was pointed at, read: the passport's bytes, and the short id a
+    sticker promised, if one did."""
+    from quackd.passport import fetch
+    from quackd.passport.errors import PassportError
+
+    if source.startswith(("http://", "https://")):
+        aim = fetch.target(source)
+        return fetch.fetch(aim.url), aim.short_id
+    if source.startswith("mqtt://"):
+        from quackd.lan.passport_mqtt import read_passport
+
+        broker, _, key = source.removeprefix("mqtt://").partition("/")
+        host, _, mqtt_port = broker.partition(":")
+        if not key:
+            raise PassportError("5.4", "an mqtt:// source ends with the robot's key")
+        return read_passport(host, key, port=int(mqtt_port or 1883)), key
+    if source.startswith("ros://"):
+        try:
+            from quackd_rosbridge.ws import read_passport as read_ros
+        except ImportError as e:
+            raise PassportError("5.5", "reading ROS needs quackd[rosbridge]") from e
+        from quackd.transport.base import TransportError
+
+        try:
+            text = asyncio.run(read_ros("ws://" + source.removeprefix("ros://")))
+        except TransportError as e:
+            raise PassportError("5.5", str(e)) from e
+        return text.encode("utf-8"), None
+    picture = Path(source)
+    if picture.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp", ".webp") and picture.is_file():
+        from quackd.passport_qr import read_qr
+
+        aim = fetch.target(read_qr(picture))
+        return fetch.fetch(aim.url), aim.short_id
+    host, _, host_port = source.partition(":")
+    aim = fetch.target(f"http://{host}:{host_port or PASSPORT_PORT}")
+    return fetch.fetch(aim.url), aim.short_id
+
+
+@app.command(rich_help_panel="Robots")
+def meet(
+    source: str = typer.Argument(
+        ...,
+        help="Where the robot's passport is: a URL, a HOST[:PORT], a picture of its QR "
+        "sticker, mqtt://BROKER[:PORT]/KEY, or ros://HOST[:PORT] for a robot on rosbridge.",
+    ),
+    as_json: bool = _JSON,
+) -> None:
+    """Meet a robot: find its passport, read it the way a reader would, and show it.
+
+    The passport is fetched only from where you pointed, with no redirects and nothing past
+    8 KB, and every claim is labelled with what it proves. Nothing about the robot is kept."""
+    from quackd.lan import LanNotInstalled
+    from quackd.passport import PassportError, document
+
+    try:
+        data, promised = _meet_source(source)
+        reading = document.read(data)
+    except (PassportError, LanNotInstalled) as e:
+        rule = f" under {e.rule}" if isinstance(e, PassportError) else ""
+        _fail(
+            f"refused{rule}: {e}", hint="docs/passport/discovery.md says where a passport is found"
+        )
+        return
+    if isinstance(reading, list):
+        t = ui.table(f"{source} serves {len(reading)} passports")
+        for column in ("name", "url"):
+            t.add_column(column)
+        for entry in reading:
+            t.add_row(entry.name or "", entry.url)
+        t.caption = Text("quackd meet <url> for one of them", style=ui.STYLES["muted"])
+        t.caption_justify = "left"
+        ui.console.print(t)
+        return
+    if promised is not None and promised != reading.short_id:
+        _fail(
+            f"refused under 5.2: {source} promised short id {promised}, and this passport's is "
+            f"{reading.short_id or 'none'}"
+        )
+    view = reading.view()
+    if as_json:
+        print(json.dumps(view))
+        return
+    _print_reading(view, title="met")
+
+
 @app.command(rich_help_panel="LAN")
 def discover(
     timeout: float = typer.Option(3.0, "--timeout", help="Seconds to listen for answers."),
     as_json: bool = typer.Option(False, "--json", help="One JSON object per robot."),
 ) -> None:
-    r"""List the quackd robots answering on the LAN (zeroconf, needs quackd\[lan])."""
+    r"""List the quackd robots, and the robot passports, answering on the LAN (zeroconf, needs
+    quackd\[lan])."""
+    from concurrent.futures import ThreadPoolExecutor
+
     from quackd.lan import LanNotInstalled
     from quackd.lan import discover as lan_discover
+    from quackd.lan.passports import discover_passports
 
     try:
-        # it listens for the whole timeout whether anything answers or not, so say so
-        with ui.spinner(f"listening for quackd robots ({timeout:g} s)"):
-            robots = lan_discover.discover(timeout)
+        # it listens for the whole timeout whether anything answers or not, so say so; the two
+        # service types are browsed side by side, so the second costs no extra time
+        spinning = ui.spinner(f"listening for quackd robots and passports ({timeout:g} s)")
+        with spinning, ThreadPoolExecutor(max_workers=2) as pool:
+            quackd_robots = pool.submit(lan_discover.discover, timeout)
+            passport_beacons = pool.submit(discover_passports, timeout)
+            robots, beacons = quackd_robots.result(), passport_beacons.result()
     except LanNotInstalled as e:
         _fail(str(e), hint="pip install 'quackd[lan]' adds zeroconf")
     if as_json:
         for robot in robots:
             print(json.dumps(robot.row()))
+        for beacon in beacons:
+            print(json.dumps(beacon.row()))
         return
+    if beacons:
+        p = ui.table(f"robot passports on the LAN ({len(beacons)})")
+        p.add_column("name", style=ui.STYLES["key"], no_wrap=True)
+        p.add_column("short id")
+        p.add_column("url", overflow="fold")  # the column a person copies, never cut short
+        p.add_column("digest")
+        for beacon in beacons:
+            p.add_row(
+                Text(beacon.instance.removesuffix("." + "_robot-passport._tcp.local.")),
+                Text(beacon.short_id or "none"),
+                Text(beacon.url()),
+                Text(beacon.digest, style=ui.STYLES["muted"]),
+            )
+        p.caption = Text("quackd meet <url> reads one", style=ui.STYLES["muted"])
+        p.caption_justify = "left"
+        ui.console.print(p)
     if not robots:
         ui.console.print(
             Text(f"no quackd robots answered in {timeout:g} s", style=ui.STYLES["muted"])

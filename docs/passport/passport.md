@@ -219,7 +219,9 @@ because something it cannot read is load-bearing.
 ### `issued` and `ttl_s`
 
 `issued` is when the passport was written, as an RFC 3339 date-time. It is advisory, because many
-robots have no clock that survives a reboot. `ttl_s` is how long a reader may cache the passport,
+robots have no clock that survives a reboot. quackd leaves it out of the passports it builds:
+stamping the build time would give an unchanged robot a new digest every time, and a reader
+caches by digest. `ttl_s` is how long a reader may cache the passport,
 counted from the moment the reader fetched it: an hour unless it says otherwise, a day at most.
 
 ## The index: several robots behind one host

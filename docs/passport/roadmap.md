@@ -8,11 +8,11 @@ what is built and what has run.
 | Part | Specified | Built in quackd | Tested on fakes | Run between two machines | Run on a robot |
 |---|---|---|---|---|---|
 | the passport document, built from a manifest and checked | 0.1 | yes: `passport show`, `check`, `set`, `owner` | yes | does not apply | no |
-| the well-known URL and the index | 0.1 | not yet | not yet | no | no |
-| QR stickers | 0.1 | not yet | not yet | no | no |
-| DNS-SD | 0.1 | not yet | not yet | no | no |
-| MQTT | 0.1 | not yet | not yet | no | no |
-| ROS 2, read through rosbridge | 0.1 | not yet | not yet | no | no |
+| the well-known URL and the index | 0.1 | yes: `passport serve`, `meet` | yes, and between processes on one machine | no | no |
+| QR stickers | 0.1 | yes: `passport qr`, `meet <picture>` | yes | does not apply | no |
+| DNS-SD | 0.1 | yes: `serve --announce`, `discover` | yes, and between processes on one machine | no | no |
+| MQTT | 0.1 | yes: `serve --mqtt`, `meet mqtt://` | yes, and between processes on one machine | no | no |
+| ROS 2, read through rosbridge | 0.1 | yes: `meet ros://` | yes | no | no |
 | signatures and stamps | 0.1 | not yet | not yet | no | no |
 | pinning | quackd's own | not yet | not yet | no | no |
 | `hello`, `say`, `bye` | 0.1 | not yet | not yet | no | no |
