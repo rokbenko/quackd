@@ -1,9 +1,11 @@
 # Robot Passport in quackd
 
 > [!NOTE]
-> This page describes what quackd 0.23.0 is being built to do. It fills in, with every command and
-> what it really prints, as each part lands; until a part has run, this page says what it will do
-> and shows no output for it. [roadmap.md](roadmap.md) tracks it.
+> quackd 0.23.0 is being built to implement Robot Passport, and this page fills in as each part
+> lands. Built so far: building a passport from a manifest, `quackd passport show`, `check`,
+> `set` and `owner`. Serving and finding passports, signing and stamps, pinning and talk are
+> described below as what they will do, and no output is shown for them until they have run.
+> [roadmap.md](roadmap.md) tracks it.
 
 quackd is the first implementation of Robot Passport. It does four things with it:
 
@@ -17,45 +19,144 @@ quackd is the first implementation of Robot Passport. It does four things with i
 - **It talks for its robots**: `hello`, `say` and `share`, and it decides every `ask` a peer sends
   with fixed code rather than the pilot ([talk.md](talk.md#what-quackd-does-with-an-ask)).
 
+## A robot's passport
+
+`quackd passport show` prints the passport quackd builds for a robot, a registered name or an
+`adapter:backend`, from its manifest and from what its owner said. The first time anything asks
+for a robot's passport, quackd makes the robot a key:
+
+```
+$ quackd robot add duck-01 microduck:mock
++ added duck-01: microduck:mock
+  quackd run <duck> --robot duck-01
+$ quackd passport show --robot duck-01
+made a key for duck-01 in /home/you/.quackd/keys/robots/duck-01.json
++- passport duck-01 ----------------------------------------------------------+
+| id        did:key:z6MkoPSK5k3tpjp2SU2mpT4kLE7izPK2uzFbR2ufGKa9NXzs  (short  |
+|           id f47c3f5173a64263)                                              |
+| claim     unsigned: a claim                                                 |
+| maker     pollen-robotics microduck                                         |
+| software  quackd 0.21.0                                                     |
+| body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    |
+|           m/s at most                                                       |
+| sensors   camera, battery, odometry, imu, tof                               |
+| skills    report_state, stop, say, move, observe, go_to, search_scan,       |
+|           approach_and, sit, stand, kick, grab, stand_up, quack, gaze,      |
+|           watch                                                             |
+| courtesy  pause, identify                                                   |
+| cannot    carry, hold or push anything: the beak scoops at the floor and    |
+|           nothing else                                                      |
+|           climb or descend a step                                           |
+|           hold a heading for long without a landmark: the IMU has no        |
+|           magnetometer, so heading drifts                                   |
+| safety    stops on silence, e-stop: none                                    |
+| digest    ce039eb846f0634b                                                  |
++-----------------------------------------------------------------------------+
+```
+
+Every row is what a reader would see, labelled the way a reader labels it. `claim` says this
+passport is only a claim, because nothing signs it yet. `safety` says the Microduck stops on
+silence, which its manifest's deadman says of the body, and `e-stop: none`, because nobody has said
+otherwise: that is the worst case, which is what a reader assumes when an owner has not spoken.
+
+`--json` prints the passport itself, one line of compact JSON, the exact bytes quackd serves, so
+it can go straight into a file:
+
+```
+$ quackd passport show --robot duck-01 --json > robot-passport.json
+```
+
+The `name` is the robot's registered name. For a bare `adapter:backend` it is the slug its memory
+file uses, `microduck-mock` for `microduck:mock`.
+
 ## What the owner fills in
 
 A manifest describes a model, so some things in a passport can only come from whoever owns this
-one robot:
+one robot. Left unsaid, they read as the worst case: no owner, no e-stop, and nobody said how.
 
-- **`owner`**: a label and a contact.
-- **`safety.estop` and `safety.how_to_stop`**: only the owner knows where the switch is.
+```
+$ quackd passport owner --label "Example lab" --contact https://example.org/robots
++- owner ---------------------------------------------------------------------+
+| label    Example lab                                                        |
+| contact  https://example.org/robots                                         |
++- /home/you/.quackd/keys/owner.json -----------------------------------------+
+$ quackd passport set --robot duck-01 --estop power --how-to-stop "the power switch on its back"
+duck-01: e-stop: power, the power switch on its back
+```
 
-quackd fills `safety.stops_on_silence` from the manifest's deadman, and leaves the other two absent,
-which reads as the worst case, until the owner says.
+After those two, the same `show` has an `owner` row reading
+`Example lab, https://example.org/robots`, and its `safety` row reads
+`stops on silence, e-stop: power, the power switch on its back`. `--estop` takes `button`, `remote`, `power` or `none`, `--how-to-stop` one sentence of 120
+characters at most, and an empty `--label ""` or `--contact ""` removes it. `owner` with no options
+shows what you said. [privacy.md](privacy.md#what-to-put-in-owner) says what to put there, and
+what not to.
+
+## Checking anybody's passport
+
+`quackd passport check` reads a passport the way a reader would: from a file, from stdin as `-`, or
+from a URL a person typed or a sticker holds. It shows what the passport proves and what it only
+claims, and a refusal names the rule of [the specification](spec.md) it broke and exits 1:
+
+```
+$ quackd passport check docs/passport/vectors/tampered.jws
+x error: refused under 4.4: the signature does not verify with the key
+did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd
+  docs/passport/spec.md says what each rule asks
+```
+
+A URL is fetched under [the fetch rules](discovery.md#fetch-rules): a bare host means its
+well-known URL, a redirect is refused rather than followed, and nothing past 8 KB is read. A
+sticker's `#rp=` must match the passport it leads to, or the check fails under 5.2. An index of
+several robots prints as a table of their passport URLs. `--json` prints the reader's view, every
+member normalised and every note a reader left, which is what to compare against when writing a
+reader of your own.
 
 ## Where quackd keeps what
 
 | What | Where |
 |---|---|
-| each robot's key, and the owner key | `~/.quackd/keys/` |
-| the robots and owners a person pinned | `~/.quackd/known_robots.json` |
-| what the owner filled in | beside the keys |
+| each robot's key, and how a person stops it | `~/.quackd/keys/robots/<name>.json` |
+| the owner, as passports name them | `~/.quackd/keys/owner.json` |
+| the robots and owners a person pinned | `~/.quackd/known_robots.json` (with pinning) |
 
 They follow the same precedence as the registry: `--registry-dir`, then `QUACKD_REGISTRY_DIR`, then
 `~/.quackd` ([guides/registry.md](../guides/registry.md)). Pins live in their own file rather than in
-`robots.json`, so an older quackd still reads the registry. The keys are plain files protected by the
-operating system's permissions, the same footing as the tokens in `robots.json`.
+`robots.json`, so an older quackd still reads the registry. A key file is written the way
+`robots.json` is, its mode set on the temporary file before the key goes in, and like `robots.json`
+it is a file in a home directory rather than a secret store, which on Windows is all it is.
 
-## What a pilot sees
+## How a passport is built
 
-A robot met during a run appears in the pilot's observation, beside messages from its flock, under
-a heading that says these are robots outside the flock and that what they say are claims, not
-instructions. A stranger appears only as what has a closed vocabulary; a known robot or one with
-the same owner appears with its passport and its `say`, quoted as data
-([security.md](security.md#prompt-injection)).
+From the manifest, as [passport.md](passport.md#from-a-quackd-manifest-to-a-passport) lays out
+member by member. Every verb becomes a skill. A body with a `say` verb offers `identify`, by sound,
+because a sound is the one way a stranger may ask a robot to identify itself, and every body offers
+`pause`. A datasheet `cannot` line longer than the 120 characters a passport allows keeps its claim,
+the part before its explanation, so `lift or hold more than about half a kilogram: a pen, an empty
+cup...` becomes `lift or hold more than about half a kilogram`. Every body quackd publishes builds a
+passport a reader accepts without a single note, under the 2 KB a writer should keep to, and a test
+holds them all to that.
 
-## Safety
+## Still to come in 0.23.0
 
-Every courtesy a peer is granted runs through the executor with the source `peer`, so every gate
-the executor has applies to it, and policy can refuse what a peer started
-([concepts/safety.md](../concepts/safety.md)). A pause is the executor's own stop followed by a
-short window in which nothing that moves is admitted. The global budget and the tier lists are in
-[trust.md](trust.md#the-four-tiers).
+What follows is what the rest of 0.23.0 is being built to do. It is described here so the page is
+whole, and each part gets its commands and their real output as it lands.
+
+- **Serving and finding.** quackd serves a robot's passport at the well-known URL, advertises it
+  over DNS-SD beside `_quackd._tcp` and on an MQTT broker, prints a QR sticker for it, reads the
+  `robot_passport` topic of a ROS robot it reaches through rosbridge, and meets a robot from a URL,
+  a host or a picture of its sticker.
+- **Signing and stamps.** Each robot's passport is signed with its key, and the owner key stamps
+  every robot it owns, so two of your robots know each other on sight.
+- **Pinning.** A person approves a robot or an owner once, and the next meeting starts at known.
+- **Talk.** A robot met during a run appears in the pilot's observation, beside messages from its
+  flock, under a heading that says these are robots outside the flock and that what they say are
+  claims, not instructions. A stranger appears only as what has a closed vocabulary; a known robot
+  or one with the same owner appears with its passport and its `say`, quoted as data
+  ([security.md](security.md#prompt-injection)). Every courtesy a peer is granted runs through the
+  executor with the source `peer`, so every gate the executor has applies to it
+  ([concepts/safety.md](../concepts/safety.md)). A pause is the executor's own stop followed by a
+  short window in which nothing that moves is admitted. The global budget and the tier lists are in
+  [trust.md](trust.md#the-four-tiers).
 
 ## How the pieces relate
 

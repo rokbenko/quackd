@@ -1,22 +1,23 @@
 # Quickstart: give a robot a passport
 
 > [!NOTE]
-> Spec draft 0.1. The first half of this page works today for any robot. The second half, for a
-> robot quackd drives, fills in as quackd 0.23.0's implementation lands, and shows no command
-> before it has run.
+> The first half works today for any robot, with nothing installed on it. The second half is for a
+> robot quackd drives, and shows only the commands quackd 0.23.0 has so far, with what they really
+> print. [roadmap.md](roadmap.md) says what is still to come.
 
-## Any robot, in five minutes, with no quackd
+## Any robot, in five minutes
 
-Nothing needs to be installed on the robot for this, and nothing needs quackd.
+Nothing needs to be installed on the robot, and quackd is needed only for the last step, and only
+if you want it.
 
 **1. Write the passport.** Three members are required. A robot that holds no key uses a UUID as its
-`id`; make a fresh one with any UUID generator, or `python -c "import uuid; print(uuid.uuid4())"`.
-Add whatever else you can say honestly:
+`id`: make a fresh one with any UUID generator, or `python -c "import uuid; print(uuid.uuid4())"`,
+rather than copying the one below. Add whatever else you can say honestly:
 
 ```json
 {
   "passport": "0.1",
-  "id": "urn:uuid:<your fresh UUID>",
+  "id": "urn:uuid:7d4a2f0e-31c5-4f8a-9b62-0c1e5d8a4b37",
   "name": "vacuum-01",
   "maker": {"vendor": "example-robotics", "model": "sweeper-3"},
   "owner": {"label": "Example lab", "contact": "https://example.org/robots"},
@@ -35,16 +36,54 @@ number reads as "not published", which is honest, where a guess is not.
 **3. Print its URL as a QR code** with any QR code generator, and stick it on the robot. Adding
 `#rp=` and a short id to the URL needs a key, so a robot without one leaves it off.
 
-**4. Check it** with any JSON Schema validator against
-[schema/passport.schema.json](schema/passport.schema.json). The vectors in
-[vectors/](vectors/README.md) show what a reader accepts and what it refuses.
+**4. Check it**, against [schema/passport.schema.json](schema/passport.schema.json) with any JSON
+Schema validator, or with quackd, which reads it exactly the way another robot would and also sees
+what no schema can, a duplicate member or a file too large:
+
+```
+$ quackd passport check vacuum.json
++- checked vacuum-01 ---------------------------------------------------------+
+| id      urn:uuid:7d4a2f0e-31c5-4f8a-9b62-0c1e5d8a4b37  (short id none: it   |
+|         holds no key)                                                       |
+| claim   unsigned: a claim                                                   |
+| maker   example-robotics sweeper-3                                          |
+| owner   Example lab, https://example.org/robots                             |
+| body    wheeled, nothing to hold with, 0.4 m/s at most                      |
+| cannot  climb or descend a step                                             |
+| safety  does not stop on silence, e-stop: button, the red button on its top |
+| digest  b292373ac4377183                                                    |
++-----------------------------------------------------------------------------+
+```
+
+It says `does not stop on silence` because the passport did not say it does, and a reader always
+reads `safety` as the worst case. Once the file is online, `quackd passport check` takes its URL
+instead. The vectors in [vectors/](vectors/README.md) show what a reader accepts and what it refuses.
 
 That robot is now level 0 on [the ladder](compatibility.md#the-ladder): anybody who scans its
 sticker knows what it is, whose it is and how to stop it.
 
 ## A robot quackd drives
 
-quackd builds a passport from a robot's manifest, signs it with a key it keeps for that robot, and
-serves it, so a robot quackd drives needs none of the steps above. The commands, with what they
-really print, arrive here as each one is built; [quackd.md](quackd.md) describes what quackd does,
-and [roadmap.md](roadmap.md) says how far it has got.
+quackd builds the passport from the robot's manifest, so there is nothing to write. You say only
+what a manifest cannot know, who owns the robot and how a person stops it, and quackd makes the
+robot a key the first time it is asked:
+
+```
+$ quackd robot add duck-01 microduck:mock
+$ quackd passport owner --label "Example lab" --contact https://example.org/robots
+$ quackd passport set --robot duck-01 --estop power --how-to-stop "the power switch on its back"
+$ quackd passport show --robot duck-01 --json > robot-passport.json
+$ quackd passport check robot-passport.json
++- checked duck-01 -----------------------------------------------------------+
+| id        did:key:z6MkoPSK5k3tpjp2SU2mpT4kLE7izPK2uzFbR2ufGKa9NXzs  (short  |
+|           id f47c3f5173a64263)                                              |
+| claim     unsigned: a claim                                                 |
+| maker     pollen-robotics microduck                                         |
+| software  quackd 0.21.0                                                     |
+| owner     Example lab, https://example.org/robots                           |
+| body      biped, legged, beak, 0.8 kg (official), 0.25 m (official), 0.3    |
+```
+
+The rest of that panel is in [quackd.md](quackd.md#a-robots-passport), with what every command
+prints. Signing the passport, serving it, advertising it and printing its sticker come with the
+rest of 0.23.0.

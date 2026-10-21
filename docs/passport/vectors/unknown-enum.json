@@ -22,22 +22,31 @@
     ]
   },
   "skills": [
+    "report_state",
     "stop",
-    "observe",
     "say",
     "move",
+    "observe",
     "go_to",
     "search_scan",
+    "approach_and",
+    "sit",
+    "stand",
     "kick",
-    "gaze"
+    "grab",
+    "stand_up",
+    "quack",
+    "gaze",
+    "watch"
   ],
   "courtesy": [
     "pause",
     "identify"
   ],
   "cannot": [
-    "carry, hold or push anything",
-    "climb or descend a step"
+    "carry, hold or push anything: the beak scoops at the floor and nothing else",
+    "climb or descend a step",
+    "hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts"
   ],
   "safety": {
     "stops_on_silence": true,
@@ -50,5 +59,10 @@
       "url": "http://192.0.2.10:8790/robot-passport/inbox"
     }
   ],
+  "ext": {
+    "org.quackd": {
+      "sha": "dc5ab18e68dd6ca5"
+    }
+  },
   "issued": "2026-10-21T00:00:00Z"
 }

@@ -24,8 +24,9 @@ is optional, and a robot adds what it can say honestly.
 
 ## A full one
 
-This is a Microduck, built from its quackd manifest. It is 853 bytes of compact JSON, about a ninth
-of the 7,703 bytes the manifest itself takes, and it is [vectors/microduck.json](vectors/microduck.json):
+This is a Microduck, exactly as quackd builds it from its manifest, with an owner, an e-stop and
+an inbox added. It is 1,218 bytes of compact JSON, about a sixth of the 7,703 bytes the manifest
+itself takes, and it is [vectors/microduck.json](vectors/microduck.json):
 
 ```json
 {
@@ -39,26 +40,37 @@ of the 7,703 bytes the manifest itself takes, and it is [vectors/microduck.json]
     "embodiment": "biped",
     "mobility": "legged",
     "manipulator": "beak",
-    "mass_kg": [0.8, "official"],
-    "height_m": [0.25, "official"],
+    "terrain": "indoor_flat",
+    "tethered": false,
+    "mass_kg": [0.8, "official", "the Pollen Robotics README"],
+    "height_m": [0.25, "official", "the Pollen Robotics README"],
     "max_speed_mps": 0.3,
     "sensors": ["camera", "battery", "odometry", "imu", "tof"]
   },
-  "skills": ["stop", "observe", "say", "move", "go_to", "search_scan", "kick", "gaze"],
+  "skills": ["report_state", "stop", "say", "move", "observe", "go_to", "search_scan",
+             "approach_and", "sit", "stand", "kick", "grab", "stand_up", "quack", "gaze",
+             "watch"],
   "courtesy": ["pause", "identify"],
-  "cannot": ["carry, hold or push anything", "climb or descend a step"],
+  "cannot": [
+    "carry, hold or push anything: the beak scoops at the floor and nothing else",
+    "climb or descend a step",
+    "hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts"
+  ],
   "safety": {"stops_on_silence": true, "estop": "power", "how_to_stop": "the power switch"},
   "talk": [{"via": "http", "url": "http://192.0.2.10:8790/robot-passport/inbox"}],
+  "ext": {"org.quackd": {"sha": "dc5ab18e68dd6ca5"}},
   "issued": "2026-10-21T00:00:00Z"
 }
 ```
 
 Read top to bottom, it says: this is `duck-01`, a Microduck from Pollen Robotics running quackd
 0.23.0, owned by Example lab, who can be reached at that page. It is a legged biped with a beak,
-0.8 kg and 25 cm tall by its maker's numbers, it moves at 0.3 m/s at most, and it can see, speak,
-walk, kick and look around. It cannot carry anything or climb a step. Its motion stops by itself
-when its controller goes quiet, and a person stops it at the power switch. Another robot can ask
-it to pause or to identify itself, and can talk to it at that inbox.
+rated for flat indoor floors and running on its battery, 0.8 kg and 25 cm tall by its maker's own
+README, and it moves at 0.3 m/s at most. It can see, speak, walk, kick, scoop and look around. It
+cannot carry anything, climb a step or hold a heading for long. Its motion stops by itself when
+its controller goes quiet, and a person stops it at the power switch. Another robot can ask it to
+pause or to identify itself, and can talk to it at that inbox. `org.quackd` carries its quackd
+manifest's digest, for another quackd host that has the same adapter.
 
 ## Every member
 
@@ -235,9 +247,9 @@ Measured from [the vectors](vectors/README.md).
 | What | Size |
 |---|---|
 | the smallest passport | 99 bytes |
-| a Microduck's full passport | 853 bytes |
-| the same with one owner stamp | 1,348 bytes |
-| that, signed, as a `.jws` | 2,032 characters |
+| a Microduck's full passport | 1,218 bytes |
+| the same with one owner stamp | 1,713 bytes |
+| that, signed, as a `.jws` | 2,518 characters |
 | one stamp | 481 characters |
 | the most a reader must accept | 8,192 bytes |
 | what a writer should stay under | 2,048 bytes |
@@ -267,9 +279,9 @@ drives, and every adapter somebody else writes, has one without anybody typing i
 | `embodiment`, `mobility`, `sensors` | `body.embodiment`, `body.mobility`, `body.sensors` |
 | `datasheet` figures, each with its confidence and source | the `body` figures of the same name |
 | `datasheet.manipulator`, `terrain`, `tethered` | `body.manipulator`, `body.terrain`, `body.tethered` |
-| `datasheet.cannot` | `cannot` |
+| `datasheet.cannot`, a line over 120 characters cut to its claim, the part before its explanation | `cannot` |
 | the fastest of `limits.max_vx` and `limits.max_vy` | `body.max_speed_mps` |
-| the canonical verb names | `skills` |
+| every canonical verb name | `skills` |
 | `safety_authority.deadman` | `safety.stops_on_silence` |
 | `digest()` | `ext.org.quackd.sha` |
 

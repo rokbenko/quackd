@@ -7,7 +7,7 @@ what is built and what has run.
 
 | Part | Specified | Built in quackd | Tested on fakes | Run between two machines | Run on a robot |
 |---|---|---|---|---|---|
-| the passport document | 0.1 | not yet | not yet | no | no |
+| the passport document, built from a manifest and checked | 0.1 | yes: `passport show`, `check`, `set`, `owner` | yes | does not apply | no |
 | the well-known URL and the index | 0.1 | not yet | not yet | no | no |
 | QR stickers | 0.1 | not yet | not yet | no | no |
 | DNS-SD | 0.1 | not yet | not yet | no | no |

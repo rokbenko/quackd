@@ -93,6 +93,10 @@ def stamp(subject: Key, *, iat: int, exp: int, signer: Key = OWNER, rel: str = "
 
 def microduck(key: Key) -> dict[str, Any]:
     """The full example from passport.md, for robot A."""
+    # Exactly what quackd's own passport_from_manifest builds for a Microduck with this owner,
+    # this e-stop and this inbox: tests/test_passport_from_manifest.py holds the two equal, so
+    # the example the docs show is the real thing rather than a sketch of it.
+    duck_source = "the Pollen Robotics README"
     return {
         "passport": "0.1",
         "id": key.did,
@@ -104,16 +108,41 @@ def microduck(key: Key) -> dict[str, Any]:
             "embodiment": "biped",
             "mobility": "legged",
             "manipulator": "beak",
-            "mass_kg": [0.8, "official"],
-            "height_m": [0.25, "official"],
+            "terrain": "indoor_flat",
+            "tethered": False,
+            "mass_kg": [0.8, "official", duck_source],
+            "height_m": [0.25, "official", duck_source],
             "max_speed_mps": 0.3,
             "sensors": ["camera", "battery", "odometry", "imu", "tof"],
         },
-        "skills": ["stop", "observe", "say", "move", "go_to", "search_scan", "kick", "gaze"],
+        "skills": [
+            "report_state",
+            "stop",
+            "say",
+            "move",
+            "observe",
+            "go_to",
+            "search_scan",
+            "approach_and",
+            "sit",
+            "stand",
+            "kick",
+            "grab",
+            "stand_up",
+            "quack",
+            "gaze",
+            "watch",
+        ],
         "courtesy": ["pause", "identify"],
-        "cannot": ["carry, hold or push anything", "climb or descend a step"],
+        "cannot": [
+            "carry, hold or push anything: the beak scoops at the floor and nothing else",
+            "climb or descend a step",
+            "hold a heading for long without a landmark: the IMU has no magnetometer, so "
+            "heading drifts",
+        ],
         "safety": {"stops_on_silence": True, "estop": "power", "how_to_stop": "the power switch"},
         "talk": [{"via": "http", "url": "http://192.0.2.10:8790/robot-passport/inbox"}],
+        "ext": {"org.quackd": {"sha": "dc5ab18e68dd6ca5"}},
         "issued": "2026-10-21T00:00:00Z",
     }
 

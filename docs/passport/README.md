@@ -51,8 +51,8 @@ bounded rule its owner chose.
 | What | Size |
 |---|---|
 | the smallest passport | 99 bytes |
-| a Microduck's full passport | 853 bytes |
-| that, signed, with an owner stamp, as a `.jws` | 2,032 characters |
+| a Microduck's full passport | 1,218 bytes |
+| that, signed, with an owner stamp, as a `.jws` | 2,518 characters |
 | the most a reader must accept | 8,192 bytes |
 | a talk message, at most | 4,096 bytes |
 | a QR code for a passport URL | 37×37 modules |

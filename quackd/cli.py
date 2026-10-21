@@ -6061,6 +6061,290 @@ def memory_clear(
 # ── lan (quackd[lan]) ───────────────────────────────────────────────────────────────────
 
 
+# ── Robot Passport (docs/passport/) ──────────────────────────────────────────────────────
+
+passport_app = typer.Typer(
+    name="passport",
+    help="Robot Passport: what a robot tells a robot it has never met. Build a robot's "
+    "passport from its manifest, check anybody's, and say who owns your robots and how to "
+    "stop them. docs/passport/ has the protocol.",
+    no_args_is_help=True,
+)
+app.add_typer(passport_app, name="passport", rich_help_panel="Robots")
+
+_PASSPORT_ROBOT = typer.Option(
+    ..., "--robot", "-r", help="A registered name, or <adapter>:<backend>."
+)
+
+
+def _passport_for(robot: str, registry_dir: str | None) -> tuple[dict[str, Any], Any, bool]:
+    """The passport quackd builds for `robot`, its key file's record, and whether that key
+    was made just now. A robot gets its key the first time anything asks for its passport."""
+    from quackd import __version__
+    from quackd.adapters.base import AdapterError
+    from quackd.adapters.factory import describe
+    from quackd.adapters.passport import passport_from_manifest
+    from quackd.memory import robot_slug
+    from quackd.passport_store import PassportStore, StoreError
+    from quackd.registry import Registry, RegistryError, resolve_robot_ref
+
+    try:
+        resolved = resolve_robot_ref(robot, Registry(registry_dir))
+        manifest = describe(resolved.spec)
+        store = PassportStore(registry_dir)
+        name = robot_slug(resolved.memory_key)
+        record, created = store.robot_or_new(name)
+        owner = store.owner()
+    except (AdapterError, RegistryError, StoreError) as e:
+        _fail(str(e), hint=_ADAPTER_HINT)
+        raise  # unreachable: _fail exits
+    doc = passport_from_manifest(
+        manifest,
+        robot_id=record.key.did,
+        name=name,
+        software_version=__version__,
+        owner={"label": owner.label or "", "contact": owner.contact or ""},
+        estop=record.estop,
+        how_to_stop=record.how_to_stop,
+    )
+    if record.stamps:
+        doc["stamps"] = list(record.stamps)
+    return doc, (store, name, record), created
+
+
+def _figure_text(figure: dict[str, Any], unit: str) -> str:
+    text = f"{figure['value']:g} {unit}"
+    return f"{text} ({figure['confidence']})" if figure.get("confidence") else text
+
+
+def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
+    """A reading as the rows a person scans, each claim where a reader would look for it."""
+    rows: list[tuple[str, Any]] = []
+    short = view["short_id"] or "none: it holds no key"
+    rows.append(("id", Text(f"{view['id']}  (short id {short})", style=ui.STYLES["muted"])))
+    counted = [s for s in view["stamps"] if s["counts"]]
+    claim = view["provenance"]
+    if view["stamps"]:
+        claim += f", {len(counted)} of {len(view['stamps'])} stamps count"
+    rows.append(("claim", claim))
+    maker = view["maker"]
+    if maker:
+        rows.append(("maker", " ".join(str(maker[k]) for k in ("vendor", "model") if k in maker)))
+    if view["software"]:
+        rows.append(("software", " ".join(str(v) for v in view["software"].values())))
+    if view["owner"]:
+        rows.append(("owner", ", ".join(str(v) for v in view["owner"].values())))
+    body = view["body"]
+    if body:
+        worded = {"mobility": "fixed in place", "manipulator": "nothing to hold with"}
+        parts = [
+            worded[k] if body[k] == "none" and k in worded else body[k]
+            for k in ("embodiment", "mobility", "manipulator")
+            # a wheeled body that moves on wheels says wheeled once, not twice
+            if k in body and not (k == "mobility" and body[k] == body.get("embodiment"))
+        ]
+        for name, unit in (("mass_kg", "kg"), ("height_m", "m"), ("payload_kg", "kg payload")):
+            if name in body:
+                parts.append(_figure_text(body[name], unit))
+        if "max_speed_mps" in body:
+            parts.append(f"{body['max_speed_mps']['value']:g} m/s at most")
+        if body.get("tethered"):
+            parts.append("tethered")
+        rows.append(("body", ", ".join(str(p) for p in parts)))
+        if body.get("sensors"):
+            rows.append(("sensors", ", ".join(body["sensors"])))
+    if view["skills"]:
+        rows.append(("skills", ", ".join(view["skills"])))
+    if view["courtesy"]:
+        rows.append(("courtesy", ", ".join(view["courtesy"])))
+    for i, line in enumerate(view["cannot"]):
+        rows.append(("cannot" if i == 0 else "", line))
+    safety = view["safety"]
+    stops = "stops on silence" if safety["stops_on_silence"] else "does not stop on silence"
+    said = f", {safety['how_to_stop']}" if safety["how_to_stop"] else ""
+    rows.append(("safety", f"{stops}, e-stop: {safety['estop']}{said}"))
+    for channel in view["talk"]:
+        rows.append(("talk", f"{channel['via']} {channel['url']}"))
+    rows.append(("digest", Text(view["digest"][:16], style=ui.STYLES["muted"])))
+    return rows
+
+
+def _print_reading(view: dict[str, Any], *, title: str) -> None:
+    ui.console.print(ui.run_header(f"{title} {view['name']}", _passport_rows(view)))
+    if not view["talk_allowed"]:
+        ui.console.print(_warn_line("a required extension is not understood, so no talk"))
+    for note in view["notes"]:
+        ui.console.print(Text(f"  {note}", style=ui.STYLES["muted"]), soft_wrap=True)
+
+
+@passport_app.command("show")
+def passport_show(
+    robot: str = _PASSPORT_ROBOT,
+    registry_dir: str | None = _REGISTRY_DIR,
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="The passport itself, one line of compact JSON: the exact bytes quackd serves.",
+        rich_help_panel="Output",
+    ),
+) -> None:
+    """Show the passport quackd builds for a robot, from its manifest and what you said."""
+    from quackd.passport import document, strict
+
+    doc, (store, name, _record), created = _passport_for(robot, registry_dir)
+    if created:
+        ui.err_console.print(
+            Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
+        )
+    raw = strict.dumps(doc)
+    if as_json:
+        print(raw.decode("utf-8"))
+        return
+    reading = document.read_json(raw)
+    _print_reading(reading.view(), title="passport")
+    if len(raw) > document.WRITER_BYTES:
+        ui.console.print(
+            _warn_line(
+                f"{len(raw)} bytes, over the {document.WRITER_BYTES} a writer should keep to"
+            )
+        )
+
+
+@passport_app.command("check")
+def passport_check(
+    source: str = typer.Argument(
+        ..., help="A passport to check: a file, - for stdin, or an http(s) URL."
+    ),
+    as_json: bool = _JSON,
+) -> None:
+    """Check a passport the way a reader would, and show what it proves and what it claims.
+
+    Works on anybody's: a file, a URL a person typed or a sticker holds, or stdin. A refusal
+    names the rule of the specification it broke, and exits 1."""
+    from quackd.passport import PassportError, document, fetch
+
+    promised: str | None = None
+    try:
+        if source.startswith(("http://", "https://")):
+            aim = fetch.target(source)
+            promised = aim.short_id
+            data = fetch.fetch(aim.url)
+        elif source == "-":
+            data = sys.stdin.buffer.read(document.MAX_BYTES + 1)
+        else:
+            path = Path(source)
+            if not path.is_file():
+                _fail(f"{source}: no such file")
+            data = path.read_bytes()
+        reading = document.read(data)
+    except PassportError as e:
+        _fail(f"refused under {e.rule}: {e}", hint="docs/passport/spec.md says what each rule asks")
+        return
+    if isinstance(reading, list):
+        if as_json:
+            for entry in reading:
+                print(json.dumps({"url": entry.url, "name": entry.name, "id": entry.id}))
+            return
+        t = ui.table(f"an index of {len(reading)} passports")
+        for column in ("name", "url", "id"):
+            t.add_column(column)
+        for entry in reading:
+            t.add_row(entry.name or "", entry.url, Text(entry.id or "", style=ui.STYLES["muted"]))
+        ui.console.print(t)
+        return
+    if promised is not None and promised != reading.short_id:
+        _fail(
+            f"refused under 5.2: the URL promised short id {promised}, and this passport's is "
+            f"{reading.short_id or 'none'}"
+        )
+    view = reading.view()
+    if as_json:
+        print(json.dumps(view))
+        return
+    _print_reading(view, title="checked")
+
+
+@passport_app.command("set")
+def passport_set(
+    robot: str = _PASSPORT_ROBOT,
+    estop: str | None = typer.Option(
+        None, "--estop", help="What kind of e-stop it has: button, remote, power or none."
+    ),
+    how_to_stop: str | None = typer.Option(
+        None, "--how-to-stop", help="One sentence for a person next to it, 120 characters at most."
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Say how a person stops this robot, which no manifest can know.
+
+    Left unsaid, a passport reads as the worst case: no e-stop, and nobody said how."""
+    from quackd.passport.document import ESTOPS
+    from quackd.passport_store import StoreError
+
+    if estop is not None and estop not in ESTOPS:
+        _fail(f"--estop {estop!r} is not one of {', '.join(ESTOPS)}")
+    if how_to_stop is not None and not 0 < len(how_to_stop) <= 120:
+        _fail("--how-to-stop is one sentence of 1 to 120 characters")
+    _doc, (store, name, record), created = _passport_for(robot, registry_dir)
+    if created:
+        ui.err_console.print(
+            Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
+        )
+    if estop is not None:
+        record.estop = estop
+    if how_to_stop is not None:
+        record.how_to_stop = how_to_stop
+    try:
+        store.save_robot(name, record)
+    except StoreError as e:
+        _fail(str(e))
+    said = f"e-stop: {record.estop or 'none said'}, {record.how_to_stop or 'how to stop: not said'}"
+    ui.console.print(Text(f"{name}: {said}"))
+
+
+@passport_app.command("owner")
+def passport_owner(
+    label: str | None = typer.Option(
+        None, "--label", help="How your robots' passports name you, 64 characters at most."
+    ),
+    contact: str | None = typer.Option(
+        None,
+        "--contact",
+        help="A URL, a mailto: address or a role address, 200 characters at most. Not a "
+        "personal phone number or a home address: docs/passport/privacy.md says why.",
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Say who owns the robots this quackd drives, or show what you said.
+
+    An empty value removes it. Both are optional, and a passport without an owner is still read."""
+    from quackd.passport_store import OwnerRecord, PassportStore, StoreError
+
+    store = PassportStore(registry_dir)
+    try:
+        owner = store.owner()
+        if label is not None or contact is not None:
+            if label is not None and len(label) > 64:
+                _fail("--label is 64 characters at most")
+            if contact is not None and len(contact) > 200:
+                _fail("--contact is 200 characters at most")
+            owner = OwnerRecord(
+                label if label is not None else owner.label,
+                contact if contact is not None else owner.contact,
+            )
+            store.save_owner(owner)
+    except StoreError as e:
+        _fail(str(e))
+        return
+    ui.console.print(
+        ui.run_header(
+            "owner",
+            [("label", owner.label or "not said"), ("contact", owner.contact or "not said")],
+            hint=str(store.owner_path),
+        )
+    )
+
+
 @app.command(rich_help_panel="LAN")
 def discover(
     timeout: float = typer.Option(3.0, "--timeout", help="Seconds to listen for answers."),

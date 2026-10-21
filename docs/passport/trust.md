@@ -52,7 +52,7 @@ payload is the passport's exact bytes:
 ```
 eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGlkOmtleTp6Nk1rZWhS...   the protected header, base64url
 .eyJwYXNzcG9ydCI6IjAuMSIsImlkIjoiZGlkOmtleTp6Nk1rZWhS...  the passport's exact bytes, base64url
-.05sNcnGoeh5ipW4G_SLudCIUV1433OpS15xhenk2COnp2MbPtQ2y...  the 64-byte Ed25519 signature, base64url
+.V0johtXIxX-ix0awrTWNyg7vRYtV_MBcazEhU8pcpCrhBTYIGtvP...  the 64-byte Ed25519 signature, base64url
 ```
 
 That is the start of each part of [vectors/microduck.jws](vectors/microduck.jws).
