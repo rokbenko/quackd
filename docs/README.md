@@ -48,6 +48,7 @@ to try a real one in.
 | AlohaMini | [adapters/alohamini/README.md](adapters/alohamini/README.md) | [hardware checklist](adapters/alohamini/hardware-checklist.md) |
 | ToddlerBot | [adapters/toddlerbot/README.md](adapters/toddlerbot/README.md) | [hardware checklist](adapters/toddlerbot/hardware-checklist.md) |
 | Huebot | [adapters/huebot/README.md](adapters/huebot/README.md) | [hardware checklist](adapters/huebot/hardware-checklist.md) |
+| MOSS, a tracked rover that picks up litter | [adapters/moss/README.md](adapters/moss/README.md) | [hardware checklist](adapters/moss/hardware-checklist.md) |
 
 - [Adapter status](adapters/status.md): what has run against its real target, and what has not.
 - [Writing an adapter](adapters/writing-an-adapter.md): the recipe for a robot quackd does not
@@ -59,7 +60,7 @@ to try a real one in.
 
 - [The `.duck` file](reference/duck-spec.md): the task format, spec v0 to v4. It is normative.
 - [The robot manifest](reference/manifest-spec.md): what a connected robot is and can do, as data.
-- [Licenses](reference/licenses.md): the nine distributions, every upstream they reach, and on
+- [Licenses](reference/licenses.md): the ten distributions, every upstream they reach, and on
   what terms.
 
 ## Concepts

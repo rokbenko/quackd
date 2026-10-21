@@ -271,6 +271,7 @@ async def test_factory_describes_and_makes_adapters() -> None:
         "alohamini",
         "toddlerbot",
         "huebot",
+        "moss",
     ]
     assert rows[0]["installed"] and "sim2d" in rows[0]["backends"]
     assert rows[1]["extra"] == "quackd[lerobot]" and "real" in rows[1]["backends"]
@@ -299,6 +300,8 @@ PARKS_NOTHING = (
     "toddlerbot:mock",
     "huebot:mock",
     "huebot:jsonrpc",
+    "moss:mock",
+    "moss:cockpit",
 )
 """Every adapter but lerobot: the bodies that hold their own posture when the power goes."""
 
@@ -319,7 +322,8 @@ ONE_CAMERA = (
     "lerobot:mock",
 )
 """Every spec outside `MULTI_CAMERA_SPECS`, which is the LeRobot arm, `lerobot:real` and its
-simulator `lerobot:mujoco`, and nothing else."""
+simulator `lerobot:mujoco`, and nothing else, but MOSS's two: its cameras come from the rover
+itself, so it takes no `--camera-url` at all, and tests/test_moss_adapter.py says so."""
 
 
 @pytest.mark.parametrize("spec", PARKS_NOTHING)

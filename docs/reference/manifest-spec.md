@@ -102,7 +102,7 @@ equal across `sim2d`, `mock` and the real thing. `rosbridge` is the one exceptio
 names a transport rather than a body: its sheet is whatever the bridge answered when asked
 ([adapters/rosbridge/README.md](../adapters/rosbridge/README.md)).
 
-The eight sheets quackd publishes, with each figure's confidence:
+The nine sheets quackd publishes, with each figure's confidence:
 
 | Robot | Mass | Height | Joints | Payload | Reach | Endurance | Hands |
 |---|---|---|---|---|---|---|---|
@@ -114,6 +114,7 @@ The eight sheets quackd publishes, with each figure's confidence:
 | `alohamini` | not published | not published | 14 official | 1.0 kg official, per arm | 0.52 m official | not published | two grippers |
 | `toddlerbot` | 3.4 kg official | 0.56 m official | 30 official | 1.484 kg official, both arms | not published | 19 min official | two arms |
 | `huebot` | not published | 0.25 m official | 15 official | not published | not published | not published | none |
+| `moss` | 4.2 kg official | not published | 6 official | not published | not published | not published | one gripper |
 
 One body carries the eighth figure: the XLeRobot publishes a working height of 0.5 to
 1.25 m, official, because its torso does not lift, so its hands work in that band and
@@ -140,7 +141,7 @@ and MCP `robot_list` returns it.
 
 ## Examples
 
-The eight manifests quackd publishes, from `quackd list-verbs --robot ...` or `describe()`.
+The nine manifests quackd publishes, from `quackd list-verbs --robot ...` or `describe()`.
 Both read the static manifest without connecting to anything, and both need that body's
 package installed: on a machine without it, `quackd list-verbs --robot lerobot:mock` refuses
 with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
@@ -155,6 +156,7 @@ with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
 | `alohamini:mock` | wheeled / wheeled | twist, pose, joint, gripper | observe, report_state, stop, move, lift, move_joints, gripper, home_arms, go_to, search_scan, approach_and |
 | `toddlerbot:mock` | humanoid / legged | skill, gaze, twist | observe, report_state, stop, stand, perform, look, move, go_to, approach_and, search_scan |
 | `huebot:mock` | biped / legged | twist, skill, sound | report_state, stop, say, move, observe, go_to, search_scan, approach_and, sit, stand, kick, stand_up, quack |
+| `moss:mock` | wheeled / wheeled | twist, pose, skill | observe, report_state, stop, move, go_to, search_scan, drive_to, explore, pick_and_drop, stow_arm, approach_and, collect_litter |
 
 What each body lacks is as important as what it has: the arm cannot `move`, neither the
 base nor the cart can `say`, and a `.duck` that `requires` one of those fails

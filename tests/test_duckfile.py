@@ -58,6 +58,7 @@ def test_bundled_list() -> None:
         "toddlerbot-lookout",
         "lerobot-lookout",
         "arm-grip-check",
+        "moss-lookout",
     }
 
 

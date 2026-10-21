@@ -1,0 +1,49 @@
+# quackd's bridge for a MOSS rover: the twist, the timed frames, the arm cycle and the litter
+# mission's stop, which MOSS's cockpit has no command for (bridge/moss/README.md). It runs beside
+# the cockpit, as the same user, from the same checkout, with the same interpreter.
+#
+# A template, as MOSS's own tools/moss-cockpit.service is: MOSS_USER is the account that runs the
+# rover's stack, and MOSS_DIR the absolute path of its MOSS checkout, with its .venv. From the
+# directory that holds this file and quackd_moss_bridge.py, on the rover:
+#   sudo install -m 0755 -D quackd_moss_bridge.py /opt/quackd/quackd_moss_bridge.py
+#   sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$HOME/moss|g" quackd-moss-bridge.service \
+#     | sudo tee /etc/systemd/system/quackd-moss-bridge.service >/dev/null
+#   sudo systemctl daemon-reload && sudo systemctl enable quackd-moss-bridge && sudo systemctl restart quackd-moss-bridge
+# The token file comes first: bridge/moss/README.md, "Install it on the rover".
+#
+# Loopback on purpose. Reach it from the laptop through the same tunnel as the cockpit,
+#   ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
+# and keep the token if you ever bind it wide: anyone who can reach the port can drive the
+# tracks and the arm.
+[Unit]
+Description=quackd bridge for a MOSS rover (twist, frames, arm cycle and mission stop over HTTP)
+Documentation=https://github.com/rokbenko/quackd/blob/main/bridge/moss/README.md
+# The bus: dimOS's LCM needs loopback multicast and its route, which MOSS's own
+# tools/lcm-loopback.service sets at boot, the same as for the cockpit.
+Wants=lcm-loopback.service
+After=network.target lcm-loopback.service
+
+[Service]
+Type=simple
+User=MOSS_USER
+WorkingDirectory=MOSS_DIR
+# What the cockpit's own unit and tools/moss-fly.sh set, since the bridge imports the same
+# packages: some aarch64 imports fail without the larger static TLS reserve.
+Environment=GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304
+Environment=PYTHONUNBUFFERED=1
+# If the stack runs with an LCM_DEFAULT_URL of its own, set the same one here: the bridge
+# refuses to publish to a stack on another address, and /hello says so.
+ExecStart=MOSS_DIR/.venv/bin/python /opt/quackd/quackd_moss_bridge.py --moss MOSS_DIR --bind 127.0.0.1 --port 9876 --token-file /etc/quackd/moss-bridge.token
+# The arm cycle is a child of the bridge. On a stop the bridge alone gets SIGTERM, so it can
+# stop the script, cancel the trajectory and see the arm hold, in that order, before anything
+# else in the unit is killed. Twenty seconds covers the mission's stop and the arm's cancel.
+KillMode=mixed
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=3
+# The same stack limit as a login shell, as the cockpit's unit keeps for what it starts: the
+# arm cycle's RPC client starts threads, and an unlimited stack can make that fail.
+LimitSTACK=8M
+
+[Install]
+WantedBy=multi-user.target

@@ -173,8 +173,8 @@ class HandResult:
 async def let_go_if_any(transport: Any, **kw: Any) -> HandResult:
     """Release the body into a person's hands, on anything that can be handed over.
 
-    Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of eight does
-    this, and the other seven should not have to carry a method to say so.
+    Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of nine does
+    this, and the other eight should not have to carry a method to say so.
 
     `kw` goes to the body's own `let_go` untouched, and the one keyword the arm takes is
     `anywhere`: True skips the rule that it is released only at its rest pose, for the two
@@ -420,8 +420,8 @@ class RobotAdapter(Protocol):
         ...
 
     # `let_go` and `take_hold` are deliberately NOT here. This protocol is runtime-checkable
-    # and structural, so a method on it is a method every one of the eight bodies must carry,
-    # and seven of them are never handed to a person. A body that can be declares
+    # and structural, so a method on it is a method every one of the nine bodies must carry,
+    # and eight of them are never handed to a person. A body that can be declares
     # `supports_hand_off = True`; the callers reach it through `let_go_if_any` and
     # `take_hold_if_any`, which is the same way a rest move reaches a bare transport.
 

@@ -6,7 +6,7 @@ that is 62.1 seconds of a 78.8 second run. Some of those turns are not writing, 
 choosing, and a decision LLM answers a choice without generating anything.
 
 Which turns those are is decided here, from each tool's own JSON Schema and nothing else, so a
-body quackd has never shipped is classified by the same rule as the eight that do. A verb whose
+body quackd has never shipped is classified by the same rule as the nine that do. A verb whose
 meaning is a number -- every `move_joints`, every `move` -- is not a choice and never becomes
 one. On the arm that is not even a judgement call: `move_joints` takes a free-form object of
 joint names the schema never lists, because they live in a `field_validator` rather than in an

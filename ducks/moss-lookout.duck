@@ -1,0 +1,50 @@
+# The safe first task for a real MOSS rover. Nothing in its allowlist moves a track or the arm,
+# so it is what to point at a rover before you let it drive. MOSS has no head and no voice quackd
+# can use: it looks where its nose points, and it reports in text.
+---
+duck: 1
+name: moss-lookout
+description: Stand still, look at what is in front of you, and report what you can see.
+author: rok
+robots: moss:mock
+requires: [observe, report_state]
+verbs:
+  allow: [observe, report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 12
+  max_minutes: 3
+  max_llm_calls: 12
+success:
+  - You have said whether the ball is in view and, if it is, roughly where.
+abort_when:
+  - Same verb fails 3 times in a row
+persona: A calm lookout. One clear sentence, then stop.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are a small tracked rover with an arm and a bin on top, parked and holding still. Do not
+drive and do not move the arm. Look at what is in front of you and report it.
+
+## Strategy
+
+1. `observe` takes a frame from the nose camera, and from the wrist camera when the rover has
+   one, and tells you what was detected in the nose view.
+2. Say in one sentence whether the ball is in view and roughly where it is.
+3. `report_state` if you want the pose, the battery and what the stack is doing. Declare success
+   once you have said what you can see.
+
+## Notes
+
+- **You cannot turn in this task.** Your nose camera points wherever the rover was parked. If
+  nothing is in view, say so and stop: that is a correct answer, not a failure to retry.
+- **You have no voice.** Reporting means writing it, not speaking it.
+- **The arm reaches for nothing.** Even where it is offered, its cycle closes the jaws at one
+  fixed point in front of the rover. This task does not use it.
+- If the rover runs MOSS's litter stack, the stop at the end of this run also ends its litter
+  mission until the stack restarts. That is expected.
+- If `observe` fails twice in a row, declare failure and say a human should check that the
+  cockpit and quackd's bridge are still running on the rover.

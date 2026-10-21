@@ -27,6 +27,7 @@ members = [
     "quackd-huebot",
     "quackd-lerobot",
     "quackd-microduck",
+    "quackd-moss",
     "quackd-open-duck",
     "quackd-rosbridge",
     "quackd-toddlerbot",
@@ -3639,6 +3640,7 @@ dev = [
     { name = "quackd-huebot" },
     { name = "quackd-lerobot" },
     { name = "quackd-microduck" },
+    { name = "quackd-moss" },
     { name = "quackd-open-duck" },
     { name = "quackd-rosbridge" },
     { name = "quackd-toddlerbot" },
@@ -3692,6 +3694,9 @@ microduck-camera = [
 mistral = [
     { name = "openai" },
 ]
+moss = [
+    { name = "quackd-moss" },
+]
 mujoco = [
     { name = "quackd-microduck", extra = ["mujoco"] },
 ]
@@ -3712,6 +3717,7 @@ robots = [
     { name = "quackd-huebot" },
     { name = "quackd-lerobot", extra = ["sdk"] },
     { name = "quackd-microduck" },
+    { name = "quackd-moss" },
     { name = "quackd-open-duck" },
     { name = "quackd-rosbridge", extra = ["sdk"] },
     { name = "quackd-toddlerbot" },
@@ -3780,6 +3786,9 @@ requires-dist = [
     { name = "quackd-microduck", marker = "extra == 'robots'", editable = "adapters/microduck" },
     { name = "quackd-microduck", extras = ["camera"], marker = "extra == 'microduck-camera'", editable = "adapters/microduck" },
     { name = "quackd-microduck", extras = ["mujoco"], marker = "extra == 'mujoco'", editable = "adapters/microduck" },
+    { name = "quackd-moss", marker = "extra == 'dev'", editable = "adapters/moss" },
+    { name = "quackd-moss", marker = "extra == 'moss'", editable = "adapters/moss" },
+    { name = "quackd-moss", marker = "extra == 'robots'", editable = "adapters/moss" },
     { name = "quackd-open-duck", marker = "extra == 'dev'", editable = "adapters/open_duck" },
     { name = "quackd-open-duck", marker = "extra == 'open-duck'", editable = "adapters/open_duck" },
     { name = "quackd-open-duck", marker = "extra == 'robots'", editable = "adapters/open_duck" },
@@ -3800,7 +3809,7 @@ requires-dist = [
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.2" },
     { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
 ]
-provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "mujoco", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
+provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "moss", "mujoco", "open-duck", "openai", "openrouter", "qwen", "robots", "rosbridge", "toddlerbot", "xlerobot", "yolo"]
 
 [[package]]
 name = "quackd-alohamini"
@@ -3881,6 +3890,16 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'camera'", specifier = ">=13" },
 ]
 provides-extras = ["camera", "mujoco"]
+
+[[package]]
+name = "quackd-moss"
+source = { editable = "adapters/moss" }
+dependencies = [
+    { name = "quackd" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "quackd", editable = "." }]
 
 [[package]]
 name = "quackd-open-duck"

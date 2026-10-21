@@ -143,6 +143,22 @@ This project builds on, interoperates with, and is grateful to:
     neither uses nor distributes it. Names are cited as facts.
     https://ce-net.com/huebot
 
+  * MOSS (metrox-eth/moss), by Laurent Genoud (Show Robotics): the small
+    tracked rover that picks up litter, which the moss adapter targets.
+    Its code is Apache-2.0, its hardware design files CERN-OHL-S-2.0 and
+    its documentation CC BY 4.0. quackd speaks its cockpit over HTTP and
+    imports none of it. The bridge quackd ships in bridge/moss/ runs on your
+    rover in MOSS's own environment, imports MOSS and dimOS there, and runs
+    the maker's own arm script as a subprocess, vendoring nothing. Names,
+    routes and constants are cited as facts.
+    https://github.com/metrox-eth/moss
+
+  * dimOS (dimensionalOS/dimos), by Dimensional Inc.: the robotics
+    framework MOSS's software runs on. Apache-2.0. quackd's bridge imports
+    it lazily on your rover, where you installed it with MOSS, and vendors
+    none of it.
+    https://github.com/dimensionalOS/dimos
+
 No logos, meshes, CAD, ONNX policies, keyframes, checkpoints, sounds,
 videos, or other brand assets from any of these projects are distributed
 with quackd. Where an upstream's design files are non-commercially

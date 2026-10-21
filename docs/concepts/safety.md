@@ -38,7 +38,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect` and `watch` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it | nothing: the model calls `assess_task` |
 | `params` | the arguments fit the verb's schema | the call. This is feedback to the model, not a crash |
-| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes` | answer y, or pass `--yes` |
+| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
 | `abort_when` | the battery threshold, and consecutive failures once the result is in | the `.duck`'s `abort_when`, or the robot |
@@ -49,6 +49,16 @@ the log and the transcript print, so a refusal tells you which row you are on.
 Execution races a **timeout** against the abort, so a kill switch cancels the verb that is
 running. A verb that times out or raises stops the robot and comes back as a failed result
 rather than an abort.
+
+**The three classes.** A verb is `safe`, `confirm` or `dangerous`, and the manifest says which.
+A `safe` verb runs once the gates above pass. A `confirm` verb asks first, and `--yes` or a
+standing answer may answer for you. A `dangerous` verb asks too, and only a person can answer
+it: wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe
+on stdin, it is refused before its question is put, with a `confirm` gate whose reason says to
+run it from a terminal. A person who answers n stops it as before, and with no task file loaded
+it is not allowed at all. `collect_litter`, which hands a MOSS rover to its own litter mission,
+is the first verb quackd ships in that class
+([ADR-0056](../adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
 
 The `cancelled` row is the one worth knowing about: that path used to return at once and leave
 the legs moving with nothing to halt them, which is the failure this page exists to rule out.
@@ -321,7 +331,7 @@ with a hand near the switch.
 
 ## On hardware
 
-One of the eight bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
+One of the nine bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
 follower arm ran `lerobot-lookout` and then a series of free-form `--goal` runs, piloted by
 OpenAI gpt-6-astra on Windows 11 with lerobot 0.6.1: it waved the wrist about 27 degrees either
 way, waved again from a raised pose, and opened and closed the gripper. **It also fell at the
@@ -332,7 +342,7 @@ parking, release and verdict changes on this page come from. None of those chang
 arm yet. [adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md) is the account, including
 what the first day did not measure, and most of what this page would want to know is on that list:
 whether the holding band is right, what a joint reads after ten minutes of work, and whether a stall
-is caught on purpose rather than by luck. The other seven bodies have not been on hardware at all.
+is caught on purpose rather than by luck. The other eight bodies have not been on hardware at all.
 
 If the body is a Microduck, run the contract in the physics simulator first
 (`--robot microduck:mujoco`): it is the only place quackd can show you a body that undershoots,
@@ -692,6 +702,7 @@ quackd goes quiet" differs per body. Each manifest says so
 | Open Duck Mini v2 (`open_duck:*`) | `none` in the robot, but quackd's own bridge daemon runs on it and zeroes the velocity after 300 ms of silence, inside the 50 Hz loop | zero velocity, head held, torque still on | anything that reaches torque, the head-control mode button, any direct servo or IMU read |
 | XLeRobot (`xlerobot:*`) | `none`: the host's own 500 ms watchdog is real but calls `stop_base()`, which zeroes the three wheels and **nothing else**, so the 14 arm and head servos keep holding under torque. `deadman_scope` says `base_only` | zeroes the three velocity keys and leaves every arm goal exactly where it was, deliberately not rebuilding a hold from an unstamped reading that may be cycles old | `disconnect()`, which is upstream's torque-off, and any `enable(on=False)` |
 | AlohaMini (`alohamini:*`) | `none`: the host's 1 s watchdog calls `stop_motion()`, which is the base and the lift and never the arms. `deadman_scope` says `base_and_lift_only` | one payload carrying all three velocity zeros **and** a lift velocity zero, because omitting either leaves the robot travelling | anything that disables arm torque. As shipped the arms are already limp, which is why the arm verbs need quackd's own host wrapper and refuse without it |
+| MOSS (`moss:*`) | `none` in the rover for what quackd starts: the firmware's own 0.3 s command timeout and dimOS's 0.2 s velocity watchdog end a twist, and nothing on the rover halts a goal or an exploration. With quackd's bridge on the rover the manifest claims `deadman: true`, and `deadman_scope` says what it covers: a twist zeroed 0.3 s after its last request, and three missed keepalives after a session goes quiet, the arm cycle, the goal, the exploration or the litter mission that session started | the bridge's `/stop` and the cockpit's soft stop at once. Off `moss-litter` a zero on the pad's channel first, then the arm's cancel and two reads of its joints. On `moss-litter` the mission's own stop, the end of its pick script, the cancel and the zero, then the mission's stop confirmed | the cockpit's `/cmd/stack` and `tools/moss-fly.sh stop`, either of which ends the arm's run and with it the arm's torque, and any torque off of quackd's own |
 | ToddlerBot (`toddlerbot:*`) | `none` in the robot, and nothing upstream has a watchdog, timeout or e-stop at all. quackd's own daemon runs on it and after 500 ms of silence slews to the safe pose at upstream's own 0.3 rad/s, waist first, and **holds** | holds the last verified-good measured pose. There is no velocity at this hardware boundary, so `stop` cannot mean zero velocity | torque off, ever. Silence on this body means hold forever and torque off means fall, so the deadman is a trajectory rather than a message |
 
 The verbs a body lacks are not gated, they do not exist: an arm cannot `move`, a base

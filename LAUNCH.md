@@ -35,9 +35,12 @@ out, and that OpenAI's Decisions API is the second wire format a decision LLM sp
 OpenAI's Decisions API yet. 0.20's was that the decision LLM can be shown the robot's camera, at
 OpenAI's own hosts alone and with each frame on the record before it goes, and that a Microduck's
 head can keep a described thing in view the way OpenAI's launch video showed, though neither has met
-OpenAI or a real duck yet. **0.21's is that quackd can drive an eighth robot, Huebot, through a shim
+OpenAI or a real duck yet. 0.21's was that quackd can drive an eighth robot, Huebot, through a shim
 its maker is writing to answer the calls a Microduck's robotd answers, though nobody has seen the
-shim answer and nothing has run on a Huebot.**
+shim answer and nothing has run on a Huebot. **0.22's is that quackd can drive a ninth robot, MOSS,
+a tracked rover that picks up litter, through its own cockpit and a bridge quackd ships for the
+rover, and that a `dangerous` verb runs only when a person answers it, though nothing has run on
+a MOSS rover yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 
@@ -71,9 +74,9 @@ command; a sentence needs something to read it.
 
 | Channel | One line |
 |---|---|
-| GitHub | Connect and command every robot you own from one CLI, each with an LLM for a brain, and a flock of them dividing a task by talking to each other. Eight robots supported, three of them open hardware you can build, a physics simulator, a browser demo, and one of the eight driven on a real arm on camera, so you need no hardware to try it and there is hardware behind it. |
+| GitHub | Connect and command every robot you own from one CLI, each with an LLM for a brain, and a flock of them dividing a task by talking to each other. Nine robots supported, four of them open hardware you can build, a physics simulator, a browser demo, and one of the nine driven on a real arm on camera, so you need no hardware to try it and there is hardware behind it. |
 | Hacker News | A `.duck` file is a SKILL.md for a robot: the frontmatter is enforced, the body is the prompt, the executor never trusts the model. Point it at the wrong robot and it refuses before anything moves. |
-| X / Twitter | One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Take one out of the flock: type *walk in a square* and watch it happen in your browser, on the robot's own trained gait, then hit `W` mid-run and take the duck off the model, no mode to flip first. Seven other bodies, from an Open Duck Mini you can print to a ToddlerBot humanoid. 🦆🧠 |
+| X / Twitter | One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Take one out of the flock: type *walk in a square* and watch it happen in your browser, on the robot's own trained gait, then hit `W` mid-run and take the duck off the model, no mode to flip first. Eight other bodies, from an Open Duck Mini you can print to a MOSS rover that picks up litter. 🦆🧠 |
 | Pollen Discord | We built the brain daemon that was missing from `robotd / mediad / padd / tofd`, and it is now the CLI that commands a flock of robots with the Microduck among them. We'd like you to tell us what we got wrong about the SDK. |
 | Open Duck Mini builders (the apirrone Discord, the BDX droid crowd) | You printed a duck that walks. quackd is the layer that decides where it walks, from a plain-language goal. It ships the daemon for your Pi, it knows your duck cannot kick and cannot get up, and no Open Duck has run it yet: the one body that has is an arm, so the first person to run a duck gets a row in the table. |
 | LeRobot / Hugging Face robotics | An LLM picks the skill, your policy executes it. `pick` is one intent that hands the arm to its own learned policy; quackd does the deciding, the gating and the transcript, and never writes a controller. |
@@ -92,19 +95,19 @@ in the manifest does not exist), the three-loop table, the honesty paragraph (on
 on two afternoons: on 2026-09-15 it fell at the end of every run, and on 2026-09-23, with a rest
 pose recorded, 19 of 26 runs never moved it at a pilot's request and every run that reached its
 close kept torque on until the power switch, and the fixes for that have not run on an arm yet;
-the other seven hardware backends are experimental and have only ever talked to fakes), and the
+the other eight hardware backends are experimental and have only ever talked to fakes), and the
 ask ("add a `.duck` to `ducks/`, or an adapter for the robot on your desk").
 
 ## X thread (8 posts)
 
 1. **Hook + GIF.** "You type *wave to the camera with an extended arm*. A model picks one of the arm's own verbs at a time, quackd checks each against the contract, and a real SO-101 waves. No controller written, no script: a phone pointed at a bench. The simulator version needs no arm and runs in 60 seconds. 🧵" *(lerobot.gif)*
-2. **What.** quackd: one CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. One `.duck` file per task, any provider, MCP so Claude Code/Desktop can drive it. Eight robots today: Microduck, an Open Duck Mini v2 you can print and build, an SO-101 class arm via LeRobot, any base over rosbridge, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot humanoid and a Huebot biped. Apache-2.0.
+2. **What.** quackd: one CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. One `.duck` file per task, any provider, MCP so Claude Code/Desktop can drive it. Nine robots today: Microduck, an Open Duck Mini v2 you can print and build, an SO-101 class arm via LeRobot, any base over rosbridge, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot humanoid, a Huebot biped and a MOSS rover that picks up litter. Apache-2.0.
 3. **Both hands on the same duck.** "The demo puts a sentence box and a live keyboard on one robot, a centimetre apart, and neither takes turns with the other. Press `W` mid-run and you have the duck: the run aborts, the request to the model aborts with it so no answer arrives after you took it back, and the transcript names the key that did it. `O` and the camera keys read without interrupting anything. There is no key for `say` — a key carries a command, a sentence needs something to read it." *(browser session, shot 3)*
-4. **The manifest.** "Every robot hands over a manifest: this is my body, these are my intents, these are my verbs. The model is only ever offered what's in it. An arm is never offered `move`. A wheeled base is never offered `kick`." *(the eight-body table from the README's Which robots work)*
+4. **The manifest.** "Every robot hands over a manifest: this is my body, these are my intents, these are my verbs. The model is only ever offered what's in it. An arm is never offered `move`. A wheeled base is never offered `kick`." *(the nine-body table from the README's Which robots work)*
 5. **The `.duck` file.** Screenshot of `find-and-kick.duck` plus the refusal: `quackd validate find-and-kick --robot lerobot:mock` → `requires kick, but arm-01 (lerobot-so101) does not provide it`, exit 1, before anything connects.
 6. **MCP demo.** Short screen capture: `claude mcp add quackd -- uvx --from "quackd[microduck,lerobot]" quackd serve-mcp --robots duck=microduck:sim2d,arm=lerobot:mock`, then "list my robots and make the duck find the ball". One executor, budget and heartbeat per robot. `--flock <name>` serves the same set from the registry, so you name the robots once.
 7. **Roadmap tease.** "v2: learned verbs. An LLM writes a reward (DrEureka-style), the training stack produces a policy, and it registers as one more verb. The hook exists today; the loop doesn't. Yet." Plus: an HTTP transport so the MCP server is a remote connector and you can poke the robot from your phone.
-8. **CTA.** "One of the eight bodies has run on hardware, an SO-101 arm on 2026-09-15 and again on 2026-09-23. It fell at the end of every run the first day, and the second day's rest pose could not reach its fold, which the README says in a table right beside the wave. The other seven have only ever talked to fakes. The Open Duck Mini is the one you can build, so it is the one most likely to be next. If you write a `.duck`, PR it to `ducks/`. If you own a robot we don't support, an adapter is a manifest and a mock. Repo: github.com/rokbenko/quackd"
+8. **CTA.** "One of the nine bodies has run on hardware, an SO-101 arm on 2026-09-15 and again on 2026-09-23. It fell at the end of every run the first day, and the second day's rest pose could not reach its fold, which the README says in a table right beside the wave. The other eight have only ever talked to fakes. The Open Duck Mini is the one you can build, so it is the one most likely to be next. If you write a `.duck`, PR it to `ducks/`. If you own a robot we don't support, an adapter is a manifest and a mock. Repo: github.com/rokbenko/quackd"
 
 ## Pollen Discord post (draft)
 

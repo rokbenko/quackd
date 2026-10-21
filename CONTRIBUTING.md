@@ -7,7 +7,7 @@ Thanks for taking a toy duck seriously. Two kinds of contribution matter most: *
 
 ```bash
 git clone https://github.com/rokbenko/quackd && cd quackd
-uv sync --extra dev            # the core and all eight robots, editable, no robot SDKs
+uv sync --extra dev            # the core and all nine robots, editable, no robot SDKs
 uv sync --extra dev --extra mujoco   # the physics simulator, or its tests just skip
 uv run pre-commit install
 uv run pytest                  # the whole suite, a few minutes, no network, no keys
@@ -19,19 +19,20 @@ Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real
 This repository is a uv workspace: `quackd` is one distribution and each robot under
 `adapters/` is another (`quackd-microduck`, `quackd-lerobot`, `quackd-rosbridge`,
 `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`, `quackd-toddlerbot`,
-`quackd-huebot`). The dev extra installs the core and all eight of them editable, so an edit
-anywhere is live in the next test run with nothing to reinstall. None of the robot SDKs come
-with them, and none is needed: the suite drives every adapter against a mock or a fake.
+`quackd-huebot`, `quackd-moss`). The dev extra installs the core and all nine of them
+editable, so an edit anywhere is live in the next test run with nothing to reinstall. None of
+the robot SDKs come with them, and none is needed: the suite drives every adapter against a mock
+or a fake.
 
 > [!IMPORTANT]
 > What a user gets is not what you have. `uv pip install quackd` installs no robot at all,
 > and every command that needs a body refuses with the list of extras. You are working with
-> all eight present, so a message that only fires when one is missing is a message you will
-> never see by accident. CI's `packaging` job is the one that checks it: it builds all nine
+> all nine present, so a message that only fires when one is missing is a message you will
+> never see by accident. CI's `packaging` job is the one that checks it: it builds all ten
 > packages, installs the core wheel alone, and asserts that `quackd doctor --json` reports
-> eight adapters and none of them installed.
+> nine adapters and none of them installed.
 
-`uv lock --check` runs before anything else in CI. Nine packages share one lock file and
+`uv lock --check` runs before anything else in CI. Ten packages share one lock file and
 `uv sync` re-locks in silence when a `pyproject.toml` has drifted, which is how an unlocked
 extra once reached a release. Change a dependency anywhere, run `uv lock`, and commit
 `uv.lock` with the change that caused it.
@@ -39,11 +40,11 @@ extra once reached a release. Change a dependency anywhere, run `uv lock`, and c
 Versions move together. The core and each adapter carry their own `__version__`, because an
 adapter's sdist holds only its own source and cannot read the core's, and each one pins a window
 on the core (`quackd>=0.21.0,<0.22`). `uv run python scripts/set_version.py X.Y.Z` rewrites all
-nine and the windows that tie them together in `pyproject.toml`, each starting at the release
+ten and the windows that tie them together in `pyproject.toml`, each starting at the release
 itself: a patch raises every floor to itself, so an adapter from a patch never installs beside a
 core from before it, and a minor moves the whole window. It cannot reach prose, so at every
 release the copies of that window quoted in this file and in the docs are the part a release
-still edits by hand. A release then builds nine wheels and nine sdists with
+still edits by hand. A release then builds ten wheels and ten sdists with
 `uv build --all-packages`, core first to PyPI because every adapter depends on it.
 [RELEASING.md](RELEASING.md) says when a release is a patch, a minor or a major, and the order
 it is cut in.
@@ -62,7 +63,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | Path | What is there |
 |---|---|
 | `quackd/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.duck` contract, the MCP server, the 2D arena (`quackd/sim2d/`) and the mock transport (`quackd/transport/mock.py`) |
-| `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the eight quackd publishes, as strings), `factory.py` (`--robot` to a body) |
+| `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the nine quackd publishes, as strings), `factory.py` (`--robot` to a body) |
 | `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/quackd_<name>/` |
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
@@ -70,7 +71,7 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 
 A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass
-`Sim2DTransport` and a fourth uses it as it is, and six of the eight mocks draw their frame
+`Sim2DTransport` and a fourth uses it as it is, and seven of the nine mocks draw their frame
 with `quackd/sim2d/render.py`, so neither was ever the duck's. `UpstreamRef`
 lives in `quackd/upstream.py` for the same reason, since every adapter cites an upstream and
 none of them should import a duck to do it.

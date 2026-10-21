@@ -767,7 +767,7 @@ def test_bodies_that_could_reads_only_the_static_descriptions() -> None:
     assert [name for name, _m in installed_manifests()] == list(ADAPTER_NAMES)
     assert [name for name, _m, _missing in bodies_that_could({"payload_kg": 3.0})] == []
     named = [name for name, _m, _missing in bodies_that_could({"manipulator": "gripper"})]
-    assert named == ["lerobot", "xlerobot", "alohamini"]
+    assert named == ["lerobot", "xlerobot", "alohamini", "moss"]
     # every backend of a named body agrees, because the sheet does not vary with one
     for backend in BACKENDS["alohamini"]:
         sheet = describe(RobotSpec("alohamini", backend)).datasheet

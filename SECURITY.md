@@ -18,7 +18,10 @@ robot and zeroing the velocity inside the 50 Hz loop, so it is code we ship and 
 code we are answerable for. On a Huebot it will be the shim its maker is writing, which is
 asked to keep robotd's deadman and which nobody has seen. The protocol has no
 authentication, so the shim is asked to listen on a unix socket or on the robot's own
-loopback, never on the network, and quackd reaches it through an ssh forward. On the other
+loopback, never on the network, and quackd reaches it through an ssh forward. On a MOSS rover the
+firmware stops the tracks 300 ms after its last command, and quackd's own bridge on the rover sends
+a twist only while quackd keeps asking for one and halts what quackd started when the heartbeat
+stops, so that too is code we ship. On the other
 five bodies upstream has no deadman that covers the whole body. A rosbridge base declares
 `native: none`, and a LeRobot arm has a torque limit on its gripper alone and holds its last goal.
 An XLeRobot's host watchdog zeroes its wheels and leaves the arms holding, and an
@@ -33,7 +36,8 @@ it is a security issue.
 quackd also ships code that runs **on a robot**, or on the board beside one, which is a
 different kind of surface from everything above. Everything under `bridge/` is in scope in
 its own right: two daemons for an Open Duck Mini v2's Raspberry Pi, a host wrapper for an
-AlohaMini, a daemon that walks a ToddlerBot, and a daemon for an NVIDIA Jetson that quackd
+AlohaMini, a daemon that walks a ToddlerBot, a bridge beside MOSS's cockpit that drives its tracks
+and plays its arm's cycle, and a daemon for an NVIDIA Jetson that quackd
 reaches with `--host` and never runs on. So is `quackd policy serve`, which is not under
 `bridge/` and is the first network service whose answers move an arm: it serves a learned
 policy's goals to a LeRobot arm, from a checkpoint that is code.
@@ -372,9 +376,23 @@ Also in scope:
   reach past the methods the protocol exposes is a security issue. As with the Open Duck,
   going limp is unreachable by construction and must stay that way, and here it matters
   more: torque off on this body means the robot falls over.
+- **The MOSS bridge** (`bridge/moss/quackd_moss_bridge.py`), an HTTP server on port 9876 that
+  drives a tracked rover, 4.2 kg by its maker's figure for the V0.3 build, and plays the cycle
+  of its arm. It binds loopback by default, compares its token with `hmac.compare_digest`,
+  refuses to start on a named token file that is missing or empty, and warns when it is bound
+  wide with no token. On `moss-litter` its stop also ends the mission's own run of the maker's
+  arm script, with SIGTERM and then SIGKILL, and it signals no other process. Each quackd session
+  is named by an id its client draws at random, and its keepalive, end and halt touch only that
+  session. Anything that lets an unauthenticated peer move the tracks or the arm, defeat its
+  twist deadman or a session's halt, or reach past the routes its protocol exposes is a security
+  issue, and so is any path that sends MOSS's own `/cmd/stack`, whose stop ends every dimOS run
+  and turns the arm's torque off. MOSS's own cockpit, on port 8904, is not quackd's code and has
+  **no authentication at all**: it binds `0.0.0.0`, and anything that reaches it reads the rover
+  and commands it. Reach both through an ssh tunnel.
 - The recommended deployment for all of them is an ssh tunnel
   (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 -L 9873:127.0.0.1:9873 -L 9874:127.0.0.1:9874`,
-  and `-L 9875:127.0.0.1:9875` for a policy server on another machine) rather than exposing
+  `-L 9875:127.0.0.1:9875` for a policy server on another machine, and
+  `-L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876` for a MOSS rover) rather than exposing
   any of these ports.
 
 ## Supported versions
@@ -385,9 +403,10 @@ The artifacts quackd ships for a robot or a board carry their own versions and l
 someone else's computer, so they can drift from the quackd that talks to them:
 `BRIDGE_VERSION` and `CAMD_VERSION` on an Open Duck Mini's Raspberry Pi, `VERSION` in the
 ToddlerBot daemon on its Jetson, `HOSTD_VERSION` in the host daemon on a Jetson that
-`--host` names, and the AlohaMini host wrapper's `quackd_host_version` field. The two robot
-daemons' handshakes carry a protocol version and refuse a mismatch rather than guessing, and
-so does the host daemon's `/hello` (the AlohaMini wrapper only stamps its version into every
+`--host` names, `BRIDGE_VERSION` in quackd's bridge on a MOSS rover, and the AlohaMini host
+wrapper's `quackd_host_version` field. The two robot daemons' handshakes carry a protocol
+version and refuse a mismatch rather than guessing, and so do the MOSS bridge's `/hello` and the
+host daemon's `/hello` (the AlohaMini wrapper only stamps its version into every
 observation, and quackd does not read it yet), but a daemon you installed months ago is a
 daemon that has not had your fixes. `quackd doctor --robot <adapter>:<backend> --address ...`
 connects and shows what the robot reports about itself, though none of the robot side's

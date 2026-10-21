@@ -169,7 +169,7 @@ claude mcp add quackd -- uvx --from "quackd[microduck]" quackd serve-mcp --robot
 `--from "quackd[microduck]"` is what puts a duck in the environment `uvx` builds. The `quackd`
 on PyPI is the loop and no robot, so a bare `uvx quackd serve-mcp --robot microduck:sim2d`
 never reaches the tool list: it stops at `adapter 'microduck' needs an extra`. Swap the extra
-for the body you own, `quackd[lerobot]` or `quackd[rosbridge]` or any of the eight, and name
+for the body you own, `quackd[lerobot]` or `quackd[rosbridge]` or any of the nine, and name
 that robot after `--robot`.
 
 Then in Claude Code: *"List the duck's verbs, then find the ball and kick it."*
@@ -178,7 +178,7 @@ Then in Claude Code: *"List the duck's verbs, then find the ball and kick it."*
 > `uv run --no-sync` rather than `uvx` on purpose: it serves the code in your working tree
 > instead of the last release, and `--no-sync` keeps the launch from re-syncing the
 > environment while the previous server still holds `Scripts/quackd.exe` open on Windows.
-> Run `uv sync --extra dev` once first, which installs the core and all eight adapters as
+> Run `uv sync --extra dev` once first, which installs the core and all nine adapters as
 > editable workspace members. That is also why the repo's file carries no `--from`: every
 > robot is already in that environment. A server that is already running keeps the tools it
 > started with, so after changing a verb or upgrading quackd, restart it (`/mcp` in Claude
@@ -363,5 +363,7 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   ends the way it always did. Recording one is `quackd robot rest-pose NAME`
   ([guides/registry.md](registry.md)).
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
-  there is no terminal to ask on. The refusal text tells the model why.
+  there is no terminal to ask on. The refusal text tells the model why. A `dangerous` verb is
+  refused even then, since `--yes` is nobody being asked: it runs only from a terminal, where a
+  person answers it.
 - What stops the body when quackd goes quiet is the body's job, not the server's, and it differs per robot. Read [concepts/safety.md](../concepts/safety.md) before an MCP session drives hardware.
