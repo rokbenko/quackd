@@ -419,7 +419,35 @@ def runs_dir() -> str:
     return os.path.join(base, "dimos", "runs")
 
 
+WINDOWS_QUERY_LIMITED_INFORMATION = 0x1000
+WINDOWS_ACCESS_DENIED = 5
+WINDOWS_STILL_ACTIVE = 259
+"""OpenProcess's right to read an exit code, the error a running process answers a caller
+without that right with, and the exit code a process reads while it still runs."""
+
+
 def _pid_alive(pid: int) -> bool:
+    """Whether process `pid` still runs.
+
+    On Windows signal 0 is CTRL_C_EVENT, so `os.kill(pid, 0)` would send Ctrl+C to every
+    process on the console, the caller's own among them, and a test run would end in a
+    KeyboardInterrupt. There the process is asked for its exit code instead. The bridge runs
+    on the rover's Linux, and this is for its tests on a Windows machine."""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(WINDOWS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return ctypes.get_last_error() == WINDOWS_ACCESS_DENIED
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == WINDOWS_STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True

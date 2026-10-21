@@ -313,6 +313,22 @@ def test_the_base_stack_and_the_arm_run_are_read_apart(tmp_path: Path) -> None:
     assert B.read_stack(str(tmp_path / "nothing")).running is False
 
 
+def test_a_liveness_check_never_signals_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Signal 0 is CTRL_C_EVENT on Windows: `os.kill(pid, 0)` there sends Ctrl+C to the whole
+    console, and on CI's Windows runners it ended the test run in a KeyboardInterrupt. Windows
+    reads the process's exit code instead, and POSIX keeps the signal-0 probe."""
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(B.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    me, gone = os.getpid(), 2**22 + 12345
+    if sys.platform == "win32":
+        assert B._pid_alive(me) is True
+        assert B._pid_alive(gone) is False
+        assert sent == [], "a signal sent on Windows reaches every process on the console"
+    else:
+        assert B._pid_alive(me) is True
+        assert sent == [(me, 0)]
+
+
 @pytest.mark.parametrize(("env", "bus"), [({}, "lcm"), ({"TRANSPORT": "zenoh"}, "zenoh")])
 def test_the_stacks_bus_is_read_in_dimos_own_order(env: dict[str, str], bus: str) -> None:
     both = {"DIMOS_TRANSPORT": "lcm", **env}
