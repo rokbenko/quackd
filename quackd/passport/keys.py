@@ -62,7 +62,51 @@ def public_from_did(did: str) -> bytes:
     public = raw[2:]
     if did_from_public(public) != did:
         raise PassportError("rule 7", f"{did!r} is not the canonical spelling of its key")
+    if not holdable(public):
+        raise PassportError("rule 7", f"{did!r} holds no key anybody could sign with")
     return public
+
+
+#: Ed25519's field and curve (RFC 8032 5.1), to check that 32 bytes are a key somebody could
+#: hold. `cryptography` verifies against whatever bytes it is handed, and a small-order "key"
+#: verifies a signature nobody made, which libsodium refuses and a reader here must too.
+_P = 2**255 - 19
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+_SQRT_M1 = pow(2, (_P - 1) // 4, _P)
+
+
+def _decoded(public: bytes) -> tuple[int, int] | None:
+    """The point 32 bytes encode (RFC 8032 5.1.3), or None for bytes that encode none."""
+    y = int.from_bytes(public, "little") & ((1 << 255) - 1)
+    sign = public[31] >> 7
+    if y >= _P:
+        return None  # one point, spelled a second way
+    u, v = (y * y - 1) % _P, (_D * y * y + 1) % _P
+    x = u * pow(v, 3, _P) * pow(u * pow(v, 7, _P), (_P - 5) // 8, _P) % _P
+    if (v * x * x - u) % _P:
+        x = x * _SQRT_M1 % _P
+        if (v * x * x - u) % _P:
+            return None  # not on the curve
+    if x == 0 and sign:
+        return None
+    return (_P - x if x & 1 != sign else x), y
+
+
+def _doubled(point: tuple[int, int]) -> tuple[int, int]:
+    x, y = point
+    t = _D * x * x * y * y % _P
+    return 2 * x * y * pow(1 + t, _P - 2, _P) % _P, (y * y + x * x) * pow(1 - t, _P - 2, _P) % _P
+
+
+def holdable(public: bytes) -> bool:
+    """Whether 32 bytes are a key somebody could hold: a point on the curve, written the one
+    way it may be, and not one of the eight points of small order (spec 4.1)."""
+    point = _decoded(public)
+    if point is None:
+        return False
+    for _ in range(3):  # eight times a point is the identity only for those eight
+        point = _doubled(point)
+    return point != (0, 1)
 
 
 def short_id(public: bytes) -> str:

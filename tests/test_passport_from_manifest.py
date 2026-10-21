@@ -110,3 +110,19 @@ def test_the_same_robot_builds_the_same_bytes_every_time() -> None:
     first = strict.dumps(_built("microduck"))
     assert strict.dumps(_built("microduck")) == first
     assert "issued" not in json.loads(first)
+
+
+def test_a_verb_name_a_passport_cannot_carry_is_written_as_one_or_left_out() -> None:
+    """A manifest allows a hyphen, a leading digit and 64 characters, and a passport's skills
+    allow none of them: quackd writes the first as an underscore and leaves the rest out, so it
+    never serves a passport its own reader refuses."""
+    manifest = _manifest("microduck")
+    first = manifest.verbs[0]
+    odd = [first.model_copy(update={"name": n}) for n in ("look-around", "2step", "x" * 40, "stop")]
+    built = passport_from_manifest(
+        manifest.model_copy(update={"verbs": odd}),
+        robot_id=KEY.did,
+        name="duck-01",
+        software_version="0.23.0",
+    )
+    assert built["skills"] == ["look_around", "stop"]

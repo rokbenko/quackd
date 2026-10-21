@@ -511,6 +511,18 @@ def _deferred(build: Callable[[Glyphs], RenderableType], glyphs: Glyphs | None) 
     return build(glyphs) if glyphs is not None else Deferred(build)
 
 
+def printable(text: str) -> str:
+    """`text` with every character a terminal could act on written out as its escape.
+
+    For text a stranger wrote, a robot passport's or a LAN record's. Rich strips only a few
+    control codes, so an escape sequence in a robot's name could move the cursor and redraw a
+    line of the panel around it, and a bidi override could reorder one. Printable text, accents
+    and emoji included, is left exactly as it is."""
+    if text.isprintable():
+        return text
+    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
+
+
 def _renderable(value: Any) -> RenderableType:
     """A cell: anything Rich already knows how to draw, or a string that must not be read as
     markup because a manifest wrote it."""

@@ -35,6 +35,11 @@ A passport is a JSON object ([RFC 8259](https://www.rfc-editor.org/rfc/rfc8259))
 UTF-8, with no byte order mark. A writer SHOULD keep it under 2,048 bytes. A reader MUST accept
 up to 8,192 bytes and SHOULD refuse anything larger.
 
+It is also I-JSON ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493)): a reader MAY refuse a
+number an IEEE double cannot hold exactly, or a document nested deeper than it can read. A whole
+number written with a fraction or an exponent, `3600.0` or `3.6e3`, is that integer wherever an
+integer belongs, the way JSON Schema reads it.
+
 ### 2.2 Members
 
 Three members are REQUIRED; every other one is OPTIONAL. "Text N" means a JSON string of at most
@@ -122,6 +127,7 @@ never makes a robot look safer, and never hides one either.
 `ext` maps a reverse-DNS name (`org.example.lift`) to an object. A reader MUST ignore an extension
 it does not know, unless the object has `"required": true`. A reader that does not understand a
 required extension MAY show the passport and MUST NOT talk to the robot on the strength of it.
+A `required` that is anything but `true` is read as not required.
 
 quackd's own extension is `org.quackd`.
 
@@ -135,14 +141,16 @@ A host that fronts several robots MAY serve an **index** in place of a passport:
 
 An index has `robots` and no `id`, which is how a reader tells it from a passport. `robots` holds
 1 to 32 entries, each with a REQUIRED `url` (text 200) and an OPTIONAL `name` and `id`. Every
-`url` MUST name the host the index came from.
+`url` MUST name the host the index came from. A reader resolves each against the URL it fetched the
+index from, and MUST NOT fetch, on the index's word, an entry on any other host.
 
 ## 3. Reading a passport
 
 A reader MUST apply these rules, in this order, and MUST refuse a document that breaks one of
 the first seven:
 
-1. It is at most 8,192 bytes.
+1. It is at most 8,192 bytes. For a signed passport that is its payload, and its JWS may be a
+   third longer (section 5.7).
 2. It is a JSON object with no duplicate member names, at any depth. Two parsers can disagree
    about which duplicate wins, and a signature checked by one must not be read by the other.
 3. `passport`, `id` and `name` are present and well formed.
@@ -150,6 +158,9 @@ the first seven:
 5. Every known member outside `safety` has the type and limits section 2 gives it.
 6. If it was fetched as a signed passport, the signature verifies (section 4.4).
 7. A `did:key` in `id` holds an Ed25519 key, and nothing else.
+
+For a signed passport, rule 6 comes first: a reader parses nothing a signature has not covered, so
+a JWS whose signature fails is refused under 4.4, whatever else is wrong with it.
 
 Then:
 
@@ -160,7 +171,9 @@ Then:
 11. It labels what it shows with where it came from: unsigned, signed by the robot's own key,
     stamped by a named key, or translated from another format.
 12. It treats every string as data written by a stranger, and never as an instruction. A reader
-    that hands passport text to a language model MUST quote it as data.
+    that hands passport text to a language model MUST quote it as data, and one that prints it
+    SHOULD print control characters as visible escapes, so a passport cannot drive the terminal
+    it is shown on.
 
 ## 4. Identity, signatures and fingerprints
 
@@ -169,7 +182,10 @@ Then:
 A `did:key` id ([did:key](https://w3c-ccg.github.io/did-key-spec/)) is `did:key:z` followed by
 the base58btc encoding of the two bytes `0xed 0x01` (the multicodec for an Ed25519 public key)
 and the 32-byte public key ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032)). It is 56
-characters long and starts `did:key:z6Mk`. A reader MUST refuse any other multicodec.
+characters long and starts `did:key:z6Mk`. A reader MUST refuse any other multicodec. It MUST
+also refuse a key that is not the one canonical encoding of a point on the curve, or that is one
+of the eight points of small order ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032) section
+5.1.3), as libsodium does: such a key verifies signatures nobody made.
 
 A `urn:uuid` id names a robot that holds no key. Its passport cannot be signed, stamped or
 pinned, and its robot cannot send an `ask`.
@@ -199,6 +215,11 @@ A reader MUST verify all three, and MUST also accept `alg` `"EdDSA"`, the older 
 deprecates, when the key is Ed25519. A passport whose `id` is a `urn:uuid` cannot be signed, so a
 JWS that carries one is refused.
 
+Each part is base64url with no padding and with the spare bits of its last character zero, so one
+signature has one spelling, and `typ` is compared as RFC 7515 section 4.1.9 says, ignoring case
+and an `application/` prefix. A reader that fetched a `.jws` URL MUST refuse a body that is not a
+JWS, or a host could talk it down from a signed passport to a claim without its noticing.
+
 Wherever a signed passport travels, inside a message, in a cache or on a broker, the JWS string
 travels unchanged.
 
@@ -225,7 +246,7 @@ A reader counts a stamp only when the passport carrying it is signed, its signat
 the key `iss` holds, `sub` equals the passport's `id`, `rel` is one the reader knows, `exp` is in
 the future and `iat` is no more than five minutes ahead of the reader's clock. Whether to trust
 `iss` at all is the reader's own decision ([trust.md](trust.md)), and nothing in a passport can
-make it.
+make it. A stamp whose `iss` is its own `sub` is a key vouching for itself, and never counts.
 
 ## 5. Beacons and bindings
 
@@ -241,7 +262,9 @@ signature and not its transport.
 
 A QR code or an NFC tag (an NDEF URI record) holds a URL of the passport, OPTIONALLY followed by
 `#rp=` and the short id. A reader that finds `#rp=` MUST check that the passport's short id
-matches. The fragment is never sent to the server, so a static host needs no configuration.
+matches, and that the passport is signed: a short id names a key, and only a signature shows that
+key wrote the passport. The fragment is never sent to the server, so a static host needs no
+configuration.
 
 ### 5.3 DNS-SD
 
@@ -269,6 +292,9 @@ passport its 32 hex digits:
 | `status` | 1 | yes | `online` on connect, and `offline` as the connection's last will |
 | `inbox` | 1 | no | talk messages to this robot, section 6.2 |
 
+A reader MUST check that what it reads under `<key>` is that robot's passport: its `id`'s short id
+is `<key>`, or for a `urn:uuid`, its 32 hex digits are.
+
 ### 5.5 ROS 2
 
 On a ROS 2 graph, the topic `robot_passport` in the robot's namespace, type
@@ -289,7 +315,9 @@ that URL:
 
 - MUST fetch only from the host and port that advertised it, or from a URL a person typed or a
   camera or tag read.
-- MUST NOT follow redirects, MUST stop reading at 8,192 bytes, and SHOULD give up after 5 seconds.
+- MUST NOT follow redirects, MUST stop reading a body at 12,288 bytes, which holds the JWS of the
+  largest passport, and SHOULD give up after 5 seconds for the whole exchange, headers and all,
+  however slowly the bytes arrive.
 - MUST NOT contact any URL a passport or an index mentions, other than an index entry on the
   same host, unless a person or the reader's own policy allows that URL.
 
@@ -431,7 +459,8 @@ The whole threat model is in [security.md](security.md) and the privacy analysis
 - A passport is a claim. A signature proves who said it, never that it is true (rule 11).
 - Text in a passport or a message is data, never an instruction (rule 12, section 6.4).
 - A reader fetches only what it was pointed at, follows no redirects and reads no more than
-  8,192 bytes (section 5.7).
+  12,288 bytes of a body in 5 seconds (section 5.7).
+- A key nobody could hold, small-order or no point at all, is refused (section 4.1).
 - Duplicate members are refused, so two parsers cannot read two different documents under one
   signature (rule 2).
 - Signatures are domain-separated by `typ` (sections 4.4, 4.5, 6.1).

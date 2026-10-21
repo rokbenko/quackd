@@ -83,7 +83,8 @@ def test_a_stranger_becomes_known_once_pinned_and_a_stranger_again_once_forgotte
     first = runner.invoke(app, ["meet", where, *_reg(b)])
     assert first.exit_code == 0, first.output
     assert "stranger: signed by a key nobody here pinned" in _flat(first.output)
-    assert "signed by its own key, 1 of 1 stamps count" in _flat(first.output)
+    assert "claim signed by its own key" in _flat(first.output)
+    assert "a key nobody here pinned, until" in _flat(first.output)
     pinned = runner.invoke(app, ["meet", where, "--pin", "--yes", *_reg(b)])
     assert pinned.exit_code == 0, pinned.output
     assert "pinned robot microduck-mock" in _flat(pinned.output)
@@ -104,7 +105,9 @@ def test_pinning_an_owner_trusts_every_robot_it_stamps(
     _a, b = hosts
     pinned = runner.invoke(app, ["meet", where, "--pin-owner", "--yes", *_reg(b)])
     assert pinned.exit_code == 0, pinned.output
-    assert "pinned owner Lab A" in _flat(pinned.output)
+    # the owner by its key, and its label as the robot's word for it, since no owner signs it
+    assert "pinned owner key" in _flat(pinned.output)
+    assert "which microduck-mock calls Lab A" in _flat(pinned.output)
     # a second robot of host A's, which host B has never met, is the same owner's
     stamped = runner.invoke(app, ["passport", "stamp", "--robot", "lerobot:mock", *_reg(a)])
     assert stamped.exit_code == 0, stamped.output
@@ -216,3 +219,121 @@ def test_meet_prefers_the_signed_passport_and_falls_back_to_json(hosts: tuple[Pa
         without.close()
     assert json.loads(signed.stdout)["signed"] is True
     assert json.loads(plain.stdout)["signed"] is False
+
+
+# ── names that look like ones this quackd knows ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "lookalike",
+    [
+        "duck-01\N{ZERO WIDTH SPACE}",
+        "du\N{CYRILLIC SMALL LETTER ES}k-01",
+        "DUCK-01 ",
+        "duck-0l",
+    ],
+)
+def test_a_name_that_only_looks_like_a_pinned_ones_is_warned_about(
+    hosts: tuple[Path, Path], lookalike: str
+) -> None:
+    _a, b = hosts
+    store = PassportStore(b)
+    store.pin(Pin(SigningKey.generate().did, "duck-01", "robot", NOW))
+    judgement = judge(document.read_jws(_signed(SigningKey.generate(), lookalike)), store)
+    assert judgement.tier == "stranger"
+    assert any("pinned with another key" in w for w in judgement.warnings)
+
+
+def test_a_robot_named_like_one_this_quackd_drives_is_warned_about(
+    hosts: tuple[Path, Path],
+) -> None:
+    a, _b = hosts
+    assert (
+        runner.invoke(app, ["passport", "show", "--robot", "microduck:mock", *_reg(a)]).exit_code
+        == 0
+    )
+    impostor = document.read_jws(_signed(SigningKey.generate(), "microduck-mock"))
+    judgement = judge(impostor, PassportStore(a))
+    assert judgement.tier == "stranger"
+    assert any("this quackd drives a robot named microduck-mock" in w for w in judgement.warnings)
+
+
+def test_an_owner_label_its_pinned_owner_did_not_stamp_is_warned_about(
+    hosts: tuple[Path, Path],
+) -> None:
+    _a, b = hosts
+    store = PassportStore(b)
+    real_owner, other_owner, robot = (SigningKey.generate() for _ in range(3))
+    store.pin(Pin(real_owner.did, "Example lab", "owner", NOW))
+    claimed = _signed(
+        robot,
+        "cart-01",
+        owner={"label": "Example lab"},
+        stamps=[stamps.make(other_owner, robot.did)],
+    )
+    judgement = judge(document.read_jws(claimed), store)
+    assert judgement.tier == "stranger"
+    assert any(
+        "an owner you pinned, and Example lab's key did not stamp it" in w
+        for w in judgement.warnings
+    )
+    genuine = _signed(
+        robot,
+        "cart-01",
+        owner={"label": "Example lab"},
+        stamps=[stamps.make(real_owner, robot.did)],
+    )
+    assert judge(document.read_jws(genuine), store).warnings == ()
+
+
+# ── stamping and pinning, as the reviews found them ─────────────────────────────────────
+
+
+def test_a_stamp_is_shown_by_the_key_that_made_it(hosts: tuple[Path, Path]) -> None:
+    a, _b = hosts
+    assert (
+        runner.invoke(app, ["passport", "stamp", "--robot", "microduck:mock", *_reg(a)]).exit_code
+        == 0
+    )
+    shown = runner.invoke(app, ["passport", "show", "--robot", "microduck:mock", *_reg(a)])
+    owner = PassportStore(a).owner().key
+    assert owner is not None
+    assert f"stamp owner {owner.short_id}, your own owner key, until" in _flat(shown.output)
+
+
+def test_restamping_under_new_owner_keys_keeps_at_most_four_stamps_that_count(
+    hosts: tuple[Path, Path],
+) -> None:
+    """As after a lost owner key: each stamp is made by a new one, and the passport still never
+    carries more stamps than a reader accepts."""
+    a, _b = hosts
+    store = PassportStore(a)
+    for _ in range(6):
+        store.owner_path.unlink(missing_ok=True)
+        stamped = runner.invoke(app, ["passport", "stamp", "--robot", "microduck:mock", *_reg(a)])
+        assert stamped.exit_code == 0, stamped.output
+    shown = runner.invoke(
+        app, ["passport", "show", "--robot", "microduck:mock", "--json", *_reg(a)]
+    )
+    assert shown.exit_code == 0, shown.output
+    assert len(json.loads(shown.stdout)["stamps"]) == 4
+
+
+def test_a_stamp_for_something_that_is_not_a_robot_makes_no_owner_key(
+    hosts: tuple[Path, Path],
+) -> None:
+    a, _b = hosts
+    for target in (["--did", "did:key:z1nope"], ["--robot", "no-such-robot"]):
+        refused = runner.invoke(app, ["passport", "stamp", *target, *_reg(a)])
+        assert refused.exit_code != 0, refused.output
+    assert PassportStore(a).owner().key is None
+
+
+def test_meet_with_json_and_a_pin_leaves_stdout_the_json_alone(
+    served_by_a: tuple[str, Path], hosts: tuple[Path, Path]
+) -> None:
+    where, _a = served_by_a
+    _a, b = hosts
+    met = runner.invoke(app, ["meet", where, "--json", "--pin", "--yes", *_reg(b)])
+    assert met.exit_code == 0, met.output
+    assert json.loads(met.stdout)["name"] == "microduck-mock"

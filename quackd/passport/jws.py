@@ -27,12 +27,17 @@ def b64url(data: bytes) -> str:
 
 
 def b64url_decode(text: str, *, rule: str) -> bytes:
+    """Base64url with no padding, written the one way it can be: the last character's spare
+    bits are zero, so one signature never has two spellings."""
     if not _B64URL.match(text) or len(text) % 4 == 1:
         raise PassportError(rule, "a part of it is not base64url")
     try:
-        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+        data = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except (binascii.Error, ValueError) as e:
         raise PassportError(rule, f"a part of it is not base64url: {e}") from e
+    if b64url(data) != text:
+        raise PassportError(rule, "a part of it is base64url written a second way")
+    return data
 
 
 def sign(payload: bytes, key: SigningKey, typ: str) -> str:
@@ -52,8 +57,24 @@ class Verified:
 
 
 def looks_like_jws(text: str) -> bool:
-    parts = text.strip().split(".")
-    return len(parts) == 3 and all(_B64URL.match(p) and p for p in parts)
+    """Whether `text` is meant as a compact JWS: three parts and no JSON. Whether each part is
+    good base64url is the verifier's to say, under the rule for what was signed."""
+    stripped = text.strip()
+    parts = stripped.split(".")
+    return (
+        len(parts) == 3
+        and all(parts)
+        and not stripped.startswith(("{", "["))
+        and not any(c.isspace() for c in stripped)
+    )
+
+
+def _same_typ(said: object, typ: str) -> bool:
+    """RFC 7515 4.1.9: a `typ` with no slash means the same as `application/` and it."""
+    if not isinstance(said, str):
+        return False
+    said = said.lower()
+    return said.removeprefix("application/") == typ.lower()
 
 
 def verify_compact(token: str, typ: str, *, rule: str, payload_limit: int) -> Verified:
@@ -69,12 +90,15 @@ def verify_compact(token: str, typ: str, *, rule: str, payload_limit: int) -> Ve
     if len(parts) != 3:
         raise PassportError(rule, "it is not a compact JWS, which has three parts")
     head, body, sig = parts
-    header = strict.loads(b64url_decode(head, rule=rule), limit=1024)
+    try:
+        header = strict.loads(b64url_decode(head, rule=rule), limit=1024)
+    except PassportError as e:
+        raise PassportError(rule, f"its protected header is not one: {e}") from e
     if not isinstance(header, dict):
         raise PassportError(rule, "its protected header is not a JSON object")
     if header.get("alg") not in ALGS:
         raise PassportError(rule, f"its alg is {header.get('alg')!r}, not Ed25519")
-    if header.get("typ") != typ:
+    if not _same_typ(header.get("typ"), typ):
         raise PassportError(rule, f"its typ is {header.get('typ')!r}, where {typ!r} belongs")
     if "crit" in header:
         raise PassportError(rule, "its header has crit, which this protocol never uses")

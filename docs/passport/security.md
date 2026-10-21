@@ -46,9 +46,14 @@ adds its own: the executor has never trusted the model, and it does not start tr
 | A signing oracle | get a robot to sign something usable somewhere else | A robot signs only messages it builds itself, and the `typ` header separates passports, stamps and messages. | [spec 6.1](spec.md#61-messages) |
 | Duplicate members | make two parsers read two documents under one signature | A document with a duplicate member is refused. | [spec rule 2](spec.md#3-reading-a-passport) |
 | A fetch aimed at the network | make a reader request internal addresses | Fetch only from the advertising host or a URL a person or camera read, follow no redirects, contact no URL a passport names. | [discovery.md](discovery.md#fetch-rules) |
-| An oversized document | exhaust a reader's memory | 8,192 bytes at most, and bounded strings and arrays. | [spec 2](spec.md#2-the-passport-document) |
+| An oversized document | exhaust a reader's memory | 8,192 bytes a passport and 12,288 on the wire, bounded strings and arrays, and numbers a double can hold. | [spec 2](spec.md#2-the-passport-document) |
+| A slow or flooding host | hold a reader for minutes, or fill its memory with headers | Five seconds for the whole exchange however slowly it sends, 12,288 bytes of body and 8,192 of headers, and an answer that is not HTTP refused. | [spec 5.7](spec.md#57-fetch-rules) |
+| A client that holds a server | keep `quackd passport serve` busy with idle or dripping connections | Five seconds a read, ten a connection, 32 connections at once, and a POST that must say how long it is. | [quackd.md](quackd.md#serving-passports) |
+| Escape sequences in a passport | redraw the panel a person reads, with a forged claim or tier in it | Every string a passport carries is printed as text, control characters and bidi overrides as their escapes. | [spec rule 12](spec.md#3-reading-a-passport) |
+| A key nobody holds | pass a forged signature, with a small-order key that verifies one | A key that is small-order, or no point on the curve at all, is refused. | [spec 4.1](spec.md#41-the-id) |
+| A lookalike name | pass as a robot or an owner a person already trusts | Names are compared the way a person reads them, with every pin and every robot this quackd drives, and a match under another key is warned about. Trust never follows a name. | [trust.md](trust.md#a-name-that-looks-like-another) |
 | Cache poisoning | overwrite what a reader knows about a robot | Only a verified passport is cached by its `id`. | [spec 5.8](spec.md#58-caching) |
-| A downgrade | strip a robot's signature and serve its passport unsigned | A reader that pinned a robot expects a signed passport for that `id`, and says so when it gets less. | [trust.md](trust.md#pinning-trust-on-first-use) |
+| A downgrade | strip a robot's signature and serve its passport unsigned | What a `.jws` URL serves must be a JWS, a sticker's short id is kept only by a signed passport, and a reader that pinned a robot says so when it gets less. | [spec 4.4](spec.md#44-signed-passports), [trust.md](trust.md#pinning-trust-on-first-use) |
 | A flood of pauses | freeze a robot by asking it to pause again and again | Every pause is bounded (5 s for a stranger, 10 s for a known robot) and every peer draws from one budget of one pause a minute. An owner can refuse stranger pauses altogether. | [trust.md](trust.md#the-four-tiers) |
 | Keys that cost nothing | make a thousand keys to dodge a limit per peer | The budget is global, never per peer. | [trust.md](trust.md#the-four-tiers) |
 | A message flood | burn a host's CPU, logs or a pilot's tokens | Message size caps, `429` when a budget is spent, and a per-turn budget on what reaches a pilot. | [talk.md](talk.md#channels) |
@@ -111,9 +116,11 @@ every executor. A peer can sit above all of that and never beneath any of it.
   read them, so a robot says nothing secret over talk. HTTPS and MQTT over TLS hide them where a
   channel offers them, and 0.1 defines no encryption of its own.
 - **Somebody holding the robot.** Physical access beats every key on the robot.
-- **A compromised quackd host.** Keys under `~/.quackd/keys/` are plain files protected by the
-  operating system's permissions, the same footing as the tokens in `robots.json`, which
-  [SECURITY.md](../../SECURITY.md) already says plainly.
+- **A compromised quackd host, or one others can read.** Keys under `~/.quackd/keys/`, the
+  robots' and the owner key alike, are plain files on the same footing as the tokens in
+  `robots.json`, which [SECURITY.md](../../SECURITY.md) already says plainly. On Linux and macOS
+  quackd makes them readable by their owner alone. On Windows a file takes the permissions of its
+  folder, so a home directory other people can read gives them the keys.
 - **Jamming or flooding the network itself.** A robot that cannot reach anything simply meets
   nobody, which fails safe.
 - **Bluetooth.** 0.1 has no Bluetooth binding, so it has no Bluetooth threats, and the ones a later

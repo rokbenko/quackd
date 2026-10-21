@@ -285,11 +285,19 @@ Also in scope:
 - **Robot Passport** ([docs/passport/security.md](docs/passport/security.md) is its whole threat
   model). `quackd passport serve` listens on every interface on port 8790 unless told otherwise,
   because a passport is a public document meant to be read, and it serves passports and nothing
-  else: no other path answers and it fetches nothing. A passport never holds a token or a key.
-  Each robot's private key is a plain file under `~/.quackd/keys/`, on the same footing as the
-  tokens in `robots.json`. Reading a passport fetches only the URL it was given, follows no
-  redirects and reads no more than 8 KB, and `quackd meet ros://` opens a bridge, reads one
-  message and closes it without publishing anything to that robot.
+  else: no other path answers and it fetches nothing. What any client can make it hold is
+  bounded: 32 connections at once, five seconds a read and ten a connection, and a POST must say
+  how long it is. A passport never holds a token or a key. Each robot's private key, and the owner
+  key that stamps them, the one to guard most, are plain files under `~/.quackd/keys/`, on the same
+  footing as the tokens in `robots.json`: readable by their owner alone on Linux and macOS, and on
+  Windows by whoever can read the folder they are in. Reading a passport fetches only the URL it
+  was given, follows no redirects, reads no more than 12 KB in five seconds however slowly a host
+  sends, and prints whatever a passport says as text, so a passport cannot drive the terminal.
+  `quackd meet ros://` opens a bridge, reads one message and closes it without publishing
+  anything to that robot. What would be a security issue: a key, the owner key above all,
+  reaching any output, log, transcript or passport, a passport's text acting on the terminal it is
+  shown on, a fetch to any host but the one named, or a robot placed in a tier above stranger
+  without the pin or the stamp that tier needs.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
   quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,

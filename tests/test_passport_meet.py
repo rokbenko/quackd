@@ -11,7 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from quackd.cli import app
-from quackd.passport import SigningKey, strict
+from quackd.passport import SigningKey, document, strict
 from quackd.passport.beacon import Beacon, sticker_url
 from quackd.passport.serve import PassportServer, Served
 from quackd.passport_qr import write_qr
@@ -23,6 +23,11 @@ OTHER = SigningKey(bytes(range(64, 96)))
 
 def _passport(key: SigningKey, name: str) -> bytes:
     return strict.dumps({"passport": "0.1", "id": key.did, "name": name})
+
+
+def _signed(key: SigningKey, name: str) -> Served:
+    doc = {"passport": "0.1", "id": key.did, "name": name}
+    return Served(name, strict.dumps(doc), document.sign(doc, key))
 
 
 @pytest.fixture
@@ -45,15 +50,17 @@ def test_meet_reads_a_url_and_a_bare_host(served: PassportServer) -> None:
     assert json.loads(by_host.stdout)["id"] == KEY.did
 
 
-def test_meet_reads_a_picture_of_a_sticker_and_checks_its_short_id(
-    served: PassportServer, tmp_path: Path
-) -> None:
-    url = f"http://127.0.0.1:{served.port}/.well-known/robot-passport.json"
-    write_qr(sticker_url(url, KEY.short_id), tmp_path / "good.png")
-    good = runner.invoke(app, ["meet", str(tmp_path / "good.png")])
+def test_meet_reads_a_picture_of_a_sticker_and_checks_its_short_id(tmp_path: Path) -> None:
+    server = PassportServer([_signed(KEY, "duck-01")], host="127.0.0.1").start()
+    try:
+        url = f"http://127.0.0.1:{server.port}/.well-known/robot-passport.json"
+        write_qr(sticker_url(url, KEY.short_id), tmp_path / "good.png")
+        good = runner.invoke(app, ["meet", str(tmp_path / "good.png")])
+        write_qr(sticker_url(url, OTHER.short_id), tmp_path / "swapped.png")
+        swapped = runner.invoke(app, ["meet", str(tmp_path / "swapped.png")])
+    finally:
+        server.close()
     assert good.exit_code == 0, good.output
-    write_qr(sticker_url(url, OTHER.short_id), tmp_path / "swapped.png")
-    swapped = runner.invoke(app, ["meet", str(tmp_path / "swapped.png")])
     assert swapped.exit_code == 1
     assert "refused under 5.2" in _flat(swapped.output)
 
@@ -80,10 +87,12 @@ def test_meet_reads_mqtt_and_ros_through_their_bindings(monkeypatch: pytest.Monk
 
     def from_broker(host: str, key: str, *, port: int = 1883, **_kw: Any) -> bytes:
         asked.append((host, key, port))
-        return _passport(KEY, "duck-01")
+        signed = _signed(KEY, "duck-01").jws
+        assert signed is not None
+        return signed.encode()  # what a broker retains is the signed passport
 
-    async def from_ros(address: str, **_kw: Any) -> str:
-        asked.append(address)
+    async def from_ros(address: str, **kw: Any) -> str:
+        asked.append((address, kw.get("topic")))
         return _passport(OTHER, "cart-01").decode()
 
     monkeypatch.setattr(mqtt, "read_passport", from_broker)
@@ -92,7 +101,13 @@ def test_meet_reads_mqtt_and_ros_through_their_bindings(monkeypatch: pytest.Monk
     assert by_mqtt.exit_code == 0, by_mqtt.output
     by_ros = runner.invoke(app, ["meet", "ros://cart.local:9090"])
     assert by_ros.exit_code == 0, by_ros.output
-    assert asked == [("broker.local", KEY.short_id, 1884), "ws://cart.local:9090"]
+    in_a_namespace = runner.invoke(app, ["meet", "ros://cart.local:9090/hall/cart_01"])
+    assert in_a_namespace.exit_code == 0, in_a_namespace.output
+    assert asked == [
+        ("broker.local", KEY.short_id, 1884),
+        ("ws://cart.local:9090", "/robot_passport"),
+        ("ws://cart.local:9090", "/hall/cart_01/robot_passport"),
+    ]
     assert "met cart-01" in by_ros.output
 
 
@@ -153,10 +168,20 @@ def test_serve_announces_and_retains_when_asked(
         def start(self) -> Closer:
             return Closer()
 
+    import quackd.lan.announce as lan_announce
+    import quackd.passport.serve as serve
+
     monkeypatch.setattr(
         passports, "announce_passport", lambda record: announced.append(record) or Closer()
     )
     monkeypatch.setattr(mqtt, "PassportPublisher", Publisher)
+    # served on every address as far as the command knows, on loopback alone in fact, so the
+    # test opens nothing on the network; the address announced is the one the host has
+    real = serve.PassportServer
+    monkeypatch.setattr(
+        serve, "PassportServer", lambda robots, **kw: real(robots, **{**kw, "host": "127.0.0.1"})
+    )
+    monkeypatch.setattr(lan_announce, "local_ip", lambda: "192.0.2.10")
     served = runner.invoke(
         app,
         [
@@ -165,7 +190,7 @@ def test_serve_announces_and_retains_when_asked(
             "--robot",
             "microduck:mock",
             "--bind",
-            "127.0.0.1",
+            "0.0.0.0",
             "--port",
             "0",
             "--announce",
@@ -180,6 +205,7 @@ def test_serve_announces_and_retains_when_asked(
     assert served.exit_code == 0, served.output
     assert [r.properties["v"] for r in announced] == ["1"]
     assert announced[0].port > 0
+    assert announced[0].addresses == ("192.0.2.10",)
     assert retained == [(retained[0][0], "broker.local", 1884, "microduck-mock")]
 
 
@@ -233,3 +259,56 @@ def test_discover_lists_passports_beside_quackd_robots(monkeypatch: pytest.Monke
         row["kind"] == "passport"
         and row["url"] == "http://192.0.2.20:8790/.well-known/robot-passport.json"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "mqtt://broker.local:abc/0123456789abcdef",
+        "127.0.0.1:abc",
+        "no-such-sticker.png",
+        "http://user:secret@127.0.0.1:9/",
+        "ros://cart.local:9090/not a namespace",
+    ],
+)
+def test_a_source_that_cannot_be_read_is_refused_and_not_a_traceback(source: str) -> None:
+    refused = runner.invoke(app, ["meet", source])
+    assert refused.exit_code == 1, refused.output
+    assert refused.exception is None or isinstance(refused.exception, SystemExit), refused.exception
+    assert "refused" in _flat(refused.output)
+
+
+def test_mqtt_keyed_by_a_uuid_finds_a_robot_with_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    import quackd.lan.passport_mqtt as mqtt
+
+    robot = "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10"
+    monkeypatch.setattr(
+        mqtt,
+        "read_passport",
+        lambda host, key, **_kw: strict.dumps({"passport": "0.1", "id": robot, "name": "cart-01"}),
+    )
+    met = runner.invoke(app, ["meet", "mqtt://broker.local/4f1c2a1e9d4b4c8e8f3a2b6d5e7a9c10"])
+    assert met.exit_code == 0, met.output
+    wrong = runner.invoke(app, ["meet", "mqtt://broker.local/" + "0" * 32])
+    assert wrong.exit_code == 1 and "refused under 5.4" in _flat(wrong.output)
+
+
+def test_serve_will_not_announce_a_passport_only_this_machine_can_read(tmp_path: Path) -> None:
+    refused = runner.invoke(
+        app,
+        [
+            "passport",
+            "serve",
+            "--robot",
+            "microduck:mock",
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            "0",
+            "--announce",
+            "--registry-dir",
+            str(tmp_path),
+        ],
+    )
+    assert refused.exit_code == 1
+    assert "nothing to announce" in _flat(refused.output)

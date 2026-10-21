@@ -381,3 +381,21 @@ async def test_a_ros_robot_with_no_passport_says_so() -> None:
             topic_factory=lambda _c, n, t: FakeTopic(n, t, None),
             timeout_s=0.2,
         )
+
+
+def test_a_beacons_url_prefers_ipv4_and_brackets_ipv6() -> None:
+    def at(*addresses: str) -> str:
+        return Beacon(
+            instance="a",
+            short_id=None,
+            digest="0" * 16,
+            path="/.well-known/robot-passport.json",
+            host="h.local.",
+            port=8790,
+            addresses=addresses,
+        ).url()
+
+    assert at("fe80::1c2b:3aff:fe4d:5e6f", "192.0.2.10") == (
+        "http://192.0.2.10:8790/.well-known/robot-passport.json"
+    )
+    assert at("2001:db8::5") == "http://[2001:db8::5]:8790/.well-known/robot-passport.json"

@@ -49,7 +49,7 @@ same hallway on the same network.
    and its passport's digest in the TXT record ([discovery.md](discovery.md)). duck-01's quackd host
    hears it. It could equally have read a QR sticker on the cart, or found it on a shared MQTT broker.
 2. **Fetch.** quackd fetches the passport from the host and port that advertised it, follows no
-   redirects and reads no more than 8 KB ([fetch rules](discovery.md#fetch-rules)).
+   redirects and reads no more than 12 KB in 5 seconds ([fetch rules](discovery.md#fetch-rules)).
 3. **Verify and place.** It checks the signature against the key in the passport's `id`, counts any
    stamps from keys it has pinned, and decides the cart's tier: a stranger, a known robot, one with
    the same owner, or a member of its own flock ([trust.md](trust.md#the-four-tiers)).

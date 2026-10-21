@@ -160,7 +160,8 @@ own initiative follows four rules ([spec section 5.7](spec.md#57-fetch-rules)):
 - It fetches only from the host and port that advertised the passport, or from a URL a person
   typed or a camera or tag read.
 - It follows no redirects.
-- It stops reading at 8,192 bytes, and gives up after 5 seconds.
+- It stops reading at 12,288 bytes, which holds the JWS of the largest passport, and gives up
+  after 5 seconds for the whole exchange, however slowly a host sends.
 - It contacts no other URL a passport mentions, its `talk` channels included, unless a person or
   its own policy allows that URL. quackd's policy allows a `talk` URL only on the host the passport
   came from.

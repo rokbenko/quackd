@@ -254,6 +254,7 @@ Measured from [the vectors](vectors/README.md).
 | that, signed, as a `.jws` | 2,518 characters |
 | one stamp | 481 characters |
 | the most a reader must accept | 8,192 bytes |
+| the most a reader reads of one off the network, signed | 12,288 bytes |
 | what a writer should stay under | 2,048 bytes |
 | the Microduck's quackd manifest, for comparison | 7,703 bytes |
 

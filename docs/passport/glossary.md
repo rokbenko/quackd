@@ -38,7 +38,7 @@ not define. One marked `required` stops a reader that cannot read it from talkin
 [passport.md](passport.md#ext)
 
 **Fetch rules.** What a reader may contact on its own initiative: only the host that advertised a
-passport, no redirects, 8 KB at most. [discovery.md](discovery.md#fetch-rules)
+passport, no redirects, 12 KB and 5 seconds at most. [discovery.md](discovery.md#fetch-rules)
 
 **Figure.** A number in a passport's `body`, optionally with a confidence and a source. Absent means
 not published, never zero. [passport.md](passport.md#body)

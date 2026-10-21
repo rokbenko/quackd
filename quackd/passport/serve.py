@@ -4,11 +4,17 @@ One robot is served at `/.well-known/robot-passport.json`, and at `.jws` once it
 Several are served each under `/robots/<name>/`, with an index at the well-known URL listing
 them on this same host (spec 2.7), so a reader is never sent anywhere else. The standard
 library's threading server is enough: a passport is a few kilobytes, read rarely.
+
+It is on a network, so nobody on it may hold it up. A connection gets five seconds a read and
+ten in all, at most 32 are served at once and the rest are closed as they arrive, and a POST
+says how long it is before a byte of it is read.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import socket
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -22,6 +28,9 @@ from quackd.passport.document import VERSION
 INBOX_PATH = "/robot-passport/inbox"
 JSON_TYPE = "application/json"
 JWS_TYPE = "application/jose"
+READ_S = 5.0
+CONNECTION_S = 10.0
+CONNECTIONS = 32
 
 #: What a talk inbox is: the request's body and content type in, a status and a body out.
 Inbox = Callable[[bytes, str], tuple[int, bytes | None, str]]
@@ -81,8 +90,7 @@ class PassportServer:
         self._routes = routes(robots)
         self._inbox = inbox
         self._inbox_limit = inbox_limit
-        self._httpd = ThreadingHTTPServer((host, port), self._handler())
-        self._httpd.daemon_threads = True
+        self._httpd = _Bounded((host, port), self._handler())
         self._thread: threading.Thread | None = None
 
     @property
@@ -111,6 +119,27 @@ class PassportServer:
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "quackd-passport"
+            timeout = READ_S
+
+            def setup(self) -> None:
+                super().setup()
+                # a client that sends a byte every few seconds never trips the read timeout,
+                # so the connection as a whole has a deadline too
+                self._deadline = threading.Timer(CONNECTION_S, self._cut)
+                self._deadline.daemon = True
+                self._deadline.start()
+
+            def _cut(self) -> None:
+                with contextlib.suppress(OSError):
+                    self.connection.shutdown(socket.SHUT_RDWR)
+
+            def finish(self) -> None:
+                self._deadline.cancel()
+                with contextlib.suppress(OSError):
+                    super().finish()
+
+            def version_string(self) -> str:
+                return self.server_version  # not which Python, which is nobody's business
 
             def _send(self, status: int, body: bytes = b"", kind: str = "text/plain") -> None:
                 self.send_response(status)
@@ -135,11 +164,14 @@ class PassportServer:
                 if self.path != INBOX_PATH or server._inbox is None:
                     self._send(404, b"no inbox here\n")
                     return
-                try:
-                    length = int(self.headers.get("Content-Length") or 0)
-                except ValueError:
-                    self._send(400, b"a Content-Length that is not a number\n")
+                said = self.headers.get("Content-Length")
+                if said is None:
+                    self._send(411, b"a message says how long it is\n")
                     return
+                if not said.strip().isdigit():
+                    self._send(400, b"a Content-Length that is not a length\n")
+                    return
+                length = int(said)
                 if length > server._inbox_limit:
                     self._send(413, b"too large\n")
                     return
@@ -152,3 +184,35 @@ class PassportServer:
                 pass
 
         return Handler
+
+
+class _Bounded(ThreadingHTTPServer):
+    """A threading server that serves at most `CONNECTIONS` clients at once, closing the rest
+    as they arrive rather than starting a thread for each, and says nothing about a client that
+    hung up or was cut off."""
+
+    daemon_threads = True
+    block_on_close = False  # closing it never waits out a slow client
+
+    def __init__(self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler]) -> None:
+        super().__init__(address, handler)
+        self._slots = threading.BoundedSemaphore(CONNECTIONS)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        pass

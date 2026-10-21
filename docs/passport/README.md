@@ -54,6 +54,7 @@ bounded rule its owner chose.
 | a Microduck's full passport | 1,218 bytes |
 | that, signed, with an owner stamp, as a `.jws` | 2,518 characters |
 | the most a reader must accept | 8,192 bytes |
+| the most a reader reads of one off the network, signed | 12,288 bytes |
 | a talk message, at most | 4,096 bytes |
 | a QR code for a passport URL | 37×37 modules |
 

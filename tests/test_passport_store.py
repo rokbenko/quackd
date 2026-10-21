@@ -67,3 +67,32 @@ def test_the_owner_is_optional_and_an_empty_value_removes_it(tmp_path: Path) -> 
     assert store.owner() == OwnerRecord("Example lab", "https://example.org")
     store.save_owner(OwnerRecord("Example lab", None))
     assert store.owner() == OwnerRecord("Example lab", None)
+
+
+def test_forget_removes_nothing_when_more_than_one_pin_answers(tmp_path: Path) -> None:
+    """Two owners can share a label, and a robot can name itself after another's short id, so
+    a name or short id more than one pin answers to removes none until a person names one."""
+    from quackd.passport import SigningKey
+    from quackd.passport_store import Pin, StoreError
+
+    store = PassportStore(tmp_path)
+    one, two, three = SigningKey.generate(), SigningKey.generate(), SigningKey.generate()
+    store.pin(Pin(one.did, "Example lab", "owner", "2026-10-21T00:00:00Z"))
+    store.pin(Pin(two.did, "Example lab", "owner", "2026-10-21T00:00:00Z"))
+    store.pin(Pin(three.did, two.short_id, "robot", "2026-10-21T00:00:00Z"))
+    with pytest.raises(StoreError, match="2 pins answer"):
+        store.forget("Example lab")
+    with pytest.raises(StoreError, match="2 pins answer"):
+        store.forget(two.short_id)
+    assert len(store.known()) == 3
+    assert [p.id for p in store.forget(one.short_id)] == [one.did]
+    assert [p.id for p in store.forget(two.did)] == [two.did]
+    assert [p.id for p in store.known()] == [three.did]
+
+
+def test_a_key_that_cannot_be_written_is_a_store_error_not_a_traceback(tmp_path: Path) -> None:
+    from quackd.passport_store import StoreError
+
+    (tmp_path / "keys").write_text("a file where a folder belongs", encoding="utf-8")
+    with pytest.raises(StoreError, match="could not write"):
+        PassportStore(tmp_path).robot_or_new("duck-01")

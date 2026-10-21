@@ -65,8 +65,13 @@ class Beacon:
     addresses: tuple[str, ...]
 
     def url(self) -> str:
-        """The passport's URL at the first address the beacon came from (spec 5.7)."""
-        where = self.addresses[0] if self.addresses else self.host.rstrip(".")
+        """The passport's URL at an address the beacon came from (spec 5.7): an IPv4 one when
+        there is one, since an IPv6 link-local address is reached only through an interface,
+        and an IPv6 one in brackets, the only way a URL can carry it."""
+        v4 = [a for a in self.addresses if ":" not in a]
+        where = (v4 or list(self.addresses) or [self.host.rstrip(".")])[0]
+        if ":" in where:
+            where = f"[{where}]"
         return f"http://{where}:{self.port}{self.path}"
 
     def row(self) -> dict[str, Any]:

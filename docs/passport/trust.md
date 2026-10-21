@@ -89,6 +89,12 @@ is only "this key is my robot". That is also why a stamp counts only on a signed
 unsigned one, nothing shows the key wrote it, and anybody can copy an id and a stamp into a
 document of their own.
 
+A reader shows each stamp by the key that made it, by its short id and by what it knows that key
+as, and never as a count: any key can stamp any robot, so a stamp is worth exactly what its key is.
+A stamp whose issuer is the robot's own key vouches for nothing and never counts. A passport
+carries at most four stamps, so quackd drops the ones that no longer count whenever it stamps a
+robot again.
+
 An owner holds one owner key and stamps every robot they own with it, from a laptop, in a second:
 `quackd passport stamp --robot NAME`, or `--did` for a robot whose key lives on the robot itself
 ([quackd.md](quackd.md#stamping-your-robots)). A reader that has pinned that owner key then trusts
@@ -165,6 +171,18 @@ A reader that has pinned a robot and then meets a new key under the same name tr
 SSH treats a host key that changed: nothing is trusted automatically, the reader says plainly that
 the key is different, and a person decides. It might be a new robot, a reinstalled one, or somebody
 pretending.
+
+### A name that looks like another
+
+A name is where a person is most easily fooled, because a person reads it and a machine does not.
+quackd compares names the way a person sees them: case, spaces, characters that show nothing and
+the usual letters from other scripts drawn like Latin ones are folded away, so `DUCK-01 `, a
+`duck-01` with a zero-width space in it and one spelled with a Cyrillic letter all read as
+`duck-01`. A robot whose name reads like a pinned robot's, or like one this quackd drives, under a
+key that is not that robot's, is warned about. So is a robot that says its owner is one you pinned,
+or you, without that owner's stamp, because an owner's label is the robot's own word: no owner
+signs it, which is why a pin names an owner by its key. None of this decides a tier, which only
+keys do. It tells a person to look before they trust.
 
 ### A robot's key is stolen
 

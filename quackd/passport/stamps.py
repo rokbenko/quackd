@@ -29,6 +29,8 @@ def make(
 ) -> str:
     """A stamp by `signer` saying `subject` is its robot, valid for `days` from `now`."""
     public_from_did(subject)
+    if subject == signer.did:
+        raise ValueError("a key cannot stamp itself: a stamp is somebody else vouching for it")
     issued = int(time.time()) if now is None else now
     claims = {
         "iss": signer.did,
@@ -81,6 +83,8 @@ def check(token: str, *, subject: str, now: int | None = None) -> Stamp:
         return judged("its iss is not the key that signed it")
     if sub != subject:
         return judged(f"it stamps {sub!r}, not this robot")
+    if iss == sub:
+        return judged("it is the robot's own key vouching for itself, which proves nothing")
     if rel not in RELATIONS:
         return judged(f"its rel is {rel!r}, which a 0.1 reader ignores")
     if (

@@ -24,9 +24,9 @@ from quackd.registry import Registry, RobotEntry
 runner = CliRunner()
 REPO = Path(__file__).resolve().parents[1]
 VECTORS = REPO / "docs" / "passport" / "vectors"
-SHORT_A = json.loads((VECTORS / "keys.json").read_text(encoding="utf-8"))["keys"]["robot-a"][
-    "short_id"
-]
+KEYS = json.loads((VECTORS / "keys.json").read_text(encoding="utf-8"))["keys"]
+SHORT_A = KEYS["robot-a"]["short_id"]
+SHORT_OWNER = KEYS["owner"]["short_id"]
 
 
 def _reg(tmp_path: Path) -> list[str]:
@@ -135,7 +135,10 @@ def test_an_empty_owner_label_removes_it(tmp_path: Path) -> None:
 def test_check_shows_a_signed_passport_and_its_stamp() -> None:
     checked = runner.invoke(app, ["passport", "check", str(VECTORS / "microduck.jws")])
     assert checked.exit_code == 0, checked.output
-    assert "signed by its own key, 1 of 1 stamps count" in checked.output
+    flat = " ".join(checked.output.split())
+    assert "claim signed by its own key" in flat
+    # the stamp by the key that made it, not a count: any key can stamp any robot
+    assert f"stamp owner {SHORT_OWNER}, a key nobody here pinned, until" in flat
 
 
 def test_check_refuses_with_the_rule_and_exits_1() -> None:
@@ -172,10 +175,19 @@ def test_check_says_when_there_is_no_such_file() -> None:
 
 @pytest.fixture
 def server(tmp_path: Path) -> Iterator[str]:
-    """A host serving robot A's passport at its well-known URL, and one redirect."""
+    """A host serving robot A's passport at its well-known URL, signed beside it, and one
+    redirect; robot A's unsigned passport alone under /unsigned/; and under /fake/ the unsigned
+    one served where the signed one belongs."""
     well_known = tmp_path / ".well-known"
     well_known.mkdir()
     (well_known / "robot-passport.json").write_bytes((VECTORS / "minimal.json").read_bytes())
+    (well_known / "robot-passport.jws").write_bytes((VECTORS / "microduck.jws").read_bytes())
+    for folder in ("unsigned", "fake"):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "robot-passport.json").write_bytes(
+            (VECTORS / "minimal.json").read_bytes()
+        )
+    (tmp_path / "fake" / "robot-passport.jws").write_bytes((VECTORS / "minimal.json").read_bytes())
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -222,6 +234,24 @@ def test_a_stickers_short_id_must_match_the_passport(server: str) -> None:
     assert bad.exit_code == 1 and "refused under 5.2" in bad.output
 
 
+def test_an_unsigned_passport_cannot_keep_a_stickers_promise(server: str) -> None:
+    """A sticker's #rp= promises a key, and an unsigned passport whose id names that key proves
+    nothing about it: anybody can copy an id."""
+    url = f"{server}/unsigned/robot-passport.json#rp={SHORT_A}"
+    refused = runner.invoke(app, ["passport", "check", url])
+    assert refused.exit_code == 1
+    flat = " ".join(refused.output.split())
+    assert "refused under 5.2" in flat and "unsigned, so nothing shows that key wrote it" in flat
+
+
+def test_what_the_signed_url_serves_must_be_signed(server: str) -> None:
+    """A host that answers the .jws URL with the unsigned document would talk a reader down
+    from a signed passport to a claim without its noticing."""
+    refused = runner.invoke(app, ["passport", "check", f"{server}/fake/robot-passport.json"])
+    assert refused.exit_code == 1
+    assert "refused under 4.4" in " ".join(refused.output.split())
+
+
 def test_a_redirect_is_refused_rather_than_followed(server: str) -> None:
     refused = runner.invoke(app, ["passport", "check", f"{server}/moved"])
     assert refused.exit_code == 1
@@ -231,3 +261,26 @@ def test_a_redirect_is_refused_rather_than_followed(server: str) -> None:
 def test_a_url_that_answers_404_is_refused_with_the_status(server: str) -> None:
     refused = runner.invoke(app, ["passport", "check", f"{server}/nothing.json"])
     assert refused.exit_code == 1 and "404" in refused.output
+
+
+def test_an_index_entry_on_another_host_is_listed_and_not_offered(
+    server: str, tmp_path: Path
+) -> None:
+    """An index lists robots on its own host (spec 2.7), so one naming another host, a cloud's
+    metadata address say, is shown for what it is and never offered as somewhere to go."""
+    (tmp_path / "idx").mkdir()
+    index = {
+        "passport": "0.1",
+        "robots": [
+            {"name": "here", "url": "/robots/here/robot-passport.json"},
+            {"name": "elsewhere", "url": "http://169.254.169.254/latest/meta-data/"},
+        ],
+    }
+    (tmp_path / "idx" / "robot-passport.json").write_text(json.dumps(index), encoding="utf-8")
+    checked = runner.invoke(
+        app,
+        ["passport", "check", f"{server}/idx/robot-passport.json"],
+        env={"COLUMNS": "200"},  # one line a row, so the note reads whole
+    )
+    assert checked.exit_code == 0, checked.output
+    assert checked.output.count("on another host, so not offered (2.7)") == 1

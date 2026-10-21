@@ -73,7 +73,8 @@ UNSIGNED_STAMP = "the passport is unsigned, so nothing shows the key it stamps w
 #: The extensions quackd understands, so a required one of these does not stop it talking.
 KNOWN_EXTENSIONS = frozenset({"org.quackd"})
 
-_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+#: A version has at most nine digits a part, so reading one never converts a huge number.
+_VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
 _DID = re.compile(r"^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$")
 _UUID = re.compile(
     r"^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -81,7 +82,7 @@ _UUID = re.compile(
 _SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _EXT = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
 _JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
-_DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$")
+_DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$")
 
 _MEMBERS = {
     "": (
@@ -242,9 +243,7 @@ def validate(doc: object) -> dict[str, Any]:
         for key, value in _object(doc["ext"], "ext").items():
             if not _EXT.match(key):
                 raise _refuse("rule 5", f"ext key {key!r} is not a reverse-DNS name")
-            extension = _object(value, f"ext[{key!r}]")
-            if "required" in extension and not isinstance(extension["required"], bool):
-                raise _refuse("rule 5", f"ext[{key!r}].required is not true or false")
+            _object(value, f"ext[{key!r}]")
     if "issued" in doc:
         _check_datetime(doc["issued"])
     if "ttl_s" in doc and (not _is_int(doc["ttl_s"]) or not 60 <= doc["ttl_s"] <= MAX_TTL_S):
@@ -279,10 +278,15 @@ def _validate_channel(channel: dict[str, Any], where: str) -> None:
 
 
 def _check_datetime(value: object) -> None:
-    if not isinstance(value, str) or not _DATETIME.match(value):
+    match = _DATETIME.match(value) if isinstance(value, str) else None
+    if match is None:
         raise _refuse("rule 5", f"issued is {value!r}, not an RFC 3339 date-time")
+    # RFC 3339 allows a lowercase t and z, and a leap second, and Python's datetime neither
+    plain = str(value).upper().replace("Z", "+00:00")
+    if match.group(1) == "60":
+        plain = plain[:17] + "59" + plain[19:]
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        datetime.fromisoformat(plain)
     except ValueError as e:
         raise _refuse("rule 5", f"issued is {value!r}, not a real date-time") from e
 
@@ -410,9 +414,10 @@ class Reading:
             "digest": self.digest,
             "signed": self.signed,
             "provenance": self.provenance,
-            "maker": dict(doc.get("maker", {})),
-            "software": dict(doc.get("software", {})),
-            "owner": dict(doc.get("owner", {})),
+            # the members a reader knows, and nothing it ignored (rule 8) next to a note saying so
+            "maker": _known(doc, "maker"),
+            "software": _known(doc, "software"),
+            "owner": _known(doc, "owner"),
             "body": self.body(),
             "skills": self.skills(),
             "core_skills": [s for s in self.skills() if s in CORE_SKILLS],
@@ -428,6 +433,7 @@ class Reading:
             "stamps": [
                 {
                     "iss": s.iss,
+                    "iss_short_id": _short_id_or_none(s.iss),
                     "rel": s.rel,
                     "exp": s.exp,
                     "counts": s.counts,
@@ -439,6 +445,23 @@ class Reading:
             "ttl_s": self.ttl_s,
             "notes": list(self.notes),
         }
+
+
+def _known(doc: dict[str, Any], member: str) -> dict[str, Any]:
+    value = doc.get(member)
+    if not isinstance(value, dict):
+        return {}
+    return {k: v for k, v in value.items() if k in _MEMBERS[member]}
+
+
+def _short_id_or_none(robot_id: str | None) -> str | None:
+    """A stamp's issuer's short id, or None for one that names no key a reader can use."""
+    if robot_id is None:
+        return None
+    try:
+        return short_id_of(robot_id)
+    except PassportError:
+        return None
 
 
 def _figure(value: Any) -> Figure:
@@ -524,6 +547,8 @@ def _readings(doc: dict[str, Any]) -> tuple[list[str], bool]:
         if extension.get("required") is True and key not in KNOWN_EXTENSIONS:
             talk_allowed = False
             notes.append(f"the required extension {key} is not understood: no talk (2.6)")
+        elif "required" in extension and not isinstance(extension["required"], bool):
+            notes.append(f"ext {key}: required is not true, so it was read as not required (2.6)")
     return notes, talk_allowed
 
 

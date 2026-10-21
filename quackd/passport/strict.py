@@ -8,6 +8,7 @@ library accepts and JSON does not."""
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from quackd.passport.errors import PassportError
@@ -28,6 +29,27 @@ def _no_constants(name: str) -> Any:
     raise PassportError("rule 2", f"{name} is not JSON")
 
 
+def _number(text: str) -> float | int:
+    """A number written with a fraction or an exponent. A whole one is the integer it equals,
+    the way JSON Schema reads it, so `3600.0` and `3.6e3` are good wherever an integer belongs.
+    One past what a double holds is refused, as I-JSON (RFC 7493) allows."""
+    value = float(text)
+    if not math.isfinite(value):
+        raise PassportError("rule 2", f"{text} is a number too large for JSON to carry")
+    if value.is_integer() and abs(value) <= 2**53:
+        return int(value)
+    return value
+
+
+def _integer(text: str) -> int:
+    """An integer, if a double can hold it exactly. Python's own ints have no limit, and one of
+    four hundred digits is valid JSON that no other reader agrees on, and that crashes arithmetic
+    expecting a figure, so it is refused, as I-JSON (RFC 7493) allows."""
+    if len(text.lstrip("-")) > 16 or abs(value := int(text)) > 2**53:
+        raise PassportError("rule 2", f"{text[:20]} is a number too large for JSON to carry")
+    return value
+
+
 def loads(data: bytes, *, limit: int) -> Any:
     """`data` parsed, or a `PassportError` saying which rule it broke."""
     if len(data) > limit:
@@ -39,7 +61,13 @@ def loads(data: bytes, *, limit: int) -> Any:
     except UnicodeDecodeError as e:
         raise PassportError("rule 2", f"it is not UTF-8 ({e.reason} at byte {e.start})") from e
     try:
-        return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constants)
+        return json.loads(
+            text,
+            object_pairs_hook=_no_duplicates,
+            parse_constant=_no_constants,
+            parse_float=_number,
+            parse_int=_integer,
+        )
     except PassportError:
         raise
     except RecursionError as e:

@@ -223,18 +223,22 @@ class PassportStore:
         self._write_pins(pins.values())
 
     def forget(self, which: str) -> list[Pin]:
-        """Remove the pins whose id, short id or name is `which`, and say which went."""
+        """Remove the pin whose id, short id or name is `which`, and say which went.
+
+        A name or short id more than one pin answers to removes none of them, and the error
+        lists them: two owners can share a label, and a robot can name itself after another's
+        short id, and forgetting both is not what a person asking for one meant."""
         from quackd.passport.keys import short_id_of
 
-        kept: list[Pin] = []
-        gone: list[Pin] = []
-        for pin in self.known():
-            if which in (pin.id, pin.name) or which == short_id_of(pin.id):
-                gone.append(pin)
-            else:
-                kept.append(pin)
+        pins = self.known()
+        gone = [p for p in pins if p.id == which] or [
+            p for p in pins if which in (p.name, short_id_of(p.id))
+        ]
+        if len(gone) > 1:
+            listed = ", ".join(f"{p.kind} {p.name} ({short_id_of(p.id) or p.id})" for p in gone)
+            raise StoreError(f"{len(gone)} pins answer to {which!r}: {listed}. Name one by its id")
         if gone:
-            self._write_pins(kept)
+            self._write_pins([p for p in pins if p.id != gone[0].id])
         return gone
 
     def _write_pins(self, pins: Any) -> None:
@@ -259,14 +263,15 @@ def _read(path: Path) -> dict[str, Any]:
 
 
 def _write_secret(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    with contextlib.suppress(OSError):
-        tmp.touch(mode=0o600)
-        tmp.chmod(0o600)
-    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            tmp.touch(mode=0o600)
+            tmp.chmod(0o600)
+        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         tmp.replace(path)
-    except PermissionError as e:  # Windows: another program is holding the file open
-        tmp.unlink(missing_ok=True)
-        raise StoreError(f"could not replace {path}: another program has it open") from e
+    except OSError as e:  # a full disk, a read-only folder, or on Windows a file held open
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise StoreError(f"could not write {path}: {e.strerror or e}") from e

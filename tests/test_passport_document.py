@@ -8,6 +8,7 @@ did:key spelled two ways, and every member a writer can get the type of wrong.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -94,7 +95,6 @@ def test_something_that_is_not_an_object_is_refused() -> None:
         ({"talk": [{"via": "http", "url": "u", "max_bytes": 100}]}, "rule 5"),
         ({"stamps": ["not.a"]}, "rule 5"),
         ({"ext": {"NoDots": {}}}, "rule 5"),
-        ({"ext": {"org.example": {"required": "yes"}}}, "rule 5"),
         ({"issued": "yesterday"}, "rule 5"),
         ({"issued": "2026-13-45T00:00:00Z"}, "rule 5"),
         ({"ttl_s": 59}, "rule 5"),
@@ -249,3 +249,100 @@ def test_a_stamp_on_an_unsigned_passport_never_counts() -> None:
     signed = document.read(document.sign(passport(stamps=[stamp]), KEY), now=NOW)
     assert isinstance(signed, document.Reading)
     assert [s.counts for s in signed.stamps] == [True]
+
+
+# ── what the reviews found ──────────────────────────────────────────────────────────────
+
+VECTORS = Path(__file__).resolve().parents[1] / "docs" / "passport" / "vectors"
+_B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def test_a_robot_vouching_for_its_own_key_proves_nothing() -> None:
+    claims = {"iss": KEY.did, "sub": KEY.did, "rel": "owner", "iat": NOW - 60, "exp": NOW + 3600}
+    token = jws.sign(strict.dumps(claims), KEY, stamps.STAMP_TYP)
+    stamp = stamps.check(token, subject=KEY.did, now=NOW)
+    assert not stamp.counts and "vouching for itself" in (stamp.reason or "")
+    with pytest.raises(ValueError, match="cannot stamp itself"):
+        stamps.make(KEY, KEY.did)
+
+
+@pytest.mark.parametrize(
+    "public_hex",
+    [
+        "0100000000000000000000000000000000000000000000000000000000000000",  # the identity
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",  # order 2
+        "0000000000000000000000000000000000000000000000000000000000000000",  # order 4
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",  # order 8
+        "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",  # y = p, spelled twice
+        "0200000000000000000000000000000000000000000000000000000000000000",  # y = 2, on no curve
+    ],
+)
+def test_a_key_nobody_could_hold_is_refused(public_hex: str) -> None:
+    """A small-order "key" verifies a signature nobody made, which libsodium refuses: a passport
+    whose id holds one could be signed by anybody, and so could a stamp from an owner like it."""
+    with pytest.raises(PassportError) as caught:
+        public_from_did(did_from_public(bytes.fromhex(public_hex)))
+    assert caught.value.rule == "rule 7"
+
+
+def test_a_signature_has_one_spelling() -> None:
+    """The last of a signature's 86 characters carries two bits of it and four spare ones, which
+    a decoder that ignored them would let anybody flip into fifteen more spellings."""
+    head, body, sig = (VECTORS / "microduck.jws").read_text(encoding="utf-8").strip().split(".")
+    bent = sig[:-1] + _B64[_B64.index(sig[-1]) ^ 1]
+    assert refused(f"{head}.{body}.{bent}").rule == "4.4"
+
+
+def test_a_typ_written_with_its_media_type_prefix_is_the_same_typ() -> None:
+    """RFC 7515 4.1.9: `application/robot-passport+jws` and `robot-passport+jws` are one value."""
+    header = {"alg": "Ed25519", "kid": KEY.did, "typ": "application/robot-passport+jws"}
+    signing_input = jws.b64url(strict.dumps(header)) + "." + jws.b64url(strict.dumps(passport()))
+    token = signing_input + "." + jws.b64url(KEY.sign(signing_input.encode("ascii")))
+    assert document.read_jws(token).signed
+
+
+def test_a_padded_jws_is_refused_as_a_jws_rather_than_as_json() -> None:
+    assert refused(document.sign(passport(), KEY) + "==").rule == "4.4"
+
+
+def test_a_whole_number_written_with_a_fraction_or_an_exponent_is_that_integer() -> None:
+    """JSON Schema reads 3600.0 as an integer, so a reader that refused it would refuse a
+    passport its own schema accepts."""
+    assert document.read(raw(passport(ttl_s=3600.0))).ttl_s == 3600  # type: ignore[union-attr]
+    written = b'{"passport":"0.1","id":"%s","name":"d","ttl_s":3.6e3}' % KEY.did.encode()
+    assert document.read(written).ttl_s == 3600  # type: ignore[union-attr]
+
+
+def test_numbers_and_versions_no_reader_could_hold_are_refused_not_crashed() -> None:
+    assert refused(raw(passport())[:-1] + b',"x":1' + b"0" * 400 + b"}").rule == "rule 2"
+    assert refused(raw(passport(body={"mass_kg": 10**30}))).rule == "rule 2"
+    assert (
+        refused(raw({"passport": "0." + "9" * 5000, "id": KEY.did, "name": "d"})).rule == "rule 3"
+    )
+
+
+def test_rfc_3339_allows_a_lowercase_t_and_z_and_a_leap_second() -> None:
+    for issued in ("2026-10-21t10:00:00z", "2016-12-31T23:59:60Z"):
+        assert isinstance(document.read(raw(passport(issued=issued))), document.Reading)
+
+
+def test_a_required_that_is_not_true_reads_as_not_required() -> None:
+    """Spec 2.6 acts on `"required": true` alone, so anything else leaves the extension ignored,
+    and the passport is read rather than refused over it."""
+    reading = document.read(raw(passport(ext={"org.example": {"required": "yes"}})))
+    assert isinstance(reading, document.Reading) and reading.talk_allowed
+    assert any("read as not required" in note for note in reading.notes)
+
+
+def test_the_view_shows_the_members_a_reader_knows_and_none_it_ignored() -> None:
+    reading = document.read(
+        raw(
+            passport(
+                owner={"label": "Lab", "vouched_by": "ACME safety board"},
+                software={"name": "quackd", "certified": ["ISO 13482"]},
+            )
+        )
+    )
+    assert isinstance(reading, document.Reading)
+    view = reading.view()
+    assert view["owner"] == {"label": "Lab"} and view["software"] == {"name": "quackd"}

@@ -7,17 +7,22 @@ reader to assume when nobody said."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from quackd.adapters.manifest import Figure, RobotManifest
-from quackd.passport.document import ESTOPS, VERSION
+from quackd.passport import strict
+from quackd.passport.document import ESTOPS, VERSION, validate
 
 #: A `cannot` line is at most this long in a passport (spec 2.2).
 CANNOT_CHARS = 120
 #: And a passport carries at most this many.
 CANNOT_LINES = 8
+#: A passport lists at most this many skills, each a name a reader accepts (spec 2.4).
+SKILLS = 64
+_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 #: Datasheet figures carried into a passport's `body`, under the same names.
 _FIGURES = ("mass_kg", "height_m", "payload_kg", "reach_m", "endurance_min")
 
@@ -48,7 +53,7 @@ def passport_from_manifest(
         if kept:
             doc["owner"] = kept
     doc["body"] = _body(manifest)
-    doc["skills"] = [verb.name for verb in manifest.verbs]
+    doc["skills"] = skill_names(manifest)
     doc["courtesy"] = courtesy(manifest)
     cannot = [
         cannot_line(line) for line in (manifest.datasheet.cannot if manifest.datasheet else [])
@@ -68,7 +73,22 @@ def passport_from_manifest(
     # digest every time it is built, and a reader caches by digest (spec 5.8)
     if issued is not None:
         doc["issued"] = issued.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # read back the way any reader would, so quackd never serves a passport a reader refuses:
+    # a manifest's names are freer than a passport's, and this is where that would show
+    validate(strict.loads(strict.dumps(doc), limit=len(strict.dumps(doc))))
     return doc
+
+
+def skill_names(manifest: RobotManifest) -> list[str]:
+    """The manifest's verbs as names a passport may carry. A manifest allows a hyphen, which a
+    passport writes as an underscore; a name a passport cannot carry at all, one too long or
+    starting with a digit, is left out rather than breaking the passport around it."""
+    names: list[str] = []
+    for verb in manifest.verbs:
+        name = verb.name.lower().replace("-", "_")
+        if _SKILL.match(name) and name not in names:
+            names.append(name)
+    return names[:SKILLS]
 
 
 def courtesy(manifest: RobotManifest) -> list[str]:
