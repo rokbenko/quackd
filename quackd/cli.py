@@ -7135,7 +7135,7 @@ def meet(
     """Meet a robot: find its passport, read it the way a reader would, and show it.
 
     The passport is fetched only from where you pointed, with no redirects and nothing past
-    8 KB, and every claim is labelled with what it proves. Nothing about the robot is kept unless
+    12 KB, and every claim is labelled with what it proves. Nothing about the robot is kept unless
     you pin it, and only a signed passport can be pinned."""
     from quackd.lan import LanNotInstalled
     from quackd.passport import PassportError, document

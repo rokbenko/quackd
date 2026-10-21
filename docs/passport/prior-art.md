@@ -199,7 +199,7 @@ robots introducing themselves to each other. [naming.md](naming.md) says why the
 |---|---|---|---|---|---|---|
 | for | robots meeting robots | agents | devices | a vehicle and its master control | a robot and its operator's software | a drone and anybody nearby |
 | transport | any: a URL, mDNS, MQTT, ROS 2 | HTTP | any, by binding | MQTT | WebSocket | Bluetooth, Wi-Fi |
-| smallest useful document | 99 bytes | larger, eight required members | larger, JSON-LD | larger | larger | 25 bytes a message |
+| smallest useful document | under 100 bytes | larger, eight required members | larger, JSON-LD | larger | larger | 25 bytes a message |
 | needs a server | no | yes | depends | a broker | a socket | no |
 | signed | optional, Ed25519 | optional | no | no | no | optional |
 | owner or operator | optional | provider | no | no | emergency contact | operator id |

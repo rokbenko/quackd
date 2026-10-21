@@ -39,7 +39,7 @@ can see the robot anyway. Version 0.1 has no Bluetooth binding precisely because
 a fixed id would let anybody nearby follow it ([privacy.md](privacy.md#tracking)).
 
 **Why JSON and not something smaller?**
-Because every language reads it, people can read it, and the smallest passport is 99 bytes anyway.
+Because every language reads it, people can read it, and a passport can be under 100 bytes anyway.
 A binary profile (CBOR, with COSE signatures) is planned for microcontrollers that need it.
 
 **Why not just use A2A's Agent Card?**
