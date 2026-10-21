@@ -42,6 +42,7 @@ from quackd_moss import upstream_api as up
 from quackd_moss.verbs import (
     BATTERY_FLOOR_V,
     FIRMWARE_LIMIT_S,
+    FULL_STOP,
     MIN_STALE_S,
     MISSION_STOPPED,
     SKILL_ARM_CYCLE,
@@ -91,6 +92,10 @@ PICK_STARTUP_S = 2.0
 build its client and read the joints before it sends its one trajectory. Nobody has measured
 it on a rover. Inside it a cancel finds nothing executing, and only ending the script keeps
 the trajectory from going out after the cancel (`up.MISSION_STOP_LEAVES_PICK`)."""
+ARM_GUARD_S = 12.0
+"""How long quackd's bridge watches the arm after a stop cancelled it (its ARM_GUARD_S, the
+maker's script's startup bound and one RPC's timeout), a trajectory landing inside it
+cancelled again."""
 
 MOCK_CAM_HEIGHT_M = 0.12
 MOCK_BALL_R = 0.04
@@ -340,6 +345,10 @@ class MossMock:
         self.job: _Job | None = None
         self._jobs = 0
         self.arm_job_id: str | None = None
+        self._guard_until: float | None = None
+        """Until when the bridge watches an arm a stop cancelled, None while it watches none."""
+        self._guard_moved = False
+        self._guard_last: dict[str, Any] | None = None
         # the mission
         self.mission = _Mission(litter=list(litter or []))
         self.mission_stopped = False
@@ -658,6 +667,7 @@ class MossMock:
         self._mission_step()
         self._base(dt)
         self._arm_step()
+        self._guard_step()
         self._heartbeat_step()
         self._session_step()
         self._idle_step()
@@ -689,8 +699,9 @@ class MossMock:
         running = job is not None and job.state in ("starting", "running")
         if not running and not self.arm_up:
             return None
-        # sent whenever the arm's coordinator is there, as the bridge sends it
+        # sent whenever the arm's coordinator is there, as the bridge sends it, and watched
         self.stop_log.append("arm.cancel")
+        self._watch()
         if self.arm_moving and not running:
             # a trajectory playing on with no script behind it: the cancel reaches it, unless
             # the coordinator plays on through it
@@ -706,11 +717,55 @@ class MossMock:
             self.arm_moving, self.arm_folded = True, False
             self._job_ended(job, ok=False)
             return False
-        job.state, job.held, job.exit = "cancelled", True, None
+        # read still, and held only once the bridge's watch has passed with it still
+        job.state, job.held, job.exit = "cancelled", None, None
         job.reason = "cancelled: the coordinator holds the last commanded position"
         self.arm_folded = False
         self._job_ended(job, ok=False)
         return True
+
+    def _watch(self) -> None:
+        """The bridge's watch on an arm a stop has just cancelled, from now for ARM_GUARD_S."""
+        if self._guard_until is None:
+            self._guard_moved = False
+        self._guard_until, self._guard_last = self._t + ARM_GUARD_S, None
+
+    def _guard_step(self) -> None:
+        """The bridge's watch: a trajectory playing inside the window is cancelled again, and
+        once the window has passed the cycle a stop cancelled holds, or not, by the window's
+        word, which replaces what the stop read."""
+        if self._guard_until is None:
+            return
+        job = self.job
+        if self.arm_moving or (job is not None and job.state == "running"):
+            if not self._guard_moved:
+                self.stop_log.append("arm.guard")
+            self._guard_moved = True
+            if not self.arm_ignores_cancel:
+                self.arm_moving = False
+                if job is not None and job.state == "running":
+                    job.state, job.exit = "cancelled", None
+                    job.reason = "cancelled by the bridge's watch after a stop"
+                    self._job_ended(job, ok=False)
+        if self._t + TICK_S / 2 < self._guard_until:
+            return  # the clock is a sum of ticks: half a tick from its end, the window is over
+        self._guard_until = None
+        held = not self.arm_moving
+        if job is not None and job.state == "cancelled":
+            job.held = held
+        self._guard_last = {
+            "watching": False,
+            "left_s": None,
+            "held": held,
+            "moved": self._guard_moved,
+        }
+
+    def _guard_doc(self) -> dict[str, Any] | None:
+        """The bridge's word on its watch after a stop, as /arm gives it."""
+        if self._guard_until is not None:
+            left = round(max(0.0, self._guard_until - self._t), 1)
+            return {"watching": True, "left_s": left, "held": None, "moved": self._guard_moved}
+        return None if self._guard_last is None else dict(self._guard_last)
 
     def _end_mission_script(self) -> None:
         """The bridge ends the mission's own pick script, which the mission's stop leaves
@@ -728,11 +783,12 @@ class MossMock:
             job.reason = "the script was ended before it sent its trajectory"
             self._job_ended(job, ok=False)
 
-    def _bridge_stop(self) -> list[str]:
+    def _bridge_stop(self, *, brake: bool = False) -> list[str]:
         """The bridge's `/stop`: on moss-litter the mission's own stop first, then at once the
         zero, then the end of the mission's own pick script and the arm's cancel. Elsewhere the
         zero first, which also cancels any goal the planner has, and then the arm's cancel, so
-        the tracks stop whatever the rest takes."""
+        the tracks stop whatever the rest takes. A verb's own brake skips that cancel when no
+        cycle of quackd's runs and the arm reads still, as the bridge's does."""
         litter = self.stack == up.LITTER_STACK
         if litter and self.mission.running:
             self.stop_log.append("mission.stop")
@@ -744,7 +800,9 @@ class MossMock:
             held = self._arm_cancel()
         else:
             self._zero()
-            held = self._arm_cancel()
+            job = self.job
+            cycling = job is not None and job.state in ("starting", "running")
+            held = None if brake and not cycling and not self.arm_moving else self._arm_cancel()
         if held is False:
             return [
                 "the bridge's stop: the arm did not hold after its cancel, read moving or still "
@@ -869,7 +927,7 @@ class MossMock:
             notes = []
             moved_arm = self.arm_job_id is not None or self.litter_started
             if moved_arm and self.arm_up and self.arm_torque and not self.arm_folded:
-                said = arm_note(None if self.job is None else self.job.held)
+                said = arm_note(None if self.job is None else self.job.held, self._guard_doc())
                 notes.append(said[0].upper() + said[1:] + ".")
             if self.stack == up.LITTER_STACK and self.stop_sent and self.mission_stopped:
                 notes.append(
@@ -951,6 +1009,7 @@ class MossMock:
                 "answering": self.arm_up and self.arm_torque,
                 "folded": self.arm_folded,
                 "job": job,
+                "guard": self._guard_doc(),
                 "torque": self.arm_torque,
             }
             if self.bridge_up
@@ -1114,6 +1173,13 @@ class MossMock:
                 )
             if self.stack == up.LITTER_STACK:
                 return Ack(accepted=False, reason=f"on {up.LITTER_STACK} the mission owns the arm")
+            if (watch := self._guard_doc()) is not None and watch["watching"]:
+                return Ack(
+                    accepted=False,
+                    reason=f"the arm is watched {watch['left_s']:g} s more after a stop, for a "
+                    "trajectory sent before it that may still land: start a cycle once that has "
+                    "passed",
+                )
             if self.job is not None and self.job.state in ("starting", "running"):
                 return Ack(accepted=False, reason="another arm job is running")
             if self._twist is not None and self._t - self._twist_at <= TWIST_DEADMAN_S:
@@ -1143,7 +1209,8 @@ class MossMock:
             if self.stop_fails == "bridge":
                 errors.append("the bridge's stop: the mock was told to fail it")
             else:
-                errors += self._bridge_stop()
+                # the stop verb's stop is sent whole, and every other is a verb's own brake
+                errors += self._bridge_stop(brake=not FULL_STOP.get() and self.arm_job_id is None)
         if self.stop_fails == "cockpit":
             errors.append("the cockpit's soft stop: the mock was told to fail it")
         else:

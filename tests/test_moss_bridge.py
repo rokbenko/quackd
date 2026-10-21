@@ -676,10 +676,47 @@ def test_a_cancel_stops_the_script_then_cancels_then_reads_the_arm_holding() -> 
     doc = bridge.stop()
     assert doc["ok"], doc
     arm = doc["arm"]
-    assert arm["script"] is True and arm["cancel"] == "CANCELLED" and arm["held"] is True
+    assert arm["script"] is True and arm["cancel"] == "CANCELLED" and arm["read_still"] is True
     _wait(lambda: bridge.arm_doc()["job"]["state"] == "cancelled")
-    assert bridge.arm_doc()["job"]["held"] is True
     assert bus.events.index("arm cancel") < len(bus.events) - 1, "the zero twist came after"
+    bridge.close()
+
+
+def _watch_to_its_end(bridge: Any, clock: Clock) -> tuple[dict[str, Any], list[bool]]:
+    """The bridge's watch after a stop, one look at a time on the test's clock, to its word,
+    with whether the fake arm was executing after each look."""
+    executing: list[bool] = []
+    for _ in range(int(bridge.arm_guard_s / B.ARM_GUARD_POLL_S) + 10):
+        said = bridge.guard_tick()
+        executing.append(bridge.bus.executing)
+        if said is not None:
+            return said, executing
+        clock.t += B.ARM_GUARD_POLL_S
+    raise AssertionError("the watch never ended")
+
+
+def test_no_hold_is_claimed_and_no_cycle_starts_before_the_window_after_a_stop_has_passed() -> None:
+    """A stop's two still reads, and a cancel that finds nothing, say the arm read still and
+    not that it holds, since a trajectory sent before the stop can still land. Until
+    ARM_GUARD_S has passed the cycle's hold is unread and a new cycle is refused, and once it
+    has passed with the joints still, the cycle holds."""
+    bridge = B.fake_bridge(cycle_s=30.0, fps=0)
+    bus = bridge.bus
+    assert bridge.arm_cycle({})[0] == 200
+    _wait(lambda: bus.executing)
+    clock = Clock()
+    _all_on(clock, bridge)
+    doc = bridge.stop()
+    assert doc["arm"]["held"] is None and doc["arm"]["read_still"] is True, doc["arm"]
+    _wait(lambda: bridge.arm_doc()["job"]["state"] == "cancelled")
+    assert bridge.arm_doc()["job"]["held"] is None, "no hold before the window has passed"
+    assert bridge.arm_doc()["guard"]["watching"] is True
+    code, said = bridge.arm_cycle({})
+    assert code == 409 and "watched" in said["reason"], said
+    word, _ = _watch_to_its_end(bridge, clock)
+    assert word["held"] is True and not word["moved"], word
+    assert bridge.arm_doc()["job"]["held"] is True
+    assert bridge.arm_doc()["guard"] == word
     bridge.close()
 
 
@@ -712,7 +749,7 @@ def test_a_cycle_cancelled_while_starting_is_cancelled_again_for_a_trajectory_in
     doc = bridge.stop()
     assert doc["arm"]["cancel"] == "ALREADY_STOPPED", "the first cancel found nothing"
     assert doc["arm"]["late"]["cancel"] == "CANCELLED", doc["arm"]
-    assert doc["arm"]["held"] is True, doc["arm"]
+    assert doc["arm"]["read_still"] is True, doc["arm"]
     clock.t += 5.0
     bus.arm_joints()
     assert not bus.executing, "the trajectory that landed after the first cancel is cancelled"
@@ -961,6 +998,9 @@ def test_the_slowest_litter_stop_answers_inside_the_bound_the_client_waits_for()
         def picks(self, stack: Any) -> list[int]:
             return [4321]
 
+        def descendants(self, pid: int) -> list[int]:
+            return []
+
         def alive(self, pid: int) -> bool:
             return True
 
@@ -1206,7 +1246,7 @@ def test_on_moss_litter_a_stop_ends_the_missions_pick_before_its_trajectory_goes
     assert "the mission's script: execute_trajectory" not in bus.events
     assert doc["ok"] and doc["mission"] == "stopped", doc
     assert doc["pick"] == {"terminated": [pid], "killed": [], "left": []}
-    assert doc["arm"]["held"] is True, "read twice, never assumed"
+    assert doc["arm"]["read_still"] is True, "read twice, never assumed"
     sent = [e for e in bus.events if e.startswith(("mission stop", "pick script", "arm cancel"))]
     assert sent[:3] == ["mission stop", "pick script SIGTERM", "arm cancel"]
     bridge.close()
@@ -1221,7 +1261,7 @@ def test_on_moss_litter_a_pick_already_playing_is_ended_and_its_trajectory_cance
     assert bus.executing, "the mission's trajectory is out"
     doc = bridge.stop()
     assert not bus.executing and doc["arm"]["cancel"] == "CANCELLED", doc
-    assert doc["arm"]["held"] is True and doc["pick"]["terminated"]
+    assert doc["arm"]["read_still"] is True and doc["pick"]["terminated"]
     bridge.close()
 
 
@@ -1249,7 +1289,7 @@ def test_on_moss_litter_a_pick_started_after_the_first_look_is_ended_too() -> No
     bus.arm_joints()
     assert not bus.executing, "the late pick never sent its trajectory"
     assert doc["pick"] is None and doc["late"]["pick"]["terminated"], doc
-    assert doc["arm"]["held"] is True and doc["mission"] == "stopped", doc
+    assert doc["arm"]["read_still"] is True and doc["mission"] == "stopped", doc
     bridge.close()
 
 
@@ -1276,7 +1316,36 @@ def test_on_moss_litter_a_trajectory_that_lands_after_the_first_cancel_is_cancel
     bus.arm_joints()
     assert not bus.executing, "the trajectory that landed late was cancelled"
     assert "a trajectory that landed after the first cancel was cancelled" in doc["did"], doc
-    assert doc["arm"]["held"] is True, doc["arm"]
+    assert doc["arm"]["read_still"] is True, doc["arm"]
+    bridge.close()
+
+
+def test_a_trajectory_landing_after_the_late_cancel_is_cancelled_inside_the_window() -> None:
+    """A trajectory sent before the stop can land later than the late cancel, which then
+    found nothing and read the arm still. The bridge watches the arm for ARM_GUARD_S from the
+    stop's last cancel: joints that start to move are cancelled again at the look that sees
+    them, and no hold is claimed before the window has passed."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    bus = bridge.bus
+    cancel = bus.arm_cancel
+
+    def first_then_one_landing_late() -> str:
+        answer = str(cancel())
+        if bus.cancels == 1:
+            bus.in_flight(B.ARM_GUARD_S / 2)  # long after the late cancel, inside the window
+        return answer
+
+    bus.arm_cancel = first_then_one_landing_late
+    doc = bridge.stop()
+    assert doc["arm"]["held"] is None and doc["arm"]["read_still"] is True, doc["arm"]
+    assert bridge.arm_doc()["guard"]["watching"] is True
+    word, executing = _watch_to_its_end(bridge, clock)
+    assert "a trajectory in flight lands" in bus.events, "it landed inside the window"
+    assert not any(executing), "and was cancelled at the look that saw it"
+    assert word["moved"] and word["cancels"] >= 1 and word["held"] is True, word
     bridge.close()
 
 
@@ -1299,6 +1368,9 @@ def test_a_pick_that_outlives_both_signals_is_said_and_the_arm_is_still_cancelle
 
         def picks(self, stack: Any) -> list[int]:
             return [4321]
+
+        def descendants(self, pid: int) -> list[int]:
+            return []
 
         def alive(self, pid: int) -> bool:
             return True
@@ -1378,7 +1450,7 @@ def test_the_arm_cancel_route_cancels_its_own_cycle_and_nothing_else() -> None:
     assert "arm cancel" not in bus.events
     code, doc = bridge.arm_cancel({"id": started["id"]})
     assert code == 200 and doc["ok"] and doc["cancelled"] is True, doc
-    assert doc["arm"]["held"] is True and not bus.executing
+    assert doc["arm"]["read_still"] is True and not bus.executing
     _wait(lambda: bridge.jobs.doc()["state"] == "cancelled")
     code, doc = bridge.arm_cancel({"id": started["id"]})
     assert doc["cancelled"] is False, "a cycle that has ended is not cancelled again"
@@ -1900,6 +1972,81 @@ def test_every_route_wants_the_token(served: Any) -> None:
         status, doc = _ask(port, method, path, {} if method == "POST" else None, token=None)
         assert status == 401 and doc["reason"] == "bad or missing token"
         assert _ask(port, method, path, {} if method == "POST" else None, token="nope")[0] == 401
+
+
+PY = "/home/rover/moss/.venv/bin/python"
+FORKSERVER = (PY, "-c", "from multiprocessing.forkserver import main; main(9, 10, [])")
+
+
+class _Tree(B.ProcTable):
+    """A /proc tree written in tmp_path, in dimOS's own shape at the pin: the registered pid,
+    its forkserver, a worker forked from it, and the mission's pick under the worker. A signal
+    is recorded and ends the process in the tree, and never reaches one of this machine's."""
+
+    def __init__(self, root: Path, pick: tuple[str, ...]) -> None:
+        super().__init__(str(root))
+        self.sent: list[tuple[int, int]] = []
+        self.add(100, 1, (PY, "/home/rover/moss/.venv/bin/dimos", "run", "moss-dimos.moss-litter"))
+        self.add(101, 100, FORKSERVER)
+        self.add(102, 101, FORKSERVER)
+        self.add(103, 102, pick)
+        self.add(200, 1, (PY, "/home/rover/moss/tools/moss_arm_play.py", "--sim"))  # the owner's
+
+    def add(self, pid: int, ppid: int, argv: tuple[str, ...]) -> None:
+        d = Path(self.root, str(pid))
+        d.mkdir()
+        (d / "stat").write_text(f"{pid} (python3) S {ppid} {pid} {pid} 0 -1", encoding="utf-8")
+        (d / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+
+    def signal(self, pid: int, sig: int) -> None:
+        self.sent.append((pid, sig))
+        stat = Path(self.root, str(pid), "stat")
+        stat.write_text(stat.read_text(encoding="utf-8").replace(") S ", ") Z "), encoding="utf-8")
+
+
+def _litter_with(tree: _Tree, pick_cmd: str | None) -> Any:
+    env = {"DIMOS_TRANSPORT": "lcm"} | ({B.PICK_CMD_ENV: pick_cmd} if pick_cmd else {})
+    stack = B.StackInfo(running=True, blueprint="moss-litter", pid=100, run_id="r", env=env)
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    return B.Bridge(stack=lambda: stack, up=B.FAKE_UPSTREAM, bus=bus, procs=tree), stack
+
+
+def test_the_missions_pick_is_ended_with_the_processes_under_it(tmp_path: Path) -> None:
+    """A MOSS_PICK_CMD that is a shell line runs the pick under the shell, whose command line
+    alone names it: the shell's child is ended with it, and nothing outside the pick, the
+    stack's workers and the owner's own run of the script among them."""
+    tree = _Tree(tmp_path, ("/bin/sh", "-c", "exec-pick", "--sim"))
+    tree.add(104, 103, (PY, "-m", "moss_pick"))
+    bridge, stack = _litter_with(tree, "/bin/sh -c exec-pick")
+    did: list[str] = []
+    errors: list[str] = []
+    ended = bridge._end_mission_pick(stack, did, errors)
+    assert sorted({pid for pid, _ in tree.sent}) == [103, 104], tree.sent
+    assert ended is not None and sorted(ended["terminated"]) == [103, 104], ended
+    assert any("under the mission's pick: pid 104" in d for d in did), did
+    assert errors == [], errors
+    bridge.close()
+
+
+def test_a_pick_command_of_one_argument_is_refused_at_hello_and_at_the_stop(
+    tmp_path: Path,
+) -> None:
+    """MOSS_PICK_CMD as the interpreter alone matches the stack's own forkserver and worker,
+    which run it too, and ending those ends the stack. So it is refused, picks are looked for
+    by the maker's script alone, and the hello and the stop both say why."""
+    tree = _Tree(tmp_path, (PY, "-u", "/opt/picks/pick.py"))
+    bridge, stack = _litter_with(tree, PY)
+    assert tree.picks(stack) == [], "the stack's own workers are no picks"
+    said = bridge.hello()["mission"]["pick_cmd_refused"]
+    assert said and "one argument" in said and B.PICK_SCRIPT in said, said
+    did: list[str] = []
+    errors: list[str] = []
+    assert bridge._end_mission_pick(stack, did, errors) is None
+    assert tree.sent == [] and errors == [said], (tree.sent, errors)
+    doc = bridge.stop()
+    assert not doc["ok"] and said in doc["errors"] and tree.sent == [], doc
+    assert doc["errors"].count(said) == 1, "both looks met it, and it is said once"
+    bridge.close()
 
 
 def test_a_token_refusal_reaches_a_client_whose_body_comes_after_its_headers(

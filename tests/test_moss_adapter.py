@@ -44,6 +44,7 @@ from quackd_moss import (
 from quackd_moss import upstream_api as up
 from quackd_moss.cockpit import NEVER_POSTED, CockpitClient, MossCockpit
 from quackd_moss.mock import (
+    ARM_GUARD_S,
     MAX_KEEPALIVE_S,
     PICK_STARTUP_S,
     PULSE_S,
@@ -665,7 +666,7 @@ async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_
     mock, _, ex = await _connected(arm_dies_at_s=3.0)
     result = await ex.run_verb("pick_and_drop", {})
     assert not result.ok and "ended failed" in result.summary, result.summary
-    assert "The arm holds where it stopped." in result.summary
+    assert "the bridge watches it" in result.summary, result.summary
     assert not mock.arm_moving and mock.job is not None and mock.job.held is True
     assert mock.stop_log[-3:] == [
         "twist.zero",
@@ -674,18 +675,23 @@ async def test_a_cycle_whose_script_dies_ends_with_the_body_stopped_and_the_arm_
     ], "the body stopped after it"
 
 
+WATCHING = {"watching": True, "left_s": 7.5}
+
+
 @pytest.mark.parametrize(
-    ("held", "said", "unsaid"),
+    ("held", "guard", "said", "unsaid"),
     [
-        (True, "holding where the run left it", "nobody read"),
-        (False, "did not hold after its cancel", "holding"),
-        (None, "nobody read whether it holds", "holding"),
+        (True, None, "holding where the run left it", "nobody read"),
+        (False, None, "did not hold after its cancel", "holding"),
+        (None, None, "nobody read whether it holds", "holding"),
+        (None, WATCHING, "the bridge watches it 7.5 s more", "holding"),
+        (False, WATCHING, "did not hold after its cancel", "watches"),
     ],
 )
 def test_the_close_says_holding_only_after_the_hold_was_read(
-    held: bool | None, said: str, unsaid: str
+    held: bool | None, guard: dict[str, Any] | None, said: str, unsaid: str
 ) -> None:
-    note = arm_note(held)
+    note = arm_note(held, guard)
     assert said in note and unsaid not in note
 
 
@@ -718,6 +724,23 @@ async def test_an_arm_that_plays_on_through_its_cancel_is_never_said_to_hold() -
     assert "did not hold after its cancel" in (mock.close_note or ""), mock.close_note
 
 
+async def test_the_mocks_watch_cancels_a_trajectory_that_plays_inside_its_window() -> None:
+    """As the bridge's does: a trajectory that plays after a stop's cancel, one sent before
+    the stop that lands late, is cancelled again inside the window, and the cycle holds once
+    the window has passed."""
+    mock, adapter, _ = await _connected()
+    cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
+    assert (await adapter.send_intent(cycle)).accepted
+    await mock.sleep(1.0)
+    await adapter.stop()
+    assert mock.job is not None and (mock.job.state, mock.job.held) == ("cancelled", None)
+    mock.arm_moving = True  # a trajectory sent before the stop lands now
+    await mock.sleep(0.1)
+    assert not mock.arm_moving and "arm.guard" in mock.stop_log
+    await mock.sleep(ARM_GUARD_S)
+    assert mock.job.held is True
+
+
 async def test_stow_arm_plays_the_cycle_from_its_return() -> None:
     mock, _, ex = await _connected()
     assert (await ex.run_verb("stow_arm", {})).ok
@@ -725,7 +748,10 @@ async def test_stow_arm_plays_the_cycle_from_its_return() -> None:
     assert sent["from_phase"] == up.CYCLE_FROM_BACK_TO_CLEAR.name == "back_to_clear"
 
 
-async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds() -> None:
+async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds_once_the_watch_has_passed() -> None:
+    """The stop reads the arm still, and the bridge watches it for ARM_GUARD_S after, for a
+    trajectory sent before the stop: the verb says so rather than that it holds, a cycle is
+    refused meanwhile, and once the window has passed the cycle holds."""
     from quackd.verbs.registry import VerbContext
     from quackd_moss.verbs import pick_and_drop
 
@@ -741,9 +767,15 @@ async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds() -> None:
     result = await pick_and_drop(
         VerbContext(transport=adapter, interrupted=interrupted), PickAndDropParams()
     )
-    assert not result.ok and "holds where it stopped" in result.summary
-    assert mock.job is not None and (mock.job.state, mock.job.held) == ("cancelled", True)
+    assert not result.ok and "the bridge watches it" in result.summary, result.summary
+    assert "holds where it stopped" not in result.summary
+    assert mock.job is not None and (mock.job.state, mock.job.held) == ("cancelled", None)
     assert "arm.cancel" in mock.stop_log
+    cycle = Intent(kind="do", params={"skill": "arm_cycle", "pick_pose": "pick"})
+    refused = await adapter.send_intent(cycle)
+    assert not refused.accepted and "watched" in (refused.reason or ""), refused
+    await adapter.sleep(ARM_GUARD_S)
+    assert mock.job.held is True
 
 
 async def test_a_stop_while_drive_to_waits_on_the_explorer_sends_no_goal() -> None:
@@ -812,9 +844,20 @@ async def test_the_arm_and_a_twist_never_run_together() -> None:
 
 
 async def test_stop_is_the_bridges_zero_then_its_cancel_and_the_soft_stop_every_time() -> None:
+    """The stop verb's stop is sent whole, and cancels the arm whatever it reads. A verb's own
+    brake leaves a still arm alone when no cycle runs, as the bridge's does."""
+    from quackd_moss.verbs import FULL_STOP
+
+    mock, adapter, _ = await _connected()
+    token = FULL_STOP.set(True)
+    try:
+        await adapter.stop()
+    finally:
+        FULL_STOP.reset(token)
+    assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
     mock, adapter, _ = await _connected()
     await adapter.stop()
-    assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
+    assert mock.stop_log[-2:] == ["twist.zero", "cockpit.stop"], "a brake, and a still arm"
 
 
 @pytest.mark.parametrize("fails", ["bridge", "cockpit"])
@@ -1015,7 +1058,9 @@ async def test_close_halts_its_own_twist_goal_and_cycle_and_nothing_else() -> No
     assert (await adapter.send_intent(cycle)).accepted
     await adapter.close()
     assert mock.stop_log == ["arm.cancel"] and mock.job is not None
-    assert (mock.job.state, mock.job.held) == ("cancelled", True)
+    assert (mock.job.state, mock.job.held) == ("cancelled", None), "watched first"
+    await mock.sleep(ARM_GUARD_S)
+    assert mock.job.held is True
     mock, adapter, _ = await _connected()
     mock.goal, mock.exploring = (1.0, 0.0), True  # the owner's, from the cockpit's own page
     await adapter.close()

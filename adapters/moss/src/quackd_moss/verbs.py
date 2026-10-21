@@ -615,21 +615,39 @@ async def collect_litter(ctx: VerbContext, p: MinutesParams) -> VerbResult:
     )
 
 
-def _hold_sentence(held: Any) -> str:
-    """What a reading of the arm after its cancel says, and nothing a reading did not."""
-    if held is True:
-        return " The arm holds where it stopped."
+def _watching(guard: Any) -> str | None:
+    """How much longer the bridge watches the arm after a stop, or None when it does not."""
+    if not isinstance(guard, dict) or guard.get("watching") is not True:
+        return None
+    left = guard.get("left_s")
+    if isinstance(left, int | float) and not isinstance(left, bool):
+        return f"{left:g} s more"
+    return "a while more"
+
+
+def _hold_sentence(held: Any, guard: Any = None) -> str:
+    """What a reading of the arm after its cancel says, and nothing a reading did not. While
+    the bridge still watches the arm after a stop, for a trajectory sent before it that may
+    still land, no hold is claimed."""
     if held is False:
         return (
             " The arm did not hold after its cancel, read moving or still executing: support it, "
             "or cut its power."
         )
+    if (more := _watching(guard)) is not None:
+        return (
+            f" The arm read still after its cancel, and the bridge watches it {more} for a "
+            "trajectory sent before the stop, cancelling again if it moves."
+        )
+    if held is True:
+        return " The arm holds where it stopped."
     return " Whether the arm holds was not read: support it."
 
 
-def arm_note(held: Any) -> str:
+def arm_note(held: Any, guard: Any = None) -> str:
     """The close's word on an arm this session moved and left out of its drive pose:
-    holding only after the hold was read, and otherwise what reading there was."""
+    holding only after the hold was read and the bridge's watch after a stop has passed, and
+    otherwise what reading there was."""
     later = (
         f"The cockpit's idle stop, or {up.FLY_STOP.name}, will later end the arm's stack, "
         "and that turns its torque off"
@@ -644,6 +662,14 @@ def arm_note(held: Any) -> str:
         return (
             "the arm is out of its drive pose and did not hold after its cancel, read moving or "
             "still executing: support it, or cut its power"
+        )
+    if (more := _watching(guard)) is not None:
+        return (
+            "the arm is out of its drive pose. It read still after its cancel, and the bridge "
+            f"watches it {more} for a trajectory sent before the stop, cancelling again if it "
+            f"moves. {later}: stow it once that has passed (stow_arm), or support it, and stow "
+            "it before you leave one of quackd's prompts open, since nothing is sent while one "
+            "waits"
         )
     return (
         "the arm is out of its drive pose, and nobody read whether it holds there. "
@@ -682,8 +708,9 @@ async def _arm_cycle(
         ended = f"timed out after {ARM_GIVE_UP_S:g} s"
     if ended is not None:
         await ctx.transport.stop()
-        held = (_arm(await ctx.transport.get_state()).get("job") or {}).get("held")
-        return VerbResult.fail(f"{what} was stopped: {ended}.{_hold_sentence(held)}", job=job)
+        arm = _arm(await ctx.transport.get_state())
+        said = _hold_sentence((arm.get("job") or {}).get("held"), arm.get("guard"))
+        return VerbResult.fail(f"{what} was stopped: {ended}.{said}", job=job)
     ending = str(job.get("state"))
     reason = str(job.get("reason") or "")
     if ending == "done":
@@ -697,8 +724,9 @@ async def _arm_cycle(
     # whatever else ended the cycle, the body is stopped before the verb says so: a script that
     # died may have left its trajectory playing, and the stop cancels it and reads the arm
     await ctx.transport.stop()
-    held = (_arm(await ctx.transport.get_state()).get("job") or {}).get("held")
-    said = f"{what} ended {ending}: {reason or 'no reason given'}.{_hold_sentence(held)}"
+    arm = _arm(await ctx.transport.get_state())
+    hold = _hold_sentence((arm.get("job") or {}).get("held"), arm.get("guard"))
+    said = f"{what} ended {ending}: {reason or 'no reason given'}.{hold}"
     return VerbResult.fail(said, job=job)
 
 

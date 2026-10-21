@@ -212,7 +212,7 @@ for one tool call, and `collect_litter` does not run there at all.
 | a twist, through the bridge | a zero on the pad channel before anything else, and the soft stop beside it | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, a dead process, a dead link and a wedged loop alike, so within 3 s, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
-| the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
+| the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, then 12 s of watching them for a trajectory sent before the stop, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
 | the litter mission | the mission's own stop, then at once the zero, then the end of the mission's own pick script and the arm's cancel, then the mission's stop confirmed, and the soft stop beside it all | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and the cockpit's `/cmd/stop`, sent at
@@ -258,16 +258,25 @@ for one tool call, and `collect_litter` does not run there at all.
   running (`MISSION_STOP_LEAVES_PICK`), and a pick whose script is still importing dimOS and
   reading the joints has sent nothing for a cancel to find: its trajectory would go out after
   the cancel and play the whole cycle. So the bridge finds the maker's script among the stack's
-  own processes, or the stack's `MOSS_PICK_CMD`, sends it SIGTERM, then SIGKILL if it outlives
-  its grace, and only then cancels the trajectory and reads the arm twice. A hold is always a
-  reading: an arm whose joints did not answer after the cancel is reported unread, never held.
+  own processes, or the stack's `MOSS_PICK_CMD`, sends it and every process under it SIGTERM,
+  then SIGKILL for any that outlives its grace, and only then cancels the trajectory and reads
+  the arm twice. A `MOSS_PICK_CMD` of one argument is refused, since a program alone is what
+  the stack's own workers may run too: the bridge's hello and every stop on `moss-litter` say
+  so, and only the maker's script is looked for. A hold is always a reading: an arm whose
+  joints did not answer after the cancel is reported unread, never held.
   Two still reads are not a hold on their own either, since a trajectory in one of its pauses
   reads still: a last cancel must find nothing executing. A cycle of quackd's cancelled while
   it was still starting is cancelled once more half a second later, for an `execute_trajectory`
   its script sent just before it was ended. On `moss-litter`, once the mission's stop has had
   its time, the stack's picks are looked for again and ended, for one the mission's last tick
   started after the first look, and the arm is cancelled and read once more, no sooner than
-  half a second after the first cancel. That reading is the stop's word on the arm.
+  half a second after the first cancel. After any stop that cancelled the arm, the bridge then
+  watches it for `ARM_GUARD_S`, 12 s from the stop's last cancel: a pick its looks did not find
+  sends its trajectory within the maker's script's startup, which quackd bounds at 10 s
+  (`ARM_PLAY_STARTUP`), and a trajectory once sent lands within one RPC's timeout, 2 s. Joints
+  that move inside the window are cancelled again, and the arm is called held only once it has
+  passed. Until then the stop says the arm read still, the verbs and the close say the bridge
+  still watches it, and a cycle is refused.
 - **The mission's stop is confirmed by silence.** dimOS sends a module's stop without waiting
   for an answer, because the module closes its RPC service as it stops. So after the cancel and
   the zero the bridge asks `mission_status` until it falls silent, at most 4 s after the stop
@@ -578,6 +587,8 @@ asked.
 | `MASS` | 4.2 kg for the rover complete, the maker's figure in issue 2, for the V0.3 prototype. An issue is not versioned, so nothing at the pin carries it | the datasheet gives it as official, the maker's word, with that source, and says the V0.6 hull has not been weighed |
 | `ARM_MASS` | 768 g for the arm and gripper, weighed off the rover, in a comment on issue 2 | the datasheet's mass note gives it |
 | `ARM_UNSEEN_WITHOUT_MOSS_ARM` | with no `moss-arm` run nothing holds the arm or reports it | the base is driven as if the arm were folded, no arm verb is offered, and the manifest's assumptions say so |
+| `ARM_PLAY_STARTUP` | how long the maker's script takes to send its one trajectory after it starts, importing dimOS, reaching the coordinator and reading the joints. Nothing at the pin bounds it, and no run has timed it | the bridge takes 10 s as its bound, and after a stop that cancelled the arm it watches the joints that long and one RPC's timeout more, cancelling again if they move and calling the arm held only once that has passed. Step 10 of the checklist reads it off a cycle |
+| `PIDS_NOT_REUSED` | a pid the bridge read for the mission's pick, and for the processes under it, still names that process when the bridge signals it, two graces later at most. Linux reuses a pid only once it has gone round the others, which nothing rules out within seconds | each command line is read once, before the first signal, and nothing is signalled that was not found under the stack's own pid |
 
 The bridge's own protocol is quackd's at both ends, so it is outside this table, and its names
 are pinned by tests that read both files instead.

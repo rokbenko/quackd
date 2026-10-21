@@ -40,6 +40,8 @@ from tests.fake_moss_cockpit import FakeCockpit
 
 BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
+GUARD_S = 1.0
+"""The bridge's watch on the arm after a stop, short here so a test can wait it out."""
 
 
 def _load() -> ModuleType:
@@ -74,7 +76,9 @@ class Rover:
 def rover(request: pytest.FixtureRequest) -> Iterator[Rover]:
     blueprint = getattr(request, "param", "moss-explore")
     with FakeCockpit(blueprint=blueprint) as cockpit:
-        bridge = B.fake_bridge(blueprint=blueprint, token=TOKEN, cycle_s=0.3, fps=10.0)
+        bridge = B.fake_bridge(
+            blueprint=blueprint, token=TOKEN, cycle_s=0.3, fps=10.0, arm_guard_s=GUARD_S
+        )
         cockpit.bus = bridge.bus  # one LCM bus on the rover, which both read
         server = B.serve(bridge, "127.0.0.1", 0)
         bridge.start()
@@ -103,6 +107,7 @@ def _block_the_loop(seconds: float) -> None:
 def _rover_with(blueprint: str = "moss-explore", **bridge_kw: Any) -> Iterator[Rover]:
     """The `rover` fixture's rig, with the bridge built as a test asks."""
     with FakeCockpit(blueprint=blueprint) as cockpit:
+        bridge_kw.setdefault("arm_guard_s", GUARD_S)
         bridge = B.fake_bridge(blueprint=blueprint, token=TOKEN, fps=10.0, **bridge_kw)
         cockpit.bus = bridge.bus
         server = B.serve(bridge, "127.0.0.1", 0)
@@ -149,6 +154,7 @@ def test_both_sides_spell_the_protocol_the_same() -> None:
     assert mock_module.SESSION_MISSES == B.SESSION_MISSES
     assert mock_module.KEEPALIVE_S == client.HEARTBEAT_S
     assert mock_module.MAX_KEEPALIVE_S == B.MAX_KEEPALIVE_S
+    assert mock_module.ARM_GUARD_S == B.ARM_GUARD_S == B.ARM_PLAY_STARTUP_S + B.RPC_TIMEOUT_S
 
 
 @pytest.mark.parametrize("track", [mock_module.TRACK_M, 0.3])
@@ -941,7 +947,7 @@ async def test_close_cancels_a_cycle_of_its_own_that_no_stop_ended() -> None:
         await transport.close()
         assert "arm cancel" in rover.bridge.bus.events and not rover.bridge.bus.executing
         _wait(lambda: (rover.bridge.jobs.doc() or {}).get("state") == "cancelled")
-        assert rover.bridge.jobs.doc()["held"] is True
+        _wait(lambda: rover.bridge.jobs.doc()["held"] is True)  # once the watch has passed
         assert rover.cockpit.posted("stop") == [], "the cancel, and not a stop"
 
 

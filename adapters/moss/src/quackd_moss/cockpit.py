@@ -101,6 +101,9 @@ two can be lost and the idle stop still never fires on a rover quackd is connect
 
 PROTOCOL = "quackd-moss-bridge"
 PROTOCOL_VERSION = 1
+"""Still 1 through every change so far, since nothing of the protocol has been released and no
+bridge or client of another shape is out there to refuse. The first release fixes it, and a
+change after that raises it."""
 BRIDGE_PORT = 9876
 """9875 is the LeRobot policy server's, 9874 the Jetson daemon's, so the rover's bridge is next."""
 TOKEN_ENV = "QUACKD_MOSS_TOKEN"
@@ -1411,7 +1414,8 @@ class MossCockpit:
                 with contextlib.suppress(Exception):
                     arm = await self._call(self.bridge.arm)
                     if arm.get("answering") and arm.get("folded") is False:
-                        note.append(arm_note((arm.get("job") or {}).get("held")))
+                        held = (arm.get("job") or {}).get("held")
+                        note.append(arm_note(held, arm.get("guard")))
             if self.stack == up.LITTER_STACK and self.stop_sent and self.run_moved is None:
                 if self.mission_stop == "stopped":
                     note.append(

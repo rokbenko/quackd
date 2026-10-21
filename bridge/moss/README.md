@@ -74,7 +74,10 @@ cancel that waited for the confirmation would leave the arm moving meanwhile. Th
 leaves its own pick running, and a pick still starting sends its one trajectory after any
 cancel, so the bridge sends the maker's script SIGTERM, then SIGKILL if it outlives its grace,
 before it cancels. The script is found among the stack's own descendants in `/proc`, by
-`tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and no other process is ever signalled.
+`tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and is ended with every process under
+it, a shell's child among them, and no other process is ever signalled. A `MOSS_PICK_CMD` of
+one argument is refused, since a program alone is what the stack's own workers may run too:
+the hello and every stop on `moss-litter` say so, and only the maker's script is looked for.
 After every cancel the joints are read twice, and a hold is never claimed without that reading.
 Two still reads are not a hold on their own, since a trajectory in one of its pauses reads
 still: a last cancel must find nothing executing. A cycle cancelled while it was still starting
@@ -95,7 +98,11 @@ either way. With every RPC on the rover answering at its timeout a stop answers 
 timeout covers that wait. A stop with `brake` set, a verb's own stop at its end, skips the arm's
 cancel and its reads off `moss-litter` when no cycle of quackd's runs and one read finds the
 joints where the bridge last read them, within `ARM_READ_FRESH_S`. Any other stop cancels the
-arm whatever it reads.
+arm whatever it reads. After any stop that cancelled the arm the bridge watches the joints for
+`ARM_GUARD_S`, 12 s from the stop's last cancel, the maker's script's startup bound and one RPC's
+timeout, since a pick its looks did not find, or a trajectory sent before the stop, can still
+land: joints that move inside it are cancelled again, the arm is called held only once it has
+passed, and meanwhile `/arm` says it watches and `/arm/cycle` is refused.
 
 **The run.** quackd's stop names the base run it connected to, and so does every keepalive,
 and the bridge goes by whether that run is still alive among dimOS's runs, not by which is

@@ -1026,6 +1026,27 @@ ARM_UNSEEN_WITHOUT_MOSS_ARM = UpstreamRef(
     "as if it were folded, offers no arm verb, and says so in the manifest's assumptions.",
 )
 
+ARM_PLAY_STARTUP = UpstreamRef(
+    "ARM_PLAY_STARTUP",
+    "UNVERIFIED",
+    src(_ARM_PLAY, 86),
+    "how long the maker's script takes from its start to its one execute_trajectory: importing "
+    "dimOS, reaching the coordinator and reading the joints (lines 86 to 111). Nothing at the "
+    "pin bounds it and no run has timed it. The bridge takes 10 s as its bound, and after a "
+    "stop that cancelled the arm it watches the joints that long and one RPC's timeout more, "
+    "cancelling again if they move. The hardware checklist's step 10 reads it off a cycle.",
+)
+PIDS_NOT_REUSED = UpstreamRef(
+    "PIDS_NOT_REUSED",
+    "UNVERIFIED",
+    src(_MISSION, 512),
+    "that a pid the bridge read for the mission's pick, and for the processes under it, still "
+    "names that process when the bridge signals it, two graces later at most. Linux reuses a "
+    "pid only once it has gone round the others, which nothing rules out within seconds. The "
+    "bridge reads each command line once, before the first signal, and signals nothing it did "
+    "not find under the stack's own pid.",
+)
+
 
 # ── the names the rest of the package spells, each from a ref above ──────────────────────
 

@@ -68,6 +68,9 @@ from urllib.parse import parse_qs
 BRIDGE_VERSION = "0.1.0"
 PROTOCOL = "quackd-moss-bridge"
 PROTOCOL_VERSION = 1
+"""Still 1 through every change so far, since nothing of the protocol has been released and no
+bridge or client of another shape is out there to refuse. The first release fixes it, and a
+change after that raises it."""
 DEFAULT_PORT = 9876
 """The cockpit is 8904. 9875 is quackd's LeRobot policy server and 9874 its Jetson daemon."""
 TOKEN_ENV = "QUACKD_MOSS_TOKEN"
@@ -167,6 +170,21 @@ STARTING_RECANCEL_S = 0.5
 """quackd's own allowance for an execute_trajectory already in flight when a cycle still
 starting is cancelled: its script is ended first, but a request it sent just before can land
 after the cancel, so a second cancel follows this long after the first."""
+ARM_PLAY_STARTUP_S = 10.0
+"""quackd's own bound on how long the maker's script takes from its start to its one
+execute_trajectory: importing dimOS, reaching the arm's coordinator and reading the joints
+(moss_arm_play.py lines 86 to 111). Nothing at the pin bounds it and no run has timed it
+(ARM_PLAY_STARTUP in quackd's upstream_api, UNVERIFIED), so the hardware checklist reads it
+off a cycle."""
+ARM_GUARD_S = ARM_PLAY_STARTUP_S + RPC_TIMEOUT_S
+"""How long the arm is watched after a stop cancelled it, counted from that stop's last
+cancel. A pick the stop's looks did not find, one started as the stop went out, sends its
+trajectory at most ARM_PLAY_STARTUP_S after it started, and a trajectory once sent lands
+within RPC_TIMEOUT_S, quackd's bound on any one RPC to the coordinator: so a trajectory that
+lands after the stop at all lands inside this window. Joints that move inside it are
+cancelled again, and the arm is called held only once it has passed."""
+ARM_GUARD_POLL_S = 0.25
+"""Between two reads of the joints while the arm is watched."""
 _CANCEL_AND_READ_WORST_S = 2 * (RPC_TIMEOUT_S + 2 * RPC_TIMEOUT_S + ARM_HOLD_GAP_S + RPC_TIMEOUT_S)
 """cancel_and_read with every RPC answering at its timeout: a cancel, two reads with their gap
 and a confirming cancel, and all of that once more when the arm still moved."""
@@ -533,9 +551,38 @@ class Procs(Protocol):
 
     def picks(self, stack: StackInfo) -> list[int]: ...
 
+    def descendants(self, pid: int) -> list[int]: ...
+
     def alive(self, pid: int) -> bool: ...
 
     def signal(self, pid: int, sig: int) -> None: ...
+
+
+def pick_command(env: dict[str, str]) -> tuple[tuple[str, ...], str | None]:
+    """The stack's own MOSS_PICK_CMD as the argv a pick of it starts with, and the sentence
+    that refuses it when the bridge will not look for picks by it. One of a single argument
+    names a program alone, an interpreter or a shell, which the stack's own workers may run
+    too, and one that does not split as a command line names nothing: picks are then looked
+    for by the maker's script alone."""
+    override = (env.get(PICK_CMD_ENV) or "").strip()
+    if override.lower() in ("", "none"):
+        return (), None
+    try:
+        argv = tuple(shlex.split(override))
+    except ValueError as e:
+        why = f"does not split as a command line ({e})"
+    else:
+        if len(argv) > 1:
+            return argv, None
+        why = (
+            f"is the one argument {override!r}, a program alone, which the stack's own "
+            "processes may run as well"
+        )
+    return (), (
+        f"the stack's {PICK_CMD_ENV} {why}, so the bridge does not look for the mission's "
+        f"picks by it, only for {PICK_SCRIPT}, and a stop may leave a pick the mission runs "
+        "with it running: give it as the program and the script it runs"
+    )
 
 
 def is_pick(argv: tuple[str, ...], custom: tuple[str, ...] = ()) -> bool:
@@ -597,11 +644,7 @@ class ProcTable:
         """The maker's cycle among the stack's own descendants, never the stack itself."""
         if not stack.running or stack.pid is None:
             return []
-        override = (stack.env.get(PICK_CMD_ENV) or "").strip()
-        try:
-            custom = tuple(shlex.split(override)) if override.lower() not in ("", "none") else ()
-        except ValueError:
-            custom = ()
+        custom = pick_command(stack.env)[0]
         return [p for p in self.descendants(stack.pid) if is_pick(self.cmdline(p), custom)]
 
     def alive(self, pid: int) -> bool:
@@ -914,6 +957,17 @@ def arm_holds(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> bool
     return True
 
 
+def _moved(up: Upstream, first: dict[str, float], second: dict[str, float], gap_s: float) -> bool:
+    """Whether a joint moved faster than the maker's own still rule between two reads `gap_s`
+    apart. A joint missing from either read is no motion seen."""
+    for name in up.arm_joints:
+        if name in first and name in second:
+            speed = abs(second[name] - first[name]) * up.ticks_per_rad / gap_s
+            if speed >= up.still_ticks_per_s:
+                return True
+    return False
+
+
 def cancel_and_read(bus: ArmBus, up: Upstream, sleep: Callable[[float], None]) -> dict[str, Any]:
     """cancel_trajectory, the joints read twice, and a second cancel that must find nothing
     executing: a trajectory in one of its pauses reads as still too, so two still reads alone
@@ -1115,8 +1169,18 @@ class ArmJobs:
             out["late"] = late
             if late.get("cancel") == "CANCELLED" or late.get("held") is not True:
                 out["held"] = late.get("held")
-        self._mark(out["held"])
+        if out["held"] is False:
+            # an arm read moving is said at once, and a hold only once the stop's window has
+            # passed with the arm still (held_after_guard)
+            self._mark(False)
         return out
+
+    def held_after_guard(self, held: bool | None) -> None:
+        """The hold of the cycle a stop cancelled, once the stop's window has passed: the
+        window's word, which replaces what the stop read."""
+        with self._lock:
+            if self.job is not None and self.job.cancelled:
+                self.job.held = held
 
     def _mark(self, held: bool | None) -> None:
         with self._lock:
@@ -1418,6 +1482,9 @@ class FakeBus:
             self._advance()
             return [self.pick.pid] if self.pick is not None and self.pick.alive else []
 
+    def descendants(self, pid: int) -> list[int]:
+        return []  # the fake mission's pick runs the script itself, with nothing under it
+
     def alive(self, pid: int) -> bool:
         with self._lock:
             self._advance()
@@ -1612,6 +1679,7 @@ class Bridge:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        arm_guard_s: float = ARM_GUARD_S,
     ) -> None:
         self._stack = stack
         self.up, self.bus = up, bus
@@ -1660,6 +1728,13 @@ class Bridge:
         self._make_bus = make_bus
         self._last_joints: tuple[float, dict[str, float]] | None = None
         """The joints as this bridge last read them, and when, for a brake's one read."""
+        self.arm_guard_s = arm_guard_s
+        """How long the arm is watched after a stop cancelled it: ARM_GUARD_S, but in a test."""
+        self._guard: dict[str, Any] | None = None
+        """The arm a stop cancelled, while its window lasts: until when, the joints as last read
+        and when, and how often they moved and were cancelled again."""
+        self.guard_doc: dict[str, Any] | None = None
+        """The last window's word on the arm, once it has passed, for /arm."""
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
 
@@ -1754,6 +1829,12 @@ class Bridge:
     def _mission_doc(self, stack: StackInfo) -> dict[str, Any] | None:
         if not self._litter(stack):
             return None
+        refused = pick_command(stack.env)[1]
+        doc = self._mission_answer(stack)
+        doc["pick_cmd_refused"] = refused
+        return doc
+
+    def _mission_answer(self, stack: StackInfo) -> dict[str, Any]:
         stopped = self.mission_stopped_run is not None and self.mission_stopped_run == stack.run_id
         if self.bus is None:
             return {"answering": False, "stopped": stopped, "status": None, "error": self.bus_error}
@@ -1978,7 +2059,8 @@ class Bridge:
         if late.get("cancel") == "CANCELLED":
             did.append("a trajectory that landed after the first cancel was cancelled")
         first = doc.get("arm")
-        doc["arm"] = {**first, "held": late.get("held")} if isinstance(first, dict) else late
+        word = {"held": late.get("held"), "read_still": late.get("read_still", False)}
+        doc["arm"] = {**first, **word} if isinstance(first, dict) else late
 
     def _arm_still_for_a_brake(self) -> bool:
         """Whether a brake may leave the arm alone: no cycle of quackd's runs, and one read of
@@ -2115,17 +2197,29 @@ class Bridge:
         self, stack: StackInfo, did: list[str], errors: list[str]
     ) -> dict[str, list[int]] | None:
         """The mission's own pick, which its stop leaves running: the maker's script, found
-        among the stack's own descendants, sent SIGTERM, and SIGKILL if it outlives its grace,
-        so it cannot send its trajectory after the cancel that follows. None for no pick."""
+        among the stack's own descendants, sent SIGTERM with every process under it, a shell's
+        child among them, and SIGKILL for any that outlives its grace, so none can send a
+        trajectory after the cancel that follows. The processes under a pick are read before
+        any is signalled, since a child whose parent has ended is no longer under it. A
+        MOSS_PICK_CMD the bridge refuses is said here, at every stop, as at hello. None for no
+        pick."""
+        refused = pick_command(stack.env)[1]
+        if refused is not None:
+            errors.append(refused)
         try:
             pids = self.procs.picks(stack)
+            family = list(
+                dict.fromkeys(p for pid in pids for p in (pid, *self.procs.descendants(pid)))
+            )
         except Exception as e:
             errors.append(f"the mission's pick could not be looked for: {e}")
             return None
         if not pids:
             did.append("no pick of the mission's was running")
             return None
-        ended = end_processes(self.procs, pids, clock=self.clock, sleep=self.sleep)
+        if under := [p for p in family if p not in pids]:
+            did.append(f"the processes under the mission's pick: pid {_pids(under)}")
+        ended = end_processes(self.procs, family, clock=self.clock, sleep=self.sleep)
         for how in ("terminated", "killed"):
             if ended[how]:
                 did.append(f"the mission's pick script {how}: pid {_pids(ended[how])}")
@@ -2165,7 +2259,92 @@ class Bridge:
                 "the arm did not hold after its cancel, read moving or still executing: "
                 "support it or cut its power"
             )
-        return result
+        return self._watch_arm(result, did)
+
+    def _watch_arm(self, result: dict[str, Any], did: list[str]) -> dict[str, Any]:
+        """The arm a stop has just cancelled, watched from now for arm_guard_s: a pick the
+        stop's looks did not find, or a trajectory sent before the stop, can still land. Until
+        the window has passed, a reading that found the arm still is said as read_still, never
+        as held. An arm whose joints did not answer the stop's reads is not watched: it is
+        said unread, and nothing is claimed of it."""
+        if result.get("held") is None:
+            return result
+        with self._lock:
+            until = self.clock() + self.arm_guard_s
+            if self._guard is None:
+                self._guard = {"until": until, "last": None, "cancels": 0, "moved": False}
+            else:
+                self._guard["until"] = max(self._guard["until"], until)
+            self.guard_doc = None
+        did.append(f"the arm is watched {self.arm_guard_s:g} s, and cancelled again if it moves")
+        watched = {**result, "watched_s": self.arm_guard_s, "read_still": False}
+        if watched.get("held") is True:
+            watched["held"], watched["read_still"] = None, True
+        return watched
+
+    def guard_tick(self) -> dict[str, Any] | None:
+        """One look at an arm a stop cancelled, while its window lasts: the joints read, and a
+        cancel more when they moved since the look before. Once the window has passed, the
+        arm's word: two reads and a cancel that finds nothing executing, and a cancel and two
+        reads more when one did. That word becomes the hold of the cycle the stop cancelled
+        and /arm's, and is returned, once. Every other look returns None."""
+        with self._lock:
+            guard = self._guard
+        bus, up = self.bus, self.up
+        if guard is None or bus is None or up is None:
+            return None
+        now = self.clock()
+        if now < guard["until"]:
+            try:
+                joints = dict(bus.arm_joints())
+            except Exception:
+                guard["last"] = None
+                return None
+            last, guard["last"] = guard["last"], (now, joints)
+            # reads at least a poll apart, whatever a test's clock says between them
+            if last is not None and _moved(
+                up, last[1], joints, max(now - last[0], ARM_GUARD_POLL_S)
+            ):
+                guard["moved"] = True
+                guard["cancels"] += 1
+                log.warning("the arm moved after a stop had cancelled it: cancelling it again")
+                with contextlib.suppress(Exception):
+                    bus.arm_cancel()
+            return None
+        out: dict[str, Any] = {"cancel": None, "held": None}
+        held = _held_after(bus, up, self.sleep, out)
+        if held is False:
+            held = cancel_and_read(bus, up, self.sleep).get("held")
+        with self._lock:
+            if self._guard is not guard or self.clock() < guard["until"]:
+                return None  # a stop watched it again meanwhile, and the window goes on
+            self._guard = None
+            doc = {
+                "watching": False,
+                "left_s": None,
+                "held": held,
+                "cancels": guard["cancels"],
+                "moved": guard["moved"],
+            }
+            self.guard_doc = doc
+        if self.jobs is not None:
+            self.jobs.held_after_guard(held)
+        return dict(doc)
+
+    def _guard_view(self) -> dict[str, Any] | None:
+        """/arm's word on the window after a stop: watching, with the seconds left, or the last
+        window's word once it has passed, or None before any stop cancelled the arm."""
+        with self._lock:
+            guard, last = self._guard, self.guard_doc
+            if guard is not None:
+                return {
+                    "watching": True,
+                    "left_s": round(max(0.0, guard["until"] - self.clock()), 1),
+                    "held": None,
+                    "cancels": guard["cancels"],
+                    "moved": guard["moved"],
+                }
+        return None if last is None else dict(last)
 
     def frame(self, cam: str) -> tuple[int, Any, dict[str, str]]:
         arrived = self.wall()
@@ -2195,6 +2374,7 @@ class Bridge:
             "answering": ok,
             "error": why,
             "job": None if self.jobs is None else self.jobs.doc(),
+            "guard": self._guard_view(),
             "joints": None,
             "gap_m": None,
             "folded": None,
@@ -2225,6 +2405,13 @@ class Bridge:
             return 503, {"ok": False, "reason": self.run_error}
         if self._litter(stack):
             return 409, {"ok": False, "reason": "on moss-litter the mission owns the arm"}
+        if (guard := self._guard_view()) is not None and guard["watching"]:
+            return 409, {
+                "ok": False,
+                "reason": f"the arm is watched {guard['left_s']:g} s more after a stop, for a "
+                "trajectory sent before it that may still land: start a cycle once that has "
+                "passed",
+            }
         if self.arm_error:
             return 503, {"ok": False, "reason": self.arm_error}
         pick_pose = str(body.get("pick_pose") or "pick")
@@ -2273,11 +2460,13 @@ class Bridge:
         result = self.jobs.cancel()
         if result.get("error"):
             errors.append(f"the arm: {result['error']}")
-        elif result.get("held") is False:
-            errors.append(
-                "the arm did not hold after its cancel, read moving or still executing: "
-                "support it or cut its power"
-            )
+        else:
+            if result.get("held") is False:
+                errors.append(
+                    "the arm did not hold after its cancel, read moving or still executing: "
+                    "support it or cut its power"
+                )
+            result = self._watch_arm(result, [])
         return 200, {"ok": not errors, "cancelled": True, "arm": result, "errors": errors}
 
     def nav_doc(self) -> dict[str, Any]:
@@ -2442,6 +2631,7 @@ class Bridge:
         pump.start()
         self._threads.append(pump)
         self._threads.append(self._every(0.1, self._session_watch, "moss-session"))
+        self._threads.append(self._every(ARM_GUARD_POLL_S, self.guard_tick, "moss-arm-guard"))
 
     def _pump_loop(self) -> None:
         """The one scheduler of every twist this bridge sends. It ticks the pump when its next
@@ -2632,6 +2822,7 @@ def fake_bridge(
     mission: bool = True,
     fps: float = 5.0,
     script_flags: tuple[str, ...] = (),
+    arm_guard_s: float = ARM_GUARD_S,
     **bus_kw: Any,
 ) -> Bridge:
     """`--fake`, whole: a fake bus, a fake arm coordinator, a fake mission, and in place of the
@@ -2667,7 +2858,14 @@ def fake_bridge(
         return out + (["--from", from_phase] if from_phase else [])
 
     return Bridge(
-        stack=lambda: stack, up=up, bus=bus, arm_argv=argv, token=token, fake=True, procs=bus
+        stack=lambda: stack,
+        up=up,
+        bus=bus,
+        arm_argv=argv,
+        token=token,
+        fake=True,
+        procs=bus,
+        arm_guard_s=arm_guard_s,
     )
 
 

@@ -60,9 +60,12 @@ Four things read at the pin shape everything below.
   not yet told to stop is a failed pick and the mission explores again. Only then does it confirm
   the mission's stop, by its RPC falling silent, counted only from a mission the bridge heard
   answer before, so the arm is never held back for the confirmation. The mission's stop leaves its
-  own pick running, so the bridge ends the maker's script first, SIGTERM and then SIGKILL, before
-  it cancels: a pick still starting would otherwise send its trajectory after the cancel. quackd
-  never posts the cockpit's `/cmd/stack`, and its close never sends a go limp call.
+  own pick running, so the bridge ends the maker's script first, with every process under it,
+  SIGTERM and then SIGKILL, before it cancels: a pick still starting would otherwise send its
+  trajectory after the cancel. After any stop that cancelled the arm it watches the joints for
+  12 s, the maker's script's startup bound and one RPC's timeout, cancels again if they move,
+  and calls the arm held only once that has passed. quackd never posts the cockpit's
+  `/cmd/stack`, and its close never sends a go limp call.
 - **The close halts what its session started.** After `collect_litter` it is the whole stop.
   Otherwise it is the session's own arm cycle, cancelled by its id, a twist of its own the
   bridge may still be repeating, and a goal or an exploration it started. A session that

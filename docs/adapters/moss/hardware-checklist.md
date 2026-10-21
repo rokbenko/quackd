@@ -52,7 +52,9 @@ ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 
    Check that `publisher.loaded` is true and names `/tele_cmd_vel` on `moss-explore`, that
    `arm.answering` and `arm.cycle` are true, that `track_m` is your rover's track width, and that
-   `cameras.nose.heard` is true. `fov_deg` is null unless the stack publishes `camera_info`.
+   `cameras.nose.heard` is true. `fov_deg` is null unless the stack publishes `camera_info`. On
+   `moss-litter`, `mission.pick_cmd_refused` is null: a sentence there says the stack's
+   `MOSS_PICK_CMD` is one the bridge will not look for the mission's picks by, and why.
 
 ## Talking to it, still on blocks
 
@@ -98,9 +100,14 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
     `.venv/bin/dimos --simulation mujoco run moss-dimos.moss-arm`, which the bridge sees, and it
     passes `--sim` on to the maker's script. The cycle takes about 37 s and ends in the drive
     pose. Then the real arm, the rover back on blocks, its sweep clear and a hand ready under it.
+    While the real arm's cycle starts, read `/arm` every second or so, as step 2 reads
+    `/hello`: the job's `elapsed_s` at the first read whose `state` is `running` is about how
+    long the maker's script took to start, which the bridge's watch after a stop takes to be
+    10 s at most (`ARM_PLAY_STARTUP`).
 11. **Stop it mid cycle.** Send `stop` while the arm is out. The bridge stops the script, cancels
     the trajectory and reads the joints twice: the arm should hold where it was, under torque.
-    `stow_arm` then brings it home along the cycle's own return.
+    The bridge then watches it for 12 s and refuses a cycle meanwhile, so `stow_arm` after that
+    brings it home along the cycle's own return.
 12. **Kill quackd mid cycle.** The bridge cancels the cycle that session started three missed
     keepalives later, and the arm holds. Then `stow_arm` from a fresh session, or support the
     arm and stop its run.
@@ -119,10 +126,10 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 ## What to report
 
 How far one pulse turned the rover in step 6, where `drive_to` stopped in step 7, whether the
-deadman and the bridge's halt behaved as described in steps 5 and 9, whether the arm held in
-steps 11 and 12, and whether the mission's stop was confirmed in step 13. And anything that made
-the rover or the arm move in a way this page did not predict. The adapter page's "How to help"
-says where that goes.
+deadman and the bridge's halt behaved as described in steps 5 and 9, how long the maker's script
+took to start in step 10, whether the arm held in steps 11 and 12, and whether the mission's stop
+was confirmed in step 13. And anything that made the rover or the arm move in a way this page
+did not predict. The adapter page's "How to help" says where that goes.
 
 Attach `runs/<timestamp>-<name>/terminal.txt` from whichever `quackd run` you did. It is the
 whole session as plain text, opening with the command that started it and the version that ran
