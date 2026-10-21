@@ -8,7 +8,8 @@ Two upstreams, both pinned by commit because neither has a software release:
 
 - MOSS, https://github.com/metrox-eth/moss at d288647adb2b7a132a69d89afa2f1b45d37b288a (main,
   2026-10-18, read 2026-10-20). Its own CHANGELOG says nothing is frozen, and some of its docs
-  lag its code, so every ref below is read from code.
+  lag its code, so every ref below is read from code, but for the maker's own words and
+  figures, which come from MOSS's README, its BOM, one of its docs and an issue, and say so.
 - dimOS, https://github.com/dimensionalOS/dimos at a7d19f76158b01739b26e7a17390f89764aaef83,
   the commit MOSS's own Software.md installs.
 
@@ -281,7 +282,10 @@ IDLE_STOP_BLUEPRINTS = UpstreamRef(
     '"moss-nav", "moss-explore"',
     "VERIFIED",
     src(_COCKPIT, 178),
-    "the only stacks the idle stop ends. moss-litter and moss-arm are never stopped by it.",
+    "the only stacks whose idle time the idle stop counts, read off the newest run "
+    "(stack_status), and it ends them with tools/moss-fly.sh stop, which ends every dimOS run, "
+    "moss-arm's included. It never counts on moss-litter, nor while a moss-arm run started "
+    "after the base is the newest run the cockpit reads.",
 )
 IDLE_FIRMWARE_AGE_S = UpstreamRef(
     "1.0",
@@ -294,8 +298,8 @@ COCKPIT_DEMO = UpstreamRef(
     "--demo",
     "VERIFIED",
     src(_COCKPIT, 3117),
-    "a synthetic rover with no bus, no stack and no launcher. quackd's one check by hand ran "
-    "its client against it.",
+    "a synthetic rover with no bus, no stack and no launcher. quackd's two checks by hand, on "
+    "Windows and in a Linux container, ran its client against it.",
 )
 RUNS_REGISTRY = UpstreamRef(
     "~/.local/state/dimos/runs/*.json",
@@ -559,8 +563,9 @@ MISSION_LOOP = UpstreamRef(
     "LitterMission._run",
     "VERIFIED",
     src(_MISSION, 472),
-    "the 10 Hz tick, the only place the mission publishes a command (_do), and it runs "
-    "while not self._stop.is_set() (line 474).",
+    "the 10 Hz tick, which publishes the mission's commands through _do (line 485) while not "
+    "self._stop.is_set() (line 474). Its start publishes explore_cmd as well when it starts "
+    "itself (line 428), and its stop a zero on tele_cmd_vel (line 436).",
 )
 MISSION_STOP_RPC = UpstreamRef(
     "LitterMission.stop",
@@ -738,12 +743,15 @@ STILL_TICKS_PER_S = UpstreamRef(
     "below this a servo counts as stopped. The bridge's two joint reads after a cancel call the "
     "arm held when every joint moved slower than this.",
 )
-DISCONNECT_TORQUE_OFF = UpstreamRef(
-    "FeetechSo101Adapter.disconnect",
+ARM_TORQUE_OFF = UpstreamRef(
+    "FeetechSo101Adapter.deactivate",
     "VERIFIED",
-    src(_FEETECH, 237),
-    "turns torque off on all six servos. Every end of the moss-arm run calls it, so the idle "
-    "stop and tools/moss-fly.sh stop drop the arm. quackd never ends that run.",
+    src(_FEETECH, 256),
+    "a stop of the servos and then torque off on all six. The arm's coordinator calls it for "
+    "its hardware as its run stops (ControlCoordinator.stop, dimOS coordinator.py line 976), "
+    "and disconnect() (line 237) turns torque off too if it is still on. So every end of the "
+    "moss-arm run drops the arm, the idle stop's and tools/moss-fly.sh stop among them, and "
+    "quackd never ends that run.",
 )
 GET_JOINT_POSITIONS = UpstreamRef(
     "ControlCoordinator.get_joint_positions",

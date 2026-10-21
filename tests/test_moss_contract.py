@@ -29,7 +29,7 @@ from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor, Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import VerbContext, registry_from_manifest
-from quackd_moss import MossAdapter
+from quackd_moss import MossAdapter, describe
 from quackd_moss import cockpit as client
 from quackd_moss import mock as mock_module
 from quackd_moss import verbs as moss_verbs
@@ -263,6 +263,24 @@ def test_the_clients_wait_for_a_stop_covers_the_bridges_worst_case() -> None:
     client waits that long and two seconds more for the link: a stop it gave up on early
     would be said not delivered while the bridge was still delivering it."""
     assert client.STOP_TIMEOUT_S >= B.STOP_WORST_S + 2.0
+
+
+def test_every_verb_leaves_its_own_stop_room_before_the_executor_cuts_it() -> None:
+    """A verb that gives up, or runs out its minutes, ends with its own stop, which is the
+    transport's and waits up to the bridge's worst case for an answer. The executor's timeout
+    keeps that wait beyond the verb's own give up, and the state read and the poll before it,
+    so the verb's stop runs and reports rather than the executor cutting it short."""
+    slowest_stop = client.STOP_TIMEOUT_S + 1.0  # the client's own wait for the bridge's answer
+    before_it = 2 * client.CALL_TIMEOUT_S + max(
+        moss_verbs.EXPLORE_POLL_S, moss_verbs.DRIVE_TO_POLL_S, moss_verbs.ARM_POLL_S
+    )
+    assert slowest_stop + before_it <= moss_verbs.VERB_MARGIN_S
+    own = moss_verbs.moss_verbs()
+    for name, verb in own.items():
+        assert verb.timeout_s is not None and verb.timeout_s <= 600, name
+    assert own["explore"].timeout_s == moss_verbs.EXPLORE_MAX_MIN * 60 + moss_verbs.VERB_MARGIN_S
+    for spec in describe("cockpit").verbs:
+        assert spec.timeout_s is None or spec.timeout_s <= 600, spec.name
 
 
 async def test_the_soft_stop_goes_out_beside_a_bridge_stop_that_waits_on_the_arm(

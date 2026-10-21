@@ -12,10 +12,14 @@ explorer and the soft stop. What the cockpit has no command for is the reason th
 - **a velocity command**, with a deadman of its own,
 - **a frame that says when it was taken**,
 - **the arm**: the maker's pick and drop cycle, and a cancel that leaves the arm holding,
-- **the litter mission's stop.** The mission listens to no stop at all. Its own `stop` RPC is
-  the only thing that ends it, and the cockpit cannot call it.
+- **the litter mission's stop.** The mission listens to no stop the cockpit sends. Its own
+  `stop` RPC ends it, which the cockpit cannot call, and so does `tools/moss-fly.sh stop`,
+  which ends the whole stack and the arm's run with it,
+- **the base stack's own navigation**, which the cockpit cannot show while moss-arm, started
+  after the base, is the newest run it reads.
 
-So the bridge does those four things over HTTP and nothing else.
+So the bridge does those five things over HTTP, keeps a deadman for each quackd session, and
+does nothing else.
 
 ## What it does
 
@@ -134,10 +138,11 @@ To try it with no rover, on any machine:
 python quackd_moss_bridge.py --fake --once
 ```
 
-prints what `/hello` would say about a fake bus, a fake arm and a fake mission, whose numbers
-are deliberately not MOSS's. Without `--fake` it reads the machine it runs on. On a machine with
-no MOSS installed that is a `/hello` with nothing loaded, and this is part of what it printed on
-Windows:
+prints what `/hello` would say about a fake bus, a fake arm and a fake mission. Their track
+width, turn ceiling, rest, ramp and arm joints are deliberately not MOSS's, and their timing, the
+deadman, the pulse, the pump's rate, the still rule and the start tolerance, is MOSS's own.
+Without `--fake` it reads the machine it runs on. On a machine with no MOSS installed that is a
+`/hello` with nothing loaded, and this is part of what it printed on Windows:
 
 ```
   "publisher": {

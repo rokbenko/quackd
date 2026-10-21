@@ -16,9 +16,9 @@ Four properties of this rover decide what this file does, and each is read at th
   (`upstream_api.TELEOP_CANCELS_NAVIGATION`). So quackd never streams a twist from here: it
   posts each one to the bridge, which re-sends it at 10 Hz while it is fresh and falls silent
   after one zero.
-- **The litter mission listens to no stop** (`upstream_api.MISSION_INPUTS`). Only its own RPC
-  ends it, and only the bridge can call that.
-- **MOSS's hard stop drops the arm** (`upstream_api.DISCONNECT_TORQUE_OFF`), so quackd never
+- **The litter mission listens to no stop the cockpit sends** (`upstream_api.MISSION_INPUTS`).
+  Its own RPC ends it, and only the bridge can call that, or the end of the whole stack.
+- **MOSS's hard stop drops the arm** (`upstream_api.ARM_TORQUE_OFF`), so quackd never
   posts `/cmd/stack`, and no method here can.
 - **A dropped link leaves a goal running.** MOSS finishes a goal the planner has, so the bridge
   halts what this session started three missed keepalives after it goes quiet, and without

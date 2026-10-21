@@ -94,8 +94,9 @@ DRIVE_TO_GIVE_UP_S = float(up.EXPLORER_GOAL_TIMEOUT_S.name) + float(up.GOAL_AFTE
 DRIVE_TO_POLL_S = 0.5
 
 EXPLORE_MAX_MIN = 8.0
-"""The longest whole number of minutes that, with the stop after it, fits inside the 600 s a
-manifest may give one verb."""
+"""quackd's own cap on one exploration and one litter run. With the stop after it at its
+slowest, VERB_MARGIN_S, it fits inside the 600 s a manifest may give one verb, and a test
+holds that."""
 EXPLORE_POLL_S = 1.0
 """Once a second, as `watch` does: how soon a brake pulled beside the verb is heard."""
 
@@ -103,9 +104,11 @@ ARM_GIVE_UP_S = float(up.PICK_TIMEOUT_S.name)
 """The mission gives one pick this long, and quackd gives a cycle the same."""
 ARM_POLL_S = 0.5
 
-VERB_MARGIN_S = 20.0
+VERB_MARGIN_S = 60.0
 """What a verb's executor timeout keeps beyond the verb's own give up, so the verb's own stop
-runs rather than the executor's."""
+runs and reports rather than the executor's. That stop is the transport's, which waits up to
+the bridge's own worst case for its answer, and the contract tests hold this above that wait,
+the state read before it and one poll."""
 
 # ── which stacks quackd connects to ─────────────────────────────────────────────────────
 

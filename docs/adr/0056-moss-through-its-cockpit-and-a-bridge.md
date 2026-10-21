@@ -26,7 +26,8 @@ Four things read at the pin shape everything below.
 3. **The litter mission listens to no stop.** Its inputs are objects, odometry and
    `goal_reached`. From the moment a `moss-litter` stack starts it goes for any confirmed litter
    in view, and after a pick, or a failed one, it sets the rover exploring again by itself. Its
-   own `stop` RPC is the only thing that ends it, and the cockpit cannot call it.
+   own `stop` RPC ends it, which the cockpit cannot call, and so does the end of the whole
+   stack, which ends the arm's run with it.
 4. **MOSS's hard stop drops the arm.** `tools/moss-fly.sh stop`, which the cockpit's idle stop
    runs too, ends every dimOS run, and the arm's adapter turns the torque off on all six servos
    as its run ends. Killing the maker's arm script cancels nothing: the whole cycle is one

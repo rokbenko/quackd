@@ -5,10 +5,10 @@ step can only fail in a way you can recover from. The maker's own rule comes fir
 blocks for the first run". **Tracks off the ground until step 6, and back on blocks for the
 arm.**
 
-MOSS is a 4.2 kg prototype with a lithium battery and, in the maker's words, no certified
-protection. A turn on the spot runs both tracks at full power whatever quackd asked, and the
-arm's torque goes off whenever its run ends. Read [the adapter's page](README.md) first, the
-stop contract above all.
+MOSS is a prototype, 4.2 kg by the maker's figure for the V0.3 build with the V0.6 hull not yet
+weighed, with a lithium battery and, in the maker's words, no certified protection. A turn on the
+spot runs both tracks at full power whatever quackd asked, and the arm's torque goes off whenever
+its run ends. Read [the adapter's page](README.md) first, the stop contract above all.
 
 ## Before you power anything
 
@@ -109,7 +109,8 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 13. **`collect_litter`, then stop it.** Start the stack with `tools/moss-fly.sh litter`, without
     `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it needs a
     `.duck` of your own that allows it, run in a terminal where you answer its confirm yourself.
-    Give it a minute with one can in view, then send `stop`. The mission's stop goes out first,
+    Give it a minute with one can in view, then press `q`, or Ctrl-C, in the terminal the run is
+    in: quackd's kill switch sends `stop`. The mission's stop goes out first,
     then at once its own pick script is ended, the arm holds and the base stops, and the run ends
     with a note that the mission is stopped and runs again only after the stack restarts. If the
     note says the stop was not confirmed, stop the stack on the rover with the arm supported.

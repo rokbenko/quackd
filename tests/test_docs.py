@@ -31,6 +31,17 @@ def _as_rendered(markdown: str) -> str:
     return markdown.replace("\\|", "|")
 
 
+def test_every_body_quackd_ships_has_a_row_on_the_safety_pages_other_bodies() -> None:
+    """What stops each body when quackd goes quiet is on one page, a row for every adapter the
+    factory lists, so a new body cannot ship without saying it."""
+    from quackd.adapters.factory import ADAPTER_NAMES
+
+    page = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
+    section = page.split("## On other bodies", 1)[1].split("\n## ", 1)[0]
+    missing = [name for name in ADAPTER_NAMES if f"(`{name}:*`)" not in section]
+    assert not missing, f"docs/concepts/safety.md has no row on other bodies for {missing}"
+
+
 def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s model and policies, which the physics backend fetches and runs.

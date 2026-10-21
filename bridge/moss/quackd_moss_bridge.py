@@ -227,8 +227,8 @@ def stale_after_s(period_s: float) -> float:
 @dataclass(frozen=True)
 class Upstream:
     """Every number the bridge drives by. Read from moss_dimos in the stack's own environment
-    (`read_upstream`), or given whole by a test or by `--fake`, which uses values that are
-    deliberately not MOSS's."""
+    (`read_upstream`), or given whole by a test or by `--fake`, whose geometry is deliberately
+    not MOSS's and whose timing is (`FAKE_UPSTREAM`)."""
 
     track_m: float
     max_wz: float

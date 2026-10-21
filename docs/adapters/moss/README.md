@@ -16,7 +16,9 @@ read at
 [`a7d19f7`](https://github.com/dimensionalOS/dimos/tree/a7d19f76158b01739b26e7a17390f89764aaef83),
 the commit MOSS's own Software.md installs. Neither has a software release, and MOSS's CHANGELOG
 says nothing is frozen, so a commit is the only honest pin, and every name was read from code
-rather than from docs. Every name quackd's package spells in its code lives in
+rather than from docs. The maker's own words and figures are the exception, read from MOSS's
+README, its BOM, one of its docs and an issue, and each ref says which. Every name quackd's
+package spells in its code lives in
 [`adapters/moss/src/quackd_moss/upstream_api.py`](../../../adapters/moss/src/quackd_moss/upstream_api.py),
 and a test scans the package for any other spelling. The bridge imports nothing of quackd, so it
 spells its own, and its tests pin them to those refs.
@@ -28,7 +30,7 @@ against MOSS's own cockpit in its `--demo` mode, on Windows and on Linux
 Nothing here has run on a rover.
 
 ```bash
-uv pip install 'quackd[moss]'     # quackd's own adapter package, standard library only
+uv pip install 'quackd[moss]'     # quackd's own adapter package, which needs no robot library
 
 # offline, the default
 quackd run moss-lookout --robot moss:mock --llm fake
@@ -119,7 +121,7 @@ test demonstrated yet.
 | `sensors` | `camera`, `odometry`, `battery`, and `joint_state` when the arm answers |
 | `limits` | `max_vx` 0.3, `max_vy` 0.0, `max_wz` 0.4, and `camera_fov_deg` only from the stack's own `camera_info` |
 | `safety_authority` | `native: none`, `deadman: true` with the bridge and `false` without it, `heartbeat_hz: 2` |
-| `extras` | the blueprint, the bridge's version, the track width, the stop ramp, the firmware and driver names, `deadman_scope`, `speech: none` and `assumptions` |
+| `extras` | the blueprint and the stacks the manifest covers, the cameras, the cockpit's URL, the bridge's URL and version or why there is none, the track width, the stop ramp, the firmware and driver names, `deadman_scope`, `speech: none` and `assumptions` |
 
 `max_vx` is quackd's schema cap of 0.3 m/s, which binds, since MOSS's full power is 0.32.
 `max_wz` is MOSS's own `SERVO_W_MAX`, the litter mission's fastest servo turn. `deadman: true`
@@ -133,8 +135,8 @@ against before anything connects. Connect narrows it to what answered:
 
 | Verbs | `moss-nav` | `moss-explore` | `moss-litter` |
 |---|---|---|---|
-| `observe`, `report_state`, `stop` | ✓ | ✓ | ✓ |
-| with the bridge: `move`, `go_to`, `search_scan`, and `approach_and` with a camera (all core) | ✓ | ✓ | no: the mission owns the base |
+| `report_state`, `stop`, and `observe` with a camera | ✓ | ✓ | ✓ |
+| with the bridge: `move`, and with a camera `go_to`, `search_scan` and `approach_and` (all core) | ✓ | ✓ | no: the mission owns the base |
 | the planner: `drive_to`, `explore` | no planner | ✓ | no |
 | with the bridge, the arm's coordinator answering and the maker's cycle found: `pick_and_drop`, `stow_arm` | ✓ | ✓ | no: the mission owns the arm |
 | with the bridge and the mission answering: `collect_litter` | | | ✓ |
@@ -281,9 +283,11 @@ for one tool call, and `collect_litter` does not run there at all.
 - **The arm and the idle stop.** A run that moved the arm and ends with it out of its drive
   pose leaves it there, and the close note says so. It says the arm is holding only when the
   arm was read to hold after its cancel, and otherwise what reading there was. The cockpit's
-  idle stop ends an idle `moss-nav` or `moss-explore` after 300 s with `tools/moss-fly.sh stop`,
-  which ends the arm's run too, and the arm's adapter turns its torque off as its run ends.
-  quackd sends the cockpit's keepalive while it is connected, and nothing does after.
+  idle stop counts idle time only while the newest dimOS run is `moss-nav` or `moss-explore`,
+  so with moss-arm started after the base stack it counts none. A stack it does end, after
+  300 s, goes with `tools/moss-fly.sh stop`, which ends the arm's run too, and the arm's adapter
+  turns its torque off as its run ends. quackd sends the cockpit's keepalive while it is
+  connected, and nothing does after.
 - **How long a stop takes** is the firmware's own ramp, which the bridge reads from the stack
   and reports: with MOSS's launcher, 5 ms per percent, half a second from full power.
 
@@ -296,9 +300,11 @@ and every rule is the maker's own.
   track width, so the inner track never reverses into a full power pivot. The answer reports any
   clip, and `move`'s description tells the pilot the rover turns slower than asked, never faster.
 - **Spins.** With `vx` zero, a turn is sent as the maker's own pulses: `PULSE_S` of twist, then a
-  rest of zeros. The rest is the maker's `REST_S` scaled by `max_wz / |wz|`, so at the manifest's
-  ceiling it is the maker's own rhythm and a smaller turn rate turns proportionally slower. The
-  pulses are timed on the rover: timed from the laptop, each would last as long as the deadman.
+  rest of zeros. Only the rest scales: every pulse is the same full power pulse, and the rest is
+  the maker's `REST_S` scaled by `max_wz / |wz|`. At the manifest's ceiling that is the maker's
+  own rhythm, and a smaller turn rate turns slower by a longer rest between the same pulses,
+  though not in exact proportion, since the pulse itself does not shrink. The pulses are timed
+  on the rover: timed from the laptop, each would last as long as the deadman.
   How far one pulse turns the rover nobody has measured.
 - **The core verbs.** `search_scan` turns in steps at 0.4 rad/s, which become pulses, and the real
   angle per step is step 6 of the hardware checklist. `go_to`'s turn to find a lost target and
@@ -446,7 +452,7 @@ asked.
 | Commands | `LiveCockpit.command` | no velocity and no arm command, which is what the bridge is for |
 | Idle stop | `300` | seconds |
 | Idle stop floor | `30` | the shortest limit the cockpit accepts |
-| Idle stop stacks | `"moss-nav", "moss-explore"` | the only stacks it ends |
+| Idle stop stacks | `"moss-nav", "moss-explore"` | the only stacks whose idle time it counts, read off the newest run, and its stop ends every run, the arm's too |
 | Firmware age | `1.0` | `cockpit_fresh`, the cockpit's own rule |
 | Demo | `--demo` | refused at connect, and the check by hand |
 | Run registry | `~/.local/state/dimos/runs/*.json` | where the bridge reads the stack |
@@ -510,7 +516,7 @@ asked.
 | Stow | `back_to_clear` | `stow_arm` plays from here |
 | Pick poses | `"pick", "pick_low"` | `pick_and_drop`'s `pick_pose` |
 | Still rule | `20.0` | ticks a second, whether the arm held after a cancel |
-| Torque off | `FeetechSo101Adapter.disconnect` | why quackd never ends the arm's run |
+| Torque off | `FeetechSo101Adapter.deactivate` | why quackd never ends the arm's run |
 | Joint reads | `ControlCoordinator.get_joint_positions` | `/arm` and the hold check |
 | Cancel | `ControlCoordinator.cancel_trajectory` | the arm's cancel |
 | Cancel result | `TrajectoryCancellationStatus` | the name `/stop` reports |
@@ -562,24 +568,33 @@ This part is for MOSS's maker. quackd runs a small bridge on the rover because t
 way to do six things. If the cockpit could do them, quackd would talk to the cockpit alone and
 the bridge would not be needed.
 
-1. **Drive with a velocity, with a deadman.** For example `POST /cmd/twist {vx, wz}`, passed on
-   to the base while new requests keep arriving, and stopped by the cockpit itself a short time
-   after the last one. Turning would be safest if it worked like the litter mission's own turns:
-   short pulses for a turn on the spot, and arcs that keep the inner track moving forward, so the
-   base never pivots at full power by accident.
-2. **Play the arm cycle and cancel it.** For example `POST /cmd/arm {pick_pose, from}` to play
-   the cycle in `tools/moss_arm_play.py`, a cancel that leaves the arm holding where it is, and a
-   way to read how the cycle ended: done, refused, lag or cancelled.
-3. **Start and stop the litter mission.** Right now the mission ignores every stop except its own
-   `stop` RPC. A command for each, with the mission's state in `/state.json`, would let any
-   client stop it without going through dimOS.
-4. **Say when a frame was taken, and what the camera sees.** The capture time on the rover's
-   clock, as a header on a single frame request, and the nose camera's `camera_info` in
-   `/state.json`, so a client knows the field of view.
-5. **Say which cockpit it is.** One field in `/state.json`, a commit or a protocol number.
-6. **Ask for a token.** The cockpit listens on `0.0.0.0`, and anything that can reach it can
-   drive the rover. An optional token, read from a file and checked on every request, would
-   make it safe on a shared network.
+The first is driving with a velocity, with a deadman: for example `POST /cmd/twist {vx, wz}`,
+passed on to the base while new requests keep arriving and stopped by the cockpit itself a
+short time after the last one. Turning would be safest if it worked like the litter mission's
+own turns, short pulses for a turn on the spot and arcs that keep the inner track moving
+forward, so the base never pivots at full power by accident.
+
+The second is playing the arm cycle and cancelling it: for example `POST /cmd/arm {pick_pose,
+from}` to play the cycle in `tools/moss_arm_play.py`, a cancel that leaves the arm holding where
+it is, and a way to read how the cycle ended, whether done, refused, lag or cancelled.
+
+The third is starting and stopping the litter mission. Right now nothing stops the mission but
+its own `stop` RPC and `tools/moss-fly.sh stop`, which ends the whole stack and the arm's run
+with it, torque and all. A command for each, with the mission's state in `/state.json`, would
+let any client stop it without going through dimOS and without ending the stack.
+
+The fourth is saying when a frame was taken, and what the camera sees: the capture time on the
+rover's clock, as a header on a single frame request, and the nose camera's `camera_info` in
+`/state.json`, so a client knows the field of view.
+
+The fifth is saying which cockpit it is, with one field in `/state.json`, a commit or a
+protocol number.
+
+The sixth is asking for a token. The cockpit listens on `0.0.0.0`, and anything that can reach
+it can drive the rover. An optional token, read from a file and checked on every request, would
+turn away anything that does not hold it. Over plain HTTP it can be read off the network by
+anything else on it, as quackd's own bridge token can, so on a shared network a tunnel is still
+what keeps the rover to its owner.
 
 A small thing we noticed while testing against the cockpit's demo mode: a request that fails
 inside the cockpit leaves nothing in its log. The handler reports it through `log_error`, the
