@@ -409,6 +409,18 @@ async def test_collect_litter_runs_only_when_a_person_answers_it(asker: Any) -> 
         assert mock.mission_stopped
 
 
+async def test_collect_litter_waits_for_the_arm_in_its_drive_pose() -> None:
+    """The mission drives off as soon as it starts, so an arm out of its drive pose refuses
+    collect_litter, with how to stow it on a stack where quackd stows nothing, and nothing is
+    started for the mission."""
+    mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
+    ex = _executor(adapter, adapter.manifest, confirm=_a_person(True), allow=LITTER_ALLOW)
+    mock.arm_folded = False
+    result = await ex.run_verb("collect_litter", {"minutes": 1})
+    assert not result.ok and "--from back_to_clear" in result.summary, result.summary
+    assert mock.started is None and not mock.mission_stopped
+
+
 async def test_a_dangerous_verb_is_out_of_a_session_with_no_task_file() -> None:
     """With no `.duck`, the executor allows every verb but a dangerous one."""
     _, _, ex = await _connected(stack="moss-litter", litter=[])

@@ -677,6 +677,15 @@ JOINT_NAMES = UpstreamRef(
     "arm/shoulder_pan, arm/shoulder_lift, arm/elbow_flex, arm/wrist_flex, arm/wrist_roll and "
     "arm/gripper. The gripper reads its jaw gap in metres.",
 )
+ARM_CALIBRATION_ENV = UpstreamRef(
+    "MOSS_ARM_CALIB",
+    "VERIFIED",
+    src(_ARM, 45),
+    "a calibration file elsewhere. calibration_path() (line 105) reads it from the environment it "
+    "is given, else from its own process's, and the drive pose and the maker's script take the "
+    "arm's poses from that file. The bridge runs the script in the moss-arm run's own "
+    "environment and reads the drive pose with it, never with its own.",
+)
 DRIVE_POSE = UpstreamRef(
     "drive_pose_rad",
     "VERIFIED",

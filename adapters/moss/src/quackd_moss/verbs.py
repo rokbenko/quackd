@@ -335,12 +335,20 @@ def _arm_idle(state: DuckState) -> str | None:
 
 def _arm_folded(state: DuckState) -> str | None:
     """Every verb that moves the base needs the arm in its drive pose, by the coordinator's own
-    start tolerance. With no moss-arm run nothing reports the arm and nothing holds it, so this
-    can only refuse an arm it can see."""
+    start tolerance, `collect_litter` among them, whose mission drives off at once. With no
+    moss-arm run nothing reports the arm and nothing holds it, so this can only refuse an arm
+    it can see. On moss-litter the mission owns the arm and quackd stows nothing, so the
+    refusal says how to stow it there."""
     arm = _arm(state)
     if not arm.get("answering"):
         return None
     if arm.get("folded") is False:
+        if state.extras.get("stack") == "moss-litter":
+            return (
+                "the arm is out of its drive pose, and on moss-litter the mission owns the arm, "
+                "so quackd stows nothing there: stow it on the rover with the maker's own cycle, "
+                "tools/moss_arm_play.py --from back_to_clear in the MOSS checkout, then ask again"
+            )
         return (
             "the arm is out of its drive pose: stow_arm first, so the rover does not drive with "
             "it out"

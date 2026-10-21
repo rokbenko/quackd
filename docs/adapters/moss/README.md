@@ -171,7 +171,7 @@ cockpit on the rover (tools/moss-fly.sh cockpit) and reach it through the tunnel
 | `not_stalled` | the base's stall guard has stopped the tracks |
 | `bridge_up` | quackd's bridge does not answer |
 | `arm_idle` | an arm cycle is playing |
-| `arm_folded` | the arm answers and is out of its drive pose, by the coordinator's own start tolerance, for every verb that moves the base |
+| `arm_folded` | the arm answers and is out of its drive pose, by the coordinator's own start tolerance, for every verb that moves the base, `collect_litter` among them |
 | `explore_stack` | the stack is not `moss-explore` |
 | `mission_up` | the litter mission's RPC does not answer, or the mission is stopped |
 
@@ -318,13 +318,15 @@ and every rule is the maker's own.
 
 ## Cameras
 
-**With the bridge**, both cameras come through `GET /frame`: the first image captured after the
-request arrived, by the image's own stamp on the rover's clock. So `frame_taken_at` is the
-moment the request went out, a true lower bound, and `frame_period_s` is the stack's 5 fps, or
-the time one fetch takes when that is longer. A
-frame whose stamp fails the bridge's check against its own receive time carries no
-`frame_taken_at`, and a frame older than four periods, at least 2 s, is not handed out. The nose
-camera is primary, for detection and steering, and the wrist camera is the extra view `wrist`.
+**With the bridge**, both cameras come through `GET /frame`: the first image that reached the
+bridge after the request did, with its own stamp on the rover's clock at least 10 ms after the
+request too. So `frame_taken_at` is the moment the request went out, a true lower bound, and
+`frame_period_s` is the stack's 5 fps, or the time the last fetch that brought a frame took
+when that is longer. A frame whose stamp sits more than 10 ms after its own arrival at the
+bridge, or long before it, fails the bridge's check and carries no `frame_taken_at`. A frame
+older than four of the camera's own periods, at least 2 s, is not handed out, however long the
+fetches since have taken. The nose camera is primary, for detection and steering, and the wrist
+camera is the extra view `wrist`.
 
 **Without the bridge**, the nose comes from the cockpit's own MJPEG stream, through one
 persistent reader, which takes one of the cockpit's four viewer slots and leaves room for the
@@ -500,6 +502,7 @@ asked.
 | Start tolerance | `0.05` | rad, folded means every joint this close to the drive pose |
 | Joints | `JOINT_NAMES` | the arm's five joints and its gripper |
 | Drive pose | `drive_pose_rad` | `arm_folded` |
+| Arm calibration | `MOSS_ARM_CALIB` | read from the moss-arm run's own environment, for the drive pose and the maker's script |
 | Jaws open | `0.090` | m, the 90 mm jaws |
 | Cycle time | `36.9` | s as the maker timed it, and the mock's cycle |
 | Stow | `back_to_clear` | `stow_arm` plays from here |

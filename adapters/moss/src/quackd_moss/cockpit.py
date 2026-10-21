@@ -780,8 +780,11 @@ class MossCockpit:
                 if img is not None:
                     self._frame, self._frame_asked, self._frame_after = img, asked, after
                     self.camera_error = None
-            self._fetch_s = time.monotonic() - asked
-            await asyncio.sleep(max(0.0, CAMERA_PERIOD_S - self._fetch_s))
+                    # only a fetch that brought a frame says how long one takes: a failed one
+                    # says how long the bridge waited for a camera that may have stopped
+                    self._fetch_s = time.monotonic() - asked
+            took = time.monotonic() - asked
+            await asyncio.sleep(max(0.0, CAMERA_PERIOD_S - took))
 
     def _frame_age_s(self) -> float | None:
         if self._mjpeg is not None:
@@ -793,9 +796,12 @@ class MossCockpit:
         if self._frame is None or self._frame_asked is None:
             return None
         age = time.monotonic() - self._frame_asked
-        return None if age > stale_after_s(self._period()) else age
+        # from the camera's own configured rate, as the Microduck's frames expire, and never
+        # from a fetch's length: a stopped camera has every fetch wait out the bridge and fail
+        return None if age > stale_after_s(CAMERA_PERIOD_S) else age
 
     def _period(self) -> float:
+        """How often a frame comes: the camera's rate, or the last fetch that brought one."""
         return max(CAMERA_PERIOD_S, self._fetch_s)
 
     async def get_frame(self) -> Image.Image | None:

@@ -50,6 +50,7 @@ import json
 import logging
 import math
 import os
+import secrets
 import shlex
 import signal
 import subprocess
@@ -191,6 +192,15 @@ MIN_STALE_S = 2.0
 STALE_PERIODS = 4
 """A camera reading older than four of its own periods, at least two seconds, is not a picture
 of now: quackd's rule for every camera it reads."""
+STAMP_SLACK_S = 0.01
+"""How far a camera's stamp may sit after the moment its frame reached the bridge, both read
+off this machine's clock, and still be trusted: quackd's own allowance for the two reading
+the clock apart. A frame is said to be taken after a request only when it reached the bridge
+after the request and its stamp is this much after the request too, so its capture is never
+before the request."""
+PUMP_IDLE_S = 0.1
+"""The longest the twist scheduler sleeps, between edges or with nothing due, so a pump built
+late is found and a closing bridge is never kept waiting."""
 MAX_BODY_BYTES = 4096
 """quackd's bodies are a few dozen bytes of JSON."""
 DRAIN_LIMIT_BYTES = 16 * MAX_BODY_BYTES
@@ -287,8 +297,11 @@ def _env_float(env: dict[str, str], name: str, default: float) -> float:
         return default
 
 
-def read_upstream(env: dict[str, str]) -> Upstream:
-    """The numbers from MOSS's own code, with the stack's own overrides applied."""
+def read_upstream(env: dict[str, str], arm_env: dict[str, str] | None = None) -> Upstream:
+    """The numbers from MOSS's own code, with the stack's own overrides applied, and the drive
+    pose from the calibration of the run that holds the arm (`arm_env`, the stack's own when
+    there is none), which upstream reads from the environment it is given and otherwise from
+    the process's own, the bridge's."""
     try:
         from moss_dimos import arm, arm_feetech, mission, moss_adapter, robot_profile
     except Exception as e:  # any failure is a reason for /hello, not a crash
@@ -308,7 +321,12 @@ def read_upstream(env: dict[str, str]) -> Upstream:
         start_tolerance_rad=float(arm.START_TOLERANCE_RAD),
         arm_joints=tuple(f"{arm.HW_ID}/{j}" for j in arm.ARM_JOINTS),
         gripper_joint=f"{arm.HW_ID}/{arm.GRIPPER}",
-        drive_pose=tuple(float(v) for v in arm.drive_pose_rad()),
+        drive_pose=tuple(
+            float(v)
+            for v in arm.drive_pose_rad(
+                arm.calibration_path(None, env if arm_env is None else arm_env)
+            )
+        ),
         arm_coordinator=str(arm.ARM_COORDINATOR_NAME),
     )
 
@@ -334,6 +352,17 @@ class StackInfo:
     env: dict[str, str] = field(default_factory=dict)
     arm_run: Run | None = None
     error: str | None = None
+    arm_env: dict[str, str] | None = None
+    """The moss-arm run's own environment, from its /proc entry, None when unreadable."""
+
+    def arm_environ(self) -> dict[str, str] | None:
+        """The environment of the run that holds the arm, the one the maker's script and the
+        drive pose must use, its calibration among it: the moss-arm run's own, or with none
+        beside the stack, the stack's own, since then its blueprint is the one that carries
+        the arm. None when that cannot be read."""
+        if self.arm_run is not None:
+            return None if self.arm_env is None else dict(self.arm_env)
+        return dict(self.env) if self.running and self.env else None
 
     @property
     def transport(self) -> str:
@@ -435,8 +464,9 @@ def read_stack(directory: str | None = None) -> StackInfo:
     runs = live_runs(directory)
     arm_run = next((r for r in reversed(runs) if r.blueprint == ARM_STACK), None)
     base = next((r for r in reversed(runs) if r.blueprint != ARM_STACK), None)
+    arm_env = proc_environ(arm_run.pid) if arm_run is not None else None
     if base is None:
-        return StackInfo(running=False, arm_run=arm_run)
+        return StackInfo(running=False, arm_run=arm_run, arm_env=arm_env)
     env = proc_environ(base.pid)
     return StackInfo(
         running=True,
@@ -445,10 +475,16 @@ def read_stack(directory: str | None = None) -> StackInfo:
         run_id=base.run_id,
         env=env or {},
         arm_run=arm_run,
+        arm_env=arm_env,
         error=None
         if env is not None
         else f"the stack's environment (pid {base.pid}) is unreadable",
     )
+
+
+def _runs_of(stack: StackInfo) -> tuple[str | None, str | None]:
+    """The base run and the arm's run: the numbers are read again when either changes."""
+    return stack.run_id, (stack.arm_run.run_id if stack.arm_run is not None else None)
 
 
 class Procs(Protocol):
@@ -583,9 +619,10 @@ def end_processes(
 class FrameStore:
     """The newest frames of each camera, with their own stamps and when they arrived here.
 
-    A stamp is trusted when it sits on this machine's wall clock: not after the frame arrived,
-    by more than one frame period, and not older than the camera's stale window. A camera on its
-    own clock fails that by years, and then no frame of it is said to be taken after a request."""
+    A stamp is trusted when it sits on this machine's wall clock: not after the frame arrived
+    here by more than STAMP_SLACK_S, and not older than the camera's stale window. A camera on
+    its own clock fails that by years, and then no frame of it is said to be taken after a
+    request."""
 
     def __init__(self, clock: Callable[[], float] = time.time) -> None:
         self._clock = clock
@@ -611,7 +648,7 @@ class FrameStore:
                 self._period[cam] = gap if old is None else 0.8 * old + 0.2 * gap
             self._last_rx[cam] = received
             period = self._period.get(cam) or 0.0
-            trusted = (stamp <= received + max(period, 0.05)) and (
+            trusted = (stamp <= received + STAMP_SLACK_S) and (
                 received - stamp <= stale_after_s(period)
             )
             self._frames[cam].append((stamp, jpeg, received, trusted))
@@ -635,16 +672,20 @@ class FrameStore:
     def first_after(
         self, cam: str, arrived: float, timeout_s: float
     ) -> tuple[float, bytes, bool] | None:
-        """The first frame whose own stamp is after `arrived`, with True. From a camera whose
-        stamps cannot be trusted, the first frame received after it, with False. Else None."""
+        """The first frame that reached this bridge after `arrived` with a stamp of its own after
+        it by STAMP_SLACK_S, with True. From a camera whose stamps cannot be trusted, the first
+        frame received after it, with False. Else None. A frame received before the request is
+        never handed out for it, whatever its stamp says."""
         deadline = time.monotonic() + timeout_s
         with self._cond:
             while True:
                 for stamp, jpeg, received, trusted in self._frames[cam]:
-                    if trusted and stamp >= arrived:
-                        return stamp, jpeg, True
-                    if not trusted and received >= arrived:
+                    if received < arrived:
+                        continue
+                    if not trusted:
                         return stamp, jpeg, False
+                    if stamp >= arrived + STAMP_SLACK_S:
+                        return stamp, jpeg, True
                 left = deadline - time.monotonic()
                 if left <= 0:
                     return None
@@ -671,6 +712,10 @@ def shape(vx: float, wz: float, up: Upstream) -> tuple[float, float, str, dict[s
         sent = math.copysign(limit, wz)
         return vx, sent, "arc", {"wz_asked": wz, "wz_sent": sent}
     return vx, wz, ("straight" if wz == 0.0 else "arc"), None
+
+
+_EDGE_S = 1e-6
+"""A scheduler that wakes on an edge computes it a hair short: this far is the edge itself."""
 
 
 def rest_s(wz: float, up: Upstream) -> float:
@@ -707,6 +752,8 @@ class TwistPump:
         self.published = 0
         self.pulses = 0
         self._was_on = False
+        self.wake = threading.Event()
+        """Set by a new twist, so the scheduler plans its next edge from it at once."""
 
     def fresh(self) -> bool:
         with self._lock:
@@ -721,6 +768,7 @@ class TwistPump:
                 self._pulse_t0 = now
             self._want, self._at, self._zeroed = (sent_vx, sent_wz, mode), now, False
         self.tick()
+        self.wake.set()
         return {
             "ok": True,
             "sent": {"vx": sent_vx, "wz": sent_wz, "mode": mode},
@@ -728,26 +776,43 @@ class TwistPump:
             "channel": self.chan,
         }
 
-    def tick(self) -> None:
+    def tick(self) -> float | None:
+        """What is due now, published, and when the next edge falls on this clock: a pulse's
+        end exactly pulse_s after its start, the next pulse a whole period after it, the next
+        resend at the mission's rate, or the deadman's one zero. None with nothing due."""
         with self._lock:
             now = self.clock()
-            if self._want is not None and now - self._at <= self.up.deadman_s:
+            expires = self._at + self.up.deadman_s
+            resend = now + 1.0 / self.up.pump_hz
+            if self._want is not None and now <= expires:
                 vx, wz, mode = self._want
                 if mode == "spin":
                     period = self.up.pulse_s + rest_s(wz, self.up)
-                    on = (now - self._pulse_t0) % period < self.up.pulse_s
+                    phase = (now - self._pulse_t0) % period
+                    # an edge reached by its own wake reads a hair short of it in floating point:
+                    # that close to the next pulse is the next pulse
+                    if period - phase <= _EDGE_S:
+                        phase = 0.0
+                    on = phase < self.up.pulse_s - _EDGE_S
                     if on and not self._was_on:
                         self.pulses += 1
                     self._was_on = on
                     out = (0.0, wz) if on else (0.0, 0.0)
+                    edge = now - phase + (self.up.pulse_s if on else period)
+                    nxt = min(edge, resend)
                 else:
                     out = (vx, wz)
+                    nxt = resend
+                # the deadman's zero is due the moment the twist is no longer fresh
+                due: float | None = min(nxt, expires + _EDGE_S)
             elif not self._zeroed:
                 self._zeroed, self._want, out = True, None, (0.0, 0.0)
+                due = None
             else:
-                return
+                return None
             self.published += 1
         self.bus.publish_twist(self.chan, *out)
+        return due
 
     def zero(self) -> None:
         """One zero now, and nothing after it: the stop's own twist."""
@@ -878,6 +943,9 @@ class ArmJobs:
         self.job: Job | None = None
         self._proc: subprocess.Popen[str] | None = None
         self._count = 0
+        self._prefix = secrets.token_hex(4)
+        """Drawn per process, so a bridge restarted since never hands out an id that a session
+        from before it still holds: a close cancels its cycle by id."""
 
     def running(self) -> bool:
         with self._lock:
@@ -895,17 +963,26 @@ class ArmJobs:
             return self.job.session if running and self.job is not None else None
 
     def start(
-        self, pick_pose: str, from_phase: str | None, session: str | None = None
+        self,
+        pick_pose: str,
+        from_phase: str | None,
+        session: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> tuple[bool, str]:
+        """The maker's script, in `env`, the environment of the run that holds the arm, as the
+        mission runs it in its own. None inherits this process's."""
         with self._lock:
             if self.job is not None and self.job.state in JOB_RUNNING:
                 return False, "another arm job is running: wait for it, or stop"
             self._count += 1
-            job = Job(f"job-{self._count}", "starting", self.clock(), session=session)
+            job = Job(
+                f"job-{self._prefix}-{self._count}", "starting", self.clock(), session=session
+            )
             try:
                 proc = subprocess.Popen(
                     self.argv_for(pick_pose, from_phase),
                     cwd=self.cwd,
+                    env=env,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -1522,8 +1599,9 @@ class Bridge:
         """The run whose mission has answered this bridge. Only a mission heard before can be
         heard to fall silent, so only its silence confirms a stop."""
         self._reread = reread
-        self._up_run = self.started_stack.run_id if self.started_stack.running else None
-        """The run whose environment the numbers in `up` were read from, None for none."""
+        self._up_run = _runs_of(self.started_stack) if self.started_stack.running else None
+        """The base run and the arm's run whose environments the numbers in `up` were read
+        from, None for none."""
         self.run_error: str | None = None
         """Why the running stack is one this bridge cannot publish to, or None."""
         self._settle_lock = threading.Lock()
@@ -1564,13 +1642,14 @@ class Bridge:
         the running stack's, overrides and all. A bridge started at boot, before any stack,
         read none of them. A stack this bridge cannot publish to refuses the twist and the arm
         until one it can starts, and the stop is never held for any of this."""
-        if self._reread is None or not stack.running or stack.run_id == self._up_run:
+        runs = _runs_of(stack)
+        if self._reread is None or not stack.running or runs == self._up_run:
             return
         with self._settle_lock:
-            if stack.run_id == self._up_run:
+            if runs == self._up_run:
                 return
             up, error = self._reread(stack)
-            self._up_run, self.run_error = stack.run_id, error
+            self._up_run, self.run_error = runs, error
             if up is None:
                 log.warning("the running stack %s: %s", stack.run_id, error)
                 return
@@ -2023,12 +2102,22 @@ class Bridge:
             ok, why = self._arm_answering()
             if not ok:
                 return 503, {"ok": False, "reason": why}
+            env = stack.arm_environ()
+            if env is None:
+                pid = stack.arm_run.pid if stack.arm_run is not None else stack.pid
+                return 503, {
+                    "ok": False,
+                    "reason": f"the environment of the run that holds the arm (pid {pid}) is "
+                    "unreadable, and the maker's script runs in it, its calibration among it: "
+                    "run the bridge as the user that runs MOSS",
+                }
             if self._stops != stops:
                 return 409, {"ok": False, "reason": "a stop came in while this cycle was asked"}
             started, said = self.jobs.start(
                 pick_pose,
                 None if phase is None else str(phase),
                 session if isinstance(session, str) and session else None,
+                env,
             )
         if not started:
             return 409, {"ok": False, "reason": said}
@@ -2173,11 +2262,29 @@ class Bridge:
         return doc
 
     def start(self) -> None:
-        if self.pump is not None:
-            self._threads.append(
-                self._every(1.0 / self.pump.up.pump_hz, self.pump.tick, "moss-pump")
-            )
+        pump = threading.Thread(target=self._pump_loop, name="moss-pump", daemon=True)
+        pump.start()
+        self._threads.append(pump)
         self._threads.append(self._every(0.1, self.session_tick, "moss-session"))
+
+    def _pump_loop(self) -> None:
+        """The one scheduler of every twist this bridge sends. It ticks the pump when its next
+        edge is due rather than on a beat of its own, so a pulse is on for exactly pulse_s
+        whatever the resend rate, and it ticks a pump built after the bridge started, for a
+        stack that started later, as much as one built with it."""
+        while not self._stop.is_set():
+            pump = self.pump
+            if pump is None:
+                self._stop.wait(PUMP_IDLE_S)
+                continue
+            try:
+                due = pump.tick()
+            except Exception as e:  # a pump that died would leave a twist unrepeated
+                log.warning("the twist pump failed: %s", e)
+                due = None
+            wait = PUMP_IDLE_S if due is None else max(0.0, due - pump.clock())
+            pump.wake.wait(min(wait, PUMP_IDLE_S))
+            pump.wake.clear()
 
     def _every(self, period: float, fn: Callable[[], Any], name: str) -> threading.Thread:
         def run() -> None:
@@ -2270,7 +2377,7 @@ def live_bridge(*, moss: str | None, token: str | None, runs: str | None = None)
     if moss_dir is not None and moss_dir not in sys.path:
         sys.path.append(moss_dir)
     try:
-        up = read_upstream(env)
+        up = read_upstream(env, stack.arm_environ())
     except UpstreamMissing as e:
         up_error = str(e)
     own_url = os.environ.get("LCM_DEFAULT_URL") or ""
@@ -2280,7 +2387,7 @@ def live_bridge(*, moss: str | None, token: str | None, runs: str | None = None)
         if refusal is not None:
             return None, refusal
         try:
-            return read_upstream(dict(running.env)), None
+            return read_upstream(dict(running.env), running.arm_environ()), None
         except UpstreamMissing as e:
             return None, str(e)
 
@@ -2366,6 +2473,8 @@ def fake_bridge(
         run_id="fake-run",
         env={"DIMOS_TRANSPORT": "lcm"},
         arm_run=run,
+        # the fake arm run is this process, so its script runs in this process's environment
+        arm_env=dict(os.environ) if arm else None,
     )
 
     def argv(pick_pose: str, from_phase: str | None) -> list[str]:

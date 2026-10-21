@@ -259,6 +259,8 @@ def moss_manifest(
             "battery_ok",
             "bridge_up",
             "mission_up",
+            # the mission drives off at once, so the arm must be in its drive pose first
+            "arm_folded",
         ]
 
     intents: list[Any] = []

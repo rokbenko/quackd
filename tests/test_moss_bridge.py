@@ -189,6 +189,9 @@ def test_the_pins_the_bridge_spells_are_the_ones_read_upstream() -> None:
     assert "moss_adapter.FIRMWARE_COMMAND_TIMEOUT_S" in src
     assert "arm_feetech.DEFAULT_STILL_TICKS_PER_S" in src
     assert "robot_profile.current(env)" in src
+    assert "arm.calibration_path(None, env if arm_env is None else arm_env)" in src
+    assert "MOSS_ARM_CALIB" not in src, "the bridge passes the arm run's environment, whole"
+    assert up.ARM_CALIBRATION_ENV.name == "MOSS_ARM_CALIB"
     assert "hmac.compare_digest" in src
 
 
@@ -408,6 +411,68 @@ def test_a_spin_is_the_makers_pulses_timed_on_the_rover(
     assert pump.pulses == len(starts)
 
 
+@pytest.mark.parametrize("hz", [10.0, 7.0, 3.0])
+def test_a_pulse_is_on_for_exactly_its_pulse_s_whatever_the_resend_rate(hz: float) -> None:
+    """The scheduler wakes on the pump's own edges, so a pulse ends pulse_s after it began, not
+    at the first resend after that, and the next one begins a whole period after it. The
+    turn a pulse gives is its on time, so that time is the maker's and nobody else's."""
+    up_ = _up(max_wz=0.4, rest_s=0.4, pulse_s=0.1, deadman_s=10.0, pump_hz=hz)
+    clock = Clock(5.0)
+    bus = Recorder(clock)
+    pump = B.TwistPump(bus, up_, "/tele_cmd_vel#geometry_msgs.Twist", clock)
+    clock.t += 0.033  # a twist that lands between two of the scheduler's wakes
+    pump.post(0.0, 0.2)
+    for _ in range(1000):
+        due = pump.tick()
+        if due is None:
+            break
+        assert due > clock.t, "the scheduler is told its next edge, always ahead of now"
+        clock.t = due
+    else:
+        raise AssertionError("the deadman never ended the spin")
+    assert bus.twists[-1][2:] == (0.0, 0.0), "the deadman's one zero"
+    on_times, began = [], None
+    for t, _, _, wz in bus.twists:
+        if wz != 0.0 and began is None:
+            began = t
+        elif wz == 0.0 and began is not None:
+            on_times.append(t - began)
+            began = None
+    assert len(on_times) >= 5
+    assert all(s == pytest.approx(up_.pulse_s, abs=1e-5) for s in on_times), on_times
+
+
+def test_a_pump_built_after_the_bridge_started_still_repeats_and_zeroes_on_its_own() -> None:
+    """A bridge started at boot has no pump until a stack it can reach starts. The scheduler
+    runs from the start all the same, so that pump's twist repeats and its deadman zeroes."""
+    stacks = _Stacks(B.StackInfo(running=False))
+    built: list[Any] = []
+
+    def make_bus(up_: Any) -> Any:
+        bus = B.FakeBus(up_, B.FrameStore(), fps=0)
+        built.append(bus)
+        return bus
+
+    bridge = B.Bridge(
+        stack=stacks,
+        up=None,
+        bus=None,
+        up_error="no stack ran when the bridge started",
+        make_bus=make_bus,
+        reread=lambda stack: (B.FAKE_UPSTREAM, None),
+    )
+    bridge.start()
+    try:
+        stacks.info = _running("run-1")
+        assert bridge.twist({"vx": 0.1, "wz": 0.0})[0] == 200
+        time.sleep(B.FAKE_UPSTREAM.deadman_s + 0.3)
+        twists = [v for _, _, v in built[0].published]
+        assert len(twists) >= 2, "repeated while fresh"
+        assert twists[-1] == (0.0, 0.0), "and the deadman's one zero, sent on its own"
+    finally:
+        bridge.close()
+
+
 # ── frames ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -421,6 +486,34 @@ def test_a_frame_is_the_first_one_taken_after_the_request_arrived() -> None:
     clock.t = 1000.2
     store.put("nose", 1000.1, b"new", 1000.15)
     assert store.first_after("nose", 1000.0, 0.01) == (1000.1, b"new", True)
+
+
+def test_a_frame_received_before_the_request_is_never_handed_out_for_it() -> None:
+    """A stamp ahead of the bridge's own clock once passed the trust check by up to a frame
+    period, and a frame received before the request was then called taken after it, with a
+    frame_taken_at later than its capture. A frame that reached the bridge before the request
+    is never handed out for it, and a stamp further ahead than the slack is not trusted."""
+    clock = Clock(100.0)
+    store = B.FrameStore(clock)
+    period, ahead = 0.2, 0.15  # synthetic: past the slack, inside a frame period
+    for k in range(4):
+        received = 100.0 + period * k
+        store.put("nose", received + ahead, b"jpeg-%d" % k, received)
+    arrived = 100.0 + period * 3 + period / 4  # after the last of them reached the bridge
+    assert store.first_after("nose", arrived, 0.0) is None, "none reached it after the request"
+    later = arrived + period
+    store.put("nose", later + ahead, b"jpeg-4", later)
+    assert store.first_after("nose", arrived, 0.0) == (later + ahead, b"jpeg-4", False)
+
+
+def test_a_trusted_frame_is_after_a_request_only_by_the_slack_past_it() -> None:
+    clock = Clock(100.0)
+    store = B.FrameStore(clock)
+    arrived, slack = 100.0, B.STAMP_SLACK_S
+    store.put("nose", arrived + slack / 2, b"close", arrived + slack / 2)
+    assert store.first_after("nose", arrived, 0.0) is None
+    store.put("nose", arrived + 2 * slack, b"after", arrived + 2 * slack)
+    assert store.first_after("nose", arrived, 0.0) == (arrived + 2 * slack, b"after", True)
 
 
 def test_a_camera_on_its_own_clock_is_never_said_to_be_taken_after_a_request() -> None:
@@ -446,6 +539,106 @@ def test_the_frame_route_names_a_frame_taken_after_it_and_refuses_an_unknown_cam
 
 
 # ── the arm cycle, a real subprocess ────────────────────────────────────────────────────
+
+
+def test_a_restarted_bridge_never_hands_out_an_id_a_close_from_before_holds() -> None:
+    """A close cancels its own cycle by id. Ids drawn from a count alone come back after a
+    restart, and a session from before it would cancel another session's cycle, so each
+    process draws a prefix of its own."""
+    first = B.fake_bridge(cycle_s=0.2, fps=0)
+    ok, mine = first.jobs.start("pick", None)
+    assert ok, mine
+    _wait(lambda: first.jobs.doc()["state"] == "done")
+    first.close()
+    second = B.fake_bridge(cycle_s=30.0, fps=0)
+    ok, theirs = second.jobs.start("pick", None)
+    assert ok, theirs
+    _wait(lambda: second.bus.executing)
+    assert mine != theirs
+    code, doc = second.arm_cancel({"id": mine})
+    assert code == 200 and doc["cancelled"] is False and second.jobs.running(), doc
+    second.stop()
+    second.close()
+
+
+def test_the_makers_script_runs_in_the_arm_runs_own_environment() -> None:
+    """The mission runs the maker's script in its own environment, so quackd runs it in the
+    moss-arm run's, its calibration among it, never the bridge's. Unreadable, the cycle is
+    refused rather than played on another calibration."""
+    stack = B.StackInfo(
+        running=True,
+        blueprint="moss-explore",
+        pid=os.getpid(),
+        run_id="r",
+        env={"DIMOS_TRANSPORT": "lcm"},
+        arm_run=B.Run(pid=os.getpid(), blueprint="moss-arm", run_id="a", started=0.0),
+        arm_env={**os.environ, "MOSS_ARM_CALIB": "/the/arm/runs/own.json"},
+    )
+    script = "import os; print('running: ' + os.environ.get('MOSS_ARM_CALIB', 'none'))"
+    bridge = B.Bridge(
+        stack=lambda: stack,
+        up=B.FAKE_UPSTREAM,
+        bus=B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0),
+        arm_argv=lambda pose, phase: [sys.executable, "-c", script],
+    )
+    assert bridge.arm_cycle({})[0] == 200
+    _wait(lambda: bridge.jobs.doc()["state"] not in B.JOB_RUNNING)
+    assert "running: /the/arm/runs/own.json" in bridge.jobs.doc()["lines"]
+    unread = replace(stack, arm_env=None)
+    bridge._stack = lambda: unread
+    code, doc = bridge.arm_cycle({})
+    assert code == 503 and "unreadable" in doc["reason"], doc
+    bridge.close()
+
+
+def test_the_drive_pose_is_read_with_the_arm_runs_own_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """upstream reads the calibration from the environment it is given, and from its own
+    process's otherwise, which on the rover is the bridge's. So the drive pose is read with
+    the run that holds the arm's, and only with the stack's when there is no other."""
+    asked: list[dict[str, str]] = []
+
+    def calibration_path(explicit: Any = None, env: Any = None) -> str:
+        asked.append(dict(env or {}))
+        return str((env or {}).get("MOSS_ARM_CALIB", "default"))
+
+    poses = {"the-arms": [0.5, 0.25], "the-stacks": [0.125, 0.0625]}  # synthetic
+    fakes: dict[str, dict[str, Any]] = {
+        "arm": {
+            "TICKS_PER_RAD": 600.0,
+            "START_TOLERANCE_RAD": 0.04,
+            "HW_ID": "limb",
+            "ARM_JOINTS": ("a", "b"),
+            "GRIPPER": "g",
+            "ARM_COORDINATOR_NAME": "Coordinator",
+            "calibration_path": calibration_path,
+            "drive_pose_rad": lambda calibration=None: poses.get(str(calibration), [9.0, 9.0]),
+        },
+        "arm_feetech": {"DEFAULT_STILL_TICKS_PER_S": 15.0},
+        "mission": {
+            "SERVO_W_MAX": 0.3,
+            "PULSE_S_ENV": "PULSE",
+            "PULSE_S": 0.2,
+            "REST_S_ENV": "REST",
+            "REST_S": 0.3,
+            "TICK_HZ": 8.0,
+        },
+        "moss_adapter": {"FIRMWARE_COMMAND_TIMEOUT_S": 0.25, "FIRMWARE_MAX_PCT": 90.0},
+        "robot_profile": {"current": lambda env: type("P", (), {"track_m": 0.31})()},
+    }
+    package = ModuleType("moss_dimos")
+    for name, attrs in fakes.items():
+        module = ModuleType(f"moss_dimos.{name}")
+        for key, value in attrs.items():
+            setattr(module, key, value)
+        setattr(package, name, module)
+        monkeypatch.setitem(sys.modules, f"moss_dimos.{name}", module)
+    monkeypatch.setitem(sys.modules, "moss_dimos", package)
+    read = B.read_upstream({"MOSS_ARM_CALIB": "the-stacks"}, {"MOSS_ARM_CALIB": "the-arms"})
+    assert read.drive_pose == tuple(poses["the-arms"]) and asked[-1]["MOSS_ARM_CALIB"] == "the-arms"
+    alone = B.read_upstream({"MOSS_ARM_CALIB": "the-stacks"})
+    assert alone.drive_pose == tuple(poses["the-stacks"])
 
 
 def test_a_cycle_runs_the_script_and_ends_with_its_exit_code() -> None:
@@ -500,6 +693,7 @@ def test_a_cycle_cancelled_while_starting_is_cancelled_again_for_a_trajectory_in
         run_id="r",
         env={"DIMOS_TRANSPORT": "lcm"},
         arm_run=B.Run(pid=os.getpid(), blueprint="moss-arm", run_id="a", started=0.0),
+        arm_env=dict(os.environ),
     )
     bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
     bridge = B.Bridge(
@@ -1198,6 +1392,30 @@ def test_a_bridge_started_with_no_bus_builds_one_when_a_stack_it_can_reach_start
     assert bridge.stop()["ok"]
     bridge.twist({"vx": 0.1, "wz": 0.0})
     assert len(built) == 1, "one bus, built once"
+    bridge.close()
+
+
+def test_the_numbers_are_read_again_when_the_arm_run_changes() -> None:
+    """The drive pose is the arm run's, and moss-arm starts after the base stack, so a new arm
+    run is read again as a new base run is."""
+    arm = B.Run(pid=os.getpid(), blueprint="moss-arm", run_id="arm-1", started=0.0)
+    stacks = _Stacks(B.StackInfo(running=False))
+    reads: list[Any] = []
+
+    def reread(stack: Any) -> tuple[Any, str | None]:
+        reads.append((stack.run_id, stack.arm_run.run_id if stack.arm_run else None))
+        return B.FAKE_UPSTREAM, None
+
+    bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
+    bridge = B.Bridge(stack=stacks, up=B.FAKE_UPSTREAM, bus=bus, reread=reread)
+    stacks.info = _running("run-1")
+    bridge.hello()
+    stacks.info = replace(stacks.info, arm_run=arm, arm_env={})
+    bridge.hello()
+    stacks.info = replace(stacks.info, arm_run=replace(arm, run_id="arm-2"))
+    bridge.hello()
+    bridge.hello()
+    assert reads == [("run-1", None), ("run-1", "arm-1"), ("run-1", "arm-2")]
     bridge.close()
 
 

@@ -24,7 +24,7 @@ So the bridge does those four things over HTTP and nothing else.
 | `/hello` | GET | the protocol and its version, the stack it found, what loaded and why anything did not, the track width, the stop ramp, the shaping it applies and the cameras it has heard |
 | `/twist` | POST | `{vx, wz}` published on the stack's pad channel, shaped as below |
 | `/stop` | POST | idempotent, never raises, and says what it did and what failed. `{run, session}` scopes it to the base run its caller connected to |
-| `/frame?cam=nose` or `?cam=wrist` | GET | the first JPEG captured after the request arrived, with the image's own stamp |
+| `/frame?cam=nose` or `?cam=wrist` | GET | the first JPEG that reached the bridge after the request, with the image's own stamp, and whether that stamp says it was taken after the request too |
 | `/arm/cycle` | POST | `{pick_pose, from_phase, session}`: the maker's cycle, as a job of that session's |
 | `/arm/cancel` | POST | `{id}`: that cycle of quackd's cancelled while it runs, and nothing else, which is what quackd's close sends |
 | `/arm` | GET | the job and how it ended, the joints, the jaw gap, and whether the arm is in its drive pose |
@@ -38,17 +38,23 @@ After the firmware's 0.3 s with no new request it sends one zero and then nothin
 because every message on that channel cancels MOSS's navigation, a zero as much as any. An arc
 is kept tight enough that the inner track never reverses, using the stack's own track width,
 because a reversed track is a full power pivot on this base. A turn on the spot is sent as the
-maker's own pulses, 0.1 s on and a rest of zeros, timed here on the rover. The twist is refused
-on `moss-litter`, where the mission owns the base, and while an arm cycle runs.
+maker's own pulses, 0.1 s on and a rest of zeros, timed here on the rover by one scheduler that
+wakes on each pulse's own edges, so a pulse is on for exactly its 0.1 s whatever the resend
+rate. The twist is refused on `moss-litter`, where the mission owns the base, and while an arm
+cycle runs.
 
 **The arm.** `/arm/cycle` runs `tools/moss_arm_play.py` from the MOSS checkout as a subprocess,
 exactly as MOSS's own mission does, and reads its progress from the script's own lines and its
-exit code. The cancel is three steps in this order: stop the script, call `cancel_trajectory`
+exit code. It runs in the moss-arm run's own environment, read from its `/proc` entry, so the
+script and the drive pose use that run's calibration (`MOSS_ARM_CALIB`), and a cycle is refused
+while that environment cannot be read. The cancel is three steps in this order: stop the script, call `cancel_trajectory`
 on the arm's coordinator, then read the joints twice to see that they hold. Killing the script
 alone cancels nothing: the whole cycle is one trajectory that the coordinator plays to its end.
 `from_phase: back_to_clear` is the stow. `/arm/cancel` runs the same three steps for the one
 cycle its `id` names, the id `/arm/cycle` answered with, and does nothing for a cycle that has
 ended or that another id names, so quackd's close never cancels a trajectory it did not start.
+Every id carries a prefix the bridge's process draws, so a bridge restarted since never hands
+out an id a session from before the restart still holds.
 A script that ends any other way than done or refused, by an exception, an exit of its own or a
 signal, has the trajectory it sent cancelled and the arm read before its job ends, since nothing
 else would watch that trajectory for lag. The script runs in a session of its own, so a Ctrl-C

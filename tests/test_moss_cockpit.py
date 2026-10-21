@@ -10,16 +10,19 @@ points at nothing, which is a rover with no bridge, so the manifest is the cockp
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import time
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.registry import VerbContext
 from quackd_moss import MossAdapter
+from quackd_moss import cockpit as moss_client
 from quackd_moss.cockpit import (
     CMD_HEADER_NAME,
     CMD_HEADER_VALUE,
@@ -133,6 +136,36 @@ def test_a_fifth_viewer_is_refused_and_the_reader_says_why(cockpit: FakeCockpit)
             second.stop()
     finally:
         first.stop()
+
+
+def test_a_stopped_camera_has_its_last_frame_expire_on_the_cameras_own_rate() -> None:
+    """Every fetch from a camera that stopped waits out the bridge and fails, and a frame's
+    life once stretched with how long the last fetch took, to four times the bridge's wait.
+    It expires on the camera's configured rate, as the Microduck's frames do."""
+    t = MossCockpit(host="127.0.0.1")
+    t.bridge_up = True
+    t._frame, t._frame_after = Image.new("RGB", (8, 8)), True
+    t._fetch_s = moss_client.FRAME_WAIT_S + moss_client.CALL_TIMEOUT_S
+    t._frame_asked = time.monotonic() - moss_client.stale_after_s(moss_client.CAMERA_PERIOD_S) - 1.0
+    assert t._frame_age_s() is None and t.frame_taken_at() is None
+    assert t.frame_period_s == t._fetch_s, "the cadence still says how slow a frame comes"
+
+
+async def test_a_failed_fetch_never_says_how_long_a_frame_takes() -> None:
+    t = MossCockpit(host="127.0.0.1")
+    t.bridge_up = True
+
+    def waited_and_failed(cam: str) -> Any:
+        _block_the_loop(0.3)
+        raise LinkDown("the bridge waited out a camera that stopped")
+
+    t.bridge.frame = waited_and_failed  # type: ignore[method-assign]
+    task = asyncio.create_task(t._frame_loop())
+    await asyncio.sleep(0.8)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    assert t._fetch_s == 0.0 and t.camera_error is not None
 
 
 # ── the transport, with no bridge ───────────────────────────────────────────────────────

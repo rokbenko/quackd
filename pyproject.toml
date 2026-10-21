@@ -211,12 +211,12 @@ packages = ["quackd"]
 [tool.hatch.build.targets.wheel.force-include]
 "ducks" = "quackd/ducks"
 
-# `bridge/` is the code quackd ships for another machine: the Open Duck Mini v2's daemons on
-# its Raspberry Pi, the AlohaMini's host on that robot, the ToddlerBot's daemon on its Jetson,
-# MOSS's bridge beside its cockpit on the rover, and the Jetson host daemon (`bridge/jetson/`),
-# which serves a board's camera, detections and health to a quackd running elsewhere. All of it ships in the sdist and the repository, never
-# in the wheel: quackd must not import it, and a robot or a board copies the file it needs
-# rather than installing quackd's whole dependency tree.
+# `bridge/` is the code quackd ships for another machine: the Open Duck Mini v2's daemons on its
+# Raspberry Pi, the AlohaMini's host on that robot, the ToddlerBot's daemon on its Jetson, MOSS's
+# bridge beside its cockpit on the rover, and the Jetson host daemon (`bridge/jetson/`), which
+# serves a board's camera, detections and health to a quackd running elsewhere. All of it ships
+# in the sdist and the repository, never in the wheel: quackd must not import it, and a robot or
+# a board copies the file it needs rather than installing quackd's whole dependency tree.
 [tool.hatch.build.targets.sdist]
 include = [
   "quackd", "ducks", "bridge", "docs", "tests",
