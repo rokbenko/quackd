@@ -1,0 +1,34 @@
+{
+  "warning": "TEST KEYS. They are published, so they must never sign for a real robot.",
+  "reference_time": "2026-10-21T00:00:00Z",
+  "keys": {
+    "robot-a": {
+      "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "public_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "did": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+      "short_id": "56475aa75463474c"
+    },
+    "owner": {
+      "seed_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "public_hex": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+      "did": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2",
+      "short_id": "24f6ed6acbfe1009"
+    },
+    "robot-b": {
+      "seed_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+      "public_hex": "2543b92ff1095511476adc8369db6ddc933665a11978dda1404ee1066ca9559d",
+      "did": "did:key:z6Mkgxj2R3HLtQRpPnvfvpuKEceSqf3tZHBjdmZ3fFz3JHGG",
+      "short_id": "03396219237f75a6"
+    },
+    "intruder": {
+      "seed_hex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "public_hex": "174553b456dddfc6908ecab1c101fe6ab21e2baa0617795b7d43a63482993fd5",
+      "did": "did:key:z6Mkg26jczDiqsPK4momfvhZTTyFefWEyxYiSisFJ2wWJFkg",
+      "short_id": "68894d58f18f2c34"
+    }
+  },
+  "session": {
+    "nonce_a": "vfXlXvct7qw_iSDdWldDYg",
+    "nonce_b": "MZtCrMC_w7RjeuBQcEBeaw"
+  }
+}

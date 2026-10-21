@@ -41,6 +41,10 @@ dependencies = [
   "opencv-python-headless>=4.9",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
+  # Robot Passport signs and verifies with Ed25519 (quackd/passport/). mcp already brings it
+  # in through pyjwt[crypto], and a module that imports it says so here rather than leaning
+  # on somebody else's dependency staying put.
+  "cryptography>=42",
 ]
 
 [project.optional-dependencies]

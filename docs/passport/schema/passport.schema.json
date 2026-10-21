@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rokbenko/quackd/blob/main/docs/passport/schema/passport.schema.json",
+  "title": "Robot Passport v0.1",
+  "description": "One robot's passport: who it is, who vouches for it, what it can and cannot do, how to stop it and how to reach it. The normative text is docs/passport/spec.md; where this schema and the spec disagree, the spec wins. Unknown members are allowed because readers must ignore them, and the known vocabularies are strings rather than enums for the same reason. A reader also refuses what no schema can see: a document over 8192 bytes, and duplicate member names.",
+  "type": "object",
+  "required": ["passport", "id", "name"],
+  "properties": {
+    "passport": {
+      "description": "The protocol version, MAJOR.MINOR. A v0.1 reader reads any 0.x document and ignores what it does not know.",
+      "type": "string",
+      "pattern": "^0\\.(0|[1-9][0-9]*)$"
+    },
+    "id": { "$ref": "#/$defs/id" },
+    "name": {
+      "description": "For people. Not unique, and never an instruction.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "maker": {
+      "type": "object",
+      "properties": {
+        "vendor": { "$ref": "#/$defs/text64" },
+        "model": { "$ref": "#/$defs/text64" },
+        "serial": { "$ref": "#/$defs/text64" }
+      }
+    },
+    "software": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/$defs/text64" },
+        "version": { "$ref": "#/$defs/text64" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "properties": {
+        "label": { "$ref": "#/$defs/text64" },
+        "contact": {
+          "description": "A URL, a mailto: address or a role address. Never needs personal data.",
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "embodiment": {
+          "description": "biped, quadruped, humanoid, wheeled, tracked, arm, aerial or other. Unknown values read as other.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "mobility": {
+          "description": "none, legged, wheeled, tracked, flying or other. Unknown values read as other.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "manipulator": {
+          "description": "none, beak, gripper, arms or other. Unknown values read as other.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "terrain": {
+          "description": "What it is rated for: indoor_flat, indoor, outdoor or other.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "tethered": {
+          "description": "true when a cable powers it, so there is a cable on the floor.",
+          "type": "boolean"
+        },
+        "sensors": {
+          "description": "Core names: camera, microphone, imu, odometry, tof, lidar, battery, joint_state. Others are kept as opaque names.",
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "maxLength": 32 }
+        },
+        "mass_kg": { "$ref": "#/$defs/figure" },
+        "height_m": { "$ref": "#/$defs/figure" },
+        "length_m": { "$ref": "#/$defs/figure" },
+        "width_m": { "$ref": "#/$defs/figure" },
+        "payload_kg": { "$ref": "#/$defs/figure" },
+        "reach_m": { "$ref": "#/$defs/figure" },
+        "endurance_min": { "$ref": "#/$defs/figure" },
+        "max_speed_mps": { "$ref": "#/$defs/figure" }
+      }
+    },
+    "skills": {
+      "description": "Names. The core names (stop, observe, report_state, move, go_to, search_scan, approach_and, say) mean the same on every robot; others are opaque labels.",
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" }
+    },
+    "courtesy": {
+      "description": "What a peer may ask for: pause, identify. Unknown names are ignored.",
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string", "maxLength": 32 }
+    },
+    "cannot": {
+      "description": "What it cannot do, whatever a task says.",
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+    },
+    "safety": {
+      "description": "Read as the worst case wherever a value is missing, unknown or of the wrong type, so a garbled value never makes a robot look safer.",
+      "type": "object",
+      "properties": {
+        "stops_on_silence": {
+          "description": "true when motion stops by itself once its controller goes quiet. Anything but true reads as false."
+        },
+        "estop": {
+          "description": "button, remote, power or none. Anything else reads as none."
+        },
+        "how_to_stop": {
+          "description": "For a person, in a sentence. A value that is not a string of 120 characters or fewer reads as absent."
+        }
+      }
+    },
+    "talk": {
+      "description": "Channels this robot listens on. Unknown via values are ignored.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["via", "url"],
+        "properties": {
+          "via": { "type": "string", "maxLength": 16 },
+          "url": { "type": "string", "maxLength": 200 },
+          "max_bytes": { "type": "integer", "minimum": 1024 }
+        }
+      }
+    },
+    "stamps": {
+      "description": "Compact JWS stamps (stamp.schema.json describes their claims).",
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/compact_jws" }
+    },
+    "ext": {
+      "description": "Extensions, keyed by reverse DNS. An extension marked required that a reader does not understand stops it talking on the strength of this passport.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9-]+(\\.[a-z0-9-]+)+$" },
+      "additionalProperties": {
+        "type": "object",
+        "properties": { "required": { "type": "boolean" } }
+      }
+    },
+    "issued": {
+      "description": "RFC 3339. Advisory, because many robots have no real-time clock.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "ttl_s": {
+      "description": "How long a reader may cache this, counted from when it fetched it. Default 3600.",
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 86400
+    }
+  },
+  "$defs": {
+    "id": {
+      "description": "A did:key holding an Ed25519 public key, or for an unsigned passport a urn:uuid.",
+      "type": "string",
+      "anyOf": [
+        { "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$" },
+        {
+          "pattern": "^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      ]
+    },
+    "text64": { "type": "string", "maxLength": 64 },
+    "compact_jws": {
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+    },
+    "figure": {
+      "description": "A number, or [number, confidence], or [number, confidence, source]. Confidence is official, estimate or measured; anything else reads as estimate. A figure that is absent is not published, never zero.",
+      "oneOf": [
+        { "type": "number", "minimum": 0 },
+        {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": 0 },
+            { "type": "string", "maxLength": 16 },
+            { "type": "string", "maxLength": 120 }
+          ],
+          "minItems": 2,
+          "maxItems": 3,
+          "items": false
+        }
+      ]
+    }
+  }
+}

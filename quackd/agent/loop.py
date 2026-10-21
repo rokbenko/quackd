@@ -41,11 +41,11 @@ from quackd.agent.prompts import (
     META_TOOLS,
     REMEMBER,
     REMEMBER_NAME,
-    TELL,
     TELL_NAME,
     build_observation_text,
     build_system_prompt,
     observation_features,
+    tell_tool,
 )
 from quackd.agent.providers.base import (
     JUDGE_FEATURE,
@@ -123,6 +123,22 @@ class FlockLinkLike(Protocol):
     def prompt_section(self) -> str: ...
 
     def describe(self) -> dict[str, Any]: ...
+
+
+class NearbyLike(Protocol):
+    """The robots this pilot met over Robot Passport (`quackd.passport_talk.Talker`).
+
+    Structural for the same reason the flock link is: `quackd.agent` imports nothing from the
+    passport glue. The loop knows the robots nearby can be read out turn by turn, as what
+    happened since the last turn and as the lines a pilot is shown, and told something."""
+
+    def drain(self) -> list[Any]: ...
+
+    def lines(self, heard: Sequence[Any] | None = None) -> list[str]: ...
+
+    def say(self, who: str, text: str) -> None: ...
+
+    def session_named(self, who: str) -> Any: ...
 
 
 @runtime_checkable
@@ -229,6 +245,10 @@ class RunConfig:
     link: FlockLinkLike | None = None
     """This pilot's end of a flock bus. None is a solo run: no `tell` tool, no flock section
     in the prompt, and no inbox in any observation."""
+    nearby: NearbyLike | None = None
+    """The robots this pilot met over Robot Passport, and the end of talk it speaks through
+    (`quackd run --talk`). None is every run without it: no `Robots nearby` block in any
+    observation, and `tell` reaches the flock alone, or is not offered at all."""
     decision: DecisionMode = "off"
     """How much a decision LLM may do with the turns that are a choice (`--decision-mode`).
 
@@ -580,6 +600,22 @@ class AgentLoop:
         with contextlib.suppress(Exception):
             self.transcript.close()
 
+    async def _wait_out_pause(self) -> None:
+        """Hold still until a pause granted to a robot met is over, before a move that reaches
+        the body without passing the gate that keeps it: the rest move, and the hand-back that
+        opens a gripper. A second Ctrl-C while waiting ends the wait, and the rest of the
+        teardown still runs, as it does for every other wait in it."""
+        held = self.executor.paused_until - time.monotonic()
+        if held <= 0:
+            return
+        self._note(f"holding still {held:.0f} s more first, for a pause a robot nearby asked")
+        try:
+            while held > 0:  # until it is over: asyncio may wake a clock tick early
+                await asyncio.sleep(held)
+                held = self.executor.paused_until - time.monotonic()
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self._note("stopped waiting out the pause: interrupted")
+
     async def _rest(self) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
 
@@ -598,6 +634,7 @@ class AgentLoop:
         cfg = self.cfg
         if cfg.dry_run or getattr(cfg.transport, "rest_pose", None) is None:
             return None
+        await self._wait_out_pause()
         in_hand = getattr(cfg.transport, "in_hand", None) is True
         if not in_hand:
             self._note("moving to the rest pose")
@@ -1228,6 +1265,7 @@ class AgentLoop:
         # reuses these features rather than observing again
         link = self.cfg.link
         inbox = link.drain() if link is not None else None
+        near = self._nearby_lines()
         text = build_observation_text(
             step=self.budget.steps,
             max_steps=self.fm.budgets.max_steps,
@@ -1240,6 +1278,7 @@ class AgentLoop:
             inbox_for=link.name if link is not None else None,
             cameras=cameras if len(cameras) > 1 else None,
             stepped=stepped,
+            nearby=near,
         )
         features = observation_features(
             state=state,
@@ -1249,6 +1288,7 @@ class AgentLoop:
             allowed=self.executor.allowed,
             inbox=inbox,
             flock=link.describe() if link is not None else None,
+            nearby=near,
         )
         images = (
             await asyncio.to_thread(
@@ -1618,23 +1658,77 @@ class AgentLoop:
             f"remembered for future runs: {entry.text}", notes=len(memory.notes())
         )
 
-    def _tell(self, arguments: dict[str, Any]) -> VerbResult:
+    def _nearby_lines(self) -> list[str] | None:
+        """The `Robots nearby` block for this turn, and every robot met, word said and session
+        ended since the last one written to the transcript, for a person: a stranger's words
+        included, since they go to the log rather than to the pilot."""
+        nearby = self.cfg.nearby
+        if nearby is None:
+            return None
+        heard = nearby.drain()
+        for item in heard:
+            self._emit(
+                "nearby",
+                step=self.budget.steps,
+                event=item.kind,
+                robot=item.name,
+                calls_itself=item.passport_name,
+                tier=item.tier,
+                text=item.text,
+                details=item.details,
+            )
+        return nearby.lines(heard) or None
+
+    async def _tell(self, arguments: dict[str, Any]) -> VerbResult:
         """One sentence to another pilot. Not a verb: nothing is sent to any robot.
 
         It works under `--dry-run`, unlike `remember`. A dry run sends no intent and leaves
         nothing behind, and a message to a peer in the same dry run is neither: the peer is
         equally pretending, and a flock that could not talk would not be a dry run of a flock
         at all."""
-        link = self.cfg.link
-        if link is None:
-            return VerbResult.fail("you are not in a flock; there is nobody to tell")
+        link, nearby = self.cfg.link, self.cfg.nearby
         to = str(arguments.get("to") or "").strip()
         text = str(arguments.get("text") or "")
+        if nearby is not None and to and to != "all":
+            try:
+                nearby.session_named(to)
+            except Exception:  # no such robot nearby, so perhaps a flock member's name
+                pass
+            else:
+                return await self._tell_nearby(nearby, to, text)
+        if link is None:
+            if nearby is not None:
+                return VerbResult.fail(f"no robot in Robots nearby is called {to!r}")
+            return VerbResult.fail("you are not in a flock; there is nobody to tell")
         try:
             link.send(to, text)
         except ValueError as e:
             return VerbResult.fail(str(e))
         return VerbResult.success(f"told {to or 'all'}: {' '.join(text.split())}")
+
+    async def _tell_nearby(self, nearby: NearbyLike, to: str, text: str) -> VerbResult:
+        """One sentence to a robot met over Robot Passport, as a `say`. Unlike a word to the
+        flock it goes to a real robot outside this run, so a dry run says what it would have
+        said and sends nothing.
+
+        It goes out off the run's loop: a robot slow to take it would otherwise hold the loop
+        for up to five seconds, and a pause asked of this robot meanwhile would time out. What
+        went wrong is said to the person, escaped, and the pilot is told only that it did not
+        arrive: a refusal can carry words the other robot chose, a redirect's target or its
+        own channel's URL, and a stranger's words never reach a pilot."""
+        said = " ".join(text.split())
+        if not 0 < len(text) <= 400:
+            return VerbResult.fail("a word to a robot nearby is 1 to 400 characters")
+        if self.cfg.dry_run:
+            return VerbResult.success(f"would tell {to}: {said} (a dry run sends nothing to it)")
+        try:
+            await asyncio.to_thread(nearby.say, to, text)
+        except Exception as e:  # the robot left, refused it, or cannot be reached
+            from quackd.ui import printable
+
+            self._note(f"could not tell {to}: {printable(str(e))}")
+            return VerbResult.fail(f"could not tell {to}: the message did not reach it")
+        return VerbResult.success(f"told {to}: {said}")
 
     def _cost_of_a_failed_call(self, error: BaseException) -> dict[str, Any]:
         """What a call that ended in an error cost, as fields for its `llm` record, if anything.
@@ -1879,8 +1973,11 @@ class AgentLoop:
             # executor's check are all read off this one registry from now on.
             narrow_policy_verb(registry, self.fm, cfg.transport)
             tools = registry.tool_schemas(allow) + META_TOOLS
-            if cfg.link is not None:
-                tools = [*tools, TELL]
+            if cfg.link is not None or cfg.nearby is not None:
+                tools = [
+                    *tools,
+                    tell_tool(flock=cfg.link is not None, nearby=cfg.nearby is not None),
+                ]
             memory_text: str | None = None
             if cfg.memory is not None:
                 tools = [*tools, REMEMBER]
@@ -2048,6 +2145,9 @@ class AgentLoop:
             # there instead of from the fold
             if cfg.hand_off is not None:
                 await self._hand_over()
+            # From here to the teardown every move goes through the executor, so a pause a
+            # robot met is granted can be kept (`Executor.open_to_peers`)
+            self.executor.open_to_peers = True
             while True:
                 await asyncio.sleep(0)  # let the heartbeat and kill switch run
                 if self.executor.abort.is_set():
@@ -2277,7 +2377,7 @@ class AgentLoop:
                 if call.name == TELL_NAME:
                     # a word to another pilot: no motion, no step, one LLM call, like `remember`
                     last_verb = mine_verb = TELL_NAME
-                    last_result = mine_result = self._tell(call.arguments)
+                    last_result = mine_result = await self._tell(call.arguments)
                     self._emit(
                         "talk",
                         step=self.budget.steps,
@@ -2427,6 +2527,9 @@ class AgentLoop:
             self._emit("note", text=f"run interrupted: {type(e).__name__}")
             raise
         finally:
+            # closed before the rest move and the hand-back, which reach the body without
+            # passing the executor's gates
+            self.executor.open_to_peers = False
             await self.heartbeat.stop()
             with contextlib.suppress(Exception):
                 # the run's last intent, narrated like every other one
@@ -2435,6 +2538,10 @@ class AgentLoop:
                 # a take-hold that stop made over an arm in a person's hands, and was refused,
                 # said to them and put on the record, which the stop itself does neither of
                 self._refused_in_the_stop()
+            # the hand-back opens a gripper and the rest move folds the arm, and neither
+            # passes the gate a granted pause keeps
+            with contextlib.suppress(Exception):
+                await self._wait_out_pause()
             if self._handed_over:
                 # between the stop, which is holding the arm where the run left it, and the
                 # rest move, which folds it: the one moment where opening the gripper is

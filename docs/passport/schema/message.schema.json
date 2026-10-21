@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rokbenko/quackd/blob/main/docs/passport/schema/message.schema.json",
+  "title": "Robot Passport v0.1 talk message",
+  "description": "One talk message: the JSON object an unsigned message is, or the payload of a signed one, a compact JWS whose protected header carries alg Ed25519 (or the older EdDSA), kid equal to from, and typ robot-passport-msg+jws. An ask is always signed. The normative text is docs/passport/spec.md.",
+  "type": "object",
+  "required": ["passport", "type", "from", "msg", "body"],
+  "properties": {
+    "passport": { "type": "string", "pattern": "^0\\.(0|[1-9][0-9]*)$" },
+    "type": {
+      "description": "hello, say, bye, ask, answer or share. A receiver ignores a message of any other type.",
+      "type": "string",
+      "maxLength": 16
+    },
+    "from": { "$ref": "#/$defs/id" },
+    "to": {
+      "description": "The receiver's id, or * for anyone listening on a shared channel.",
+      "type": "string",
+      "maxLength": 128
+    },
+    "msg": { "$ref": "#/$defs/token" },
+    "re": { "$ref": "#/$defs/token" },
+    "nonces": {
+      "description": "The session's two nonces, the initiator's first. Every message after the hello's first carries them.",
+      "type": "array",
+      "prefixItems": [{ "$ref": "#/$defs/nonce" }, { "$ref": "#/$defs/nonce" }],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    },
+    "body": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "hello" } } },
+      "then": {
+        "properties": {
+          "body": {
+            "properties": {
+              "passport": {
+                "description": "The sender's passport, carried in the hello itself: a compact JWS, or the JSON text of an unsigned passport from a robot that holds no key. Its id is the hello's from.",
+                "type": "string"
+              },
+              "nonce": { "$ref": "#/$defs/nonce" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "say" } } },
+      "then": {
+        "properties": {
+          "body": {
+            "required": ["text"],
+            "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 400 } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "ask" } } },
+      "then": {
+        "required": ["nonces"],
+        "properties": {
+          "body": {
+            "required": ["skill"],
+            "properties": {
+              "skill": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+              "args": { "type": "object" },
+              "why": { "type": "string", "maxLength": 120 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "answer" } } },
+      "then": {
+        "required": ["re"],
+        "properties": {
+          "body": {
+            "required": ["result"],
+            "properties": {
+              "result": { "enum": ["ok", "no", "later"] },
+              "reason": { "type": "string", "maxLength": 120 },
+              "versions": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "type": "string", "maxLength": 16 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "share" } } },
+      "then": {
+        "properties": {
+          "body": {
+            "required": ["about", "fact"],
+            "properties": {
+              "about": { "type": "string", "maxLength": 64 },
+              "fact": { "type": "string", "maxLength": 200 },
+              "place": { "type": "string", "maxLength": 64 },
+              "age_s": { "type": "integer", "minimum": 0 },
+              "confidence": { "type": "string", "maxLength": 16 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "anyOf": [
+        { "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$" },
+        {
+          "pattern": "^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      ]
+    },
+    "token": { "type": "string", "pattern": "^[A-Za-z0-9_-]{16,64}$" },
+    "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22,64}$" }
+  }
+}

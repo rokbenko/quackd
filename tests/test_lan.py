@@ -15,6 +15,7 @@ from quackd.cli import app
 from quackd.lan import LanNotInstalled
 from quackd.lan import announce as lan_announce
 from quackd.lan import discover as lan_discover
+from quackd.lan import passports as lan_passports
 from quackd.lan.announce import ServiceRecord, announce, service_record
 from quackd.lan.discover import discover, robot_from_info
 from quackd.lan.txt import (
@@ -183,8 +184,15 @@ def fake_lan(monkeypatch: pytest.MonkeyPatch) -> FakeZeroconf:
             addresses=["10.0.0.9"],
         )
 
+    # `quackd discover` browses Robot Passport beacons too, on the same fake registrar
+    real_discover_passports = lan_passports.discover_passports
+
+    def fake_discover_passports(timeout_s: float = 3.0, **_: Any) -> list[Any]:
+        return real_discover_passports(timeout_s, zc=zc, browse=browse)
+
     monkeypatch.setattr(lan_discover, "discover", fake_discover)
     monkeypatch.setattr(lan_announce, "announce", fake_announce)
+    monkeypatch.setattr(lan_passports, "discover_passports", fake_discover_passports)
     return zc
 
 

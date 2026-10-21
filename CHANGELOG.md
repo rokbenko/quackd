@@ -7,6 +7,112 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Added
+
+- **Robot Passport, a small open protocol for robots that have never met.** A robot says who it
+  is, who vouches for it, what it can and cannot do, how a person stops it and how to reach it, in
+  one JSON document of 99 bytes at its smallest, which a robot that holds an Ed25519 key signs as
+  a compact JWS over its exact bytes, with stamps from its owner. A reader finds it at
+  `/.well-known/robot-passport.json`, over DNS-SD as `_robot-passport._tcp`, retained on an MQTT
+  broker, on a ROS 2 topic or on a QR sticker, and two robots that have met talk in six small
+  signed messages. The specification is draft 0.1, with four JSON Schemas and test vectors signed
+  by a second implementation of its rules, and quackd is its first implementation
+  ([docs/passport/](docs/passport/README.md),
+  [ADR-0057](docs/adr/0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md)). It asks
+  nobody to install anything: `cryptography`, which every install already had through `mcp`, is
+  now a dependency of quackd's own.
+- **`quackd passport`, a passport for every robot quackd drives.** `show --robot NAME` builds it
+  from the robot's manifest and signs it with a key quackd makes for the robot the first time it
+  is asked, and `--json`, `--jws` and `--out FILE` print or write it. `check` reads anybody's
+  passport from a file, from stdin or from a URL the way a reader would, says what it proves and
+  what it only claims, and names the rule of the specification a refusal broke. `set --robot NAME`
+  records how a person stops that robot, `owner` who owns your robots and what robots they meet
+  may ask them for, and `stamp` stamps a robot with your owner key, or with `--did` one whose key
+  lives on the robot. `known` and `forget` list and remove pins. `serve` serves passports at the
+  well-known URL, one or several with an index, advertises them over DNS-SD with `--announce` and
+  keeps them retained on a broker with `--mqtt HOST`, both with `quackd[lan]`. `qr --robot NAME
+  --url URL` writes the robot's QR sticker, read back before it is saved
+  ([docs/passport/quackd.md](docs/passport/quackd.md)).
+- **`quackd meet SOURCE`**, which finds a robot's passport from a URL, a `HOST[:PORT]`, a picture
+  of its sticker, a passport file, `mqtt://BROKER/KEY`, or `ros://HOST[:PORT]` for a ROS robot on
+  rosbridge, under fetch rules that follow no redirect, read nothing past 12 KB in five seconds in
+  all and contact no host but the one named. It shows the robot's tier: a stranger, known, the
+  same owner's, or one this quackd drives. `--pin` and `--pin-owner` pin its key or its owner's
+  once a person says yes. `--as NAME` says hello as one of your robots, each proving it holds its
+  key, and then `--say TEXT` says one thing, `--ask pause:N` or `--ask identify` asks for a
+  courtesy, and `--share "ABOUT: FACT"` with `--place` tells it something your robot saw.
+- **`quackd discover` lists the robot passports on the network** beside the quackd robots it
+  always listed, a passport's `--json` object carrying `"kind": "passport"`.
+- **Talk in a run.** `quackd run --talk` serves the run's robot with a talk inbox, on port 8790
+  unless `--talk-port` says otherwise, and `--meet HOST` says hello to a robot as the run starts.
+  A robot met appears in the pilot's observation under Robots nearby, as JSON within a budget of
+  characters a turn, a stranger under a name made from its key and never with its words, and the
+  pilot can `tell` it something. A dry run sends nothing to a robot met, and the bundled
+  `nearby-hello` task is the smallest run that does all of it.
+- **`robot_nearby`**, an MCP tool that `quackd serve-mcp --talk` adds, which shows a client the
+  robots met exactly as a pilot would see them. Every `robot_list` row names its robot's
+  passport, or `null` for a robot with no key yet ([docs/guides/mcp.md](docs/guides/mcp.md)).
+- **Courtesies.** A robot met can ask one of quackd's robots for a pause, of 5 s at most for a
+  stranger and 10 s for a known robot, or to identify itself by sound, out of one budget every
+  peer shares: a pause a minute and an identify every ten seconds. Fixed code decides, never the
+  pilot, and what it grants runs through the executor under a new source, `peer`, and two new
+  gates: `peer`, which admits only the `stop` a pause begins with and the `say` an identify is,
+  and `paused`, which admits nothing that moves any part of the body while a granted pause holds
+  and ends a verb already moving it. No peer can have a robot stop, a courtesy costs the pilot no
+  step, a run takes courtesies only while its pilot has the body, and an arm in a person's hands
+  is never paused. `passport owner --no-stranger-pauses` and `--courtesy` set what robots met may
+  ask ([docs/passport/talk.md](docs/passport/talk.md#what-quackd-does-with-an-ask),
+  [docs/concepts/safety.md](docs/concepts/safety.md)).
+- **Keys and pins on disk.** A robot's key, and what its owner said about stopping it, sit in one
+  small file per robot under `~/.quackd/keys/robots/`, the owner and the owner key in
+  `~/.quackd/keys/owner.json`, and the robots and owners a person pinned in
+  `~/.quackd/known_robots.json`, all moved by `--registry-dir` with the registry. `robots.json`
+  gains nothing, so an older quackd still reads it.
+
+### Fixed
+
+- **`stop` is never refused for want of budget.** A run or an MCP session whose `max_steps` or
+  `max_minutes` were spent had its brake refused with them, though no other gate refuses `stop`
+  and quackd tells every pilot it is always allowed. It is still charged a step while one is
+  left.
+
+### Documentation
+
+- **[docs/passport/](docs/passport/README.md)**, eighteen pages on every part of Robot Passport:
+  why it exists and what it is not, one meeting step by step, a quickstart for any robot and for
+  one quackd drives, every member of the document, discovery and the fetch rules, keys, stamps,
+  pins and the four tiers, talk and the courtesy handler, a threat model, privacy, compatibility
+  from a sticker to a talking robot, quackd's own commands with what they really print, the
+  normative specification, naming, prior art, a glossary, the questions people ask, and a
+  roadmap that says part by part what is built and what has run. The README gains a section that
+  covers every aspect and links to each page.
+- **SECURITY.md** describes the passport server, `meet`'s fetches and talk as surfaces, and what
+  would be a security issue in each. docs/concepts/safety.md names the `peer` and `paused`
+  gates, docs/concepts/architecture.md the new modules, events and gates, docs/guides/mcp.md
+  `robot_nearby`, and docs/guides/lan.md the second service type.
+
+### Known limitations
+
+- **Nothing of Robot Passport has run between two machines or on a robot.** It ran between
+  separate processes on one Windows 11 machine, with two registry directories standing for two
+  hosts: passports served and announced, found over real zeroconf, read over HTTP and retained
+  on a real amqtt broker, a robot and its owner pinned, all six talk messages over HTTP and
+  through the broker, two `nearby-hello` runs that met, and a pause asked of a running robot and
+  granted. The roadmap's status table keeps that part by part, until somebody runs it on two
+  machines or a robot and writes down what happened
+  ([docs/passport/roadmap.md](docs/passport/roadmap.md)).
+- **A run and `serve-mcp` talk over HTTP only**, not over a broker, and a run in a flock refuses
+  `--talk`. A pilot speaks to a robot met with `tell` alone: asking one for a courtesy, or sharing
+  what it saw, from a run is planned.
+- **Bluetooth LE waits for beacon ids that rotate**, and maker stamps for makers that hold keys,
+  so a passport's maker and model are its own claim, and a reader labels them so. A list of
+  revoked keys at an owner's contact URL is planned.
+- **A single file server for any Linux robot, an ESP32 library, a ROS 2 node, a page that shows a
+  scanned passport to a person, the translators and a passport inside an A2A Agent Card** come
+  after 0.23.0, and the pages mark each as planned.
+
 ## [0.22.0] — 2026-10-21
 
 0.22.0 adds MOSS, a small tracked rover by Laurent Genoud (Show Robotics) that picks up litter,

@@ -1,0 +1,9 @@
+{
+  "passport": "0.1",
+  "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+  "name": "duck-01",
+  "safety": {
+    "stops_on_silence": "yes",
+    "estop": "teleport"
+  }
+}

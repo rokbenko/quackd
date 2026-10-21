@@ -34,8 +34,11 @@ def robot_from_info(info: Any) -> DiscoveredRobot | None:
     )
 
 
-def _browse_zeroconf(zeroconf: Any, zc: Any, timeout_s: float) -> list[Any]:
-    """Collect every `_quackd._tcp.local.` instance seen within the window."""
+def _browse_zeroconf(
+    zeroconf: Any, zc: Any, timeout_s: float, service_type: str = SERVICE_TYPE
+) -> list[Any]:
+    """Collect every instance of `service_type`, `_quackd._tcp.local.` unless told otherwise,
+    seen within the window."""
     found: dict[str, Any] = {}
     wanted = {zeroconf.ServiceStateChange.Added, zeroconf.ServiceStateChange.Updated}
 
@@ -47,7 +50,7 @@ def _browse_zeroconf(zeroconf: Any, zc: Any, timeout_s: float) -> list[Any]:
             if info is not None:
                 found[name] = info
 
-    browser = zeroconf.ServiceBrowser(zc, SERVICE_TYPE, handlers=[on_change])
+    browser = zeroconf.ServiceBrowser(zc, service_type, handlers=[on_change])
     try:
         time.sleep(timeout_s)
     finally:

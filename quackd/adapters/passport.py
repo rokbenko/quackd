@@ -1,0 +1,177 @@
+"""A robot's passport, built from its manifest, so no robot quackd drives needs one written.
+
+`docs/passport/passport.md` has the mapping as a table. What a manifest cannot know, because it
+belongs to one robot rather than to its model, comes from the owner: who owns it, and how a
+person stops it. Left out, those read as the worst case, which is what the protocol asks a
+reader to assume when nobody said."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
+
+from quackd.adapters.manifest import Figure, RobotManifest
+from quackd.passport import strict
+from quackd.passport.document import ESTOPS, MAX_STAMPS, VERSION, validate
+
+#: A `cannot` line is at most this long in a passport (spec 2.2).
+CANNOT_CHARS = 120
+#: And a passport carries at most this many.
+CANNOT_LINES = 8
+#: A passport lists at most this many skills, each a name a reader accepts (spec 2.4).
+SKILLS = 64
+_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+#: Datasheet figures carried into a passport's `body`, under the same names.
+_FIGURES = ("mass_kg", "height_m", "payload_kg", "reach_m", "endurance_min")
+
+
+def passport_from_manifest(
+    manifest: RobotManifest,
+    *,
+    robot_id: str,
+    name: str,
+    software_version: str,
+    owner: Mapping[str, str] | None = None,
+    estop: str | None = None,
+    how_to_stop: str | None = None,
+    talk: Sequence[Mapping[str, Any]] | None = None,
+    issued: datetime | None = None,
+) -> dict[str, Any]:
+    """The passport for one robot with this manifest, as the dict quackd serializes.
+
+    `robot_id` is the robot's own key as a `did:key`, `name` its registered name, and the rest
+    is what its owner said. Members with nothing honest to put in them are left out."""
+    if estop is not None and estop not in ESTOPS:
+        raise ValueError(f"estop {estop!r} is not one of {', '.join(ESTOPS)}")
+    doc: dict[str, Any] = {"passport": VERSION, "id": robot_id, "name": name}
+    doc["maker"] = {"vendor": manifest.vendor, "model": manifest.model}
+    doc["software"] = {"name": "quackd", "version": software_version}
+    if owner:
+        kept = {k: owner[k] for k in ("label", "contact") if owner.get(k)}
+        if kept:
+            doc["owner"] = kept
+    doc["body"] = _body(manifest)
+    doc["skills"] = skill_names(manifest)
+    doc["courtesy"] = courtesy(manifest)
+    cannot = [
+        cannot_line(line) for line in (manifest.datasheet.cannot if manifest.datasheet else [])
+    ]
+    if cannot:
+        doc["cannot"] = cannot[:CANNOT_LINES]
+    safety: dict[str, Any] = {"stops_on_silence": manifest.safety_authority.deadman}
+    if estop is not None:
+        safety["estop"] = estop
+    if how_to_stop:
+        safety["how_to_stop"] = how_to_stop
+    doc["safety"] = safety
+    if talk:
+        doc["talk"] = [dict(channel) for channel in talk]
+    doc["ext"] = {"org.quackd": {"sha": manifest.digest()}}
+    # no `issued` unless asked: stamping the build time would give the same passport a new
+    # digest every time it is built, and a reader caches by digest (spec 5.8)
+    if issued is not None:
+        doc["issued"] = issued.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # read back the way any reader would, so quackd never serves a passport a reader refuses:
+    # a manifest's names are freer than a passport's, and this is where that would show
+    validate(strict.loads(strict.dumps(doc), limit=len(strict.dumps(doc))))
+    return doc
+
+
+def built_passport(
+    manifest: RobotManifest,
+    store: Any,
+    name: str,
+    *,
+    software_version: str,
+    talk: Sequence[Mapping[str, Any]] | None = None,
+) -> tuple[dict[str, Any], Any, bool]:
+    """The passport quackd serves for the robot it keeps under `name` in `store` (a
+    `quackd.passport_store.PassportStore`): its key, made the first time anything asks, what its
+    owner said, and its newest stamps. Returns the passport, the robot's key record, and whether
+    the key was made just now. The one builder `quackd passport`, `quackd run --talk` and
+    `quackd serve-mcp --talk` share, so all three serve the same bytes for one robot."""
+    record, created = store.robot_or_new(name)
+    owner = store.owner()
+    doc = passport_from_manifest(
+        manifest,
+        robot_id=record.key.did,
+        name=name,
+        software_version=software_version,
+        owner={"label": owner.label or "", "contact": owner.contact or ""},
+        estop=record.estop,
+        how_to_stop=record.how_to_stop,
+        talk=talk,
+    )
+    if record.stamps:
+        doc["stamps"] = list(record.stamps)[-MAX_STAMPS:]
+    return doc, record, created
+
+
+def skill_names(manifest: RobotManifest) -> list[str]:
+    """The manifest's verbs as names a passport may carry. A manifest allows a hyphen, which a
+    passport writes as an underscore; a name a passport cannot carry at all, one too long or
+    starting with a digit, is left out rather than breaking the passport around it."""
+    names: list[str] = []
+    for verb in manifest.verbs:
+        name = verb.name.lower().replace("-", "_")
+        if _SKILL.match(name) and name not in names:
+            names.append(name)
+    return names[:SKILLS]
+
+
+def courtesy(manifest: RobotManifest) -> list[str]:
+    """What a peer may ask this body for. Every body quackd drives moves, so every one can
+    pause; only a body with a voice can identify itself, by sound, which is the one way
+    strangers are allowed to ask for (`docs/passport/trust.md`)."""
+    names = ["pause"]
+    if any(verb.name == "say" for verb in manifest.verbs):
+        names.append("identify")
+    return names
+
+
+def cannot_line(line: str) -> str:
+    """A datasheet `cannot` line, cut to what a passport carries.
+
+    The datasheets write a claim and then its explanation, `lift or hold more than about half a
+    kilogram: a pen, an empty cup...`. A line too long for a passport keeps the claim, and a
+    claim still too long is cut at a word."""
+    if len(line) <= CANNOT_CHARS:
+        return line
+    claim = line.split(": ", 1)[0]
+    if len(claim) <= CANNOT_CHARS:
+        return claim
+    return claim[: CANNOT_CHARS - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _figure(figure: Figure | None) -> list[Any] | None:
+    if figure is None:  # not published, which a passport says by leaving it out
+        return None
+    source = figure.source if len(figure.source) <= CANNOT_CHARS else None
+    return (
+        [figure.value, figure.confidence, source] if source else [figure.value, figure.confidence]
+    )
+
+
+def _body(manifest: RobotManifest) -> dict[str, Any]:
+    body: dict[str, Any] = {"embodiment": manifest.embodiment, "mobility": manifest.mobility}
+    sheet = manifest.datasheet
+    if sheet is not None:
+        body["manipulator"] = sheet.manipulator
+        if sheet.terrain is not None:
+            body["terrain"] = sheet.terrain
+        if sheet.tethered is not None:
+            body["tethered"] = sheet.tethered
+        for name in _FIGURES:
+            figure = _figure(getattr(sheet, name))
+            if figure is not None:
+                body[name] = figure
+    speeds = [manifest.limits[k] for k in ("max_vx", "max_vy") if manifest.limits.get(k)]
+    if speeds:
+        # what quackd clamps to, which is what another body sharing the floor needs: a
+        # configured limit rather than a measured fact, so it carries no confidence
+        body["max_speed_mps"] = max(speeds)
+    if manifest.sensors:
+        body["sensors"] = list(manifest.sensors)
+    return body

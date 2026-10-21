@@ -1,0 +1,13 @@
+{
+  "passport": "0.1",
+  "type": "ask",
+  "from": "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10",
+  "to": "did:key:z6Mkgxj2R3HLtQRpPnvfvpuKEceSqf3tZHBjdmZ3fFz3JHGG",
+  "msg": "Ouw8LbUJmEHoRr4-Wx8qPg",
+  "body": {
+    "skill": "pause",
+    "args": {
+      "seconds": 5
+    }
+  }
+}

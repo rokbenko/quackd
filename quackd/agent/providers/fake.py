@@ -9,6 +9,7 @@ transcript run whether the pilot is a rule or a frontier model.
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from collections.abc import Callable
 from typing import Any
@@ -526,6 +527,94 @@ def flock_hello_strategy(obs: Observation, step: int, history: list[Exchange]) -
     return ToolCall(name="report_state", arguments={})
 
 
+NEARBY_PAUSES_S = (0.5, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0)
+"""How long `nearby-hello`'s rule waits on the wall clock before each check for a robot nearby,
+about fifteen seconds in all: time for another robot to start and say hello, and a run that
+nobody meets still ends. Never more than two seconds apart, so a robot that says hello is
+answered while it is still listening."""
+
+ANSWER_WAITS = 3
+ANSWER_PAUSE_S = 3.0
+"""How many checks, and how far apart, the rule waits after its hello for the robot to say
+something back. Without them the robot that spoke first was gone before the other answered."""
+
+
+def nearby_hello_pause(call: ToolCall, history: list[Exchange]) -> float:
+    if call.name != "report_state":
+        return 0.0
+    if _told(history) is not None:
+        return ANSWER_PAUSE_S
+    done = _count_calls(history, "report_state")
+    return NEARBY_PAUSES_S[min(done, len(NEARBY_PAUSES_S) - 1)]
+
+
+def _nearby_lines(obs: Observation) -> list[dict[str, Any]]:
+    """The `Robots nearby` block of an observation, each line read back from its JSON."""
+    items = []
+    for line in obs.features.get("nearby") or []:
+        if not str(line).startswith("- {"):
+            continue
+        try:
+            item = json.loads(str(line)[2:])
+        except ValueError:
+            continue
+        if isinstance(item, dict):
+            items.append(item)
+    return items
+
+
+def _told(history: list[Exchange]) -> dict[str, Any] | None:
+    """What came of the rule's `tell`, read off the observation after it, if it told anybody."""
+    for exchange in history:
+        last = exchange.observation.features.get("last_result") or {}
+        if last.get("verb") == "tell":
+            return dict(last)
+    return None
+
+
+def nearby_hello_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Robot Passport's demo: wait for a robot from outside the flock to come near, tell it hello
+    by the name it is shown under, wait a little for it to say something back, and stop.
+
+    It reads `features["nearby"]`, the very `Robots nearby` lines a model is shown, so it runs
+    the whole path: the hello, the block in the observation, `tell`, and the `say` that reaches
+    the other robot. Bounded like `flock-hello`, so a robot that never comes ends the run."""
+    told = _told([*history, Exchange(observation=obs)])
+    if told is not None:
+        if not told.get("ok"):
+            return ToolCall(
+                name="declare_failure",
+                arguments={"reason": f"could not say hello: {told.get('summary')}"},
+            )
+        heard = [i for ex in history for i in _nearby_lines(ex.observation) if "said" in i]
+        heard += [i for i in _nearby_lines(obs) if "said" in i]
+        # the checks made since the observation that said how the tell went
+        since = next(
+            (
+                i
+                for i, ex in enumerate(history)
+                if (ex.observation.features.get("last_result") or {}).get("verb") == "tell"
+            ),
+            len(history),
+        )
+        waited = _count_calls(history[since:], "report_state")
+        if heard or waited >= ANSWER_WAITS:
+            back = ", and it said something back" if heard else ", and heard nothing back"
+            return ToolCall(
+                name="declare_success", arguments={"reason": f"{told.get('summary')}{back}"}
+            )
+        return ToolCall(name="report_state", arguments={})
+    names = [str(i["name"]) for i in _nearby_lines(obs) if "tier" in i and "name" in i]
+    if names:
+        return ToolCall(
+            name="tell",
+            arguments={"to": names[0], "text": "hello from a quackd robot, staying where I am"},
+        )
+    if _count_calls(history, "report_state") >= len(NEARBY_PAUSES_S):
+        return ToolCall(name="declare_failure", arguments={"reason": "no robot came near"})
+    return ToolCall(name="report_state", arguments={})
+
+
 def lerobot_lookout_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
     """Read the arm back and report it. No camera, no voice, and nothing that moves a joint.
 
@@ -554,6 +643,7 @@ def lerobot_lookout_strategy(obs: Observation, step: int, history: list[Exchange
 
 STRATEGIES: dict[str, Strategy] = {
     "flock-hello": flock_hello_strategy,
+    "nearby-hello": nearby_hello_strategy,
     "hello-world": hello_world_strategy,
     "find-and-kick": find_and_kick_strategy,
     "patrol-and-quack": patrol_strategy,
@@ -570,6 +660,7 @@ STRATEGIES: dict[str, Strategy] = {
 
 PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {
     flock_hello_strategy: flock_hello_pause,
+    nearby_hello_strategy: nearby_hello_pause,
 }
 """Strategies that wait on the wall clock before some of their calls, and how long. A rule
 decides in no time, and a peer it is waiting on needs some."""
