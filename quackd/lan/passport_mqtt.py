@@ -54,7 +54,11 @@ def _paho_client(client_id: str) -> Any:
         import paho.mqtt.client as mqtt
     except ImportError as e:  # pragma: no cover - depends on the environment
         raise LanNotInstalled("Robot Passport over MQTT") from e
-    return mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    # paho re-raises what a callback raises, which ends its network thread: a message handler
+    # that failed once would leave the robot deaf on the broker from then on
+    client.suppress_exceptions = True
+    return client
 
 
 class PassportPublisher:

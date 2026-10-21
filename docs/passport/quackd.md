@@ -601,7 +601,9 @@ ask `no`.
 
 Sessions end after ten quiet minutes, a `hello` that is not finished in thirty seconds is
 forgotten, and a robot holds at most 64 sessions and 64 half-finished hellos, so a flood of hellos
-from fresh keys is a flood of `429`s and not of memory.
+from fresh keys is a flood of `429`s and not of memory. A quiet session ends before a new `hello`
+is weighed against that limit, so keys that said hello once and went quiet never turn the next
+robot away.
 
 ## Printing a sticker
 

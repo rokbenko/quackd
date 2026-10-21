@@ -118,7 +118,6 @@ class Talker:
         self.store = store
         self._send = send
         self._on_heard = on_heard
-        self._tiers: dict[str, Judgement] = {}
         self._unread: list[Heard] = []
         self._lock = threading.RLock()
         self._met = threading.Condition(self._lock)
@@ -136,6 +135,12 @@ class Talker:
         know of it kept. `address` is where it came from over HTTP, the only host a reply may
         later go to when the robot that sent it opened the session; `broker` says it came over
         this robot's broker, where a reply goes to the inbox the sender's id names."""
+        if message.type == "hello" and message.re is None:
+            # the endpoint ends quiet sessions before it weighs a new one against its limit;
+            # ended here first, so a person is told each went quiet
+            with self._lock:
+                for ended in self.endpoint.expire():
+                    self._note(Event("quiet", ended))
         reply = self.endpoint.receive(message)
         if reply.event is None:
             return reply
@@ -171,7 +176,14 @@ class Talker:
         """A message that came to this robot's inbox on its broker: handled, and any reply sent
         back over the same broker, to the inbox of the robot that sent it, the topic its id
         names (spec 5.4). A message nobody could read is dropped: over a broker there is no
-        status code to refuse it with."""
+        status code to refuse it with. So is one whose handling failed in any way at all,
+        since an exception here would end the broker client's thread, and the inbox with it."""
+        try:
+            self._inbox_mqtt(payload)
+        except Exception:  # anybody on the broker can publish anything here
+            return
+
+    def _inbox_mqtt(self, payload: bytes) -> None:
         try:
             message = read_message(payload)
         except VersionUnknown as e:
@@ -328,12 +340,12 @@ class Talker:
     # ── what a person and a pilot are told ──────────────────────────────────────────────
 
     def tier_of(self, session: Session) -> Judgement:
+        """The tier of the robot a session is with, judged once for the session and kept on it,
+        so it lives no longer than the session does and a robot pinned since is judged anew."""
         with self._lock:
-            known = self._tiers.get(session.peer)
-            if known is None:
-                known = judge(session.passport, self.store)
-                self._tiers[session.peer] = known
-            return known
+            if not isinstance(session.judged, Judgement):
+                session.judged = judge(session.passport, self.store)
+            return session.judged
 
     def shown_name(self, session: Session) -> str:
         """The name a pilot knows a robot by: its own for a robot a person trusts, and for a

@@ -90,6 +90,10 @@ def verify_compact(token: str, typ: str, *, rule: str, payload_limit: int) -> Ve
     if len(parts) != 3:
         raise PassportError(rule, "it is not a compact JWS, which has three parts")
     head, body, sig = parts
+    if not all(_B64URL.fullmatch(part) for part in parts):
+        # before anything encodes one as ASCII: a part outside the alphabet used to raise a
+        # UnicodeEncodeError, which no caller expects of a message off the network
+        raise PassportError(rule, "a part of it is not base64url")
     try:
         header = strict.loads(b64url_decode(head, rule=rule), limit=1024)
     except PassportError as e:

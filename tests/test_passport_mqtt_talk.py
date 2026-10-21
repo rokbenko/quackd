@@ -8,6 +8,7 @@ second step arrives before the call that sent the first has returned.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +147,26 @@ def test_what_nobody_can_read_on_an_inbox_is_dropped(tmp_path: Path) -> None:
     Client(bus).publish(topics(DUCK.short_id)[2], b"{not json")
     Client(bus).publish(topics(DUCK.short_id)[2], b'{"passport": "0.1"}')
     assert heard == [] and duck.endpoint.sessions == {}
+
+
+def test_nothing_published_to_an_inbox_ends_it_or_steers_its_answers(tmp_path: Path) -> None:
+    bus = Bus()
+    _duck, _pub, heard = on_broker(bus, DUCK, "duck-01", tmp_path, serve=True)
+    inbox = topics(DUCK.short_id)[2]
+    before = len(bus.published)
+    e_acute = "\N{LATIN SMALL LETTER E WITH ACUTE}"
+    hostile = [f"eyJhbGciOiJFZDI1NTE5In0.{e_acute}t{e_acute}.c2ln".encode()]
+    # a version this robot does not read, from ids that would have named another topic, or none
+    for sender in ("victim/passport#", "x+y", "did:key:zBAD"):
+        doc = {"passport": "9.0", "type": "say", "from": sender, "msg": "m" * 22}
+        hostile.append(json.dumps(doc).encode())
+    for payload in hostile:
+        Client(bus).publish(inbox, payload)  # raised into paho's thread, this ended the inbox
+    assert [t for t, _p in bus.published[before:] if t != inbox] == []  # nothing answered
+    cart, _cart_pub, _heard_by_cart = on_broker(bus, CART, "cart-01", tmp_path, serve=False)
+    reading = document.read_jws(bus.retained[topics(DUCK.short_id)[0]].decode())
+    cart.meet(reading, route_on_broker(reading, "broker.local", 1883))
+    assert [h.kind for h in heard] == ["met"]  # and the inbox still hears whoever comes next
 
 
 def test_meet_over_a_broker_as_one_of_your_robots(

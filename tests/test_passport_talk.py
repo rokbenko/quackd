@@ -22,6 +22,8 @@ from quackd.passport.talk import (
     IDLE_S,
     MAX_MESSAGE_BYTES,
     MAX_PENDING,
+    MAX_SESSIONS,
+    REMEMBERED,
     Endpoint,
     VersionUnknown,
     envelope,
@@ -217,6 +219,39 @@ def test_a_session_ends_after_ten_quiet_minutes_and_a_hello_after_half_a_minute(
     clock.now += HELLO_S + 1
     assert answer.wire is not None
     assert a.receive(read_message(answer.wire)).status == 403
+
+
+def test_a_message_replayed_into_its_session_is_dropped_however_many_came_between() -> None:
+    a, b = pair()
+    handshake(a, b)
+    noisy = Endpoint(INTRUDER.did, passport_of(INTRUDER, "noisy"), INTRUDER, clock=b.clock)
+    handshake(noisy, b)
+    wire, _msg = a.ask(B.did, "pause", {"seconds": 3})
+    assert b.receive(read_message(wire)).event is not None
+    # one shared memory of messages seen let another peer push this one out of it
+    for i in range(REMEMBERED + 8):
+        b.receive(read_message(noisy.say(B.did, f"word {i}")))
+    again = b.receive(read_message(wire))
+    assert again.status == 204 and again.event is None
+
+
+def test_quiet_sessions_end_before_a_new_hello_meets_the_limit() -> None:
+    clock = Clock()
+    b = Endpoint(B.did, passport_of(B, "cart-01"), B, clock=clock)
+    for i in range(MAX_SESSIONS):
+        key = SigningKey.generate()
+        handshake(Endpoint(key.did, passport_of(key, f"robot-{i}"), key, clock=clock), b)
+    late = SigningKey.generate()
+    newcomer = Endpoint(late.did, passport_of(late, "late"), late, clock=clock)
+    assert b.receive(read_message(newcomer.hello(B.did))).status == 429  # all still talking
+    clock.now += IDLE_S + 1  # and then all quiet, on a host that never asks who is nearby
+    assert b.receive(read_message(newcomer.hello(B.did))).status == 200
+
+
+def test_a_part_outside_base64url_is_refused_and_never_raises_anything_else() -> None:
+    e_acute = "\N{LATIN SMALL LETTER E WITH ACUTE}"
+    with pytest.raises(PassportError, match="not base64url"):
+        read_message(f"eyJhbGciOiJFZDI1NTE5In0.{e_acute}t{e_acute}.c2ln")
 
 
 def test_a_flood_of_hellos_is_refused_once_the_table_is_full() -> None:

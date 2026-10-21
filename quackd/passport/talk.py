@@ -19,7 +19,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from quackd.passport import jws, strict
@@ -40,8 +40,11 @@ HELLO_S = 30.0
 #: so without a bound a flood of hellos would be a flood of memory.
 MAX_SESSIONS = 64
 MAX_PENDING = 64
-#: How many messages a robot remembers having seen, to drop a second copy.
+#: How many messages a robot remembers having seen, to drop a second copy: hellos and anything
+#: outside a session in one memory, and each session's messages in its own, so 64 sessions at
+#: most hold 16,384 of them.
 REMEMBERED = 1024
+REMEMBERED_PER_SESSION = 256
 SIGNED_TYPE = "application/jose"
 PLAIN_TYPE = "application/json"
 
@@ -141,10 +144,14 @@ def read_message(data: bytes | str, *, limit: int = MAX_HELLO_BYTES) -> Message:
     if not isinstance(version, str) or not _VERSION.match(version):
         raise PassportError("6.1", f"passport is {version!r:.40}, not a MAJOR.MINOR version")
     if int(version.split(".")[0]) != MAJOR:
+        # answered only at an id: the sender becomes a topic on a broker, and a made-up one
+        # (`x+y`, `victim/passport#`) named a topic that was not its inbox, or none at all
+        try:
+            answer_to: str | None = _id(sender, "from")
+        except PassportError:
+            answer_to = None
         raise VersionUnknown(
-            version,
-            sender if isinstance(sender, str) else None,
-            msg if isinstance(msg, str) and _TOKEN.match(msg) else None,
+            version, answer_to, msg if isinstance(msg, str) and _TOKEN.match(msg) else None
         )
     kind = doc.get("type")
     if not isinstance(kind, str) or not 0 < len(kind) <= 16:
@@ -293,6 +300,11 @@ class Session:
     passport: Reading
     last: float
     route: Any = None
+    #: the caller's too: what it made of the other robot, its tier, kept for the session's life
+    judged: Any = None
+    #: the messages seen in this session, so a repeat is dropped, which no other peer's
+    #: messages can push out (`REMEMBERED_PER_SESSION`)
+    seen: OrderedDict[str, None] = field(default_factory=OrderedDict)
 
 
 @dataclass(frozen=True)
@@ -471,18 +483,28 @@ class Endpoint:
                 return Reply(403, reason="it is addressed to another robot")
             if message.type not in TYPES:
                 return Reply(204, reason=f"a {message.type} is a type this robot ignores")
-            seen = (message.sender, message.msg)
-            if seen in self._seen:
+            memory, seen, limit = self._memory(message)
+            if seen in memory:
                 return self._repeat(message) or Reply(204, reason="a repeat, dropped")
             try:
                 reply = self._hello(message) if message.type == "hello" else self._spoken(message)
             except PassportError as e:
                 return Reply(400, reason=f"{e.rule}: {e}")
             if reply.status < 300:
-                self._seen[seen] = None
-                while len(self._seen) > REMEMBERED:
-                    self._seen.popitem(last=False)
+                memory[seen] = None
+                while len(memory) > limit:
+                    memory.popitem(last=False)
             return reply
+
+    def _memory(self, message: Message) -> tuple[OrderedDict[Any, None], Any, int]:
+        """Where `message` is remembered, to drop a second copy: its session's own memory when
+        it belongs to one, and the shared one when it does not, which is a hello. One shared
+        memory let any peer push another's messages out of it with a thousand of its own, and
+        then replay one into that robot's session as if it were that robot."""
+        session = self.sessions.get(message.nonces) if message.nonces is not None else None
+        if session is not None and session.peer == message.sender:
+            return session.seen, message.msg, REMEMBERED_PER_SESSION
+        return self._seen, (message.sender, message.msg), REMEMBERED
 
     def _repeat(self, message: Message) -> Reply | None:
         """A first hello that came again while its answer is still waiting gets that answer
@@ -504,6 +526,11 @@ class Endpoint:
         return Reply(403, reason="it answers no hello of this robot's, or one that timed out")
 
     def _first(self, m: Message) -> Reply:
+        # Quiet sessions end before the limit is read. A host that never asks who is nearby
+        # (`passport serve --talk`) never ended them otherwise, so 64 fresh keys left quiet
+        # turned every robot after them away until a restart.
+        for quiet in [s for s in self.sessions.values() if self._quiet(s)]:
+            del self.sessions[quiet.nonces]
         if len(self._answered) >= MAX_PENDING or len(self.sessions) >= MAX_SESSIONS:
             return Reply(429, reason="this robot is talking to as many robots as it can")
         passport = self._passport_of(m)
