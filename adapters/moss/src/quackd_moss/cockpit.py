@@ -780,7 +780,9 @@ class MossCockpit:
 
     async def _frame_loop(self) -> None:
         """The newest nose frame on a timer, each stamped with the moment its request went out,
-        which a frame the bridge says was taken after the request is no older than."""
+        which a frame the bridge says was taken after the request is no older than. It ends
+        when close clears its flag, or at a cancel from anywhere, a lost one among them."""
+        me = asyncio.current_task()
         while self._frames_on:
             asked = time.monotonic()
             try:
@@ -797,6 +799,11 @@ class MossCockpit:
                     # only a fetch that brought a frame says how long one takes: a failed one
                     # says how long the bridge waited for a camera that may have stopped
                     self._fetch_s = time.monotonic() - asked
+            if me is not None and me.cancelling():
+                # Python 3.11's wait_for loses a cancel that arrives as its call returns, and the
+                # cancel is still asked for: a loop shutting down cancels every task, this one
+                # without close, and would wait on it for good
+                raise asyncio.CancelledError
             took = time.monotonic() - asked
             await asyncio.sleep(max(0.0, CAMERA_PERIOD_S - took))
 

@@ -569,6 +569,42 @@ async def test_close_ends_though_its_cancel_of_the_frame_loop_is_lost(rover: Rov
             await asyncio.wait({closing}, timeout=1.0)
 
 
+async def test_the_frame_loop_ends_at_a_cancel_its_fetch_lost(rover: Rover) -> None:
+    """A loop that shuts down cancels every task, the frame loop of a transport nobody closed
+    among them. Python 3.11's wait_for loses a cancel that arrives in the turn after its call
+    returned, and the frame loop used to fetch on, so the shutdown waited on it for good. The
+    cancel is still asked for, and the loop honours it at its next turn."""
+    transport = rover.transport()
+    await transport.connect()
+    frames = transport._frames_task
+    assert frames is not None, "the bridge hears the nose camera, so frames are fetched"
+    loop = asyncio.get_running_loop()
+    real = transport.bridge.frame
+    fetched, go = threading.Event(), threading.Event()
+
+    def frame(cam: str) -> tuple[bytes, bool, str | None]:
+        got = real(cam)
+        if not fetched.is_set():
+            fetched.set()
+            go.wait(10.0)
+            # the cancel lands in the turn after this fetch's own answer, before wait_for has
+            # resumed the loop: the turn it loses a cancel in
+            loop.call_soon_threadsafe(lambda: loop.call_soon(frames.cancel))
+        return got
+
+    transport.bridge.frame = frame  # type: ignore[method-assign]
+    try:
+        assert await asyncio.to_thread(fetched.wait, 5.0), "a fetch is out"
+        go.set()
+        _block_the_loop(0.3)  # the cancel and the fetch's answer queue up in that order
+        done, _ = await asyncio.wait({frames}, timeout=10.0)
+        assert frames in done and frames.cancelled(), "the frame loop fetched on past its cancel"
+    finally:
+        transport._frames_on = False
+        await asyncio.wait({frames}, timeout=5.0)
+        await transport.close()
+
+
 def _closed_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
