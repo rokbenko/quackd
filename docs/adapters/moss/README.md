@@ -213,18 +213,23 @@ for one tool call, and `collect_litter` does not run there at all.
 | a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, a dead process, a dead link and a wedged loop alike, so within 3 s, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
-| the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed, and the soft stop beside it all | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
+| the litter mission | the mission's own stop, then at once the zero, then the end of the mission's own pick script and the arm's cancel, then the mission's stop confirmed, and the soft stop beside it all | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
 
 - **The transport's `stop()`** is the bridge's `/stop` and the cockpit's `/cmd/stop`, sent at
-  once, every time. Each failure is kept and reported, and neither half skips the other or
-  waits for it. Off `moss-litter` the bridge sends its zero first and cancels the arm after it,
-  so a coordinator that hangs never holds back the zero that ends a twist or a planner goal.
-  quackd waits 67 s for the bridge's answer, which covers the bridge's own worst case with
-  every RPC on the rover answering at its timeout, and a stop not answered by then is reported
-  as not delivered. The `stop` verb sends it, and so does the end of every run, a run refused
-  before it moved anything among them, and of every MCP session. On `moss-litter` that ends the
-  mission whoever started it, and that is by plan: the mission runs again once the owner
-  restarts the stack.
+  once, every time. Each failure is kept and reported, and neither half skips the other or waits
+  for it. Off `moss-litter` the bridge sends its zero first and cancels the arm after it, so a
+  coordinator that hangs never holds back the zero that ends a twist or a planner goal. quackd
+  waits 67 s for the bridge's answer, which covers the bridge's own worst case with every RPC on
+  the rover answering at its timeout, and a stop not answered by then is reported as not
+  delivered. The stop verb's own timeout, 72 s, covers that wait, so a slow stop is waited out
+  and never cut short into a second one, and a close after a stop that reached both surfaces,
+  with nothing started since, sends nothing. A verb's own stop at its end is a brake: on a base
+  stack, with no arm cycle of this session's and the arm where the bridge last read it, it sends
+  the zero and skips the arm's two cancels and two reads. The stop verb is never a brake, and
+  cancels the arm whatever it reads. The `stop` verb sends it, and so does the end of every run,
+  a run refused before it moved anything among them, and of every MCP session. On `moss-litter`
+  that ends the mission whoever started it, and that is by plan: the mission runs again once the
+  owner restarts the stack.
 - **A stop is for the run quackd connected to.** The stop and every keepalive name the base
   stack's run. When the owner has restarted the stack since, the bridge's stop sends the new
   run no mission stop and no zero, cancels only an arm cycle the stopping session started,
@@ -239,11 +244,12 @@ for one tool call, and `collect_litter` does not run there at all.
   sends the soft stop for a goal or an exploration it started. A session that started nothing
   sends nothing when it closes, and one that sent no stop either, `quackd doctor` among them,
   leaves no close note.
-- **The mission's stop goes out first, and the arm's cancel and the zero at once after it.** A
-  cycle cancelled under a mission not yet told to stop makes the maker's script exit on its lag
-  watch, the mission marks the pick failed, and its next tick sets the rover exploring again.
-  The mock reproduces that race, and a test proves the order prevents it. Nothing waits on the
-  mission before the arm is cancelled, and a test with a mission slow to stop proves that too.
+- **The mission's stop goes out first, the zero at once after it, and then the arm's cancel.**
+  The base stops whatever ending the pick and the arm's cancel take. A cycle cancelled under a
+  mission not yet told to stop makes the maker's script exit on its lag watch, the mission marks
+  the pick failed, and its next tick sets the rover exploring again. The mock reproduces that
+  race, and a test proves the order prevents it. Nothing waits on the mission before the arm is
+  cancelled, and a test with a mission slow to stop proves that too.
 - **The mission's own pick is ended before the cancel.** The mission's stop leaves its pick
   running (`MISSION_STOP_LEAVES_PICK`), and a pick whose script is still importing dimOS and
   reading the joints has sent nothing for a cancel to find: its trajectory would go out after

@@ -157,6 +157,12 @@ SCRIPT_GRACE_S = 2.0
 """How long the arm script has to end after a terminate before it is killed."""
 PROC_POLL_S = 0.05
 """Between two looks at whether a signalled process has ended."""
+ARM_READ_FRESH_S = 2.0
+"""How recent the bridge's last reading of the joints must be for a brake to compare one read
+against it, quackd's own bound: the client reads the arm with every state it asks."""
+MISSION_RESEND_FIRST_S = 0.2
+"""When the mission's stop first goes out again, while it still answers, the gap doubling each
+time after, so a few go in the confirmation's window rather than one every probe."""
 STARTING_RECANCEL_S = 0.5
 """quackd's own allowance for an execute_trajectory already in flight when a cycle still
 starting is cancelled: its script is ended first, but a request it sent just before can land
@@ -1623,6 +1629,8 @@ class Bridge:
         self._stops = 0
         """How many stops this bridge has run: a start that a stop overtook does not happen."""
         self._make_bus = make_bus
+        self._last_joints: tuple[float, dict[str, float]] | None = None
+        """The joints as this bridge last read them, and when, for a brake's one read."""
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
 
@@ -1825,10 +1833,13 @@ class Bridge:
             self.pump.chan = self._pad_channel(stack)
             return 200, self.pump.post(vx, wz)
 
-    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
+    def stop(
+        self, run: str | None = None, session: str | None = None, *, brake: bool = False
+    ) -> dict[str, Any]:
         """Idempotent, never raises, and says what it did. On moss-litter the mission's stop
-        goes out first, then at once the end of the mission's own pick, the arm's cancel and
-        the zero, and only then is the mission's stop confirmed. A cycle cancelled under a
+        goes out first, then at once the zero, so the base stops whatever the rest takes, then
+        the end of the mission's own pick and the arm's cancel, and only then is the mission's
+        stop confirmed. A cycle cancelled under a
         mission not yet told to stop makes its script exit on its lag watch, the mission marks
         the pick failed, and its next tick explores again. The mission's stop leaves its pick
         running, and a pick still starting sends its trajectory after any cancel, so its script
@@ -1839,7 +1850,12 @@ class Bridge:
         `run` is the base run the caller connected to, and `session` the caller's session. A
         stack restarted since is another run, and the stop touches nothing of it, cancels only
         a cycle that session started, and says why. A stop that names no run stops whatever
-        runs, and one that names no session cancels any cycle of quackd's."""
+        runs, and one that names no session cancels any cycle of quackd's.
+
+        `brake` is a verb's own stop at its end, which off moss-litter skips the arm's cancel
+        and its reads when no cycle of quackd's runs and one read of the joints finds them
+        where the bridge last read them. The stop verb itself is never a brake, and cancels
+        the arm whatever it reads."""
         stack = self.stack()
         did: list[str] = []
         errors: list[str] = []
@@ -1874,13 +1890,20 @@ class Bridge:
         sent = self._send_mission_stop(stack, did, errors) if litter else None
         cancelled_at = self.clock()
         if litter:
+            # the base first: ending the pick and the arm's cancel can take seconds
+            self._zeros(stack, did, errors)
             doc["pick"] = self._end_mission_pick(stack, did, errors)
             doc["arm"] = self._cancel_arm(did, errors, picked=bool(doc["pick"]))
             cancelled_at = self.clock()
-            self._zeros(stack, did, errors)
         else:
             self._zeros(stack, did, errors)
-            doc["arm"] = self._cancel_arm(did, errors)
+            if brake and self._arm_still_for_a_brake():
+                did.append(
+                    "a verb's own brake, no cycle of quackd's running and the arm where it "
+                    "was last read: no cancel"
+                )
+            else:
+                doc["arm"] = self._cancel_arm(did, errors)
         if sent is not None:
             doc["mission"] = self._confirm_mission_stop(stack, sent, did, errors)
         if litter:
@@ -1920,6 +1943,33 @@ class Bridge:
             did.append("a trajectory that landed after the first cancel was cancelled")
         first = doc.get("arm")
         doc["arm"] = {**first, "held": late.get("held")} if isinstance(first, dict) else late
+
+    def _arm_still_for_a_brake(self) -> bool:
+        """Whether a brake may leave the arm alone: no cycle of quackd's runs, and one read of
+        the joints finds every one moving slower than the maker's still rule since the bridge
+        last read them, no longer ago than ARM_READ_FRESH_S. Anything else, an arm that did
+        not answer among it, is the whole cancel."""
+        if self.bus is None or self.up is None:
+            return False
+        if self.jobs is not None and self.jobs.running():
+            return False
+        last = self._last_joints
+        if last is None or self.clock() - last[0] > ARM_READ_FRESH_S:
+            return False
+        try:
+            now = self.bus.arm_joints()
+        except Exception:
+            return False
+        at = self.clock()
+        self._last_joints = (at, dict(now))
+        gap = max(at - last[0], 1e-3)
+        for name in self.up.arm_joints:
+            if name not in now or name not in last[1]:
+                return False
+            speed = abs(now[name] - last[1][name]) * self.up.ticks_per_rad / gap
+            if speed >= self.up.still_ticks_per_s:
+                return False
+        return True
 
     def _zeros(self, stack: StackInfo, did: list[str], errors: list[str]) -> None:
         """A zero on every channel the cockpit's own soft stop zeroes, and the pump's own."""
@@ -1968,14 +2018,19 @@ class Bridge:
         run = stack.run_id or "unknown"
         heard = self.mission_heard_run == run
         deadline = sent_at + MISSION_CONFIRM_S
+        gap = MISSION_RESEND_FIRST_S
+        resend_at = sent_at + gap
         while True:
             if self.bus.mission_status(MISSION_PROBE_S) is not None:
                 heard = True
                 self.mission_heard_run = run
                 # still answering: the stop goes out again, since a stop sent without an answer
-                # on a lossy bus may never have arrived
-                with contextlib.suppress(Exception):
-                    self.bus.mission_stop()
+                # on a lossy bus may never have arrived, backing off as it goes
+                if self.clock() >= resend_at:
+                    with contextlib.suppress(Exception):
+                        self.bus.mission_stop()
+                    gap *= 2
+                    resend_at = self.clock() + gap
             elif heard:
                 silent = self._second_module_answers(stack)
                 if silent is False:
@@ -2111,6 +2166,7 @@ class Bridge:
         if ok and self.bus is not None and self.up is not None:
             with contextlib.suppress(Exception):
                 joints = self.bus.arm_joints()
+                self._last_joints = (self.clock(), dict(joints))
                 doc["joints"] = {k: round(v, 4) for k, v in joints.items()}
                 doc["gap_m"] = joints.get(self.up.gripper_joint)
                 off = max(
@@ -2687,6 +2743,7 @@ def make_handler(bridge: Bridge) -> type[BaseHTTPRequestHandler]:
                     bridge.stop(
                         run if isinstance(run, str) and run else None,
                         sid if isinstance(sid, str) and sid else None,
+                        brake=body.get("brake") is True,
                     ),
                 )
             elif path == ARM_CYCLE_PATH:

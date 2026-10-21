@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib.util
+import os
 import socket
 import sys
 import threading
@@ -266,6 +267,16 @@ def test_the_clients_wait_for_a_stop_covers_the_bridges_worst_case() -> None:
     assert client.STOP_TIMEOUT_S >= B.STOP_WORST_S + 2.0
 
 
+def test_the_stop_verbs_own_timeout_covers_the_transports_wait() -> None:
+    """The core stop verb gives up at 5 s, and the transport may wait for the bridge far longer:
+    a stop cut short there is followed by the executor's own, a second one nothing bounds. The
+    manifest gives the stop verb a timeout that covers the whole wait."""
+    spec = next(v for v in describe("cockpit").verbs if v.name == "stop")
+    assert spec.timeout_s is not None
+    assert client.STOP_TIMEOUT_S + 1.0 < spec.timeout_s <= 600
+    assert spec.timeout_s == moss_verbs.STOP_VERB_TIMEOUT_S
+
+
 def test_every_verb_leaves_its_own_stop_room_before_the_executor_cuts_it() -> None:
     """A verb that gives up, or runs out its minutes, ends with its own stop, which is the
     transport's and waits up to the bridge's worst case for an answer. The executor's timeout
@@ -282,6 +293,129 @@ def test_every_verb_leaves_its_own_stop_room_before_the_executor_cuts_it() -> No
     assert own["explore"].timeout_s == moss_verbs.EXPLORE_MAX_MIN * 60 + moss_verbs.VERB_MARGIN_S
     for spec in describe("cockpit").verbs:
         assert spec.timeout_s is None or spec.timeout_s <= 600, spec.name
+
+
+class _BusyArm(B.FakeBus):
+    """A coordinator that answers every RPC, each a second and a half late: a busy serial bus."""
+
+    def arm_joints(self) -> Any:
+        time.sleep(1.5)
+        return super().arm_joints()
+
+    def arm_cancel(self) -> Any:
+        time.sleep(1.5)
+        return super().arm_cancel()
+
+
+async def test_the_stop_verb_waits_out_a_slow_stop_and_never_sends_a_second() -> None:
+    """Every RPC to the arm takes a second and a half, so the bridge's stop takes longer than
+    the core stop verb's own 5 s. The stop verb is waited out, reports ok, and the bridge saw
+    one stop and no second from the executor."""
+    bus = _BusyArm(B.FAKE_UPSTREAM, B.FrameStore(), fps=10.0)
+    stack = B.StackInfo(
+        running=True,
+        blueprint="moss-explore",
+        pid=os.getpid(),
+        run_id="fake-run",
+        env={"DIMOS_TRANSPORT": "lcm"},
+        arm_run=B.Run(pid=os.getpid(), blueprint="moss-arm", run_id="fake-arm", started=0.0),
+        arm_env=dict(os.environ),
+    )
+    bridge = B.Bridge(
+        stack=lambda: stack,
+        up=B.FAKE_UPSTREAM,
+        bus=bus,
+        token=TOKEN,
+        fake=True,
+        arm_argv=lambda pose, phase: [sys.executable, "-c", "pass"],
+    )
+    with FakeCockpit(blueprint="moss-explore") as cockpit:
+        cockpit.bus, cockpit.run_id = bus, "fake-run"
+        server = B.serve(bridge, "127.0.0.1", 0)
+        bridge.start()
+        try:
+            _wait(lambda: bus.frames.heard("nose")["heard"])
+            rover = Rover(cockpit, bridge, int(server.server_address[1]))
+            adapter = MossAdapter(rover.transport())
+            manifest = await adapter.connect()
+            ex = Executor(
+                registry_from_manifest(manifest, adapter),
+                adapter,
+                contract=None,
+                detector=ColorBlobDetector(),
+                confirm=allow_all,
+                manifest=manifest,
+            )
+            began = time.monotonic()
+            result = await ex.run_verb("stop", {})
+            took = time.monotonic() - began
+            assert result.ok, result.summary
+            assert took > 5.0, "the stop outlasted the core verb's own timeout"
+            assert bridge._stops == 1, "and no second stop followed it"
+            await adapter.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            bridge.close()
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_on_moss_litter_close_after_a_clean_stop_sends_nothing(rover: Rover) -> None:
+    """A run on moss-litter ends with its stop and then its close: the close has nothing left to
+    stop, so it sends nothing, rather than a second stop as long as the first."""
+    transport = rover.transport()
+    await transport.connect()
+    start = Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    await transport.stop()
+    assert transport.stop_error is None, transport.stop_error
+    stops, sent = rover.bridge._stops, rover.bridge.bus.mission_stops
+    posted = len(rover.cockpit.posted("stop"))
+    await transport.close()
+    assert rover.bridge._stops == stops and rover.bridge.bus.mission_stops == sent
+    assert len(rover.cockpit.posted("stop")) == posted
+    assert "litter mission is stopped" in (transport.close_note or ""), transport.close_note
+
+
+async def test_close_after_a_stop_still_halts_what_was_started_since(rover: Rover) -> None:
+    """A clean stop leaves nothing for the close only until something starts again: an
+    exploration started after it is ended by the close."""
+    transport = rover.transport()
+    await transport.connect()
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    await transport.stop()
+    assert transport.stop_error is None and not rover.cockpit.exploring
+    assert (await transport.send_intent(start)).accepted and rover.cockpit.exploring
+    await transport.close()
+    assert not rover.cockpit.exploring, "the close ended what was started after the stop"
+
+
+async def test_a_moves_own_brake_leaves_a_still_arm_alone_and_the_stop_verb_never_does(
+    rover: Rover,
+) -> None:
+    """Every move ends with a stop of its own. On a base stack, with no cycle of this
+    session's and the arm reading still, that brake sends the zero and skips the arm's two
+    cancels and two reads. The stop verb is sent whole, and cancels the arm whatever it
+    reads."""
+    adapter = MossAdapter(rover.transport())
+    manifest = await adapter.connect()
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=None,
+        detector=ColorBlobDetector(),
+        confirm=allow_all,
+        manifest=manifest,
+    )
+    ex.require_verdict = False
+    bus = rover.bridge.bus
+    moved = await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.5})
+    assert moved.ok, moved.summary
+    assert "arm cancel" not in bus.events, "the move's own brake left the still arm alone"
+    stopped = await ex.run_verb("stop", {})
+    assert stopped.ok and "arm cancel" in bus.events, stopped.summary
+    await adapter.close()
 
 
 async def test_the_soft_stop_goes_out_beside_a_bridge_stop_that_waits_on_the_arm(

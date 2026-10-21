@@ -65,32 +65,37 @@ else would watch that trajectory for lag. The script runs in a session of its ow
 on the bridge's terminal never reaches it, and the bridge's own shutdown cancels a cycle still
 running.
 
-**The stop.** On `moss-litter` the mission's own `stop` goes first, then at once the end of the
-mission's own pick, the arm's cancel and a zero twist, and only then the wait that confirms the
-mission's stop. The order matters: a cycle cancelled under a mission not yet told to stop makes
-the maker's script exit on its lag watch, the mission marks the pick failed, and its next tick
-sets the rover exploring again, while a cancel that waited for the confirmation would leave the
-arm moving meanwhile. The mission's stop leaves its own pick running, and a pick still starting
-sends its one trajectory after any cancel, so the bridge sends the maker's script SIGTERM, then
-SIGKILL if it outlives its grace, before it cancels. The script is found among the stack's own
-descendants in `/proc`, by `tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and no other
-process is ever signalled. After every cancel the joints are read twice, and a hold is never
-claimed without that reading. Two still reads are not a hold on their own, since a trajectory
-in one of its pauses reads still: a last cancel must find nothing executing. A cycle cancelled
-while it was still starting is cancelled once more half a second later, for a trajectory its
-script sent just before it was ended. On `moss-litter`, once the mission's stop has had its
-time, the stack's picks are looked for again and ended, for one the mission's last tick
-started after the first look, and the arm is cancelled and read once more, no sooner than half
-a second after the first cancel. Off `moss-litter` the zero goes first and the arm's cancel
-after it, so a coordinator that hangs never holds back the zero.
-The mission's stop is sent without an answer, as dimOS sends every stop, so the bridge confirms
-it by the mission's RPC falling silent, and only for a mission it heard answer before. Each
-probe that still hears the mission sends the stop again, since one sent without an answer may
-never have arrived, and the silence counts only when the arm's coordinator answers in the same
-breath, since with both silent the bus itself may be down. A stop it cannot confirm within 4 s
-of sending it is reported as a failure, and the arm's cancel and the zero have gone out either
-way. With every RPC on the rover answering at its timeout a stop answers within
-`STOP_WORST_S`, and quackd waits that long for it and two seconds more.
+**The stop.** On `moss-litter` the mission's own `stop` goes first, then at once a zero twist,
+so the base stops whatever the rest takes, then the end of the mission's own pick and the arm's
+cancel, and only then the wait that confirms the mission's stop. The order matters: a cycle
+cancelled under a mission not yet told to stop makes the maker's script exit on its lag watch,
+the mission marks the pick failed, and its next tick sets the rover exploring again, while a
+cancel that waited for the confirmation would leave the arm moving meanwhile. The mission's stop
+leaves its own pick running, and a pick still starting sends its one trajectory after any
+cancel, so the bridge sends the maker's script SIGTERM, then SIGKILL if it outlives its grace,
+before it cancels. The script is found among the stack's own descendants in `/proc`, by
+`tools/moss_arm_play.py` or the stack's `MOSS_PICK_CMD`, and no other process is ever signalled.
+After every cancel the joints are read twice, and a hold is never claimed without that reading.
+Two still reads are not a hold on their own, since a trajectory in one of its pauses reads
+still: a last cancel must find nothing executing. A cycle cancelled while it was still starting
+is cancelled once more half a second later, for a trajectory its script sent just before it was
+ended. On `moss-litter`, once the mission's stop has had its time, the stack's picks are looked
+for again and ended, for one the mission's last tick started after the first look, and the arm
+is cancelled and read once more, no sooner than half a second after the first cancel. Off
+`moss-litter` the zero goes first and the arm's cancel after it, so a coordinator that hangs
+never holds back the zero. The mission's stop is sent without an answer, as dimOS sends every
+stop, so the bridge confirms it by the mission's RPC falling silent, and only for a mission it
+heard answer before. A probe that still hears the mission sends the stop again, since one sent
+without an answer may never have arrived, the gap doubling from 0.2 s each time, so a few go out
+rather than one a probe, and the silence counts only when the arm's coordinator answers in the
+same breath, since with both silent the bus itself may be down. A stop it cannot confirm within
+4 s of sending it is reported as a failure, and the arm's cancel and the zero have gone out
+either way. With every RPC on the rover answering at its timeout a stop answers within
+`STOP_WORST_S`, and quackd waits that long for it and two seconds more, and its stop verb's own
+timeout covers that wait. A stop with `brake` set, a verb's own stop at its end, skips the arm's
+cancel and its reads off `moss-litter` when no cycle of quackd's runs and one read finds the
+joints where the bridge last read them, within `ARM_READ_FRESH_S`. Any other stop cancels the
+arm whatever it reads.
 
 **The run.** quackd's stop names the base run it connected to, and so does every keepalive.
 When the owner has restarted the stack since, the stop sends the new run nothing, no mission

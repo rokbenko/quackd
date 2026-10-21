@@ -133,6 +133,8 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "drive_to": (None, "motion"),
         "explore": (None, "confirm"),
         "pick_and_drop": (2, "confirm"),
+        # the core stop, sent whole, so the pilot's stop always cancels the arm
+        "stop": (1, "brake"),
         "stow_arm": (1, "confirm"),
     },
 }

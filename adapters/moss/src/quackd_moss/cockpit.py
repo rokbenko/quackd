@@ -63,11 +63,13 @@ from quackd_moss import upstream_api as up
 from quackd_moss.verbs import (
     BATTERY_FLOOR_V,
     FIRMWARE_LIMIT_S,
+    FULL_STOP,
     MIN_STALE_S,
     MISSION_STOPPED,
     SKILL_ARM_CYCLE,
     SKILL_COLLECT,
     SKILL_EXPLORE,
+    STOP_TIMEOUT_S,
     TELEMETRY_LIMIT_S,
     arm_note,
     stack_refusal,
@@ -141,10 +143,6 @@ quackd waits for one, beyond its own call timeout."""
 FIRST_FRAME_S = 2 * float(up.FIRST_FRAME_WAIT_S.name)
 """How long connect() waits for the cockpit's first nose frame when there is no bridge: the
 cockpit's own wait for a camera, twice."""
-STOP_TIMEOUT_S = 67.0
-"""How long the bridge's stop may take to answer. It is bounded on the rover, and this covers
-its worst case, every RPC there timing out (the bridge's STOP_WORST_S, which the contract
-tests hold this to): a stop never answered in time is a stop reported as not delivered."""
 
 
 class LinkDown(TransportError):
@@ -353,15 +351,20 @@ class BridgeClient:
         status, doc = self._doc(self.control, "POST", TWIST_PATH, {"vx": vx, "wz": wz})
         return status, doc
 
-    def stop(self, run: str | None = None, session: str | None = None) -> dict[str, Any]:
+    def stop(
+        self, run: str | None = None, session: str | None = None, *, brake: bool = False
+    ) -> dict[str, Any]:
         """The bridge's stop, for the base run quackd connected to: a run started since is not
         touched, and of the arm only a cycle `session` started is cancelled under it. No run
-        stops whatever runs."""
+        stops whatever runs. A brake, a verb's own stop, may leave alone an arm that reads
+        still with no cycle of quackd's running."""
         body: dict[str, Any] = {}
         if run:
             body["run"] = run
         if session:
             body["session"] = session
+        if brake:
+            body["brake"] = True
         _, doc = self._doc(self.slow, "POST", STOP_PATH, body, timeout_s=STOP_TIMEOUT_S)
         return dict(doc)
 
@@ -601,6 +604,9 @@ class MossCockpit:
         """`collect_litter` started in this session, so close() stops the mission."""
         self.stop_sent = False
         """A stop ran in this session, so close() says what it did to the mission."""
+        self._clean_stop = False
+        """The last stop reached both surfaces, and nothing has been started since it, so a
+        close has nothing left to stop and sends nothing."""
         self.run_moved: str | None = None
         """The base run a stop or a halt of this session found running instead of the one it
         connected to, which it then left alone."""
@@ -968,6 +974,8 @@ class MossCockpit:
             # that reads this as fresh may send a zero the pump no longer needed, and never
             # the reverse
             self._twist_at = None if vx == 0.0 and wz == 0.0 else time.monotonic()
+            if self._twist_at is not None:
+                self._clean_stop = False
             return Ack()
         return Ack(accepted=False, reason=str(doc.get("reason") or f"the bridge answered {status}"))
 
@@ -976,6 +984,7 @@ class MossCockpit:
         its deadman halts it even if quackd dies the instant after: (why it could not, the
         session's word before). With no bridge there is no deadman to tell."""
         previous, self.started = self.started, started
+        self._clean_stop = False
         if not self.bridge_up:
             return None, previous
         try:
@@ -1080,6 +1089,7 @@ class MossCockpit:
                 return await self._lost("the arm cycle", e)
             if status == 200 and doc.get("ok"):
                 self.arm_job_id = str(doc.get("id"))
+                self._clean_stop = False
                 return Ack()
             return Ack(
                 accepted=False, reason=str(doc.get("reason") or f"the bridge answered {status}")
@@ -1105,13 +1115,15 @@ class MossCockpit:
         """The run the bridge found running instead of the one quackd connected to."""
         soft_sent: list[bool] = []
         run, sid = self.run_id, self.session_id
+        # the stop verb's stop is sent whole, and every other is a verb's own brake
+        brake = not FULL_STOP.get() and self.arm_job_id is None
 
         async def bridge_half() -> None:
             if not self.bridge_up:
                 return
             try:
                 doc = await self._call(
-                    lambda: self.bridge.stop(run, sid), timeout_s=STOP_TIMEOUT_S + 1.0
+                    lambda: self.bridge.stop(run, sid, brake=brake), timeout_s=STOP_TIMEOUT_S + 1.0
                 )
             except Exception as e:
                 bridge_errors.append(f"the bridge's stop: {e}")
@@ -1161,6 +1173,7 @@ class MossCockpit:
             # failed keeps it, so the session still says so to the bridge's deadman and a later
             # close still sends the soft stop for it
             self.started = None
+        self._clean_stop = not errors
         self.stop_error = " and ".join(errors) if errors else None
 
     # ── the watchdog ────────────────────────────────────────────────────────────────
@@ -1369,7 +1382,9 @@ class MossCockpit:
         of its drive pose is said, and so is what a stop of this session's did to the mission."""
         if self.connected:
             note: list[str] = []
-            if self.litter_started:
+            if self._clean_stop:
+                pass  # the last stop reached both surfaces, and nothing has started since it
+            elif self.litter_started:
                 await self.stop()
             elif failed := await self._halt_own():
                 note.append(

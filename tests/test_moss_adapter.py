@@ -794,7 +794,7 @@ async def test_on_moss_litter_the_mission_stops_before_the_arm_is_cancelled() ->
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
     await _picking(mock, "running")
     await adapter.stop()
-    assert mock.stop_log[:4] == ["mission.stop", "pick.script", "arm.cancel", "twist.zero"]
+    assert mock.stop_log[:4] == ["mission.stop", "twist.zero", "pick.script", "arm.cancel"]
     await mock.sleep(5.0)
     assert not mock.exploring, "a stopped mission explores nothing after its cancelled pick"
 
@@ -809,7 +809,7 @@ async def test_on_moss_litter_a_stop_ends_the_missions_pick_while_its_script_is_
     await mock.sleep(PICK_STARTUP_S + 5.0)
     assert mock.job is not None and mock.job.state == "failed", mock.job
     assert mock.arm_folded, "the trajectory never went out, so the arm never left its pose"
-    assert mock.stop_log[:3] == ["mission.stop", "pick.script", "arm.cancel"]
+    assert mock.stop_log[:4] == ["mission.stop", "twist.zero", "pick.script", "arm.cancel"]
 
 
 async def test_cancelling_the_arm_before_the_mission_is_the_race_the_order_prevents() -> None:
@@ -926,6 +926,21 @@ async def test_on_moss_litter_a_session_that_started_nothing_leaves_the_mission_
     assert adapter.close_note is None
     assert mock.stop_log == [] and mock.session_halts == 0
     assert mock.mission.running and not mock.mission_stopped
+
+
+async def test_on_moss_litter_close_after_a_clean_stop_sends_nothing_on_the_mock() -> None:
+    """As the real transport does: the run's own stop, then a close with nothing to stop."""
+    mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.6, 0.0)])
+    assert (
+        await adapter.send_intent(
+            Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+        )
+    ).accepted
+    await adapter.stop()
+    sent = list(mock.stop_log)
+    await adapter.close()
+    assert mock.stop_log == sent, mock.stop_log
+    assert "is stopped" in (adapter.close_note or ""), adapter.close_note
 
 
 async def test_on_moss_litter_close_stops_a_mission_this_session_started() -> None:
@@ -1106,6 +1121,15 @@ def test_every_ref_links_to_one_of_the_two_pinned_upstreams() -> None:
     assert len(up.PIN) == len(up.DIMOS_PIN) == 40
 
 
+def test_the_page_states_the_stops_waits_as_the_code_holds_them() -> None:
+    """The two numbers the page gives a person deciding how long a stop may take."""
+    from quackd_moss.verbs import STOP_TIMEOUT_S, STOP_VERB_TIMEOUT_S
+
+    page = " ".join(DOC.read_text(encoding="utf-8").split())
+    assert f"quackd waits {STOP_TIMEOUT_S:g} s for the bridge's answer" in page
+    assert f"The stop verb's own timeout, {STOP_VERB_TIMEOUT_S:g} s, covers that wait" in page
+
+
 def test_the_page_names_every_ref_carries_the_pin_and_says_never() -> None:
     doc = DOC.read_text(encoding="utf-8").replace("\\|", "|")
     missing = [ref.name for ref in up.all_refs() if ref.name not in doc]
@@ -1122,4 +1146,4 @@ def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:
     m = describe("cockpit")
     named = {c for gates in m.preconditions.values() for c in gates}
     assert named <= set(conditions())
-    assert set(implementations()) == OWN
+    assert set(implementations()) == OWN | {"stop"}, "the stop verb, sent whole"

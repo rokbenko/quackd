@@ -349,6 +349,9 @@ class MossMock:
         """`collect_litter` started in this session, so close() stops the mission."""
         self.stop_sent = False
         """A stop ran in this session, so close() says what it did to the mission."""
+        self._clean_stop = False
+        """The last stop reached both surfaces and nothing has started since: close sends
+        nothing."""
         # quackd's session with the bridge, kept by the loop's own heartbeat
         self.session_id = secrets.token_hex(8)
         self._session_at: float | None = None
@@ -726,19 +729,19 @@ class MossMock:
             self._job_ended(job, ok=False)
 
     def _bridge_stop(self) -> list[str]:
-        """The bridge's `/stop`: on moss-litter the mission's own stop first, then the end of
-        the mission's own pick script, the arm's cancel and a zero twist. Elsewhere the zero
-        first, which also cancels any goal the planner has, and then the arm's cancel, so the
-        tracks stop whatever the arm's coordinator takes to answer."""
+        """The bridge's `/stop`: on moss-litter the mission's own stop first, then at once the
+        zero, then the end of the mission's own pick script and the arm's cancel. Elsewhere the
+        zero first, which also cancels any goal the planner has, and then the arm's cancel, so
+        the tracks stop whatever the rest takes."""
         litter = self.stack == up.LITTER_STACK
         if litter and self.mission.running:
             self.stop_log.append("mission.stop")
             self.mission.running = False
             self.mission_stopped = True
         if litter:
+            self._zero()
             self._end_mission_script()
             held = self._arm_cancel()
-            self._zero()
         else:
             self._zero()
             held = self._arm_cancel()
@@ -795,6 +798,7 @@ class MossMock:
                 f"so nothing was started: {why}"
             )
         self.started = started
+        self._clean_stop = False
         if self.bridge_up:
             self._beat()
         return None
@@ -856,7 +860,9 @@ class MossMock:
         """What this session started, halted, and nothing else, as the real transport does it:
         the whole stop after `collect_litter`, and otherwise `_halt_own`."""
         if self.connected:
-            if self.litter_started:
+            if self._clean_stop:
+                pass  # the last stop reached both surfaces, and nothing has started since it
+            elif self.litter_started:
                 await self.stop()
             else:
                 self._halt_own()
@@ -1145,6 +1151,7 @@ class MossMock:
         if not errors:
             # a stop that failed keeps what the session started, as the real transport does
             self.started = None
+        self._clean_stop = not errors
         self.stop_error = " and ".join(errors) if errors else None
 
     async def heartbeat(self) -> None:

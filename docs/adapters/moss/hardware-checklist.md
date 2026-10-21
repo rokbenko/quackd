@@ -108,11 +108,11 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 ## The litter mission, last
 
 13. **`collect_litter`, then stop it.** Start the stack with `tools/moss-fly.sh litter`, without
-    `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it needs a
-    `.duck` of your own that allows it, run in a terminal where you answer its confirm yourself.
-    Give it a minute with one can in view, then press `q`, or Ctrl-C, in the terminal the run is
-    in: quackd's kill switch sends `stop`. The mission's stop goes out first,
-    then at once its own pick script is ended, the arm holds and the base stops, and the run ends
+    `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it
+    needs a `.duck` of your own that allows it, run in a terminal where you answer its confirm
+    yourself. Give it a minute with one can in view, then press `q`, or Ctrl-C, in the terminal
+    the run is in: quackd's kill switch sends `stop`. The mission's stop goes out first and the
+    base stops at once, then its own pick script is ended and the arm holds, and the run ends
     with a note that the mission is stopped and runs again only after the stack restarts. If the
     note says the stop was not confirmed, stop the stack on the rover with the arm supported.
 

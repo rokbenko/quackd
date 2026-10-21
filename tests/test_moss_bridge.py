@@ -1041,18 +1041,85 @@ def test_on_moss_litter_a_stop_for_a_run_that_has_gone_sends_no_mission_stop() -
     bridge.close()
 
 
-def test_on_moss_litter_the_mission_stops_first_then_the_arm_then_the_zero() -> None:
+def test_on_moss_litter_the_zero_goes_out_before_the_pick_is_ended_and_the_arm_cancelled() -> None:
+    """Ending a pick that outlives its SIGTERM and an arm slow to answer take seconds, and the
+    base stops at once all the same: its zero goes out right after the mission's stop."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    bus = bridge.bus
+    bus.start_mission_pick(startup_s=60.0, ignores_term=True)
+    bus.arm_cancel = _at_its_timeout(clock, bus.arm_cancel, B.RPC_TIMEOUT_S)
+    began, before = clock.t, len(bus.events)
+    bridge.stop()
+    zeros = [t for t, _, values in bus.published if values == (0.0, 0.0)]
+    assert zeros and zeros[0] == began, f"the first zero went out at {zeros[:1]}"
+    assert clock.t > began + B.SCRIPT_GRACE_S, "the pick's end took its grace after it"
+    assert _sends(bus.events[before:])[:2] == [
+        "mission stop",
+        "twist /tele_cmd_vel#geometry_msgs.Twist",
+    ]
+    bridge.close()
+
+
+def test_a_mission_still_answering_is_sent_its_stop_again_less_and_less_often() -> None:
+    """Every probe still hears it, and the resends back off, doubling the gap each time, so a
+    few go out in the confirmation's window rather than one every probe."""
+    clock = Clock()
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_ignores_stop=True)
+    _all_on(clock, bridge)
+    assert bridge.mission_doc()["answering"] is True
+    doc = bridge.stop()
+    assert doc["mission"] == "unconfirmed", doc
+    doublings, gap = 0, B.MISSION_RESEND_FIRST_S
+    while gap < B.MISSION_CONFIRM_S:
+        doublings, gap = doublings + 1, gap * 2
+    sent = bridge.bus.mission_stops
+    assert 2 <= sent <= 1 + doublings + 1, f"{sent} stops in {B.MISSION_CONFIRM_S:g} s"
+    bridge.close()
+
+
+def test_a_brake_leaves_alone_an_arm_that_reads_still_and_the_stop_verb_never_does() -> None:
+    """A verb's own stop at its end, on a base stack, with no cycle of quackd's running and the
+    arm where the bridge last read it, sends the zero and leaves the arm's cancel and reads
+    out. An arm that moved since, and a reading too old to tell, are cancelled and read, and
+    so is every stop that is not a brake, the stop verb's own among them."""
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    _all_on(clock, bridge)
+    bus = bridge.bus
+    bridge.arm_doc()  # the client reads the arm with every state it asks
+    clock.t += 0.5
+    doc = bridge.stop(brake=True)
+    assert "arm cancel" not in bus.events and doc["arm"] is None, doc
+    assert any(v == (0.0, 0.0) for _, _, v in bus.published), "the zero went out all the same"
+    bridge.stop()
+    assert "arm cancel" in bus.events, "a stop that is not a brake always cancels the arm"
+    bus.events.clear()
+    bridge.arm_doc()
+    bus.executing = True  # a trajectory of the owner's, playing
+    clock.t += 0.5
+    bridge.stop(brake=True)
+    assert "arm cancel" in bus.events, "an arm that moved since it was read is cancelled"
+    bus.events.clear()
+    clock.t += B.ARM_READ_FRESH_S + 1.0
+    bridge.stop(brake=True)
+    assert "arm cancel" in bus.events, "a reading too old says nothing of now"
+    bridge.close()
+
+
+def test_on_moss_litter_the_mission_stops_first_then_the_zero_then_the_arm() -> None:
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     bus = bridge.bus
     assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
     bus.executing = True  # the mission's own pick is mid cycle
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
-    assert _sends(bus.events)[:3] == [
-        "mission stop",
-        "arm cancel",
-        "twist /tele_cmd_vel#geometry_msgs.Twist",
-    ]
+    sent = _sends(bus.events)
+    cancel = sent.index("arm cancel")
+    assert sent[0] == "mission stop" and cancel >= 2, sent
+    assert all(e.startswith("twist ") for e in sent[1:cancel]), "the zeros, before the arm"
     assert bridge.mission_doc()["stopped"] is True
     sent = bus.mission_stops
     again = bridge.stop()
@@ -1082,11 +1149,10 @@ def test_on_moss_litter_the_arm_is_cancelled_before_the_missions_stop_is_confirm
     bus.arm_cancel = timed
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
-    assert _sends(bus.events)[:3] == [
-        "mission stop",
-        "arm cancel",
-        "twist /tele_cmd_vel#geometry_msgs.Twist",
-    ]
+    sent = _sends(bus.events)
+    cancel = sent.index("arm cancel")
+    assert sent[0] == "mission stop" and cancel >= 2, sent
+    assert all(e.startswith("twist ") for e in sent[1:cancel]), "the zeros, before the arm"
     assert cancelled_at and cancelled_at[0] < slow <= clock.t, "the cancel waited on the mission"
     bridge.close()
 

@@ -62,6 +62,7 @@ from quackd_moss.verbs import (
     MAX_VX,
     MAX_VY,
     MAX_WZ,
+    STOP_VERB_TIMEOUT_S,
     VERB_MARGIN_S,
     moss_conditions,
     moss_verbs,
@@ -212,7 +213,11 @@ def moss_manifest(
     arm_verbs = bridge and arm and on_base
     collect = bridge and mission and litter
 
-    verbs = [verb_spec(CORE["report_state"], core=True), verb_spec(CORE["stop"], core=True)]
+    verbs = [
+        verb_spec(CORE["report_state"], core=True),
+        # a timeout that covers the transport's own wait, so a slow stop is never cut short
+        verb_spec(CORE["stop"], core=True, timeout_s=STOP_VERB_TIMEOUT_S),
+    ]
     preconditions: dict[str, list[str]] = {}
     if camera:
         verbs.insert(0, verb_spec(CORE["observe"], core=True))
