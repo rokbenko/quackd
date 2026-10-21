@@ -25,7 +25,8 @@ from quackd.passport.talk import Endpoint, read_message
 from quackd.passport_courtesy import Courtesy, Decision
 from quackd.passport_store import PassportStore
 from quackd.passport_talk import Talker
-from quackd.safety import Executor, VerbNotAllowed
+from quackd.safety import Budget, Budgets, Executor, VerbNotAllowed
+from quackd.transport.base import Ack, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import default_registry
 
@@ -48,14 +49,39 @@ class Clock:
         return self.now
 
 
+class Body(MockTransport):
+    """A mock body on the wall's clock, so a peer can ask while a verb runs, that keeps every
+    intent it was sent in order, the stops among them."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent: list[str] = []
+        self.started = time.monotonic()
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        self.sent.append(intent.kind)
+        return await super().send_intent(intent)
+
+    async def stop(self) -> None:
+        self.sent.append("STOP")
+        await super().stop()
+
+    def now(self) -> float:
+        return time.monotonic() - self.started
+
+    async def sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+
 @pytest.fixture
 def on_a_loop() -> Iterator[tuple[Executor, asyncio.AbstractEventLoop]]:
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
-    transport = MockTransport()
+    transport = Body()
     asyncio.run_coroutine_threadsafe(transport.connect(), loop).result(5)
     executor = Executor(default_registry(), transport, contract=contract())
+    executor.open_to_peers = True  # as a run's executor is once its pilot has the body
     try:
         yield executor, loop
     finally:
@@ -96,6 +122,75 @@ def test_while_a_pause_holds_nothing_that_moves_is_admitted_whoever_asks(
     assert executor.paused_until > time.monotonic() + 3
     executor.paused_until = 0.0
     assert run(loop, executor.run_verb("move", STEP)).ok
+
+
+def test_a_pause_ends_a_verb_already_moving_the_body_and_nothing_follows_its_stop(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    body = executor.transport
+    assert isinstance(body, Body)
+    walking = asyncio.run_coroutine_threadsafe(
+        executor.run_verb("move", {"vx": 0.2, "duration_s": 3.0}), loop
+    )
+    time.sleep(0.4)  # the pilot's move is under way when a robot it met asks
+    granted = Courtesy(executor, loop).decide("stranger", "pause", {"seconds": 5})
+    assert granted == Decision("ok", "stopped, and holding still for 5 s")
+    walked = walking.result(5)
+    assert not walked.ok and "asked it to pause" in walked.summary
+    first_stop = body.sent.index("STOP")
+    assert "move" in body.sent[:first_stop]  # it was moving
+    assert set(body.sent[first_stop:]) == {"STOP"}  # and nothing but stops came after
+
+
+def test_a_robot_a_person_is_holding_is_never_paused(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    body = executor.transport
+    assert isinstance(body, Body)
+    body.in_hand = True  # type: ignore[attr-defined]  # an arm handed to a person
+    refused = Courtesy(executor, loop).decide("known", "pause", {"seconds": 3})
+    assert refused.result == "no" and "holding this robot" in refused.reason
+    assert executor.paused_until == 0.0 and "STOP" not in body.sent
+
+
+def test_no_courtesy_is_granted_while_a_run_starts_or_stops(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    executor.open_to_peers = False  # parking its arm, or handing it to a person
+    courtesy = Courtesy(executor, loop)
+    assert courtesy.decide("known", "pause", {"seconds": 3}).result == "later"
+    assert executor.paused_until == 0.0
+    executor.open_to_peers = True
+    assert courtesy.decide("known", "pause", {"seconds": 3}).result == "ok"  # no budget spent
+
+
+def test_a_courtesy_costs_the_pilot_no_steps_and_its_stop_is_never_refused_for_budget(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    executor.budget = Budget(Budgets(max_steps=2))
+    executor.budget.start()
+    clock = Clock()
+    courtesy = Courtesy(executor, loop, clock=clock)
+    for _ in range(3):
+        assert courtesy.decide("stranger", "identify", {}).result == "ok"
+        clock.now += 11
+    assert executor.budget.steps == 0
+    run(loop, executor.run_verb("report_state"))
+    run(loop, executor.run_verb("report_state"))
+    assert run(loop, executor.run_verb("stop")).ok  # the steps are spent, the brake is not
+
+
+def test_a_courtesy_asked_after_its_loop_has_closed_is_answered_later() -> None:
+    loop = asyncio.new_event_loop()
+    executor = Executor(default_registry(), MockTransport(), contract=contract())
+    executor.open_to_peers = True
+    loop.close()
+    answered = Courtesy(executor, loop).decide("known", "pause", {"seconds": 2})
+    assert answered.result == "later"
 
 
 # ── what each tier may ask for ──────────────────────────────────────────────────────────

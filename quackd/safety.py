@@ -56,8 +56,10 @@ if TYPE_CHECKING:
 CANCELLED_BY_ABORT = "abort"
 CANCELLED_BY_TIMEOUT = "timeout"
 CANCELLED_FROM_OUTSIDE = "cancel"
+CANCELLED_BY_PAUSE = "pause"
 """Why the executor cancelled a running verb, as the message of the `CancelledError` the verb is
-handed (`Executor._execute`): the abort it races, the verb's own timeout, or the caller going
+handed (`Executor._execute`): the abort it races, a pause granted to a robot met, the verb's own
+timeout, or the caller going
 away. A verb that keeps a record of its own names its ending by it."""
 
 Source = Literal["agent", "mcp", "cli", "decision", "peer"]
@@ -255,6 +257,15 @@ class Executor:
     """The `time.monotonic()` until which a pause this robot granted a peer holds (`pause_for`):
     the `paused` gate admits nothing that moves the body before then, whoever asks, the pilot
     included. 0 is no pause, which is every run no peer ever asked."""
+    open_to_peers: bool = False
+    """Whether a robot met may have a courtesy run now (`quackd.passport_courtesy`). A run opens
+    it once its pilot has the body and closes it before its teardown, and an MCP session once it
+    has connected and until it closes. Outside those windows the body is moved by its rest move
+    and its hand-over, which no gate sees, so a pause granted then could not be kept."""
+    _moving: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
+    """The verbs moving the body now, which a granted pause ends (`pause_for`)."""
+    _halted: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
+    """Those a pause ended, so `_execute` answers for them rather than raising their cancel."""
     require_verdict: bool = False
     """On where an `assess_task` tool was offered: the agent loop and every MCP session. A
     flock member is a state machine with no pilot to ask, so its executor never does."""
@@ -369,10 +380,20 @@ class Executor:
         return verb.safety_class in ("confirm", "dangerous")
 
     def pause_for(self, seconds: float) -> None:
-        """Hold the body still for `seconds`, the window a granted pause opens after the
-        executor's own stop (docs/passport/talk.md#what-quackd-does-with-an-ask). A second
-        pause only ever lengthens the hold, never shortens one already running."""
+        """Hold the body still for `seconds` (docs/passport/talk.md#what-quackd-does-with-an-ask):
+        every verb already moving it is ended now, as an abort ends one, and the `paused` gate
+        admits nothing that moves it until the hold is over. Without the first half a `move`
+        that began a second earlier went on sending its twists for the rest of its duration,
+        and a `go_to` for up to its whole timeout, past a robot told this one was holding
+        still. A second pause only ever lengthens the hold, never shortens one already running."""
         self.paused_until = max(self.paused_until, time.monotonic() + seconds)
+        # Cancelled here, not through something they wait on: a task cancelled before its next
+        # step never takes it, so none of them sends another intent after this returns, and the
+        # stop the courtesy sends next is the last thing the body is told.
+        for task in list(self._moving):
+            if not task.done():
+                self._halted.add(task)
+                task.cancel(CANCELLED_BY_PAUSE)
 
     def context(self, source: Source = "agent") -> VerbContext:
         """`source` is the outer call's, so a composite's nested verbs are narrated as coming
@@ -659,8 +680,17 @@ class Executor:
             try:
                 if timed:
                     self.budget.check_policy()
-                if not nested:
-                    self.budget.note_step()
+                # A peer's courtesy draws on a budget of its own (`quackd.passport_courtesy`),
+                # never the pilot's: an identify every ten seconds used to spend six of a run's
+                # forty steps a minute. And `stop` is charged while there is a step left and
+                # never refused for want of one, as no other gate refuses it: a session whose
+                # steps were spent used to have its brake refused with them.
+                if not nested and source != "peer":
+                    try:
+                        self.budget.note_step()
+                    except BudgetExceeded:
+                        if canonical != "stop":
+                            raise
             except BudgetExceeded as e:
                 self._emit("gate", name=name, gate="budget", outcome="exceeded", reason=str(e))
                 raise
@@ -798,6 +828,8 @@ class Executor:
         if interruptible:
             abort_task = asyncio.ensure_future(self.abort.wait())
             waiting.add(abort_task)
+            if self.registry.canonical(verb.name) not in WHILE_PAUSED:
+                self._moving.add(verb_task)
         done: set[asyncio.Future[Any]] = set()
         finished = False
         try:
@@ -808,6 +840,9 @@ class Executor:
         finally:
             # the loser is always cancelled: an abort waiter left behind would otherwise
             # accumulate one task per verb for the life of the run
+            self._moving.discard(verb_task)
+            halted = verb_task in self._halted
+            self._halted.discard(verb_task)
             if abort_task is not None and not abort_task.done():
                 abort_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -836,6 +871,8 @@ class Executor:
                 )
                 with contextlib.suppress(Exception):
                     await self.logged_transport().stop()
+        if halted:
+            return await self._ended_by_pause(called)
         if verb_task in done:
             return verb_task.result()
         if abort_task is not None and abort_task in done:
@@ -855,6 +892,24 @@ class Executor:
                 )
             raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
         raise TimeoutError
+
+    async def _ended_by_pause(self, called: str) -> VerbResult:
+        """What a verb a granted pause ended comes to: a stop after it, and a result saying why,
+        which the pilot reads as it reads any other verb's."""
+        held = max(0.0, self.paused_until - time.monotonic())
+        self._emit(
+            "gate",
+            name=called,
+            gate="paused",
+            outcome="fired",
+            reason="ended by a pause this robot granted a robot it met; a stop was sent",
+        )
+        unstopped = await self._stop_after()
+        return VerbResult.fail(
+            f"{called} ended: a robot this one met asked it to pause, and it is holding still "
+            f"for {held:.0f} s more"
+            + (f"; the stop sent after it failed: {unstopped}" if unstopped else "")
+        )
 
     # ── abort conditions the executor enforces itself ───────────────────────────────
 

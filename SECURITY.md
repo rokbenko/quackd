@@ -302,14 +302,16 @@ Also in scope:
   decided by the courtesy handler, never the pilot: a pause of 5 s at most for a stranger and 10 s
   for a known robot, an identify by sound, one pause a minute and one identify every ten seconds
   across every peer together, run through the executor with the source `peer`, where the `peer` gate
-  admits only `stop` and `say` and the `paused` gate admits nothing that moves while a pause holds.
-  A peer can never ask for `stop`, and a reply goes only to the host the other robot's passport or
-  hello came from. A stranger's words reach the terminal and the transcript, for a person, and never
-  a pilot or an MCP client. What would be a security issue: a key, the owner key above all, reaching
-  any output, log, transcript or passport, a passport's text acting on the terminal it is shown on,
-  a fetch to any host but the one named, a robot placed in a tier above stranger without the pin or
-  the stamp that tier needs, a stranger's words reaching a pilot or an MCP client, a peer reaching
-  any verb but `stop` and `say`, or a body moving while a granted pause holds.
+  admits only `stop` and `say`. A pause ends any verb already moving the body, and the `paused` gate
+  admits nothing that moves while it holds. A run takes courtesies only while its pilot has the
+  body, never over an arm in a person's hands, and they cost the pilot no steps. A peer can never
+  ask for `stop`, and a reply goes only to the host the other robot's passport or hello came from. A
+  stranger's words reach the terminal and the transcript, for a person, and never a pilot or an MCP
+  client. What would be a security issue: a key, the owner key above all, reaching any output, log,
+  transcript or passport, a passport's text acting on the terminal it is shown on, a fetch to any
+  host but the one named, a robot placed in a tier above stranger without the pin or the stamp that
+  tier needs, a stranger's words reaching a pilot or an MCP client, a peer reaching any verb but
+  `stop` and `say`, or a body moving while a granted pause holds.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
   quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,

@@ -146,8 +146,9 @@ specification puts four duties on every receiver, whoever made it:
 quackd's handler is fixed code, not the pilot. It looks up the asker's tier
 ([trust.md](trust.md#the-four-tiers)), checks the skill is on that tier's list and that the global
 budget allows it, and only then runs it through the executor, with the source `peer`, so every gate
-the executor already has still applies. `pause` becomes the executor's own stop, followed by a short
-window in which nothing that moves is admitted. `identify` becomes the body's sound when it has one.
+the executor already has still applies. `pause` ends whatever verb is moving the body, then becomes
+the executor's own stop, followed by a short window in which nothing that moves is admitted.
+`identify` becomes the body's sound when it has one.
 Anything else a peer asks for reaches the pilot as information only, the way a passer-by might
 mention something, and the pilot's own task decides whether it matters. A peer never calls `stop`,
 and nothing a peer asks can outlast or override the robot's own stop. The executor holds a peer to

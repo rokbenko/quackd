@@ -509,11 +509,18 @@ fixed code, never the pilot ([talk.md](talk.md#what-quackd-does-with-an-ask)). I
 asker's tier, checks the courtesy is on that tier's list, and checks the one budget every peer
 shares, a pause a minute and an identify every ten seconds, since new keys cost nothing and a limit
 per peer would stop nobody. Only then does it run the courtesy through the executor with the source
-`peer`, so every gate the executor has still applies. A pause is the executor's own `stop`, then a
-window in which nothing that moves any part of the body is admitted, a turn of the head included,
-whoever asks, the pilot included (the `paused` gate). An identify is the body's voice. A peer can
-reach no other verb (the `peer` gate), and it can never ask for `stop` itself
-([concepts/safety.md](../concepts/safety.md)).
+`peer`, so every gate the executor has still applies. A pause ends whatever verb is moving the
+body there and then, sends the executor's own `stop`, and opens a window in which nothing that
+moves any part of the body is admitted, a turn of the head included, whoever asks, the pilot
+included (the `paused` gate). An identify is the body's voice. A peer can reach no other verb (the
+`peer` gate), it can never ask for `stop` itself, and what it is granted costs the pilot none of
+its steps ([concepts/safety.md](../concepts/safety.md)).
+
+A run takes courtesies only while its pilot has the body. While it parks its arm at the start and
+the end, or hands it to a person and takes it back, it moves the body where no gate sees, so an
+ask then is answered `later`, and an arm in a person's hands is never paused, since its stop
+would take the arm back from them. A pause still holding when a run ends is waited out before the
+arm folds.
 
 | Tier | May ask for |
 |---|---|

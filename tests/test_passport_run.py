@@ -9,9 +9,11 @@ glue together and never a fake of either.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
+from quackd.adapters.base import RestResult
 from quackd.agent.loop import AgentLoop, RunConfig
 from quackd.agent.providers.base import Exchange, Observation, ProviderTurn, ToolCall, Usage
 from quackd.agent.transcript import Transcript
@@ -112,6 +114,50 @@ def run_with(
 
 def records(tmp_path: Path, kind: str) -> list[dict[str, Any]]:
     return [r for r in Transcript.read(tmp_path / "run" / "transcript.jsonl") if r["kind"] == kind]
+
+
+async def test_a_run_takes_courtesies_only_while_its_pilot_has_the_body(tmp_path: Path) -> None:
+    duck, _cart, _sent = met_by_a_cart(tmp_path, None)
+    cfg, provider = run_with(tmp_path, duck, [VERDICT, DONE])
+    loop = AgentLoop(cfg)
+    seen: list[bool] = []
+    step = provider.step
+
+    async def watching(*args: Any) -> ProviderTurn:
+        seen.append(loop.executor.open_to_peers)
+        return await step(*args)
+
+    provider.step = watching  # type: ignore[method-assign,assignment]
+    assert loop.executor.open_to_peers is False  # parking, or handing over: no gate sees those
+    await loop.run()
+    assert seen and all(seen)  # open on every turn of the pilot's
+    assert loop.executor.open_to_peers is False  # and closed again before the teardown
+
+
+async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: Path) -> None:
+    class Arm(MockTransport):
+        rest_pose = {"shoulder_pan": 0.0}
+        parked_at = 0.0
+
+        async def go_to_rest(self) -> RestResult:
+            self.parked_at = time.monotonic()
+            return RestResult("arrived", "at the rest pose")
+
+    arm = Arm()
+    (tmp_path / "run").mkdir()
+    cfg = RunConfig(
+        duck=parse_duck_text(DUCK_FILE),
+        provider=Script([DONE]),
+        transport=arm,
+        run_dir=tmp_path / "run",
+        summary_file=False,
+    )
+    loop = AgentLoop(cfg)
+    asked = time.monotonic()
+    loop.executor.paused_until = asked + 0.3
+    parked = await loop._rest()
+    assert parked is not None and parked.reached
+    assert arm.parked_at - asked >= 0.3  # the arm folded only once the pause was over
 
 
 async def test_a_pilot_sees_a_stranger_nearby_and_a_person_reads_its_words(tmp_path: Path) -> None:

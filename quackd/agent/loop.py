@@ -618,6 +618,14 @@ class AgentLoop:
         cfg = self.cfg
         if cfg.dry_run or getattr(cfg.transport, "rest_pose", None) is None:
             return None
+        held = self.executor.paused_until - time.monotonic()
+        if held > 0:
+            # a pause granted to a robot met is a promise to hold still, and the rest move
+            # reaches the body without passing the gate that keeps it
+            self._note(f"holding still {held:.0f} s more first, for a pause a robot nearby asked")
+            while held > 0:  # until it is over: asyncio may wake a clock tick early
+                await asyncio.sleep(held)
+                held = self.executor.paused_until - time.monotonic()
         in_hand = getattr(cfg.transport, "in_hand", None) is True
         if not in_hand:
             self._note("moving to the rest pose")
@@ -2119,6 +2127,9 @@ class AgentLoop:
             # there instead of from the fold
             if cfg.hand_off is not None:
                 await self._hand_over()
+            # From here to the teardown every move goes through the executor, so a pause a
+            # robot met is granted can be kept (`Executor.open_to_peers`)
+            self.executor.open_to_peers = True
             while True:
                 await asyncio.sleep(0)  # let the heartbeat and kill switch run
                 if self.executor.abort.is_set():
@@ -2498,6 +2509,9 @@ class AgentLoop:
             self._emit("note", text=f"run interrupted: {type(e).__name__}")
             raise
         finally:
+            # closed before the rest move and the hand-back, which reach the body without
+            # passing the executor's gates
+            self.executor.open_to_peers = False
             await self.heartbeat.stop()
             with contextlib.suppress(Exception):
                 # the run's last intent, narrated like every other one

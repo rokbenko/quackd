@@ -403,12 +403,19 @@ class RobotSession:
         )
 
     async def close(self) -> None:
+        # closed before the rest move, which reaches the body without passing the executor
+        self.executor.open_to_peers = False
         await self.heartbeat.stop()
         with contextlib.suppress(Exception):
             await self.transport.stop()
         if not self.executor.dry_run:
-            # between the stop and the close, which is the only window where putting the arm
-            # down changes whether it falls when torque is released
+            # a pause granted to a robot met is waited out first, since the rest move is not
+            # gated; then between the stop and the close, which is the only window where
+            # putting the arm down changes whether it falls when torque is released
+            held = self.executor.paused_until - time.monotonic()
+            while held > 0:  # until it is over: asyncio may wake a clock tick early
+                await asyncio.sleep(held)
+                held = self.executor.paused_until - time.monotonic()
             with contextlib.suppress(Exception):
                 await go_to_rest_if_any(self.transport)
         with contextlib.suppress(Exception):
@@ -993,6 +1000,8 @@ def build_fleet_server(
                 stranger_pauses=owner.stranger_pauses,
                 same_owner=owner.courtesy,
             )
+            # connected, parked and holding: every move from here goes through the executor
+            fleet.sessions[name].executor.open_to_peers = True
         for session in fleet.sessions.values():
             # now that the robot has said what it actually has, not what its description
             # claims. `build_fleet_server` can only see a bare transport's backend.

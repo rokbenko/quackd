@@ -10,7 +10,10 @@ asks for a pause, which is bounded and ends on its own.
 What is granted runs through the executor with the source `peer`, so every gate the executor has
 still applies, and two of its own: a peer can reach no verb but the two a courtesy runs (`peer`),
 and while a pause holds nothing that moves the body is admitted, whoever asks (`paused`). A pause
-is the executor's own stop followed by that window, and an identify is the body's voice.
+ends whatever verb is moving the body, then sends the executor's own stop and opens that window,
+and an identify is the body's voice. Neither costs the pilot a step. Courtesies are taken only
+while the executor is open to them (`Executor.open_to_peers`), never while a run parks its arm or
+hands it to a person, and a pause is never granted over an arm in a person's hands.
 
 The handler runs on whatever thread a message arrived on, an HTTP server's or a broker's, and
 hands the verb to the run's event loop, answering within the five seconds the specification
@@ -93,6 +96,10 @@ class Courtesy:
         if skill not in allowed:
             listed = " and ".join(allowed) if allowed else "nothing"
             return _no(f"a robot in the {tier} tier may ask this one for {listed}")
+        if not getattr(self.executor, "open_to_peers", False):
+            # a run that is parking its arm, or handing it to a person, moves it where no gate
+            # sees, so a pause granted then could not be kept (`Executor.open_to_peers`)
+            return Decision("later", "this robot is not taking courtesies while it starts or stops")
         if skill == "pause":
             return self._pause(tier, args)
         return self._identify(tier, args)
@@ -105,6 +112,10 @@ class Courtesy:
             return _no(
                 f"a robot in the {tier} tier may ask for a pause of {PAUSE_S[tier]} s at most"
             )
+        if getattr(getattr(self.executor, "transport", None), "in_hand", None) is True:
+            # an arm's stop takes it back from the hands it was given to (the LeRobot arm's
+            # `take_hold`), which is not a robot met's to ask
+            return _no("a person is holding this robot, and a stop would take it from them")
         with self._lock:
             wait = self._last_pause + PAUSE_EVERY_S - self.clock()
             if wait > 0:
@@ -129,6 +140,9 @@ class Courtesy:
         return self._run(self._identified())
 
     def _run(self, coroutine: Any) -> Decision:
+        """The courtesy done on the executor's loop, and its answer, whatever happens: a loop
+        that has closed, a verb that was cancelled or raised, and a clock that ran out each
+        answer `later`, rather than leaving the asker with a dropped connection."""
         try:
             on_the_loop = asyncio.get_running_loop() is self.loop
         except RuntimeError:
@@ -138,32 +152,37 @@ class Courtesy:
             # everything else, so a handler wired to the wrong thread answers rather than waits
             coroutine.close()
             return Decision("later", "this robot could not do it in time")
-        future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+        try:
+            future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+        except RuntimeError:  # the loop has closed: the run is over
+            coroutine.close()
+            return Decision("later", "this robot is not taking courtesies while it starts or stops")
         try:
             result: Decision = future.result(timeout=ANSWER_WITHIN_S)
         except concurrent.futures.TimeoutError:
             future.cancel()
             return Decision("later", "this robot could not do it in time")
+        except (concurrent.futures.CancelledError, Exception):
+            return Decision("later", "this robot could not do it just now")
         return result
 
     async def _paused(self, seconds: int) -> Decision:
-        from quackd.safety import BudgetExceeded, ConfirmDenied, SafetyStop, VerbNotAllowed
-
+        # The hold first: it ends whatever verb is moving the body and refuses the next, so the
+        # stop after it is the last intent the body gets. In the other order a verb still
+        # running sent its next twist after the stop and started the body again.
+        self.executor.pause_for(seconds)
         try:
             result = await self.executor.run_verb("stop", source="peer")
-        except (VerbNotAllowed, ConfirmDenied, BudgetExceeded, SafetyStop) as e:
-            return _no(str(e))
+        except Exception as e:  # a refusal, or a link that dropped
+            return _no(f"it could not stop: {e}")
         if not result.ok:
             return _no(f"it could not stop: {result.summary}")
-        self.executor.pause_for(seconds)
         return Decision("ok", f"stopped, and holding still for {seconds} s")
 
     async def _identified(self) -> Decision:
-        from quackd.safety import BudgetExceeded, ConfirmDenied, SafetyStop, VerbNotAllowed
-
         try:
             result = await self.executor.run_verb("say", {"text": "here"}, source="peer")
-        except (VerbNotAllowed, ConfirmDenied, BudgetExceeded, SafetyStop) as e:
+        except Exception as e:  # a refusal, or a link that dropped
             return _no(str(e))
         if not result.ok:
             return _no(f"it could not make a sound: {result.summary}")
