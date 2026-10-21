@@ -343,6 +343,61 @@ async def test_a_stop_reports_a_bridge_that_went_away_and_still_sends_the_soft_s
     await transport.close()
 
 
+async def test_close_ends_though_its_cancel_of_the_frame_loop_is_lost(rover: Rover) -> None:
+    """The bridge has gone, so a frame fetch and close's own last call to it fail in one turn
+    of the loop, as two connects to one closed port do. Python 3.11's wait_for then loses the
+    cancel close sends the frame loop, which used to leave close waiting on that loop for
+    good. The loop ends on its own flag as well, so close ends."""
+    transport = rover.transport()
+    await transport.connect()
+    frames = transport._frames_task
+    assert frames is not None, "the bridge hears the nose camera, so frames are fetched"
+    fetching, ending = threading.Event(), threading.Event()
+    frame_fails, end_fails = threading.Event(), threading.Event()
+    fetches = {"n": 0}
+
+    def frame(cam: str) -> tuple[bytes, bool, str | None]:
+        fetches["n"] += 1
+        fetching.set()
+        frame_fails.wait(10.0)
+        raise client.LinkDown("the bridge has gone")
+
+    def keepalive(*args: Any, **kw: Any) -> dict[str, Any]:
+        ending.set()
+        end_fails.wait(10.0)
+        raise client.LinkDown("the bridge has gone")
+
+    transport.bridge.frame = frame  # type: ignore[method-assign]
+    transport.bridge.keepalive = keepalive  # type: ignore[method-assign]
+    closing: asyncio.Task[None] | None = None
+    try:
+        assert await asyncio.to_thread(fetching.wait, 5.0), "a fetch is out"
+        closing = asyncio.create_task(transport.close())
+        assert await asyncio.to_thread(ending.wait, 5.0), "close's last call is out"
+        # both fail while the loop runs nothing, close's call first, so both land in one turn
+        end_fails.set()
+        _block_the_loop(0.2)
+        frame_fails.set()
+        _block_the_loop(0.2)
+        done, _ = await asyncio.wait({closing}, timeout=10.0)
+        assert closing in done, "close waited on the frame loop for good"
+        assert frames.done(), "the frame loop has ended"
+        fetched = fetches["n"]
+        await asyncio.sleep(3 * client.CAMERA_PERIOD_S)
+        assert fetches["n"] == fetched, "and fetches nothing after close"
+    finally:
+        frame_fails.set()
+        end_fails.set()
+        for _ in range(100):
+            if frames.done():
+                break
+            frames.cancel()
+            await asyncio.wait({frames}, timeout=0.05)
+        if closing is not None and not closing.done():
+            closing.cancel()
+            await asyncio.wait({closing}, timeout=1.0)
+
+
 def _closed_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

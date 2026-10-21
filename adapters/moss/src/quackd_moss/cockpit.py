@@ -611,6 +611,8 @@ class MossCockpit:
         self.post_sleep: Callable[[], None] | None = None
         self._mjpeg: MjpegReader | None = None
         self._frames_task: asyncio.Task[None] | None = None
+        self._frames_on = False
+        """Whether the frame loop goes on: close clears it as well as cancelling the loop."""
         self._frame: Image.Image | None = None
         self._frame_asked: float | None = None
         self._frame_after = False
@@ -753,6 +755,7 @@ class MossCockpit:
                 self.camera_error = "the bridge has heard no nose camera on the bus"
                 self.camera_keys = []
                 return
+            self._frames_on = True
             self._frames_task = asyncio.create_task(self._frame_loop(), name="moss-frames")
             return
         reader = MjpegReader(self.host, self.cockpit.link.port)
@@ -769,7 +772,7 @@ class MossCockpit:
     async def _frame_loop(self) -> None:
         """The newest nose frame on a timer, each stamped with the moment its request went out,
         which a frame the bridge says was taken after the request is no older than."""
-        while True:
+        while self._frames_on:
             asked = time.monotonic()
             try:
                 jpeg, after, _ = await self._call(
@@ -1399,10 +1402,14 @@ class MossCockpit:
                     )
             self.close_note = " ".join(n[0].upper() + n[1:] + "." for n in note) or None
         if self._frames_task is not None:
-            self._frames_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._frames_task
-            self._frames_task = None
+            task, self._frames_task = self._frames_task, None
+            # Python 3.11's wait_for loses a cancel that arrives after its call has returned and
+            # before the loop has resumed it, as when a fetch and close's own last call to a
+            # bridge that has gone fail together. The loop then ends on its flag at its next
+            # turn, and close waits for one fetch at most
+            self._frames_on = False
+            task.cancel()
+            await asyncio.wait({task}, timeout=CALL_TIMEOUT_S + FRAME_WAIT_S)
         if self._mjpeg is not None:
             reader, self._mjpeg = self._mjpeg, None
             await asyncio.to_thread(reader.stop)

@@ -160,6 +160,7 @@ async def test_a_failed_fetch_never_says_how_long_a_frame_takes() -> None:
         raise LinkDown("the bridge waited out a camera that stopped")
 
     t.bridge.frame = waited_and_failed  # type: ignore[method-assign]
+    t._frames_on = True  # as connect starts the loop
     task = asyncio.create_task(t._frame_loop())
     await asyncio.sleep(0.8)
     task.cancel()
