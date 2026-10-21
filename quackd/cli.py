@@ -2300,6 +2300,8 @@ def _run_impl(
 
         global _SWITCH
         loop = AgentLoop(cfg)
+        if nearby is not None:
+            _grant_courtesies(nearby, loop.executor, registry_dir)
         # The first moment there is a directory to write into. Everything printed before
         # now went into the capture's buffer and is carried across by `attach`.
         ui.attach_capture(loop.run_dir)
@@ -6265,6 +6267,21 @@ def _print_reading(view: dict[str, Any], *, title: str) -> None:
         ui.console.print(Text(f"  {note}", style=ui.STYLES["muted"]), soft_wrap=True)
 
 
+def _grant_courtesies(talker: Any, executor: Any, registry_dir: str | None) -> None:
+    """Let `talker` grant the courtesies its owner allows, through the run's executor, on the
+    loop that executor runs on (`quackd.passport_courtesy`)."""
+    from quackd.passport_courtesy import Courtesy
+    from quackd.passport_store import PassportStore
+
+    owner = PassportStore(registry_dir).owner()
+    talker.courtesy = Courtesy(
+        executor,
+        asyncio.get_running_loop(),
+        stranger_pauses=owner.stranger_pauses,
+        same_owner=owner.courtesy,
+    )
+
+
 def _talk_for_run(
     ref: str, meet: Sequence[str], registry_dir: str | None, *, port: int = PASSPORT_PORT
 ) -> tuple[Any, Any]:
@@ -6322,11 +6339,33 @@ def _heard_line(robot: str) -> Any:
             "said": f"{who} to {robot}: {ui.printable(heard.text or '')}",
             "left": f"{who} said bye to {robot}",
             "quiet": f"{who} went quiet, and {robot}'s session with it is over",
-            "asked": f"{who} asked {robot} for a courtesy, refused until courtesies are decided",
+            "asked": f"{who} asked {robot} for {_asked_text(heard.details)}",
+            "share": f"{who} told {robot} something it saw: {_shared_text(heard.details)}",
+            "answer": f"{who} answered {robot}: {_answer_text(heard.details)}",
         }
         ui.console.print(Text(lines.get(heard.kind, f"{who}: {heard.kind}")), soft_wrap=True)
 
     return said
+
+
+def _asked_text(details: dict[str, Any] | None) -> str:
+    d = details or {}
+    args = d.get("args") or {}
+    what = f"{d.get('skill')} {ui.printable(json.dumps(args))}" if args else str(d.get("skill"))
+    return f"{what}: {d.get('result')}, {ui.printable(str(d.get('reason', '')))}"
+
+
+def _shared_text(details: dict[str, Any] | None) -> str:
+    d = details or {}
+    where = f", at {ui.printable(str(d['place']))}" if d.get("place") else ""
+    when = f", {d['age_s']} s ago" if d.get("age_s") is not None else ""
+    return f"{ui.printable(str(d.get('about')))}: {ui.printable(str(d.get('fact')))}{where}{when}"
+
+
+def _answer_text(details: dict[str, Any] | None) -> str:
+    d = details or {}
+    reason = f", {ui.printable(str(d['reason']))}" if d.get("reason") else ""
+    return f"{d.get('result')}{reason}"
 
 
 def _judged_view(reading: Any, registry_dir: str | None) -> dict[str, Any]:
@@ -6523,25 +6562,52 @@ def passport_owner(
         help="A URL, a mailto: address or a role address, 200 characters at most. Not a "
         "personal phone number or a home address: docs/passport/privacy.md says why.",
     ),
+    stranger_pauses: bool | None = typer.Option(
+        None,
+        "--stranger-pauses/--no-stranger-pauses",
+        help="Whether a robot nobody here knows may ask your robots for a pause at all.",
+    ),
+    courtesy: str | None = typer.Option(
+        None,
+        "--courtesy",
+        help="What a robot stamped by your owner key or by an owner you pinned, or one this "
+        "quackd drives, may ask your robots for: pause, identify, both comma separated, or none.",
+    ),
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Say who owns the robots this quackd drives, or show what you said.
 
-    An empty value removes it. Both are optional, and a passport without an owner is still read."""
-    from quackd.passport_store import OwnerRecord, PassportStore, StoreError
+    An empty value removes it. Both are optional, and a passport without an owner is still read.
+    --no-stranger-pauses and --courtesy set what robots your robots meet may ask them for
+    (docs/passport/trust.md#the-four-tiers)."""
+    from dataclasses import replace
+
+    from quackd.passport_store import PassportStore, StoreError
 
     store = PassportStore(registry_dir)
+    listed: tuple[str, ...] | None = None
+    if courtesy is not None:
+        listed = tuple(c.strip() for c in courtesy.split(",") if c.strip() and c.strip() != "none")
+        if any(c not in ("pause", "identify") for c in listed):
+            _fail("--courtesy lists pause and identify, or none")
     try:
         owner = store.owner()
-        if label is not None or contact is not None:
-            if label is not None and len(label) > 64:
+        changes: dict[str, Any] = {}
+        if label is not None:
+            if len(label) > 64:
                 _fail("--label is 64 characters at most")
-            if contact is not None and len(contact) > 200:
+            changes["label"] = label or None
+        if contact is not None:
+            if len(contact) > 200:
                 _fail("--contact is 200 characters at most")
-            owner = OwnerRecord(
-                label if label is not None else owner.label,
-                contact if contact is not None else owner.contact,
-            )
+            changes["contact"] = contact or None
+        if stranger_pauses is not None:
+            changes["stranger_pauses"] = stranger_pauses
+        if listed is not None:
+            changes["courtesy"] = listed
+        if changes:
+            # every other field, the owner key among them, as it was
+            owner = replace(owner, **changes)
             store.save_owner(owner)
     except StoreError as e:
         _fail(str(e))
@@ -6549,6 +6615,11 @@ def passport_owner(
     rows: list[tuple[str, Any]] = [
         ("label", owner.label or "not said"),
         ("contact", owner.contact or "not said"),
+        (
+            "strangers",
+            "may ask for a pause" if owner.stranger_pauses else "may not ask for a pause",
+        ),
+        ("same owner", "may ask for " + (", ".join(owner.courtesy) or "nothing")),
     ]
     if owner.key is not None:
         rows.append(("key", Text(f"{owner.key.did}  (short id {owner.key.short_id})")))
@@ -7041,6 +7112,24 @@ def meet(
     say: str | None = typer.Option(
         None, "--say", help="One thing to say once the hello is done, 400 characters at most."
     ),
+    ask: str | None = typer.Option(
+        None,
+        "--ask",
+        help="Ask for a courtesy once the hello is done: pause:SECONDS, or identify, or "
+        "identify:light|sound|motion. The robot's own policy decides.",
+    ),
+    share: str | None = typer.Option(
+        None,
+        "--share",
+        help="Tell the robot something your robot saw once the hello is done, as ABOUT: FACT, "
+        "say 'the kitchen door: open'. 64 and 200 characters at most.",
+    ),
+    place: str | None = typer.Option(
+        None,
+        "--place",
+        help="Where what --share tells was seen: somewhere both robots can recognise, never a "
+        "coordinate. 64 characters at most.",
+    ),
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Meet a robot: find its passport, read it the way a reader would, and show it.
@@ -7051,8 +7140,12 @@ def meet(
     from quackd.lan import LanNotInstalled
     from quackd.passport import PassportError, document
 
-    if say is not None and as_robot is None:
-        _fail("--say speaks as one of your robots: --as NAME says which")
+    if (say is not None or ask is not None or share is not None) and as_robot is None:
+        _fail("--say, --ask and --share speak as one of your robots: --as NAME says which")
+    if place is not None and share is None:
+        _fail("--place says where what --share tells was seen")
+    asked = _parse_ask(ask) if ask is not None else None
+    shared = _parse_share(share, place) if share is not None else None
     if say is not None and not 0 < len(say) <= 400:
         _fail("--say is 1 to 400 characters")
     try:
@@ -7095,7 +7188,40 @@ def meet(
             as_json=as_json,
         )
     if as_robot is not None:
-        _talk_to(reading, found, as_robot, say=say, registry_dir=registry_dir, as_json=as_json)
+        _talk_to(
+            reading,
+            found,
+            as_robot,
+            say=say,
+            ask=asked,
+            share=shared,
+            registry_dir=registry_dir,
+            as_json=as_json,
+        )
+
+
+def _parse_share(text: str, place: str | None) -> dict[str, Any]:
+    """`--share` as the members of a `share`: `ABOUT: FACT`, and where, when `--place` says."""
+    about, separator, fact = (part.strip() for part in text.partition(": "))
+    if not separator or not 0 < len(about) <= 64 or not 0 < len(fact) <= 200:
+        _fail(
+            f"--share {text!r} is not ABOUT: FACT, 64 and 200 characters at most, "
+            "say 'the kitchen door: open'"
+        )
+    if place is not None and not 0 < len(place) <= 64:
+        _fail("--place is 1 to 64 characters")
+    return {"about": about, "fact": fact, "place": place}
+
+
+def _parse_ask(text: str) -> tuple[str, dict[str, Any]]:
+    """`--ask` as a skill and its arguments: `pause:5`, `identify`, `identify:sound`."""
+    skill, _, arg = text.partition(":")
+    if skill == "pause" and arg.isdigit() and 1 <= int(arg) <= 10:
+        return "pause", {"seconds": int(arg)}
+    if skill == "identify" and arg in ("", "light", "sound", "motion"):
+        return "identify", {"how": arg} if arg else {}
+    _fail(f"--ask {text!r} is not pause:SECONDS (1 to 10) or identify[:light|sound|motion]")
+    raise AssertionError  # unreachable: _fail exits
 
 
 def _talk_to(
@@ -7106,8 +7232,11 @@ def _talk_to(
     say: str | None,
     registry_dir: str | None,
     as_json: bool,
+    ask: tuple[str, dict[str, Any]] | None = None,
+    share: dict[str, Any] | None = None,
 ) -> None:
-    """Say hello to the robot `meet` read, as `as_robot`, perhaps say one thing, and say bye.
+    """Say hello to the robot `meet` read, as `as_robot`, perhaps say one thing, ask for a
+    courtesy or tell it something seen, and say bye.
 
     The hello goes only to a talk channel the passport names on the host or broker it came
     from, since a passport is no reason to contact any other (spec 5.7), so a passport read
@@ -7145,6 +7274,21 @@ def _talk_to(
         if say is not None:
             talker.say(session.peer, say)
             told.print(Text(f"{name} to {shown}: {say}"), soft_wrap=True)
+        if ask is not None:
+            skill, args = ask
+            result, reason = talker.ask(session.peer, skill, args)
+            what = f"{skill} {json.dumps(args)}" if args else skill
+            told.print(
+                Text(f"{name} asked {shown} for {what}: {result}, {ui.printable(reason)}"),
+                soft_wrap=True,
+            )
+        if share is not None:
+            talker.share(session.peer, share["about"], share["fact"], place=share["place"])
+            where = f", at {share['place']}" if share["place"] else ""
+            told.print(
+                Text(f"{name} told {shown} {share['about']}: {share['fact']}{where}"),
+                soft_wrap=True,
+            )
         talker.bye(session.peer)
         told.print(Text(f"bye: {name} ended the session"))
     except PassportError as e:

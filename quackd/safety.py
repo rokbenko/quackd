@@ -60,12 +60,27 @@ CANCELLED_FROM_OUTSIDE = "cancel"
 handed (`Executor._execute`): the abort it races, the verb's own timeout, or the caller going
 away. A verb that keeps a record of its own names its ending by it."""
 
-Source = Literal["agent", "mcp", "cli", "decision"]
+Source = Literal["agent", "mcp", "cli", "decision", "peer"]
 """Who asked for this verb. `decision` is the discrete stepper answering a turn the model
 never saw, whichever decision LLM was behind it: which one that was is recorded once for the
 run (`run_start.decision_llm`) rather than on every verb, so swapping Jev for a server you run
 yourself changes nothing here. The log already prints `from <source>` for anything that is not
-the agent, so the record says who chose a verb without a renderer knowing the word."""
+the agent, so the record says who chose a verb without a renderer knowing the word. `peer` is
+a robot met over Robot Passport, through the courtesy handler and nothing else
+(`quackd.passport_courtesy`), and the `peer` gate holds it to the two verbs a courtesy runs."""
+
+PEER_VERBS = ("stop", "say")
+"""The verbs a peer's courtesy may run: `stop`, which a granted pause begins with, and `say`,
+which a body identifies itself by sound with. A peer never asks for either by name; the handler
+runs them for it, and the `peer` gate refuses anything else a peer might reach."""
+
+WHILE_PAUSED = frozenset({"stop", "observe", "report_state", "say", "quack", "introspect"})
+"""What still runs while a pause this robot granted holds: the brake, and the verbs quackd knows
+move no part of the body. It is not `BEFORE_VERDICT`, which is what a pilot needs before it
+judges: `gaze`, `look` and `watch` turn a head and `express` moves antennas, and a robot that
+answered that it is holding still holds still. A verb this set does not name waits, a sensor a
+third party marked `read_only` among them, since a flag on a verb quackd has never seen is no
+promise that nothing turns, and a learned verb waits whatever it is called."""
 
 
 class SafetyStop(Exception):
@@ -236,6 +251,10 @@ class Executor:
     """The connected robot's manifest, handed to verbs so composites can pick a strategy."""
     verdict: Verdict | None = None
     """The pilot's latest word on whether this body can do the task it is on."""
+    paused_until: float = 0.0
+    """The `time.monotonic()` until which a pause this robot granted a peer holds (`pause_for`):
+    the `paused` gate admits nothing that moves the body before then, whoever asks, the pilot
+    included. 0 is no pause, which is every run no peer ever asked."""
     require_verdict: bool = False
     """On where an `assess_task` tool was offered: the agent loop and every MCP session. A
     flock member is a state machine with no pilot to ask, so its executor never does."""
@@ -348,6 +367,12 @@ class Executor:
             if self.registry.canonical(verb.name) in gated:
                 return True
         return verb.safety_class in ("confirm", "dangerous")
+
+    def pause_for(self, seconds: float) -> None:
+        """Hold the body still for `seconds`, the window a granted pause opens after the
+        executor's own stop (docs/passport/talk.md#what-quackd-does-with-an-ask). A second
+        pause only ever lengthens the hold, never shortens one already running."""
+        self.paused_until = max(self.paused_until, time.monotonic() + seconds)
 
     def context(self, source: Source = "agent") -> VerbContext:
         """`source` is the outer call's, so a composite's nested verbs are narrated as coming
@@ -511,6 +536,13 @@ class Executor:
                 reason=f"unknown verb {name!r}",
             )
             raise VerbNotAllowed(f"unknown verb {name!r}") from None
+        if source == "peer" and canonical not in PEER_VERBS:
+            reason = (
+                f"{name} is not a verb a courtesy runs: a robot met over Robot Passport can have "
+                "this one pause or identify itself, and nothing else"
+            )
+            self._emit("gate", name=name, gate="peer", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
 
         # A verb declared `read_only` by whoever wrote it is a sensor, whatever body it came
         # with: a third-party `locate` that reads where things are must run before the
@@ -525,6 +557,14 @@ class Executor:
         looks = (canonical in BEFORE_VERDICT and verb.kind != "learned") or (
             verb.read_only and canonical not in MOVES_THE_BODY
         )
+        held = self.paused_until - time.monotonic()
+        if held > 0 and (canonical not in WHILE_PAUSED or verb.kind == "learned"):
+            reason = (
+                f"{name} waits: a pause this robot granted a robot it met holds {held:.1f} s "
+                "more, and until it ends only stop and the verbs that move nothing run"
+            )
+            self._emit("gate", name=name, gate="paused", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
         if self.require_verdict and not looks and not self.cleared:
             why = (
                 self.verdict.blocking_reason()

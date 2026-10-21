@@ -1658,6 +1658,7 @@ class AgentLoop:
                 calls_itself=item.passport_name,
                 tier=item.tier,
                 text=item.text,
+                details=item.details,
             )
         return nearby.lines(heard) or None
 

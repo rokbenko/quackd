@@ -17,6 +17,7 @@ to the wire, and the only screen involved is the client's.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import re
@@ -980,6 +981,18 @@ def build_fleet_server(
     @contextlib.asynccontextmanager
     async def lifespan(_server: MCPServer) -> AsyncIterator[Fleet]:
         await fleet.connect_all()
+        # a robot that talks grants the courtesies its owner allows, through its own executor,
+        # on the loop that executor runs on, which exists only now
+        for name, talker in (talkers or {}).items():
+            from quackd.passport_courtesy import Courtesy
+
+            owner = talker.store.owner()
+            talker.courtesy = Courtesy(
+                fleet.sessions[name].executor,
+                asyncio.get_running_loop(),
+                stranger_pauses=owner.stranger_pauses,
+                same_owner=owner.courtesy,
+            )
         for session in fleet.sessions.values():
             # now that the robot has said what it actually has, not what its description
             # claims. `build_fleet_server` can only see a bare transport's backend.

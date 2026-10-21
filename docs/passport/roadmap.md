@@ -16,7 +16,7 @@ what is built and what has run.
 | signatures and stamps | 0.1 | yes: every passport signed, `passport stamp` | yes, and between processes on one machine | no | no |
 | pinning | quackd's own | yes: `meet --pin`, `--pin-owner`, `passport known`, `forget` | yes, and between processes on one machine | no | no |
 | `hello`, `say`, `bye` | 0.1 | yes, over HTTP (`serve --talk`, `meet --as`, `run --talk`, `serve-mcp --talk`) and MQTT (`serve --mqtt --talk`, `meet mqtt:// --as`) | yes, and between processes on one machine | no | no |
-| `ask`, `answer`, `share`, the courtesy handler | 0.1 | not yet | not yet | no | no |
+| `ask`, `answer`, `share`, the courtesy handler | 0.1 | yes: the handler in a run and `serve-mcp`, `meet --ask` and `--share`, owner settings | yes, and between processes on one machine, over HTTP and a broker | no | no |
 | Bluetooth LE | reserved | no | no | no | no |
 
 "Run between two machines" stays "no" until somebody runs it on two machines and writes down what

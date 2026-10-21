@@ -284,3 +284,26 @@ def test_an_index_entry_on_another_host_is_listed_and_not_offered(
     )
     assert checked.exit_code == 0, checked.output
     assert checked.output.count("on another host, so not offered (2.7)") == 1
+
+
+def test_the_owner_says_what_robots_met_may_ask_and_a_new_label_keeps_it(tmp_path: Path) -> None:
+    assert (
+        runner.invoke(
+            app, ["passport", "stamp", "--robot", "microduck:mock", *_reg(tmp_path)]
+        ).exit_code
+        == 0
+    )
+    key = PassportStore(tmp_path).owner().key
+    set_ = runner.invoke(
+        app,
+        ["passport", "owner", "--no-stranger-pauses", "--courtesy", "identify", *_reg(tmp_path)],
+    )
+    assert set_.exit_code == 0, set_.output
+    flat = " ".join(set_.output.split())
+    assert "strangers may not ask for a pause" in flat and "same owner may ask for identify" in flat
+    runner.invoke(app, ["passport", "owner", "--label", "Example lab", *_reg(tmp_path)])
+    owner = PassportStore(tmp_path).owner()
+    assert owner.stranger_pauses is False and owner.courtesy == ("identify",)
+    assert owner.key is not None and key is not None and owner.key.did == key.did
+    bad = runner.invoke(app, ["passport", "owner", "--courtesy", "stop", *_reg(tmp_path)])
+    assert bad.exit_code == 1

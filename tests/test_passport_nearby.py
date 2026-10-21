@@ -282,3 +282,50 @@ def test_serve_with_talk_names_the_inbox_it_listens_on(tmp_path: Path) -> None:
     assert served.exit_code == 0, served.output
     flat = " ".join(served.output.split())
     assert "talk http://127.0.0.1:" in flat and "/robot-passport/inbox" in flat
+
+
+def test_meet_tells_a_robot_what_its_robot_saw_and_a_strangers_share_stays_off_the_pilot(
+    duck_host: tuple[Talker, str, list[Heard]], tmp_path: Path
+) -> None:
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    duck, url, heard_by_duck = duck_host
+    host = url.removesuffix("/.well-known/robot-passport.json").removeprefix("http://")
+    told = ["meet", host, "--as", "lerobot:mock", "--share", "the kitchen door: open"]
+    met = CliRunner().invoke(
+        app, [*told, "--place", "the hall", "--registry-dir", str(tmp_path / "visitor")]
+    )
+    assert met.exit_code == 0, met.output
+    flat = " ".join(met.output.split())
+    assert "lerobot-mock told duck-01 the kitchen door: open, at the hall" in flat
+    shared = [h for h in heard_by_duck if h.kind == "share"]
+    assert shared and shared[0].details == {
+        "about": "the kitchen door",
+        "fact": "open",
+        "place": "the hall",
+    }
+    assert "kitchen" not in "\n".join(duck.lines())  # a stranger's share is withheld
+    bad = CliRunner().invoke(app, ["meet", host, "--as", "lerobot:mock", "--share", "open"])
+    assert bad.exit_code == 1 and "ABOUT: FACT" in " ".join(bad.output.split())
+
+
+def test_an_ask_to_a_robot_that_runs_nothing_is_answered_no(
+    duck_host: tuple[Talker, str, list[Heard]], tmp_path: Path
+) -> None:
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    _duck, url, heard_by_duck = duck_host
+    host = url.removesuffix("/.well-known/robot-passport.json").removeprefix("http://")
+    asked_as = ["meet", host, "--as", "lerobot:mock", "--ask", "pause:3"]
+    met = CliRunner().invoke(app, [*asked_as, "--registry-dir", str(tmp_path / "visitor")])
+    assert met.exit_code == 0, met.output
+    flat = " ".join(met.output.split())
+    assert 'asked duck-01 for pause {"seconds": 3}: no, this robot is running nothing' in flat
+    asked = [h for h in heard_by_duck if h.kind == "asked"]
+    assert asked and asked[0].details is not None and asked[0].details["result"] == "no"
+    bad = CliRunner().invoke(app, ["meet", host, "--as", "lerobot:mock", "--ask", "pause:99"])
+    assert bad.exit_code == 1 and "pause:SECONDS" in " ".join(bad.output.split())

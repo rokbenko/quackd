@@ -128,13 +128,14 @@ the rest to each owner ([spec section 6.5](spec.md#65-ask-and-answer)).
 |---|---|---|---|
 | stranger | it has any passport at all | `pause` for up to 5 s, and `identify` by light or sound only, both out of one global budget | its closed-vocabulary fields, under a name made from its key. Its free text, its name included, goes to the log, for a person. |
 | known | a person pinned its key | `pause` for up to 10 s and `identify` by any means, out of the same budget | its passport and its `say`, JSON-quoted |
-| same owner | it carries a stamp from an owner key a person pinned, your own included | what its owner listed, run by the same handler | the same |
-| flock | a person registered it with `quackd robot add` | what flock members do today, over the flock bus | the same as in any flock |
+| same owner | it carries a stamp from an owner key a person pinned, your own included | what your robot's owner listed, `pause` and `identify` unless they said otherwise, at a known robot's limits, run by the same handler | the same |
+| flock | a person registered it with `quackd robot add` | what flock members do today, over the flock bus, and over talk what a robot of the same owner may | the same as in any flock |
 
 **The global budget.** New keys cost nothing, so a limit per peer stops nobody: a stranger can make
 a thousand keys. Every peer therefore draws from one budget: at most one pause a minute and one
 `identify` every ten seconds, across all of them together. An owner can turn stranger pauses off
-altogether.
+altogether, with `quackd passport owner --no-stranger-pauses`, and list what a robot of the same
+owner may ask for, with `--courtesy` ([quackd.md](quackd.md#asking-for-a-courtesy)).
 
 **A peer never stops your robot.** It can ask for a pause, which is bounded and ends on its own.
 Your robot's own stop, the executor's, its kill switch, its deadman, stays above anything any peer

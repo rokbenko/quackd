@@ -55,6 +55,11 @@ class OwnerRecord:
     label: str | None = None
     contact: str | None = None
     key: SigningKey | None = field(default=None, compare=False)
+    stranger_pauses: bool = True
+    """Whether a stranger may ask these robots for a pause at all; an owner can turn it off
+    (docs/passport/trust.md#the-four-tiers)."""
+    courtesy: tuple[str, ...] = ("pause", "identify")
+    """What a robot stamped by this owner may ask these robots for: the owner's own list."""
 
 
 @dataclass(frozen=True)
@@ -159,10 +164,15 @@ class PassportStore:
                 ) from e
             if raw.get("did") not in (None, key.did):
                 raise StoreError(f"{self.owner_path}: its did is not the key its seed makes")
+        listed = raw.get("courtesy", ["pause", "identify"])
+        if not isinstance(listed, list) or not all(c in ("pause", "identify") for c in listed):
+            raise StoreError(f"{self.owner_path}: courtesy is not a list of pause and identify")
         return OwnerRecord(
             label if isinstance(label, str) and label else None,
             contact if isinstance(contact, str) and contact else None,
             key,
+            stranger_pauses=raw.get("stranger_pauses", True) is not False,
+            courtesy=tuple(listed),
         )
 
     def save_owner(self, owner: OwnerRecord) -> None:
@@ -176,6 +186,8 @@ class PassportStore:
         if owner.key is not None:
             payload["did"] = owner.key.did
             payload["seed"] = owner.key.seed.hex()
+        payload["stranger_pauses"] = owner.stranger_pauses
+        payload["courtesy"] = list(owner.courtesy)
         _write_secret(self.owner_path, payload)
 
     def owner_key_or_new(self) -> tuple[SigningKey, bool]:

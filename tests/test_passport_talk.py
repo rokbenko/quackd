@@ -273,15 +273,19 @@ def test_a_message_is_held_to_its_size_and_a_hello_may_carry_a_large_passport() 
     assert read_message(big).type == "hello"
 
 
-def test_an_ask_is_answered_no_until_courtesies_are_decided() -> None:
+def test_an_ask_is_handed_up_to_be_decided_and_answered_in_the_session() -> None:
+    """An endpoint decides no ask itself: deciding can take seconds and belongs to the robot's
+    own policy, so the ask comes back as an event, and `answer` writes the reply."""
     a, b = pair()
     handshake(a, b)
-    session = a.session_with(B.did)
-    assert session is not None
-    ask = envelope("ask", A.did, {"skill": "pause", "args": {"seconds": 5}}, nonces=session.nonces)
-    answer = b.receive(read_message(seal(ask, A)))
-    assert answer.status == 200 and answer.wire is not None
-    assert read_message(answer.wire).body["result"] == "no"
+    wire, msg = a.ask(B.did, "pause", {"seconds": 5}, "passing on your left")
+    handed = b.receive(read_message(wire))
+    assert handed.status == 204 and handed.wire is None
+    assert handed.event is not None and handed.event.kind == "asked"
+    answer = read_message(b.answer(A.did, msg, "no", "not today"))
+    assert answer.signed and answer.re == msg
+    assert answer.body == {"result": "no", "reason": "not today"}
+    assert a.receive(answer).event is not None
 
 
 def test_bye_ends_the_session_on_both_sides() -> None:

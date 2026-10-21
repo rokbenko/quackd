@@ -96,15 +96,17 @@ The passport layer and the executor do different jobs, and neither does the othe
 a peer's ask ──> passport layer: is this peer allowed to ask this, now?   (tier, list, budget)
                      │ yes
                      v
-                 executor: may this verb run, now?   (allowlist, verdict, confirm, budget, preconditions)
+                 executor: may this verb run, now?   (allowlist, peer, paused, verdict, confirm, budget, preconditions)
                      │ yes
                      v
                  the body, under its own deadman and quackd's kill switch
 ```
 
-The passport layer can only say no, or pass a request on. The executor then applies every gate it
-always has, with the source `peer` on the request so that policy can refuse what a peer started
-rather than only log it ([concepts/safety.md](../concepts/safety.md)). Below both, a robot whose
+The passport layer, quackd's courtesy handler, can only say no, or pass a request on. The executor
+then applies every gate it always has, and two that read the source `peer` on the request: `peer`,
+which admits only the `stop` a pause begins with and the `say` an identify is, and `paused`, which
+admits nothing that moves any part of the body while a granted pause holds, whoever asks
+([concepts/safety.md](../concepts/safety.md)). Below both, a robot whose
 `safety` says it stops on silence stops when quackd goes quiet, and quackd's kill switch reaches
 every executor. A peer can sit above all of that and never beneath any of it.
 

@@ -68,6 +68,8 @@ class Heard:
     text: str | None = None
     #: the name the robot gave itself, which a person may read and a pilot never does
     passport_name: str = ""
+    #: an ask's skill, arguments and answer, a share's body, or an answer's result and reason
+    details: dict[str, Any] | None = None
 
 
 def stranger_name(reading: Reading) -> str:
@@ -105,6 +107,13 @@ class Talker:
         #: this robot's end of a broker when it talks over one, a `PassportPublisher` from
         #: `quackd.lan.passport_mqtt` with its inbox subscribed to `inbox_mqtt`
         self.mqtt: Any = None
+        #: what decides a peer's `ask`, a `quackd.passport_courtesy.Courtesy` over the run's
+        #: executor; None, and every ask is answered no, since nothing here could grant one
+        self.courtesy: Any = None
+        #: the asks this robot is waiting on, by `msg`, and the answers that came to them; an
+        #: answer to anything else is noted and never kept, so a peer cannot grow either
+        self._asking: set[str] = set()
+        self._answers: dict[str, dict[str, Any]] = {}
         self.endpoint = Endpoint(key.did, passport, key, clock=clock)
         self.store = store
         self._send = send
@@ -128,16 +137,35 @@ class Talker:
         later go to when the robot that sent it opened the session; `broker` says it came over
         this robot's broker, where a reply goes to the inbox the sender's id names."""
         reply = self.endpoint.receive(message)
-        if reply.event is not None:
-            session = reply.event.session
-            if reply.event.kind == "met" and session.route is None:
-                session.route = (
-                    self._mqtt_route(session.peer)
-                    if broker
-                    else _route_back(session.passport, address)
-                )
-            self._note(reply.event)
+        if reply.event is None:
+            return reply
+        session = reply.event.session
+        if reply.event.kind == "met" and session.route is None:
+            session.route = (
+                self._mqtt_route(session.peer) if broker else _route_back(session.passport, address)
+            )
+        if reply.event.kind == "asked":
+            # decided here, outside the endpoint's lock, by fixed code: never by a pilot
+            result, reason = self._decide(session, message)
+            wire = self.endpoint.answer(session.peer, message.msg, result, reason)
+            self._note(reply.event, {**message.body, "result": result, "reason": reason})
+            return Reply(200, wire, reply.event, reason)
+        if reply.event.kind == "answer":
+            with self._met:
+                if str(message.re) in self._asking:
+                    self._answers[str(message.re)] = dict(message.body)
+                    self._met.notify_all()
+        details = dict(message.body) if reply.event.kind in ("share", "answer") else None
+        self._note(reply.event, details)
         return reply
+
+    def _decide(self, session: Session, message: Message) -> tuple[str, str]:
+        if self.courtesy is None:
+            return "no", "this robot is running nothing that could grant a courtesy"
+        skill = str(message.body.get("skill"))
+        args = message.body.get("args") or {}
+        decision = self.courtesy.decide(self.tier_of(session).tier, skill, dict(args))
+        return str(decision.result), str(decision.reason)
 
     def inbox_mqtt(self, payload: bytes) -> None:
         """A message that came to this robot's inbox on its broker: handled, and any reply sent
@@ -223,6 +251,58 @@ class Talker:
                 "6.2", f"{who} listens nowhere this robot may reach, so it can only be answered"
             )
         status, _reply = self._deliver(session.route, self.endpoint.say(session.peer, text))
+        if status not in (200, 204):
+            raise PassportError("6.2", f"{who} did not take it: it answered {status}")
+
+    def ask(
+        self,
+        who: str,
+        skill: str,
+        args: dict[str, Any] | None = None,
+        why: str | None = None,
+        *,
+        timeout: float = 5.0,
+    ) -> tuple[str, str]:
+        """Ask a robot this one met for a courtesy, and its answer: the result and the reason.
+        Over HTTP the answer rides back on the response; over a broker it comes to this robot's
+        inbox, and is waited for. No answer in time is `later`, as the specification reads a
+        silence (spec 6.5)."""
+        session = self.session_named(who)
+        if session.route is None:
+            raise PassportError("6.2", f"{who} listens nowhere this robot may reach")
+        wire, msg = self.endpoint.ask(session.peer, skill, args, why)
+        with self._met:
+            self._asking.add(msg)
+        try:
+            status, reply = self._deliver(session.route, wire)
+            if reply is not None:
+                answer = read_message(reply)
+                self.receive(answer)
+                if answer.type != "answer" or answer.re != msg:
+                    raise PassportError("6.5", f"{who} replied to the ask with something else")
+                return str(answer.body.get("result")), str(answer.body.get("reason", ""))
+            if status not in (200, 204):
+                raise PassportError("6.2", f"{who} did not take the ask: it answered {status}")
+            with self._met:
+                self._met.wait_for(lambda: msg in self._answers, timeout)
+                answered = self._answers.get(msg)
+        finally:
+            with self._met:
+                self._asking.discard(msg)
+                self._answers.pop(msg, None)
+        if answered is None:
+            return "later", "no answer came in time"
+        return str(answered.get("result")), str(answered.get("reason", ""))
+
+    def share(self, who: str, about: str, fact: str, **more: Any) -> None:
+        """Tell a robot this one met something it saw: what, the fact, and where, as a place
+        both can recognise rather than a coordinate (spec 6.6)."""
+        session = self.session_named(who)
+        if session.route is None:
+            raise PassportError("6.2", f"{who} listens nowhere this robot may reach")
+        status, _reply = self._deliver(
+            session.route, self.endpoint.share(session.peer, about, fact, **more)
+        )
         if status not in (200, 204):
             raise PassportError("6.2", f"{who} did not take it: it answered {status}")
 
@@ -339,20 +419,48 @@ class Talker:
         return shown
 
     def _said(self, heard: Heard) -> dict[str, Any] | None:
+        stranger = heard.tier == "stranger"
+        withheld = "a stranger's words go to the log, for a person"
+        details = heard.details or {}
         if heard.kind == "said":
-            if heard.tier == "stranger":
+            if stranger:
+                return {"from": heard.name, "tier": heard.tier, "said": None, "withheld": withheld}
+            return {"from": heard.name, "tier": heard.tier, "said": heard.text}
+        if heard.kind == "asked":
+            # what the handler answered is this robot's own word; what was asked is the peer's,
+            # and a stranger's reaches the pilot only in the words a courtesy is asked in
+            skill, args = details.get("skill"), details.get("args") or {}
+            if stranger:
+                skill, args = _courtesy_words(skill, args)
+            shown = {
+                "from": heard.name,
+                "tier": heard.tier,
+                "asked": skill,
+                "args": args,
+                "answered": details.get("result"),
+            }
+            if not stranger and details.get("why"):
+                shown["why"] = details["why"]
+            return shown
+        if heard.kind == "share":
+            if stranger:
                 return {
                     "from": heard.name,
                     "tier": heard.tier,
-                    "said": None,
-                    "withheld": ("a stranger's words go to the log, for a person"),
+                    "shared": None,
+                    "withheld": withheld,
                 }
-            return {"from": heard.name, "tier": heard.tier, "said": heard.text}
+            return {"from": heard.name, "tier": heard.tier, "shared": details}
+        if heard.kind == "answer":
+            shown = {"from": heard.name, "tier": heard.tier, "answered": details.get("result")}
+            if not stranger and details.get("reason"):
+                shown["reason"] = details["reason"]
+            return shown
         if heard.kind in ("met", "left", "quiet"):
             return {"robot": heard.name, "tier": heard.tier, "event": heard.kind}
         return None
 
-    def _note(self, event: Event) -> None:
+    def _note(self, event: Event, details: dict[str, Any] | None = None) -> None:
         session = event.session
         heard = Heard(
             event.kind,
@@ -361,6 +469,7 @@ class Talker:
             self.tier_of(session).tier,
             event.text,
             session.passport.name,
+            details,
         )
         with self._lock:
             self._unread.append(heard)
@@ -370,6 +479,23 @@ class Talker:
                 self._met.notify_all()
         if self._on_heard is not None:
             self._on_heard(heard)
+
+
+def _courtesy_words(skill: Any, args: Any) -> tuple[str, dict[str, Any]]:
+    """An ask as a pilot may read a stranger's: the courtesy it named and the arguments that
+    courtesy takes, and not one word the stranger chose. A skill name is the stranger's own up
+    to 32 characters, and `args` any object at all, so either could carry an instruction."""
+    given = args if isinstance(args, dict) else {}
+    if skill == "pause":
+        seconds = given.get("seconds")
+        whole = isinstance(seconds, int) and not isinstance(seconds, bool)
+        return "pause", {"seconds": seconds} if whole else {}
+    if skill == "identify":
+        how = given.get("how")
+        return "identify", {"how": how} if how in ("light", "sound", "motion") else {}
+    if skill == "stop":
+        return "stop", {}
+    return "something else", {}
 
 
 class Talkers:

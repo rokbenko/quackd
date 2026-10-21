@@ -45,6 +45,8 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `precondition` | what the manifest says this verb needs: not fallen, not sitting, torque on | the robot's state |
 | `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
+| `peer` | a verb a robot met over Robot Passport started, through the courtesy handler. A courtesy runs `stop`, which a granted pause begins with, and `say`, which an identify is, and a peer reaches nothing else, whatever its tier | nothing: a robot met asks, and fixed code decides ([passport/talk.md](../passport/talk.md#what-quackd-does-with-an-ask)) |
+| `paused` | a pause this robot granted a robot it met still holds, so only `stop` and the verbs that move nothing (`observe`, `report_state`, `say`, `quack`, `introspect`) run, whoever asks, the pilot included. `gaze`, `look`, `watch` and `express`, which a pilot may use before its verdict, wait as well, since they turn a head or move antennas | wait it out: a granted pause is 10 s at most, and one a minute |
 
 Execution races a **timeout** against the abort, so a kill switch cancels the verb that is
 running. A verb that times out or raises stops the robot and comes back as a failed result

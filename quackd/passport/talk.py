@@ -389,6 +389,32 @@ class Endpoint:
             raise ValueError(f"a say is 1 to {SAY_CHARS} characters")
         return self._in_session_message(peer, "say", {"text": text})
 
+    def ask(
+        self, peer: str, skill: str, args: dict[str, Any] | None = None, why: str | None = None
+    ) -> tuple[str, str]:
+        """An `ask` to `peer` for a courtesy (spec 6.5), and the `msg` its answer will name."""
+        body: dict[str, Any] = {"skill": skill}
+        if args:
+            body["args"] = dict(args)
+        if why:
+            body["why"] = why[:120]
+        wire = self._in_session_message(peer, "ask", body)
+        return wire, str(json_payload(wire)["msg"])
+
+    def answer(self, peer: str, re: str, result: str, reason: str = "") -> str:
+        """The `answer` to the `ask` whose `msg` is `re`: `ok`, `no` or `later`, and why."""
+        body: dict[str, Any] = {"result": result}
+        if reason:
+            body["reason"] = reason[:120]
+        return self._in_session_message(peer, "answer", body, re=re)
+
+    def share(self, peer: str, about: str, fact: str, **more: Any) -> str:
+        """A `share` to `peer`: something seen, where and how long ago, and never a coordinate,
+        since two robots that just met share no frame of reference (spec 6.6)."""
+        body: dict[str, Any] = {"about": about[:64], "fact": fact[:200]}
+        body.update({k: v for k, v in more.items() if v is not None})
+        return self._in_session_message(peer, "share", body)
+
     def bye(self, peer: str) -> str:
         """A `bye` to `peer`, ending the session this robot has with it."""
         with self._lock:
@@ -398,13 +424,17 @@ class Endpoint:
                 del self.sessions[session.nonces]
             return wire
 
-    def _in_session_message(self, peer: str, kind: str, body: dict[str, Any]) -> str:
+    def _in_session_message(
+        self, peer: str, kind: str, body: dict[str, Any], *, re: str | None = None
+    ) -> str:
         with self._lock:
             session = self.session_with(peer)
             if session is None:
                 raise PassportError("6.3", f"no session with {peer}: say hello first")
             session.last = self.clock()
-            doc = envelope(kind, self.me, body, to=peer, nonces=session.nonces, msg=self.token())
+            doc = envelope(
+                kind, self.me, body, to=peer, re=re, nonces=session.nonces, msg=self.token()
+            )
             return seal(doc, self.key)
 
     def session_with(self, peer: str) -> Session | None:
@@ -568,18 +598,19 @@ class Endpoint:
             del self.sessions[m.nonces]
             return Reply(204, event=Event("left", session, message=m), reason="bye")
         if m.type == "ask":
-            # a courtesy is decided in step two of talk; until then every ask is answered no
-            doc = envelope(
-                "answer",
-                self.me,
-                {"result": "no", "reason": "this robot grants no courtesy yet"},
-                to=m.sender,
-                re=m.msg,
-                nonces=m.nonces,
-                msg=self.token(),
-            )
-            return Reply(200, seal(doc, self.key), Event("asked", session, message=m), "asked")
+            # decided by the caller, outside this lock: deciding can take seconds, a pause run
+            # through an executor that may itself be waiting to read what this robot heard
+            return Reply(204, event=Event("asked", session, message=m), reason="asked")
         return Reply(204, event=Event(m.type, session, message=m), reason=f"a {m.type}, noted")
+
+
+def json_payload(wire: str) -> dict[str, Any]:
+    """The members of a message this robot just wrote, signed or not, without checking it again."""
+    if jws.looks_like_jws(wire):
+        return dict(
+            strict.loads(jws.b64url_decode(wire.split(".")[1], rule="6.1"), limit=MAX_HELLO_BYTES)
+        )
+    return dict(strict.loads(wire.encode("utf-8"), limit=MAX_HELLO_BYTES))
 
 
 def version_answer(error: VersionUnknown, me: str, key: SigningKey | None) -> str:

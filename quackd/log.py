@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import json
 import os
 import re
 import time
@@ -969,11 +970,24 @@ def _nearby_text(d: Mapping[str, Any]) -> str:
     from quackd.ui import printable
 
     robot = printable(str(d.get("calls_itself") or d.get("robot")))
-    what = {"met": "met", "said": "said", "left": "said bye", "quiet": "went quiet"}
+    what = {
+        "met": "met",
+        "said": "said",
+        "left": "said bye",
+        "quiet": "went quiet",
+        "asked": "asked for a courtesy",
+        "share": "shared what it saw",
+        "answer": "answered",
+    }
     event = str(d.get("event"))
     text = f"{robot} ({d.get('tier')}, {d.get('robot')} to the pilot) {what.get(event, event)}"
     if d.get("text"):
         text += f": {printable(str(d['text']))}"
+    if isinstance(details := d.get("details"), Mapping):
+        shown = ", ".join(
+            f"{k} {json.dumps(v) if isinstance(v, (dict, list)) else v}" for k, v in details.items()
+        )
+        text += f": {printable(shown)}"
     return text
 
 
