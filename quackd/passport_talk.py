@@ -328,12 +328,15 @@ class Talker:
         self._note(Event("left", session))
 
     def session_named(self, who: str) -> Session:
+        """The session with the robot `who` names: its id, or the name a pilot sees it by. Never
+        the name a stranger gave itself, which a stranger that met first could have set to a
+        pinned robot's, and taken a pilot's words meant for that robot."""
         with self._lock:
             for session in list(self.endpoint.sessions.values()):
                 live = self.endpoint.session_with(session.peer)
                 if live is None:
                     continue
-                if who in (live.peer, live.passport.name, self.shown_name(live)):
+                if who in (live.peer, self.shown_name(live)):
                     return live
         raise PassportError("6.3", f"this robot has no session with {who}")
 

@@ -1670,7 +1670,7 @@ class AgentLoop:
             )
         return nearby.lines(heard) or None
 
-    def _tell(self, arguments: dict[str, Any]) -> VerbResult:
+    async def _tell(self, arguments: dict[str, Any]) -> VerbResult:
         """One sentence to another pilot. Not a verb: nothing is sent to any robot.
 
         It works under `--dry-run`, unlike `remember`. A dry run sends no intent and leaves
@@ -1686,7 +1686,7 @@ class AgentLoop:
             except Exception:  # no such robot nearby, so perhaps a flock member's name
                 pass
             else:
-                return self._tell_nearby(nearby, to, text)
+                return await self._tell_nearby(nearby, to, text)
         if link is None:
             if nearby is not None:
                 return VerbResult.fail(f"no robot in Robots nearby is called {to!r}")
@@ -1697,19 +1697,28 @@ class AgentLoop:
             return VerbResult.fail(str(e))
         return VerbResult.success(f"told {to or 'all'}: {' '.join(text.split())}")
 
-    def _tell_nearby(self, nearby: NearbyLike, to: str, text: str) -> VerbResult:
+    async def _tell_nearby(self, nearby: NearbyLike, to: str, text: str) -> VerbResult:
         """One sentence to a robot met over Robot Passport, as a `say`. Unlike a word to the
         flock it goes to a real robot outside this run, so a dry run says what it would have
-        said and sends nothing."""
+        said and sends nothing.
+
+        It goes out off the run's loop: a robot slow to take it would otherwise hold the loop
+        for up to five seconds, and a pause asked of this robot meanwhile would time out. What
+        went wrong is said to the person, escaped, and the pilot is told only that it did not
+        arrive: a refusal can carry words the other robot chose, a redirect's target or its
+        own channel's URL, and a stranger's words never reach a pilot."""
         said = " ".join(text.split())
         if not 0 < len(text) <= 400:
             return VerbResult.fail("a word to a robot nearby is 1 to 400 characters")
         if self.cfg.dry_run:
             return VerbResult.success(f"would tell {to}: {said} (a dry run sends nothing to it)")
         try:
-            nearby.say(to, text)
+            await asyncio.to_thread(nearby.say, to, text)
         except Exception as e:  # the robot left, refused it, or cannot be reached
-            return VerbResult.fail(f"could not tell {to}: {e}")
+            from quackd.ui import printable
+
+            self._note(f"could not tell {to}: {printable(str(e))}")
+            return VerbResult.fail(f"could not tell {to}: the message did not reach it")
         return VerbResult.success(f"told {to}: {said}")
 
     def _cost_of_a_failed_call(self, error: BaseException) -> dict[str, Any]:
@@ -2359,7 +2368,7 @@ class AgentLoop:
                 if call.name == TELL_NAME:
                     # a word to another pilot: no motion, no step, one LLM call, like `remember`
                     last_verb = mine_verb = TELL_NAME
-                    last_result = mine_result = self._tell(call.arguments)
+                    last_result = mine_result = await self._tell(call.arguments)
                     self._emit(
                         "talk",
                         step=self.budget.steps,

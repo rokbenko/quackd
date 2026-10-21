@@ -18,7 +18,7 @@ import pytest
 
 from quackd.passport import PassportError, SigningKey, document, strict
 from quackd.passport.serve import INBOX_PATH, PassportServer, Served
-from quackd.passport.talk import envelope, read_message, seal
+from quackd.passport.talk import Endpoint, envelope, open_session, read_message, seal
 from quackd.passport_store import PassportStore, Pin
 from quackd.passport_talk import HEADING, Heard, Talker, Talkers, route_to
 
@@ -144,7 +144,7 @@ def test_a_robot_that_said_hello_first_is_answered_only_on_the_address_it_came_f
     reading = met(url)
     visitor.meet(reading, route_to(reading, url))
     with pytest.raises(PassportError, match="can only be answered"):
-        duck.say("cart-01", "where are you?")  # its passport names an inbox on another host
+        duck.say(CART.did, "where are you?")  # its passport names an inbox on another host
 
 
 def test_a_passport_naming_a_talk_channel_on_another_host_is_not_contacted() -> None:
@@ -196,6 +196,31 @@ def test_what_reaches_a_pilot_is_held_to_its_budget_oldest_words_first(
     lines = duck.lines(budget=800)
     assert sum(len(line) + 3 for line in lines[1:]) <= 800 + len(lines[-1])
     assert "word number 29" in lines[-1] and "word number 00" not in "\n".join(lines)
+
+
+def test_a_stranger_that_takes_a_pinned_robots_name_never_gets_words_meant_for_it(
+    tmp_path: Path,
+) -> None:
+    store = PassportStore(tmp_path)
+    store.pin(Pin(CART.did, "cart-01", "robot", "2026-10-21T00:00:00Z"))
+    duck = Talker("duck-01", DUCK, document.sign(passport(DUCK, "duck-01"), DUCK), store)
+
+    def post(wire: str) -> tuple[int, str | None]:
+        reply = duck.receive(read_message(wire), address="127.0.0.1")
+        return reply.status, reply.wire
+
+    mallory = SigningKey.generate()
+    # the stranger says hello first, calling itself what the pinned cart is called
+    mallory_end = Endpoint(
+        mallory.did, document.sign(passport(mallory, "cart-01"), mallory), mallory
+    )
+    open_session(mallory_end, DUCK.did, post)
+    open_session(
+        Endpoint(CART.did, document.sign(passport(CART, "cart-01"), CART), CART), DUCK.did, post
+    )
+    assert duck.session_named("cart-01").peer == CART.did
+    # and the stranger is reached by the name the pilot sees it by, made from its key
+    assert duck.session_named(f"stranger-{mallory.short_id[:8]}").peer == mallory.did
 
 
 def test_nothing_nearby_is_no_block_at_all(tmp_path: Path) -> None:

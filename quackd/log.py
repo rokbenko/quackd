@@ -529,7 +529,11 @@ def flock_caption(kind: str, d: Mapping[str, Any]) -> tuple[str, str] | None:
         refused = "" if d.get("ok", True) else f" (refused: {d.get('summary')})"
         # a run with robots nearby and no flock has no member name to speak under
         who = d.get("src") or "the pilot"
-        return "TALK", f"{who} -> {d.get('to')}: {d.get('text')}{refused}"
+        line = f"{who} -> {d.get('to')}: {d.get('text')}{refused}"
+        # printed as text: a refusal may carry words a robot met chose
+        from quackd.ui import printable
+
+        return "TALK", printable(line)
     if kind == "bid_rejected":
         why = d.get("why") or f"missing {', '.join(d.get('missing') or [])}"
         return "BID", f"{d.get('src')} for {d.get('role')} rejected: {why}"

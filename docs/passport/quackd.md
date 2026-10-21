@@ -473,8 +473,10 @@ log, which is for a person, shows it all:
 
 and the transcript keeps one `nearby` record for each robot met, word said and session ended
 ([concepts/architecture.md](../concepts/architecture.md)). A dry run tells the pilot what it would
-have said and sends nothing to the other robot, since that robot is not pretending. A run in a
-flock refuses `--talk` for now, so a flock's members meet nobody outside it yet.
+have said and sends nothing to the other robot, since that robot is not pretending. When a word
+does not arrive, the pilot is told only that, and the person reads why in the log: a refusal can
+carry words the other robot chose, and those never reach a pilot. A run in a flock refuses
+`--talk` for now, so a flock's members meet nobody outside it yet.
 
 ### Over MCP
 
