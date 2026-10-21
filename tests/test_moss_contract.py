@@ -725,6 +725,33 @@ async def test_one_keepalive_late_by_more_than_a_second_never_halts_a_live_sessi
     await transport.close()
 
 
+async def test_a_cockpit_slow_to_answer_never_delays_the_keepalive(rover: Rover) -> None:
+    """The heartbeat waits on the cockpit's state, and while it waits the session's keepalive
+    goes on every HEARTBEAT_S. A state that comes back just inside the cockpit's own timeout,
+    slow enough that a keepalive waiting on it would miss the bridge's window, halts nothing
+    of a live session."""
+    transport = rover.transport()
+    await transport.connect()
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    original = rover.cockpit.state
+    slow_s = WINDOW_S - client.HEARTBEAT_S + 0.1
+    assert slow_s < client.CALL_TIMEOUT_S, "a cockpit slow, and not gone"
+
+    def slow_state() -> dict[str, Any]:
+        time.sleep(slow_s)
+        return original()
+
+    rover.cockpit.state = slow_state  # type: ignore[method-assign]
+    beat = _alive(transport)
+    await asyncio.sleep(3 * slow_s + 1.0)
+    await beat.stop()
+    assert rover.bridge.expired == 0 and rover.bridge.halts == 0, rover.bridge.last_halt
+    assert beat.failure is None, beat.failure
+    rover.cockpit.state = original  # type: ignore[method-assign]
+    await transport.close()
+
+
 async def test_a_heartbeat_held_past_the_window_asks_the_bridge_before_it_fails(
     rover: Rover,
 ) -> None:

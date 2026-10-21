@@ -295,9 +295,10 @@ mission's stop to be confirmed, at most 4 s after it went out.
   it cannot confirm is reported as a failure, the close note says the mission may still be
   running, and the arm's cancel and the zero have gone out either way.
 - **A dropped session halts what that session started.** The session's keepalives go from the
-  loop's own heartbeat, one each beat, first in it, so a dead process, a dead link and a wedged
-  loop all stop them, and the deadman covers all three. Each session is named by an id its
-  transport draws at random, and each keepalive declares the bridge's own 1 s cap as its period,
+  loop's own heartbeat, one each beat, first in it and again every half second while the beat
+  waits on a cockpit slow to answer, so a dead process, a dead link and a wedged loop all stop
+  them, and the deadman covers all three. Each session is named by an id its transport draws at
+  random, and each keepalive declares the bridge's own 1 s cap as its period,
   never a measured one, so the window is 3 s and one keepalive late by a second or two costs
   nothing. Three missed periods later the bridge halts what that session said it started and
   nothing else: its own arm cycle, and a goal or an exploration it started, with

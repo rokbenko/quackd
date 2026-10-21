@@ -46,7 +46,7 @@ import math
 import secrets
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from PIL import Image, UnidentifiedImageError
@@ -1186,27 +1186,23 @@ class MossCockpit:
 
         The keepalives go from here, from the loop's own heartbeat, so a loop that does not run
         sends none. A dead process, a dead link and a wedged loop all end the session, and the
-        bridge halts what it started. The keepalive goes before the cockpit's state is asked, so
-        a cockpit slow to answer delays the next one and never this one. A prompt on the
+        bridge halts what it started. The keepalive goes before the cockpit's state is asked,
+        and again every HEARTBEAT_S for as long as the cockpit takes to answer, so a cockpit
+        slow to answer delays none of them. A prompt on the
         terminal blocks the loop too, and a session that started nothing while it waits halts
         nothing. A halt that halted something this session started is this heartbeat's
         failure, which stops the run."""
         if self.bridge_up:
-            try:
-                await self._call(self._beat)
-            except HeartbeatError:
-                raise
-            except Exception:  # said by the window check below, once it has passed
-                pass
+            await self._beat_once()
         try:
-            state = await self._call(self.cockpit.state)
+            state = await self._while_beating(self._call(self.cockpit.state))
         except LinkDown as e:
             raise HeartbeatError(
                 f"moss: the cockpit at {self.cockpit.url} stopped answering with the rover's "
                 f"state: {e}"
             ) from e
         self._idle = state.get("idle") or {}
-        await self._idle_keepalive()
+        await self._while_beating(self._idle_keepalive())
         if not self.bridge_up:
             stack = state.get("stack") or {}
             same = stack.get("running") and stack.get("blueprint") == self.stack
@@ -1216,14 +1212,9 @@ class MossCockpit:
         window = SESSION_MISSES * MAX_KEEPALIVE_S
         if self._session_at is not None and time.monotonic() - self._session_at > window:
             # the loop was held past the window, by a prompt or a wedge, while this heartbeat
-            # waited on the cockpit: the bridge's own word on the session decides. A halt of
-            # something this session started fails here, and a halt of nothing is no event
-            try:
-                await self._call(self._beat)
-            except HeartbeatError:
-                raise
-            except Exception:  # said by the check that follows
-                pass
+            # waited: the bridge's own word on the session decides. A halt of something this
+            # session started fails here, and a halt of nothing is no event
+            await self._beat_once()
         if self._session_at is None or time.monotonic() - self._session_at > window:
             raise HeartbeatError(
                 f"moss: the bridge at {self.bridge.url} has taken no keepalive of this session "
@@ -1238,6 +1229,33 @@ class MossCockpit:
             raise HeartbeatError(self._stack_gone(stack))
 
     # ── the keepalives, from the loop's own heartbeat ───────────────────────────────────
+
+    async def _beat_once(self) -> None:
+        """One keepalive. A halt of something this session started raises, and any other
+        failure is the window check's to say, once the window has passed."""
+        try:
+            await self._call(self._beat)
+        except HeartbeatError:
+            raise
+        except Exception:
+            pass
+
+    async def _while_beating(self, call: Awaitable[Any]) -> Any:
+        """`call`, with this session's keepalive going out every HEARTBEAT_S while it waits, so
+        a cockpit slow to answer never delays the bridge's keepalive. They go from the loop, as
+        every keepalive does: a loop that does not run sends none."""
+        work = asyncio.ensure_future(call)
+        if not self.bridge_up:
+            return await work
+        try:
+            while True:
+                done, _ = await asyncio.wait({work}, timeout=HEARTBEAT_S)
+                if done:
+                    return work.result()
+                await self._beat_once()
+        except BaseException:
+            work.cancel()  # a halt said, or the heartbeat stopped: the call is not waited on
+            raise
 
     def _beat(self) -> dict[str, Any]:
         """One keepalive of this session, declaring the bridge's cap as its period, with what
