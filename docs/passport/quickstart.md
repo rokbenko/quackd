@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > The first half works today for any robot, with nothing installed on it. The second half is for a
-> robot quackd drives, and shows only the commands quackd 0.23.0 has so far, with what they really
-> print. [roadmap.md](roadmap.md) says what is still to come.
+> robot quackd drives, and shows the commands quackd 0.23.0 has for it, with what they really
+> print. [roadmap.md](roadmap.md) says what has run, and what comes after 0.23.0.
 
 ## Any robot, in five minutes
 
@@ -88,10 +88,12 @@ $ quackd passport check robot-passport.jws
 ```
 
 The first `set` makes the robot's key and the first `stamp` makes your owner key, which you should
-back up. For a web page, write both files, `--out robot-passport.jws` and `--out
-robot-passport.json`, and serve them side by side. To publish from the robot's own host instead,
-`quackd passport serve --robot duck-01 --announce` serves both at the well-known URL and advertises
-them on the local network, and `quackd passport qr` prints the sticker
-([quackd.md](quackd.md#serving-passports)).
+back up. For a web page, write both files, `--out robot-passport.jws` and
+`--out robot-passport.json`, and serve them side by side. To publish from the robot's own host
+instead, `quackd passport serve --robot duck-01 --announce` serves both at the well-known URL and
+advertises them on the local network, and `quackd passport qr` prints the sticker
+([quackd.md](quackd.md#serving-passports)). With `--talk` it also listens for robots that say hello,
+and tells you what each says, asks and shares, and `quackd meet` with `--as duck-01` says hello to
+another robot as one of yours ([quackd.md](quackd.md#talking)).
 
 The rest of that panel, and what every command prints, is in [quackd.md](quackd.md#a-robots-passport).

@@ -1,11 +1,10 @@
 # Talk: what two robots say once they have met
 
 > [!NOTE]
-> Spec draft 0.1. quackd speaks all six messages over an HTTP inbox and an MQTT broker, and
-> decides every `ask` with its courtesy handler. All six have run between processes on one
-> machine over both, and a running robot granted a pause asked over HTTP
-> ([quackd.md](quackd.md#talking)). [roadmap.md](roadmap.md) says what of it is built and what has
-> run.
+> Spec draft 0.1. quackd speaks all six messages over an HTTP inbox and an MQTT broker, and decides
+> every `ask` with its courtesy handler. All six have run between processes on one machine over
+> both, and a running robot granted a pause asked over HTTP ([quackd.md](quackd.md#talking)).
+> [roadmap.md](roadmap.md) says what of it is built and what has run.
 
 Reading each other's passports is already an exchange, and for many robots it is all they need.
 Talk is the optional layer above it: six small messages for two robots that want to prove who they
@@ -146,18 +145,17 @@ specification puts four duties on every receiver, whoever made it:
 
 quackd's handler is fixed code, not the pilot. It looks up the asker's tier
 ([trust.md](trust.md#the-four-tiers)), checks the skill is on that tier's list and that the global
-budget allows it, and only then runs it through the executor, with the source `peer`, so every
-gate the executor already has still applies. `pause` becomes the executor's own stop, followed by
-a short window in which nothing that moves is admitted. `identify` becomes the body's sound when it
-has one. Anything else a peer asks for reaches the pilot as information only, the way a passer-by
-might mention something, and the pilot's own task decides whether it matters. A peer never calls
-`stop`, and nothing a peer asks can outlast or override the robot's own stop. The executor holds a
-peer to two gates of its own: `peer`, which admits no verb a peer started but the `stop` and `say`
-a courtesy runs, and `paused`, which admits nothing that moves any part of the body while a granted
-pause holds
-([concepts/safety.md](../concepts/safety.md)). The handler answers within the five seconds the
-specification allows, or answers `later`, and `quackd meet --ask` is the way to ask one by hand
-([quackd.md](quackd.md#asking-for-a-courtesy)).
+budget allows it, and only then runs it through the executor, with the source `peer`, so every gate
+the executor already has still applies. `pause` becomes the executor's own stop, followed by a short
+window in which nothing that moves is admitted. `identify` becomes the body's sound when it has one.
+Anything else a peer asks for reaches the pilot as information only, the way a passer-by might
+mention something, and the pilot's own task decides whether it matters. A peer never calls `stop`,
+and nothing a peer asks can outlast or override the robot's own stop. The executor holds a peer to
+two gates of its own: `peer`, which admits no verb a peer started but the `stop` and `say` a
+courtesy runs, and `paused`, which admits nothing that moves any part of the body while a granted
+pause holds ([concepts/safety.md](../concepts/safety.md)). The handler answers within the five
+seconds the specification allows, `later` when the executor has not finished in four, and
+`quackd meet --ask` asks for one by hand ([quackd.md](quackd.md#asking-for-a-courtesy)).
 
 ## share
 

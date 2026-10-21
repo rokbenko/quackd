@@ -1,8 +1,8 @@
 # Discovery: how robots find each other's passports
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run.
+> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
+> of it is built and what has run.
 
 Before one robot can read another's passport it has to know there is one, and where. That is the
 **beacon**'s whole job. A beacon carries almost nothing, a pointer and two fingerprints, so it

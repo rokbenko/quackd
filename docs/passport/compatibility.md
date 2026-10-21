@@ -1,10 +1,9 @@
 # Compatibility: any robot can carry a passport
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run. The Raspberry Pi, ESP32 and
-> ROS 2 recipes and the translators below are planned, not written, and this page says so beside
-> each one.
+> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
+> of it is built and what has run. The Raspberry Pi, ESP32 and ROS 2 recipes and the translators
+> below are planned, not written, and this page says so beside each one.
 
 Robot Passport is meant to be the easiest thing a robot ever implements. The smallest version needs
 no software on the robot at all, every step up is optional, and robots that never implement any of

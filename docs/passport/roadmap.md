@@ -24,7 +24,7 @@ happened, which is the same rule [guides/lan.md](../guides/lan.md) has always fo
 
 ## Phases
 
-quackd 0.23.0 is meant to ship phases 1 to 6.
+quackd 0.23.0 ships phases 1 to 6.
 
 1. **The specification and these pages.** The spec, the schemas, the vectors, every page in this
    folder, the README's section and the decision record ([ADR-0057](../adr/0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md)).

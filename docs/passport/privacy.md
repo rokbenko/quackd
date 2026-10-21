@@ -1,8 +1,8 @@
 # Privacy: what a robot reveals, and to whom
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run.
+> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
+> of it is built and what has run.
 
 A passport is public by design: its job is to tell strangers about a robot. That makes it worth
 being careful about what it tells them, because a robot usually belongs to a person, sits in their

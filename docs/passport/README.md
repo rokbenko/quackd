@@ -1,8 +1,8 @@
 # Robot Passport
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run.
+> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
+> of it is built and what has run.
 
 A quackd flock is a list of robots a person put together, and each knows the others from their
 manifests. Robot Passport is for every robot that is not on that list: a small open protocol for

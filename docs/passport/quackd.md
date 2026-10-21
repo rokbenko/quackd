@@ -1,12 +1,11 @@
 # Robot Passport in quackd
 
 > [!NOTE]
-> quackd 0.23.0 is being built to implement Robot Passport, and this page fills in as each part
-> lands. Built so far: a signed passport for every robot from its manifest, owner stamps, pins,
-> `quackd passport show`, `check`, `set`, `owner`, `stamp`, `known`, `forget`, `serve` and `qr`,
-> `quackd meet`, passports in `quackd discover`, and talk, over HTTP and a broker: `hello`,
-> `say` and `bye`, `Robots nearby` in a run, `tell` to a robot met, `robot_nearby` over MCP, and
-> the courtesy handler that decides every `ask`. [roadmap.md](roadmap.md) tracks it.
+> quackd 0.23.0 is the first implementation of Robot Passport: a signed passport for every robot
+> from its manifest, owner stamps, pins, `quackd passport show`, `check`, `set`, `owner`, `stamp`,
+> `known`, `forget`, `serve` and `qr`, `quackd meet`, passports in `quackd discover`, and talk over
+> HTTP and a broker, with `Robots nearby` in a run, `tell` to a robot met, `robot_nearby` over MCP
+> and the courtesy handler that decides every `ask`. [roadmap.md](roadmap.md) says what has run.
 
 quackd is the first implementation of Robot Passport. It does four things with it:
 

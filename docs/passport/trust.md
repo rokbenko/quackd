@@ -1,8 +1,8 @@
 # Trust: keys, signatures, stamps and tiers
 
 > [!NOTE]
-> Spec draft 0.1. quackd's implementation is being built for 0.23.0, and
-> [roadmap.md](roadmap.md) says what of it is built and what has run.
+> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
+> of it is built and what has run.
 
 A passport is a claim. Anybody can write one, about any robot, saying anything. This page is about
 what turns a claim into something a reader can act on, and about how little that is: a signature
