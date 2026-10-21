@@ -210,7 +210,7 @@ for one tool call, and `collect_litter` does not run there at all.
 | What is moving | quackd's `stop` | A dropped link, with the bridge | Without the bridge |
 |---|---|---|---|
 | a twist, through the bridge | a zero on the pad channel before anything else, and the soft stop beside it | the bridge's own 0.3 s twist deadman, one zero and then silence. Behind it, dimOS's 0.2 s velocity watchdog, the base adapter's 0.5 s and the firmware's 0.3 s | no twist verbs exist |
-| a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, at most 1.5 s at quackd's own 0.5 s period, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
+| a `drive_to` goal, through the cockpit | the soft stop's zero on `tele_cmd_vel`, which cancels the goal | three missed keepalives after the session goes quiet, a dead process, a dead link and a wedged loop alike, so within 3 s, the bridge halts it: `stop_explore_cmd`, `stop_movement` and a zero | MOSS drives on to the goal, which is never more than 2 m away |
 | `explore`, through the cockpit | `stop_explore_cmd` and `stop_movement`, then the soft stop | the bridge halts it the same way | MOSS explores on inside its radius, which the launcher sets to 4 m from where exploring started, until its frontier runs out. That is why `explore` is `confirm` |
 | the arm cycle, through the bridge | the cancel: the script stopped, `cancel_trajectory`, the joints read twice, so the arm holds where it was | the bridge cancels the cycle that session started, and reads the arm. A script that dies any way but its own has the trajectory it sent cancelled and the arm read as soon as the bridge reads its exit | no arm verbs exist |
 | the litter mission | the mission's own stop, then at once the end of the mission's own pick script, the arm's cancel and the zero, then the mission's stop confirmed, and the soft stop beside it all | the bridge runs the whole stop for the session that started the mission, and leaves running a mission the session only watched | `moss-litter` is refused at connect |
@@ -267,19 +267,23 @@ for one tool call, and `collect_litter` does not run there at all.
   coordinator answers in the same breath: with both silent the bus itself may be down. A stop
   it cannot confirm is reported as a failure, the close note says the mission may still be
   running, and the arm's cancel and the zero have gone out either way.
-- **A dropped session halts what that session started.** The transport keeps its session alive
-  from a thread of its own, at its configured 0.5 s, whatever the event loop is doing, so a
-  prompt on the terminal never reads as a dead quackd: only a dead process or a dead link stops
-  the keepalives. Each session is named by an id its transport draws at random, and it declares
-  that configured period, never a measured one, which the bridge caps at 1 s. Three missed
-  keepalives later the bridge halts what that session said it started and nothing else: its own
-  arm cycle, and a goal or an exploration it started, with `stop_explore_cmd`, `stop_movement`
-  and a zero. A start is said to the bridge before it goes out, and a start whose answer is lost
-  is kept and stopped, so a quackd that dies the instant after is still covered. A doctor or a
-  second quackd beside a run never touches the run's session. On `moss-litter` the whole stop
-  runs only for a session that started the mission: a run that only watched the owner's
-  mission, or a `quackd doctor`, leaves it running when its link drops, and an explicit stop,
-  the end of every run among them, still ends it.
+- **A dropped session halts what that session started.** The session's keepalives go from the
+  loop's own heartbeat, one each beat, first in it, so a dead process, a dead link and a wedged
+  loop all stop them, and the deadman covers all three. Each session is named by an id its
+  transport draws at random, and each keepalive declares the bridge's own 1 s cap as its period,
+  never a measured one, so the window is 3 s and one keepalive late by a second or two costs
+  nothing. Three missed periods later the bridge halts what that session said it started and
+  nothing else: its own arm cycle, and a goal or an exploration it started, with
+  `stop_explore_cmd`, `stop_movement` and a zero. Every keepalive answer after says what was
+  halted, and a halt of something the session started fails its heartbeat, which stops the run
+  with the reason. A prompt on the terminal holds the loop too, and nothing is started while a
+  question is on the screen, so a halt then halts nothing and is no event. A start is said to
+  the bridge before it goes out, and a start whose answer is lost is kept and stopped, so a
+  quackd that dies the instant after is still covered. A doctor or a second quackd beside a run
+  never touches the run's session. On `moss-litter` the whole stop runs only for a session that
+  started the mission: a run that only watched the owner's mission, or a `quackd doctor`, leaves
+  it running when its link drops, and an explicit stop, the end of every run among them, still
+  ends it.
 - **`close()` never sends a go limp call**, and **quackd never posts `/cmd/stack`**, whose stop
   ends every dimOS run and turns the arm's torque off. A test reads the package's source to
   prove no code path can send either.
@@ -289,8 +293,11 @@ for one tool call, and `collect_litter` does not run there at all.
   idle stop counts idle time only while the newest dimOS run is `moss-nav` or `moss-explore`,
   so with moss-arm started after the base stack it counts none. A stack it does end, after
   300 s, goes with `tools/moss-fly.sh stop`, which ends the arm's run too, and the arm's adapter
-  turns its torque off as its run ends. quackd sends the cockpit's keepalive while it is
-  connected, and nothing does after.
+  turns its torque off as its run ends. quackd sends the cockpit's keepalive from its loop's own
+  heartbeat while it is connected, and nothing does after. A prompt holds the loop, so none goes
+  while a question waits: one left open longer than about two thirds of the cockpit's idle limit
+  lets a stack the idle stop counts be ended under it, the arm's torque with it. Stow the arm
+  before you leave a prompt open.
 - **How long a stop takes** is the firmware's own ramp, which the bridge reads from the stack
   and reports: with MOSS's launcher, 5 ms per percent, half a second from full power.
 

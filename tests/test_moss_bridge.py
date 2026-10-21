@@ -1583,6 +1583,48 @@ def test_a_dropped_session_of_a_run_that_has_gone_halts_nothing_of_the_new_one()
     bridge.close()
 
 
+def test_a_halted_session_hears_what_was_halted_in_every_keepalive_after() -> None:
+    """The client learns of its halt from the next keepalive answer: what was halted, or that
+    nothing was, which a session that started nothing gets. Only a halt that halted something
+    is counted, and the record goes with the session's end."""
+    clock = Clock()
+    bridge = B.fake_bridge(fps=0)
+    bridge.clock = clock
+    _beat(bridge, "run", 0.1, "explore")
+    clock.t += 1.0
+    bridge.session_tick()
+    said = _beat(bridge, "run", 0.1, "explore")["session"]["halted"]
+    assert said["halted"] == ["its exploration"] and "missed" in said["why"], said
+    assert bridge.halts == 1 and bridge.expired == 1
+    bridge.keepalive({"session": "run", "end": True})
+    assert "run" not in bridge.halted, "the record goes with the session's end"
+    _beat(bridge, "probe", 0.1, None)
+    clock.t += 1.0
+    bridge.session_tick()
+    assert _beat(bridge, "probe")["session"]["halted"]["halted"] == []
+    assert bridge.halts == 1 and bridge.expired == 2
+    bridge.close()
+
+
+def test_a_long_halt_never_holds_back_another_sessions_expiry() -> None:
+    """The bridge's own watch halts each expired session in a thread of its own: a litter
+    mission's whole stop, slow to confirm, never delays the end of another session that
+    expired after it."""
+    bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_ignores_stop=True)
+    assert bridge.mission_doc()["answering"] is True
+    bridge.start()
+    try:
+        _beat(bridge, "collector", 0.1, "litter")
+        _wait(lambda: "mission stop" in bridge.bus.events, 5.0)
+        _beat(bridge, "watcher", 0.1, None)
+        began = time.monotonic()
+        _wait(lambda: "watcher" in bridge.halted, B.MISSION_CONFIRM_S / 2)
+        assert time.monotonic() - began < B.MISSION_CONFIRM_S / 2
+        assert "collector" not in bridge.halted, "while the litter halt still runs"
+    finally:
+        bridge.close()
+
+
 def test_a_session_ended_by_its_client_halts_nothing() -> None:
     clock = Clock()
     bridge = B.fake_bridge(fps=0)
@@ -1681,7 +1723,8 @@ def test_on_moss_litter_a_dropped_session_that_only_watched_leaves_the_mission_r
     _fake_time(bridge, clock)
     _beat(bridge, "watcher", 0.1, None)
     clock.t += 1.0
-    assert len(bridge.session_tick()) == 1 and bridge.halts == 1
+    assert len(bridge.session_tick()) == 1 and bridge.expired == 1
+    assert bridge.halts == 0, "it halted nothing, so no halt is counted"
     assert "mission stop" not in bridge.bus.events and bridge.bus.mission_stops == 0
     assert bridge.mission_doc()["answering"] is True
     bridge.close()

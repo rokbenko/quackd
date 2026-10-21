@@ -204,6 +204,8 @@ before the request."""
 PUMP_IDLE_S = 0.1
 """The longest the twist scheduler sleeps, between edges or with nothing due, so a pump built
 late is found and a closing bridge is never kept waiting."""
+HALTS_KEPT = 64
+"""The expired sessions' halts kept to report to their clients, the oldest dropped first."""
 MAX_BODY_BYTES = 4096
 """quackd's bodies are a few dozen bytes of JSON."""
 DRAIN_LIMIT_BYTES = 16 * MAX_BODY_BYTES
@@ -1593,8 +1595,14 @@ class Bridge:
         if bus is not None and up is not None:
             self._build(bus, up, self.started_stack)
         self.sessions: dict[str, Session] = {}
+        self.expired = 0
+        """How many sessions missed their keepalives, whether or not they had started anything."""
         self.halts = 0
-        """How many sessions this bridge has halted for missing their keepalives."""
+        """How many of those halts halted something: a session that started nothing halts
+        nothing, and is not counted here."""
+        self.halted: dict[str, dict[str, Any]] = {}
+        """Each expired session's halt, by its id, with what it halted, which every keepalive of
+        that session reports from then on, so its client learns it was halted."""
         self.last_halt: str | None = None
         self.mission_stopped_run: str | None = None
         """The run whose mission this bridge stopped: stopped stays stopped until a new run."""
@@ -2223,6 +2231,7 @@ class Bridge:
         with self._lock:
             if body.get("end"):
                 self.sessions.pop(sid, None)
+                self.halted.pop(sid, None)
             else:
                 s = self.sessions.setdefault(sid, Session(sid))
                 s.keepalive_s = min(MAX_KEEPALIVE_S, max(0.05, period))
@@ -2230,7 +2239,12 @@ class Bridge:
                 s.last = self.clock()
                 given = body.get("run")
                 s.run = str(given) if isinstance(given, str) and given else None
-                mine = {"id": s.id, "keepalive_s": s.keepalive_s, "started": s.started}
+                mine = {
+                    "id": s.id,
+                    "keepalive_s": s.keepalive_s,
+                    "started": s.started,
+                    "halted": self.halted.get(sid),
+                }
         return 200, {
             "ok": True,
             "stack": self.stack().doc(),
@@ -2239,13 +2253,18 @@ class Bridge:
         }
 
     def _sessions_doc(self) -> dict[str, Any]:
-        return {"live": len(self.sessions), "halts": self.halts, "last_halt": self.last_halt}
+        return {
+            "live": len(self.sessions),
+            "expired": self.expired,
+            "halts": self.halts,
+            "last_halt": self.last_halt,
+        }
 
     # ── the watchdogs ───────────────────────────────────────────────────────────────
 
-    def session_tick(self) -> list[dict[str, Any]]:
-        """Each session three of its own periods past its last keepalive is ended, and what it
-        said it started is halted, and nothing any other session started."""
+    def _expired_now(self) -> list[tuple[str, Session]]:
+        """The sessions three of their own periods past their last keepalive, ended here, each
+        with why."""
         now = self.clock()
         with self._lock:
             late = [
@@ -2253,8 +2272,20 @@ class Bridge:
             ]
             for s in late:
                 del self.sessions[s.id]
-                self.halts += 1
-        return [self.halt(f"session {s.id} missed {SESSION_MISSES} keepalives", s) for s in late]
+                self.expired += 1
+        return [(f"session {s.id} missed {SESSION_MISSES} keepalives", s) for s in late]
+
+    def session_tick(self) -> list[dict[str, Any]]:
+        """Each session three of its own periods past its last keepalive is ended, and what it
+        said it started is halted, and nothing any other session started, one after the other
+        as a test drives it."""
+        return [self.halt(why, s) for why, s in self._expired_now()]
+
+    def _session_watch(self) -> None:
+        """The bridge's own watch: each expired session halted in a thread of its own, so a
+        long halt, a litter mission's whole stop, never holds back another session's expiry."""
+        for why, s in self._expired_now():
+            threading.Thread(target=self.halt, args=(why, s), name="moss-halt", daemon=True).start()
 
     def halt(self, why: str, session: Session) -> dict[str, Any]:
         """What one session started, halted, and nothing it did not. On moss-litter the whole
@@ -2264,6 +2295,7 @@ class Bridge:
         stop_explore_cmd, stop_movement and a zero."""
         stack = self.stack()
         log.warning("halting what session %s started: %s", session.id, why)
+        halted: list[str] = []
         moved_on = session.run is not None and stack.run_id not in (None, session.run)
         if moved_on:
             # the stack the session was kept on has gone: nothing of the new run is its
@@ -2272,10 +2304,12 @@ class Bridge:
             doc = {"ok": True, "did": did, "errors": errors, "arm": None}
             if self.jobs is not None and self.jobs.running_session() == session.id:
                 doc["arm"] = self._cancel_arm(did, errors)
+                halted.append("its arm cycle")
             did.append(f"run {session.run} is gone, and nothing of run {stack.run_id} is halted")
             doc["ok"] = not errors
         elif self._litter(stack) and session.started == "litter":
             doc = self.stop()
+            halted.append("the litter mission it started")
         else:
             did = []
             errors = []
@@ -2283,7 +2317,9 @@ class Bridge:
             if self.bus is not None and self.up is not None:
                 if self.jobs is not None and self.jobs.running_session() == session.id:
                     doc["arm"] = self._cancel_arm(did, errors)
+                    halted.append("its arm cycle")
                 if session.started in ("goal", "explore"):
+                    halted.append("its goal" if session.started == "goal" else "its exploration")
                     for stream in (STOP_EXPLORE_STREAM, STOP_MOVEMENT_STREAM):
                         with contextlib.suppress(Exception):
                             self.bus.publish_true(channel(stream, BOOL_MSG))
@@ -2293,15 +2329,22 @@ class Bridge:
                             self.bus.publish_twist(chan, 0.0, 0.0)
                             did.append(f"zero twist on {chan}")
             doc["ok"] = not errors
+        doc["halted"] = halted
+        record = {"why": why, "started": session.started, "halted": halted, "ok": doc["ok"]}
         with self._lock:
             self.last_halt = why
+            if halted:
+                self.halts += 1
+            self.halted[session.id] = record
+            while len(self.halted) > HALTS_KEPT:
+                self.halted.pop(next(iter(self.halted)))
         return doc
 
     def start(self) -> None:
         pump = threading.Thread(target=self._pump_loop, name="moss-pump", daemon=True)
         pump.start()
         self._threads.append(pump)
-        self._threads.append(self._every(0.1, self.session_tick, "moss-session"))
+        self._threads.append(self._every(0.1, self._session_watch, "moss-session"))
 
     def _pump_loop(self) -> None:
         """The one scheduler of every twist this bridge sends. It ticks the pump when its next

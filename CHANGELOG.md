@@ -32,11 +32,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   stack, which comes with the end of the mission's own pick script, since the mission's stop leaves
   that running. The bridge runs on the rover with MOSS's own interpreter, imports quackd nowhere,
   binds loopback and takes a token. Each quackd session has an id of its own and keeps itself alive
-  from a thread of its own, so a prompt never reads as a dead quackd, and three missed keepalives
-  later the bridge halts what that session started and nothing else, the whole stop on `moss-litter`
-  only for a session that started the mission. quackd's close halts only what its own session
-  started, its own arm cycle by its id, so a `quackd doctor` stops nothing. A systemd unit and its
-  page sit beside it ([bridge/moss/README.md](bridge/moss/README.md)).
+  from its loop's own heartbeat, so a dead process, a dead link and a wedged loop all end it, and
+  three missed keepalives later the bridge halts what that session started and nothing else, the
+  whole stop on `moss-litter` only for a session that started the mission, and the next keepalive
+  answer says what was halted. quackd's close halts only what its own session started, its own arm
+  cycle by its id, so a `quackd doctor` stops nothing. A systemd unit and its page sit beside it
+  ([bridge/moss/README.md](bridge/moss/README.md)).
 - **MOSS's own verbs.** `drive_to`, a goal at most 2 m away for MOSS's own planner. `explore`, its
   explorer for up to eight minutes. `pick_and_drop` and `stow_arm`, the maker's fixed arm cycle,
   which reaches for nothing. And `collect_litter`, the rover handed to MOSS's own litter mission

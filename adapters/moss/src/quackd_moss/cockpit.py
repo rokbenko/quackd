@@ -21,8 +21,9 @@ Four properties of this rover decide what this file does, and each is read at th
 - **MOSS's hard stop drops the arm** (`upstream_api.ARM_TORQUE_OFF`), so quackd never
   posts `/cmd/stack`, and no method here can.
 - **A dropped link leaves a goal running.** MOSS finishes a goal the planner has, so the bridge
-  halts what this session started three missed keepalives after it goes quiet, and without
-  the bridge a goal is kept short (`verbs.DRIVE_TO_MAX_M`).
+  halts what this session started three missed keepalives after it goes quiet, a dead process,
+  a dead link and a wedged loop alike, since the keepalives go from the loop's own heartbeat,
+  and without the bridge a goal is kept short (`verbs.DRIVE_TO_MAX_M`).
 
 `stop()` is the bridge's `/stop` and then the cockpit's `/cmd/stop`, every time, each failure
 reported and neither skipping the other. `close()` halts what this session started and nothing
@@ -128,8 +129,11 @@ NAV_KEYS = ("exploring", "explore_done", "goal", "goal_reached")
 """What quackd may have started through the cockpit, as the keepalive tells the bridge."""
 
 HEARTBEAT_S = 0.5
-"""The period of the session's keepalives, from the transport's own thread, and the period each
-one declares: the same as the core heartbeat's own default (`quackd.safety.Heartbeat`)."""
+"""How often the session's keepalives go: once in every heartbeat of the loop's own, whose
+default this is (`quackd.safety.Heartbeat`). Each declares MAX_KEEPALIVE_S, the bridge's cap,
+so the window is three of those, and one keepalive late by a couple of periods costs nothing.
+A loop that does not run sends none: a dead process, a dead link and a wedged loop all end the
+session."""
 CALL_TIMEOUT_S = 3.0
 FRAME_WAIT_S = stale_after_s(CAMERA_PERIOD_S)
 """How long the bridge may hold a frame request for a frame taken after it, and so how long
@@ -564,8 +568,9 @@ class MossCockpit:
         self.bridge = bridge or BridgeClient(host, bridge_port, token)
         self.timeout_s = timeout_s
         self.heartbeat_floor_s = heartbeat_s
-        """The configured period of this session's keepalives, and the period it declares: a
-        constant, never a measurement, so a slow round trip never widens the bridge's window."""
+        """The loop's heartbeat period, which sends one keepalive each beat. Each keepalive
+        declares the bridge's own cap instead, a constant, never a measurement, so the window
+        is the same however slow a round trip is."""
         self.session_id = secrets.token_hex(8)
         """Drawn here, so this session's keepalives, end and halts are its own on the bridge."""
         self.connected = False
@@ -610,8 +615,6 @@ class MossCockpit:
         self._frame_asked: float | None = None
         self._frame_after = False
         self._fetch_s = 0.0
-        self._beats: threading.Thread | None = None
-        self._beats_stop = threading.Event()
         self._beat_lock = threading.Lock()
         self._session_open = False
         self._session_doc: dict[str, Any] = {}
@@ -716,7 +719,6 @@ class MossCockpit:
             "driver": base.get("driver"),
         }
         self.connected = True
-        self._start_beats()
 
     async def _bridge_hello(self) -> None:
         """A bridge that is not there is a rover without one. A bridge that answers with the
@@ -1161,11 +1163,23 @@ class MossCockpit:
     # ── the watchdog ────────────────────────────────────────────────────────────────
 
     async def heartbeat(self) -> None:
-        """A round trip to the cockpit, and the stack quackd connected to still running.
+        """The session's keepalive first, then a round trip to the cockpit, the cockpit's idle
+        keepalive when it is due, and the stack quackd connected to still running.
 
-        The keepalives are not sent from here. A thread of the transport's own sends them
-        (`_keepalives`), so a loop blocked on a prompt never reads as a dead quackd. This checks
-        that the bridge took one of them within the session's window and says which stack runs."""
+        The keepalives go from here, from the loop's own heartbeat, so a loop that does not run
+        sends none. A dead process, a dead link and a wedged loop all end the session, and the
+        bridge halts what it started. The keepalive goes before the cockpit's state is asked, so
+        a cockpit slow to answer delays the next one and never this one. A prompt on the
+        terminal blocks the loop too, and a session that started nothing while it waits halts
+        nothing. A halt that halted something this session started is this heartbeat's
+        failure, which stops the run."""
+        if self.bridge_up:
+            try:
+                await self._call(self._beat)
+            except HeartbeatError:
+                raise
+            except Exception:  # said by the window check below, once it has passed
+                pass
         try:
             state = await self._call(self.cockpit.state)
         except LinkDown as e:
@@ -1174,13 +1188,24 @@ class MossCockpit:
                 f"state: {e}"
             ) from e
         self._idle = state.get("idle") or {}
+        await self._idle_keepalive()
         if not self.bridge_up:
             stack = state.get("stack") or {}
             same = stack.get("running") and stack.get("blueprint") == self.stack
             if not same or (self.run_id is not None and str(stack.get("run_id")) != self.run_id):
                 raise HeartbeatError(self._stack_gone(stack))
             return
-        window = SESSION_MISSES * self.heartbeat_floor_s
+        window = SESSION_MISSES * MAX_KEEPALIVE_S
+        if self._session_at is not None and time.monotonic() - self._session_at > window:
+            # the loop was held past the window, by a prompt or a wedge, while this heartbeat
+            # waited on the cockpit: the bridge's own word on the session decides. A halt of
+            # something this session started fails here, and a halt of nothing is no event
+            try:
+                await self._call(self._beat)
+            except HeartbeatError:
+                raise
+            except Exception:  # said by the check that follows
+                pass
         if self._session_at is None or time.monotonic() - self._session_at > window:
             raise HeartbeatError(
                 f"moss: the bridge at {self.bridge.url} has taken no keepalive of this session "
@@ -1192,40 +1217,37 @@ class MossCockpit:
         ):
             raise HeartbeatError(self._stack_gone(stack))
 
-    # ── the keepalives, from a thread of the transport's own ────────────────────────────
-
-    def _start_beats(self) -> None:
-        self._beats_stop.clear()
-        self._beats = threading.Thread(target=self._keepalives, name="moss-keepalive", daemon=True)
-        self._beats.start()
-
-    def _keepalives(self) -> None:
-        """The session's keepalive and the cockpit's idle keepalive, at the configured period,
-        whatever the event loop is doing. Only a dead process or a dead link stops them, and the
-        thread dies with the process."""
-        while not self._beats_stop.wait(self.heartbeat_floor_s):
-            if self.bridge_up:
-                with contextlib.suppress(Exception):
-                    self._beat()
-            self._idle_beat()
+    # ── the keepalives, from the loop's own heartbeat ───────────────────────────────────
 
     def _beat(self) -> dict[str, Any]:
-        """One keepalive of this session, with the configured period and what it has started.
-        Raises when the bridge did not take it, and keeps its answer for the heartbeat."""
+        """One keepalive of this session, declaring the bridge's cap as its period, with what
+        the session has started. Raises when the bridge did not take it, and keeps its answer
+        for the heartbeat. A HeartbeatError when the bridge says it halted something this
+        session had started, after it went quiet: what the run was doing is not running any
+        more, so the run stops. A halt that halted nothing is no event."""
         with self._beat_lock:
             try:
                 doc = self.bridge.keepalive(
-                    self.session_id, self.heartbeat_floor_s, self.started, run=self.run_id
+                    self.session_id, MAX_KEEPALIVE_S, self.started, run=self.run_id
                 )
             except Exception as e:
                 self._session_error = str(e)
                 raise
             self._session_doc, self._session_at, self._session_error = doc, time.monotonic(), None
             self._session_open = True
-            return doc
+        halt = (doc.get("session") or {}).get("halted")
+        if isinstance(halt, dict) and halt.get("halted"):
+            what = " and ".join(str(h) for h in halt["halted"])
+            raise HeartbeatError(
+                f"moss: quackd's bridge halted {what} after this session went quiet "
+                f"({halt.get('why')}), so quackd stops here rather than go on as if it ran"
+            )
+        return doc
 
-    def _idle_beat(self) -> None:
-        """The cockpit's idle keepalive, three times inside its own limit, while connected."""
+    async def _idle_keepalive(self) -> None:
+        """The cockpit's idle keepalive, three times inside its own limit, from the loop's own
+        heartbeat. While the loop waits on a prompt none goes, so a prompt left open longer
+        than about two thirds of that limit lets the cockpit's idle stop end the stack."""
         idle = self._idle
         limit = _number(idle.get("limit_s"))
         if not idle.get("enabled") or limit is None or limit < IDLE_STOP_MIN_S:
@@ -1234,19 +1256,15 @@ class MossCockpit:
         if now - self._last_cockpit_keepalive < limit / KEEPALIVES_PER_LIMIT:
             return
         with contextlib.suppress(Exception):
-            ok, _ = self.cockpit.keepalive()
+            ok, _ = await self._call(self.cockpit.keepalive)
             if ok:
                 self._last_cockpit_keepalive = now
 
     async def _end_session(self) -> None:
-        """The keepalives stopped, and the bridge's session ended if this transport opened one,
-        so the bridge halts nothing for it after it has gone."""
-        self._beats_stop.set()
-        thread, self._beats = self._beats, None
-        if thread is not None:
-            await asyncio.to_thread(thread.join, CALL_TIMEOUT_S + 1.0)
+        """The bridge's session ended if this transport opened one, so the bridge halts nothing
+        for it after it has gone."""
         if self.bridge_up and self._session_open:
-            sid, period = self.session_id, self.heartbeat_floor_s
+            sid, period = self.session_id, MAX_KEEPALIVE_S
             with contextlib.suppress(Exception):
                 await self._call(lambda: self.bridge.keepalive(sid, period, None, end=True))
         self._session_open = False
@@ -1261,7 +1279,7 @@ class MossCockpit:
         if self.run_id is None:
             return None
         if self.bridge_up:
-            window = SESSION_MISSES * self.heartbeat_floor_s
+            window = SESSION_MISSES * MAX_KEEPALIVE_S
             fresh = self._session_at is not None and time.monotonic() - self._session_at <= window
             stack = (self._session_doc.get("stack") or {}) if fresh else {}
         else:
@@ -1380,7 +1398,6 @@ class MossCockpit:
                         "running: stop the stack on the rover"
                     )
             self.close_note = " ".join(n[0].upper() + n[1:] + "." for n in note) or None
-        self._beats_stop.set()
         if self._frames_task is not None:
             self._frames_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

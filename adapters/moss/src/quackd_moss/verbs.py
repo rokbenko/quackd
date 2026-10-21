@@ -609,7 +609,8 @@ def arm_note(held: Any) -> str:
     if held is True:
         return (
             "the arm is holding where the run left it, out of its drive pose. "
-            f"{later}: stow it first (stow_arm), or support it"
+            f"{later}: stow it first (stow_arm), or support it. quackd sends nothing while one "
+            "of its prompts waits, so stow it before you leave one open"
         )
     if held is False:
         return (
@@ -618,7 +619,8 @@ def arm_note(held: Any) -> str:
         )
     return (
         "the arm is out of its drive pose, and nobody read whether it holds there. "
-        f"{later}: support it, or stow it (stow_arm)"
+        f"{later}: support it, or stow it (stow_arm), and stow it before you leave one of "
+        "quackd's prompts open, since nothing is sent while one waits"
     )
 
 

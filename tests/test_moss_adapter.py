@@ -25,7 +25,7 @@ from quackd.duckfile.schema import POLICY_VERBS
 from quackd.duckfile.validate import validate_duck
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import Intent, TransportError
+from quackd.transport.base import HeartbeatError, Intent, TransportError
 from quackd.verbs.core import CORE
 from quackd.verbs.core import MAX_VX as SCHEMA_VX
 from quackd.verbs.core import MAX_VY as SCHEMA_VY
@@ -44,8 +44,10 @@ from quackd_moss import (
 from quackd_moss import upstream_api as up
 from quackd_moss.cockpit import NEVER_POSTED, CockpitClient, MossCockpit
 from quackd_moss.mock import (
+    MAX_KEEPALIVE_S,
     PICK_STARTUP_S,
     PULSE_S,
+    SESSION_MISSES,
     STALL_S,
     TRACK_M,
     MossMock,
@@ -848,32 +850,37 @@ async def test_a_dropped_link_halts_what_quackd_started_and_nothing_else() -> No
     await adapter.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
     assert mock.exploring and mock.started == "explore"
     mock.drop_link()
-    await mock.sleep(2.0)  # past the session's window
+    await mock.sleep(3.5)  # past the session's window, three of the bridge's 1 s cap
     assert mock.session_halts == 1 and not mock.exploring
     assert mock.stop_log[-2:] == ["session.halt", "halt.started"]
     idle, _, _ = await _connected()
     idle.exploring = True  # the owner's own exploration, from the cockpit's page
     idle.drop_link()
-    await idle.sleep(2.0)
+    await idle.sleep(3.5)
     assert idle.session_halts == 1
     assert idle.exploring, "an exploration quackd did not start is not quackd's to halt"
 
 
-async def test_a_session_kept_by_its_thread_never_reads_as_dead() -> None:
-    """No heartbeat at all from the loop, a prompt blocking it, and the session lives on: its
-    keepalives are the transport's own thread's. Only a dead link or process ends it."""
+async def test_a_session_lives_while_its_loop_runs_and_a_wedged_loop_has_it_halted() -> None:
+    """The keepalives go from the loop's own heartbeat: while the loop runs the session lives,
+    and a loop wedged past the window has what the session started halted. The heartbeat
+    after says so, which ends the run."""
     mock, adapter, _ = await _connected()
     await adapter.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
     await mock.sleep(10.0)
     assert mock.session_halts == 0 and mock.exploring
+    mock.wedge(SESSION_MISSES * MAX_KEEPALIVE_S + 1.0)
+    assert mock.session_halts == 1 and not mock.exploring
+    with pytest.raises(HeartbeatError, match="its exploration"):
+        await adapter.transport.heartbeat()
 
 
 @pytest.mark.parametrize("limit", [30.0, 90.0])
 async def test_the_idle_stop_ends_every_run_and_the_arms_torque_unless_kept_alive(
     limit: float,
 ) -> None:
-    """quackd sends the cockpit's keepalive while it is connected, from its own thread, and
-    nothing does once it has gone."""
+    """quackd sends the cockpit's keepalive while it is connected, from its loop's own
+    heartbeat, and nothing does once it has gone."""
     kept, _, _ = await _connected(idle_limit_s=limit)
     await kept.sleep(limit * 1.5)
     assert kept.stack_running and kept.cockpit_keepalives >= 4

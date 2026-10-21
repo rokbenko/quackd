@@ -78,8 +78,9 @@ GOAL_AFTER_STOP_S = float(up.GOAL_AFTER_STOP_S.name)
 SESSION_MISSES = 3
 """As quackd's bridge counts them (`cockpit.SESSION_MISSES`)."""
 KEEPALIVE_S = 0.5
-"""The period the real transport's keepalive thread beats at and declares
-(`cockpit.HEARTBEAT_S`)."""
+"""How often the real transport sends a keepalive, once in every heartbeat of its loop
+(`cockpit.HEARTBEAT_S`). Each declares MAX_KEEPALIVE_S, the bridge's cap, so the window is
+three of those."""
 MAX_KEEPALIVE_S = 1.0
 """The longest period the bridge takes from a client (`cockpit.MAX_KEEPALIVE_S`)."""
 EXPLORER_REPLAN_S = 2.0
@@ -348,12 +349,17 @@ class MossMock:
         """`collect_litter` started in this session, so close() stops the mission."""
         self.stop_sent = False
         """A stop ran in this session, so close() says what it did to the mission."""
-        # quackd's session with the bridge, kept by the transport's own keepalive thread
+        # quackd's session with the bridge, kept by the loop's own heartbeat
         self.session_id = secrets.token_hex(8)
         self._session_at: float | None = None
         """When the bridge took this session's last keepalive, None while it has none."""
-        self._session_s = min(MAX_KEEPALIVE_S, KEEPALIVE_S)
-        """The declared, configured period, capped as the bridge caps it."""
+        self._session_s = MAX_KEEPALIVE_S
+        """The period each keepalive declares, the bridge's own cap, so the window is three."""
+        self._wedged = False
+        """The loop is stuck (`wedge`): the rover goes on, and no keepalive goes."""
+        self.session_halted: dict[str, Any] | None = None
+        """The bridge's word on this session's halt, with what it halted, as every keepalive
+        answer of the real bridge reports it."""
         self._beat_started: str | None = None
         """What that last keepalive said this session started: what its halt halts."""
         self.link_down = False
@@ -372,6 +378,21 @@ class MossMock:
 
     def now(self) -> float:
         return self._t
+
+    def wedge(self, seconds: float) -> None:
+        """quackd alive and its loop stuck this long, in a verb that never yields or a call
+        that never returns: the rover goes on as it was, and no keepalive goes, so the bridge
+        halts what the session started."""
+        self._wedged = True
+        try:
+            remaining = seconds
+            while remaining > 1e-9:
+                dt = min(TICK_S, remaining)
+                self._t += dt
+                self._step(dt)
+                remaining -= dt
+        finally:
+            self._wedged = False
 
     async def sleep(self, seconds: float) -> None:
         remaining = seconds
@@ -582,14 +603,15 @@ class MossMock:
                     startup_s=PICK_STARTUP_S,
                 )
 
-    def _keepalive_step(self) -> None:
-        """The transport's keepalive thread: while connected and the link is up, a keepalive
-        every period, carrying what the session has started, and the cockpit's idle keepalive
-        when it is due, whatever the event loop is doing."""
-        if not self.connected or self.link_down:
+    def _heartbeat_step(self) -> None:
+        """The loop's own heartbeat: while the mock's time goes by through its sleep the loop
+        runs, and a keepalive goes every heartbeat, carrying what the session has started, and
+        the cockpit's idle keepalive when it is due. A wedged loop (`wedge`) sends neither, as
+        the real transport's does not."""
+        if not self.connected or self.link_down or self._wedged:
             return
         if self.bridge_up and (
-            self._session_at is None or self._t - self._session_at >= self._session_s
+            self._session_at is None or self._t - self._session_at >= KEEPALIVE_S
         ):
             self._beat()
         if self.idle_limit_s > 0:
@@ -633,7 +655,7 @@ class MossMock:
         self._mission_step()
         self._base(dt)
         self._arm_step()
-        self._keepalive_step()
+        self._heartbeat_step()
         self._session_step()
         self._idle_step()
 
@@ -739,17 +761,25 @@ class MossMock:
         started the mission: one that only watched the owner's mission leaves it running."""
         self.stop_log.append("session.halt")
         started = self._beat_started
+        halted: list[str] = []
         if self.stack == up.LITTER_STACK:
             if started == "litter":
                 self._bridge_stop()
-            return
-        job = self.job
-        if job is not None and job.owner == "quackd":
-            self._arm_cancel()
-        if started in ("goal", "explore"):
-            self.stop_log.append("halt.started")
-            self.exploring, self.goal, self._pending_goal = False, None, None
-            self._publish((0.0, 0.0))
+                halted.append("the litter mission it started")
+        else:
+            job = self.job
+            if job is not None and job.owner == "quackd" and job.state in ("starting", "running"):
+                self._arm_cancel()
+                halted.append("its arm cycle")
+            if started in ("goal", "explore"):
+                self.stop_log.append("halt.started")
+                self.exploring, self.goal, self._pending_goal = False, None, None
+                self._publish((0.0, 0.0))
+                halted.append("its goal" if started == "goal" else "its exploration")
+        self.session_halted = {
+            "why": f"session {self.session_id} missed {SESSION_MISSES} keepalives",
+            "halted": halted,
+        }
 
     def _announce(self, started: str) -> str | None:
         """Tell the bridge first, as the real transport does: a keepalive that carries what is
@@ -759,10 +789,25 @@ class MossMock:
                 f"the bridge did not take this session's word that it is starting {started}, "
                 "so nothing was started: the link is down"
             )
+        if self.bridge_up and (why := self._halted_said()) is not None:
+            return (
+                f"the bridge did not take this session's word that it is starting {started}, "
+                f"so nothing was started: {why}"
+            )
         self.started = started
         if self.bridge_up:
             self._beat()
         return None
+
+    def _halted_said(self) -> str | None:
+        """The real transport's word on a halt that halted something this session started."""
+        halt = self.session_halted
+        if halt is None or not halt["halted"]:
+            return None
+        return (
+            f"moss: quackd's bridge halted {' and '.join(halt['halted'])} after this session "
+            f"went quiet ({halt['why']}), so quackd stops here rather than go on as if it ran"
+        )
 
     def drop_link(self) -> None:
         """quackd's process died, or its link to the rover dropped: no keepalive of this
@@ -1108,6 +1153,10 @@ class MossMock:
             raise HeartbeatError("mock moss heartbeat failure (scripted)")
         if self.link_down:
             raise HeartbeatError("moss: the mock's link to the rover is down")
+        if self.bridge_up:
+            self._beat()  # the keepalive goes first in a heartbeat, as the real one's does
+            if (why := self._halted_said()) is not None:
+                raise HeartbeatError(why)
         if not self.stack_running:
             raise HeartbeatError(
                 f"moss: the stack quackd connected to ({self.stack}) is not running any more"

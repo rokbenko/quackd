@@ -70,10 +70,14 @@ Four things read at the pin shape everything below.
   note, so `quackd doctor` on `moss-litter` reports a healthy rover and leaves the mission
   running.
 - **A session deadman, one per session.** Each quackd transport draws a session id and keeps it
-  alive from a thread of its own at its configured 0.5 s, whatever its event loop is doing, so
-  a prompt never reads as a dead quackd. It declares that configured period, which the bridge
-  caps at 1 s, and three missed periods later the bridge halts what that session said it
-  started through either surface and nothing else. A start is said to the bridge before it goes
+  alive from its loop's own heartbeat, a keepalive first in every beat, so a dead process, a
+  dead link and a wedged loop all end it. Each keepalive declares the bridge's own 1 s cap, so
+  the window is 3 s, and three missed periods later the bridge halts what that session said it
+  started through either surface and nothing else, and says so in the keepalive answers after.
+  A halt of something the session started fails its heartbeat. A prompt holds the loop, and
+  nothing is started while one is on the screen, so a halt then halts nothing. A transport
+  that kept its session alive from a thread of its own was tried first and reversed: it kept
+  a wedged quackd's exploration running to its radius. A start is said to the bridge before it goes
   out. On `moss-litter` the whole stop runs only for a session that started the mission. That
   gives `drive_to`, `explore` and `collect_litter` a deadman whenever the bridge is up, and the
   manifest claims `deadman: true` only then.

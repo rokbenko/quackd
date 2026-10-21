@@ -15,6 +15,7 @@ import contextlib
 import importlib.util
 import socket
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -316,7 +317,9 @@ async def test_a_stop_after_the_stack_restarted_touches_nothing_of_the_new_run(
     assert transport.run_id == "fake-run"
     old = rover.bridge.stack()
     rover.bridge._stack = lambda: replace(old, run_id="restarted-run")
-    _wait(lambda: (transport._session_doc.get("stack") or {}).get("run_id") == "restarted-run")
+    with contextlib.suppress(HeartbeatError):  # its keepalive tells it, then it fails
+        await transport.heartbeat()
+    assert (transport._session_doc.get("stack") or {}).get("run_id") == "restarted-run"
     bus = rover.bridge.bus
     published, events = len(bus.published), len(bus.events)
     await transport.stop()
@@ -349,26 +352,153 @@ def _closed_port() -> int:
 # ── the session ─────────────────────────────────────────────────────────────────────────
 
 
-def _dies(transport: client.MossCockpit) -> None:
-    """quackd killed where it stands: its keepalive thread stops with nothing else sent."""
-    transport._beats_stop.set()
+def _alive(transport: Any) -> Heartbeat:
+    """quackd's loop, beating: its own heartbeat, which sends the session's keepalives."""
+    beat = Heartbeat(transport, asyncio.Event(), period_s=client.HEARTBEAT_S)
+    beat.start()
+    return beat
 
 
-async def test_the_keepalive_thread_feeds_the_bridge_and_its_death_halts_what_quackd_started(
+async def _dies(beat: Heartbeat) -> None:
+    """quackd killed where it stands: its loop's heartbeat ends, and nothing else is sent."""
+    await beat.stop()
+
+
+WINDOW_S = B.SESSION_MISSES * B.MAX_KEEPALIVE_S
+"""How long a session lives without a keepalive: each declares the bridge's own cap."""
+
+
+async def test_the_loops_heartbeat_feeds_the_bridge_and_its_death_halts_what_quackd_started(
     rover: Rover,
 ) -> None:
     transport = rover.transport()
     await transport.connect()
+    beat = _alive(transport)
     await transport.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
     assert rover.cockpit.exploring and transport.started == "explore"
+    await asyncio.sleep(WINDOW_S + 0.5)
     session = rover.bridge.sessions[transport.session_id]
-    assert session.started == "explore" and session.keepalive_s == client.HEARTBEAT_S
-    await transport.heartbeat()
-    _dies(transport)
+    assert session.started == "explore" and session.keepalive_s == B.MAX_KEEPALIVE_S
+    assert rover.bridge.halts == 0, "kept alive past the window by the loop's own beats"
+    await _dies(beat)
     bus = rover.bridge.bus
-    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, WINDOW_S + 2.0)
     assert "true /stop_movement#std_msgs.Bool" in bus.events
     assert rover.bridge.halts == 1
+    await transport.close()
+
+
+async def test_a_wedged_loop_has_what_its_session_started_halted_and_the_run_stopped(
+    rover: Rover,
+) -> None:
+    """quackd alive and its loop wedged, in a verb that never yields or a call that never
+    returns: no heartbeat runs, so no keepalive goes, and the bridge halts the exploration it
+    started three periods later. The heartbeat that runs once the loop is free hears of the
+    halt, and fails the run with it rather than steer on as if nothing had happened."""
+    transport = rover.transport()
+    await transport.connect()
+    beat = _alive(transport)
+    start = Intent(kind="do", params={"skill": "explore", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    _block_the_loop(WINDOW_S + 1.0)
+    bus = rover.bridge.bus
+    assert "true /stop_explore_cmd#std_msgs.Bool" in bus.events, "halted while it was wedged"
+    assert rover.bridge.halts == 1
+    await asyncio.wait_for(beat.abort.wait(), 5.0)  # the heartbeat failed, and aborted
+    assert "its exploration" in str(beat.failure), beat.failure
+    await beat.stop()
+    await transport.close()
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_on_moss_litter_a_wedged_loop_has_the_mission_it_started_stopped(
+    rover: Rover,
+) -> None:
+    transport = rover.transport()
+    await transport.connect()
+    beat = _alive(transport)
+    start = Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+    assert (await transport.send_intent(start)).accepted and transport.started == "litter"
+    _block_the_loop(WINDOW_S + 1.0)
+    _wait(lambda: rover.bridge.bus.mission_stops >= 1, 5.0)
+    await asyncio.wait_for(beat.abort.wait(), 10.0)
+    assert "the litter mission it started" in str(beat.failure), beat.failure
+    await beat.stop()
+    await transport.close()
+
+
+@pytest.mark.parametrize("rover", ["moss-litter"], indirect=True)
+async def test_one_keepalive_late_by_more_than_a_second_never_halts_a_live_session(
+    rover: Rover,
+) -> None:
+    """Each keepalive declares the bridge's own cap, so the window is three seconds while the
+    keepalives still go every heartbeat: one round trip slow by over a second, a wifi hiccup,
+    leaves a live litter session and its mission alone."""
+    transport = rover.transport()
+    await transport.connect()
+    beat = _alive(transport)
+    start = Intent(kind="do", params={"skill": "collect_litter", "action": "start"})
+    assert (await transport.send_intent(start)).accepted
+    real = transport.bridge.keepalive
+    calls = {"n": 0}
+
+    def hiccup(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 3:
+            time.sleep(2 * B.MAX_KEEPALIVE_S - 0.8)  # one late round trip
+        return real(*args, **kwargs)
+
+    transport.bridge.keepalive = hiccup  # type: ignore[method-assign]
+    await asyncio.sleep(WINDOW_S + 1.0)
+    assert calls["n"] > 3 and rover.bridge.halts == 0 and rover.bridge.bus.mission_stops == 0
+    assert beat.failure is None, beat.failure
+    await beat.stop()
+    await transport.close()
+
+
+async def test_a_heartbeat_held_past_the_window_asks_the_bridge_before_it_fails(
+    rover: Rover,
+) -> None:
+    """A prompt that lands while a heartbeat waits on the cockpit holds the rest of that
+    heartbeat past the window. The session expired meanwhile, having started nothing, so the
+    heartbeat asks the bridge once more before it says the session is gone, and the halt of
+    nothing is no failure."""
+    transport = rover.transport()
+    await transport.connect()
+    original = rover.cockpit.state
+    asked = threading.Event()
+
+    def asked_for() -> Any:
+        asked.set()
+        time.sleep(0.3)
+        return original()
+
+    rover.cockpit.state = asked_for  # type: ignore[method-assign]
+    beat = asyncio.create_task(transport.heartbeat())
+    assert await asyncio.to_thread(asked.wait, 5.0), "the heartbeat asked the cockpit"
+    _block_the_loop(WINDOW_S + 1.0)  # the prompt, while the heartbeat waits on the cockpit
+    await beat
+    assert rover.bridge.expired == 1 and rover.bridge.halts == 0
+    assert transport.session_id in rover.bridge.sessions, "the session lives again"
+    await transport.close()
+
+
+async def test_a_halt_that_halted_nothing_is_no_event_and_is_said_in_the_keepalives(
+    rover: Rover,
+) -> None:
+    """A prompt on the terminal blocks the loop too: a session that started nothing while it
+    waited expires, halts nothing, and is no event once the loop runs again. Every keepalive
+    answer after says so."""
+    transport = rover.transport()
+    await transport.connect()
+    beat = _alive(transport)
+    _block_the_loop(WINDOW_S + 1.0)
+    await asyncio.sleep(1.0)
+    assert beat.failure is None, beat.failure
+    assert rover.bridge.expired == 1 and rover.bridge.halts == 0
+    said = (transport._session_doc.get("session") or {}).get("halted") or {}
+    assert said.get("halted") == [] and "missed" in str(said.get("why")), said
+    await beat.stop()
     await transport.close()
 
 
@@ -380,23 +510,9 @@ async def test_close_ends_the_session_so_nothing_is_halted_after_quackd_has_gone
     await transport.heartbeat()
     await transport.close()
     before = list(rover.bridge.bus.events)
-    await asyncio.sleep(B.SESSION_MISSES * client.HEARTBEAT_S + 0.5)
+    await asyncio.sleep(WINDOW_S + 0.5)
     assert rover.bridge.halts == 0 and rover.bridge.sessions == {}
     assert [e for e in rover.bridge.bus.events if e not in before] == []
-
-
-async def test_a_loop_blocked_on_a_prompt_never_reads_as_a_dead_quackd(rover: Rover) -> None:
-    """A confirm on the terminal blocks the event loop for as long as the person reads it. The
-    keepalives come from the transport's own thread, so the bridge's deadman never fires on a
-    quackd that is alive and waiting."""
-    transport = rover.transport()
-    await transport.connect()
-    await transport.send_intent(Intent(kind="do", params={"skill": "explore", "action": "start"}))
-    _block_the_loop(B.SESSION_MISSES * client.HEARTBEAT_S * 2)
-    assert rover.bridge.halts == 0 and transport.session_id in rover.bridge.sessions
-    assert "true /stop_explore_cmd#std_msgs.Bool" not in rover.bridge.bus.events
-    await transport.heartbeat()
-    await transport.close()
 
 
 async def test_a_doctor_beside_a_run_never_strips_the_runs_deadman(rover: Rover) -> None:
@@ -404,6 +520,7 @@ async def test_a_doctor_beside_a_run_never_strips_the_runs_deadman(rover: Rover)
     and the run's exploration is still halted when the run dies."""
     run = rover.transport()
     await run.connect()
+    beat = _alive(run)
     start = Intent(kind="do", params={"skill": "explore", "action": "start"})
     assert (await run.send_intent(start)).accepted
     doctor = MossAdapter(rover.transport())
@@ -411,9 +528,9 @@ async def test_a_doctor_beside_a_run_never_strips_the_runs_deadman(rover: Rover)
     assert (await doctor.health()).ok
     await doctor.close()
     assert rover.bridge.sessions[run.session_id].started == "explore"
-    _dies(run)
+    await _dies(beat)
     bus = rover.bridge.bus
-    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, WINDOW_S + 2.0)
     assert rover.bridge.halts == 1
     await run.close()
 
@@ -435,9 +552,9 @@ async def test_a_start_is_said_to_the_bridge_before_it_goes_out(rover: Rover) ->
     start = Intent(kind="do", params={"skill": "explore", "action": "start"})
     assert (await transport.send_intent(start)).accepted
     assert seen == ["explore"], "the bridge knew before the cockpit was asked"
-    _dies(transport)
+    # no heartbeat beats here, so nothing goes after the start, as if quackd died with it
     bus = rover.bridge.bus
-    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.SESSION_MISSES * 2.0)
+    _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, WINDOW_S + 2.0)
     await transport.close()
 
 
@@ -464,8 +581,8 @@ async def test_a_start_whose_answer_is_lost_is_kept_and_stopped(rover: Rover) ->
 
 
 async def test_a_slow_cockpit_never_widens_the_deadmans_window(rover: Rover) -> None:
-    """The period a session declares is the configured one, never a measured round trip, and
-    the bridge caps it, so a cockpit that takes a second to answer leaves the window as it was."""
+    """The period a session declares is the bridge's own cap, never a measured round trip, so
+    a cockpit that takes a second to answer leaves the window as it was."""
     original = rover.cockpit.state
 
     def slow() -> Any:
@@ -480,9 +597,8 @@ async def test_a_slow_cockpit_never_widens_the_deadmans_window(rover: Rover) -> 
     for _ in range(3):
         await transport.heartbeat()
     session = rover.bridge.sessions[transport.session_id]
-    assert session.keepalive_s == client.HEARTBEAT_S <= B.MAX_KEEPALIVE_S
-    _dies(transport)
-    last = session.last
+    assert session.keepalive_s == B.MAX_KEEPALIVE_S
+    last = session.last  # and no heartbeat beats after the last one asked here
     bus = rover.bridge.bus
     _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, B.MAX_KEEPALIVE_S * 4)
     assert time.monotonic() - last <= B.SESSION_MISSES * B.MAX_KEEPALIVE_S + 0.5
@@ -564,6 +680,7 @@ async def test_with_moss_arm_newest_drive_to_reads_the_base_stack_off_the_bridge
         rover.cockpit.newest = "moss-arm"
         adapter = MossAdapter(rover.transport())
         await adapter.connect()
+        beat = _alive(adapter)
         start = Intent(kind="do", params={"skill": "explore", "action": "start"})
         assert (await adapter.send_intent(start)).accepted
         state = await adapter.get_state()
@@ -583,6 +700,7 @@ async def test_with_moss_arm_newest_drive_to_reads_the_base_stack_off_the_bridge
         assert actions == ["start", "stop"], actions
         stopped, sent = rover.cockpit.posted("explore")[-1].t, rover.cockpit.posted("goal")[0].t
         assert sent - stopped >= float(client.up.GOAL_AFTER_STOP_S.name) - 0.1
+        await beat.stop()
         await adapter.close()
 
 
@@ -692,10 +810,11 @@ class _PersonReading:
 async def test_collect_litter_survives_a_person_reading_its_confirm(
     rover: Rover, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The confirm blocks the event loop while the person reads it, longer than the bridge's
-    window. The session's keepalives come from the transport's own thread, so the bridge never
-    takes the reading person for a dead quackd, and the mission is the verb's to run."""
-    monkeypatch.setattr(cli, "_SWITCH", _PersonReading(B.SESSION_MISSES * client.HEARTBEAT_S * 2))
+    """The confirm blocks the event loop while the person reads it, as long as the bridge's
+    window. No keepalive goes meanwhile, and nothing has been started while the question is on
+    the screen, so a halt then halts nothing and is no event: the mission is the verb's to run
+    once the person answers."""
+    monkeypatch.setattr(cli, "_SWITCH", _PersonReading(WINDOW_S))
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     duck = parse_duck_text(
         "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, report_state, "
@@ -717,7 +836,7 @@ async def test_collect_litter_survives_a_person_reading_its_confirm(
         result = await ex.run_verb("collect_litter", {"minutes": 0.05})
     finally:
         await beat.stop()
-    assert rover.bridge.halts == 0, "the bridge never halted the session of the person reading"
+    assert rover.bridge.halts == 0, "nothing of the session's was halted while the person read"
     assert result.ok, result.summary
     await adapter.close()
 
@@ -733,7 +852,7 @@ async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_ru
     await adapter.connect()
     health = await adapter.health()
     assert health.ok, health.reason
-    await asyncio.sleep(B.SESSION_MISSES * client.HEARTBEAT_S + 0.5)
+    await asyncio.sleep(WINDOW_S + 0.5)
     await adapter.close()
     assert adapter.close_note is None
     assert "mission stop" not in rover.bridge.bus.events

@@ -99,16 +99,19 @@ session kept on a run that has gone halts nothing of the new one. A stop that na
 stops whatever runs.
 
 **The sessions.** Every quackd transport draws a session id of its own and posts a keepalive
-every half second from a thread of its own, so a prompt that blocks quackd's event loop never
-reads as a dead quackd. Each session keeps its own period, which the bridge caps at 1 s, its
-own word of what it started and its own end, so a doctor or a second quackd never touches a
-run's session. Three missed periods after a session's last keepalive the bridge halts what
-that session started and nothing else: a goal or an exploration it started through the cockpit
-is ended with `stop_explore_cmd`, `stop_movement` and a zero, and an arm cycle it started is
-cancelled. A session that started nothing halts nothing, so a goal the owner clicked on the
-cockpit's page is left alone. On `moss-litter` the whole stop above runs only for a session
-that started the mission, and a session that only watched the owner's mission leaves it
-running. The bridge's own shutdown halts what every live session started.
+every half second from its loop's own heartbeat, so a dead process, a dead link and a wedged
+loop all stop them. Each keepalive declares the bridge's own 1 s cap as its period, so the
+window is 3 s. Each session keeps its own word of what it started and its own end, so a doctor
+or a second quackd never touches a run's session. Three missed periods after a session's last
+keepalive the bridge halts what that session started and nothing else, each expired session in a
+thread of its own so one long halt never delays another: a goal or an exploration it started
+through the cockpit is ended with `stop_explore_cmd`, `stop_movement` and a zero, and an arm
+cycle it started is cancelled. A session that started nothing halts nothing, so a goal the owner
+clicked on the cockpit's page is left alone. On `moss-litter` the whole stop above runs only for
+a session that started the mission, and a session that only watched the owner's mission leaves
+it running. Every keepalive answer of a session that was halted says what its halt halted, an
+empty list for none, and only a halt that halted something is counted in `/hello`. The bridge's
+own shutdown halts what every live session started.
 
 ## Install it on the rover
 
@@ -193,13 +196,14 @@ the bridge warns and starts, and anyone who can reach the port can drive the tra
 ## The cockpit's idle stop
 
 MOSS's cockpit stops an idle `moss-nav` or `moss-explore` stack after 300 s with
-`tools/moss-fly.sh stop`, which ends every dimOS run, the arm's included, and the arm's
-adapter turns its torque off as its run ends. quackd sends the cockpit's keepalive while it
-is connected. Once it disconnects nothing does, and an arm left outside its drive pose drops
-when the idle stop fires. quackd's close note says so at the end of every run that moved the
-arm and leaves it out. `MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off. The cockpit
-counts idle time only while the newest dimOS run is `moss-nav` or `moss-explore`, so with moss-arm
-started after the base stack, as the launcher's first gate makes it, it counts none at all.
+`tools/moss-fly.sh stop`, which ends every dimOS run, the arm's included, and the arm's adapter
+turns its torque off as its run ends. quackd sends the cockpit's keepalive from its loop's own
+heartbeat while it is connected, and none while a prompt holds the loop. Once it disconnects
+nothing does, and an arm left outside its drive pose drops when the idle stop fires. quackd's
+close note says so at the end of every run that moved the arm and leaves it out.
+`MOSS_IDLE_STOP_S=0` on the cockpit turns the idle stop off. The cockpit counts idle time only
+while the newest dimOS run is `moss-nav` or `moss-explore`, so with moss-arm started after the
+base stack, as the launcher's first gate makes it, it counts none at all.
 
 ## Rules this file lives by
 

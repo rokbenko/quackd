@@ -423,20 +423,22 @@ def _block_the_loop(seconds: float) -> None:
 async def test_the_idle_keepalive_follows_the_cockpits_own_limit(
     cockpit: FakeCockpit, limit: float
 ) -> None:
-    """Three times inside the cockpit's own limit, from the transport's own thread, so a loop
-    blocked on a prompt never lets the idle stop end the stack under a connected quackd."""
+    """Three times inside the cockpit's own limit, from the loop's own heartbeat: a loop
+    blocked on a prompt sends none, which is the cost of a deadman that also covers a wedged
+    loop."""
     cockpit.idle_limit_s = limit
     transport = _transport(cockpit)
     await transport.connect()
-    _wait(lambda: len(cockpit.posted("keepalive")) == 1)
-    _block_the_loop(1.2)
+    await transport.heartbeat()
+    assert len(cockpit.posted("keepalive")) == 1
+    await transport.heartbeat()
     assert len(cockpit.posted("keepalive")) == 1, "not again until a third of the limit has gone"
-    transport._last_cockpit_keepalive = time.monotonic() - limit / 3 - 0.1
-    _wait(lambda: len(cockpit.posted("keepalive")) == 2)
-    await transport.close()
-    sent = len(cockpit.posted("keepalive"))
     _block_the_loop(1.2)
-    assert len(cockpit.posted("keepalive")) == sent, "and nothing after the close"
+    assert len(cockpit.posted("keepalive")) == 1, "and none while the loop is held"
+    transport._last_cockpit_keepalive = time.monotonic() - limit / 3 - 0.1
+    await transport.heartbeat()
+    assert len(cockpit.posted("keepalive")) == 2
+    await transport.close()
 
 
 async def test_no_idle_keepalive_when_the_idle_stop_is_off(cockpit: FakeCockpit) -> None:

@@ -20,7 +20,8 @@ its run ends. Read [the adapter's page](README.md) first, the stop contract abov
 - **Know what drops the arm.** `tools/moss-fly.sh stop` ends every dimOS run, the arm's included,
   and the arm's adapter turns its torque off as its run ends. The cockpit runs it when you stop
   the stack from its page, and its idle stop runs it after 300 s idle. quackd never does. You
-  may have to, so support the arm first.
+  may have to, so support the arm first. quackd sends nothing while one of its prompts waits,
+  the cockpit's idle keepalive included, so stow the arm before you leave a prompt open.
 
 ## The cockpit and the bridge, with nothing moving
 
@@ -86,10 +87,10 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 8. **`explore` for one minute,** in a room. The launcher keeps the explorer within 4 m of where
    exploring started unless you set `MOSS_EXPLORE_RADIUS_M`.
 9. **Kill quackd mid `explore`.** The bridge halts the exploration three missed keepalives
-   after the last one, at most a second and a half at quackd's own 0.5 s period and never more
-   than three seconds, since the bridge caps a declared period at 1 s: `stop_explore_cmd`,
-   `stop_movement` and a zero. Without the bridge nothing would, and the explorer would go on
-   to its radius.
+   after the last one, within three seconds, since every keepalive declares the bridge's own
+   1 s cap: `stop_explore_cmd`, `stop_movement` and a zero. A quackd alive but wedged sends no
+   keepalive either, and is halted the same way. Without the bridge nothing would, and the
+   explorer would go on to its radius.
 
 ## The arm, in the simulator, then on blocks
 
