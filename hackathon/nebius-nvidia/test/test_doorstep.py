@@ -221,6 +221,7 @@ def test_appointment_the_couriers_words_reach_the_home_robots_model(tmp_path: Pa
         f.read_text(encoding="utf-8", errors="replace")[-2000:] for f in logs.glob("*.log")
     ]
     assert pilots.told == "home-01", "a pinned robot is shown by its own name"
+    assert _home_saw(stand_in, "courier-01"), "and the courier too, to the home robot"
     assert _home_heard(stand_in)
     assert {p.body["model"] for p in stand_in.posts()} == {TEXT_MODEL}
 
@@ -231,6 +232,7 @@ def test_stranger_the_couriers_words_never_reach_the_home_robots_model(tmp_path:
     assert codes == {"courier-01": 0, "home-01": 0}
     assert pilots.told is not None and pilots.told.startswith("stranger-")
     assert not _home_heard(stand_in)
+    assert not _home_saw(stand_in, "courier-01"), "a name a stranger chose is its own words"
     # it was said and it arrived: quackd kept it from the model and told the model so
     assert _home_saw(stand_in, WITHHELD), "the courier's words never arrived at all"
     assert pilots.home_waits > 8, "the home robot saw the courier and waited, hearing nothing"

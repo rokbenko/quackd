@@ -380,7 +380,7 @@ def doorstep_setup(act: str = ACT_OPTION, state: Path = STATE_OPTION) -> None:
         fail(str(e))
     for line in done:
         console.print(Text(printable(line)))
-    console.print(Text(f"ready for the {act} act in {state}", style="dim"))
+    console.print(Text(f"ready for the {act} act in {state.as_posix()}", style="dim"))
 
 
 @doorstep_app.command("run")
@@ -433,7 +433,10 @@ def doorstep_run(
             for line in doorstep.setup(state, act):
                 console.print(Text(printable(line)))
         elif not doorstep.is_set_up(state):
-            fail(f"nothing is set up in {state}: passport-nebius doorstep setup --act {act}")
+            fail(
+                f"nothing is set up in {state.as_posix()}: "
+                f"passport-nebius doorstep setup --act {act}"
+            )
     except nebius.NebiusError as e:
         fail(str(e))
     _notes(chosen, [], vision)
@@ -453,7 +456,7 @@ def doorstep_run(
 
     logs = state / "logs" if role == "both" else None
     if logs is not None:
-        console.print(Text(f"each run's output goes to {logs}", style="dim"))
+        console.print(Text(f"each run's output goes to {logs.as_posix()}", style="dim"))
     try:
         codes = doorstep.play(
             started, courier_at=courier_at, logs=logs, on_home_started=home_started
@@ -465,7 +468,11 @@ def doorstep_run(
             timer.cancel()
     for name, code in codes.items():
         console.print(Text(f"{name}: its run ended with {code}"))
-    console.print(Text(f"the runs, transcripts and pictures are in {state / 'runs'}", style="dim"))
+    console.print(
+        Text(
+            f"the runs, transcripts and pictures are in {(state / 'runs').as_posix()}", style="dim"
+        )
+    )
     if any(codes.values()):
         raise typer.Exit(1)
 
