@@ -34,6 +34,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode=None,
+    pretty_exceptions_show_locals=False,
 )
 console = Console(highlight=False)
 err = Console(stderr=True, highlight=False)
@@ -178,7 +179,7 @@ def pilot(
     except nebius.NebiusError as e:
         fail(str(e))
     if show:
-        console.print(Text(printable(launch.shown())))
+        console.print(Text(printable(launch.shown())), soft_wrap=True)
         return
     _notes(chosen, list(ctx.args), vision)
     raise typer.Exit(run_quackd(launch))
@@ -355,6 +356,7 @@ doorstep_app = typer.Typer(
     "Robot Passport, each piloted by Nemotron on Token Factory.",
     no_args_is_help=True,
     rich_markup_mode=None,
+    pretty_exceptions_show_locals=False,
 )
 app.add_typer(doorstep_app, name="doorstep")
 
@@ -414,6 +416,8 @@ def doorstep_run(
     """Play one act of the doorstep with both pilots on Token Factory."""
     from quackd.lan.announce import local_ip
 
+    if pause_after > 0 and role == "courier":
+        fail("--pause-after pauses the home robot, which runs here only with --role both or home")
     settings = _settings(base_url)
     chosen = _chosen(settings, model)
     here = local_ip()
@@ -426,7 +430,7 @@ def doorstep_run(
         fail(str(e))
     if show:
         for robot, launch in started:
-            console.print(Text(printable(f"{robot.name}: {launch.shown()}")))
+            console.print(Text(printable(f"{robot.name}: {launch.shown()}")), soft_wrap=True)
         return
     try:
         if role in ("both", "courier"):
@@ -444,7 +448,7 @@ def doorstep_run(
 
     def ask_for_pause() -> None:
         result = doorstep.pause(state, f"{here}:{doorstep.HOME.port}", pause_seconds)
-        answer = doorstep.outcome(result)
+        answer = doorstep.outcome(result, marker=" asked ")
         console.print(Text(printable(f"the courier asked for a {pause_seconds} s pause: {answer}")))
 
     def home_started() -> None:

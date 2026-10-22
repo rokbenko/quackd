@@ -19,7 +19,6 @@ machine routes to the LAN by, so the home robot meets the courier on that addres
 
 from __future__ import annotations
 
-import os
 import subprocess
 import time
 from collections.abc import Callable, Sequence
@@ -27,12 +26,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .nebius import Model, NebiusError, Settings
-from .pilot import QUACKD, Launch, run_launch, start, wait
+from .pilot import QUACKD, Launch, child_env, run_launch, start, wait
 
 ACTS = ("stranger", "appointment")
 ROLES = ("both", "courier", "home")
 SCENARIOS = Path(__file__).resolve().parents[2] / "scenarios"
 SERVE_WITHIN_S = 90.0
+#: How long a run this command has to end is given before it is killed.
+STOP_WITHIN_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -88,10 +89,12 @@ def scenario(robot: Robot) -> Path:
 
 
 def quackd(*args: str) -> subprocess.CompletedProcess[str]:
-    """One quackd command, its output kept. Nothing here needs a model, so no key is passed."""
+    """One quackd command, its output kept. Nothing here asks a model, so this process hands it
+    no key; quackd still reads the .env beside the command by itself, as it always does."""
     return subprocess.run(
         [*QUACKD, *args],
-        env={**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1"},
+        env=child_env({"PYTHONIOENCODING": "utf-8", "NO_COLOR": "1"}),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -100,32 +103,34 @@ def quackd(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-#: What frames quackd's error panels, which is not the error.
-_BOX = "│┃┌┐└┘├┤─━ \t"
+#: What frames quackd's error panels, square on Windows and rounded elsewhere, which is not the
+#: error itself.
+_BOX = "│┃┌┐└┘├┤╭╮╰╯─━ \t"
 
 
-def last_words(text: str) -> str:
-    """The last line quackd said in words: its error panel's message rather than the border
-    under it, and never the usage line above it."""
-    for line in reversed(text.strip().splitlines()):
-        words = line.strip(_BOX)
-        if words and not words.startswith(("Usage:", "Try '", "Error")):
-            return words
-    return ""
+def _lines(text: str) -> list[str]:
+    return [words for words in (line.strip(_BOX) for line in text.splitlines()) if words]
 
 
-def outcome(result: subprocess.CompletedProcess[str]) -> str:
-    """What a quackd command came to, in its own last words: an answer on stdout when it
-    succeeded, an error panel on stderr when it did not."""
-    first, then = (
-        (result.stdout, result.stderr)
-        if result.returncode == 0
-        else (
-            result.stderr,
-            result.stdout,
-        )
-    )
-    return last_words(first) or last_words(then) or f"exit {result.returncode}"
+def outcome(result: subprocess.CompletedProcess[str], *, marker: str | None = None) -> str:
+    """What a quackd command came to, in its own words.
+
+    With `marker`, the last line that holds it, which is how an answer is found among the lines
+    around it (`asked` for a courtesy's answer, before the line saying the session ended). On a
+    failure, quackd's own `error:` line, without the hint under it, or the message inside a
+    usage panel; never the panel's border or the usage line above it."""
+    lines = _lines(result.stdout or "") + _lines(result.stderr or "")
+    if marker is not None:
+        for line in reversed(lines):
+            if marker in line:
+                return line
+    for line in lines:
+        if "error: " in line:
+            return line.split("error: ", 1)[1]
+    for line in reversed(lines):
+        if not line.startswith(("Usage:", "Try '", "Error")):
+            return line
+    return f"exit {result.returncode}"
 
 
 def _must(result: subprocess.CompletedProcess[str], what: str) -> None:
@@ -133,15 +138,22 @@ def _must(result: subprocess.CompletedProcess[str], what: str) -> None:
         raise NebiusError(f"{what} failed: {outcome(result)}")
 
 
-def _pinned(where: str) -> set[str]:
-    from quackd.passport_store import PassportStore
+def passport_id(state: Path, robot: Robot) -> str:
+    """The id in the signed passport `setup` wrote for `robot`: the key a pin has to name."""
+    from quackd.passport import document
 
-    return {name for pin in PassportStore(where).known() for name in (pin.name, pin.id)}
+    reading = document.read(passport_file(state, robot).read_bytes())
+    if not isinstance(reading, document.Reading):
+        raise NebiusError(f"{passport_file(state, robot)} is not one robot's passport")
+    return reading.id
 
 
 def setup(state: Path, act: str) -> list[str]:
     """Both robots registered, owned and with their stop lines said, then pinned to each other
-    for `appointment` or unpinned for `stranger`. Safe to repeat. Returns what it changed."""
+    for `appointment` or unpinned for `stranger`. Pins are matched by key, never by name, so a
+    robot whose registry was made again is pinned again. Safe to repeat. Returns what it
+    changed."""
+    from quackd.passport_store import PassportStore
     from quackd.registry import Registry
 
     if act not in ACTS:
@@ -190,8 +202,16 @@ def setup(state: Path, act: str) -> list[str]:
         )
     for robot, other in ((HOME, COURIER), (COURIER, HOME)):
         where = str(registry(state, robot))
-        known = other.name in _pinned(where)
-        if act == "appointment" and not known:
+        wanted = passport_id(state, other)
+        pins = PassportStore(where).known()
+        for stale in [p for p in pins if p.name == other.name and p.id != wanted]:
+            _must(
+                quackd("passport", "forget", stale.id, "--registry-dir", where),
+                f"{robot.name} forgetting an old key of {other.name}",
+            )
+            done.append(f"{robot.name} forgot an old key of {other.name}")
+        pinned = wanted in {p.id for p in pins}
+        if act == "appointment" and not pinned:
             _must(
                 quackd(
                     "meet",
@@ -204,9 +224,9 @@ def setup(state: Path, act: str) -> list[str]:
                 f"{robot.name} pinning {other.name}",
             )
             done.append(f"{robot.name} pinned {other.name}")
-        elif act == "stranger" and known:
+        elif act == "stranger" and pinned:
             _must(
-                quackd("passport", "forget", other.name, "--registry-dir", where),
+                quackd("passport", "forget", wanted, "--registry-dir", where),
                 f"{robot.name} forgetting {other.name}",
             )
             done.append(f"{robot.name} forgot {other.name}")
@@ -273,13 +293,14 @@ def launches(
 def served(
     address: str,
     *,
-    within: float = SERVE_WITHIN_S,
+    within: float | None = None,
     alive: subprocess.Popen[bytes] | None = None,
 ) -> None:
     """Wait until a passport answers at `address` (HOST:PORT), or say why it never did."""
     from quackd.passport.errors import PassportError
     from quackd.passport.fetch import fetch_passport, target
 
+    within = SERVE_WITHIN_S if within is None else within
     url = target(f"http://{address}").url
     deadline = time.monotonic() + within
     while time.monotonic() < deadline:
@@ -297,8 +318,9 @@ def served(
 
 def pause(state: Path, home_at: str, seconds: int) -> subprocess.CompletedProcess[str]:
     """The courier asks the home robot for a pause, as itself: a hello signed by the courier's
-    own key, then the ask. The home robot's owner policy decides, by fixed code, and a pause
-    brakes the body at once. A peer can never make a robot stop outright."""
+    own key in a session of its own, then the ask, then a bye that ends that session only. The
+    home robot's owner policy decides, by fixed code, and a pause brakes the body at once. A peer
+    can never make a robot stop for good."""
     return quackd(
         "meet",
         home_at,
@@ -311,6 +333,22 @@ def pause(state: Path, home_at: str, seconds: int) -> subprocess.CompletedProces
     )
 
 
+def stop(processes: Sequence[subprocess.Popen[bytes]]) -> None:
+    """End runs this command started and has given up on: a terminate, then a kill once
+    `STOP_WITHIN_S` has passed. On Windows a terminate is at once and skips a run's own teardown,
+    which is acceptable here only because the doorstep's robots are simulated."""
+    for process in processes:
+        if process.poll() is None:
+            process.terminate()
+    deadline = time.monotonic() + STOP_WITHIN_S
+    for process in processes:
+        try:
+            process.wait(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
 def play(
     started: Sequence[tuple[Robot, Launch]],
     *,
@@ -319,24 +357,40 @@ def play(
     on_home_started: Callable[[], None] | None = None,
 ) -> dict[str, int]:
     """Start the runs, the home robot only once the courier's passport is served, and wait for
-    every one of them. With `logs`, each run's output goes to a file there, since two runs
-    writing to one terminal cannot be read."""
+    every one of them.
+
+    With `logs`, each run's output goes to a file there, since two runs writing to one terminal
+    cannot be read, and neither run reads the terminal: a question a run puts to a person then
+    finds no answer and the run goes on without one, rather than waiting on a prompt nobody can
+    see. A Ctrl+C reaches every run, which brings its robot to a stop itself, so this waits for
+    them; anything else that stops this command ends the runs it started."""
     processes: list[tuple[Robot, subprocess.Popen[bytes]]] = []
     files = []
     try:
-        for robot, launch in started:
-            if robot is HOME:
-                courier = processes[0][1] if processes else None
-                served(courier_at, alive=courier)
-            if logs is not None:
-                logs.mkdir(parents=True, exist_ok=True)
-                f = (logs / f"{robot.name}.log").open("wb")
-                files.append(f)
-                processes.append((robot, start(launch, stdout=f, stderr=subprocess.STDOUT)))
-            else:
-                processes.append((robot, start(launch)))
-            if robot is HOME and on_home_started is not None:
-                on_home_started()
+        try:
+            for robot, launch in started:
+                if robot is HOME:
+                    courier = processes[0][1] if processes else None
+                    served(courier_at, alive=courier)
+                if logs is not None:
+                    logs.mkdir(parents=True, exist_ok=True)
+                    f = (logs / f"{robot.name}.log").open("wb")
+                    files.append(f)
+                    process = start(
+                        launch, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT
+                    )
+                else:
+                    process = start(launch)
+                processes.append((robot, process))
+                if robot is HOME and on_home_started is not None:
+                    on_home_started()
+        except KeyboardInterrupt:
+            for _robot, process in processes:
+                wait(process)
+            raise
+        except BaseException:
+            stop([process for _robot, process in processes])
+            raise
         return {robot.name: wait(process) for robot, process in processes}
     finally:
         for f in files:

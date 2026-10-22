@@ -137,3 +137,32 @@ def test_models_without_a_key_says_which_variable() -> None:
     result = runner.invoke(app, ["models"])
     assert result.exit_code == 1
     assert "NEBIUS_API_KEY" in result.output
+
+
+def test_the_sdks_own_variables_never_reach_token_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A gateway's credential, an organisation and a project the OpenAI SDK reads from its own
+    variables would ride along on a client built plainly; this one sends the Nebius key alone."""
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "Authorization: Bearer gateway-secret\nX-Gw: 1")
+    monkeypatch.setenv("OPENAI_ORG_ID", "org-elsewhere")
+    monkeypatch.setenv("OPENAI_PROJECT_ID", "proj-elsewhere")
+    with FakeTokenFactory(answers=["fine"]) as stand_in:
+        settings = nebius.Settings(stand_in.base_url, "stand-in-key")
+        assert nebius.ask(settings, TEXT_MODEL, [{"role": "user", "content": "hi"}]) == "fine"
+    (post,) = stand_in.posts()
+    assert post.headers["authorization"] == "Bearer stand-in-key"
+    for name in ("openai-organization", "openai-project", "x-gw"):
+        assert name not in post.headers
+    assert "gateway-secret" not in json.dumps(post.headers)
+
+
+def test_a_redirect_is_refused_rather_than_followed_with_the_key() -> None:
+    with (
+        FakeTokenFactory(key=None) as elsewhere,
+        FakeTokenFactory(redirect_to=f"{elsewhere.base_url}/models") as stand_in,
+    ):
+        settings = nebius.Settings(stand_in.base_url, "stand-in-key")
+        with pytest.raises(nebius.NebiusError, match="redirect"):
+            nebius.list_models(settings)
+    assert elsewhere.requests == [], "the key went where the redirect pointed"

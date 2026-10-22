@@ -21,9 +21,10 @@ for a pause, which fixed code grants within limits and which ends on its own; no
 another to move, or to stop for good.
 
 > [!NOTE]
-> Everything here is tested offline against a stand-in for Token Factory and against quackd
-> 0.23 itself, with real runs on its simulator. The commands that need a Nebius key are shown
-> as commands; their output is added here from real runs before submission.
+> The commands are tested offline against a stand-in for Token Factory and against quackd 0.23
+> itself, with real runs on its simulator, all but two that need hardware or a network: `whois
+> --camera` and `whois --lan`. The commands that need a Nebius key are shown as commands; their
+> output is added here from real runs before submission.
 
 ## How NVIDIA and Nebius are used
 
@@ -81,9 +82,9 @@ The parcels are a 0.8 kg book and a 2.5 kg box of tiles. The passports decide wh
 book fits the home robot, the tiles fit nobody and stay for a person.
 
 **Act one, strangers.** Nobody has pinned anybody. Each robot sees the other's passport in
-closed words and numbers, under a name made from its key. The courier speaks, quackd delivers
-the message, and keeps the words from the home robot's model, telling it only that a stranger
-spoke. No handoff happens.
+closed words and numbers, under a name made from its key. The courier says who it is; quackd
+delivers the message, and keeps the words from the home robot's model, telling it only that a
+stranger spoke. No handoff happens.
 
 **Act two, an appointment.** Each side has pinned the other first, as a booking would record
 both robots. Now each is `known` to the other, the courier's words reach the home robot's model,
@@ -121,6 +122,9 @@ policy grants it by fixed code, and the body brakes at once and holds:
 ```
 uv run passport-nebius doorstep pause --seconds 5
 ```
+
+The ask comes in a session of its own under the courier's key, so the home robot sees one more
+hello and bye from the courier while the act goes on.
 
 `run --pause-after 20` does the same twenty seconds after the home robot starts. Every run writes its
 transcript and an animation of the simulator under `runs/doorstep/runs`.
@@ -178,8 +182,11 @@ uv run pytest
 * Both doorstep acts end to end, with two real quackd 0.23 runs talking over HTTP: in the
   stranger act the courier's words arrive and are kept from the home robot's model, which is
   told so; in the appointment act they reach it, and each robot sees the other by its own name.
+* The brake in a live act: the courier's pause is granted and the home robot holds.
 * A real `quackd run` piloted through the stand-in: every request carries the NVIDIA id, the
   key and the robot's verbs as tools.
+* `explain` and `whois` send the Nebius key and nothing else: a credential, an organisation or
+  a project that the OpenAI SDK would read from its own variables never reaches Nebius.
 * `explain` with an order written into a passport, a terminal escape in a robot's name, a pinned
   robot, a wrong and a right sticker promise, and a QR picture.
 * `whois` with a model that invents a passport, a blind model, and an oversized frame.

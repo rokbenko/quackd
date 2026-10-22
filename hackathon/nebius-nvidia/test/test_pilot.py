@@ -128,3 +128,32 @@ def test_a_real_quackd_run_is_piloted_through_token_factory(
         names = {t["function"]["name"] for t in post.body["tools"]}
         assert {"assess_task", "report_state", "declare_success"} <= names
     assert list(runs.glob("*/transcript.jsonl")), "the run wrote no transcript"
+
+
+def test_a_quackd_in_the_folder_a_command_runs_from_is_never_imported(tmp_path: Path) -> None:
+    """The repository root has a quackd/ of its own; the one run must be the installed one."""
+    import subprocess
+
+    planted = tmp_path / "quackd"
+    planted.mkdir()
+    (planted / "__init__.py").write_text("raise SystemExit('the planted quackd ran')\n")
+    shown = subprocess.run(
+        [*pilot.QUACKD[:2], "-c", "import quackd; print(quackd.__file__)"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert str(tmp_path) not in shown.stdout
+    assert "site-packages" in shown.stdout
+
+
+def test_neither_a_repr_nor_a_childs_environment_carries_the_nebius_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launch = pilot.run_launch(SETTINGS, _model(TEXT_MODEL), ["task.duck"])
+    assert "the-key" not in repr(launch)
+    monkeypatch.setenv("NEBIUS_API_KEY", "the-key")
+    env = pilot.child_env(launch.env)
+    assert "NEBIUS_API_KEY" not in env
+    assert env["LOCAL_API_KEY"] == "the-key", "quackd's local provider reads it here, and only here"

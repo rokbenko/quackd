@@ -108,7 +108,7 @@ def test_ruff_reads_quackds_rules_here() -> None:
 def test_nothing_outside_the_folder_names_it() -> None:
     """`git grep` exits 1 when nothing matches, 0 with the files that do, above 1 on a failure."""
     found = subprocess.run(
-        ["git", "grep", "-I", "-i", "-l", "nebius", "--", ".", ":(exclude)hackathon"],
+        ["git", "grep", "-I", "-i", "-l", "nebius", "--", ".", ":(exclude)hackathon/nebius-nvidia"],
         cwd=REPO,
         capture_output=True,
         check=False,

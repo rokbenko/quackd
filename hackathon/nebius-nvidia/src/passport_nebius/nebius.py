@@ -103,18 +103,33 @@ def _model(entry: Any) -> Model | None:
     )
 
 
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect is an error here: following one would carry the key to whatever it named."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirects)
+
+
 def _get(settings: Settings, path: str, timeout: float) -> Any:
     request = urllib.request.Request(
         settings.base_url + path,
         headers={"Authorization": f"Bearer {settings.api_key}", "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _OPENER.open(request, timeout=timeout) as response:
             body = response.read()
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise NebiusError(
                 f"Token Factory refused the key ({e.code}): check {KEY_ENV}"
+            ) from None
+        if 300 <= e.code < 400:
+            raise NebiusError(
+                f"{settings.base_url}{path} answered a redirect ({e.code}), which is not "
+                "followed, since it would carry the key elsewhere"
             ) from None
         raise NebiusError(f"{settings.base_url}{path} answered {e.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -163,6 +178,54 @@ def strip_thinking(text: str) -> str:
     return _THINKING.sub("", text).strip()
 
 
+def sdk_client(settings: Settings) -> Any:
+    """An OpenAI SDK client for Token Factory that sends the key and nothing from the
+    environment, and follows no redirect.
+
+    Releases of the SDK read `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` by
+    themselves, which would put another service's credential or account on a request to Nebius.
+    quackd's own rules for that, in `quackd.agent.providers.openai_headers`, answer every header
+    the SDK would add; a client that would still send one is refused, as quackd refuses it."""
+    import openai
+
+    from quackd.agent.providers.openai_headers import (
+        CUSTOM_HEADERS_ENV,
+        ambient_headers,
+        foreign_authorization,
+        foreign_headers,
+        is_sdk_own_header,
+        own_headers,
+        request_headers,
+    )
+
+    bearer = f"Bearer {settings.api_key}"
+    http = openai.DefaultHttpxClient(follow_redirects=False)
+    own: dict[str, str] = {}
+    if any(is_sdk_own_header(n) for n in ambient_headers(os.environ.get(CUSTOM_HEADERS_ENV))):
+        own = own_headers(
+            openai.OpenAI(api_key=settings.api_key, base_url=settings.base_url, http_client=http)
+        )
+    handed = request_headers(bearer, at_openai=False, omit=openai.Omit, own=own)
+    client = openai.OpenAI(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        default_headers=handed,
+        http_client=http,
+        timeout=TIMEOUT_S,
+        max_retries=2,
+    )
+    built = dict(client.default_headers)
+    if foreign_authorization(built, bearer, openai.Omit) or foreign_headers(
+        built, handed, openai.Omit
+    ):
+        raise NebiusError(
+            f"openai {openai.__version__} would send a line of {CUSTOM_HEADERS_ENV}, or "
+            "OPENAI_ORG_ID or OPENAI_PROJECT_ID, to Token Factory, which none of them is for: "
+            "take them out of the environment for this command"
+        )
+    return client
+
+
 def ask(
     settings: Settings,
     model: str,
@@ -176,9 +239,7 @@ def ask(
     validates whatever comes back either way, since no format option is a promise."""
     import openai
 
-    client = openai.OpenAI(
-        base_url=settings.base_url, api_key=settings.api_key, timeout=TIMEOUT_S, max_retries=2
-    )
+    client = sdk_client(settings)
     formats: list[dict[str, Any] | None] = [None]
     if schema is not None:
         formats = [

@@ -123,6 +123,8 @@ class FakeTokenFactory:
     chat: Callable[[int, dict[str, Any]], tuple[int, Any]] | None = None
     """Answers a POST instead of either list when set: `(turn, body) -> (status, body)`."""
     requests: list[Recorded] = field(default_factory=list)
+    redirect_to: str | None = None
+    """Answers `GET /v1/models` with a 302 to this URL when set."""
 
     def __post_init__(self) -> None:
         self._posts = 0
@@ -141,6 +143,8 @@ class FakeTokenFactory:
         if self.key is not None and seen.headers.get("authorization") != f"Bearer {self.key}":
             return 401, {"detail": "the stand-in does not know this key"}
         if seen.method == "GET" and seen.path == f"{PREFIX}/models":
+            if self.redirect_to is not None:
+                return 302, {"location": self.redirect_to}
             return 200, {"object": "list", "data": self.models}
         if seen.method == "POST" and seen.path == f"{PREFIX}/chat/completions":
             with self._lock:
@@ -184,6 +188,8 @@ class FakeTokenFactory:
                 status, answer = stand_in._answer(seen)
                 payload = json.dumps(answer).encode("utf-8")
                 self.send_response(status)
+                if status == 302:
+                    self.send_header("Location", answer["location"])
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()

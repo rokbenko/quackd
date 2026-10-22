@@ -13,13 +13,15 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from .nebius import Model, NebiusError, Settings
+from .nebius import KEY_ENV, Model, NebiusError, Settings
 
 #: quackd's console script, run by this interpreter, so the quackd it runs is the one installed
-#: beside this edition. quackd has no `python -m quackd`.
-QUACKD = (sys.executable, "-c", "from quackd.cli import main; main()")
+#: beside this edition. quackd has no `python -m quackd`, and `-P` keeps the folder a command
+#: is run from off the import path, so a `quackd/` there (the repository root has one) is never
+#: imported in place of the installed one.
+QUACKD = (sys.executable, "-P", "-c", "from quackd.cli import main; main()")
 #: quackd's own flags this edition sets, refused when given again so the two never disagree.
 OWNED = ("--llm", "-l", "--base-url", "--api-key")
 #: Where quackd's local provider reads its key when `--api-key` is absent.
@@ -31,7 +33,7 @@ class Launch:
     """A quackd command and the variables it needs on top of this process's own."""
 
     argv: tuple[str, ...]
-    env: Mapping[str, str]
+    env: Mapping[str, str] = field(repr=False)
 
     def shown(self) -> str:
         """The command for a person to read: quackd's part only, with the key never in it."""
@@ -40,6 +42,14 @@ class Launch:
 
 def _quoted(arg: str) -> str:
     return f'"{arg}"' if not arg or any(c in arg for c in " \t'\"") else arg
+
+
+def child_env(extra: Mapping[str, str]) -> dict[str, str]:
+    """This process's environment for a quackd it starts, less the Nebius key, which quackd
+    never reads under that name, plus `extra`."""
+    env = {name: value for name, value in os.environ.items() if name != KEY_ENV}
+    env.update(extra)
+    return env
 
 
 def owned_flags(args: Sequence[str]) -> list[str]:
@@ -76,7 +86,7 @@ def unpriced(run_args: Sequence[str]) -> bool:
 
 
 def start(launch: Launch, **popen: object) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(launch.argv, env={**os.environ, **launch.env}, **popen)  # type: ignore[call-overload]
+    return subprocess.Popen(launch.argv, env=child_env(launch.env), **popen)  # type: ignore[call-overload]
 
 
 def wait(process: subprocess.Popen[bytes]) -> int:
