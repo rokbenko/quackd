@@ -22,6 +22,7 @@ from rich.text import Text
 from quackd.ui import printable
 
 from . import __version__, doorstep, nebius
+from . import explain as explaining
 from .pilot import run as run_quackd
 from .pilot import run_launch, unpriced
 
@@ -180,6 +181,65 @@ def pilot(
         return
     _notes(chosen, list(ctx.args), vision)
     raise typer.Exit(run_quackd(launch))
+
+
+@app.command()
+def explain(
+    source: str = typer.Argument(
+        ...,
+        help="Where the robot's passport is: a URL, a HOST[:PORT], a picture of its QR "
+        "sticker, or a file.",
+    ),
+    question: str = typer.Option(
+        explaining.DEFAULT_QUESTION, "--ask", "-q", help="What you want to know about the robot."
+    ),
+    model: str | None = MODEL_OPTION,
+    registry_dir: str | None = typer.Option(
+        None,
+        "--registry-dir",
+        help="Whose pins decide how far the robot is trusted (default: $QUACKD_REGISTRY_DIR or "
+        "~/.quackd).",
+    ),
+    base_url: str | None = BASE_URL_OPTION,
+) -> None:
+    """Read a robot's passport the way quackd reads one, then ask Nemotron about it.
+
+    How far the robot is trusted is quackd's decision, printed first. A stranger's own words
+    never reach the model: you read them below its answer, as the robot's claim."""
+    from quackd.passport.errors import PassportError
+    from quackd.passport_store import PassportStore
+    from quackd.passport_trust import judge
+
+    settings = _settings(base_url)
+    chosen = _chosen(settings, model)
+    try:
+        reading = explaining.read(explaining.find(source))
+    except PassportError as e:
+        fail(f"refused under {e.rule}: {e}")
+    except OSError as e:
+        fail(f"could not read {source}: {e}")
+    judgement = judge(reading, PassportStore(registry_dir))
+    view = explaining.model_view(reading, judgement.tier)
+    console.print(
+        Text(printable(f"{view['name']} ({reading.short_id or 'no key'})"), style="bold")
+        + Text(printable(f"  {judgement.tier}: {judgement.why}"))
+    )
+    for warning in judgement.warnings:
+        warn(warning)
+    try:
+        said = explaining.answer(settings, chosen.id, view, judgement.why, question)
+    except nebius.NebiusError as e:
+        fail(str(e))
+    console.print(Text(printable(f"{chosen.id} on Token Factory:"), style="dim"))
+    console.print(Text(printable(said)))
+    heading = (
+        "in its own words, which the model never saw"
+        if judgement.tier == "stranger"
+        else "in its own words"
+    )
+    console.print(Text(f"{heading} (a claim, not a fact):", style="dim"))
+    for label, words in explaining.own_words(reading):
+        console.print(Text(printable(f"  {label}: {words}")))
 
 
 doorstep_app = typer.Typer(
