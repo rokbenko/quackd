@@ -74,7 +74,7 @@ $ quackd passport owner --label "Example lab" --contact https://example.org/robo
 $ quackd passport set --robot duck-01 --estop power --how-to-stop "the power switch on its back"
 $ quackd passport stamp --robot duck-01
 $ quackd passport show --robot duck-01 --out robot-passport.jws
-wrote robot-passport.jws: 2380 bytes, digest 63ebc3f7acd754cc
+wrote robot-passport.jws: 2380 bytes, digest 32c8fdf98e91f528
 $ quackd passport check robot-passport.jws
 ┌─ 🦆 checked duck-01 ────────────────────────────────────────────────────────┐
 │ id        did:key:z6MkrrZYoygPr1cWb7PMqyuQnQ8TrughCzAqXypJqaMGWGTT  (short  │
@@ -83,7 +83,7 @@ $ quackd passport check robot-passport.jws
 │ stamp     owner 9bdc6799888c2473, your own owner key, until 2027-10-21      │
 │ tier      flock: one of the robots this quackd drives                       │
 │ maker     pollen-robotics microduck                                         │
-│ software  quackd 0.21.0                                                     │
+│ software  quackd 0.23.0                                                     │
 │ owner     Example lab, https://example.org/robots                           │
 ```
 

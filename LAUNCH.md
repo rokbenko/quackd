@@ -37,10 +37,13 @@ OpenAI's own hosts alone and with each frame on the record before it goes, and t
 head can keep a described thing in view the way OpenAI's launch video showed, though neither has met
 OpenAI or a real duck yet. 0.21's was that quackd can drive an eighth robot, Huebot, through a shim
 its maker is writing to answer the calls a Microduck's robotd answers, though nobody has seen the
-shim answer and nothing has run on a Huebot. **0.22's is that quackd can drive a ninth robot, MOSS,
+shim answer and nothing has run on a Huebot. 0.22's was that quackd can drive a ninth robot, MOSS,
 a tracked rover that picks up litter, through its own cockpit and a bridge quackd ships for the
 rover, and that a `dangerous` verb runs only when a person answers it, though nothing has run on
-a MOSS rover yet.**
+a MOSS rover yet. **0.23's is that a robot can introduce itself to one it has never met, through
+Robot Passport, an open protocol quackd is the first to implement, and that two robots that have
+met can talk and one can ask the other for a short pause, which fixed code grants and never a
+pilot, though none of it has run between two machines or on a robot yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

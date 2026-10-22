@@ -12,7 +12,7 @@ explains every member; [the specification](spec.md#2-the-passport-document) is w
 
 ## The smallest passport
 
-Three members are required, so the smallest valid passport is 99 bytes:
+Three members are required, so a passport can be under 100 bytes. This one, with a key, is 99:
 
 ```json
 {"passport":"0.1","id":"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd","name":"duck-01"}
@@ -248,7 +248,7 @@ Measured from [the vectors](vectors/README.md).
 
 | What | Size |
 |---|---|
-| the smallest passport | 99 bytes |
+| the minimal passport above | 99 bytes |
 | a Microduck's full passport | 1,218 bytes |
 | the same with one owner stamp | 1,713 bytes |
 | that, signed, as a `.jws` | 2,518 characters |

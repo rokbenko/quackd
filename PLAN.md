@@ -148,6 +148,16 @@ before.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
   with neither a lookout task nor a checklist. A coordinator flock across two machines needs a
   distributed clock first; a pilot flock needs none and has simply never been tried across two.
+- ⬜ **Robot Passport across two machines, and then on a robot.** No part 0.23.0 ships has run
+  between two machines or on a robot. Most has run between processes on one machine, and
+  `meet ros://` only against fakes ([docs/passport/roadmap.md](docs/passport/roadmap.md)). On two
+  machines on one network: `quackd passport serve --announce --talk` on one, and from the other
+  `quackd discover`, then `quackd meet HOST --pin --as NAME --say TEXT`, the same through a real
+  broker with `--mqtt`, and two `quackd run nearby-hello --talk` runs, one with `--meet`. A courtesy
+  is asked of a run, since `passport serve` drives no robot and answers every ask no:
+  `quackd meet HOST --as NAME --ask pause:3` at a running `nearby-hello`. Then a pause asked of a
+  robot that is really walking, which has to stop and hold still for the seconds it was granted.
+  Each one flips its row in the roadmap's status table, and not before.
 
 ## Open here
 

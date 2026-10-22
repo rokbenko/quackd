@@ -18,7 +18,7 @@ PASSPORT  who I am, who vouches for me, what I can and     one small JSON docume
 TALK      hello · say · bye · ask · answer · share         small signed messages, never obeyed blindly
 ```
 
-**Reading needs nothing; asking needs a key.** The smallest passport is 99 bytes, a robot with no
+**Reading needs nothing; asking needs a key.** A passport can be under 100 bytes, a robot with no
 software can carry one on a sticker, and nothing a peer says moves a robot except through a short,
 bounded rule its owner chose.
 
@@ -50,7 +50,7 @@ bounded rule its owner chose.
 
 | What | Size |
 |---|---|
-| the smallest passport | 99 bytes |
+| the minimal passport in passport.md | 99 bytes |
 | a Microduck's full passport | 1,218 bytes |
 | that, signed, with an owner stamp, as a `.jws` | 2,518 characters |
 | the most a reader must accept | 8,192 bytes |
