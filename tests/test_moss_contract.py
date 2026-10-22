@@ -42,6 +42,10 @@ BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 GUARD_S = 1.0
 """The bridge's watch on the arm after a stop, short here so a test can wait it out."""
+CLOCK_TICK_S = 0.02
+"""How far short of what it was asked a wait can measure on `time.monotonic`. Windows' timers
+tick about every 15.6 ms, and the bridge's wait of `RPC_TIMEOUT_S` once measured
+1.9999999999998863 s against 2.0 on CI's Windows runner, a wait that had not ended early at all."""
 
 
 def _load() -> ModuleType:
@@ -446,7 +450,7 @@ async def test_the_soft_stop_goes_out_beside_a_bridge_stop_that_waits_on_the_arm
     took = time.monotonic() - began
     soft = rover.cockpit.posted("stop")[-1].t - began
     zero = min(t for t, _, v in bus.published if v == (0.0, 0.0) and t >= began) - began
-    assert took >= B.RPC_TIMEOUT_S, "the bridge's stop waited on the arm"
+    assert took >= B.RPC_TIMEOUT_S - CLOCK_TICK_S, "the bridge's stop waited on the arm"
     assert soft < B.RPC_TIMEOUT_S / 2 and zero < B.RPC_TIMEOUT_S / 2, (soft, zero, took)
     await transport.close()
 
