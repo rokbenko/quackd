@@ -7,6 +7,17 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Documentation
+
+- **Robot Passport's phase 7, planned in the repository.**
+  [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md) says what each of
+  its six pieces is, what is decided and what is left to decide, where its code goes, what done
+  means and what it needs, then how the spec moves to its own repository and what else is open,
+  and PLAN.md points to it. `scripts/passport_readme_ratio.py` measures the README's Robot
+  Passport section against the pages it summarises.
+
 ## [0.23.0] — 2026-10-21
 
 0.23.0 adds Robot Passport, a small open protocol for a robot to introduce itself to one it has

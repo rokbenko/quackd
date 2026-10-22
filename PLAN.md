@@ -161,6 +161,20 @@ before.
 
 ## Open here
 
+- ⬜ **Robot Passport, phase 7: reaching robots that do not run quackd.** Six pieces, in this order:
+  the four translators (a URDF through rosbridge, a VDA 5050 factsheet, a MassRobotics identity
+  report and an A2A Agent Card) and a passport inside an A2A Agent Card, which need no hardware,
+  then a single-file server for any Linux robot with a page that shows a scanned passport to a
+  person, a ROS 2 node that publishes `robot_passport`, and an ESP32 library, HTTP first. The second
+  implementation then moves the spec, its schemas, its vectors and `quackd/passport/` to a
+  repository of their own. What is decided, what is left to decide, where each piece's code goes and
+  what done means for it are in
+  [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md), which a session
+  that knows nothing else can start from. Nothing of it is built.
+- ⬜ **Robot Passport's smaller open items.** Talk over a broker in `run` and `serve-mcp`, `--talk`
+  in a flock run, a pilot that can ask for a courtesy or share what it saw, maker stamps, a list of
+  revoked keys, and guests in a flock, which need a decision record of their own first. The same
+  note says what each needs.
 - ⬜ **Nobody has run the discrete stepper against a real decision LLM.** Not TypeSafe's hosted
   API, not OpenAI's Decisions API, not a `kev`, `von`, `openjev` or `opendecision` server, not
   `laya` in this process, and not on hardware in any of those shapes. `--decision-llm` ships off

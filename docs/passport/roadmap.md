@@ -37,9 +37,11 @@ quackd 0.23.0 ships phases 1 to 6.
    MCP tool.
 6. **Talk, second step.** `ask`, `answer` and `share`, and the courtesy handler with its tiers and
    global budget.
-7. **Reach, after 0.23.0.** A single-file Python server for any Linux robot, an ESP32 library, a ROS 2
-   node, a page that shows any passport to a person who scanned a sticker, the translators, and a
-   passport inside an A2A Agent Card.
+7. **Reach, after 0.23.0.** A single-file Python server for any Linux robot, an ESP32 library, a ROS
+   2 node, a page that shows any passport to a person who scanned a sticker, the translators, and a
+   passport inside an A2A Agent Card. The working plan for each, and for the move of the spec to its
+   own repository after the second implementation, is
+   [design/robot-passport-phase-7.md](../design/robot-passport-phase-7.md).
 
 ## Decisions taken
 
