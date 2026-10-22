@@ -23,6 +23,7 @@ from quackd.ui import printable
 
 from . import __version__, doorstep, nebius
 from . import explain as explaining
+from . import whois as seeing
 from .pilot import run as run_quackd
 from .pilot import run_launch, unpriced
 
@@ -240,6 +241,113 @@ def explain(
     console.print(Text(f"{heading} (a claim, not a fact):", style="dim"))
     for label, words in explaining.own_words(reading):
         console.print(Text(printable(f"  {label}: {words}")))
+
+
+@app.command()
+def whois(
+    meet: list[str] = typer.Option(
+        [],
+        "--meet",
+        help="A passport to compare: a URL, a HOST[:PORT], a picture of its QR sticker, or a "
+        "file. Repeat it for each robot.",
+    ),
+    lan: float = typer.Option(
+        0.0,
+        "--lan",
+        help="Also find the passports robots announce on this network, listening this many "
+        "seconds. 0 does not look.",
+    ),
+    camera: int | None = typer.Option(
+        None, "--camera", help="Take the frame from this camera on this machine (0 is the first)."
+    ),
+    image: Path | None = typer.Option(None, "--image", help="Or read the frame from a picture."),
+    model: str | None = MODEL_OPTION,
+    registry_dir: str | None = typer.Option(
+        None,
+        "--registry-dir",
+        help="Whose pins decide each robot's tier (default: $QUACKD_REGISTRY_DIR or ~/.quackd).",
+    ),
+    base_url: str | None = BASE_URL_OPTION,
+) -> None:
+    """Which passport belongs to which robot in view, by an NVIDIA vision model on Token Factory.
+
+    A signature proves who wrote a passport, never which body holds its key. This compares a
+    camera frame with the bodies the passports declare. It is advice for a person: it pins
+    nothing, stamps nothing and changes no tier."""
+    from quackd.passport.errors import PassportError
+    from quackd.passport_store import PassportStore
+    from quackd.passport_trust import judge
+
+    if (camera is None) == (image is None):
+        fail("one picture: --camera N or --image FILE")
+    settings = _settings(base_url)
+    chosen = _chosen(settings, model)
+    if chosen.takes_images is False:
+        fail(
+            f"{chosen.id} does not read images, by its own modality on the list: pick one "
+            "passport-nebius models says reads images"
+        )
+    if chosen.takes_images is None:
+        warn(f"the model list does not say whether {chosen.id} reads images")
+    sources = list(meet)
+    if lan > 0:
+        from quackd.lan.passports import discover_passports
+
+        sources += seeing.lan_sources(discover_passports(lan))
+    if not sources:
+        fail("no passport to compare: --meet SOURCE for each robot, or --lan SECONDS")
+    readings = []
+    for source in sources:
+        try:
+            readings.append(explaining.read(explaining.find(source)))
+        except PassportError as e:
+            warn(f"{source}: refused under {e.rule}: {e}")
+        except OSError as e:
+            warn(f"{source}: {e}")
+    if not readings:
+        fail("no passport could be read")
+    refs = seeing.candidates(readings)
+    try:
+        if camera is not None:
+            picture = seeing.from_camera(camera)
+        else:
+            assert image is not None
+            picture = seeing.from_file(image)
+        found = seeing.whois(settings, chosen.id, picture, refs)
+    except nebius.NebiusError as e:
+        fail(str(e))
+    store = PassportStore(registry_dir)
+    table = Table(title=f"who is who, by {printable(chosen.id)}")
+    for column in ("in view", "where", "passport", "tier", "confidence", "why"):
+        table.add_column(column, overflow="fold")
+    matched = set()
+    for match in found:
+        passport, tier = "none fits", ""
+        if match.ref is not None:
+            reading = readings[int(match.ref[1:]) - 1]
+            matched.add(match.ref)
+            passport = f"{reading.name} ({reading.short_id or 'no key'})"
+            tier = judge(reading, store).tier
+        why = match.why + (f" (it {match.dropped})" if match.dropped else "")
+        table.add_row(
+            Text(printable(match.seen)),
+            Text(printable(match.where)),
+            Text(printable(passport)),
+            tier,
+            match.confidence,
+            Text(printable(why)),
+        )
+    console.print(table)
+    unseen = [r for ref, r in zip(refs, readings, strict=True) if ref not in matched]
+    if unseen:
+        names = ", ".join(f"{r.name} ({r.short_id or 'no key'})" for r in unseen)
+        console.print(Text(printable(f"no robot in view fits: {names}")))
+    console.print(
+        Text(
+            "advice from a camera and a model: nothing was pinned, stamped or re-tiered",
+            style="dim",
+        )
+    )
 
 
 doorstep_app = typer.Typer(
