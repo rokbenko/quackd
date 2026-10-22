@@ -42,10 +42,12 @@ BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 GUARD_S = 1.0
 """The bridge's watch on the arm after a stop, short here so a test can wait it out."""
-CLOCK_TICK_S = 0.02
-"""How far short of what it was asked a wait can measure on `time.monotonic`. Windows' timers
-tick about every 15.6 ms, and the bridge's wait of `RPC_TIMEOUT_S` once measured
-1.9999999999998863 s against 2.0 on CI's Windows runner, a wait that had not ended early at all."""
+CLOCK_TICK_S = time.get_clock_info("monotonic").resolution
+"""How far short of what it was asked a wait can measure on `time.monotonic`: the clock's own
+tick, about 15.6 ms on Windows and a fraction of a microsecond on Linux, the platform's answer
+rather than a constant, as `waited()` in tests/test_kill_switch.py takes it. The bridge's wait of
+`RPC_TIMEOUT_S` once measured 1.9999999999998863 s against 2.0 on CI's Windows runner, a wait
+that had not ended early at all."""
 
 
 def _load() -> ModuleType:
