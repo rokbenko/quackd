@@ -254,8 +254,9 @@ class LeRobotAdapter:
     supports_hand_off = True
     """A person can be handed this body: quackd takes torque off at its recorded rest pose,
     waits while they place it, and holds whatever pose they left it in (`quackd run
-    --by-hand`), and a person holding it can have its torque taken off wherever it stands
-    (`quackd robot release`, and the offer at the end of a run whose rest move missed).
+    --by-hand`), and a person at it can have it folded to that pose and let go of there
+    (`quackd robot release`), or, after two folds missed, holding it, have its torque taken off
+    wherever it stands (the same command, and the end of a run whose rest move missed).
     Declared rather than inferred, because the run and the command refuse outright on a body
     that does not offer it rather than connecting and finding out."""
     supports_rest_pose = True
@@ -331,13 +332,13 @@ class LeRobotAdapter:
     async def go_to_rest(self) -> RestResult:
         return await go_to_rest_if_any(self.transport)
 
-    async def let_go(self, *, anywhere: bool = False) -> HandResult:
-        """Torque off, for a person at the arm. `anywhere` is the transport's own keyword and
-        is passed only when set, for `let_go_if_any`'s reason: without it the arm is released
-        at its rest pose or refused, which is `--by-hand`'s rule and stays the default."""
-        if anywhere:
-            return await let_go_if_any(self.transport, anywhere=True)
-        return await let_go_if_any(self.transport)
+    async def let_go(self, *, anywhere: bool = False, asked: bool = False) -> HandResult:
+        """Torque off, for a person at the arm. `anywhere` and `asked` are the transport's own
+        keywords and each is passed only when set, for `let_go_if_any`'s reason: without them
+        the arm is released at its rest pose or refused, which is `--by-hand`'s rule and stays
+        the default, and `asked` keeps that rule and changes only what the close says."""
+        kw = {k: True for k, on in (("anywhere", anywhere), ("asked", asked)) if on}
+        return await let_go_if_any(self.transport, **kw)
 
     async def take_hold(self) -> HandResult:
         return await take_hold_if_any(self.transport)

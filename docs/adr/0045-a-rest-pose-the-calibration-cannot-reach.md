@@ -16,6 +16,13 @@ motor for a moment: hold the arm first, then run `quackd robot release`, or run
 of the arm as it stands. [ADR-0039](0039-an-arm-placed-by-hand.md)'s second amendment has the
 rest.
 
+**Amended 2026-10-23 by [ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md):** `TORQUE_LEFT_ON` names one way out
+now: clear whatever is in the arm's way and run `quackd robot release NAME`, which folds it to
+this reachable rest pose and lets go there, supporting the arm while that connects, or cut its
+power. `doctor --robot` is no longer named, since the release parks the arm itself. And a genuine
+miss at a run's terminal is no longer released where it stands on the first Enter: it is folded
+once more after the person clears its way, and asked about again only if that fold misses too.
+
 **Amended 2026-09-24:** `take_hold()` no longer skips a joint placed past its travel. It refuses
 before it writes anything, torque stays off and the arm stays in the person's hands, because the
 goal a skipped joint keeps after a hand-off is the rest move's and not the limit. The decision

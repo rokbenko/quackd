@@ -11,9 +11,10 @@ One row below has met hardware: `lerobot:real`, on a LeRobot SO-101 arm, on 2026
 on 2026-09-23. Eight of the nine bodies here have still never been driven by quackd, and the row
 that has was driven on one arm for two afternoons, the second on quackd 0.12.0. Nothing changed
 since that afternoon has run on it: the rest pose clipped into the travel,
-`quackd robot release`, the paced `move_joints` and the connect retries are exercised only
-against a fake arm, `lerobot:mock` and the test suite ([CHANGELOG.md](../../CHANGELOG.md), Known
-limitations). What the first afternoon did and did not settle is under the table.
+`quackd robot release` with the fold it now makes before it lets go, the two questions a run
+asks when its rest move missed, the paced `move_joints` and the connect retries are exercised
+only against a fake arm, `lerobot:mock` and the test suite ([CHANGELOG.md](../../CHANGELOG.md),
+Known limitations). What the first afternoon did and did not settle is under the table.
 
 > [!IMPORTANT]
 > `uv pip install quackd` installs the core and no robot at all. Every body below is its own

@@ -69,9 +69,11 @@ from quackd_lerobot.verbs import (
     GRIPPER_CLOSED,
     HOLD_NOT_CONFIRMED,
     IN_HAND_NOT_MOVED,
+    LET_GO_AT_REST,
     LET_GO_TO_PLACE,
     LET_GO_WHERE_IT_STOOD,
     LIMP_AT_REST,
+    LIMP_AT_REST_AS_ASKED,
     LIMP_IN_HAND,
     MANIPULATE_S,
     MOVE_HEADROOM_S,
@@ -4078,7 +4080,12 @@ class _Hands:
             self.on_say(text)
 
     async def wait(
-        self, text: str, *, timeout_s: float | None = None, until_abort: bool = True
+        self,
+        text: str,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
     ) -> bool:
         self.asked.append(text)
         answer = self.answers[min(len(self.asked), len(self.answers)) - 1]
@@ -5001,6 +5008,87 @@ async def test_the_mock_releases_away_from_its_rest_pose_only_when_a_person_asks
     assert (await bare.let_go(anywhere=True)).how == "released", "no pose, second door"
 
 
+def _asked_arm(backend: str) -> tuple[Any, Any]:
+    """An arm at its recorded rest pose, as `quackd robot release` leaves one once its fold has
+    arrived: the fake arm under the real backend, or the mock. Returns the arm and the adapter's
+    transport, which is the same object for the mock."""
+    if backend == "real":
+        return _handover_arm()
+    mock = LeRobotMock(rest_pose=dict(REST))
+    return mock, mock
+
+
+@pytest.mark.parametrize("backend", ["real", "mock"])
+async def test_a_release_asked_for_at_the_rest_pose_says_it_rests_there(backend: str) -> None:
+    """`quackd robot release` folds the arm and then lets go of it at its rest pose through the
+    first door, which refuses anywhere else, so it can never drop the arm. The close's own read
+    then finds the arm still at the pose with every motor off, and says it rests limp there
+    because the person asked: not that it was let go of for them to place, which is
+    `--by-hand`'s line, and not that it is in their hands."""
+    arm, transport = _asked_arm(backend)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    released = await adapter.let_go(asked=True)
+    assert released.how == "released" and released.torque_on == (), released.reason
+    assert released.reason == "torque is off at the rest pose"
+    if backend == "real":
+        assert arm.timeline == ["disable_torque"], arm.timeline
+    await adapter.close()
+    assert adapter.close_note == LIMP_AT_REST_AS_ASKED, adapter.close_note
+    assert "place" not in LIMP_AT_REST_AS_ASKED and "your hands" not in LIMP_AT_REST_AS_ASKED
+    assert arm.torque is False
+
+
+@pytest.mark.parametrize("backend", ["real", "mock"])
+async def test_a_release_asked_for_away_from_the_rest_pose_drops_nothing(backend: str) -> None:
+    """The first door asked for refuses anywhere but the rest pose, exactly as `--by-hand`'s
+    does, because an arm standing up is held up by torque alone. Its refusal is one a person
+    asked for, so the close neither lets go of the standing arm nor sends the person back to
+    `quackd robot release`, the command that was just refused: it says the release did not take
+    and to cut the power."""
+    if backend == "real":
+        arm: Any = _spanned()
+        recorded, reading = _stopped_short(arm)
+        arm.positions.update(reading)
+        transport: Any = LeRobotReal("COM5", robot=arm, rest_pose=recorded)
+    else:
+        arm = transport = LeRobotMock(rest_pose=dict(REST))
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    if backend == "mock":
+        assert (await adapter.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
+    refused = await adapter.let_go(asked=True)
+    assert refused.how == "refused" and "the arm is not at its rest pose" in refused.reason
+    assert arm.torque is True
+    if backend == "real":
+        assert arm.timeline == [] and transport._in_hand is False
+    await adapter.close()
+    note = adapter.close_note or ""
+    assert "the release did not take, so torque was left on" in note, note
+    assert "quackd robot release" not in note, "sent back to the command that just refused"
+    assert arm.torque is True, "the close let go of an arm standing up"
+
+
+@pytest.mark.parametrize("backend", ["real", "mock"])
+async def test_an_asked_release_the_close_finds_lifted_says_it_is_in_your_hands(
+    backend: str,
+) -> None:
+    """Let go of at its rest pose because a person asked, and then lifted off it before the
+    close: the close's own read finds it away from the pose with every motor off, which is an
+    arm in somebody's hand, and it says so, with why it was let go of rather than the shortfall
+    from a pose nobody asked it to keep."""
+    arm, transport = _asked_arm(backend)
+    adapter = LeRobotAdapter(transport)
+    await adapter.connect()
+    assert (await adapter.let_go(asked=True)).how == "released"
+    if backend == "real":
+        arm.positions["shoulder_pan"] = arm.positions["shoulder_pan"] + 30.0  # a hand lifts it
+    else:
+        arm.joints["shoulder_pan"] = arm.joints["shoulder_pan"] + 30.0
+    await adapter.close()
+    assert adapter.close_note == LIMP_IN_HAND.format(why=LET_GO_AT_REST), adapter.close_note
+
+
 # ── the torque note names the ways out ──────────────────────────────────────────────────
 
 
@@ -5009,17 +5097,17 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
     name: str,
 ) -> None:
     """The note used to end at "hold the arm and cut its power, or run again", and on the
-    bench every run that got that far ended at the switch. It now names the command that
-    releases the arm and the one that parks it, spelled with this arm's own name: the registry
-    builds a robot with its name as the id (`make(robot_id=...)`), and a command with the wrong
-    name in it fails, or reaches another arm.
+    bench every run that got that far ended at the switch. It names the one command that puts
+    the arm down, `quackd robot release`, which folds it to its rest pose and lets go there,
+    spelled with this arm's own name: the registry builds a robot with its name as the id
+    (`make(robot_id=...)`), and a command with the wrong name in it fails, or reaches another
+    arm. Doctor is no longer named beside it: the release parks the arm now.
 
-    And the hold comes before every one of them, with the reason. Both commands connect, and
-    connecting takes torque off every motor for a moment, so an arm held up by torque alone
-    is limp for that moment whichever of them reaches it. The note once tied the hold to the
-    release alone and offered `doctor` beside it as though the arm could be left to hold
-    itself while `doctor` connected, and said "it will not fall" of an arm about to be let
-    go of by the connect: it is said now of the arm as it stands, and no further."""
+    The clearing comes first, because a fold that runs into what stopped the last one stops
+    again, and the support comes with its reason: the command connects, and connecting takes
+    torque off every motor for a moment, so an arm held up by torque alone is limp for that
+    moment. "It will not fall" is said of the arm as it stands, and no further, and the power
+    switch is the one way out after it."""
     mock = make("mock", robot_id=name, rest_pose=dict(REST))
     await mock.connect()
     assert (await mock.send_intent(Intent.joint({"shoulder_pan": 30.0}, 1.0))).accepted
@@ -5036,12 +5124,12 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
     for note in (mock.close_note or "", transport.close_note or ""):
         assert note.startswith(TORQUE_LEFT_ON.split("(")[0]), note
         assert "it will not fall as it stands" in note, note
-        hold = note.index("hold it first, because connecting takes torque off every motor")
-        release = note.index(f"quackd robot release {name}")
-        doctor = note.index(f"quackd doctor --robot {name} to park it")
-        power = note.index("or cut its power")
-        assert hold < release < doctor < power, "the hold does not come before every way out"
-        assert "hold" not in note[release:], "a way out stands after the hold as its own route"
+        clear = note.index("clear whatever is in its way")
+        release = note.index(f"quackd robot release {name}, which folds it to its rest pose")
+        support = note.index("support the arm while that connects, because connecting takes")
+        power = note.index("Or hold it and cut its power")
+        assert clear < release < support < power, "the way out is not said in the order done"
+        assert "doctor" not in note and "park" not in note, note
 
 
 async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id() -> None:
@@ -5061,7 +5149,7 @@ async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id(
     await transport.close()
 
     for note in (mock.close_note or "", transport.close_note or ""):
-        assert "quackd robot release NAME" in note and "doctor --robot NAME" in note, note
+        assert "quackd robot release NAME" in note and "doctor" not in note, note
         assert transport.robot_id not in note, "the default id was offered as the name"
 
 
@@ -7541,3 +7629,24 @@ async def test_every_bus_call_and_every_tick_is_timed_and_a_pick_reports_both() 
         assert 0 <= row["p50_ms"] <= row["p99_ms"] <= row["max_ms"], row
     assert timing["bus_call"]["count"] > before["bus_call"]["count"] + policy.n
     await adapter.close()
+
+
+async def test_a_stall_whose_hold_found_the_arm_silent_says_it_did_not_answer() -> None:
+    """A fold that stalls ends in a hold, whose own read is the last word on the arm. When that
+    read fails, the servo supply cut at the switch or a cable pulled, the arm is one nothing can
+    be said to be holding up, and the result says so (`answered`), so no question that begins
+    "it is holding itself up" is put over it. It used to say it answered whatever the hold
+    found."""
+    arm = FakeArm(step=40.0, stuck=("shoulder_lift",))
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    hold = transport._hold
+
+    async def goes_silent() -> None:
+        arm.dead = True  # the supply cut as the fold stalled
+        await hold()
+
+    transport._hold = goes_silent  # type: ignore[method-assign]
+    parked = await transport.go_to_rest()
+    assert parked.how == "stalled", parked
+    assert parked.answered is False, "a stall nothing read back was said to have answered"

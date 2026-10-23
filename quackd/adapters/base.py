@@ -176,10 +176,12 @@ async def let_go_if_any(transport: Any, **kw: Any) -> HandResult:
     Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of nine does
     this, and the other eight should not have to carry a method to say so.
 
-    `kw` goes to the body's own `let_go` untouched, and the one keyword the arm takes is
-    `anywhere`: True skips the rule that it is released only at its rest pose, for the two
-    callers a person drives from a terminal, `quackd robot release` and the offer at the end
-    of a run whose rest move missed. Nothing passes it without a person at the arm. The
+    `kw` goes to the body's own `let_go` untouched, and the arm takes two keywords. `anywhere`
+    skips the rule that it is released only at its rest pose, for the question that drops it,
+    which `quackd robot release` and the end of a run put to a person at a terminal only after
+    two folds missed (`quackd.release`). `asked` keeps that rule, for `quackd robot release`
+    once its fold arrives, and changes only what the close says: that the arm was folded and
+    let go of because the person asked. Nothing passes either without a person at the arm. The
     keywords are passed only when given, so a body whose `let_go` takes none is called exactly
     as it always was."""
     hand = getattr(transport, "let_go", None)

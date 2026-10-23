@@ -2868,6 +2868,44 @@ def test_no_page_repeats_a_claim_about_the_arms_torque_the_code_never_made() -> 
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
 
 
+#: What the pages said about releasing the arm before ADR-0058, when `quackd robot release` and
+#: the end of a run took torque off wherever the arm stood, each beside what the code does now.
+#: Checked against the living pages only: the CHANGELOG and the ADRs keep them as history.
+_RELEASE_CLAIMS_RETIRED_BY_ADR_0058 = (
+    (
+        "the release then lets the arm fall from wherever it is",
+        "`quackd robot release` folds the arm to its rest pose and lets go there; only Enter at "
+        "the question after two missed folds lets go where it stands",
+    ),
+    (
+        "Hold it and press Enter to release torque now",
+        "a run whose fold missed asks first to clear the arm's way and fold it once more, and "
+        "only then whether to drop it (`quackd.release.CLEAR_THE_WAY`)",
+    ),
+    (
+        "to park it, or cut its power",
+        "the close's torque line names `quackd robot release`, which parks the arm itself, and "
+        "no longer `doctor --robot` (`verbs.TORQUE_LEFT_ON`)",
+    ),
+    (
+        "RELEASE_OFFER",
+        "the end-of-run offer is two questions now, waiting `quackd.release.CLEAR_THE_WAY_S` and "
+        "`ENTER_DROPS_S`",
+    ),
+)
+
+
+def test_no_living_page_says_the_release_drops_the_arm_first() -> None:
+    """ADR-0058: releasing the arm means folding it first. A page that still tells a person the
+    release lets the arm fall, or that Enter at the end of a run drops it, sends them to hold an
+    arm that is about to fold, or straight past the question that asks them to clear its way."""
+    for path in _living_docs():
+        text = _one_line(path.read_text(encoding="utf-8"))
+        for wrong, true in _RELEASE_CLAIMS_RETIRED_BY_ADR_0058:
+            if wrong in text:
+                pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
+
+
 def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step() -> None:
     """0.15.0 built the follower to keep torque on a disconnect quackd did not ask for, so a
     second Ctrl-C during the fold back to the rest pose leaves the arm holding where 0.14.0

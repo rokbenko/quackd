@@ -26,10 +26,14 @@ joint was `shoulder_lift`, and the cure is to calibrate with the arm folded and 
 pose again, which is sections 05 and 07 of
 [adapters/lerobot/first-run.md](../../adapters/lerobot/first-run.md).
 
-A run whose rest move missed ends with the arm holding itself up. At a terminal it offers first
-to take torque off where the arm stands: hold the arm and press Enter, or leave it for 60
-seconds and torque stays on. After that, hold the arm and run `quackd robot release arm-01`,
-because connecting takes torque off every motor for a moment.
+A run whose rest move missed leaves the arm holding itself up. At a terminal it asks first:
+clear whatever is in the arm's way and press Enter, and it tries the fold once more, letting go
+of the arm at its rest pose if it gets there. Only if that fold misses too does it ask again,
+and Enter at that second question takes torque off where the arm stands, so hold it first,
+because it drops. Leave either question for 60 seconds and torque stays on. After that, clear
+its way and run `quackd robot release arm-01`, which folds the arm to its rest pose and lets go
+of it there: support the arm while it connects, because connecting takes torque off every motor
+for a moment. None of this has run on an arm yet.
 
 118 of these files give the pilot a part to play, a feeling to show or a question to answer with
 its body, rather than a change to make on the table. They are `duck: 4` files with `play: true`,

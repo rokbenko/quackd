@@ -29,9 +29,11 @@ from quackd_lerobot.verbs import (
     GRIPPER_OPEN,
     IN_HAND_NOT_MOVED,
     JOINTS,
+    LET_GO_AT_REST,
     LET_GO_TO_PLACE,
     LET_GO_WHERE_IT_STOOD,
     LIMP_AT_REST,
+    LIMP_AT_REST_AS_ASKED,
     LIMP_IN_HAND,
     MANIPULATE_S,
     NO_INSTRUCTION,
@@ -182,8 +184,9 @@ class LeRobotMock(MockTransport):
         backend's `_refused_hold`. The stop takes hold of an arm in a hand only while this is
         None, and the close reads its `energised`."""
         self.release_refused = False
-        """The last release a person asked for through the second door was refused, as on the
-        real backend: the close then does not send them back to it."""
+        """The last release a person asked for, through the second door or through the first
+        with `asked`, was refused, as on the real backend: the close then does not send them
+        back to it."""
         self.sequence: list[str] = []
         """`stop`, `rest` and `close` in the order they were called. A run's teardown is an
         order as much as a set, and this is what a test reads to check it."""
@@ -442,22 +445,25 @@ class LeRobotMock(MockTransport):
             result = RestResult(result.how, result.reason, clipped, note)
         return result
 
-    async def let_go(self, *, anywhere: bool = False) -> HandResult:
+    async def let_go(self, *, anywhere: bool = False, asked: bool = False) -> HandResult:
         """Torque off for a person to place the arm, refused wherever the real one refuses.
 
         `anywhere` is the real backend's second door, opened the same way: the two refusals
         about the pose are skipped and the arm is released where it stands, in the same words,
-        so a rehearsal of `quackd robot release` or of the end-of-run offer says what the arm
-        would. An in-memory release takes wherever `release_holdouts` does not say otherwise,
-        and those motors read on afterwards in the real backend's words, and is read back
-        unless `release_unread` says the read did not answer.
+        so a rehearsal of the question that drops the arm says what the arm would. `asked` is
+        the first door opened for a person who asked for torque off at the rest pose, as
+        `quackd robot release` does once its fold arrives: the same refusals as the default,
+        and the close's own words afterwards. An in-memory release takes wherever
+        `release_holdouts` does not say otherwise, and those motors read on afterwards in the
+        real backend's words, and is read back unless `release_unread` says the read did not
+        answer.
 
         `release_refused` is set where a refusal is returned and nowhere else, as on the real
         backend, whose release an interrupt can land on before anything is sent."""
         self.sequence.append("let_go")
 
         def refused(reason: str, **kw: Any) -> HandResult:
-            self.release_refused = anywhere
+            self.release_refused = anywhere or asked
             return HandResult("refused", reason, **kw)
 
         if not anywhere and self.rest_pose is None:
@@ -489,7 +495,7 @@ class LeRobotMock(MockTransport):
         self.torque = holding == JOINTS
         self.in_hand = True
         self.hold_refusal = None
-        self.let_go_why = LET_GO_WHERE_IT_STOOD if anywhere else None
+        self.let_go_why = LET_GO_WHERE_IT_STOOD if anywhere else LET_GO_AT_REST if asked else None
         if self.release_unread is not None:
             # sent, and nothing read it back: the real backend's words for a read-back whose
             # torque register did not answer, and what the motors did is not known
@@ -621,8 +627,16 @@ class LeRobotMock(MockTransport):
                 self.close_note = UNCONFIRMED_IN_HAND if wrote else UNREAD_IN_HAND.format(why=limp)
             elif self.holding_in_hand:
                 self.close_note = still_holding_in_hand(self.holding_in_hand, limp)
-            elif goal and at_rest(goal, self.joints, recorded) and not self.let_go_why:
-                self.close_note = LIMP_AT_REST
+            elif (
+                goal
+                and at_rest(goal, self.joints, recorded)
+                and self.let_go_why
+                in (
+                    None,
+                    LET_GO_AT_REST,
+                )
+            ):
+                self.close_note = LIMP_AT_REST if self.let_go_why is None else LIMP_AT_REST_AS_ASKED
             else:
                 self.close_note = LIMP_IN_HAND.format(why=limp)
         elif self.rest_pose and not goal:

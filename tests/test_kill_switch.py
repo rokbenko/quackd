@@ -236,3 +236,82 @@ async def test_a_run_with_no_reader_at_all_does_not_wait_for_one(
         assert await asyncio.wait_for(ks.wait_for_enter(timeout_s=None), timeout=2) is False
     finally:
         ks.uninstall()
+
+
+# ── a question whose Enter moves or drops an arm ────────────────────────────────────
+
+
+@pytest.mark.parametrize("deliberate", [False, True])
+async def test_a_press_during_a_wait_is_never_an_enter(
+    monkeypatch: pytest.MonkeyPatch, deliberate: bool
+) -> None:
+    """A terminal in its usual mode hands `q` to the key thread only with the Enter that sends
+    its line, so a press and an Enter arrive together. The wait used to answer True whenever
+    both were in by the time it looked: `q`, the key that stops a run, read as a yes, at the
+    question whose yes drops the arm. A press is never an Enter, at any wait."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    ks, _ = switch()
+
+    def q_and_its_enter() -> None:
+        ks._fire("'q' pressed")
+        ks._heard_enter("q")
+
+    asyncio.get_running_loop().call_later(0.02, q_and_its_enter)
+    got = await ks.wait_for_enter(timeout_s=2.0, until_abort=False, deliberate=deliberate)
+    assert got is False, "q was taken for Enter"
+
+
+@pytest.mark.parametrize(("typed", "yes"), [("", True), ("n", False), ("no", False), ("y", False)])
+async def test_a_deliberate_question_takes_only_a_bare_enter(
+    monkeypatch: pytest.MonkeyPatch, typed: str, yes: bool
+) -> None:
+    """Every line ends in Enter, so the key thread used to take `n` and Enter for Enter, and an
+    arm with no rest pose was connected to and dropped on a person saying no. A question whose
+    Enter moves or drops an arm takes only a bare one: anything typed on the line is a no, and
+    says so (`declined`), `y` too, since the question asks for Enter."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    ks, _ = switch()
+    asyncio.get_running_loop().call_later(0.02, ks._heard_enter, typed)
+    got = await ks.wait_for_enter(timeout_s=2.0, until_abort=False, deliberate=True)
+    assert got is yes, typed
+    assert ks.declined is (not yes), typed
+
+
+async def test_an_ordinary_wait_still_takes_any_line_as_enter() -> None:
+    """`--by-hand`'s waits are about placing an arm, not dropping one, and a line typed there is
+    still the Enter it always was."""
+    ks, _ = switch()
+    asyncio.get_running_loop().call_later(0.02, ks._heard_enter, "placed it")
+    assert await ks.wait_for_enter(timeout_s=2.0) is True
+
+
+async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The key thread reads whatever is already in the terminal as it starts, and an Enter typed
+    while a command was starting used to answer the first question it asked. One read within
+    `TYPED_AHEAD_S` of the question being put is passed by, and the wait goes on to the next."""
+    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.2)
+    ks, _ = switch()
+    ks._heard_enter("")  # already in the terminal when the question was put
+    loop = asyncio.get_running_loop()
+    loop.call_later(0.05, ks._heard_enter, "")  # still too soon to have read it
+    loop.call_later(0.4, ks._heard_enter, "")  # the answer
+    started = time.perf_counter()
+    assert await ks.wait_for_enter(timeout_s=3.0, until_abort=False, deliberate=True) is True
+    assert time.perf_counter() - started >= waited(0.4), "an Enter typed ahead answered it"
+
+    quiet, _ = switch()
+    quiet._heard_enter("")
+    assert await quiet.wait_for_enter(timeout_s=0.4, until_abort=False, deliberate=True) is False
+    assert quiet.declined is False, "a question nobody answered was filed as a no"
+
+
+async def test_the_key_thread_records_each_line_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What was typed on each line is what a deliberate question reads, and a terminal that
+    ends its lines with a carriage return and a newline has sent one Enter, not two: the
+    second, an empty line, would otherwise be read as the bare Enter after an `n`."""
+    ks, _ = switch()
+    await feed(ks, "n\r\nyes\n\n", monkeypatch)
+    assert [text for _at, text in ks._enters] == ["n", "yes", ""]
+    assert ks.presses == 0

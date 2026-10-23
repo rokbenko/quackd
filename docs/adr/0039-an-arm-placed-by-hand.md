@@ -82,6 +82,16 @@ leaves the arm in a hand instead of reporting it released in nobody's, and a rea
 `HandResult.torque_on` names the motors that still read on, so nobody is told torque reads off
 over a joint that kept it.
 
+**Amended 2026-10-23 by [ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md):** the second door no longer opens at a
+person's first word, because it drops the arm. `quackd robot release` folds the arm to its rest
+pose and lets go there through the first door (`let_go(asked=True)`), and a fold that misses,
+there or at the end of a run, is settled by two questions in this order: clear the arm's way and
+press Enter to fold it once more, and only if that fold misses too, Enter at a question that says
+the arm will drop and to hold it first. `let_go(anywhere=True)` is that Enter, and Enter at the
+one question asked before connecting to an arm with no rest pose. Anything but Enter keeps torque
+on. `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are gone; the waits are
+`quackd.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`, 60 s each.
+
 ## Context
 
 Every run of an SO-101 has started the same way since the arm had an adapter: quackd drives it

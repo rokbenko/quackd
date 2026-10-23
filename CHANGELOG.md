@@ -9,14 +9,85 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Changed
+
+- **Releasing the SO-101 means folding it first.** `quackd robot release NAME` folds the arm to
+  its recorded rest pose and lets go of it there, through the door that refuses anywhere but that
+  pose, where 0.14.0's command took torque off wherever the arm stood and let it fall into
+  whoever was holding it. Its warning, printed before it connects, says to support the arm while
+  it connects and then to take your hands away when it says so, and once connected it says it
+  folds in 3 seconds (`quackd.release.HANDS_AWAY_S`), which is when the hands come away; the
+  close ends on
+  `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`.
+  Ctrl-C or `q` during those seconds, or during the fold, stops it where it is and keeps torque
+  on.
+  [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md).
+- **A fold that misses asks twice before anything drops**, in `quackd robot release` and at the
+  end of a run, where the run used to offer one Enter that released the arm where it stood. The
+  first question asks you to clear whatever is in the arm's way and press Enter, and it folds once
+  more; only if that fold misses too does the second say that Enter now takes torque off where it
+  stands and that the arm will drop, so hold it first. Anything but Enter, at either, keeps torque
+  on: a wait that runs out (60 s each), a Ctrl-C, a `q`, a terminal with nothing to read. Neither
+  is put over an arm that stopped answering. `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are
+  gone (`quackd.release`), and the record's `release` events gain the stages `refold` and
+  `folded` and the `kept` reasons `interrupted during the fold` and
+  `the arm did not answer the second fold`.
+- **`quackd robot release --yes` skips only the question before the connect.** The two
+  questions are still put wherever a terminal can prompt. With none, a fold that arrives lets go
+  at the pose, and one that misses keeps torque on and exits 1.
+- **An arm with no rest pose is asked about before `quackd robot release` connects to it**,
+  because its close lets go of it wherever it stands: Enter connects and drops it into your hands,
+  anything else connects nothing. With no terminal the command refuses, `--yes` or not.
+- **The close's line for an arm left holding itself up names one way out**: clear its way and run
+  `quackd robot release NAME`, which folds it and lets go at the pose, supporting the arm while
+  that connects, or cut its power. It no longer names `quackd doctor --robot NAME` to park it.
+
+### Fixed
+
+- **A `q`, or any line typed at the end-of-run offer, released the arm.** The kill switch's key
+  thread took every line for Enter, so `n` and Enter was a yes, and a terminal in its usual mode
+  hands `q` over only with the Enter that sends its line, so the key that stops a run was read as
+  Enter too. A press of the kill switch is never an Enter now, at any wait, and a question whose
+  Enter moves or drops an arm takes only a bare Enter: anything typed on the line is a no, and
+  the record says `answered no`.
+- **An Enter typed before a question answered it.** The key thread reads whatever is already in
+  the terminal as it starts, so an Enter pressed while a command was starting answered the first
+  question it put. A question that moves or drops an arm passes by an Enter read within half a
+  second of being put (`quackd.safety.TYPED_AHEAD_S`).
+
 ### Documentation
 
+- **The SO-101's release, on every page that told it.** The LeRobot page's
+  [Releasing it](docs/adapters/lerobot/README.md#releasing-it) (the old anchor still works), the
+  first run, the hardware checklist, safety, the registry guide and the README say that releasing
+  folds first and what the two questions are, with output captured on `lerobot:mock`.
+  [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md) records Rok's
+  decisions, and ADR-0039 and ADR-0045 carry dated amendments.
 - **Robot Passport's phase 7, planned in the repository.**
   [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md) says what each of
   its six pieces is, what is decided and what is left to decide, where its code goes, what done
   means and what it needs, then how the spec moves to its own repository and what else is open,
   and PLAN.md points to it. `scripts/passport_readme_ratio.py` measures the README's Robot
   Passport section against the pages it summarises.
+
+### Known limitations
+
+- **None of the folding release has run on an arm.** The fold before `quackd robot release`
+  lets go, both questions, a Ctrl-C during a fold and the release where the arm stands are
+  exercised against `lerobot:mock`, a fake arm and the simulator. The bench steps that would
+  settle them, in order, with a hand on the power switch throughout:
+  1. `quackd robot release arm-01` on an arm a run left holding itself up away from its pose:
+     support it through the connect, take your hands away, and say whether it folds and is let
+     go of at the pose, and whether it then rests there limp.
+  2. Something soft in the fold's path: the stall, the first question, Enter once it is cleared,
+     and whether the second fold arrives.
+  3. The path kept blocked: the second question; hold the arm and press Enter; say how far it
+     drops and whether one hand catches it.
+  4. Each question left for its 60 s: torque stays on and the arm holds where its fold stopped.
+  5. Ctrl-C during the release's fold: the arm stops and holds; say how far it went on after
+     the press.
+  6. A run whose teardown fold is held back by a hand: the first question, the hand taken away,
+     Enter, and the close letting go at the pose.
 
 ## [0.23.0] — 2026-10-21
 

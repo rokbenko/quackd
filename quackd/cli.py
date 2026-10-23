@@ -17,7 +17,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1157,6 +1157,7 @@ class _TerminalHandOff:
         "no keys": "(no key could be read, so the wait ended without an Enter)",
         "stopped": "(the run was stopped, which ended the wait without an Enter)",
         "timeout": "(nobody answered: the wait ran out without an Enter)",
+        "declined": "(a line was typed rather than a bare Enter, which is a no)",
     }
     """What the saved terminal says about each way a wait ends, since none of them printed."""
 
@@ -1167,8 +1168,9 @@ class _TerminalHandOff:
         key thread, or stdin finished), `stopped` (an abort nobody pressed, on a wait that
         watches the abort flag) or `timeout`. `wait` still answers with a bool, which is
         all the first `--by-hand` wait needs, since it watches the abort flag and reads that
-        after a False. The two waits that watch a fresh key press instead, the hand-back at the
-        end of a `--by-hand` run and the end-of-run offer, read this as well, because the abort
+        after a False. The waits that watch a fresh key press instead, the hand-back at the end
+        of a `--by-hand` run and the two questions about a fold that missed (`quackd.release`),
+        at the end of a run and in `quackd robot release`, read this as well, because the abort
         flag is set on every run a person ended and says nothing about this wait, and a record
         that files a Ctrl-C under "nobody answered" says the room was empty when somebody in it
         pressed a key."""
@@ -1183,7 +1185,12 @@ class _TerminalHandOff:
             ui.err_console.print(Text(text, style=ui.STYLES["warn"]))
 
     async def wait(
-        self, text: str, *, timeout_s: float | None = None, until_abort: bool = True
+        self,
+        text: str,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
     ) -> bool:
         if self.switch is None:  # `bind` runs before the loop does, so this is a bug if hit
             raise RuntimeError("the hand-off has no kill switch to read Enter from")
@@ -1193,11 +1200,15 @@ class _TerminalHandOff:
         # press is counted on the signal's own thread before the loop is told of it, so one
         # that ended this wait has always been counted by the time it returns
         presses = self.switch.presses
-        came = await self.switch.wait_for_enter(timeout_s=timeout_s, until_abort=until_abort)
+        came = await self.switch.wait_for_enter(
+            timeout_s=timeout_s, until_abort=until_abort, deliberate=deliberate
+        )
         if came:
             self.ended = "enter"
         elif self.switch.presses > presses:
             self.ended = "kill switch"
+        elif self.switch.declined:
+            self.ended = "declined"
         elif self.switch.keys_ended.is_set():
             self.ended = "no keys"
         elif until_abort and self.switch.abort.is_set():
@@ -1209,6 +1220,29 @@ class _TerminalHandOff:
         # half: a hand-off that timed out is why the arm was left where it was.
         ui.note(self.WAIT_ENDED[self.ended])
         return came
+
+    def stopped(self) -> Awaitable[None]:
+        """What returns when the kill switch fires from now on: a fresh Ctrl-C or `q`.
+
+        How a person stops a fold they asked for (`quackd.release.fold_unless_stopped`), at the
+        end of a run and in `quackd robot release`. Counted the way `wait` counts presses, so a
+        press from before this was asked is not taken for one made now, and counted when this is
+        called rather than when what it returns first runs: the fold is started straight after,
+        and a press made as it starts used to fall in between and be taken for an old one. After
+        the switch's first press, SIGINT goes back to the event loop's own handler, and every
+        later Ctrl-C reaches the fold as a cancellation instead, which its caller catches; `q`
+        reaches the switch every time, so this is what hears it."""
+        if self.switch is None:  # `bind` runs before anything is folded, so a bug if hit
+            raise RuntimeError("the hand-off has no kill switch to watch")
+        switch = self.switch
+        presses = switch.presses
+
+        async def fresh_press() -> None:
+            while switch.presses == presses:
+                switch.pressed.clear()
+                await switch.pressed.wait()
+
+        return fresh_press()
 
 
 _SWITCH: KillSwitch | None = None
@@ -2211,8 +2245,9 @@ def _run_impl(
             _verbose_line(msg)
 
     hand_off = _TerminalHandOff() if by_hand else None
-    # Whoever is at this terminal, for the one question a run can put at its very end: the
-    # rest move missed, and would they like torque off while they hold the arm. Not `hand_off`,
+    # Whoever is at this terminal, for the two questions a run can put at its very end, when
+    # the rest move missed: clear the way and fold once more, and only if that misses too,
+    # drop it into their hands (`quackd.release`). Not `hand_off`,
     # which the loop reads as "this run is handed over by hand", but the same object when
     # there is one, so a run reads Enter through one reader. None without a terminal to ask on
     # and on a dry run, which moves nothing and so has no rest move to miss.
@@ -5421,29 +5456,45 @@ def _connect_warning(*, simulator: bool = False) -> str:
     return f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
 
 
-def _release_warning(*, simulator: bool = False) -> str:
-    """Said before anything connects, and before the question, because both halves happen to
-    an arm a person has to be holding already. The first is upstream's (`configure()` runs
+def _release_warning(*, simulator: bool = False, folds: bool = True) -> str:
+    """Said before anything connects, and before the question, because the connect happens to
+    an arm a person has to be supporting already. That half is upstream's (`configure()` runs
     inside `torque_disabled()`), and it is the reason this cannot wait until after the
-    connect: by then the arm has already been limp once. On a simulator the simulated arm
-    falls, and nobody holds it."""
+    connect: by then the arm has already been limp once.
+
+    The other half is what comes after the connect. An arm with a rest pose (`folds`) is folded
+    to it and let go of there, so the person is told to take their hands away before it moves:
+    a hand still under it is in the fold's path, and the fold is the part that moves. One with
+    none has nothing to fold to, and its own question, which says it drops, comes before the
+    connect. On a simulator the simulated arm folds, or falls, and nobody holds it."""
     if simulator:
+        if folds:
+            return (
+                f"{_connect_warning(simulator=True)}, and the simulated arm then folds to its "
+                "rest pose and is let go of there, with no arm to hold"
+            )
         return (
             f"{_connect_warning(simulator=True)}, and the release then lets the simulated arm "
             "fall from wherever it is, with no arm to hold"
         )
+    if folds:
+        return (
+            f"{_connect_warning()}, and the arm then folds to its rest pose and is let go of "
+            "there: support it while it connects, then take your hands away when it says so, "
+            "before it folds"
+        )
     return (
-        f"{_connect_warning()}, and the release then lets the arm fall from wherever it is: "
-        "hold it now, and keep hold of it until it is down"
+        f"{_connect_warning()}, and with no rest pose recorded there is nothing to fold it to: "
+        "you are asked before anything connects"
     )
 
 
 def _doctor_warning(*, simulator: bool = False) -> str:
     """`_release_warning`'s first half, for `doctor --robot` on a body handed to people. A
-    probe connects, and an arm left holding itself up, which is when its close note sends a
-    person to `doctor`, is limp for that moment like any other, so the person is told to
-    support it before the connect rather than finding out during it. A simulator has no arm
-    to support, and the line says so rather than asking for a hand under one."""
+    probe connects, and an arm left holding itself up is limp for that moment like any other,
+    so the person is told to support it before the connect rather than finding out during it.
+    A simulator has no arm to support, and the line says so rather than asking for a hand under
+    one."""
     if simulator:
         return f"{_connect_warning(simulator=True)}, and there is no arm to support"
     return f"{_connect_warning()}: support the arm until doctor has finished with it"
@@ -5453,21 +5504,50 @@ def _doctor_warning(*, simulator: bool = False) -> str:
 def robot_release(
     name: str = _ROBOT_NAME,
     yes: bool = typer.Option(
-        False, "--yes", "-y", help="Do not ask. Hold the arm before you run it: nothing waits."
+        False,
+        "--yes",
+        "-y",
+        help=(
+            "Do not ask before it connects and folds. A fold that misses still asks at a "
+            "terminal, twice, before anything drops, and an arm with no rest pose is still asked "
+            "about before it connects; with no terminal, a missed fold keeps torque on and exits "
+            "1."
+        ),
     ),
     address: str | None = _ADDR,
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
-    """Take torque off this arm wherever it stands, while you hold it.
+    """Fold this arm to its rest pose and take torque off there.
 
     For an arm left holding itself up, which is what a run does when it cannot get the arm back
-    to its rest pose: hold the arm, run this, and put it down. It says what connecting and
-    releasing do to the arm, asks, and only then connects, prints the joints, releases, and
-    reads torque back. No verb and no MCP tool can do this: it is a command a person types.
+    to its rest pose, and for any arm you want limp without cutting its power. It says what
+    connecting does to the arm, asks, and only then connects, prints the joints, folds the arm
+    to its recorded rest pose and lets go of it there, reading torque back. Where the fold
+    misses, it asks you to clear the arm's way and folds once more, and only if that misses too
+    does it offer to take torque off where the arm stands, which drops it, so you hold it first.
+    An arm with no rest pose recorded has nothing to fold to, and is asked about before anything
+    connects. Ctrl-C or q stops a fold. No verb and no MCP tool can do this: it is a command a
+    person types.
     """
-    from quackd.adapters.base import AdapterError, HandResult, let_go_if_any
+    from quackd.adapters.base import AdapterError, go_to_rest_if_any, let_go_if_any
     from quackd.adapters.factory import make_adapter
     from quackd.registry import RegistryError
+    from quackd.release import (
+        DROP_UNFOLDED,
+        ENTER,
+        ENTER_DROPS_S,
+        FOLD_INTERRUPTED,
+        FOLD_STOPPED,
+        FOLDING_IN,
+        HANDS_AWAY_S,
+        FoldStopped,
+        Settled,
+        ask,
+        fold_unless_stopped,
+        release_where_it_stands,
+        settle_missed_fold,
+    )
+    from quackd.safety import KillSwitch
     from quackd.transport.base import TransportError
 
     registry = _registry(registry_dir)
@@ -5498,51 +5578,192 @@ def robot_release(
     # the arm's simulator releases a simulated arm, and every line said before its connect
     # says so rather than asking for a hand under an arm that is not there
     simulated = _is_simulator(adapter)
-    if not yes and not _can_prompt():
+    rest = getattr(adapter, "rest_pose", None)
+    prompting = _can_prompt()
+    muted = ui.STYLES["muted"]
+    if rest is None and not simulated and not prompting:
+        # Nothing to fold to, so the one way this command could take torque off is where the
+        # arm stands, which drops it, and that is Enter at a terminal or nothing. Refused before
+        # the warning and whatever --yes says: its close would let go of the arm too.
+        _fail(
+            f"{name} has no rest pose recorded, so there is nothing to fold it to, and taking "
+            "torque off where it stands drops it, which only Enter at a terminal may do",
+            hint="run it from a terminal, or hold the arm and cut its power",
+        )
+        return
+    if not yes and not prompting:
         # refused before the warning, because nothing is going to happen that a person has to
         # get hold of the arm for
         again = f"quackd robot release {name} --yes"
         _fail(
-            "no terminal to ask on: pass --yes to release it",
-            hint=again if simulated else f"hold the arm, then {again}",
+            "no terminal to ask on: pass --yes to fold it to its rest pose and let go there",
+            hint=again,
         )
         return
     # Before anything connects: connecting is the first thing that takes torque off, so a
     # warning printed after it would arrive after the arm had already been limp once.
-    ui.console.print(_warn_line(_release_warning(simulator=simulated)))
-    if not yes:
+    ui.console.print(_warn_line(_release_warning(simulator=simulated, folds=rest is not None)))
+    if not yes and (rest is not None or simulated):
+        # Asked before the key thread exists, so nothing races `input()` for the keystroke. An
+        # arm with no rest pose has its own question, inside, and it is the one that matters.
+        question = (
+            f"fold {name} to its rest pose and release torque there?"
+            if rest is not None
+            else f"release torque on {name}?"
+        )
         with ui.pause_status():
-            if not typer.confirm(f"release torque on {name}?"):
+            if not typer.confirm(question):
                 ui.console.print(
-                    Text(
-                        "  nothing was connected, and the arm is as it was",
-                        style=ui.STYLES["muted"],
-                    )
+                    Text("  nothing was connected, and the arm is as it was", style=muted)
                 )
                 raise typer.Exit()
 
-    async def release() -> tuple[HandResult, str | None]:
-        await adapter.connect()
+    def pressed(_message: str) -> None:
+        """The kill switch's line, which is the run's and names a verb: here it says only that
+        the press registered, since every step says for itself what came of it."""
+        ui.err_console.print(Text("kill switch pressed", style=ui.STYLES["warn"]))
+
+    def fold() -> Any:
+        return go_to_rest_if_any(adapter)
+
+    async def hands_away() -> None:
+        await asyncio.sleep(HANDS_AWAY_S)
+
+    at_rest: list[bool] = []
+    """Whether the release was the one asked for at the rest pose, which the close then says the arm
+    rests limp after, rather than one where the arm stood, which leaves it in a person's hands."""
+
+    async def settle(person: _TerminalHandOff, presses: Callable[[], int]) -> Settled:
+        """Everything between the connect and the close, as one `Settled`."""
+        joints: dict[str, float] = {}
+        with contextlib.suppress(Exception):
+            state = await adapter.get_state()
+            joints = {str(k): float(v) for k, v in dict(state.extras.get("joints", {})).items()}
+        if joints:
+            # where it is before anything moves it, which is where the person is supporting it
+            ui.console.print(Text(f"{label} is at", style=muted))
+            ui.console.print(ui.kv_grid((j, f"{v:.1f}") for j, v in joints.items()))
+        stopped_before = (
+            "stopped before the fold: nothing was moved, and the close lets go of the arm only "
+            "where it reads at its rest pose"
+        )
+        if presses():
+            # a Ctrl-C or `q` while it connected: nothing is moved or released after one
+            said = stopped_before
+            if rest is None and not simulated:
+                # and an arm with no rest pose is let go of where it stands by its close, which
+                # is the drop the person already pressed Enter for, so they are holding it
+                said = (
+                    "stopped before anything else was done, but an arm with no rest pose is let "
+                    "go of where it stands as quackd disconnects from it: keep hold of it and put "
+                    "it down"
+                )
+            return Settled("kept", "stopped before the fold", said=said)
+        if rest is None:
+            # nothing to fold to: the simulator's arm, or a real one after Enter at the question
+            # that said it drops
+            return await release_where_it_stands(adapter)
+        if not simulated:
+            # The hands that supported the arm through the connect come away before it moves:
+            # the fold used to start a few milliseconds after the connect, under them. The
+            # countdown is raced against a press the way the fold is, and one stops the command
+            # with nothing moved.
+            ui.err_console.print(
+                Text(FOLDING_IN.format(name=name, seconds=HANDS_AWAY_S), style=ui.STYLES["warn"])
+            )
+            try:
+                await fold_unless_stopped(hands_away, person.stopped)
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                return Settled("kept", "stopped before the fold", said=stopped_before)
+        ui.console.print(
+            Text(f"folding {name} to its rest pose: keep your hands out of its way", style=muted)
+        )
         try:
-            joints: dict[str, float] = {}
-            with contextlib.suppress(Exception):
-                state = await adapter.get_state()
-                joints = {str(k): float(v) for k, v in dict(state.extras.get("joints", {})).items()}
-            if joints:
-                # where it is before it goes, which is where the person is holding it
-                ui.console.print(Text(f"{label} is at", style=ui.STYLES["muted"]))
-                ui.console.print(ui.kv_grid((j, f"{v:.1f}") for j, v in joints.items()))
-            # No stop first. A stop picks an arm in somebody's hands back up (`_hold`), and
-            # this arm is about to be in them: the release goes out on its own.
-            released = await let_go_if_any(adapter, anywhere=True)
+            first = await fold_unless_stopped(fold, person.stopped)
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                # holds the arm where the cancelled fold left it, a step cap on at most, and a
+                # second press landing here is caught too, so the close still comes
+                await adapter.stop()
+            return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
+        if first is not None and first.note:
+            # what the body has to say about the pose it parked in, once, as a run says it
+            ui.console.print(Text(first.note, style=muted))
+        if first is not None and first.reached:
+            # the first door, which lets go nowhere but this pose, so it can never drop the arm
+            released = await let_go_if_any(adapter, asked=True)
+            at_rest.append(True)
+            return Settled("released", released.reason, released=released)
+        why = first.reason if first is not None else "the arm has no rest move"
+        if first is None or not first.answered:
+            return Settled(
+                "kept",
+                why,
+                said=(
+                    f"the arm stopped answering during the fold ({why}), so quackd cannot tell "
+                    "whether it is holding itself up: hold it, and cut its power"
+                ),
+            )
+        if simulated or not prompting:
+            whose = "the simulated arm" if simulated else "the arm"
+            return Settled(
+                "kept",
+                why,
+                said=(
+                    f"{whose} did not reach its rest pose ({why}), so torque stays on"
+                    + (
+                        ""
+                        if simulated
+                        else ", and with no terminal to ask on nothing more is tried"
+                    )
+                ),
+            )
+        settled = await settle_missed_fold(adapter, person, first, fold=fold, stop=adapter.stop)
+        if settled.how == "folded":
+            released = await let_go_if_any(adapter, asked=True)
+            at_rest.append(True)
+            return Settled("released", released.reason, released=released, fold=settled.fold)
+        return settled
+
+    async def release() -> tuple[Settled | None, str | None]:
+        """The release, and the close's note. None for an arm with no rest pose whose question
+        was not answered with Enter, which is never connected to."""
+        switch = KillSwitch(asyncio.Event(), log=pressed)
+        person = _TerminalHandOff()
+        person.bind(switch)
+        switch.install()
+        try:
+            if rest is None and not simulated:
+                question = DROP_UNFOLDED.format(name=name, seconds=ENTER_DROPS_S)
+                if await ask(person, question, ENTER_DROPS_S) != ENTER:
+                    return None, None
+            # a Ctrl-C during a connect that is failing ends its retries, as in a run, each of
+            # which would switch torque off on every motor again
+            stop_check = getattr(adapter, "set_stop_check", None)
+            if callable(stop_check):
+                stop_check(switch.abort.is_set)
+            try:
+                await adapter.connect()
+            finally:
+                if callable(stop_check):
+                    stop_check(None)
+            settled: Settled | None = None
+            try:
+                settled = await settle(person, lambda: switch.presses)
+            finally:
+                with contextlib.suppress(Exception):
+                    await adapter.close()
+                # an interrupt went through everything above, so nothing after this runs: the
+                # close's own line, what it did with the torque, is said here or never
+                if settled is None and (close_note := getattr(adapter, "close_note", None)):
+                    ui.console.print(_warn_line(str(close_note)))
+            note = getattr(adapter, "close_note", None)
+            return settled, str(note) if note else None
         finally:
-            with contextlib.suppress(Exception):
-                await adapter.close()
-        note = getattr(adapter, "close_note", None)
-        return released, str(note) if note else None
+            switch.uninstall()
 
     try:
-        released, note = asyncio.run(release())
+        settled, note = asyncio.run(release())
     except (TransportError, OSError) as e:
         where = f" at {kwargs['address']}" if kwargs.get("address") else ""
         after = (
@@ -5553,8 +5774,17 @@ def robot_release(
         _fail(f"{entry.key}{where}: {e}", hint=f"nothing was released by quackd, and {after}")
         return
 
+    if settled is None:
+        ui.console.print(Text("  nothing was connected, and the arm is as it was", style=muted))
+        return
+    released = settled.released
     failed = True
-    if released.ok and released.torque_on == ():
+    if settled.how in ("kept", "interrupted") or released is None:
+        again = f"clear its way and run quackd robot release {name} again"
+        hint = None if settled.said is not None else f"{again}, or hold it and cut its power"
+        line = settled.said or f"torque stays on and nothing was released: {settled.reason}"
+        ui.err_console.print(ui.fail_line(line, hint=hint))
+    elif released.ok and released.torque_on == ():
         failed = False
         ui.console.print(_ok_line(f"torque reads off on every joint of {name}"))
     elif released.torque_on:
@@ -5577,10 +5807,11 @@ def robot_release(
         ui.err_console.print(
             ui.fail_line(
                 f"nothing was released: {released.reason}",
-                hint="run it again, or hold the arm and cut its power",
+                # not "run it again": the close's line follows, and says what holds the arm now
+                hint="hold the arm, and cut its power",
             )
         )
-    if note and simulated:
+    if note and simulated and released is not None:
         # The close note is the real backend's, written for somebody holding a real arm, and
         # the warning above has just told this person that nobody is. The simulator's close
         # let the released arm settle under the model's gravity, so that is the line to end on.
@@ -5588,11 +5819,15 @@ def robot_release(
             Text(
                 "  this was the arm's simulator: the simulated arm settled where the model's "
                 "physics left it when it closed, and there is nothing to put down",
-                style=ui.STYLES["muted"],
+                style=muted,
             )
         )
+    elif note and not failed and at_rest:
+        # the close found it limp at its rest pose, as asked: said, but not as a warning
+        ui.console.print(Text(f"  {note}", style=muted))
     elif note:
-        # after a release this is the limp-in-your-hands line, which is the one to end on
+        # torque kept on away from the pose, or an arm limp in somebody's hands: the line to
+        # end on, and the one a person acts on
         ui.console.print(_warn_line(note))
     if failed:
         raise typer.Exit(code=1)
