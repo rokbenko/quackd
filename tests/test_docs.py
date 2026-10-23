@@ -1468,6 +1468,59 @@ def test_the_readme_starter_table_lists_every_bundled_duck() -> None:
     assert not missing, f"README does not mention: {missing}"
 
 
+def test_no_living_document_claims_the_wrong_number_of_starters() -> None:
+    """`microduck-watch`, `moss-lookout` and `nearby-hello` made eighteen bundled starters, and
+    the README still said fifteen ship with the core and nine of them are `duck: 1`. The starter
+    table has a guard, and the two counts written beside it had none. One of them sits in a
+    comment in a code block, so this reads every page whole rather than only its prose."""
+    from quackd.duckfile.parser import list_bundled_ducks, parse_duck_text
+
+    versions = [
+        parse_duck_text(path.read_text(encoding="utf-8"), str(path)).frontmatter.duck
+        for path in list_bundled_ducks()
+    ]
+    counts = {
+        "{w} ship with the core": len(versions),
+        "of the {w} bundled starters": len(versions),
+        "the {w} written before 0.4": versions.count(0),
+        "the {w} written since are `duck: 1`": versions.count(1),
+    }
+    for path in _living_docs():
+        text = path.read_text(encoding="utf-8").lower()
+        for shape, right in counts.items():
+            for count, word in _NUMBER_WORDS.items():
+                if count == right:
+                    continue
+                claim = shape.format(w=word)
+                assert claim not in text, (
+                    f"{path.relative_to(REPO)} says {claim!r}; the bundled starters make it "
+                    f"{_NUMBER_WORDS.get(right, right)}"
+                )
+
+
+def test_the_arm_guide_gives_the_duck_it_has_the_reader_load() -> None:
+    """M09 of the arm's first-run guide has the reader load `arm-look.duck` over MCP and quotes
+    what loading it answers, down to `step 0/8, llm calls 0/8, 0.0/3 min`, and the file itself
+    was nowhere, not on the page and not in `ducks/`. The page gives it now, straight after the
+    sentence that names it, and this holds the file to that sentence and to the budget the
+    quoted note shows."""
+    from quackd.duckfile.parser import parse_duck_text
+
+    guide = (REPO / "docs" / "adapters" / "lerobot" / "first-run.md").read_text(encoding="utf-8")
+    named = guide.index("The file is `arm-look.duck`")
+    after = guide[guide.index("\n\n", named) + 2 :]
+    fence = "```markdown\n"
+    assert after.startswith(fence), "M09 names arm-look.duck and does not give it"
+    text = after[len(fence) : after.index("\n```", len(fence))]
+    contract = parse_duck_text(text, "arm-look.duck").frontmatter
+    assert contract.name == "arm-look"
+    assert contract.robots == "lerobot:mock"
+    assert contract.verbs.allow == ["observe", "report_state", "stop"]
+    budgets = contract.budgets
+    assert (budgets.max_steps, budgets.max_minutes, budgets.max_llm_calls) == (8, 3, 8)
+    assert "step 0/8, llm calls 0/8, 0.0/3 min" in guide, "M09 no longer quotes that budget"
+
+
 def test_no_living_document_quotes_an_exact_test_count() -> None:
     """CONTRIBUTING said 445 while 451 ran, and no test could see it.
 

@@ -1859,6 +1859,16 @@ project's laptop an ACT kept up and SmolVLA did not
 GPU through an ssh tunnel, which policies there are and under what licences, and recording the 50 to
 200 episodes a policy for your own task learns from with LeRobot's own tools.
 
+**A latency the chunk cannot carry is refused.** `serve` and `check` refuse a latency of 5 s or
+more, since a segment gives up waiting for its first chunk after that, and one longer than half a
+chunk's actions, rounded down, take to play, since a segment asks for the next chunk only once the
+last has landed and past half a chunk the arm has nothing to play for part of every chunk. Each
+refusal says the longest latency the chunk allows, so serve the policy with that or less, or where
+it answers faster. A server an earlier quackd started with such a latency still declares it, and
+the arm refuses to connect to it before any motor is energised, saying how many ticks of every
+chunk it would starve and the longest `--latency-s` to start it again with. Nothing overrides that
+refusal ([the arm's page](README.md#whether-the-policy-fits-the-arm)).
+
 **On the arm**, the same commands with `--robot arm-01`, and step 18 of
 [the hardware checklist](hardware-checklist.md) in that order: a policy that holds the
 arm still, then the sweep, then a checkpoint. A policy moves no joint faster than a verb may,
@@ -1898,10 +1908,12 @@ quackd chooses no model here and reads no key of yours.
 >
 > [Section 17](#17-optional-hand-the-arm-to-a-learned-policy) has no mirror either. Its server is
 > the same from here, and `quackd serve-mcp --robot arm-01-sim --policy-url
-> http://127.0.0.1:9875 --yes` hands Claude a `manipulate` the policy runs. `--yes` is not
-> optional, since both verbs a policy runs are confirm gated. `--controller vla` is refused over
-> MCP, because Claude is the pilot here and a vla run needs a person at a terminal to say
-> whether the arm did the task ([guides/mcp.md](../../guides/mcp.md)).
+> http://127.0.0.1:9875 --yes` hands Claude a `manipulate` the policy runs. The rule on a policy's
+> latency holds here too: the arm refuses to connect to a server that declares one longer than half
+> a chunk, before any motor is energised, and says the longest `--latency-s` to start it again
+> with. `--yes` is not optional, since both verbs a policy runs are confirm gated.
+> `--controller vla` is refused over MCP, because Claude is the pilot here and a vla run needs a
+> person at a terminal to say whether the arm did the task ([guides/mcp.md](../../guides/mcp.md)).
 
 The steps below are numbered `M00` to `M14` and they mirror Part 1's `00` to `14`, so if you
 have just walked the terminal path you will recognise every one of them. Where a step is the
@@ -2833,8 +2845,34 @@ mock's static manifest always declares its camera, so the file used below, which
 the tool that loaded it.
 
 The file is `arm-look.duck`, and it allows `observe`, `report_state` and `stop`, eight steps, three
-minutes. Ask the client to load it by absolute path, which is the model calling
-`robot_load_duckfile`, and the `note` that comes back reads, on the mock arm again:
+minutes:
+
+```markdown
+---
+duck: 1
+name: arm-look
+description: Look through the camera and say what is in front of the arm, moving nothing.
+robots: lerobot:mock
+requires: [observe, report_state]
+verbs:
+  allow: [observe, report_state, stop]
+  confirm: []
+budgets: {max_steps: 8, max_minutes: 3, max_llm_calls: 8}
+success:
+  - You have said what the camera shows and where the joints are, and moved nothing.
+abort_when:
+  - Same verb fails 3 times in a row
+---
+
+# Task
+
+You are a six-joint robot arm bolted to a desk, with a webcam watching the bench. Do not move.
+Look once with `observe`, read your joints with `report_state`, and say in one sentence what the
+camera shows and where the joints are.
+```
+
+Ask the client to load it by absolute path, which is the model calling `robot_load_duckfile`, and
+the `note` that comes back reads, on the mock arm again:
 
 ```
 "note": "The executor now enforces this contract for every call to arm-01. This is a new task: assess it with robot_assess_task before anything moves. What this session already spent still counts: step 0/8, llm calls 0/8, 0.0/3 min."

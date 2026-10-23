@@ -17,6 +17,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   means and what it needs, then how the spec moves to its own repository and what else is open,
   and PLAN.md points to it. `scripts/passport_readme_ratio.py` measures the README's Robot
   Passport section against the pages it summarises.
+- **The arm's first-run guide shows the task file it has you load, and says which policy
+  latencies are refused.** M09 had the reader load `arm-look.duck` over MCP and quoted what
+  loading it answers, and the file was nowhere. It is on the page now, and loaded through
+  `robot_load_duckfile` on `lerobot:mock` it answers the quoted note word for word. Section 17,
+  and Part 2's note on it, now say what 0.16.1 made `quackd policy serve` and `check` refuse, a
+  latency of 5 s or more or one longer than half a chunk's actions take to play, and that the
+  arm refuses to connect to a server an earlier quackd started with such a latency, before any
+  motor is energised. The README counted fifteen bundled starters, nine of them `duck: 1`, where
+  eighteen ship and twelve are. Two tests in `tests/test_docs.py` hold the guide's file to the
+  budget it quotes and every page's starter counts to the starters that ship.
 
 ## [0.23.0] — 2026-10-21
 
