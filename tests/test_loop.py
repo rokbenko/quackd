@@ -3637,7 +3637,10 @@ async def test_the_second_fold_waits_out_no_pause_and_both_questions_take_a_bare
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
     person = ScriptedPerson(mock, answers=[True, False])
     await run_duck(_missing_run(mock, tmp_path, person=person))
-    assert pauses[-1] is False and all(pauses[:-1]), pauses
+    # the start of the run waits out a pause before its fold; the teardown waits out every
+    # pause itself, just before its folds, and the folds race a press, which that wait would
+    # swallow, so neither of the teardown's folds waits again (`_teardown_fold`)
+    assert pauses[0] is True and not any(pauses[1:]), pauses
     assert person.deliberate == [True, True], person.deliberate
 
 
@@ -5438,8 +5441,11 @@ async def test_a_connection_that_never_answered_is_not_asked_again(
 ) -> None:
     """A connection that failed before the model answered once is as often a wrong address or
     a server that is not running as a dropped one, and two minutes of asking again help
-    neither: the run ends at once with the provider's own error, and a note says why."""
-    provider = FlakyProvider([sdk.wrapped(sdk.APIConnectionError("Connection error."))])
+    neither. It gets the two quick tries the SDK used to give it, half a second and a second
+    apart, and when those fail too the run ends with the provider's own error, and a note says
+    why."""
+    lost = [sdk.wrapped(sdk.APIConnectionError("Connection error.")) for _ in range(3)]
+    provider = FlakyProvider(lost)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     with pytest.raises(ProviderError, match="the provider's own words"):
@@ -5452,10 +5458,26 @@ async def test_a_connection_that_never_answered_is_not_asked_again(
                 runs_dir=tmp_path,
             )
         )
-    assert instant_waits == []
+    assert instant_waits == list(loop_module.FIRST_CONNECTION_TRIES_S)
     notes = [e["text"] for e in _events(run_dir, "note")]
-    said = loop_module.GAVE_UP_NEVER_ANSWERED.format(why="no connection")
+    said = loop_module.GAVE_UP_NEVER_ANSWERED.format(why="no connection", tries=3)
     assert said in notes, notes
+    asking = loop_module.ASKING_AGAIN.split("(")[0]
+    assert not any(note.startswith(asking) for note in notes), "a quick try is not announced"
+
+
+async def test_a_first_connection_that_comes_back_on_a_quick_try_runs_on(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """The SDKs no longer retry a call of their own (`NO_SDK_RETRIES`), so the quick try they
+    gave a dropped first connection is the loop's: half a second, and the run goes on."""
+    provider = FlakyProvider([sdk.wrapped(sdk.APIConnectionError("Connection error."))])
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert instant_waits == [loop_module.FIRST_CONNECTION_TRIES_S[0]]
+    assert result.summary["llm_retries"] == 1
 
 
 @pytest.mark.parametrize(
@@ -5499,3 +5521,127 @@ async def test_the_wait_before_asking_again_ends_on_an_abort_and_says_which_ende
     started = asyncio.get_running_loop().time()
     assert await loop_module._wait_or_abort(abort, 30.0) is True
     assert asyncio.get_running_loop().time() - started < 5
+
+
+# ── a first press reaches a model call and a fold nobody asked for ───────────────────────
+
+
+async def test_a_press_while_the_model_is_thinking_ends_the_run_without_waiting_for_it(
+    tmp_path: Path,
+) -> None:
+    """The first Ctrl-C used to wait for the model's answer, which can take a minute: the abort
+    was read only once the call came back. The call is raced against the abort now, as a verb
+    is, so the run ends `aborted` at once, the call on the record as cut short, and the arm is
+    folded and let go of at its pose as at any end."""
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    loop = AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=StallingProvider(),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+
+    async def press() -> None:
+        await asyncio.sleep(0.2)
+        loop.executor.abort.set()  # the kill switch's first press
+
+    clock = asyncio.get_running_loop()
+    pressing = asyncio.ensure_future(press())
+    started = clock.time()
+    result = await loop.run()
+    await pressing
+    assert clock.time() - started < 5, "the run waited for the model's answer"
+    assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
+    cut = next(e for e in _events(result.run_dir, "llm") if "error" in e)
+    assert cut["error"] == "Aborted: kill switch", cut
+    assert mock.sequence[-3:] == ["stop", "rest", "close"], mock.sequence
+
+
+def _slow_teardown_fold(
+    monkeypatch: pytest.MonkeyPatch, seconds: float
+) -> tuple[asyncio.Event, list[int]]:
+    """`LeRobotMock.go_to_rest`, made to take `seconds` at the end of the run, with the arm a
+    little off its pose as that fold sets off. The fold at the start of the run is the real one.
+    Returns what is set as the teardown's fold begins, and the count of folds made."""
+    real = LeRobotMock.go_to_rest
+    began = asyncio.Event()
+    folds: list[int] = []
+
+    async def go_to_rest(self: LeRobotMock) -> RestResult:
+        folds.append(1)
+        if len(folds) > 1:
+            self.joints["shoulder_pan"] = ARM_REST["shoulder_pan"] + 30.0
+            began.set()
+            await asyncio.sleep(seconds)
+        return await real(self)
+
+    monkeypatch.setattr(LeRobotMock, "go_to_rest", go_to_rest)
+    return began, folds
+
+
+async def test_a_press_during_the_fold_of_a_run_that_ended_by_itself_stops_the_fold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that ended by itself folds the arm with nobody having asked, and a press during
+    that fold changed nothing until a second one quit the process. The first press stops it
+    now, as it stops a fold a person asked for: cancelled, held where it is by a stop, nothing
+    released, and the close says the arm is holding itself up away from its pose."""
+    began, _folds = _slow_teardown_fold(monkeypatch, 30.0)
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    loop = AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider.for_duck("lerobot-lookout"),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+
+    async def press() -> None:
+        await began.wait()
+        loop.executor.abort.set()  # the kill switch's first press, during the fold
+
+    clock = asyncio.get_running_loop()
+    pressing = asyncio.ensure_future(press())
+    started = clock.time()
+    result = await loop.run()
+    await pressing
+    assert clock.time() - started < 10, "the fold ran on past the press"
+    assert result.outcome == "success", result.reason
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    assert FOLD_STOPPED in notes, notes
+    assert mock.torque is True and mock.close_note is not None, "nothing was let go of"
+    assert mock.sequence[-2:] == ["stop", "close"], mock.sequence
+
+
+async def test_a_flock_stopping_its_members_does_not_stop_a_members_fold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flock stops its members through the same flag, and that is no reason to leave an arm
+    unfolded: only the kill switch's stop ends the fold a run that ended by itself makes. The
+    fold goes on to the pose, and the close lets go of the arm there."""
+    began, _folds = _slow_teardown_fold(monkeypatch, 0.2)
+    monkeypatch.setattr(AgentLoop, "_abort_reason", lambda self: "the flock stopped: duck failed")
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    loop = AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider.for_duck("lerobot-lookout"),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+
+    async def stop_the_flock() -> None:
+        await began.wait()
+        loop.executor.abort.set()
+
+    stopping = asyncio.ensure_future(stop_the_flock())
+    result = await loop.run()
+    await stopping
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    assert FOLD_STOPPED not in notes, notes
+    assert mock.sequence[-2:] == ["rest", "close"], mock.sequence
+    assert mock.torque is False and mock.close_note is None, "let go of at its pose"

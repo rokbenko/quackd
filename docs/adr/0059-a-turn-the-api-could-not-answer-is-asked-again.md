@@ -2,6 +2,26 @@
 
 **Status:** accepted · **Date:** 2026-10-23 · Extends [ADR-0012](0012-safety-executor.md) (the kill switch, the heartbeat and the teardown every run ends with) · Implemented in `quackd/agent/providers/base.py` (`transient_failure`), `quackd/agent/loop.py` (`_ask_the_model`), and in `quackd/log.py`, `quackd/ui.py` and `quackd/cli.py` (`run_counters`) for what a person sees ([safety](../concepts/safety.md#when-the-models-api-fails))
 
+**Amended 2026-10-23:** the two separate changes the consequences below name were made the same
+day, at Rok's word.
+
+- **The SDKs retry nothing of their own.** Every anthropic and openai client is built with
+  `max_retries=0` (`NO_SDK_RETRIES`), the read-only client the openai provider builds to read the
+  SDK's own headers included, and google-genai retries nothing by default. Every try is the
+  loop's, on the record, under the stop and inside `max_minutes`, and a `retry-after` of minutes
+  can no longer hold a call out of reach of a first Ctrl-C. The quick tries a first connection
+  had from the SDKs are kept as the loop's own: a connection that failed or timed out before the
+  API had answered once in the run is tried again after 0.5 s and then 1 s
+  (`FIRST_CONNECTION_TRIES_S`), with no note, and only then ends the run as decision 3 says.
+- **A first press ends a call in flight.** The pilot's call and a decision LLM's are raced
+  against the abort, as a verb is (`_unless_stopped`), so the press wins at once and the answer,
+  if it comes, is never read. A second Ctrl-C that lands inside the call is carried back to the
+  run, so its teardown still runs.
+
+Two more came with them. `x-should-retry: true` asks again at any status, as the SDKs read it,
+where only `false` was read before. And a run that gave up prints its counters under the line it
+ended on, as a run that ended any other way prints them under its panel.
+
 ## Context
 
 On 2026-10-23 Rok asked what a run does when its goal fails for a reason that is not the model

@@ -383,13 +383,21 @@ A real body that has to be put down before it is let go of declares that in the 
 while no rest pose is recorded for the robot, and
 `quackd.adapters.factory.needs_rest_pose(spec)` reads it before anything is built, so the
 refusal names the robot and the command that records a pose, and nothing has connected. The
-LeRobot arm's `real` is the one listed, because its close lets go of an arm with no pose
-wherever it stands, and an SO-101 has no brake. Its mock and its simulator are not, having no
-arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a person supports the
+LeRobot arm's `real` is the one listed, because an SO-101 has no brake: with no pose there is
+nothing to fold the arm to at the end, and its close keeps such an arm powered rather than let
+it fall where it stands, which would leave it holding itself up wherever it stopped. Its mock and
+its simulator are not, having no arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a person supports the
 arm through and the other is how a pose comes to be recorded at all
 ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). A backend listed
 there has to support `quackd robot rest-pose` as well (`supports_rest_pose`), or every run of it
 is refused with a way back that refuses too. A module that declares none needs none.
+
+A declaration an adapter does not make reads as none, so a core beside one of its own adapters
+from an older release would read `lerobot:real` as needing no pose, and run it. pip allows that
+mix: upgrading quackd alone leaves the adapter where it was and only warns. quackd's own adapters
+are released with the core and carry its version (`__version__`), and one from another major or
+minor is refused wherever a body is described or built, with the command that reinstalls the two
+together (`factory._same_release`). A third party's adapter is never asked.
 
 A backend on its way out declares itself in the same module, as a mapping rather than a list:
 `DEPRECATED_BACKENDS` maps its name to one line saying what to use instead and the release it

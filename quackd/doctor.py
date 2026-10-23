@@ -20,7 +20,7 @@ import importlib.metadata as md
 import os
 import platform
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -729,6 +729,9 @@ def probe(
     name: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
     host: HostClient | None = None,
+    park: Callable[[Any], Awaitable[RestResult]] | None = None,
+    before_close: Callable[[Any], Awaitable[None]] | None = None,
+    after_close: Callable[[], None] | None = None,
 ) -> ProbeReport:
     """Connect, and report what the robot itself said.
 
@@ -747,6 +750,15 @@ def probe(
     one chance to say something to a person holding it (`cli._doctor_warning`). `address` is
     empty only for a registered simulator, which is built without one as a run builds it.
 
+    `park` folds the body to its rest pose in place of `go_to_rest_if_any`, which is how the
+    CLI puts a countdown before the fold for the hands to come away, and a press of the kill
+    switch that stops it (`cli._DoctorHands`). `before_close` is awaited once the probe is done
+    and before it lets go of the bus, which is the CLI's one chance to ask, over an arm whose
+    close will keep its torque, whether to drop it into the person's hands instead. `after_close`
+    is called last, whichever way the probe ended, and inside the event loop that ran it, which is
+    where a kill switch bound to that loop has to be taken down: a press after the loop has closed
+    raised in the switch's own handler and ended doctor with no report.
+
     `host` is the board `--host` names, when its daemon answered. Its camera joins the body
     as a run's would (`quackd.adapters.host_camera`), and the camera rows say whether it is
     the primary view or an extra one. The body's own cameras are read only with
@@ -758,6 +770,15 @@ def probe(
     from quackd.transport.base import DEFAULT_CAMERA_NAME, TransportError, frames_of
 
     async def go() -> tuple[
+        Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
+    ]:
+        try:
+            return await probed()
+        finally:
+            if after_close is not None:
+                after_close()
+
+    async def probed() -> tuple[
         Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
     ]:
         parsed = parse_robot_spec(spec)
@@ -830,7 +851,9 @@ def probe(
                         frame = await adapter.get_frame()
                     camera = dict(cam_probe())
                     camera["frame"] = f"{frame.width}x{frame.height}" if frame is not None else None
-            parked = await go_to_rest_if_any(adapter)
+            parked = await (park(adapter) if park is not None else go_to_rest_if_any(adapter))
+            if before_close is not None:
+                await before_close(adapter)
             # close_note is written by the disconnect, so the disconnect happens here and is
             # read from; the finally below is left as the safety net for the exception path.
             await adapter.disconnect()
@@ -1269,6 +1292,9 @@ def collect(
     robot_name: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
     host_token_fix: str | None = None,
+    park: Callable[[Any], Awaitable[RestResult]] | None = None,
+    before_close: Callable[[Any], Awaitable[None]] | None = None,
+    after_close: Callable[[], None] | None = None,
 ) -> DoctorReport:
     """Every question doctor asks, answered as data.
 
@@ -1276,8 +1302,9 @@ def collect(
     what keeps `render` honest about where its numbers came from.
 
     `robot_name` is the registered name `robot` was resolved from, when it was, and the robot
-    is described and built under it, as a run builds it; `before_connect` goes to `probe`.
-    Not `name`, which this function's own loops over providers and presets rebind.
+    is described and built under it, as a run builds it; `before_connect`, `park`, `before_close`
+    and `after_close` go to `probe`. Not `name`, which this function's own loops over providers
+    and presets rebind.
 
     `host` is a board already settled by `quackd.host.resolve_host` (the flag, a registered
     robot's, or `QUACKD_HOST`), and `host_token` the token that goes with it. With one, the
@@ -1494,6 +1521,9 @@ def collect(
                     name=robot_name,
                     before_connect=before_connect,
                     host=host_camera_from,
+                    park=park,
+                    before_close=before_close,
+                    after_close=after_close,
                 )
 
     # An adapter that has backends worth probing on this machine says so itself. The LeRobot

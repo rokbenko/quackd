@@ -10,6 +10,7 @@ past the close that has to follow it."""
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -24,9 +25,11 @@ from quackd.release import (
     ENTER_DROPS_S,
     FOLD_INTERRUPTED,
     FOLD_UNANSWERED,
+    LIMP_AFTER_A_MISS,
     NO_KEYS,
     NOBODY,
     NOT_SENT,
+    TORQUE_READS_OFF,
     WAIT_INTERRUPTED,
     FoldStopped,
     ask,
@@ -278,6 +281,47 @@ async def test_two_folds_and_two_questions_in_order_before_anything_drops() -> N
     assert made == ["fold"] and stops == [], "one fold more, and nothing stopped"
     assert arm.calls == [{"anywhere": True}]
     assert settled.how == "released" and settled.asked == "drop"
+
+
+async def test_a_fold_that_missed_over_limp_joints_asks_nothing() -> None:
+    """A fold that missed because servos lost their torque on the way, a brown-out under stall
+    current, is no arm holding itself up where it stopped, which is what the first question
+    begins by saying. A second fold cannot move a joint with no torque, and a drop would let go
+    of whatever still holds while the rest has gone, so neither is offered: what the read found
+    is said, and torque stays on wherever it still is."""
+    person, arm = Person(True), Arm()
+    fold, made = _folds(MISSED)
+    events: list[dict[str, Any]] = []
+    notes: list[str] = []
+    limp = replace(MISSED, limp=("shoulder_lift", "elbow_flex"))
+    settled = await settle_missed_fold(
+        arm,
+        person,
+        limp,
+        fold=fold,
+        stop=_nothing,
+        event=lambda **kw: events.append(kw),
+        note=notes.append,
+    )
+    said = LIMP_AFTER_A_MISS.format(why=MISSED.reason, limp="shoulder_lift, elbow_flex")
+    assert person.asked == [] and made == [] and arm.calls == [], "something was asked or moved"
+    assert settled.how == "kept" and settled.reason == TORQUE_READS_OFF and settled.said == said
+    assert events == [{"stage": "kept", "reason": TORQUE_READS_OFF}] and notes == [said]
+
+
+async def test_a_second_fold_that_found_the_joints_limp_puts_no_question_that_drops() -> None:
+    """The way was cleared, Enter pressed, and the arm browned out on its second fold: what the
+    read found is said, and the question whose Enter drops the arm is never put."""
+    person, arm = Person(True), Arm()
+    browned = replace(MISSED, limp=("elbow_flex",))
+    fold, made = _folds(browned)
+    settled = await settle_missed_fold(arm, person, MISSED, fold=fold, stop=_nothing)
+    assert [a[0] for a in person.asked] == [
+        CLEAR_THE_WAY.format(why=MISSED.reason, seconds=CLEAR_THE_WAY_S)
+    ]
+    assert made == ["fold"] and arm.calls == [], "the arm was let go of where it stands"
+    assert settled.how == "kept" and settled.reason == TORQUE_READS_OFF
+    assert settled.asked == "clear" and settled.fold is browned
 
 
 async def test_a_fold_that_raises_is_settled_and_never_raises_past_the_close() -> None:

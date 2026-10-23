@@ -597,6 +597,22 @@ transport. A placeholder a person can see is one, rather than a guess at the nam
 like the right one."""
 
 
+NO_REST_POSE_RECORDED = "no rest pose is recorded"
+"""Why the close keeps the torque of a real arm with no rest pose: nowhere it may be let go of."""
+
+TORQUE_LEFT_ON_WITHOUT_A_POSE = (
+    "{name} has no rest pose recorded, so torque was left on rather than let go of where the arm "
+    "stands, where it would fall. To put it down, hold it and cut its power, or run quackd robot "
+    "release {name} and press Enter when it asks, holding the arm. To give it a pose, fold it by "
+    "hand once it is down and limp, then run quackd robot rest-pose {name} with its power on"
+)
+"""The close's line for a real arm with no rest pose, which it no longer lets go of where it
+stands (ADR-0058). A run of one is refused, so this is said after a probe, `doctor` or
+`robot list --probe`, which read the arm and move nothing. It names the ways out an arm with no
+pose has: the power switch, and `quackd robot release`, which with no pose to fold to asks, before
+it connects, whether to take torque off where the arm stands, and does only on Enter."""
+
+
 def torque_left_on(why: str, name: str | None) -> str:
     """`TORQUE_LEFT_ON` for this arm, with its registered name where the caller knew it.
 
@@ -608,6 +624,15 @@ def torque_left_on(why: str, name: str | None) -> str:
     may not be what the arm is registered under."""
     return TORQUE_LEFT_ON.format(why=why, name=name or UNNAMED)
 
+
+TORQUE_KEPT_AFTER_REFUSAL_WITHOUT_A_POSE = (
+    "the release did not take, and with no rest pose recorded the close kept torque on rather "
+    "than let go of where the arm stands: hold it and cut its power"
+)
+"""`TORQUE_KEPT_AFTER_REFUSAL` for an arm with no rest pose, which a person had asked to have
+released where it stood (`quackd robot release`, Enter at the question it puts before it
+connects). The close keeps such an arm powered as it keeps any (ADR-0058), and "not at its rest
+pose" would name a pose it does not have."""
 
 TORQUE_KEPT_AFTER_REFUSAL = (
     "the arm is not at its rest pose ({why}) and the release did not take, so torque was left "
@@ -806,6 +831,20 @@ def still_holding_in_hand(holding: tuple[str, ...], why: str) -> str:
     )
 
 
+def torque_reads_off(why: str, limp: tuple[str, ...]) -> str:
+    """The close's line for an arm away from its rest pose whose own read finds torque off on
+    `limp`, which `TORQUE_LEFT_ON` would say is holding itself up. A servo that browned out
+    under stall current comes back with its torque disabled and still answers every read, so the
+    arm reads where it lies, or where it is falling, and the joints named hold nothing."""
+    one = len(limp) == 1
+    return (
+        f"the arm is not at its rest pose ({why}), and torque reads off on {_listed(list(limp))}, "
+        f"so {'that joint is' if one else 'those joints are'} not holding it up there and the arm "
+        "may already have dropped: hold it, put it down, and cut its power before it is powered "
+        "again"
+    )
+
+
 UNREAD_IN_HAND = (
     "the arm is in your hands ({why}), but nothing read its torque back after the release went "
     "out, so it may be limp only in part: hold it as though nothing holds it, put it down, and "
@@ -837,6 +876,28 @@ True)`). Not the shortfall from the rest pose, which is what the close would oth
 there: that sentence ends "nothing moved it there" when no rest move ran, which is false of an
 arm a person is holding, and the person already knows where it stands, having just asked for
 it to be let go of there."""
+
+UNREAD_AT_REST = (
+    "the arm was folded to its rest pose and its release went out there, but nothing read its "
+    "torque back, so it may still hold itself up in its fold, all of it or part of it: leave it "
+    "where it rests, and cut its power to be sure"
+)
+"""`UNREAD_IN_HAND` for the release `quackd robot release` asked for at the rest pose
+(`LET_GO_AT_REST`). The person was told to take their hands away before the arm folded, so
+nobody is holding it, and the in-hand line told them to put down an arm lying in its fold."""
+
+
+def still_holding_at_rest(holding: tuple[str, ...]) -> str:
+    """`still_holding_in_hand` for the release asked for at the rest pose: the last read of the
+    torque register found `holding` still on, over an arm lying in its fold with no hand on it,
+    which the in-hand line told to be put down."""
+    one = len(holding) == 1
+    return (
+        "the arm lies at its rest pose, folded and let go of there because you asked for it, but "
+        f"{_listed(list(holding))} still {'reads' if one else 'read'} torque on: leave it where "
+        f"it rests, and cut its power to let go of {'it' if one else 'them'}"
+    )
+
 
 LET_GO_AT_REST = "it was folded to its rest pose and let go of there, because you asked for it"
 """Why the arm was let go of, after a release a person asked for at its rest pose

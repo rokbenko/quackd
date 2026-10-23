@@ -2922,8 +2922,8 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
     ),
     (
         "goes limp at the end of every clean session",
-        "a run, a dry run and an MCP session of a real arm with no rest pose are refused, and only "
-        "a probe still lets go of one where it stands",
+        "a run, a dry run and an MCP session of a real arm with no rest pose are refused, and a "
+        "probe keeps one powered where it stands",
     ),
     (
         "The arm falls when a session ends, unless you have recorded a rest pose",
@@ -2935,7 +2935,47 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
     ),
     (
         "a clean session ends the way it always did and the arm sags",
-        "a run of a real arm with no rest pose is refused, and only a probe lets it sag",
+        "a run of a real arm with no rest pose is refused, and a probe keeps it powered",
+    ),
+    # amended 2026-10-23: the close keeps a real arm with no rest pose powered, so nothing lets go
+    # of one where it stands but a person's Enter, and doctor counts the hands away before its fold
+    (
+        "so it would fall there",
+        "a real arm's close keeps an arm with no rest pose powered, and the refusal says it would "
+        "be left holding itself up wherever it stopped (`quackd.registry.no_rest_pose_refusal`)",
+    ),
+    (
+        "lets go of an arm with none wherever it stands",
+        "a real arm's close keeps the torque of an arm with no rest pose "
+        "(`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)",
+    ),
+    (
+        "its close lets go of it wherever it stands",
+        "a real arm's close keeps the torque of an arm with no rest pose "
+        "(`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)",
+    ),
+    (
+        "its close would let go of the arm wherever it",
+        "a real arm's close keeps the torque of an arm with no rest pose, so a run of one would "
+        "leave it holding itself up wherever it stopped",
+    ),
+    (
+        "the probe ended the way it always did: limp",
+        "a probe keeps a real arm with no rest pose powered, and says so",
+    ),
+    (
+        "this probe still lets go",
+        "doctor keeps a real arm with no rest pose powered, and at a terminal asks whether to drop "
+        "it (`quackd.release.DROP_UNPOSED`)",
+    ),
+    (
+        "support the arm until doctor has finished",
+        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`), so its "
+        "warning says to take them away when it says so (`quackd.cli._doctor_warning`)",
+    ),
+    (
+        "support the arm until it has finished",
+        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`)",
     ),
 )
 
@@ -2987,7 +3027,26 @@ _API_CLAIMS_RETIRED_BY_ADR_0059 = (
     ),
     (
         "which ends the run once the SDK's own retries are spent",
-        "the loop asks the same turn again once the SDK's own retries are spent",
+        "the loop asks the same turn again, and the SDKs retry nothing of their own "
+        "(`quackd.agent.providers.base.NO_SDK_RETRIES`)",
+    ),
+    # amended 2026-10-23: the SDK clients are built to retry nothing, and a first press ends a call
+    (
+        "the SDK's own retries come first",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`), so every try is the "
+        "loop's",
+    ),
+    (
+        "own two retries are spent",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`)",
+    ),
+    (
+        "four times after the SDK's own retries",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`)",
+    ),
+    (
+        "A first Ctrl-C does not reach into those waits",
+        "a first press ends a call in flight (`AgentLoop._unless_stopped`)",
     ),
 )
 

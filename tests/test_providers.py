@@ -2799,3 +2799,42 @@ async def test_a_provider_keeps_the_sdk_error_beneath_its_own(provider: Any) -> 
     failure = transient_failure(raised.value)
     assert failure is not None, f"the SDK's 429 was lost beneath {raised.value!r}"
     assert failure.status == 429 and failure.retry_after_s == 7.0, failure
+
+
+@pytest.mark.parametrize("preset", ["openai", "grok", "openrouter", "local", "anthropic"])
+def test_every_sdk_client_is_built_to_retry_nothing_of_its_own(
+    preset: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0059: the loop asks a failed turn again itself, on a clock it bounds, stoppable by a
+    first Ctrl-C and on the record. Left to retry, the SDKs sit out a `retry-after` inside the
+    call, the anthropic SDK's at any length, where none of that holds, so each client is built
+    to retry nothing (`NO_SDK_RETRIES`), the clients built only to be read included."""
+    import sys
+    import types
+
+    from quackd.agent.providers.base import NO_SDK_RETRIES
+    from quackd.agent.providers.factory import KEY_ENV, make_provider
+    from tests import fake_openai_sdk as fake_sdk
+
+    assert NO_SDK_RETRIES == 0
+    if preset == "anthropic":
+        built: list[dict[str, Any]] = []
+
+        class FakeAnthropic:
+            def __init__(self, **kwargs: Any) -> None:
+                built.append(kwargs)
+
+        module = types.ModuleType("anthropic")
+        module.AsyncAnthropic = FakeAnthropic  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "anthropic", module)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+        make_provider("anthropic")
+        assert built == [{"max_retries": 0}], built
+        return
+    fake = fake_sdk.install(monkeypatch, fake_sdk.FakeOpenAI())
+    monkeypatch.setenv(KEY_ENV[preset], "sk-not-a-real-key")
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "User-Agent: a-gateway-of-its-own")
+    make_provider(
+        preset, **({"base_url": "http://127.0.0.1:11434/v1"} if preset == "local" else {})
+    )
+    assert fake.calls and all(call.get("max_retries") == 0 for call in fake.calls), fake.calls

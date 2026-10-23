@@ -45,6 +45,7 @@ from quackd.command import command_text, redacted_url
 from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
+    from quackd.adapters.base import RestResult
     from quackd.adapters.factory import RobotSpec
     from quackd.safety import KillSwitch
 
@@ -1836,8 +1837,9 @@ def _run_impl(
                 hint="run it from a terminal, or drop the flag and start from the rest pose",
             )
             return
-    # A real arm with no rest pose is let go of wherever it stands when its run closes, and an
-    # SO-101 has no brake, so it falls there (ADR-0058). Refused once the task file has been
+    # A real arm with no rest pose has nothing to be folded to at the end of a run, and its
+    # close keeps its torque rather than let it fall where it stands, so the run would leave it
+    # holding itself up wherever it stopped (ADR-0058). Refused once the task file has been
     # judged against the body, so a task that could never run on it says so first rather than
     # sending a person off to fold the arm, and before any provider, adapter or run directory
     # exists, a dry run among them, since a dry run connects the arm too.
@@ -2368,11 +2370,16 @@ def _run_impl(
         Ctrl-C on a walking robot needs to see that it registered."""
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
+    ran: list[Any] = []
+    """The loop, once built, so a run that ended in an error can still be read for what it
+    spent: the loop keeps its summary however its run ends."""
+
     async def main() -> Any:
         from quackd.agent.loop import AgentLoop
 
         global _SWITCH
         loop = AgentLoop(cfg)
+        ran.append(loop)
         if nearby is not None:
             _grant_courtesies(nearby, loop.executor, registry_dir)
         # The first moment there is a directory to write into. Everything printed before
@@ -2398,6 +2405,15 @@ def _run_impl(
             result = asyncio.run(main())
     except (TransportError, ProviderError) as e:
         # the log has already shown the call that failed; this is the one-line verdict
+        summary = getattr(ran[0], "summary", None) if ran else None
+        if isinstance(summary, Mapping) and "llm_retries" in summary:
+            # A run that waited to ask the model's API again, and gave up, says beside its
+            # verdict what the waiting cost, as a run that ended any other way does under its
+            # panel: how many tries went out again, and the seconds waited (ADR-0059).
+            ui.err_console.print(ui.fail_line(str(e)))
+            counters = " · ".join(run_counters(summary))
+            ui.err_console.print(Text(f"  {counters}", style=ui.STYLES["muted"]))
+            raise typer.Exit(code=1) from None
         _fail(str(e))
         return
     finally:
@@ -4234,6 +4250,16 @@ def doctor(
         text = next((t.strip() for t in named if t and t.strip()), "")
         board, unusable = HostChoice(), refused_host(text, str(e))
 
+    from quackd.adapters.factory import needs_rest_pose
+
+    # the person at an arm, at a terminal: hands away before its fold, and over one with no rest
+    # pose, whether to drop it into their hands rather than leave it powered (ADR-0058)
+    hands = _DoctorHands(
+        name or robot or "",
+        prompting=not as_json and _can_prompt(),
+        unposed=bool(robot) and rest_pose is None and needs_rest_pose(robot or ""),
+    )
+
     def warn(adapter: Any) -> None:
         # A backend its adapter is retiring is said first, in the line a run prints for it,
         # and only here, just before the probe connects through it. A real body is connected
@@ -4247,42 +4273,59 @@ def doctor(
         # JSON document and nothing else.
         # A simulator of such a body says it is one instead of asking for a hand under it.
         if getattr(adapter, "supports_hand_off", False):
-            line = _doctor_warning(simulator=_is_simulator(adapter))
+            line = _doctor_warning(
+                simulator=_is_simulator(adapter),
+                folds=getattr(adapter, "rest_pose", None) is not None,
+                keeps=hands.unposed,
+                asks=hands.prompting,
+            )
             (ui.err_console if as_json else ui.console).print(_warn_line(line))
+        hands.start(adapter)
 
     if as_json:
-        report = collect(
-            robot,
-            address=address,
-            camera_url=camera_url,
-            token=token,
-            rest_pose=rest_pose,
-            robot_name=name,
-            before_connect=warn,
-            host=board.host,
-            host_token=board.token,
-            host_token_fix=board.token_fix,
-        )
+        try:
+            report = collect(
+                robot,
+                address=address,
+                camera_url=camera_url,
+                token=token,
+                rest_pose=rest_pose,
+                robot_name=name,
+                before_connect=warn,
+                host=board.host,
+                host_token=board.token,
+                host_token_fix=board.token_fix,
+                park=hands.park,
+                after_close=hands.finish,
+            )
+        finally:
+            hands.finish()
         report.host = unusable or report.host
         print(json.dumps(report.to_dict()))
         raise typer.Exit(code=0 if report.ok else 1)
     ui.install_logging()
     # the probes are the slow part: five local servers at 1.5 s each, and a real robot after
     # them. It used to sit silent for ten seconds with no sign it was doing anything.
-    with ui.spinner("checking this machine") as say:
-        report = collect(
-            robot,
-            address=address,
-            camera_url=camera_url,
-            token=token,
-            rest_pose=rest_pose,
-            host=board.host,
-            host_token=board.token,
-            host_token_fix=board.token_fix,
-            progress=say,
-            robot_name=name,
-            before_connect=warn,
-        )
+    try:
+        with ui.spinner("checking this machine") as say:
+            report = collect(
+                robot,
+                address=address,
+                camera_url=camera_url,
+                token=token,
+                rest_pose=rest_pose,
+                host=board.host,
+                host_token=board.token,
+                host_token_fix=board.token_fix,
+                progress=say,
+                robot_name=name,
+                before_connect=warn,
+                park=hands.park,
+                before_close=hands.before_close,
+                after_close=hands.finish,
+            )
+    finally:
+        hands.finish()
     report.host = unusable or report.host
     render(ui.console, report)
     if not report.ok:
@@ -5417,50 +5460,77 @@ def robot_rest_pose(
         )
         return
 
+    if not yes and not _can_prompt():
+        # Before anything connects, where it used to come after the read: the arm is let go of
+        # where it lies only once the pose is answered for, so a read nobody can answer would
+        # only leave it powered in its fold.
+        _fail(
+            "no terminal to ask on: pass --yes to record it",
+            hint=f"quackd robot rest-pose {name} --yes",
+        )
+        return
+
     # the same shape `Resolved.label` prints, which is what every other line about a
     # registered robot says: the name you gave it, and the body under it
     label = f"{entry.name} ({entry.key})"
 
     async def read() -> dict[str, float]:
         await adapter.connect()
-        try:
-            state = await adapter.get_state()
-            return {str(k): float(v) for k, v in dict(state.extras.get("joints", {})).items()}
-        finally:
-            with contextlib.suppress(Exception):
-                await adapter.close()
+        state = await adapter.get_state()
+        return {str(k): float(v) for k, v in dict(state.extras.get("joints", {})).items()}
 
+    async def close(rests_here: bool) -> None:
+        if rests_here:
+            # The arm lies where a person folded it, and the pose read is the one now answered
+            # for, so its close lets go of it there. Without the yes, a real arm's close keeps
+            # torque on, as it does for any arm with no pose recorded (ADR-0058): an arm read
+            # standing rather than folded is let go of only on a yes to the pose it reads.
+            rests = getattr(adapter, "rests_where_it_reads", None)
+            if callable(rests):
+                rests()
+        with contextlib.suppress(Exception):
+            await adapter.close()
+
+    # One event loop for the read and the close, with the question between them: the close
+    # comes after the answer, which decides it.
+    runner = asyncio.Runner()
+    agreed = False
     try:
-        with ui.spinner(f"reading {label}"):
-            joints = asyncio.run(read())
-    except (TransportError, OSError) as e:
-        where = f" at {kwargs['address']}" if kwargs.get("address") else ""
-        _fail(f"{entry.key}{where}: {e}")
-        return
-    if not joints:
-        _fail(f"{label} reported no joint positions")
-        return
-
-    ui.console.print(Text(f"{label} is at", style=ui.STYLES["muted"]))
-    ui.console.print(ui.kv_grid((j, f"{v:.1f}") for j, v in joints.items()))
-    # A fold past the travel this arm's calibration recorded is still recorded: it is where
-    # the arm rests, and a run parks at the edge of the travel and lets it settle there. But
-    # the person folding it is the one who can fix it, so they hear it now, before answering,
-    # in the words a run and `doctor` will use. The adapter owns the rule; this only asks.
-    note_for = getattr(adapter, "rest_pose_note", None)
-    if callable(note_for) and (warning := note_for(joints)):
-        ui.console.print(_warn_line(str(warning)))
-    if not yes:
-        if not _can_prompt():
-            _fail(
-                "no terminal to ask on: pass --yes to record it",
-                hint=f"quackd robot rest-pose {name} --yes",
-            )
+        try:
+            with ui.spinner(f"reading {label}"):
+                joints = runner.run(read())
+        except (TransportError, OSError) as e:
+            where = f" at {kwargs['address']}" if kwargs.get("address") else ""
+            _fail(f"{entry.key}{where}: {e}")
             return
-        already = ", replacing the one already recorded" if entry.rest_pose else ""
-        with ui.pause_status():
-            if not typer.confirm(f"record this as {name}'s rest pose{already}?"):
-                raise typer.Exit()
+        if not joints:
+            _fail(f"{label} reported no joint positions")
+            return
+
+        ui.console.print(Text(f"{label} is at", style=ui.STYLES["muted"]))
+        ui.console.print(ui.kv_grid((j, f"{v:.1f}") for j, v in joints.items()))
+        # A fold past the travel this arm's calibration recorded is still recorded: it is where
+        # the arm rests, and a run parks at the edge of the travel and lets it settle there. But
+        # the person folding it is the one who can fix it, so they hear it now, before
+        # answering, in the words a run and `doctor` will use. The adapter owns the rule; this
+        # only asks.
+        note_for = getattr(adapter, "rest_pose_note", None)
+        if callable(note_for) and (warning := note_for(joints)):
+            ui.console.print(_warn_line(str(warning)))
+        if not yes:
+            already = ", replacing the one already recorded" if entry.rest_pose else ""
+            with ui.pause_status():
+                if not typer.confirm(f"record this as {name}'s rest pose{already}?"):
+                    raise typer.Exit()
+        agreed = True
+    finally:
+        with contextlib.suppress(Exception):
+            runner.run(close(agreed))
+        runner.close()
+        # what the close did with the torque, on every way out: a read that failed or a no
+        # leaves a real arm powered in its fold, and the line says how to put it down
+        if close_note := getattr(adapter, "close_note", None):
+            ui.console.print(_warn_line(str(close_note)))
 
     pose = {joint: round(value, 1) for joint, value in joints.items()}
     try:
@@ -5540,15 +5610,168 @@ def _release_warning(*, simulator: bool = False, folds: bool = True) -> str:
     )
 
 
-def _doctor_warning(*, simulator: bool = False) -> str:
+def _doctor_warning(
+    *, simulator: bool = False, folds: bool = True, keeps: bool = True, asks: bool = False
+) -> str:
     """`_release_warning`'s first half, for `doctor --robot` on a body handed to people. A
     probe connects, and an arm left holding itself up is limp for that moment like any other,
     so the person is told to support it before the connect rather than finding out during it.
-    A simulator has no arm to support, and the line says so rather than asking for a hand under
-    one."""
+
+    What follows the connect is said as well, because the arms differ. One with a rest pose is
+    folded to it before doctor lets go, and doctor says so first and waits for the hands to come
+    away (`_DoctorHands.park`), terminal or not, so the hands that supported it come away when
+    doctor says so: the line used to ask them to stay until doctor had finished, under the fold.
+    A real arm with none is kept powered where it stands (`keeps`, ADR-0058), and the person is
+    told doctor will ask whether to drop it into their hands only where it will (`asks`: a
+    terminal, and no `--json`). The mock with none is let go of where it stands at the end, as
+    every arm with none was until 0.24. A simulator has no arm to support, and the line says so
+    rather than asking for a hand under one."""
     if simulator:
         return f"{_connect_warning(simulator=True)}, and there is no arm to support"
-    return f"{_connect_warning()}: support the arm until doctor has finished with it"
+    if folds:
+        return (
+            f"{_connect_warning()}: support the arm while it connects, then take your hands away "
+            "when doctor says so, because it folds the arm to its rest pose before it lets go"
+        )
+    if not keeps:
+        return (
+            f"{_connect_warning()}: support the arm until doctor has finished with it, because "
+            "with no rest pose recorded it is let go of where it stands at the end"
+        )
+    kept = (
+        f"{_connect_warning()}: support the arm while it connects. It has no rest pose recorded, "
+        "so doctor keeps it powered where it stands at the end"
+    )
+    return f"{kept}, and asks first whether to drop it into your hands" if asks else kept
+
+
+class _DoctorHands:
+    """What `quackd doctor` asks of a person at a real arm handed to people.
+
+    Before it folds an arm to its recorded rest pose, it says so and waits `HANDS_AWAY_S` for the
+    hands that supported it through the connect to come away, as `quackd robot release` does,
+    terminal or not, because the warning before the connect says it will. A press of the kill
+    switch stops the fold before it moves or while it does, holding the arm where the press
+    found it, and one made while the arm connected or was read stops it before anything moves:
+    the switch goes in as the arm is about to connect, and doctor used to fold the arm after such
+    a press, the switch having swallowed the Ctrl-C that used to end it. Over a real arm with no
+    rest pose, whose close keeps its torque rather than let it go where it stands (ADR-0058), one
+    question before the probe lets go of the bus, at a terminal and without `--json`: whether to
+    drop it into the person's hands (`DROP_UNPOSED`), which at first contact is how an arm comes
+    to be limp for folding by hand. A simulator and a body nobody holds get none of it, and keep
+    the Ctrl-C that ends doctor."""
+
+    def __init__(self, label: str, *, prompting: bool, unposed: bool) -> None:
+        self.label = label
+        self.prompting = prompting
+        """Whether a question can be put: a terminal, and no `--json`."""
+        self.unposed = unposed
+        """An arm whose close will keep its torque: a real arm with no rest pose recorded."""
+        self.switch: KillSwitch | None = None
+        self.person: _TerminalHandOff | None = None
+        self._stop_check: Callable[[Any], None] | None = None
+
+    def start(self, adapter: Any) -> None:
+        """Install the kill switch, from inside the probe's event loop, which it needs, for a real
+        body handed to people: called as the body is about to connect. A press while a connect is
+        failing ends its retries, as in `robot release`."""
+        from quackd.safety import KillSwitch
+
+        if self.switch is not None or not getattr(adapter, "supports_hand_off", False):
+            return
+        if _is_simulator(adapter):
+            return
+        switch = KillSwitch(asyncio.Event(), log=_switch_pressed)
+        person = _TerminalHandOff()
+        person.bind(switch)
+        switch.install()
+        self.switch, self.person = switch, person
+        stop_check = getattr(adapter, "set_stop_check", None)
+        if callable(stop_check):
+            stop_check(switch.abort.is_set)
+            self._stop_check = stop_check
+
+    def finish(self) -> None:
+        """Take the kill switch down again: inside the probe's event loop as the probe ends
+        (`doctor.probe`'s `after_close`), where its handler is bound, and once more after it,
+        which then does nothing."""
+        if self._stop_check is not None:
+            with contextlib.suppress(Exception):
+                self._stop_check(None)
+        if self.switch is not None:
+            self.switch.uninstall()
+        self.switch = self.person = None
+        self._stop_check = None
+
+    def pressed(self) -> bool:
+        """A Ctrl-C or `q` since the switch went in: nothing is moved or released after one."""
+        return self.switch is not None and self.switch.presses > 0
+
+    async def park(self, adapter: Any) -> RestResult:
+        """The probe's fold, with the hands away first and a press stopping it."""
+        from quackd.adapters.base import RestResult, go_to_rest_if_any
+        from quackd.release import (
+            FOLD_STOPPED,
+            FOLDING_IN,
+            HANDS_AWAY_S,
+            FoldStopped,
+            fold_unless_stopped,
+        )
+
+        person = self.person
+        if person is None or getattr(adapter, "rest_pose", None) is None:
+            return await go_to_rest_if_any(adapter)
+        if self.pressed():
+            # a Ctrl-C or `q` while the arm connected or was read: nothing moves after one
+            return RestResult("refused", "stopped before the fold: nothing was moved")
+        with ui.pause_status():
+            ui.err_console.print(
+                Text(
+                    FOLDING_IN.format(name=self.label, seconds=HANDS_AWAY_S),
+                    style=ui.STYLES["warn"],
+                )
+            )
+            try:
+                await fold_unless_stopped(_hands_away, person.stopped)
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                return RestResult("refused", "stopped before the fold: nothing was moved")
+            try:
+                parked = await fold_unless_stopped(
+                    lambda: go_to_rest_if_any(adapter), person.stopped
+                )
+                return parked if parked is not None else RestResult.none()
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
+                    # held where the stopped fold left it, a step cap on at most
+                    await adapter.stop()
+                return RestResult("refused", FOLD_STOPPED)
+
+    async def before_close(self, adapter: Any) -> None:
+        """Over an arm whose close keeps its torque, ask whether to drop it instead. Not after a
+        press, which asked for nothing to move. The release is `release_where_it_stands`, which
+        a second Ctrl-C landing on it cannot take past the close, and what it did is said."""
+        from quackd.release import DROP_UNPOSED, ENTER, ENTER_DROPS_S, ask, release_where_it_stands
+
+        person = self.person
+        if person is None or not self.prompting or not self.unposed or self.pressed():
+            return
+        question = DROP_UNPOSED.format(name=self.label, seconds=ENTER_DROPS_S)
+        with ui.pause_status():
+            if await ask(person, question, ENTER_DROPS_S) == ENTER:
+                settled = await release_where_it_stands(adapter)
+                if settled.said:
+                    ui.err_console.print(_warn_line(settled.said))
+
+
+def _switch_pressed(_message: str) -> None:
+    """The kill switch's line outside a run, which names no verb: only that the press took."""
+    ui.err_console.print(Text("kill switch pressed", style=ui.STYLES["warn"]))
+
+
+async def _hands_away() -> None:
+    from quackd.release import HANDS_AWAY_S
+
+    await asyncio.sleep(HANDS_AWAY_S)
 
 
 @robot_app.command("release")
@@ -5591,6 +5814,8 @@ def robot_release(
         FOLD_STOPPED,
         FOLDING_IN,
         HANDS_AWAY_S,
+        LIMP_AFTER_A_MISS,
+        TORQUE_READS_OFF,
         FoldStopped,
         Settled,
         ask,
@@ -5702,12 +5927,13 @@ def robot_release(
             # a Ctrl-C or `q` while it connected: nothing is moved or released after one
             said = stopped_before
             if rest is None and not simulated:
-                # and an arm with no rest pose is let go of where it stands by its close, which
-                # is the drop the person already pressed Enter for, so they are holding it
+                # and a real arm with no rest pose is kept powered by its close (ADR-0058): the
+                # press came after the Enter that asked for the drop, and stopped it
                 said = (
-                    "stopped before anything else was done, but an arm with no rest pose is let "
-                    "go of where it stands as quackd disconnects from it: keep hold of it and put "
-                    "it down"
+                    "stopped before anything was released: with no rest pose recorded the close "
+                    "keeps torque on, so the arm holds where it stands. To put it down, hold it "
+                    f"and cut its power, or run quackd robot release {name} again and press Enter "
+                    "at its question"
                 )
             return Settled("kept", "stopped before the fold", said=said)
         if rest is None:
@@ -5754,6 +5980,13 @@ def robot_release(
                     f"the arm stopped answering during the fold ({why}), so quackd cannot tell "
                     "whether it is holding itself up: hold it, and cut its power"
                 ),
+            )
+        if first.limp:
+            # what its own read found, said without a question, as at the end of a run
+            return Settled(
+                "kept",
+                TORQUE_READS_OFF,
+                said=LIMP_AFTER_A_MISS.format(why=why, limp=", ".join(first.limp)),
             )
         if simulated or not prompting:
             whose = "the simulated arm" if simulated else "the arm"

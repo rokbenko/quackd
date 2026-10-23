@@ -1357,8 +1357,8 @@ def fleet_from_flags(
     else:
         resolved = [resolve_robot_ref(robot, registry, duck_default=default)]
     specs: list[RobotSpec] = [r.spec for r in resolved]
-    # A real arm with no rest pose is let go of wherever it stands when its session closes,
-    # and an SO-101 has no brake, so it falls there (ADR-0058). Refused before anything is
+    # A real arm with no rest pose has nothing to be folded to when its session closes, and
+    # would be left holding itself up wherever it stopped (ADR-0058). Refused before anything is
     # described or built, as `run` refuses it, a `--dry-run` session included: it connects too.
     for each in resolved:
         refused = no_rest_pose_refusal(

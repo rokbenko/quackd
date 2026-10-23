@@ -3176,3 +3176,15 @@ def test_the_so101_model_loads_with_its_fingers_cut_to_pads() -> None:
             arm.joints[name].to_lerobot(start[name]), abs=TOL_DEG
         )
     assert all(not o.touching for o in world.truth().objects.values())
+
+
+async def test_a_simulated_arm_with_no_rest_pose_is_still_let_go_of_at_its_close(mjcf: str) -> None:
+    """A real arm with no rest pose is kept powered at its close rather than let fall where it
+    stands (ADR-0058). The simulated arm drops on nothing, and a run of it needs no pose, so its
+    close lets go of it as before (`LeRobotSim.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
+    transport = LeRobotSim(model=mjcf)
+    transport.connect_pause_s = 0.0
+    with _needs_gl():
+        await transport.connect()
+    await transport.close()
+    assert transport.close_note is None, transport.close_note

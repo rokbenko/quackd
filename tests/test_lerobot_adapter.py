@@ -90,8 +90,12 @@ from quackd_lerobot.verbs import (
     STALL_TICKS,
     TICK_S,
     TOL_DEG,
+    TORQUE_KEPT_AFTER_REFUSAL_WITHOUT_A_POSE,
     TORQUE_LEFT_ON,
+    TORQUE_LEFT_ON_WITHOUT_A_POSE,
     UNCONFIRMED_IN_HAND,
+    UNNAMED,
+    UNREAD_AT_REST,
     UNREAD_IN_HAND,
     MoveJointsParams,
     PickParams,
@@ -106,6 +110,7 @@ from quackd_lerobot.verbs import (
     reachable_rest_goal,
     rest_budget_s,
     rest_goal,
+    still_holding_at_rest,
     still_holding_in_hand,
     unlifted_from_rest,
     worth_saying,
@@ -2911,8 +2916,9 @@ async def test_an_exit_that_skips_the_close_leaves_the_arm_holding(monkeypatch: 
 
 async def test_a_built_arm_still_goes_limp_at_rest_and_holds_away_from_it(monkeypatch: Any) -> None:
     """Building the follower to keep torque changes the disconnects nobody asked for and no
-    other: the close writes the flag every time, so a clean ending lets go exactly where it
-    always did, at the rest pose and with none recorded, and nowhere else."""
+    other: the close writes the flag every time, so a clean ending lets go at the rest pose and
+    nowhere else. An arm with none recorded used to be let go of too, wherever it stood, and is
+    kept powered now, its close saying so (ADR-0058)."""
     parked = built_arm(monkeypatch, FakeArm())
     where_it_sits = {j: parked.positions[j] for j in JOINTS if j != "gripper"}
     rested = LeRobotAdapter(LeRobotReal("COM5", rest_pose=where_it_sits))
@@ -2925,8 +2931,8 @@ async def test_a_built_arm_still_goes_limp_at_rest_and_holds_away_from_it(monkey
     unposed = LeRobotAdapter(LeRobotReal("COM5"))
     await unposed.connect()
     await unposed.close()
-    assert loose.torque_disabled == 1 and loose.torque is False, "no pose, so it goes limp"
-    assert unposed.close_note is None
+    assert loose.torque_disabled == 0 and loose.torque is True, "no pose, nowhere to let go"
+    assert "has no rest pose recorded" in (unposed.close_note or ""), unposed.close_note
 
     away = built_arm(monkeypatch, FakeArm(step=40.0, stuck=("shoulder_lift",)))
     strayed = LeRobotAdapter(LeRobotReal("COM5", rest_pose=dict(FOLDED)))
@@ -3003,7 +3009,8 @@ async def test_a_second_connect_asks_for_the_hold_again(monkeypatch: Any) -> Non
     A transport connected again reuses that follower, so a session whose exit then skipped
     the close would have dropped the arm on the strength of the one before it."""
     arm = built_arm(monkeypatch, FakeArm())
-    adapter = LeRobotAdapter(LeRobotReal("COM5"))
+    where_it_sits = {j: arm.positions[j] for j in JOINTS if j != "gripper"}
+    adapter = LeRobotAdapter(LeRobotReal("COM5", rest_pose=where_it_sits))
     await adapter.connect()
     await adapter.close()
     assert arm.torque_disabled == 1 and arm.config.disable_torque_on_disconnect is True
@@ -3096,9 +3103,10 @@ async def test_a_refused_release_the_close_could_not_repeat_is_not_said_to_have_
     assert "the close then took torque off" not in note, note
 
 
-async def test_an_arm_with_no_rest_pose_recorded_moves_nothing_and_goes_limp() -> None:
-    """The whole thing is opt-in. Without a recorded pose there is nothing to check the
-    joints against, so the rest move is a no-op and the close lets go as it always has."""
+async def test_an_arm_with_no_rest_pose_recorded_moves_nothing_and_keeps_its_torque() -> None:
+    """Without a recorded pose there is nothing to check the joints against, so the rest move is
+    a no-op. Nor is there anywhere the arm is known to rest, so the close keeps its torque rather
+    than let it go where it stands, which it used to do (ADR-0058), and says how to put it down."""
     arm = FakeArm()
     transport = LeRobotReal("COM5", robot=arm)
     adapter = LeRobotAdapter(transport)
@@ -3108,9 +3116,10 @@ async def test_an_arm_with_no_rest_pose_recorded_moves_nothing_and_goes_limp() -
     assert result.how == "none" and not result.recorded and not result.reached
     assert arm.actions == [], "an arm with no rest pose was driven somewhere"
     await adapter.close()
-    assert arm.config.disable_torque_on_disconnect is True
-    assert arm.torque_disabled == 1 and arm.torque is False
-    assert adapter.close_note is None
+    assert arm.config.disable_torque_on_disconnect is False
+    assert arm.torque_disabled == 0 and arm.torque is True
+    note = adapter.close_note or ""
+    assert note == TORQUE_LEFT_ON_WITHOUT_A_POSE.format(name=UNNAMED), note
 
 
 async def test_an_arm_already_at_its_rest_pose_sends_nothing() -> None:
@@ -4912,8 +4921,14 @@ async def test_a_refused_release_the_close_then_let_go_of_says_the_close_did(pos
     assert (await transport.let_go(anywhere=True)).how == "refused"
     await transport.close()
     note = transport.close_note or ""
-    where = "at the rest pose" if pose == "recorded" else "where the arm stands"
-    assert note.startswith(f"the release did not take, and the close then took torque off {where}")
+    if pose == "none":
+        # an arm with no rest pose is kept powered by its close (ADR-0058), refused or not
+        assert note == TORQUE_KEPT_AFTER_REFUSAL_WITHOUT_A_POSE, note
+        assert arm.torque_disabled == 0, "the close let go of an arm with no pose"
+        return
+    assert note.startswith(
+        "the release did not take, and the close then took torque off at the rest pose"
+    )
     assert "cut its power if it still holds itself up" in note, note
     assert arm.torque_disabled == 1, "the close did not let go"
 
@@ -7650,3 +7665,190 @@ async def test_a_stall_whose_hold_found_the_arm_silent_says_it_did_not_answer() 
     parked = await transport.go_to_rest()
     assert parked.how == "stalled", parked
     assert parked.answered is False, "a stall nothing read back was said to have answered"
+
+
+# ── what the close says over what its own reads found ───────────────────────────────────
+
+
+class _BrownsOut(FakeArm):
+    """Servos that reset part way through a fold, a brown-out under stall current, and come back
+    answering every read with their torque disabled: a goal moves nothing after that."""
+
+    def __init__(self, after: int, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.after = after
+        self.sends = 0
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        self.sends += 1
+        if self.sends == self.after:
+            self.torque = False
+        return super().send_action(action)
+
+
+async def test_a_fold_that_missed_over_servos_that_lost_their_torque_says_they_read_off() -> None:
+    """The fold stalls because the servos are limp, not because something holds the arm back,
+    and the arm's own reads say so. The miss carries the joints that read off, and the close no
+    longer says torque was left on and the arm will not fall: its read found it off. `robot list
+    --probe` keeps that direction when it shortens the note."""
+    from quackd.registry import _torque_phrase
+
+    arm = _BrownsOut(after=2)
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    missed = await transport.go_to_rest()
+    assert not missed.reached and missed.answered, missed
+    assert set(missed.limp) == BODY_JOINTS, missed.limp
+    await transport.close()
+    note = transport.close_note or ""
+    assert "torque reads off on" in note and "torque was left on" not in note, note
+    assert "may already have dropped" in note, note
+    assert _torque_phrase(note) == "torque reads OFF: the arm may have dropped", note
+
+
+class _TorqueUnread(FakeBus):
+    """A bus whose torque register answers no read, every other read going through: the status
+    packets of `Torque_Enable` lost, as upstream says it of a sync read with no good reply."""
+
+    def sync_read(
+        self, data_name: str, motors: Any = None, *, normalize: bool = True, num_retry: int = 0
+    ) -> dict[str, int]:
+        if data_name == "Torque_Enable":
+            self.arm.reads.append((data_name, normalize, num_retry))
+            raise RuntimeError(
+                "Failed to sync read 'Torque_Enable' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. "
+                "[TxRxResult] There is no status packet!"
+            )
+        return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
+
+
+async def test_a_fold_that_missed_with_its_torque_unread_names_no_joint_limp() -> None:
+    """`RestResult.limp` is what the arm's torque read found off, and a read that failed found
+    nothing: an arm whose torque register has answered no read since the connect is not said to
+    be limp, and a missed fold is settled as one over an arm holding itself up, its questions
+    put as before."""
+    arm = FakeArm()
+    arm.bus = _TorqueUnread(arm)
+    arm.obstacles["shoulder_pan"] = (-5.0, math.inf)  # something in the way of the fold
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    missed = await transport.go_to_rest()
+    assert not missed.reached and missed.answered, missed
+    assert missed.limp == (), f"an unread torque register was read as limp: {missed.limp}"
+
+
+async def test_a_limp_miss_past_the_travel_still_names_the_joints_that_read_off() -> None:
+    """The bench arm's fold lies past the travel its calibration recorded, and a fold to such a
+    pose reports the joints clipped. That result was built anew from the move's and lost the
+    joints whose torque read off, so on that arm a fold that missed over limp servos was said to
+    hold itself up, and the questions after it were put."""
+    arm = _BrownsOut(after=2)
+    pose = dict(FOLDED)
+    pose["shoulder_lift"] = _past(arm, "shoulder_lift", -20.0)
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=pose)
+    await transport.connect()
+    missed = await transport.go_to_rest()
+    assert missed.clipped and not missed.reached and missed.answered, missed
+    assert set(missed.limp) == BODY_JOINTS, missed.limp
+
+
+class _GripperTripped(FakeBus):
+    """A bus whose gripper servo reads its torque off while every body joint reads on: the
+    overload protection a gripper's servo trips while it squeezes."""
+
+    def sync_read(
+        self, data_name: str, motors: Any = None, *, normalize: bool = True, num_retry: int = 0
+    ) -> dict[str, int]:
+        if data_name == "Torque_Enable":
+            self.arm.reads.append((data_name, normalize, num_retry))
+            return {joint: 0 if joint == "gripper" else 1 for joint in JOINTS}
+        return super().sync_read(data_name, motors, normalize=normalize, num_retry=num_retry)
+
+
+async def test_a_gripper_alone_reading_torque_off_is_no_limp_arm() -> None:
+    """The gripper holds none of the arm up and is never folded. A fold stopped by something in
+    its way, over an arm whose gripper alone reads off, is an arm holding itself up, and the
+    questions after a miss are put over it; it used to be said that it may have dropped."""
+    arm = FakeArm()
+    arm.bus = _GripperTripped(arm)
+    arm.obstacles["shoulder_pan"] = (-5.0, math.inf)  # something in the way of the fold
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    missed = await transport.go_to_rest()
+    assert not missed.reached and missed.answered, missed
+    assert missed.limp == (), missed.limp
+    await transport.close()
+    note = transport.close_note or ""
+    assert "torque reads off" not in note and "torque was left on" in note, note
+
+
+async def test_an_asked_release_read_back_limp_is_at_rest_when_the_close_cannot_read() -> None:
+    """Every motor read off after the release `robot release` asked for at the rest pose, and the
+    close's own read then got no answer. The arm is limp in its fold, where nobody holds it, and
+    the close told the person to put it down from their hands."""
+    arm = FakeArm()
+    rest = {j: arm.positions[j] for j in JOINTS if j != "gripper"}
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=rest)
+    await transport.connect()
+    released = await transport.let_go(asked=True)
+    assert released.ok and released.torque_on == (), released
+    arm.dead = True  # and the close's read gets no answer
+    await transport.close()
+    assert transport.close_note == LIMP_AT_REST_AS_ASKED, transport.close_note
+
+
+async def test_a_fold_stopped_partway_is_said_to_have_been_stopped() -> None:
+    """A fold cancelled as it went, which is how a press stops the fold at the end of a run, left
+    the close nothing to read but its own shortfall, and the close said nothing had moved the arm
+    there, over an arm the fold had moved."""
+    arm = FakeArm(step=5.0)
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    sent = len(arm.actions)
+    fold = asyncio.ensure_future(transport.go_to_rest())
+    await _until(lambda: len(arm.actions) > sent)  # the fold has sent a goal
+    fold.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await fold
+    await transport.close()
+    note = transport.close_note or ""
+    assert "a fold to it was stopped partway" in note, note
+    assert "nothing moved it there" not in note, note
+
+
+async def test_an_asked_release_at_rest_is_never_put_down_from_a_hand() -> None:
+    """`quackd robot release` folds the arm and lets go of it at its pose, and the person was
+    told to take their hands away before it folded. Where a motor still reads on afterwards, or
+    nothing read the release back, the close used to tell them to put down an arm lying in its
+    fold, from hands nobody had on it. It says to leave it where it rests now."""
+    holdout = _spanned()
+    holdout.torque_holdouts = {"shoulder_lift"}
+    rest = {j: holdout.positions[j] for j in SPANS}
+    transport = LeRobotReal("COM5", robot=holdout, rest_pose=rest)
+    await transport.connect()
+    await transport.let_go(asked=True)
+    await transport.close()
+    assert transport.close_note == still_holding_at_rest(("shoulder_lift",)), transport.close_note
+    assert "in your hands" not in (transport.close_note or "")
+
+    unread = _spanned()
+    unread.bus_error_after_release = True
+    transport = LeRobotReal("COM5", robot=unread, rest_pose={j: unread.positions[j] for j in SPANS})
+    await transport.connect()
+    await transport.let_go(asked=True)
+    await transport.close()
+    assert transport.close_note == UNREAD_AT_REST, transport.close_note
+
+
+async def test_an_arm_read_for_its_rest_pose_is_let_go_of_where_it_reads() -> None:
+    """`quackd robot rest-pose` reads an arm a person folded by hand, which has no pose recorded
+    yet, and the close of such an arm keeps its torque. Told it rests where it reads, the close
+    finds it at that pose and lets go of it there, saying nothing, as at the end of any run."""
+    arm = FakeArm()
+    transport = LeRobotReal("COM5", robot=arm)
+    await transport.connect()
+    await transport.get_state()
+    transport.rests_where_it_reads()
+    await transport.close()
+    assert arm.torque_disabled == 1 and arm.torque is False
+    assert transport.close_note is None, transport.close_note

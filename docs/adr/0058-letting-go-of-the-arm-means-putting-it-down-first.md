@@ -2,6 +2,42 @@
 
 **Status:** accepted · **Date:** 2026-10-23 · Amends [ADR-0039](0039-an-arm-placed-by-hand.md) (its second door, which released the arm wherever it stood) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (the ways out its torque line names) · Implemented in `quackd/release.py`, `quackd/cli.py` (`robot release`, and `run`'s refusal), `quackd/agent/loop.py` (`_offer_release`), `quackd/registry.py` (`no_rest_pose_refusal`), `quackd/adapters/factory.py` (`needs_rest_pose`), `quackd/mcp_server.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md#releasing-it), [first run](../adapters/lerobot/first-run.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
+**Amended 2026-10-23:** the follow-ups this record left open were made the same day, at Rok's
+word, and three of them change what is decided below.
+
+- **A real arm's close no longer lets go of an arm with no rest pose where it stands.** It keeps
+  its torque and says so, naming the ways to put it down and to give it a pose
+  (`KEEPS_TORQUE_WITHOUT_A_POSE`, `TORQUE_LEFT_ON_WITHOUT_A_POSE`). The mock and the simulator
+  let go as before, having no arm to drop. Decision 9's refusal stands, as Rok decided it, for a
+  reason the change alters: a run of such an arm would end with nothing to fold it to and the
+  arm left holding itself up wherever it stopped, and the refusal now says that rather than that
+  the arm would fall. Decision 5's question still comes before the connect, because connecting
+  is where the arm first goes limp, not because the close would drop it.
+- **`doctor` and `robot list --probe` keep such an arm powered.** The probe says
+  `torque left on: no rest pose recorded`. At a terminal `doctor` asks, before it lets go of the
+  bus, whether to drop the arm into the person's hands (`DROP_UNPOSED`), which is how a first arm
+  comes to be limp for folding by hand. Over an arm with a pose it counts `HANDS_AWAY_S` before
+  its fold, terminal or not, as `robot release` does, and a press, from the connect on, stops the
+  fold; its warning no longer asks for the arm to be supported until doctor has finished, under
+  that fold. `robot rest-pose` lets go of the arm where it reads it only once the person has
+  answered yes to the pose (`rests_where_it_reads`), its close coming after the question where it
+  came before it, so a no, or a read that fails, keeps the arm powered in its fold.
+- **A first press stops the fold at the end of a run that ended by itself.** "What does not
+  change" below still holds for a run the press ended. A run that ended on success, failure or a
+  spent budget used to make its fold deaf to a first press. It is stopped now where the arm is,
+  held there with torque on (`FOLD_STOPPED`). A flock stopping its members, or a heartbeat that
+  fails, does not stop it.
+
+Three smaller ones correct what quackd says over an arm its own reads contradict. A fold that
+missed over joints whose torque read finds them off, servos that browned out, puts neither
+question and says what the read found (`RestResult.limp`, `LIMP_AFTER_A_MISS`, and the close's
+`torque_reads_off`), rather than saying the arm holds itself up. A release asked for at the rest
+pose no longer tells the person to put down from their hands an arm lying in its fold
+(`UNREAD_AT_REST`, `still_holding_at_rest`). And the consequence below that a core beside an
+older adapter lets such a run through is closed: one of quackd's own adapters from another
+release than the core is refused wherever a body is described or built (`factory._same_release`).
+None of it has run on an arm either.
+
 ## Context
 
 An SO-101 has no brake. Torque is the only thing holding it up, so an arm let go of where it

@@ -197,12 +197,15 @@ they read it with no room for a field they do not know, and two installs on one 
 ## The rest pose
 
 A LeRobot arm goes limp the moment it is disconnected, because LeRobot's own `disconnect()`
-disables torque by its default, and a clean close with no rest pose recorded asks for exactly
-that. On the bench that meant the arm fell at the end of every run, and every run started from
+disables torque by its default, and until 0.24 a clean close with no rest pose recorded asked
+for exactly that. On the bench that meant the arm fell at the end of every run, and every run started from
 wherever the last one had left it. A rest pose answers both: one pose, kept under the robot's
 name, that a run drives the arm to before the pilot gets control and returns it to before torque
 is released. A real arm with none is refused a run, a dry run and an MCP session before anything
-connects, since its close would let go of the arm wherever it stood.
+connects, since at the end there would be nothing to fold it to, and its close, which keeps such
+an arm powered rather than let it fall, would leave it holding itself up wherever it stopped.
+`doctor` and `robot list --probe` keep it powered the same way, and at a terminal `doctor` asks
+first whether to drop it into your hands, which is how to get it limp to fold by hand.
 
 It is **read off the arm, never typed.** Nothing is connected while you set it up, so the arm
 is limp. Fold it by hand into a pose it holds with the power off, then record where it ended
@@ -394,9 +397,10 @@ Ctrl-C or `q` during a fold, the first or the second, stops it at most a step ca
 pressed (5 degrees by default), holds it there with nothing released, and exits 1 on
 `the fold was stopped where it was, and nothing was released: torque is as the fold left it`.
 
-**An arm with no rest pose** has nothing to fold to, and its close lets go of it wherever it
-stands, so connecting to it at all ends in the drop. Its one question is asked before anything
-connects, and it says that the arm will drop. Captured on `lerobot:mock` registered as `arm-02`
+**An arm with no rest pose** has nothing to fold to, so letting go of it where it stands is all
+the command can do, and connecting is where it first goes limp. Its one question is asked before
+anything connects, it says that the arm will drop, and anything but Enter leaves the arm as it
+was. Captured on `lerobot:mock` registered as `arm-02`
 with no rest pose, at a terminal:
 
 ```

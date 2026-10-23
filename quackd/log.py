@@ -624,7 +624,7 @@ def render_events(
                 LogLine(
                     "llm<",
                     f"ERROR {d['error']} after {d.get('latency_s', 0):.1f} s, asking again in "
-                    f"{d['retry_in_s']:.0f} s",
+                    f"{d['retry_in_s']:g} s",
                     "yellow",
                     mark="warn",
                 )

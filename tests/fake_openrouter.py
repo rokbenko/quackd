@@ -208,8 +208,9 @@ class FakeOpenRouter:
     script describes, asked again."""
     fail_status: int = 529
     fail_headers: dict[str, str] = field(default_factory=lambda: {"retry-after-ms": "1"})
-    """Sent with each failure: a `retry-after-ms` of 1 lets the SDK's own retries spend
-    themselves at once, so what reaches quackd is the failure the SDK gave up on."""
+    """Sent with each failure: a `retry-after-ms` of 1, a wait shorter than any of quackd's own,
+    so the wait quackd sits out is its schedule's. An SDK left to retry on its own spends its
+    tries at once on it."""
     requests: list[Recorded] = field(default_factory=list)
 
     def __post_init__(self) -> None:

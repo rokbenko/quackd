@@ -82,6 +82,14 @@ class RestResult:
     doing. True for a move the body answered and still missed, a write it refused after a read
     that came back included, and for every body that never fails this way, which is why it has
     a default."""
+    limp: tuple[str, ...] = ()
+    """The joints the body's last read of its own torque found off when a move that missed
+    ended, in the body's order: an arm whose servos lost their torque partway through the move,
+    a brown-out under stall current or a supply cut and back, still answers every read, and a
+    goal sent to a joint with no torque moves nothing. What is limp is not holding itself up,
+    whatever the move's own reason says, so a caller about to say that it is reads this
+    second. Empty where every joint read on, where nothing has read the torque since, and for
+    every body that cannot say, which is why it has a default."""
 
     @property
     def reached(self) -> bool:

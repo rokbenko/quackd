@@ -148,9 +148,20 @@ DROP_UNFOLDED = (
     f"connects to it and {WILL_DROP}. Leave it, and after {{seconds:.0f}} s nothing is connected"
 )
 """`quackd robot release`'s only question for an arm with no rest pose, asked before it
-connects, not after. With no pose to judge it by, the arm's close lets go of it wherever it
-stands, so connecting to it at all ends in the drop: a question put after the connect could
-only be answered by an arm already on its way down."""
+connects, not after. With no pose to fold it to, letting go of it where it stands is all the
+command can do, and connecting is where the arm first goes limp, for the moment LeRobot takes to
+configure its motors: a no put after the connect would come after that moment, over an arm that
+had already sagged. Asked first, a no leaves the arm exactly as it was."""
+
+DROP_UNPOSED = (
+    "{name} has no rest pose recorded, so torque was kept on rather than let go of where the arm "
+    f"stands. Pressing Enter now {WILL_DROP}. Leave it, and after {{seconds:.0f}} s torque stays on"
+)
+"""`quackd doctor`'s one question, put at a terminal once it has read an arm with no rest pose
+and before it lets go of the bus. A real arm's close keeps such an arm powered rather than let
+it go where it stands (ADR-0058), and at first contact the person usually wants it limp, to fold
+it by hand and record its pose: Enter drops it into their hands, and anything else keeps it as
+it is. With no terminal nothing is asked, and torque stays on."""
 
 REFOLDED = (
     "the arm reached its rest pose this time, so it is let go of there when the run disconnects "
@@ -162,9 +173,22 @@ with nothing more to say."""
 FOLD_STOPPED = (
     "the fold was stopped where it was, and nothing was released: torque is as the fold left it"
 )
-"""Said when a Ctrl-C or `q` stopped the fold the person asked for. Nothing was released, which
-is all this knows: whether the arm is holding itself up is the close's line to say, from its own
-read, and it follows this one, as after `RELEASE_NOT_SENT`."""
+"""Said when a Ctrl-C or `q` stopped a fold: one a person asked for, the second fold or the
+release's, `doctor`'s, or the fold at the end of a run that ended by itself. Nothing was
+released, which is all this knows: whether the arm is holding itself up is the close's line to
+say, from its own read, and it follows this one, as after `RELEASE_NOT_SENT`."""
+
+LIMP_AFTER_A_MISS = (
+    "the arm did not reach its rest pose ({why}), and its last read finds torque off on {limp}: "
+    "that much of it is not holding itself up and may already have dropped, and a fold cannot "
+    "move a joint with no torque, so nothing is asked. Hold the arm, put it down, and cut its "
+    "power before it is powered again"
+)
+"""Said in place of either question when the fold missed over joints whose own torque read
+found them off (`RestResult.limp`): a brown-out under stall current, or a supply cut and back,
+leaves servos answering with their torque disabled. "It is holding itself up where it stopped"
+would be untrue of them, a second fold would send goals to joints that cannot move, and a
+release would let go of whatever still holds while the rest has already gone."""
 
 REFOLD_UNANSWERED = (
     "the arm stopped answering during the second fold ({why}), so quackd cannot tell whether it "
@@ -206,6 +230,7 @@ FOLD_UNANSWERED = "the arm did not answer the second fold"
 NOT_SENT = "interrupted before the release was sent"
 DURING_RELEASE = "interrupted during the release"
 DECLINED = "answered no"
+TORQUE_READS_OFF = "torque reads off"
 """The record's reasons, one per way a missed fold is settled, as the `release` event's
 `reason` and `Settled.reason` carry them. `answered no` is a line with something typed on it,
 `n` the commonest: only a bare Enter is a yes to a question that moves or drops the arm."""
@@ -278,7 +303,7 @@ practice it is gone at once; the bound is for one that would not go, and it keep
 from being held up for ever by something this module did not write."""
 
 
-async def _finished(*tasks: asyncio.Future[Any]) -> None:
+async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
     """Cancel `tasks` and wait until every one has finished, whatever each ends with.
 
     `asyncio.wait` rather than awaiting each: it raises nothing a task raised. A cancellation of
@@ -329,14 +354,14 @@ async def fold_unless_stopped(
         await asyncio.wait({folding, watching}, return_when=asyncio.FIRST_COMPLETED)
     except BaseException:
         # this call was cancelled or interrupted while both ran: neither may outlive it
-        await _finished(folding, watching)
+        await cancel_and_wait(folding, watching)
         raise
     if folding.done():
         # the fold ended first, or both at once: it is what happened, whatever was pressed
-        await _finished(watching)
+        await cancel_and_wait(watching)
         return folding.result()
     if not watching.cancelled() and watching.exception() is None:
-        await _finished(folding)
+        await cancel_and_wait(folding)
         raise FoldStopped
     # a `stopped` that failed is no stop, so the fold goes on alone. Awaited directly, so a
     # cancellation of this call is passed on to the fold and waited out with it
@@ -399,6 +424,14 @@ async def release_where_it_stands(
     return Settled("released", released.reason, released=released, said=said)
 
 
+def _limp(missed: RestResult, *, event: Hook, note: Hook) -> Settled:
+    """`kept`, over a fold that missed with joints whose torque read found them off."""
+    said = LIMP_AFTER_A_MISS.format(why=missed.reason, limp=", ".join(missed.limp))
+    event(stage="kept", reason=TORQUE_READS_OFF)
+    note(said)
+    return Settled("kept", TORQUE_READS_OFF, said=said)
+
+
 async def settle_missed_fold(
     transport: Any,
     person: Person,
@@ -422,7 +455,12 @@ async def settle_missed_fold(
     2. The second fold, which a fresh press stops. Stopped or interrupted: the caller's stop is
        sent, and `kept`. Arrived: `folded`. Missed with the arm silent: `kept`, and nothing more
        is asked, because nothing it says about itself can be believed.
-    3. `DROP_AFTER_TWO_FOLDS`. Anything but Enter: `kept`. Enter: the release where it stands."""
+    3. `DROP_AFTER_TWO_FOLDS`. Anything but Enter: `kept`. Enter: the release where it stands.
+
+    Neither question is put over joints whose own torque read found them off after a fold
+    (`RestResult.limp`): `LIMP_AFTER_A_MISS` says so instead, and `kept`."""
+    if missed.limp:
+        return _limp(missed, event=event, note=note)
     first = CLEAR_THE_WAY.format(why=missed.reason, seconds=CLEAR_THE_WAY_S)
     answer = await ask(person, first, CLEAR_THE_WAY_S, asked=asked)
     if answer != ENTER:
@@ -462,6 +500,8 @@ async def settle_missed_fold(
     if again.reached:
         event(stage="folded", how=again.how, reason=again.reason)
         return Settled("folded", again.reason, asked="clear", fold=again, said=REFOLDED)
+    if again.limp:
+        return replace(_limp(again, event=event, note=note), asked="clear", fold=again)
     if not again.answered:
         said = REFOLD_UNANSWERED.format(why=again.reason)
         event(stage="kept", reason=FOLD_UNANSWERED)

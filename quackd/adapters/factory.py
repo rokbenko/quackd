@@ -221,7 +221,40 @@ def _module(adapter: str) -> Any:
             raise AdapterNotInstalled(adapter, row.extra or f"quackd[{adapter}]")
         known = ", ".join(adapter_names())
         raise AdapterError(f"unknown adapter {adapter!r}; installed here: {known}")
-    return importlib.import_module(where)
+    module = importlib.import_module(where)
+    _same_release(adapter, module)
+    return module
+
+
+def _release_of(version: str) -> tuple[str, ...]:
+    """The major and minor of a version, the part an adapter and the core must share."""
+    return tuple(version.split(".")[:2])
+
+
+def _same_release(adapter: str, module: Any) -> None:
+    """Refuse one of quackd's own adapters that is from another release than this core.
+
+    They are released together, each carrying the core's own `__version__`, and each allows a
+    core of its own minor and no other (RELEASING.md). pip still lets a mix happen: upgrading
+    quackd on its own leaves the adapter where it was and only warns. The core then reads
+    declarations the older adapter does not make, `REST_POSE_BACKENDS` among them, and reads
+    each missing one as none, so a run it would refuse on a real arm with no rest pose went
+    ahead (ADR-0058). Refused here, where everything that describes, builds or asks about a
+    body passes, so the refusal says what to reinstall before anything connects. A module with
+    no `__version__` of its own is inside the core wheel, and a third party's adapter is not
+    quackd's to version: neither is asked."""
+    from quackd import __version__ as core
+
+    theirs = getattr(module, "__version__", None)
+    if adapter not in BY_NAME or not isinstance(theirs, str):
+        return
+    if _release_of(theirs) == _release_of(core):
+        return
+    extra = BY_NAME[adapter].extra or f"quackd[{adapter}]"
+    raise AdapterError(
+        f"quackd-{adapter} {theirs} is from another release than quackd {core}, and the two are "
+        f'released together: reinstall them together: uv pip install -U "{extra}"'
+    )
 
 
 def describe(spec: RobotSpec, *, policy: PolicyChoice | None = None) -> RobotManifest:
@@ -272,11 +305,12 @@ def needs_rest_pose(spec: RobotSpec | str) -> bool:
     `REST_POSE_BACKENDS`, and a module that declares none needs none, as with
     `SIMULATOR_BACKENDS` above.
 
-    The LeRobot arm's real backend is the one (ADR-0058): its close lets go of an arm with no
-    rest pose wherever it stands, and an SO-101 has no brake, so such a run, a dry one
-    included, ends with the arm falling. Its mock and its simulator are not, having no arm to
-    drop. `doctor` and `rest-pose` do not ask: one is a probe a person supports the arm
-    through, and the other is how a pose comes to be recorded at all.
+    The LeRobot arm's real backend is the one (ADR-0058): with no rest pose there is nothing
+    to fold the arm to at the end of a run, a dry one included, and the close keeps its torque
+    rather than let it fall where it stands, so the run would leave it holding itself up
+    wherever it stopped. Its mock and its simulator are not, having no arm to drop. `doctor`
+    and `rest-pose` do not ask: one is a probe that moves nothing, and the other is how a pose
+    comes to be recorded at all.
 
     A spec that does not parse, or an adapter that is not installed or does not import, needs
     none here and fails where it always did, when it is built."""

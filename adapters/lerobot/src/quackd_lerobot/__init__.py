@@ -68,9 +68,11 @@ built (`quackd.adapters.factory.is_simulator`), so a command that must only ever
 simulator refuses a real arm before connecting to it."""
 REST_POSE_BACKENDS = ("real",)
 """The backends a run, an MCP session or a flock refuses without a recorded rest pose. Read
-before anything is built (`quackd.adapters.factory.needs_rest_pose`). The arm's close lets go of
-an arm with no rest pose wherever it stands, and an SO-101 has no brake, so on a desk such a
-session ends with the arm falling (ADR-0058). The mock and the simulator have no arm to drop."""
+before anything is built (`quackd.adapters.factory.needs_rest_pose`). An arm with no rest pose
+has nothing to be folded to at the end, and the real arm's close keeps its torque rather than let
+it fall where it stands (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`), so such a session would end
+with it holding itself up wherever it stopped (ADR-0058). The mock and the simulator have no arm
+to drop."""
 DEFAULT_ID = "arm-01"
 ROBOT_TYPE = "so101_follower"
 BLURB = (
@@ -336,6 +338,14 @@ class LeRobotAdapter:
 
     async def go_to_rest(self) -> RestResult:
         return await go_to_rest_if_any(self.transport)
+
+    def rests_where_it_reads(self) -> None:
+        """The arm's own (`LeRobotReal.rests_where_it_reads`), where it has one: `rest-pose` reads
+        an arm folded by hand, and its close then lets go of it there. The mock lets go of an arm
+        with no pose as it always did, and has nothing to take."""
+        rests = getattr(self.transport, "rests_where_it_reads", None)
+        if callable(rests):
+            rests()
 
     async def let_go(self, *, anywhere: bool = False, asked: bool = False) -> HandResult:
         """Torque off, for a person at the arm. `anywhere` and `asked` are the transport's own

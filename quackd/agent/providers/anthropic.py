@@ -27,6 +27,7 @@ import re
 from typing import Any
 
 from quackd.agent.providers.base import (
+    NO_SDK_RETRIES,
     Decision,
     Exchange,
     ProviderError,
@@ -302,7 +303,11 @@ class AnthropicProvider:
                 import anthropic
             except ImportError as e:
                 raise ProviderNotInstalled("anthropic", "anthropic") from e
-            client = anthropic.AsyncAnthropic()  # resolves the key / `ant auth` profile itself
+            # It resolves the key or the `ant auth` profile itself. No retries of its own: the
+            # SDK sits out a `retry-after` of any length inside the call, where a first Ctrl-C
+            # cannot reach and nothing is recorded, and the loop asks again on its own clock,
+            # stoppable and on the record (ADR-0059).
+            client = anthropic.AsyncAnthropic(max_retries=NO_SDK_RETRIES)
         self.client = client
 
     def _params(

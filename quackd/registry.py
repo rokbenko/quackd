@@ -502,8 +502,9 @@ def no_rest_pose_refusal(
     """The refusal for a real arm with no rest pose recorded, and the way out, or None for any
     robot that may be connected without one (`needs_rest_pose`).
 
-    Such an arm's close lets go of it wherever it stands, and an SO-101 has no brake, so a run, a
-    dry run, an MCP session or a flock member on it ends with the arm falling (ADR-0058). It is
+    Such an arm has nothing to be folded to at the end of a run, a dry run, an MCP session or a
+    flock member's run, and its close keeps its torque rather than let it fall where it stands,
+    so each would end with the arm holding itself up wherever it stopped (ADR-0058). It is
     refused before anything is built or connected. `what` is the thing refused, as the sentence
     says it: `a run, a dry one included`, `an MCP session`. A registered arm is sent to record
     its pose; a bare spec names no arm to record one for, so it is sent to register one first,
@@ -513,13 +514,13 @@ def no_rest_pose_refusal(
     if not needs_rest_pose(resolved.spec) or resolved.adapter_kwargs()["rest_pose"] is not None:
         return None
     falls = (
-        f"quackd lets go of an arm with none wherever it stands at the end of {what}, so it would "
-        "fall there"
+        f"at the end of {what}, there is nothing to fold it to, and it would be left holding "
+        "itself up wherever it stopped"
     )
     if resolved.entry is not None:
         name = resolved.entry.name
         return (
-            f"{name} ({resolved.spec.key}) has no rest pose recorded, and {falls}",
+            f"{name} ({resolved.spec.key}) has no rest pose recorded, so {falls}",
             f"quackd robot rest-pose {name}",
         )
     key = resolved.spec.key
@@ -1085,6 +1086,14 @@ def _torque_phrase(note: str) -> str:
         return "torque could NOT be kept: the arm was released where it stood"
     if "cannot tell whether" in note:
         return "torque unknown: the arm did not answer the close"
+    if "has no rest pose recorded" in note:
+        # a real arm with none is kept powered at the close rather than let go of where it
+        # stands (ADR-0058), and a probe moves nothing, so this is the probe's own doing
+        return "torque left on: no rest pose recorded"
+    if "torque reads off on" in note:
+        # the close's own read found servos limp, a brown-out the commonest cause: the arm is
+        # not held up there, which is the other way round from the line below
+        return "torque reads OFF: the arm may have dropped"
     return "torque left on: not at its rest pose"
 
 

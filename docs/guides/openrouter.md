@@ -262,7 +262,7 @@ stepper.
 | `COST_IS_THE_BILL` | that `usage.cost`, with the upstream figure on BYOK, is what your key is charged | recorded as billed; `--price` overrides it |
 | `LIST_PRICE_MATCHES_BILL` | that a row's rate, or the list's, is near what a turn costs | used only for a turn that came back with no bill |
 | `NO_MAX_TOKENS` | how OpenRouter treats a request that names no `max_tokens` against a small balance | nothing; a 402 ends the run in OpenRouter's words |
-| `FREE_LIMITS` | that the limits above still hold | a 429 is asked again up to four times after the SDK's own retries, then ends the run |
+| `FREE_LIMITS` | that the limits above still hold | a 429 is asked again up to four times, by quackd alone since the SDK retries nothing of its own, then ends the run |
 | `ROUTED_PROVIDER_VARIES` | which provider served a turn | not recorded |
 
 ## Status

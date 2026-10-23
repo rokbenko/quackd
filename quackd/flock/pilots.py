@@ -247,8 +247,8 @@ async def run_pilot_flock(
         where = ", ".join(f"{name}={roster[name].robot_spec.key}" for name in members)
         raise ValueError(f"{duck.name} cannot run on {where}: {'; '.join(problems)}")
     contracts = {name: trim_contract(duck.frontmatter, manifests[name]) for name in members}
-    # A real arm with no rest pose is let go of wherever it stands when its member closes, and
-    # an SO-101 has no brake, so it falls there (ADR-0058). `quackd run` refuses such a member
+    # A real arm with no rest pose has nothing to be folded to when its member ends, and would
+    # be left holding itself up wherever it stopped (ADR-0058). `quackd run` refuses such a member
     # before anything is built; this is the same rule for a caller that reaches the flock
     # without it, read off each member's own kwargs, since a roster is structural.
     for name, entry in roster.items():
@@ -266,8 +266,8 @@ async def run_pilot_flock(
                 else (f"{name} ({key}) has no rest pose recorded", f"quackd robot rest-pose {name}")
             )
             raise ValueError(
-                f"{said}, and quackd lets go of an arm with none wherever it stands at the end of "
-                f"a flock's run, so it would fall there: {way_out}"
+                f"{said}, so at the end of a flock's run there is nothing to fold it to, and it "
+                f"would be left holding itself up wherever it stopped: {way_out}"
             )
 
     # built before the run directory exists, so a missing extra or a bad address fails with

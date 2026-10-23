@@ -1,10 +1,11 @@
 """A real arm with no rest pose is refused a run, a dry run, an MCP session and a flock.
 
-Its close lets go of an arm with none wherever it stands, and an SO-101 has no brake, so each
-of those would end with the arm falling (ADR-0058). The refusal comes before anything is built
-or connected, so these patch the arm's builder to fail the test if a refused arm is ever built,
-and check that no run directory was made. The mock and the simulator have no arm to drop and
-still run without a pose, and `doctor` and `rest-pose` never ask."""
+With no pose there is nothing to fold the arm to at the end, and its close keeps its torque rather
+than let it fall where it stands, so each would leave the arm holding itself up wherever it
+stopped (ADR-0058); the close used to let go of it there, and the arm fell. The refusal comes
+before anything is built or connected, so these patch the arm's builder to fail the test if a
+refused arm is ever built, and check that no run directory was made. The mock and the simulator
+have no arm to drop and still run without a pose, and `doctor` and `rest-pose` never ask."""
 
 from __future__ import annotations
 
@@ -84,8 +85,8 @@ def test_the_refusal_names_the_arm_and_the_way_out(tmp_path: Path) -> None:
         "",
     )
     assert message.startswith("arm-r (lerobot:real) has no rest pose recorded"), message
-    assert "lets go of an arm with none wherever it stands at the end of a run" in message
-    assert message.endswith("so it would fall there"), message
+    assert "so at the end of a run, there is nothing to fold it to" in message, message
+    assert message.endswith("would be left holding itself up wherever it stopped"), message
     assert hint == "quackd robot rest-pose arm-r"
 
     bare = Resolved(RobotSpec("lerobot", "real"))
@@ -130,7 +131,7 @@ def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_bui
     result = runner.invoke(app, args)
     flat = " ".join(result.output.split())
     assert result.exit_code == 1, result.output
-    assert "no rest pose" in flat and "so it would fall there" in flat, flat
+    assert "no rest pose" in flat and "holding itself up wherever it stopped" in flat, flat
     assert "quackd robot rest-pose" in flat, "the refusal names no way out"
     assert "real" not in never_built, never_built
     assert not runs.exists() or not any(runs.iterdir()), "a run directory was made"
@@ -373,3 +374,44 @@ def test_a_task_that_cannot_run_on_the_arm_says_so_before_the_pose_is_asked_for(
     assert result.exit_code == 1 and "cannot run on lerobot:real" in flat, flat
     assert "no rest pose" not in flat, flat
     assert "real" not in never_built, never_built
+
+
+def test_an_adapter_from_another_release_is_refused_before_it_is_described(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, never_built: list[str]
+) -> None:
+    """A core beside an adapter from an older release reads every declaration the older one
+    does not make as none, so the rest-pose refusal read `lerobot:real` as needing no pose and
+    the run went ahead. quackd's own adapters are released with the core, so another major or
+    minor is refused wherever a body is described or built, with what to reinstall. A patch
+    of the same minor is the same release, and a third party's adapter is never asked."""
+    import types
+
+    import quackd_lerobot
+    from quackd.adapters import factory
+    from quackd.adapters.base import AdapterError
+
+    major, minor, *_ = quackd_lerobot.__version__.split(".")
+    monkeypatch.setattr(quackd_lerobot, "__version__", f"{major}.{int(minor) - 1}.0")
+    with pytest.raises(AdapterError, match=r"reinstall them together: uv pip install -U"):
+        factory.describe(factory.parse_robot_spec("lerobot:mock"))
+    _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "lerobot-lookout",
+            "--robot",
+            "arm-r",
+            "--llm",
+            "fake",
+            "--no-gif",
+            *_reg(tmp_path),
+        ],
+    )
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 1 and "is from another release than quackd" in flat, flat
+    assert "real" not in never_built, never_built
+    monkeypatch.setattr(quackd_lerobot, "__version__", f"{major}.{minor}.99")
+    factory.describe(factory.parse_robot_spec("lerobot:mock"))
+    stranger = types.SimpleNamespace(__version__="9.9.9")
+    factory._same_release("a-third-partys-arm", stranger)

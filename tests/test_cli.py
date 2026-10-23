@@ -2518,7 +2518,8 @@ def test_doctor_builds_a_registered_arm_under_its_name_and_warns_before_it_conne
     assert seen == ["warned", "connected"], seen
     assert (
         "connecting takes torque off every motor for a moment, because LeRobot configures them "
-        "with it off: support the arm until doctor has finished with it"
+        "with it off: support the arm while it connects, then take your hands away"
+        " when doctor says so, because it folds the arm to its rest pose before it lets go"
     ) in flat, flat
     assert "quackd robot release bench-2" in flat and "to park it" not in flat, flat
     assert "release NAME" not in flat, "the arm was built without the name it was asked for by"
@@ -2538,7 +2539,26 @@ def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
 
     real = f"{CONNECTING_TAKES_TORQUE_OFF}, because LeRobot configures them with it off"
     assert cli._connect_warning() == real
-    assert cli._doctor_warning() == f"{real}: support the arm until doctor has finished with it"
+    # the hands that supported the arm come away before doctor folds it (`_DoctorHands`), and
+    # an arm with no pose is said to stay powered, with the question doctor then puts
+    assert cli._doctor_warning() == (
+        f"{real}: support the arm while it connects, then take your hands away when doctor says "
+        "so, because it folds the arm to its rest pose before it lets go"
+    )
+    kept = (
+        f"{real}: support the arm while it connects. It has no rest pose recorded, so doctor keeps "
+        "it powered where it stands at the end"
+    )
+    # the question is promised only where doctor will put it: a terminal, and no --json
+    assert cli._doctor_warning(folds=False) == kept
+    assert cli._doctor_warning(folds=False, asks=True) == (
+        f"{kept}, and asks first whether to drop it into your hands"
+    )
+    # and the mock with no pose is let go of where it stands, as every arm with none was
+    assert cli._doctor_warning(folds=False, keeps=False) == (
+        f"{real}: support the arm until doctor has finished with it, because with no rest pose "
+        "recorded it is let go of where it stands at the end"
+    )
     assert cli._release_warning() == (
         f"{real}, and the arm then folds to its rest pose and is let go of there: support it "
         "while it connects, then take your hands away when it says so, before it folds"
@@ -2565,6 +2585,365 @@ def test_the_hardware_warnings_say_when_the_arm_is_the_simulator() -> None:
     assert not cli._is_simulator(make_adapter("microduck:mock"))
     assert cli._is_simulator(make_adapter("lerobot:mujoco"))
     assert not cli._is_simulator(SimpleNamespace(is_simulator="yes"))
+
+
+# ── doctor, the probe and rest-pose over a real arm with no rest pose ───────────────────
+#
+# A real arm with no rest pose has nowhere it is known to rest, and its close keeps its torque
+# rather than let it fall where it stands (ADR-0058). These run the commands over the real
+# backend, with a `FakeArm` where the follower would be, because the mock lets go as it always
+# did and would pass whatever the close of the arm does.
+
+
+def _real_arm(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    arm: Any,
+    name: str,
+    *,
+    off: float | None = None,
+) -> Path:
+    """A registry with `name` registered as `lerobot:real` at a port, and every body the
+    commands build the real backend over `arm`, a `FakeArm`: the rest is the commands' own code.
+    With `off`, a rest pose is recorded with the shoulder that many degrees from where the arm
+    sits, so a fold moves it; with none, no pose is recorded."""
+    from quackd import doctor
+    from quackd.registry import Registry
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.real import LeRobotReal
+
+    monkeypatch.setattr(doctor, "_probe_models", lambda url, timeout_s=1.5: ("down", "not running"))
+    reg = tmp_path / "registry"
+    added = runner.invoke(
+        app,
+        ["robot", "add", name, "lerobot:real", "--address", "COM99", "--registry-dir", str(reg)],
+    )
+    assert added.exit_code == 0, added.output
+    if off is not None:
+        pose = {j: arm.positions[j] for j in JOINT_NAMES if j != "gripper"}
+        pose["shoulder_pan"] += off
+        Registry(reg).update_robot(name, {"rest_pose": pose})
+
+    def make_adapter(spec: Any, **kwargs: Any) -> Any:
+        pose = kwargs.get("rest_pose")
+        return LeRobotAdapter(
+            LeRobotReal(
+                "COM99", robot=arm, rest_pose=dict(pose) if pose else None, registered_name=name
+            ),
+            robot_id=name,
+        )
+
+    monkeypatch.setattr("quackd.adapters.factory.make_adapter", make_adapter)
+    return reg
+
+
+def test_doctor_keeps_a_real_arm_with_no_rest_pose_powered_and_says_how_to_put_it_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`doctor` used to let go of an arm with no rest pose wherever it stood, which on a bench
+    is an arm falling onto the table at the end of a health check. With no terminal to ask at,
+    it keeps it powered, and says so before the connect and after the close."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-p")
+    result = runner.invoke(app, ["doctor", "--robot", "arm-p", "--registry-dir", str(reg)])
+    flat = " ".join(result.output.split())
+    assert arm.torque is True and arm.torque_disabled == 0, "doctor let go of an arm with no pose"
+    assert "so doctor keeps it powered where it stands at the end" in flat, flat
+    assert "arm-p has no rest pose recorded, so torque was left on" in flat, flat
+    assert "quackd robot rest-pose arm-p" in flat, flat
+
+
+@pytest.mark.parametrize(("line", "drops"), [("\n", True), ("n\n", False)])
+def test_doctor_at_a_terminal_drops_an_arm_with_no_rest_pose_only_on_a_bare_enter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str, drops: bool
+) -> None:
+    """At a terminal `doctor` asks before it lets go of the bus whether to drop such an arm into
+    the person's hands, which at first contact is how an arm comes to be limp for folding by
+    hand before its pose is recorded. The question says it drops; a bare Enter drops it, and
+    anything typed on the line keeps it powered."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-q")
+    _a_terminal(monkeypatch, {"so torque was kept on rather than let go": line})
+    result = runner.invoke(app, ["doctor", "--robot", "arm-q", "--registry-dir", str(reg)])
+    flat = " ".join(result.output.split())
+    assert "Pressing Enter now takes torque off where it stands, and the arm will drop" in flat
+    assert (arm.torque is False) is drops, (line, arm.torque, flat)
+    assert ("torque was left on" in flat) is not drops, flat
+    # what the release did is said, as `robot release` says it
+    assert ("the arm is in your hands" in flat) is drops, flat
+
+
+def test_doctor_counts_the_hands_away_before_its_fold_and_a_press_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`doctor` folds an arm with a rest pose to it before it lets go, and its warning used to
+    ask for the arm to be supported until doctor had finished, which kept a hand in the fold's
+    path. At a terminal it counts the hands away first, as `robot release` does, and a `q`
+    during the count stops the fold before anything moves, the arm kept powered."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    monkeypatch.setattr("quackd.release.HANDS_AWAY_S", 3.0)
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-c", off=20.0)
+    tty = _a_terminal(monkeypatch, {})
+
+    async def q_during_the_count() -> None:
+        tty.type_line("q\n")
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr("quackd.cli._hands_away", q_during_the_count)
+    result = runner.invoke(app, ["doctor", "--robot", "arm-c", "--registry-dir", str(reg)])
+    flat = " ".join(result.output.split())
+    assert "take your hands away when doctor says so" in flat, flat
+    assert "folding arm-c to its rest pose in 3 s: take your hands away from it now" in flat
+    assert arm.positions["shoulder_pan"] == 0.0, "the fold moved the arm after the press"
+    assert all(a.get("shoulder_pan.pos", 0.0) == 0.0 for a in arm.actions), arm.actions
+    assert arm.torque is True and arm.torque_disabled == 0, "let go of away from its pose"
+
+
+def test_doctor_with_nobody_to_press_folds_the_arm_and_lets_go_at_its_pose(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The count's other side: with the hands away, the fold goes ahead and the arm is let go
+    of at its pose, as before."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-d", off=20.0)
+    _a_terminal(monkeypatch, {})
+    result = runner.invoke(app, ["doctor", "--robot", "arm-d", "--registry-dir", str(reg)])
+    flat = " ".join(result.output.split())
+    assert "folding arm-d to its rest pose in 0 s" in flat, flat
+    assert abs(arm.positions["shoulder_pan"] - 20.0) < 1.0, arm.positions
+    assert arm.torque is False and arm.torque_disabled == 1, flat
+
+
+def test_the_probe_says_a_real_arm_with_no_rest_pose_was_kept_powered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`robot list --probe` reads and closes, and its close used to let go of such an arm where
+    it stood. It keeps it powered now, and says so on the line that says the arm answered."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-l")
+    result = runner.invoke(app, ["robot", "list", "--probe", "--json", "--registry-dir", str(reg)])
+    (row,) = [json.loads(line) for line in result.output.strip().splitlines()]
+    assert row["reachable"] is True, row
+    assert row["probe"].endswith("torque left on: no rest pose recorded"), row
+    assert arm.torque is True and arm.torque_disabled == 0
+
+
+def test_recording_a_rest_pose_lets_go_of_the_arm_where_it_was_folded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rest-pose` reads an arm a person has just folded by hand, so no pose is recorded yet,
+    and a real arm's close keeps such an arm powered. The pose being read is where it lies, so
+    it is let go of there, as before, rather than left energised in its fold."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-r")
+    result = runner.invoke(
+        app, ["robot", "rest-pose", "arm-r", "--yes", "--registry-dir", str(reg)]
+    )
+    assert result.exit_code == 0, result.output
+    assert arm.torque is False and arm.torque_disabled == 1, "left energised in its fold"
+    assert "torque was left on" not in " ".join(result.output.split()), result.output
+
+
+@pytest.mark.parametrize("terminal", [True, False])
+def test_a_release_whose_fold_found_the_servos_limp_puts_no_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, terminal: bool
+) -> None:
+    """Servos that browned out partway through the fold answer every read with their torque
+    off, so the arm is not holding itself up and a second fold cannot move it. `robot release`
+    used to say it was holding itself up where it stopped and ask to fold it again. It says what
+    the read found and asks nothing, and the close does not say torque was left on. With no
+    terminal it used to say torque stays on."""
+    from tests.test_lerobot_adapter import _BrownsOut
+
+    arm = _BrownsOut(after=2)
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-b", off=40.0)
+    asked = _enter(monkeypatch, True)
+    if not terminal:
+        monkeypatch.setattr("quackd.cli._can_prompt", lambda: False)
+    result = _release(reg, "arm-b", "--yes")
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 1, result.output
+    assert asked == [], "a question was put over a limp arm"
+    assert "and its last read finds torque off on" in flat, flat
+    assert "it is holding itself up where it stopped" not in flat, flat
+    assert "torque was left on" not in flat and "torque stays on" not in flat, flat
+
+
+def _pressed_while_connecting(tty: Any) -> Any:
+    """A `FakeArm` whose connect is answered by a `q` typed at `tty` before it returns, and given
+    the moment the kill switch's key thread needs to read it: a press made while the arm
+    connects, which is while its person supports it."""
+    import time
+
+    from tests.test_lerobot_adapter import FakeArm
+
+    class PressedWhileConnecting(FakeArm):
+        def connect(self, calibrate: bool = True) -> None:
+            super().connect(calibrate)
+            tty.type_line("q\n")
+            time.sleep(0.5)
+
+    return PressedWhileConnecting()
+
+
+def test_doctor_folds_nothing_after_a_press_while_the_arm_connects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """doctor's kill switch goes in as the arm is about to connect, and it takes the first Ctrl-C
+    or `q`, which used to end doctor there with nothing moved. doctor then folded the arm and let
+    it go as if no press had been made. A press while the arm connects stops the fold before
+    anything moves."""
+    tty = _a_terminal(monkeypatch, {})
+    arm = _pressed_while_connecting(tty)
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-k", off=20.0)
+    result = runner.invoke(app, ["doctor", "--robot", "arm-k", "--registry-dir", str(reg)])
+    flat = " ".join(result.output.split())
+    assert "kill switch pressed" in flat, flat
+    assert "stopped before the fold: nothing was moved" in flat, flat
+    assert arm.positions["shoulder_pan"] == 0.0, "the arm was folded after the press"
+    assert arm.torque is True and arm.torque_disabled == 0, "let go of away from its pose"
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_doctor_with_nobody_at_a_terminal_still_says_when_it_folds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, as_json: bool
+) -> None:
+    """The warning before the connect says to take the hands away when doctor says so, and with
+    no terminal, or with `--json`, doctor folded the arm at once and said nothing. It says it
+    folds, and waits, terminal or not, `--json` on its stderr, its stdout one document still."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-n", off=20.0)
+    flags = ["--json"] if as_json else []
+    result = runner.invoke(app, ["doctor", "--robot", "arm-n", "--registry-dir", str(reg), *flags])
+    said = " ".join((result.stderr if as_json else result.output).split())
+    assert "take your hands away when doctor says so" in said, said
+    assert "folding arm-n to its rest pose in 0 s: take your hands away from it now" in said, said
+    assert abs(arm.positions["shoulder_pan"] - 20.0) < 1.0, "the arm was not folded"
+    if as_json:
+        assert json.loads(result.stdout)["robot"]["probe"]["ok"] is True, result.stdout
+
+
+def test_doctor_json_over_an_arm_with_no_rest_pose_promises_no_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--json` puts no question, even at a terminal, and its warning said doctor would ask
+    whether to drop the arm. It says only that the arm is kept powered."""
+    from tests.test_lerobot_adapter import FakeArm
+
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-j")
+    result = runner.invoke(
+        app, ["doctor", "--robot", "arm-j", "--json", "--registry-dir", str(reg)]
+    )
+    said = " ".join(result.stderr.split())
+    assert "so doctor keeps it powered where it stands at the end" in said, said
+    assert "drop it into your hands" not in said, said
+    assert arm.torque is True and arm.torque_disabled == 0
+
+
+def test_doctor_puts_the_ctrl_c_handler_back_before_its_event_loop_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """doctor's kill switch went in inside the probe's event loop and came out once that loop had
+    closed, so a Ctrl-C between the two raised in the switch's own handler and ended doctor with
+    no report, and the handler it put back was the closed loop's. It comes out inside the loop,
+    and the process is left with the handler it had."""
+    import signal
+
+    from tests.test_lerobot_adapter import FakeArm
+
+    before = signal.getsignal(signal.SIGINT)
+    _a_terminal(monkeypatch, {})
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-h", off=20.0)
+    result = runner.invoke(app, ["doctor", "--robot", "arm-h", "--registry-dir", str(reg)])
+    assert "folding arm-h to its rest pose" in " ".join(result.output.split()), result.output
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_a_press_while_an_arm_with_no_rest_pose_connects_keeps_it_powered_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enter at the question before the connect asks for the drop, and a press while the arm
+    connects takes it back. The line after it said the close lets go of the arm where it stands,
+    and a real arm's close keeps the torque of one with no rest pose: it says the arm holds."""
+    tty = _a_terminal(monkeypatch, {"has no rest pose recorded": "\n"})
+    arm = _pressed_while_connecting(tty)
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-u")
+    result = _release(reg, "arm-u")
+    flat = " ".join(result.output.split())
+    assert arm.torque is True and arm.torque_disabled == 0, "let go of after the press"
+    assert "stopped before anything was released" in flat, flat
+    assert "so the arm holds where it stands" in flat, flat
+    assert "as quackd disconnects from it" not in flat, flat
+
+
+def test_a_rest_pose_answered_no_keeps_the_arm_powered_and_a_yes_lets_it_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`rest-pose` let go of the arm as it closed, which was before its question was answered,
+    so a no left the arm let go of anyway, and an arm read standing rather than folded fell. It
+    lets go only once the pose is answered for: a no keeps a real arm powered, saying how to put
+    it down, and a yes records the pose and lets go of the arm where it lies."""
+    from quackd.registry import Registry
+    from tests.test_lerobot_adapter import FakeArm
+
+    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-s")
+    asked = ["robot", "rest-pose", "arm-s", "--registry-dir", str(reg)]
+    said_no = runner.invoke(app, asked, input="n\n")
+    flat = " ".join(said_no.output.split())
+    assert said_no.exit_code == 0, said_no.output
+    assert arm.torque is True and arm.torque_disabled == 0, "let go of on a no"
+    assert "arm-s has no rest pose recorded, so torque was left on" in flat, flat
+    assert Registry(reg).robot("arm-s").rest_pose is None
+    said_yes = runner.invoke(app, asked, input="y\n")
+    assert said_yes.exit_code == 0, said_yes.output
+    assert arm.torque is False and arm.torque_disabled == 1, "kept powered after a yes"
+    assert Registry(reg).robot("arm-s").rest_pose is not None
+
+
+def test_a_rest_pose_whose_read_fails_says_what_its_close_did(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read that failed once the arm had connected left it powered in the fold its person
+    made, and the command said only that the read failed. The close's own line follows now."""
+    from quackd_lerobot import LeRobotAdapter
+    from tests.test_lerobot_adapter import FakeArm
+
+    arm = FakeArm()
+    reg = _real_arm(monkeypatch, tmp_path, arm, "arm-f")
+    state = LeRobotAdapter.get_state
+
+    async def dies(self: LeRobotAdapter) -> Any:
+        arm.dead = True
+        return await state(self)
+
+    monkeypatch.setattr(LeRobotAdapter, "get_state", dies)
+    result = runner.invoke(
+        app, ["robot", "rest-pose", "arm-f", "--yes", "--registry-dir", str(reg)]
+    )
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 1, result.output
+    assert "Present_Position" in flat, flat
+    assert "quackd cannot tell whether the arm is holding itself up" in flat, flat
+    assert arm.torque is True and arm.torque_disabled == 0
 
 
 # ── --run-name and --price: what the run is called, and what it cost ────────────────────
@@ -2692,6 +3071,53 @@ def test_the_help_offers_the_name_on_disk_and_the_price_of_the_model() -> None:
     record_help = _help(["record", "--help"])
     assert "--run-name" in record_help
     assert "--price" not in record_help
+
+
+def test_a_run_that_gave_up_asking_the_model_again_prints_what_the_waiting_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0059. A run whose turn the model's API never answered ends in an error, and the one
+    line it ended on used to be all it printed, though it had waited and asked again: the
+    counters a run prints under its verdict are printed under this one too."""
+    import quackd.agent.loop as loop_module
+    from tests.test_loop import _overloaded
+
+    real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
+
+    def overloaded(name: str, **kw: object) -> object:
+        provider = real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
+
+        async def step(*_args: Any, **_kwargs: Any) -> Any:
+            raise _overloaded()
+
+        monkeypatch.setattr(provider, "step", step)
+        return provider
+
+    async def no_wait(abort: asyncio.Event, seconds: float) -> bool:
+        return abort.is_set()
+
+    monkeypatch.setattr("quackd.agent.providers.factory.make_provider", overloaded)
+    monkeypatch.setattr(loop_module, "_wait_or_abort", no_wait)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "hello-world",
+            "--robot",
+            "microduck:mock",
+            "--llm",
+            "fake",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            "--no-gif",
+            "--no-memory",
+        ],
+    )
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 1, result.output
+    assert "the model's API could not answer this turn" in flat, flat
+    assert re.search(r"llm calls 1 \(\+[1-9]\d* asked again\)", flat), flat
+    assert "Traceback" not in result.output
 
 
 # ── terminal.txt: what you saw while it ran ─────────────────────────────────────────────

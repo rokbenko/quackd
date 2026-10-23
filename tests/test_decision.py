@@ -2165,3 +2165,52 @@ async def test_a_run_interrupted_while_the_stepper_waits_has_that_turn_on_the_re
     assert block["cost_usd"] == round(turn["cost_usd"], 6) and block["cost_usd"] > 0
     assert block["latency_s"] == round(turn["latency_s"], 3)
     assert summary["outcome"] == "aborted"
+
+
+async def test_a_press_while_the_decision_llm_is_thinking_ends_the_run_without_waiting(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first Ctrl-C reaches the stepper's request as it reaches the model's: raced against
+    the abort, so a decision LLM that has not answered is not waited for, the turn goes on the
+    record as cut off, and the run ends `aborted`. The stepper's own timeout is raised here, so
+    nothing but the stop could end the request quickly."""
+    from quackd.agent.decision import stepper as module
+    from quackd.agent.loop import AgentLoop, RunConfig
+    from quackd.agent.providers.fake import FakeProvider
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import LeRobotMock
+
+    monkeypatch.setattr(module, "TIMEOUT_S", 30.0)
+    asked = asyncio.Event()
+
+    class Hangs(_Fails):
+        async def decide(self, state: Any, questions: Any) -> Any:
+            asked.set()
+            await asyncio.sleep(30)
+
+    duck = _lookout()
+    loop = AgentLoop(
+        RunConfig(
+            duck=duck,
+            provider=FakeProvider.for_duck(duck.name),
+            transport=LeRobotAdapter(LeRobotMock()),
+            runs_dir=tmp_path,
+            decision="on",
+            decision_llm=Hangs(None),
+            decision_price=resolve_decision_price(JEV),
+        )
+    )
+
+    async def press() -> None:
+        await asked.wait()
+        loop.executor.abort.set()  # the kill switch's first press
+
+    clock = asyncio.get_running_loop()
+    pressing = asyncio.ensure_future(press())
+    started = clock.time()
+    result = await loop.run()
+    await asyncio.wait_for(pressing, timeout=5)
+    assert clock.time() - started < 10, "the run waited for the decision LLM"
+    assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
+    decided = _records(result, "decision")
+    assert decided and decided[-1].get("gate") == "interrupted", decided[-1:]

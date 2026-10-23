@@ -404,11 +404,13 @@ quackd doctor --robot lerobot:real --address COM5
 > for a moment whatever else is true, and an arm folded somewhere awkward falls at that moment.
 > If a packet is lost or garbled at connect, quackd prints a
 > `connect attempt 1 of 3 failed on ...` warning and connects again, and each attempt drops
-> torque for its own moment. Support it at the end too, for now: until
-> [section 07](#07-record-the-rest-pose) has recorded a rest pose there is nothing for quackd to
-> put the arm back to, so LeRobot's `disconnect()` disables torque where the arm stands, a
-> `doctor` probe included. Once a pose is recorded, `doctor` returns the arm to it and leaves
-> torque on if it cannot get there.
+> torque for its own moment. Until [section 07](#07-record-the-rest-pose) has recorded a rest
+> pose there is nothing for quackd to put the arm back to, so `doctor` keeps the arm powered
+> where it stands at the end rather than let it fall, and asks first whether to drop it into
+> your hands: hold it and press Enter, and it is limp for you to fold it by hand in section 07,
+> or leave it and it stays powered. 0.23 and before let go of it where it stood. Once a pose is
+> recorded, `doctor` gives your hands 3 seconds to come away, returns the arm to it, lets go
+> there, and leaves torque on if it cannot get there.
 
 Read four things off it:
 
@@ -466,18 +468,23 @@ shape.
 A rest pose fixes both. It is one folded pose, recorded once, that the arm can hold with
 torque off because it is resting on itself or on the desk rather than held up. Until one is
 recorded, a run of this arm, a dry run included, is refused before anything connects, because
-its close would let go of the arm wherever it stood.
+at its end there would be nothing to fold the arm to, and it would be left holding itself up
+wherever it stopped.
 
 **Fold the arm by hand first, with nothing connected.** An arm nobody has connected has no
-torque on it, so it is limp and you can move it. Fold it low and compact, into the shape you
-would leave it in overnight. Then record it:
+torque on it, so it is limp and you can move it. One `doctor` kept powered is still holding
+itself up: hold it and cut its power, then power it again, and it comes back limp. Fold it low
+and compact, into the shape you would leave it in overnight. Then record it:
 
 ```bash
 quackd robot rest-pose arm-01
 ```
 
 It connects, reads every joint, prints them, asks you whether that is the pose, and keeps the
-answer in the registry beside the address and the camera. The capture below is the mock arm
+answer in the registry beside the address and the camera. Only a yes lets go of the arm, where
+it lies: answer no and it stays powered in its fold, with a line saying how to put it down, as
+it does if the read fails. Without `--yes` and with no terminal to ask on, the command refuses
+before anything connects. The capture below is the mock arm
 with `--yes`, which answers the question for you, so the numbers are the mock's and yours will
 be your own folded arm's:
 
@@ -721,9 +728,9 @@ quackd robot rest-pose arm-01 --clear
   quackd robot rest-pose arm-01
 ```
 
-With no pose recorded, `quackd robot release arm-01` has nothing to fold the arm to, and its
-close would let go of the arm wherever it stands, so it asks before anything connects, and the
-question says the arm will drop. `--yes` does not skip it. Enter connects and takes torque off
+With no pose recorded, `quackd robot release arm-01` has nothing to fold the arm to, so
+letting go of it where it stands is all it can do, and it asks before anything connects, since
+connecting is where the arm first goes limp, and the question says the arm will drop. `--yes` does not skip it. Enter connects and takes torque off
 where the arm stands, so hold the arm first, and anything else connects nothing. With no
 terminal to ask on it refuses, with `--yes` or without.
 
@@ -864,8 +871,9 @@ the other moves nothing
   run it from a terminal, or drop the flag and start from the rest pose
 ✗ error: microduck:mock is not a body a person places by hand: only the LeRobot arm is
   quackd list-adapters
-✗ error: arm-bare (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none
-wherever it stands at the end of a run, a dry one included, so it would fall there
+✗ error: arm-bare (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one
+included, there is nothing to fold it to, and it would be left holding itself up wherever it
+stopped
   quackd robot rest-pose arm-bare
 ```
 
@@ -1204,8 +1212,8 @@ Hold the arm before you plug the cable back in and before the next command conne
 connecting takes torque off every motor for a moment. Then put it down with
 `quackd robot release arm-01`, which folds it to its rest pose and lets go of it there, so take
 your hands away as soon as it prints where the arm is, or park it with
-`quackd doctor --robot arm-01`, which asks you to support the arm until it has finished, or cut
-its power.
+`quackd doctor --robot arm-01`, which asks you to support the arm while it connects and to take
+your hands away when it says so, before it folds the arm, or cut its power.
 
 **5. Ctrl-C mid move.** quackd's kill switch sends `stop`, which re-sends the present position
 as the goal of every body joint inside its travel. The arm should freeze where it is rather than
@@ -1489,9 +1497,9 @@ And once it is running:
 | `the camera gave no frame` | the webcam stalled or was unplugged | the arm carries on, and `report_state` starts saying `CAMERA DOWN:` |
 | `the arm's torque is off` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so this points at a tripped servo or the supply |
 | the run ends saying the arm did not answer, and closes on `quackd cannot tell whether the arm is holding itself up (...)` when the close could not read it either | the heartbeat's round trip failed. The close's line means quackd cannot say whether the arm is held up or limp. Seen once on 2026-09-15, in a dry run, and not since. One other cause was found later, in the simulator and not on an arm: the event loop's thread busy past the deadline while the arm answered in time, which 0.15.0 fixed. It is not known to be what happened that day | hold the arm and cut its power, then check the cable, the power or a tripped servo. Do not reconnect without holding it, because connecting takes torque off every motor for a moment |
-| `arm-01 (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none ...` | no rest pose is recorded, and a run, a dry run included, refuses a real arm without one before anything connects. A bare `--robot lerobot:real` is refused the same way, since it has no name to keep a pose under | `quackd robot rest-pose arm-01`, with the arm folded by hand first, and if you ran it by its spec, register it before that ([section 06](#name-it)) |
-| the arm sags when `doctor` ends | no rest pose is recorded, so torque drops where the arm stands | `quackd robot rest-pose arm-01`, with the arm folded by hand first |
-| `the arm is not at its rest pose (...), so torque was left on` | it could not get home: something is in the way, or a servo tripped. The run itself says `the arm did not reach its rest pose`, and at a terminal it asked you first to clear the way for a second fold | clear whatever stopped it, then run `quackd robot release arm-01`, which folds the arm to its rest pose and lets go of it there. Support the arm while it connects, because connecting takes torque off every motor for a moment, and take your hands away as soon as it prints where the arm is, because the fold follows at once. `quackd doctor --robot arm-01` tries the fold again too, and asks you to support the arm until it has finished, and the power switch is for when neither can reach the arm. It stays energised until you do one of them. If you calibrated again since you recorded the pose, record it again: the old angles name a different shape now |
+| `arm-01 (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to ...` | no rest pose is recorded, and a run, a dry run included, refuses a real arm without one before anything connects. A bare `--robot lerobot:real` is refused the same way, since it has no name to keep a pose under | `quackd robot rest-pose arm-01`, with the arm folded by hand first, and if you ran it by its spec, register it before that ([section 06](#name-it)) |
+| `arm-01 has no rest pose recorded, so torque was left on rather than let go of where the arm stands` when `doctor` ends | no rest pose is recorded, so `doctor` kept the arm powered where it stands rather than let it fall, which 0.23 and before let go of there | hold the arm and press Enter at doctor's question, or cut its power, then fold it by hand and `quackd robot rest-pose arm-01` |
+| `the arm is not at its rest pose (...), so torque was left on` | it could not get home: something is in the way, or a servo tripped. The run itself says `the arm did not reach its rest pose`, and at a terminal it asked you first to clear the way for a second fold | clear whatever stopped it, then run `quackd robot release arm-01`, which folds the arm to its rest pose and lets go of it there. Support the arm while it connects, because connecting takes torque off every motor for a moment, and take your hands away as soon as it prints where the arm is, because the fold follows at once. `quackd doctor --robot arm-01` tries the fold again too, and gives your hands 3 seconds to come away first, and the power switch is for when neither can reach the arm. It stays energised until you do one of them. If you calibrated again since you recorded the pose, record it again: the old angles name a different shape now |
 | `torque still reads on for <joints>: cut the power` | `quackd robot release` sent the release and those motors kept their torque | hold the arm and cut its power. The motors not named are limp, and the line after it says what the close did: kept torque, or took it off at the rest pose |
 | `torque stays on and nothing was released: ...` | the fold `quackd robot release` made missed, and a question about it ended without an Enter, so the arm is holding itself up where its fold stopped | clear its way and run it again, or hold the arm and cut its power |
 | `... is recorded at ... in the rest pose and this calibration lets its servo be driven to ... and no further` | the fold you recorded lies past the travel your calibration recorded. The arm parks at the edge of the travel and is let go of there, and the run carries on | nothing needs doing today. To make the fold itself reachable, calibrate again, typing `c` at the tool's first prompt, with every joint taken all the way into it, then record the pose again |
@@ -3621,7 +3629,7 @@ terminal. What has never happened is a chat client's model answering it.
 > now that the port is free, cutting the servo supply is the immediate way, and a fresh connect,
 > the `doctor` run in the bullet above, also takes the arm back to its pose and puts it down.
 > The release says it folds the arm in 3 seconds once it has printed where the arm is, so take
-> your hands away then, and `doctor` asks you to support the arm until it has finished with it. Nothing is
+> your hands away then, and `doctor` gives you the same 3 seconds. Nothing is
 > reading temperature once the process is gone, so the hold is not indefinite: a loaded joint
 > heats until it trips its own protection, and a joint that trips its own protection goes slack
 > without announcing it. End the test in seconds rather than minutes, keep the arm unloaded,

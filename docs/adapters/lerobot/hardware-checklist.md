@@ -113,11 +113,13 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    the travel you swept during calibration, that torque is on, and what the servos say their
    temperature is with the arm cold. That last number is the baseline for every later step.
 
-   **Support the arm before this command finishes, and while it starts.** `configure()` runs
-   with torque off, so connecting drops it for a moment, and LeRobot's `disconnect()` disables
-   it again by default at the end of every clean session, a `doctor` probe included. An arm
-   folded somewhere awkward will fall at either end. The second half of that is what the rest
-   pose below is for, and until one is recorded this probe still lets go.
+   **Support the arm while this command starts.** `configure()` runs with torque off, so
+   connecting drops it for a moment, and an arm folded somewhere awkward falls at that moment.
+   With no rest pose recorded yet there is nothing to fold the arm to at the end, so `doctor`
+   keeps it powered where it stands rather than let it fall, which 0.23 and before did, and asks
+   first whether to drop it into your hands. Hold it and press Enter, and it is limp for you to
+   fold it by hand for the rest pose below, or leave it and it stays powered until you cut its
+   power.
 
    **Then give the arm a name.** A registered name carries the port, the camera and the rest
    pose, so from step 7 on this page writes `--robot arm-01` where it used to write the pair:
@@ -129,8 +131,9 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    The name has to be the calibration id from step 5.
    `--robot lerobot:real --address /dev/ttyACM0` reaches the same arm for `doctor`, and nothing
    below takes it: a rest pose is recorded against a name, so the spec form has none, and a run
-   of a real arm with none, a dry run included, is refused before it connects, because its close
-   would let go of the arm wherever it stopped.
+   of a real arm with none, a dry run included, is refused before it connects, because at its
+   end there would be nothing to fold the arm to, and it would be left holding itself up
+   wherever it stopped.
 
    **Then check that a connect quackd refuses lets go of the arm.** Register the same port once
    more, under a name nothing was calibrated as, point `doctor` at it, and remove the name again:
@@ -159,7 +162,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    uv run quackd robot rest-pose arm-01
    ```
 
-   It connects, reads every joint, prints them, and asks before it writes anything. **It drives
+   It connects, reads every joint, prints them, and asks before it writes anything, and only a
+   yes lets go of the arm, where it lies: a no keeps it powered in its fold. **It drives
    nothing.** That is why it belongs at step 6 rather than after step 10: recording a pose is a
    read. The block below was captured against `lerobot:mock`, with `--yes`, which is the flag
    that skips the question. Those are the mock arm's joints, and yours are whatever you folded
@@ -231,8 +235,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    > run or `doctor` puts it back, or until you cut its power. Support it for every one of
    > those, not only the first: a run, `doctor` and the release all begin by connecting, and
    > connecting takes torque off every motor for a moment. The release then says it folds the
-   > arm in 3 seconds, so take your hands away then, and `doctor` asks you to support the arm
-   > until it has finished with it. A run at a terminal whose rest
+   > arm in 3 seconds, so take your hands away then, and `doctor` does the same before it
+   > folds. A run at a terminal whose rest
    > move missed asks you first, up to twice: clear the arm's way and press Enter for a second
    > fold, and only if that one misses too, Enter to take torque off where the arm stands, which
    > drops it, so hold it first. Step 14 tries both.
@@ -459,8 +463,8 @@ means, and which moments move the arm without anybody asking for it.
     torque off every motor for a moment. Either cut its power with your hand under it, or
     support it while `quackd robot release arm-01` connects and take your hand away as soon as
     it prints where the arm is, since it then folds the arm to its rest pose at once and lets go
-    of it there, or park it with `quackd doctor --robot arm-01`, supporting the arm until doctor
-    has finished, before the next step.
+    of it there, or park it with `quackd doctor --robot arm-01`, supporting the arm while it
+    connects and taking your hands away when it says so, before the next step.
 
     Report the line the run ended on word for word. Since 0.15.0 a call that ran out of time
     names itself and its budget, as in step 9, and one that failed says what failed.
@@ -550,8 +554,9 @@ and there is no rehearsing this one with `--dry-run`, because a dry run moves no
 takes torque off an arm:
 
 ```
-✗ error: arm-bare (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none
-wherever it stands at the end of a run, a dry one included, so it would fall there
+✗ error: arm-bare (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one
+included, there is nothing to fold it to, and it would be left holding itself up wherever it
+stopped
   quackd robot rest-pose arm-bare
 ```
 

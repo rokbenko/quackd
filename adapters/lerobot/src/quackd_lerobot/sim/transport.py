@@ -197,6 +197,11 @@ class LeRobotSim(LeRobotReal):
     object or a runner such as the client of a policy server (`--policy-url`), and None leaves
     the arm without either."""
 
+    KEEPS_TORQUE_WITHOUT_A_POSE = False
+    """The simulated arm drops on nothing, and a run of it needs no rest pose (it is not among
+    `REST_POSE_BACKENDS`), so its close lets go of it as the close of every session did before
+    a real arm with no pose was kept powered (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
+
     name = "mujoco"
     label = "mujoco"
 

@@ -177,3 +177,12 @@ def test_a_cause_cycle_ends() -> None:
     first, second = ProviderError("one"), ProviderError("two")
     first.__cause__, second.__cause__ = second, first
     assert transient_failure(first) is None
+
+
+def test_x_should_retry_true_makes_any_status_worth_asking_again() -> None:
+    """Both SDKs obey the header either way, and with their own retries off (`NO_SDK_RETRIES`)
+    it is read here: `true` asks a status that is worth nothing by itself again, in words that
+    say the API asked for it."""
+    failure = transient_failure(sdk.wrapped(sdk.BadRequestError(400, {"x-should-retry": "true"})))
+    assert failure is not None and failure.status == 400, failure
+    assert failure.why == "the API asked to be asked again (400)", failure.why

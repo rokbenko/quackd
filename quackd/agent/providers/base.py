@@ -294,6 +294,14 @@ class ProviderMissingKey(ProviderError):
 
 # ── a turn the API could not answer, and whether it is worth asking again ──────────────────
 
+NO_SDK_RETRIES = 0
+"""The retries every SDK client quackd builds is told to make of its own: none. The anthropic and
+openai SDKs retry a failed call twice by default, inside the call, and sit out a `retry-after`
+there, openai's up to two minutes and anthropic's of any length, where a first Ctrl-C does not
+reach and nothing is recorded. The loop asks a turn again itself instead, on a clock it bounds
+and a stop ends, with every try on the record (ADR-0059). google-genai retries nothing by
+default and is built as it is."""
+
 ASK_AGAIN_STATUSES = frozenset({408, 429})
 """The HTTP statuses below 500 that say "not now" rather than "no": a request that timed out at
 the server (408) and a rate limit (429). Every 5xx is one too, Anthropic's 529 "overloaded"
@@ -330,8 +338,10 @@ transport as their own `APIConnectionError`, raised from it, so these are looked
 connection error as well as on their own."""
 
 SHOULD_RETRY_HEADER = "x-should-retry"
-"""A header an API sets to say whether a failure is worth retrying, which both SDKs obey. `false`
-makes any status permanent here too."""
+"""A header an API sets to say whether a failure is worth retrying, which both SDKs obey, and so
+does this: `false` makes any status permanent, and `true` makes any status worth asking again.
+Read here because the SDKs are built to retry nothing of their own (`NO_SDK_RETRIES`), so what
+the header says would otherwise go unheard."""
 
 RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
 """The detail Google's APIs put in an error body to say how long to wait (`retryDelay`, like
@@ -342,6 +352,8 @@ STATUS_WORDS = {408: "the request timed out at the server", 429: "rate limited",
 `SERVER_ERROR`."""
 
 SERVER_ERROR = "a server error"
+ASKED_TO_ASK_AGAIN = "the API asked to be asked again"
+"""What a person reads for a status worth nothing by itself that the API said to retry."""
 NO_ANSWER_IN_TIME = "no answer in time"
 NO_CONNECTION = "no connection"
 
@@ -421,11 +433,13 @@ def _status_of(link: BaseException) -> int | None:
 def _by_status(link: BaseException, status: int) -> Transient | None:
     headers = getattr(getattr(link, "response", None), "headers", None)
     should = _header(headers, SHOULD_RETRY_HEADER)
-    if should is not None and should.strip().lower() == "false":
+    said = should.strip().lower() if should is not None else None
+    if said == "false":
         return None
-    if status not in ASK_AGAIN_STATUSES and not 500 <= status <= 599:
+    worth = status in ASK_AGAIN_STATUSES or 500 <= status <= 599
+    if not worth and said != "true":
         return None
-    word = STATUS_WORDS.get(status, SERVER_ERROR)
+    word = STATUS_WORDS.get(status, SERVER_ERROR if worth else ASKED_TO_ASK_AGAIN)
     return Transient(f"{word} ({status})", status, _asked_to_wait_s(link, headers))
 
 
