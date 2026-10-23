@@ -66,6 +66,11 @@ SIMULATOR_BACKENDS = ("mujoco",)
 """The backends that drive a simulated arm rather than one on a desk. Read before anything is
 built (`quackd.adapters.factory.is_simulator`), so a command that must only ever run on a
 simulator refuses a real arm before connecting to it."""
+REST_POSE_BACKENDS = ("real",)
+"""The backends a run, an MCP session or a flock refuses without a recorded rest pose. Read
+before anything is built (`quackd.adapters.factory.needs_rest_pose`). The arm's close lets go of
+an arm with no rest pose wherever it stands, and an SO-101 has no brake, so on a desk such a
+session ends with the arm falling (ADR-0058). The mock and the simulator have no arm to drop."""
 DEFAULT_ID = "arm-01"
 ROBOT_TYPE = "so101_follower"
 BLURB = (

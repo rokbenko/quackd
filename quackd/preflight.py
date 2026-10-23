@@ -310,7 +310,9 @@ def judge_close(rest: Any, expect: bool | None) -> Verdict:
     """The teardown's rest move against what the sidecar expects of it (`Check.at_rest`).
 
     `rest` is the transport's last `RestResult`, or None where no rest move was made, which is
-    an arm with no rest pose: its close keeps torque on where the run left it.
+    an arm with no rest pose: its close lets go of it where the run left it, which on the arm's
+    simulator is the model settling under its gravity, and which a run on a real arm with no
+    rest pose is refused for (ADR-0058).
 
     Of a rest move that was made, only a refusal is what `at_rest: false` expects: the arm left
     where the rest move will not move it, such as in a person's hands. A move that set off and

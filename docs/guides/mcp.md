@@ -360,9 +360,10 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   window where putting the arm down changes whether it falls once torque is released. Where the arm
   is not at that pose, torque is left on and it holds itself up instead of dropping, and
   [concepts/safety.md](../concepts/safety.md) has the line it prints and what to do about it. A
-  session started with `--dry-run` moves nothing at either end, and a robot with no pose recorded
-  ends the way it always did. Recording one is `quackd robot rest-pose NAME`
-  ([guides/registry.md](registry.md)).
+  session started with `--dry-run` moves nothing at either end. A real arm with no pose recorded
+  is refused before anything connects, `--dry-run` or not, since its close would let go of it
+  wherever it stood, and a mock or a simulator with none ends the way it always did. Recording
+  one is `quackd robot rest-pose NAME` ([guides/registry.md](registry.md)).
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
   there is no terminal to ask on. The refusal text tells the model why. A `dangerous` verb is
   refused even then, since `--yes` is nobody being asked: it runs only from a terminal, where a

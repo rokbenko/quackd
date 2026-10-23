@@ -41,6 +41,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The close's line for an arm left holding itself up names one way out**: clear its way and run
   `quackd robot release NAME`, which folds it and lets go at the pose, supporting the arm while
   that connects, or cut its power. It no longer names `quackd doctor --robot NAME` to park it.
+- **A real SO-101 with no rest pose is refused a run.** `quackd run`, a dry run included,
+  `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no recorded rest pose before
+  anything connects, because the close lets go of such an arm wherever it stands and an SO-101 has
+  no brake, which is how it fell at the end of every run on 2026-09-15. A spec on its own,
+  `--robot lerobot:real --address PORT`, has no name to keep a pose under and is refused the same
+  way, with `quackd robot add NAME lerobot:real --address PORT, then quackd robot rest-pose NAME`
+  as the way back. `doctor`, `robot list --probe`, `rest-pose`, `robot release`, the mock and the
+  simulator are unaffected, and `run_pilot_flock` refuses such an arm too, for a library caller.
+  An adapter declares the backends this applies to in `REST_POSE_BACKENDS`, which
+  `quackd.adapters.factory.needs_rest_pose` reads before anything is built, and
+  `quackd robot rest-pose NAME --clear` on a real arm now says its runs are refused until a pose
+  is recorded again.
 
 ### Fixed
 
@@ -63,6 +75,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   folds first and what the two questions are, with output captured on `lerobot:mock`.
   [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md) records Rok's
   decisions, and ADR-0039 and ADR-0045 carry dated amendments.
+- **A real arm is run by its registered name.** The LeRobot page, the first run and the hardware
+  checklist run `arm-01` where they ran a bare `lerobot:real`, say that a run of a real arm with
+  no rest pose is refused and why, and quote the refusal, captured on a scratch registry. Safety,
+  the registry and MCP guides, the README and the adapter guide say the same, the adapter guide
+  documents `REST_POSE_BACKENDS`, and it no longer says that `quackd robot release` lets go of
+  the arm wherever it stands.
 - **Robot Passport's phase 7, planned in the repository.**
   [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md) says what each of
   its six pieces is, what is decided and what is left to decide, where its code goes, what done

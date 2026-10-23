@@ -1,6 +1,6 @@
 # ADR-0058: Letting go of the arm means putting it down first
 
-**Status:** accepted · **Date:** 2026-10-23 · Amends [ADR-0039](0039-an-arm-placed-by-hand.md) (its second door, which released the arm wherever it stood) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (the ways out its torque line names) · Implemented in `quackd/release.py`, `quackd/cli.py` (`robot release`), `quackd/agent/loop.py` (`_offer_release`) and `adapters/lerobot/` ([page](../adapters/lerobot/README.md#releasing-it), [first run](../adapters/lerobot/first-run.md), [checklist](../adapters/lerobot/hardware-checklist.md))
+**Status:** accepted · **Date:** 2026-10-23 · Amends [ADR-0039](0039-an-arm-placed-by-hand.md) (its second door, which released the arm wherever it stood) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (the ways out its torque line names) · Implemented in `quackd/release.py`, `quackd/cli.py` (`robot release`, and `run`'s refusal), `quackd/agent/loop.py` (`_offer_release`), `quackd/registry.py` (`no_rest_pose_refusal`), `quackd/adapters/factory.py` (`needs_rest_pose`), `quackd/mcp_server.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md#releasing-it), [first run](../adapters/lerobot/first-run.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 ## Context
 
@@ -17,7 +17,7 @@ short of the power switch, and a way out that dropped the arm into whoever was h
 onto the table if nobody was.
 
 On 2026-10-23 Rok asked two things of the arm. Whether the kill switch that takes torque off lets
-it drop, because when anything goes wrong he wants a command that releases torque without
+it drop, because when anything goes wrong Rok wants a command that releases torque without
 pulling the power, and releasing should mean going to the rest pose, not dropping to the table.
 And whether a run that fails, an error or a model refusing the work, puts the arm back at its
 rest pose.
@@ -28,6 +28,11 @@ rest pose, and lets go there (`test_every_way_a_run_ends_returns_the_arm_to_rest
 switch itself is the first Ctrl-C or `q`, and it never let go of anything: it stops the arm and
 the teardown folds it. What dropped the arm were the two paths a person reaches for after
 something has gone wrong: the command, and the offer. Both released it where it stood.
+
+A third path dropped it with nobody reaching for anything. A run, a dry run or an MCP session of
+an arm with no rest pose recorded ends in a close that lets go of the arm wherever it stands,
+which is how the arm of 2026-09-15 fell at the end of every run, and a bare
+`--robot lerobot:real` has no name to keep a pose under at all.
 
 ## Decision
 
@@ -93,6 +98,19 @@ something has gone wrong: the command, and the offer. Both released it where it 
    the person asked (`LIMP_AT_REST_AS_ASKED`), not that it was let go of for them to place, which
    is `--by-hand`'s line.
 
+9. **A real arm with no rest pose is refused a run, a dry run and an MCP session.** Rok's call,
+   out of the three that were asked: refuse, keep torque on at the end of such a run, or leave
+   it as it had been since 0.9. A dry run is refused too, because it connects and closes like
+   any other. `quackd run`, `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no
+   recorded rest pose before anything is described, built or connected, naming the robot and
+   `quackd robot rest-pose NAME`. A spec on its own is refused the same way, with the
+   registration to do first. The adapter declares which of its backends this applies to
+   (`REST_POSE_BACKENDS`, read by `quackd.adapters.factory.needs_rest_pose`), so no LeRobot name
+   enters the core, and `run_pilot_flock` refuses one as well, for a library caller. Not
+   refused: `doctor` and `robot list --probe`, which move nothing and are run with a person
+   supporting the arm; `rest-pose`, which is how a pose comes to exist; `robot release`, which
+   asks before it connects (5); the mock; and the simulator, which drops nothing real.
+
 What does not change: the first door's rule, the first Ctrl-C or `q` of a run, which still stops,
 folds and lets go at the pose, a second Ctrl-C during the teardown's own first fold, which still
 quits at once and leaves the arm holding, `doctor`, which still parks and lets go at the pose,
@@ -112,6 +130,9 @@ and the last decision of ADR-0039: no verb, no MCP tool, and not on the `RobotAd
 - Every connect still takes torque off for a moment, because LeRobot configures the motors inside
   `torque_disabled()`. A command run after a crash has to connect, so that moment stays, and so
   does the warning about it.
+- A real arm is no longer run by its spec. `--robot lerobot:real --address PORT` reaches it for
+  `doctor`, and a run, a session or a flock wants the name it was registered under, with a pose
+  recorded there. `quackd robot rest-pose NAME --clear` on a real arm says so.
 - Nothing here has run on an arm: the bench steps in the CHANGELOG are owed.
 
 ## Alternatives

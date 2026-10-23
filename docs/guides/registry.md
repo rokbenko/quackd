@@ -201,7 +201,8 @@ disables torque by its default, and a clean close with no rest pose recorded ask
 that. On the bench that meant the arm fell at the end of every run, and every run started from
 wherever the last one had left it. A rest pose answers both: one pose, kept under the robot's
 name, that a run drives the arm to before the pilot gets control and returns it to before torque
-is released.
+is released. A real arm with none is refused a run, a dry run and an MCP session before anything
+connects, since its close would let go of the arm wherever it stood.
 
 It is **read off the arm, never typed.** Nothing is connected while you set it up, so the arm
 is limp. Fold it by hand into a pose it holds with the power off, then record where it ended
@@ -233,6 +234,17 @@ other door:
 $ quackd robot rest-pose arm --clear
 + cleared arm's rest pose
   a run now leaves the arm where it stands, and torque drops there
+```
+
+That is the mock's line. A real arm's says what clearing costs now, since a run of a real arm
+with no rest pose is refused, and names the way back (captured with `arm-01` registered as
+`lerobot:real`):
+
+```
+$ quackd robot rest-pose arm-01 --clear
++ cleared arm-01's rest pose
+  a run, a dry run or an MCP session of arm-01 is now refused until a pose is recorded again
+  quackd robot rest-pose arm-01
 ```
 
 Only the LeRobot arm is parked today, and a body that cannot hold a pose refuses to keep one

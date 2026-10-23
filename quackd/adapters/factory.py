@@ -266,6 +266,29 @@ def is_simulator(spec: RobotSpec | str) -> bool:
     return spec.backend in tuple(backends)
 
 
+def needs_rest_pose(spec: RobotSpec | str) -> bool:
+    """Whether this robot must have a recorded rest pose before a run, an MCP session or a
+    flock may connect it, asked before anything is built: the adapter module's own
+    `REST_POSE_BACKENDS`, and a module that declares none needs none, as with
+    `SIMULATOR_BACKENDS` above.
+
+    The LeRobot arm's real backend is the one (ADR-0058): its close lets go of an arm with no
+    rest pose wherever it stands, and an SO-101 has no brake, so such a run, a dry one
+    included, ends with the arm falling. Its mock and its simulator are not, having no arm to
+    drop. `doctor` and `rest-pose` do not ask: one is a probe a person supports the arm
+    through, and the other is how a pose comes to be recorded at all.
+
+    A spec that does not parse, or an adapter that is not installed or does not import, needs
+    none here and fails where it always did, when it is built."""
+    try:
+        if isinstance(spec, str):
+            spec = parse_robot_spec(spec)
+        backends = getattr(_module(spec.adapter), "REST_POSE_BACKENDS", ())
+    except Exception:
+        return False
+    return spec.backend in tuple(backends)
+
+
 def deprecated_backend(spec: RobotSpec | str) -> str | None:
     """The one line a backend on its way out is announced with, or None for any other.
 

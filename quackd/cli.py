@@ -1501,7 +1501,7 @@ def _run_impl(
         thinking_limit_default,
     )
     from quackd.perception import DETECTOR_CHOICES, detector_for, explicit_detector
-    from quackd.registry import RegistryError, Resolved
+    from quackd.registry import RegistryError, Resolved, no_rest_pose_refusal
     from quackd.safety import KillSwitch, allow_all
     from quackd.transport.base import TransportError
 
@@ -1603,6 +1603,14 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
+    # A real arm with no rest pose is let go of wherever it stands when its run closes, and an
+    # SO-101 has no brake, so it falls there (ADR-0058). Refused before any provider, adapter or
+    # run directory exists, a dry run among them, since a dry run connects the arm too.
+    for each in resolved:
+        refused = no_rest_pose_refusal(each, what="a run, a dry one included", address=address)
+        if refused is not None:
+            _fail(refused[0], hint=refused[1])
+            return
     if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
         # Here rather than with the flags above, which run before the file is read, and before
         # the instructions, which a played file would otherwise be sent to add first. The
@@ -5293,9 +5301,9 @@ def robot_rest_pose(
 ) -> None:
     """Record where this arm rests: connect, read every joint, and keep the pose under NAME.
 
-    A run starts from it and returns to it before torque is released, so the arm stops falling
-    when a run ends. Fold the arm by hand first, with nothing connected, so the pose you record
-    is one it can hold with torque off.
+    A run starts from it and returns to it before torque is released, and a real arm with none
+    is refused a run, which would let go of it wherever it ended. Fold the arm by hand first,
+    with nothing connected, so the pose you record is one it can hold with torque off.
     """
     from quackd.adapters.base import AdapterError
     from quackd.adapters.factory import describe, make_adapter
@@ -5325,12 +5333,23 @@ def robot_rest_pose(
             print(json.dumps(entry.public()))
             return
         ui.console.print(_ok_line(f"cleared {name}'s rest pose"))
-        ui.console.print(
-            Text(
-                "  a run now leaves the arm where it stands, and torque drops there",
-                style=ui.STYLES["muted"],
+        from quackd.adapters.factory import needs_rest_pose
+
+        # a real arm with no pose is refused a run altogether (ADR-0058), rather than being let
+        # go of where it stands at the end of one, which is what a mock or a simulator still is.
+        # The way back is a line of its own, as robot add's next command is, so that a wrap at
+        # the terminal's width never splits the command a person copies.
+        after = (
+            (
+                f"  a run, a dry run or an MCP session of {name} is now refused until a pose is "
+                "recorded again",
+                f"  quackd robot rest-pose {name}",
             )
+            if needs_rest_pose(entry.robot_spec)
+            else ("  a run now leaves the arm where it stands, and torque drops there",)
         )
+        for line in after:
+            ui.console.print(Text(line, style=ui.STYLES["muted"]))
         return
 
     if as_json and not yes:

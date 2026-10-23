@@ -108,8 +108,11 @@ make_adapter(
     scene=[{{"name": "block", "kind": "box", "size": [0.01, 0.01, 0.01], "place": "jaws"}}],
 )
 import quackd.preflight
-from quackd.adapters.factory import is_simulator
+from quackd.adapters.factory import is_simulator, needs_rest_pose
 assert is_simulator("lerobot:mujoco") and not is_simulator("lerobot:real")
+# read off the adapter's own declaration, which needs no SDK: the real arm alone must have a pose
+assert needs_rest_pose("lerobot:real")
+assert not needs_rest_pose("lerobot:mock") and not needs_rest_pose("lerobot:mujoco")
 # the arm simulator's upstream and its fetcher find files and never load them, and its model,
 # stand-in, world, follower, clock, cameras and transport import the physics only when a model
 # is loaded or drawn, so none of them may pull it in just by being imported. Its follower

@@ -49,6 +49,7 @@ from quackd.adapters.factory import (
     RobotSpec,
     adapter_names,
     default_spec,
+    needs_rest_pose,
     parse_robot_spec,
 )
 from quackd.host import clean_token, parse_host
@@ -487,6 +488,38 @@ def unusable_spec(name: str, spec: str, why: str) -> str:
     return (
         f"{name} is registered as {spec}, which this quackd cannot build ({why}): "
         f"{install}{moves}, or quackd robot remove {name}"
+    )
+
+
+def no_rest_pose_refusal(
+    resolved: Resolved, *, what: str, address: str | None = None
+) -> tuple[str, str] | None:
+    """The refusal for a real arm with no rest pose recorded, and the way out, or None for any
+    robot that may be connected without one (`needs_rest_pose`).
+
+    Such an arm's close lets go of it wherever it stands, and an SO-101 has no brake, so a run, a
+    dry run, an MCP session or a flock member on it ends with the arm falling (ADR-0058). It is
+    refused before anything is built or connected. `what` is the thing refused, as the sentence
+    says it: `a run, a dry one included`, `an MCP session`. A registered arm is sent to record
+    its pose; a bare spec names no arm to record one for, so it is sent to register one first,
+    with the address it was given where there was one."""
+    if not needs_rest_pose(resolved.spec) or resolved.adapter_kwargs()["rest_pose"] is not None:
+        return None
+    falls = (
+        f"quackd lets go of an arm with none wherever it stands at the end of {what}, so it would "
+        "fall there"
+    )
+    if resolved.entry is not None:
+        name = resolved.entry.name
+        return (
+            f"{name} ({resolved.spec.key}) has no rest pose recorded, and {falls}",
+            f"quackd robot rest-pose {name}",
+        )
+    key = resolved.spec.key
+    at = f" --address {address}" if address else ""
+    return (
+        f"{key} names no registered arm, so it has no rest pose, and {falls}",
+        f"quackd robot add NAME {key}{at}, then quackd robot rest-pose NAME",
     )
 
 
@@ -1084,6 +1117,7 @@ __all__ = [
     "UnknownFlock",
     "UnknownRobot",
     "check_name",
+    "no_rest_pose_refusal",
     "probe_all",
     "probe_entry",
     "registry_dir",

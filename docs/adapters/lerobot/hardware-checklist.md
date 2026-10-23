@@ -82,10 +82,11 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration
    directory is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
    `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**, which is
-   `arm-01` unless you named the robot with `--robots <name>=lerobot:real` or registered it
-   with `quackd robot add <name> lerobot:real`. quackd reads every joint's travel out of that
-   file and refuses to drive an arm without one, and two arms sharing an id share a file with
-   nothing in it to say which arm it came from.
+   `arm-01` unless you registered the robot under another name with
+   `quackd robot add <name> lerobot:real`, which step 6 does, because a run needs a rest pose
+   and only a registered name keeps one. quackd reads every joint's travel out of that file and
+   refuses to drive an arm without one, and two arms sharing an id share a file with nothing in
+   it to say which arm it came from.
 
    Upstream will ask you to move every joint through its range **except `wrist_roll`**, and it
    records a full encoder turn for that one rather than anything you swept. That is not a
@@ -125,10 +126,11 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    uv run quackd robot add arm-01 lerobot:real --address /dev/ttyACM0
    ```
 
-   The name has to be the calibration id from step 5. `--robot lerobot:real --address
-   /dev/ttyACM0` still works everywhere below and reaches the same arm, with one difference
-   that starts mattering here: a rest pose is recorded against a name, so the spec form has
-   none and goes on letting go of the arm wherever it stops.
+   The name has to be the calibration id from step 5.
+   `--robot lerobot:real --address /dev/ttyACM0` reaches the same arm for `doctor`, and nothing
+   below takes it: a rest pose is recorded against a name, so the spec form has none, and a run
+   of a real arm with none, a dry run included, is refused before it connects, because its close
+   would let go of the arm wherever it stopped.
 
    **Then check that a connect quackd refuses lets go of the arm.** Register the same port once
    more, under a name nothing was calibrated as, point `doctor` at it, and remove the name again:
@@ -250,7 +252,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    green, because the arm reached the pose it can be driven to.
 
    `quackd robot rest-pose arm-01 --clear` forgets the pose again and says what that costs: a
-   run then leaves the arm where it stands, and torque drops there.
+   run, a dry run or an MCP session of the arm is refused until a pose is recorded again.
 
    > [!IMPORTANT]
    > Step 6 keeps the promise at the top of this page, because recording reads the arm and
@@ -543,12 +545,13 @@ with no rest pose.
 Everything below rests on that pose being right, which is why these two steps come after the
 ones that drove the arm there and back rather than before them. The flag wants the registered
 name from step 6 with a pose against it, and a terminal, because somebody has to press Enter.
-Without the pose it refuses before anything is touched, and there is no rehearsing this one with
-`--dry-run`, because a dry run moves nothing and this takes torque off an arm:
+Without the pose it is refused before anything is touched, as every run of an arm with none is,
+and there is no rehearsing this one with `--dry-run`, because a dry run moves nothing and this
+takes torque off an arm:
 
 ```
-✗ error: --by-hand releases the arm at its recorded rest pose, and this arm has none
-recorded
+✗ error: arm-bare (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none
+wherever it stands at the end of a run, a dry one included, so it would fall there
   quackd robot rest-pose arm-bare
 ```
 

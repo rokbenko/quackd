@@ -32,7 +32,7 @@ from typing import Any, Protocol
 
 from quackd import __version__
 from quackd.adapters.base import go_to_rest_if_any
-from quackd.adapters.factory import RobotSpec, describe, make_adapter
+from quackd.adapters.factory import RobotSpec, describe, make_adapter, needs_rest_pose
 from quackd.adapters.manifest import RobotManifest
 from quackd.agent.loop import AgentLoop, Outcome, RunConfig, RunResult, resolve_play
 from quackd.agent.providers.base import LLMProvider, Usage
@@ -247,6 +247,17 @@ async def run_pilot_flock(
         where = ", ".join(f"{name}={roster[name].robot_spec.key}" for name in members)
         raise ValueError(f"{duck.name} cannot run on {where}: {'; '.join(problems)}")
     contracts = {name: trim_contract(duck.frontmatter, manifests[name]) for name in members}
+    # A real arm with no rest pose is let go of wherever it stands when its member closes, and
+    # an SO-101 has no brake, so it falls there (ADR-0058). `quackd run` refuses such a member
+    # before anything is built; this is the same rule for a caller that reaches the flock
+    # without it, read off each member's own kwargs, since a roster is structural.
+    for name, entry in roster.items():
+        if needs_rest_pose(entry.robot_spec) and entry.adapter_kwargs().get("rest_pose") is None:
+            raise ValueError(
+                f"{name} ({entry.robot_spec.key}) has no rest pose recorded, and quackd lets go "
+                "of an arm with none wherever it stands at the end of a flock's run, so it would "
+                f"fall there: quackd robot rest-pose {name}"
+            )
 
     # built before the run directory exists, so a missing extra or a bad address fails with
     # nothing on disk to explain away

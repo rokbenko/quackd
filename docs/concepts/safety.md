@@ -601,20 +601,23 @@ write says nothing about what that write did.
   while it reads past its travel is the limit to the servo, so a joint a move had begun lifting
   keeps rising to that limit whatever the stop does. The power switch is the only stop for that
   stretch.
-- **The arm falls when a session ends, unless you have recorded a rest pose.** LeRobot's own
+- **A run needs a recorded rest pose, or the arm would fall when it ends.** LeRobot's own
   `disconnect()` disables torque by its default and quackd asks for that at the end of every
   clean session over an arm with no rest pose recorded, which is why the arm fell at the end of
-  every run on 2026-09-15. Fold the arm by hand while nothing is
-  connected, record where it sits with `quackd robot rest-pose <name>`, and quackd drives it
-  back there between the `stop` and the close, on every exit path there is: success, failure,
-  infeasible, a spent budget, an abort, an error and Ctrl-C. It drives the arm there at the
-  start of a run too, before the pilot gets control, and a run that cannot reach it aborts
-  before the first LLM call. Only the five body joints are ever driven: the gripper is recorded
-  and never commanded, for the same reason `stop` leaves it alone. With no pose recorded, the
-  old behaviour stands and the arm sags where it stopped, which is also what
-  `quackd robot rest-pose <name> --clear` returns you to. An MCP session does the same at both
-  ends and refuses to open at all if it cannot get there, because a client is about to drive a
-  body nobody has established the pose of ([guides/mcp.md](../guides/mcp.md)).
+  every run on 2026-09-15. Fold the arm by hand while nothing is connected, record where it sits
+  with `quackd robot rest-pose <name>`, and quackd drives it back there between the `stop` and
+  the close, on every exit path there is: success, failure, infeasible, a spent budget, an
+  abort, an error and Ctrl-C. It drives the arm there at the start of a run too, before the
+  pilot gets control, and a run that cannot reach it aborts before the first LLM call. Only the
+  five body joints are ever driven: the gripper is recorded and never commanded, for the same
+  reason `stop` leaves it alone. With no pose recorded, which is also where
+  `quackd robot rest-pose <name> --clear` leaves an arm, a run, a dry run, an MCP session and a
+  flock refuse a real arm before anything connects, and `doctor` lets go of it where it stops,
+  as every session once did
+  ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). An MCP session
+  parks the arm at both ends too, and refuses to open at all if it cannot get there, because a
+  client is about to drive a body nobody has established the pose of
+  ([guides/mcp.md](../guides/mcp.md)).
 - **A rest pose past the calibrated travel is parked at the edge of it.** A servo on this arm is
   never driven outside the travel its calibration recorded: LeRobot writes that travel into it
   as two limits, and it clamps every goal to them. A folded arm can still sit past them, because

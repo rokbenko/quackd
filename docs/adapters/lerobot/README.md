@@ -231,7 +231,9 @@ and are connecting as `arm-01`.
 Registering the arm is worth it beyond the id: `quackd robot add` stores the address, every
 camera url and the token, so `--robot lab-arm` carries all of them and you stop retyping a COM
 port ([guides/registry.md](../../guides/registry.md)). It is also the only place a
-[rest pose](#the-rest-pose) can live, which is what stops the arm falling when a run ends.
+[rest pose](#the-rest-pose) can live, and a run or an MCP session refuses a real arm with none
+before anything connects, so the two spec forms above are for the commands that move nothing,
+such as `doctor` and `validate`.
 
 ## The manifest
 
@@ -543,13 +545,24 @@ for a look as a deliberate act and get the frame back as a verb result, which is
 
 ## Driving it
 
-Three ways, and they differ only in who chooses the verbs.
+Three ways, and they differ only in who chooses the verbs. Each names the arm by the name it was
+registered under, `arm-01`, with a [rest pose](#the-rest-pose) recorded under it, because a real
+arm with none is refused a run, a dry run included, and an MCP session, before anything
+connects: the close of each lets go of an arm with no pose wherever it stands, and an SO-101 has
+no brake. A spec on its own carries no name to keep a pose under, and is refused the same way:
+
+```
+$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake
+x error: lerobot:real names no registered arm, so it has no rest pose, and quackd lets go of an arm
+with none wherever it stands at the end of a run, a dry one included, so it would fall there
+  quackd robot add NAME lerobot:real --address COM5, then quackd robot rest-pose NAME
+```
 
 **A task file**, which is the one with guard rails. The `.duck` names the allowlist, the
 budgets and the success test, and quackd enforces all three:
 
 ```bash
-quackd run lerobot-lookout --robot lerobot:real --address /dev/ttyACM0 --llm anthropic
+quackd run lerobot-lookout --robot arm-01 --llm anthropic
 ```
 
 `lerobot-lookout` ships with quackd and moves no joint: it reads the arm back and says what
@@ -561,8 +574,8 @@ if this arm does not provide a verb it asks for.
 still has to pass `assess_task`, and everything else still applies:
 
 ```bash
-quackd run --goal "roll the wrist ten degrees and stop" --robot lerobot:real \
-  --address /dev/ttyACM0 --llm anthropic --max-steps 3
+quackd run --goal "roll the wrist ten degrees and stop" --robot arm-01 --llm anthropic \
+  --max-steps 3
 ```
 
 Keep `--max-steps` small. `--llm fake` will not do here: the scripted pilot answers a
@@ -577,8 +590,7 @@ one verb and stop:
   "mcpServers": {
     "arm": {
       "command": "uvx",
-      "args": ["--from", "quackd[lerobot]", "quackd", "serve-mcp", "--robot", "lerobot:real",
-               "--address", "COM5", "--camera-url", "opencv://1"]
+      "args": ["--from", "quackd[lerobot]", "quackd", "serve-mcp", "--robot", "arm-01"]
     }
   }
 }
@@ -591,13 +603,15 @@ two-minute script: [guides/mcp.md](../../guides/mcp.md). The same path at walkin
 empty laptop to a waving arm in fifteen steps, is
 [Part 2 of the first run](first-run.md#part-2-from-claude-over-mcp).
 
-A session started with a registered name that has a rest pose parks the arm at both ends, the
-same as a run does, and **refuses to start** if it cannot reach that pose. The spec form above
-has none, because a rest pose lives under a registered name, so that session parks nothing and
-the arm goes limp when it ends, as it does at the end of both runs above. Register the arm
-(`quackd robot add`, then `quackd robot rest-pose`) and name it instead, `"--robot", "arm-01"`
-with no `--address`, to have it parked. Repeat `--camera-url` here too, and the session reads
-every camera you name.
+The session parks the arm at both ends, the same as a run does, and **refuses to start** if it
+cannot reach that pose. It takes the address and every camera from the registry, and
+`--camera-url` given here, repeated for each camera, replaces the registered ones for that
+session. A spec in the arm's place, `"--robot", "lerobot:real", "--address", "COM5"`, is refused
+before it connects, as a run is, and the server exits 1 with this on its stderr:
+
+```
+lerobot:real names no registered arm, so it has no rest pose, and quackd lets go of an arm with none wherever it stands at the end of an MCP session, so it would fall there: quackd robot add NAME lerobot:real --address COM5, then quackd robot rest-pose NAME
+```
 
 **A picture that comes with the task** is `--image PATH`, repeatable, and it is the flag that
 makes "draw what is in the picture" a sentence this body can be given. This arm is the body a
@@ -1587,9 +1601,10 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   hold it and press Enter, and torque comes off where it stands, which drops it into your hands.
   The line above is what follows when nobody presses Enter, and what `doctor`, a dry run, an MCP
   session or a flock member says without asking. With no rest pose recorded there is nothing to
-  check against, nothing changes, and the arm goes limp at the end of every clean session exactly
-  as it did in 0.9. See [The rest pose](#the-rest-pose), and for an arm left up this way,
-  [Releasing it](#releasing-it).
+  check against, so a run, a dry run, an MCP session and a flock each refuse a real arm with
+  none before anything connects, and a probe, `doctor` or `robot list --probe`, lets go of it
+  where it stands, as every session did in 0.9. See [The rest pose](#the-rest-pose), and for an
+  arm left up this way, [Releasing it](#releasing-it).
 
   An exit that never reaches that read, a second Ctrl-C during the rest move or a crash, leaves
   the arm holding too. LeRobot can still disconnect an arm nobody closed as the process lets go
@@ -1681,7 +1696,17 @@ default, and a clean close with no rest pose recorded asks for exactly that. On 
 arm, so the pose a model was improvising from was different every time.
 
 A rest pose fixes both. You fold the arm by hand, tell quackd where that is, and quackd drives
-it there at both ends of every run.
+it there at both ends of every run. A real arm without one is refused a run, a dry run and an
+MCP session, before anything connects, because the close would let go of it wherever it stood
+([ADR-0058](../../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). Captured on a
+scratch registry with `arm-01` registered as `lerobot:real` and no pose recorded:
+
+```
+$ quackd run lerobot-lookout --robot arm-01 --llm fake
+x error: arm-01 (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none
+wherever it stands at the end of a run, a dry one included, so it would fall there
+  quackd robot rest-pose arm-01
+```
 
 > [!IMPORTANT]
 > **The first arm to run a rest pose could not reach it.** On 2026-09-23 the SO-101 of the 15th
@@ -1745,8 +1770,12 @@ SO-101 folded on a desk reports its own, and they will not look like these.
 ```
 $ quackd robot rest-pose arm-01 --clear
 ✓ cleared arm-01's rest pose
-  a run now leaves the arm where it stands, and torque drops there
+  a run, a dry run or an MCP session of arm-01 is now refused until a pose is recorded again
+  quackd robot rest-pose arm-01
 ```
+
+That is a real arm's line. A mock or a simulator, neither of which is refused a run, says instead
+that a run now leaves the arm where it stands, and torque drops there.
 
 A rest pose belongs to a **registered** robot, because it is read off the arm and kept under
 its name. There is no `--rest-pose` flag on `quackd run`.
@@ -2162,7 +2191,7 @@ connects and before a run directory exists:
 | `--by-hand and --dry-run ask for opposite things: one takes torque off the arm, the other moves nothing` | a dry run moves nothing at either end, and taking torque off an arm is the one thing here that is not a command to the robot but a change to it. Rehearse with `--dry-run`, then run it again with `--by-hand` |
 | `--by-hand waits for you to press Enter, and there is no terminal to ask on` | the wait reads a real keystroke. With nobody to ask, the release would happen and nothing would ever pick the arm back up |
 | `microduck:mock is not a body a person places by hand: only the LeRobot arm is` | a body declares `supports_hand_off`, and eight of the nine do not. `quackd list-adapters` |
-| `--by-hand releases the arm at its recorded rest pose, and this arm has none recorded` | the release refuses anywhere but the recorded pose, so an arm without one could never be handed over at all. Said here rather than after it has connected: `quackd robot rest-pose NAME` |
+| `--by-hand releases the arm at its recorded rest pose, and this arm has none recorded` | the release refuses anywhere but the recorded pose, so an arm without one could never be handed over at all. Said here rather than after it has connected: `quackd robot rest-pose NAME`. A real arm never gets this far, because every run of one with no rest pose is refused first, `--by-hand` or not ([The rest pose](#the-rest-pose)), so this line is the mock's and the simulator's |
 
 > [!NOTE]
 > The hand-off is exercised against `lerobot:mock` and in the test suite, and not yet on a
@@ -2222,7 +2251,9 @@ a dry run never drives it to:
 > servos are drawing current until something stops them: clear its way and run
 > `quackd robot release NAME`, which folds it and lets go at the pose, or cut its power. The
 > command connects, and connecting drops torque for a moment, so support the arm while it does.
-> An arm with no rest pose recorded behaves as it always did.
+> An arm with no rest pose recorded is let go of where it stands by a probe, `doctor` or
+> `robot list --probe`, as it always was, and a run or a dry run of one is refused before it
+> connects.
 
 **The exceptions are a person asking for it, out loud.** Everything above is about quackd's own
 initiative, and on its own initiative quackd still de-energises nothing: no verb disables
@@ -2672,7 +2703,8 @@ And once it is running:
 | `cannot move_joints: the arm's torque is off, so a goal would reach a limp servo` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so torque still off after one points at a tripped servo or the supply. On a `--by-hand` run this is also what the arm reads like between the release and the moment quackd takes hold again, which is before the first turn |
 | `cannot place: nothing is held: pick something first` | the `holding` precondition | holding is inferred from the gripper stopping short of shut, so an empty hand reads as nothing held. After a `--by-hand` start it is also what a pilot gets for the pencil you put between the jaws yourself: closing the gripper by hand sets a position and not a grip, and the pilot has to close on the object itself first |
 | the run ends saying the arm did not answer | the heartbeat's round trip to the motors failed, and the words after `TimeoutError:` name the call and its budget. Before 0.15.0 there was one more cause: the event loop's thread busy past the deadline, parsing a pilot's first response or encoding a frame, while the arm answered in time, and the answer was thrown away. That was found in the simulator and never measured on an arm. An answer that came back in time is now kept, and a probe queued behind a call which came back in time keeps its place and goes out rather than failing | the cable, the power, or a servo that has tripped. The arm holds its last goal under torque |
-| the arm sags when the run ends | no rest pose is recorded, so quackd asks LeRobot's `disconnect()` for the release that is its own default, at the end of every clean session | record one: `quackd robot rest-pose <name>`. Until you do, support it or fold it somewhere it can rest before you exit |
+| `NAME (lerobot:real) has no rest pose recorded, and quackd lets go of an arm with none wherever it stands at the end of a run, a dry one included, so it would fall there` | a run, a dry run, an MCP session and a flock refuse a real arm with no rest pose before anything connects, and a spec such as `--robot lerobot:real` the same way, saying it `names no registered arm`, since a pose lives only under a name | fold the arm by hand and record one: `quackd robot rest-pose NAME`. For a spec, register the arm first: `quackd robot add NAME lerobot:real --address PORT` |
+| the arm sags when `doctor` or `robot list --probe` ends | no rest pose is recorded, so quackd asks LeRobot's `disconnect()` for the release that is its own default | record one: `quackd robot rest-pose <name>`. Until you do, support it or fold it somewhere it can rest before the probe ends |
 | `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so quackd kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `quackd robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
 | `quackd cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |
 | `torque still reads on for <joints>: cut the power` from `quackd robot release` | those motors kept their torque through the release | cut the servo supply while you hold the arm. The motors not named are limp, and the line after it says what the close then did ([Releasing it](#releasing-it)) |

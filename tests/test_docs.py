@@ -2899,11 +2899,81 @@ def test_no_living_page_says_the_release_drops_the_arm_first() -> None:
     """ADR-0058: releasing the arm means folding it first. A page that still tells a person the
     release lets the arm fall, or that Enter at the end of a run drops it, sends them to hold an
     arm that is about to fold, or straight past the question that asks them to clear its way."""
+    _no_living_page_says(_RELEASE_CLAIMS_RETIRED_BY_ADR_0058)
+
+
+def _no_living_page_says(claims: tuple[tuple[str, str], ...]) -> None:
+    """Fail on the first living page that still makes one of `claims`, each a wrong sentence and
+    what is true instead. `_one_line` lowercases the page, so the wrong sentence is lowercased
+    too: written as it reads, with a capital or a constant's name in it, it could never match,
+    which is how two of the release's four claims went unguarded at first."""
     for path in _living_docs():
         text = _one_line(path.read_text(encoding="utf-8"))
-        for wrong, true in _RELEASE_CLAIMS_RETIRED_BY_ADR_0058:
-            if wrong in text:
+        for wrong, true in claims:
+            if _one_line(wrong) in text:
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
+
+
+_NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
+    (
+        "so that session parks nothing",
+        "a session of a real arm with no rest pose is refused before it connects "
+        "(`quackd.registry.no_rest_pose_refusal`)",
+    ),
+    (
+        "goes limp at the end of every clean session",
+        "a run, a dry run and an MCP session of a real arm with no rest pose are refused, and only "
+        "a probe still lets go of one where it stands",
+    ),
+    (
+        "The arm falls when a session ends, unless you have recorded a rest pose",
+        "a run needs a recorded rest pose, and without one it is refused before anything connects",
+    ),
+    (
+        "goes on letting go of the arm wherever it stops",
+        "the spec form reaches a real arm for `doctor`, and a run of it is refused",
+    ),
+)
+
+
+def test_no_living_page_says_a_real_arm_with_no_rest_pose_runs() -> None:
+    """ADR-0058's ninth decision: a run, a dry run, an MCP session and a flock refuse a real arm
+    with no rest pose, whose close would let go of it wherever it stood. A page that still says
+    such a run ends with the arm limp tells a reader something that no longer happens, and
+    leaves out the refusal they will meet instead."""
+    _no_living_page_says(_NO_POSE_CLAIMS_RETIRED_BY_ADR_0058)
+
+
+# The commands a page still prints with a bare real arm on purpose: the run of 2026-09-15 as it
+# was typed, kept as history, and the run the LeRobot page shows being refused.
+_BARE_REAL_RUNS_ON_PURPOSE = {
+    "README.md": 'quackd run --goal "Wave to the camera with an extended arm" --robot lerobot:real',
+    "docs/adapters/lerobot/README.md": (
+        "$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake"
+    ),
+}
+_BARE_REAL_RUN = re.compile(
+    r'quackd (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
+    r'"lerobot:real"'
+)
+
+
+def test_no_living_page_runs_a_real_arm_by_its_spec() -> None:
+    """A spec carries no name to keep a rest pose under, so `run` and `serve-mcp` refuse
+    `--robot lerobot:real` (ADR-0058), and a page that tells a reader to type one hands them
+    that refusal. Every example runs the registered `arm-01` instead; the two lines kept on
+    purpose are named above, and a third of either, or a new one, fails here."""
+    for path in _living_docs():
+        rel = path.relative_to(REPO).as_posix()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if (
+                _BARE_REAL_RUN.search(line)
+                and _BARE_REAL_RUNS_ON_PURPOSE.get(rel, "\0") not in line
+            ):
+                pytest.fail(
+                    f"{rel} runs a real arm by its spec, which is refused now: {line.strip()!r}. "
+                    "Name the registered arm, --robot arm-01, as the other examples do"
+                )
 
 
 def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step() -> None:

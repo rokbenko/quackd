@@ -142,7 +142,7 @@ Two ways to drive the same arm, and the steps that set the arm up are shared bet
     quackd robot add arm-01 lerobot:real --address COM3 --llm openai:gpt-6-astra
     ```
 
-6. **Fold the arm by hand, then record where it rests.** An SO-101 has no brake and LeRobot releases torque when it disconnects, so without this the arm drops from wherever the run left it. With it, every run starts at this pose and returns to it before quackd lets go. This pose is where every run starts and ends unless the run itself says otherwise, and the one flag that says otherwise is just below step 10, where it changes the start and leaves the end alone. If it warns that a joint is recorded past what this calibration lets its servo be driven to, your fold lies outside the travel step 3 recorded: a run parks that joint at the edge of its travel and lets it settle from there, and calibrating again with the joint taken all the way into the fold, then recording the pose again, makes the fold itself reachable. Record the pose again after any new calibration too, because a calibration can move a joint's zero and the pose is kept as angles.
+6. **Fold the arm by hand, then record where it rests.** An SO-101 has no brake and LeRobot releases torque when it disconnects, so without this the arm would drop from wherever a run left it, and quackd refuses to run it at all. With it, every run starts at this pose and returns to it before quackd lets go. This pose is where every run starts and ends unless the run itself says otherwise, and the one flag that says otherwise is just below step 10, where it changes the start and leaves the end alone. If it warns that a joint is recorded past what this calibration lets its servo be driven to, your fold lies outside the travel step 3 recorded: a run parks that joint at the edge of its travel and lets it settle from there, and calibrating again with the joint taken all the way into the fold, then recording the pose again, makes the fold itself reachable. Record the pose again after any new calibration too, because a calibration can move a joint's zero and the pose is kept as angles.
 
     ```bash
     quackd robot rest-pose arm-01
@@ -240,7 +240,7 @@ The command, as it was typed on the laptop in the recording:
 quackd run --goal "Wave to the camera with an extended arm" --robot lerobot:real --address COM3 --camera-url "opencv://2" --llm openai:gpt-6-astra --max-steps 10
 ```
 
-No task file, no registered name, no rest pose. `--goal` writes a contract on the spot: the arm's own five verbs allowed, `gripper`, `move_joints`, `place`, `report_state` and `stop`, plus the four the loop always offers, `assess_task`, `declare_success`, `declare_failure` and `remember`. Exactly one of them per turn, and anything else refused. It was the last of twelve runs that afternoon, so the memory quackd keeps per robot handed it five notes and how the last five of the eleven before it had ended, which is the whole of what it carries.
+No task file, no registered name, no rest pose, which is why quackd refuses that command today: a real arm with no rest pose would fall where its run ended, as this one did. `--goal` writes a contract on the spot: the arm's own five verbs allowed, `gripper`, `move_joints`, `place`, `report_state` and `stop`, plus the four the loop always offers, `assess_task`, `declare_success`, `declare_failure` and `remember`. Exactly one of them per turn, and anything else refused. It was the last of twelve runs that afternoon, so the memory quackd keeps per robot handed it five notes and how the last five of the eleven before it had ended, which is the whole of what it carries.
 
 **What the model was told.** About a third of the system prompt as it read that day, cut where marked, with the two lines that were wrong left in:
 
@@ -701,7 +701,7 @@ robots (--robot NAME)
 
 The two mocks answer because a mock always answers. `scout` is a real robot's address with nothing at it, which is what a robot that is switched off looks like, and it makes the command exit 1 so a script can branch on it. Both files live under `~/.quackd/`, `--registry-dir` or `QUACKD_REGISTRY_DIR` moves them, and **tokens are stored there in plain text**. What a name changes, and what happens when a flock's member goes missing: [docs/guides/registry.md](docs/guides/registry.md).
 
-**A name also carries where an arm should be left.** A LeRobot arm goes limp the moment it is disconnected, because LeRobot's `disconnect()` disables torque by its own default, and a clean close with no rest pose recorded asks for exactly that. So on the bench the arm fell at the end of every run, and every run started from wherever the last one had left it. `quackd robot rest-pose` closes both ends. Fold the arm by hand, which you can do because nothing is connected to it and it is limp, then record the pose it is in:
+**A name also carries where an arm should be left.** A LeRobot arm goes limp the moment it is disconnected, because LeRobot's `disconnect()` disables torque by its own default, and a clean close with no rest pose recorded asks for exactly that. So on the bench the arm fell at the end of every run, and every run started from wherever the last one had left it. `quackd robot rest-pose` closes both ends, and a real arm without one is refused a run, a dry run and an MCP session before anything connects. Fold the arm by hand, which you can do because nothing is connected to it and it is limp, then record the pose it is in:
 
 ```
 $ quackd robot rest-pose arm-01 --yes     # without --yes it prints the joints and asks
@@ -716,7 +716,7 @@ gripper        100.0
   quackd run <duck> --robot arm-01 starts from it and returns to it before letting go
 ```
 
-Those joint numbers are the mock arm's, from `lerobot:mock`, and a real SO-101 reports its own. The pose is kept in `~/.quackd/robots.json` beside the address and the cameras, `quackd robot show NAME` prints it back, and `rest-pose NAME --clear` forgets it, after which a run leaves the arm where it stands and torque drops there. What quackd does with a pose it has:
+Those joint numbers are the mock arm's, from `lerobot:mock`, and a real SO-101 reports its own. The pose is kept in `~/.quackd/robots.json` beside the address and the cameras, `quackd robot show NAME` prints it back, and `rest-pose NAME --clear` forgets it, after which a run of a real arm is refused until a pose is recorded again. What quackd does with a pose it has:
 
 | When | What happens |
 |---|---|
@@ -1092,7 +1092,7 @@ browser test.
 |---|---|---|
 | Microduck | `microduck:jsonrpc --address unix:///run/robotd.sock` on the robot, or `tcp://127.0.0.1:9870` after `ssh -L 9870:/run/robotd.sock microduck@<robot>`, as an account in the robot's `robot` group. For a picture, which `robotd` does not serve, `--camera-url http://127.0.0.1:8080/frame` after `ssh -L 8080:127.0.0.1:8080 microduck@<robot>`, `mediad`'s own snapshot, or `--camera-url webrtc://<robot>:8443` for its video track | `quackd[microduck]`, and `quackd[microduck-camera]` for the WebRTC camera |
 | Open Duck Mini v2 | `open_duck:bridge --address tcp://open-duck.local:9871 --camera-url http://open-duck.local:9872/snapshot.jpg --token <the bridge token>` | `quackd[open_duck]`, and no robot library: the daemon runs on the robot |
-| LeRobot arm | `lerobot:real --address /dev/ttyACM0` (the arm's serial port, `COM5` on Windows), and `--camera-url opencv://N` for a USB webcam (`lerobot-find-cameras opencv` prints the indices), which repeats, because this is the one body that reads more than one camera | `quackd[lerobot]`, Python 3.12 or newer, and `quackd robot rest-pose NAME` recorded for it, or the arm falls when the run ends |
+| LeRobot arm | `lerobot:real --address /dev/ttyACM0` (the arm's serial port, `COM5` on Windows), and `--camera-url opencv://N` for a USB webcam (`lerobot-find-cameras opencv` prints the indices), which repeats, because this is the one body that reads more than one camera | `quackd[lerobot]`, Python 3.12 or newer, and the arm registered under a name with a rest pose recorded for it (`quackd robot add NAME lerobot:real --address ...`, then `quackd robot rest-pose NAME`), without which a run is refused, because the arm would fall where it ended |
 | Any ROS base | `rosbridge:ws --address "ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed"` | `quackd[rosbridge]` |
 | XLeRobot | `xlerobot:zmq --address tcp://xlerobot.local:5555` (add `?variant=diff2` or `?variant=mecanum` for a base other than the default three-omniwheel one, or `?swap_colour=0`, if you need them) | `quackd[xlerobot]` |
 | AlohaMini | `alohamini:zmq --address tcp://alohamini.local:5555` | `quackd[alohamini]` |
