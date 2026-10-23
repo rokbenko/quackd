@@ -206,8 +206,10 @@ def _play(
     threads: list[threading.Thread] = []
 
     def ask_for_pause() -> None:
-        time.sleep(3.0)
-        result = doorstep.pause(state, f"{local_ip()}:{doorstep.HOME.port}", 3)
+        home_at = f"{local_ip()}:{doorstep.HOME.port}"
+        doorstep.served(home_at, within=60)  # as run --pause-after does: never before it listens
+        time.sleep(2.0)
+        result = doorstep.pause(state, home_at, 3)
         braked.append(doorstep.outcome(result, marker=" asked "))
 
     def home_started() -> None:

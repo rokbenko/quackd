@@ -410,6 +410,12 @@ def doorstep_run(
     ),
     pause_seconds: int = typer.Option(5, "--pause-seconds", help="How long that pause is."),
     show: bool = typer.Option(False, "--show", help="Print the quackd commands and stop."),
+    print_logs: bool = typer.Option(
+        False,
+        "--print-logs",
+        help="With --role both, print each run's log once the act ends, for a place where "
+        "nobody reads the files, such as a Serverless Job's log.",
+    ),
     state: Path = STATE_OPTION,
     base_url: str | None = BASE_URL_OPTION,
 ) -> None:
@@ -418,6 +424,8 @@ def doorstep_run(
 
     if pause_after > 0 and role == "courier":
         fail("--pause-after pauses the home robot, which runs here only with --role both or home")
+    if print_logs and role != "both":
+        fail("--print-logs prints the log files that only --role both writes")
     settings = _settings(base_url)
     chosen = _chosen(settings, model)
     here = local_ip()
@@ -447,7 +455,14 @@ def doorstep_run(
     timers: list[threading.Timer] = []
 
     def ask_for_pause() -> None:
-        result = doorstep.pause(state, f"{here}:{doorstep.HOME.port}", pause_seconds)
+        home_at = f"{here}:{doorstep.HOME.port}"
+        try:
+            # counted from the home robot's start, which a slow start can outlast
+            doorstep.served(home_at)
+        except nebius.NebiusError as e:
+            warn(f"the courier asked for no pause: {e}")
+            return
+        result = doorstep.pause(state, home_at, pause_seconds)
         answer = doorstep.outcome(result, marker=" asked ")
         console.print(Text(printable(f"the courier asked for a {pause_seconds} s pause: {answer}")))
 
@@ -470,6 +485,11 @@ def doorstep_run(
     finally:
         for timer in timers:
             timer.cancel()
+        if print_logs and logs is not None:
+            for name, text in doorstep.logged(logs):
+                console.print(Text(f"== {name}'s run ==", style="bold"))
+                for line in text.splitlines():
+                    console.print(Text(printable(line)), soft_wrap=True)
     for name, code in codes.items():
         console.print(Text(f"{name}: its run ended with {code}"))
     console.print(

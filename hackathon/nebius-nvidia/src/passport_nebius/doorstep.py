@@ -333,6 +333,16 @@ def pause(state: Path, home_at: str, seconds: int) -> subprocess.CompletedProces
     )
 
 
+def logged(logs: Path) -> list[tuple[str, str]]:
+    """Each run's log under `logs`, the courier's first, as its robot's name and its text."""
+    found = []
+    for robot in (COURIER, HOME):
+        path = logs / f"{robot.name}.log"
+        if path.is_file():
+            found.append((robot.name, path.read_text(encoding="utf-8", errors="replace")))
+    return found
+
+
 def stop(processes: Sequence[subprocess.Popen[bytes]]) -> None:
     """End runs this command started and has given up on: a terminate, then a kill once
     `STOP_WITHIN_S` has passed. On Windows a terminate is at once and skips a run's own teardown,

@@ -10,9 +10,10 @@ what it cannot do, how a person stops it, and where to talk to it. Ed25519 signa
 over HTTP, DNS-SD, MQTT and QR stickers, published test vectors, and a talk protocol in which a
 robot may ask another for a pause or to identify itself.
 
-This edition gives every robot an NVIDIA brain on Nebius. Nemotron on Nebius Token Factory pilots
-the robots, explains a passport to the person standing next to the robot, and tells which
-passport belongs to which robot in a camera's view.
+quackd is the agent runtime: it connects each robot, gives it a pilot, and enforces what that
+pilot may do. This edition gives every robot an NVIDIA brain on Nebius. Nemotron on Nebius Token
+Factory pilots the robots, explains a passport to the person standing next to the robot, and
+tells which passport belongs to which robot in a camera's view.
 
 The property the demo is built around: **a stranger's words never reach your robot's model.**
 Two robots that never met see each other's passport in closed words and numbers only. Words flow
@@ -33,14 +34,31 @@ another to move, or to stop for good.
 | The robots' pilots | a Nemotron model with tool calling | Token Factory chat completions, one per turn |
 | `explain` | a Nemotron model | Token Factory, answering from passport fields |
 | `whois` | an NVIDIA vision model (a Nemotron VL or Omni row) | Token Factory, an image and a JSON schema |
-| The doorstep on a server | the same pilots | both robots on one Nebius AI Cloud CPU VM |
+| Both acts on AI Cloud | the same pilots | a Serverless AI Job on a CPU preset |
 
 No model id is written down anywhere. Every command reads the key's live `GET /v1/models` list
 and takes an NVIDIA id only when that list carries it, spelled as the list spells it.
 
+**Where Token Factory sped the work up.** quackd already spoke to OpenAI-compatible servers, so
+giving every robot a Nemotron pilot took an address and a key and no new client code: the work
+went into the scene around it. Nothing here needs a GPU of our own, since the simulated robots
+run on a laptop or a CPU job and every pilot turn is one call to Token Factory. And with the live
+model list as the one source of ids, trying a larger Nemotron for the pilots or a smaller one for
+`explain` is a change of one id.
+
+**Nebius services used:** Token Factory for every model call; Serverless AI Jobs to play both
+acts on Nebius AI Cloud; MysteryBox to hand the job its key.
+
 The pilots are quackd's own `quackd run`, unchanged: its `local` provider speaks to any
 OpenAI-compatible server, so Token Factory is an address and a key. The key goes to quackd in
 its environment, never on a command line.
+
+## Requirements
+
+* Windows, macOS or Linux with [uv](https://docs.astral.sh/uv/), which installs the Python this
+  folder needs.
+* A Nebius Token Factory API key.
+* For the job only: the Nebius CLI, configured, and a project that can start one CPU VM.
 
 ## Setup
 
@@ -107,8 +125,9 @@ courier-01 pinned home-01
 ready for the appointment act in runs/doorstep
 ```
 
-With `--role both` (the default) both runs go to log files under `runs/doorstep/logs`. To watch
-them side by side, use two terminals, the courier first:
+With `--role both` (the default) both runs go to log files under `runs/doorstep/logs`, and
+`--print-logs` prints them when the act ends. To watch the runs side by side, use two
+terminals, the courier first:
 
 ```
 uv run passport-nebius doorstep run --act appointment --role courier
@@ -124,10 +143,9 @@ uv run passport-nebius doorstep pause --seconds 5
 ```
 
 The ask comes in a session of its own under the courier's key, so the home robot sees one more
-hello and bye from the courier while the act goes on.
-
-`run --pause-after 20` does the same twenty seconds after the home robot starts. Every run writes its
-transcript and an animation of the simulator under `runs/doorstep/runs`.
+hello and bye from the courier while the act goes on. `run --pause-after 20` asks the same
+twenty seconds after the home robot starts. Every run writes its transcript and an animation of
+the simulator under `runs/doorstep/runs`.
 
 ## explain
 
@@ -157,23 +175,25 @@ passport fits which robot in view, and which fits none. The model sees each pass
 body under a label such as `r1`, and what does not hold of its answer is dropped. It is advice
 for a person: it pins nothing, stamps nothing and changes no tier.
 
-## On Nebius AI Cloud
+## On Nebius AI Cloud: a Serverless Job
 
-The doorstep needs no GPU: the robots run on quackd's 2D simulator and their pilots on Token
-Factory. On a fresh Ubuntu VM:
+Both acts run as one Nebius Serverless AI Job, a container that plays them and ends. It takes a
+CPU preset, since the robots are simulated and their pilots run on Token Factory. The key stays
+in a MysteryBox secret: create one named `nebius-api-key` whose payload key is
+`NEBIUS_API_KEY`, then, from this folder:
 
 ```
-curl -LsSfO https://raw.githubusercontent.com/rokbenko/quackd/main/hackathon/nebius-nvidia/deploy/bootstrap.sh
-bash bootstrap.sh
+bash deploy/serverless-job.sh <an NVIDIA id from passport-nebius models>
+nebius ai job logs <job id> --follow
 ```
 
-It installs uv, checks quackd out and syncs this folder, and writes no key. Both robots talk over
-the VM's own address, so no port needs to be open to the internet.
+The job's log shows the NVIDIA models the key can use, then each act with both robots' runs in
+full. What the container runs is `deploy/doorstep-job.sh`.
 
-## What is proven, and how
+## Testing this entry
 
-The tests run offline in a few minutes, with no key, against a stand-in for Token Factory that
-serves its documented model list and answers its chat completions:
+**Without a key.** The tests run offline in a few minutes, against a stand-in for Token Factory
+that serves its documented model list and answers its chat completions:
 
 ```
 uv run pytest
@@ -192,14 +212,17 @@ uv run pytest
 * `whois` with a model that invents a passport, a blind model, and an oversized frame.
 * That this folder stays apart from quackd (below).
 
+**With a key.** Setup, then the two acts, `explain` on `runs/doorstep/courier-01.jws`, and
+`whois` on a picture or a camera, as above. **On Nebius,** the job.
+
 What is not proven yet: none of it has met Token Factory itself. That run, and its transcripts,
 are added here before submission.
 
-## Built during the hackathon
+## New during the Submission Period
 
-The submission period opened on 26 August 2026. quackd's first commit is from 28 August 2026, so
-the whole project was written inside it; Robot Passport shipped in quackd 0.23.0 on 22 October,
-and this edition followed.
+The Submission Period opened on 26 August 2026. quackd's repository starts on 28 August 2026, so
+none of it existed before the period: Robot Passport shipped in quackd 0.23.0 on 22 October
+2026, and this edition was built on it from that day.
 
 ## This folder
 
@@ -207,4 +230,4 @@ It is a consumer of quackd 0.23 from PyPI and changes nothing in the rest of the
 It is not a member of quackd's workspace, so no quackd release builds or publishes it, and its
 classifier makes PyPI refuse it. `test/test_separation.py` keeps it that way: nothing in here
 may carry a name quackd's own sdist would take, and no tracked file outside this folder may name
-it. Its licence is the repository's, Apache-2.0.
+it. Its licence is the repository's, [Apache-2.0](../../LICENSE).
