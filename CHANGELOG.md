@@ -7,7 +7,29 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.24.0] — 2026-10-23
+
+0.24.0 makes letting go of the SO-101 mean putting it down first. `quackd robot release` folds the
+arm to its recorded rest pose and lets go of it there, where 0.14.0's command took torque off
+wherever the arm stood and let it fall. A fold that misses, there or at the end of a run, asks
+twice before anything drops: first to clear the arm's way and fold once more, and only if that
+fold misses too, whether to take torque off where the arm stands, saying that it will drop.
+Anything but Enter keeps torque on.
+
+A real arm with no rest pose recorded is refused a run, a dry run, an MCP session and a flock,
+and its close no longer lets go of it wherever it stands: `doctor` and `robot list --probe` keep
+it powered and say so, at a terminal `doctor` asks before it drops it into your hands, and
+`quackd robot rest-pose` lets go of the arm only once its pose is confirmed. A first Ctrl-C or
+`q` now ends a model call that is still out, and stops the fold at the end of a run that ended by
+itself.
+
+A turn the model's API could not answer for now, a rate limit, an overloaded server or a dropped
+connection, is asked again up to four times, after waits that grow from 5 seconds to a minute,
+with the robot holding still and the heartbeat watching it. The SDKs retry nothing of their own
+now, so every try is on the record and under the stop.
+
+None of it has run on an arm, and nothing has been asked again after a real 429 or 529. The
+bench steps that would settle the arm's part are under Known limitations.
 
 ### Added
 
@@ -7774,7 +7796,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/rokbenko/quackd/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/rokbenko/quackd/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/rokbenko/quackd/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/rokbenko/quackd/compare/v0.20.0...v0.21.0
