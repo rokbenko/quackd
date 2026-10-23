@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "passport-nebius"
+version = "0.1.0"
+description = "Robot Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's entry to the Nebius x NVIDIA Global AI Hackathon 2026"
+readme = { file = "README.markdown", content-type = "text/markdown" }
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "Rok Benko" }]
+# Never published: PyPI refuses every upload that carries this classifier. Nothing in quackd's
+# release builds this folder either, since it is not a member of quackd's uv workspace.
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+  # The released passport, from PyPI: this folder is a consumer of quackd, never a part of it.
+  # openai is the local provider's client, lan the passport's discovery, and the two bodies
+  # are the doorstep's courier and home robot.
+  "quackd[openai,lan,alohamini,toddlerbot]>=0.23.0,<0.24",
+  "openai>=1.66,<4",
+  "typer>=0.12",
+  "rich>=13.7",
+  "python-dotenv>=1.0",
+]
+
+[project.scripts]
+passport-nebius = "passport_nebius.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "mypy>=1.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/passport_nebius"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
+# No [tool.ruff] here on purpose: ruff then lints this folder by quackd's own root config, the
+# same rules CI holds the rest of the repository to.
+[tool.mypy]
+files = ["src", "test"]
+ignore_missing_imports = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = false
