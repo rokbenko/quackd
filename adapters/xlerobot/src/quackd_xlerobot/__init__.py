@@ -44,7 +44,7 @@ from quackd.verbs.registry import Precondition, Verb
 from quackd_xlerobot import upstream_api as up
 from quackd_xlerobot.verbs import JOINTS, xlerobot_conditions, xlerobot_verbs
 
-__version__ = "0.23.0"
+__version__ = "0.24.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""

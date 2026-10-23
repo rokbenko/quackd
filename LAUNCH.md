@@ -40,10 +40,14 @@ its maker is writing to answer the calls a Microduck's robotd answers, though no
 shim answer and nothing has run on a Huebot. 0.22's was that quackd can drive a ninth robot, MOSS,
 a tracked rover that picks up litter, through its own cockpit and a bridge quackd ships for the
 rover, and that a `dangerous` verb runs only when a person answers it, though nothing has run on
-a MOSS rover yet. **0.23's is that a robot can introduce itself to one it has never met, through
+a MOSS rover yet. 0.23's was that a robot can introduce itself to one it has never met, through
 Robot Passport, an open protocol quackd is the first to implement, and that two robots that have
 met can talk and one can ask the other for a short pause, which fixed code grants and never a
-pilot, though none of it has run between two machines or on a robot yet.**
+pilot, though none of it has run between two machines or on a robot yet. **0.24's is that letting
+go of the SO-101 means putting it down first, with a fold that misses asking twice before anything
+drops and an arm with no rest pose never let fall, and that a turn the model's API could not
+answer is asked again with the robot holding still, though none of it has run on the arm or met a
+real 429 yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

@@ -80,7 +80,7 @@ before.
   2026-09-23 when its rest pose was recorded; and that checklist's *What to report*, six things
   still chosen against Feetech's documentation rather than measured
   ([ADR-0036](docs/adr/0036-what-the-arm-does-not-say.md)).
-- ⬜ **The SO-101 again, for everything in 0.14.0, 0.15.0, 0.16.0, 0.16.1 and 0.19.0.** The arm last
+- ⬜ **The SO-101 again, for everything in 0.14.0 to 0.16.1, 0.19.0 and 0.24.0.** The arm last
   ran a build of the code that became quackd 0.13.0, still numbered 0.12.0. The rest pose clipped
   into the travel, `quackd robot release`, the Enter offer at the end of a run whose rest move
   missed, the `--by-hand` refusal over a joint past its travel, the paced `move_joints` and the
@@ -102,11 +102,11 @@ before.
   (step 17). That checklist is the order to take the arm through, with a hand on the switch. Nothing
   0.19.0 asks of the arm in a played task file has run on it, and the bench steps that would settle
   that, with what to report from each, are under 0.19.0's *Known limitations* in
-  [CHANGELOG.md](CHANGELOG.md). Since then `quackd robot release` folds the arm before it lets
+  [CHANGELOG.md](CHANGELOG.md). In 0.24.0 `quackd robot release` folds the arm before it lets
   go, and a fold that misses there or at the end of a run asks twice before anything drops
   ([ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)), a real arm
   with no rest pose is kept powered at its close, and `doctor` counts the hands away before its
-  fold; none of it has run on the arm, and its nine bench steps are under the next release's
+  fold; none of it has run on the arm, and its nine bench steps are under 0.24.0's
   *Known limitations*.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
