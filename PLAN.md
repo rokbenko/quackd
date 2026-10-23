@@ -102,7 +102,12 @@ before.
   (step 17). That checklist is the order to take the arm through, with a hand on the switch. Nothing
   0.19.0 asks of the arm in a played task file has run on it, and the bench steps that would settle
   that, with what to report from each, are under 0.19.0's *Known limitations* in
-  [CHANGELOG.md](CHANGELOG.md).
+  [CHANGELOG.md](CHANGELOG.md). Since then `quackd robot release` folds the arm before it lets
+  go, and a fold that misses there or at the end of a run asks twice before anything drops
+  ([ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)), a real arm
+  with no rest pose is kept powered at its close, and `doctor` counts the hands away before its
+  fold; none of it has run on the arm, and its nine bench steps are under the next release's
+  *Known limitations*.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a

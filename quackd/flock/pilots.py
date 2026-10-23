@@ -32,7 +32,7 @@ from typing import Any, Protocol
 
 from quackd import __version__
 from quackd.adapters.base import go_to_rest_if_any
-from quackd.adapters.factory import RobotSpec, describe, make_adapter
+from quackd.adapters.factory import RobotSpec, describe, make_adapter, needs_rest_pose
 from quackd.adapters.manifest import RobotManifest
 from quackd.agent.loop import AgentLoop, Outcome, RunConfig, RunResult, resolve_play
 from quackd.agent.providers.base import LLMProvider, Usage
@@ -247,6 +247,28 @@ async def run_pilot_flock(
         where = ", ".join(f"{name}={roster[name].robot_spec.key}" for name in members)
         raise ValueError(f"{duck.name} cannot run on {where}: {'; '.join(problems)}")
     contracts = {name: trim_contract(duck.frontmatter, manifests[name]) for name in members}
+    # A real arm with no rest pose has nothing to be folded to when its member ends, and would
+    # be left holding itself up wherever it stopped (ADR-0058). `quackd run` refuses such a member
+    # before anything is built; this is the same rule for a caller that reaches the flock
+    # without it, read off each member's own kwargs, since a roster is structural.
+    for name, entry in roster.items():
+        if needs_rest_pose(entry.robot_spec) and entry.adapter_kwargs().get("rest_pose") is None:
+            key = entry.robot_spec.key
+            # a member from a spec has no registry entry to keep a pose under, so recording one
+            # for its name would change nothing: it is sent to register the arm instead
+            said, way_out = (
+                (
+                    f"{name} ({key}) names no registered arm, so it has no rest pose",
+                    f"quackd robot add NAME {key} --address PORT, then quackd robot rest-pose "
+                    "NAME, and run the flock from the registry with --flock",
+                )
+                if isinstance(entry, SpecEntry)
+                else (f"{name} ({key}) has no rest pose recorded", f"quackd robot rest-pose {name}")
+            )
+            raise ValueError(
+                f"{said}, so at the end of a flock's run there is nothing to fold it to, and it "
+                f"would be left holding itself up wherever it stopped: {way_out}"
+            )
 
     # built before the run directory exists, so a missing extra or a bad address fails with
     # nothing on disk to explain away
@@ -539,6 +561,12 @@ def _finish(
             "cost_usd": results[name].summary.get("cost_usd"),
             "wall_s": results[name].summary.get("wall_s"),
             "llm_latency_s": results[name].summary.get("llm_latency_s"),
+            # the member's tries asked again and its waits, only where it waited (ADR-0059)
+            **{
+                key: results[name].summary[key]
+                for key in ("llm_retries", "llm_retry_wait_s")
+                if key in results[name].summary
+            },
             "provider": providers[name].name,
             "model": providers[name].model,
             "robot": roster[name].robot_spec.key,

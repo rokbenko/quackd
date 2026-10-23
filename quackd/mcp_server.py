@@ -1307,7 +1307,13 @@ def fleet_from_flags(
     start connects that robot."""
     from quackd.adapters.base import policy_choice, policy_hint
     from quackd.adapters.factory import describe, make_adapter, parse_robots
-    from quackd.registry import Registry, RegistryError, Resolved, resolve_robot_ref
+    from quackd.registry import (
+        Registry,
+        RegistryError,
+        Resolved,
+        no_rest_pose_refusal,
+        resolve_robot_ref,
+    )
 
     given = (("--flock", flock), ("--robots", robots), ("--robot", robot))
     named = [name for name, value in given if value]
@@ -1351,6 +1357,19 @@ def fleet_from_flags(
     else:
         resolved = [resolve_robot_ref(robot, registry, duck_default=default)]
     specs: list[RobotSpec] = [r.spec for r in resolved]
+    # A real arm with no rest pose has nothing to be folded to when its session closes, and
+    # would be left holding itself up wherever it stopped (ADR-0058). Refused before anything is
+    # described or built, as `run` refuses it, a `--dry-run` session included: it connects too.
+    for each in resolved:
+        refused = no_rest_pose_refusal(
+            each,
+            what="an MCP session",
+            address=address,
+            camera_url=camera_url,
+            fleet=bool(robots) or len(resolved) > 1,
+        )
+        if refused is not None:
+            raise SystemExit(f"{refused[0]}: {refused[1]}")
     # Refused before a manifest is described or an adapter built, as `run` refuses it.
     # QUACKD_HOST is not refused, for `run`'s reason: it is the board you usually use, and
     # with several bodies there is nothing here for it to name, so it is left unread.

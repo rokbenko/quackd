@@ -108,9 +108,10 @@ SIM_TORQUE_LEFT_ON = (
     "with the run, and the next connect starts it at its rest pose again"
 )
 """The simulator's close line for an arm it kept torque on away from its rest pose. The real
-one (`verbs.TORQUE_LEFT_ON`) tells a person to hold the arm, release it, park it with doctor or
-cut its power, none of which a simulated arm needs: its world closes with the close. What is
-left to act on is the reason, which is a rest move that missed on the arm's own code."""
+one (`verbs.TORQUE_LEFT_ON`) tells a person to clear the arm's way and fold it with `quackd robot
+release`, supporting it while that connects, or to cut its power, none of which a simulated arm
+needs: its world closes with the close. What is left to act on is the reason, which is a rest
+move that missed on the arm's own code."""
 SIM_ASSUMPTIONS = (
     so.SERVO_DYNAMICS.name,
     so.JOINT_SIGN.name,
@@ -195,6 +196,11 @@ class LeRobotSim(LeRobotReal):
     default ones. `policy` is what `pick` and `manipulate` run, as for the real backend, a policy
     object or a runner such as the client of a policy server (`--policy-url`), and None leaves
     the arm without either."""
+
+    KEEPS_TORQUE_WITHOUT_A_POSE = False
+    """The simulated arm drops on nothing, and a run of it needs no rest pose (it is not among
+    `REST_POSE_BACKENDS`), so its close lets go of it as the close of every session did before
+    a real arm with no pose was kept powered (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
 
     name = "mujoco"
     label = "mujoco"

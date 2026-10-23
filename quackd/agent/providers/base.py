@@ -8,8 +8,13 @@ it produced). Each provider renders that into its wire format and returns one
 
 from __future__ import annotations
 
+import contextlib
+import email.utils
+import math
+import re
+import time
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -257,6 +262,12 @@ class ProviderTurn(BaseModel):
 
 
 class ProviderError(RuntimeError):
+    """A turn the model's API did not give, in this provider's words.
+
+    Every provider that talks to an SDK raises this `from` the SDK's own exception, and that
+    chain is how the loop tells a failure worth asking again from one that is not
+    (`transient_failure`): the SDK's status code and class name are read, never this message."""
+
     billed_usd: float | None = None
     """What the vendor billed for the call that failed, where it said so: OpenRouter can answer
     with an error and the bill for what the provider had already used. None almost always."""
@@ -279,6 +290,214 @@ class ProviderMissingKey(ProviderError):
         super().__init__(
             f"provider {provider!r} needs {env_var} (set it in .env or the environment)"
         )
+
+
+# ── a turn the API could not answer, and whether it is worth asking again ──────────────────
+
+NO_SDK_RETRIES = 0
+"""The retries every SDK client quackd builds is told to make of its own: none. The anthropic and
+openai SDKs retry a failed call twice by default, inside the call, and sit out a `retry-after`
+there, openai's up to two minutes and anthropic's of any length, where a first Ctrl-C does not
+reach and nothing is recorded. The loop asks a turn again itself instead, on a clock it bounds
+and a stop ends, with every try on the record (ADR-0059). google-genai retries nothing by
+default and is built as it is."""
+
+ASK_AGAIN_STATUSES = frozenset({408, 429})
+"""The HTTP statuses below 500 that say "not now" rather than "no": a request that timed out at
+the server (408) and a rate limit (429). Every 5xx is one too, Anthropic's 529 "overloaded"
+among them. 409 is left out on purpose, though both SDKs retry it themselves: it is a conflict
+over the request, and asking the same request again a minute later is not what resolves one.
+Read off anthropic 1.9.0 and openai 3.22.1 on 2026-10-23, whose own retries use the same set."""
+
+TIMED_OUT_ERRORS = frozenset({"APITimeoutError", "TimeoutException", "TimeoutError"})
+"""Class names, anywhere in a failure's MRO, of a request that got no answer in time: the
+anthropic and openai SDKs' `APITimeoutError`, httpx's `TimeoutException` (its `ReadTimeout`,
+`ConnectTimeout` and `PoolTimeout` among them) and Python's own `TimeoutError`. Names, not
+imports, because no SDK is imported here and CI installs none."""
+
+NO_CONNECTION_ERRORS = frozenset(
+    {
+        "APIConnectionError",
+        "NetworkError",
+        "RemoteProtocolError",
+        "ClientConnectionError",
+        "ConnectionError",
+    }
+)
+"""Class names of a request that never got a connection, or lost it: the SDKs'
+`APIConnectionError`, httpx's `NetworkError` (`ConnectError`, `ReadError`, `WriteError`) and
+`RemoteProtocolError` (a server that hung up mid-answer), aiohttp's `ClientConnectionError`,
+and Python's own `ConnectionError`. A request quackd built wrong is not one of them, though the
+SDKs raise it as one (`BUILT_WRONG_ERRORS`)."""
+
+BUILT_WRONG_ERRORS = frozenset({"LocalProtocolError", "UnsupportedProtocol"})
+"""Class names of a request quackd built wrong, which asking again sends wrong again: httpx's
+`LocalProtocolError`, a request the protocol layer would not send, and `UnsupportedProtocol`, a
+URL that is not http or https. The anthropic and openai SDKs wrap every failure inside their
+transport as their own `APIConnectionError`, raised from it, so these are looked for beneath a
+connection error as well as on their own."""
+
+SHOULD_RETRY_HEADER = "x-should-retry"
+"""A header an API sets to say whether a failure is worth retrying, which both SDKs obey, and so
+does this: `false` makes any status permanent, and `true` makes any status worth asking again.
+Read here because the SDKs are built to retry nothing of their own (`NO_SDK_RETRIES`), so what
+the header says would otherwise go unheard."""
+
+RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
+"""The detail Google's APIs put in an error body to say how long to wait (`retryDelay`, like
+`"39s"`), where the others use a `retry-after` header."""
+
+STATUS_WORDS = {408: "the request timed out at the server", 429: "rate limited", 529: "overloaded"}
+"""What a person reads for the statuses that have a word of their own; every other 5xx is
+`SERVER_ERROR`."""
+
+SERVER_ERROR = "a server error"
+ASKED_TO_ASK_AGAIN = "the API asked to be asked again"
+"""What a person reads for a status worth nothing by itself that the API said to retry."""
+NO_ANSWER_IN_TIME = "no answer in time"
+NO_CONNECTION = "no connection"
+
+
+class Transient(NamedTuple):
+    """A turn the API could not answer for now, rather than one it said no to."""
+
+    why: str
+    """The words a person reads: `rate limited (429)`, `overloaded (529)`, `no connection`."""
+    status: int | None
+    """The HTTP status the failure carried, or None for one that never got an answer at all,
+    which a caller can tell apart: a connection that never answered is as often a wrong address
+    as a dropped one."""
+    retry_after_s: float | None
+    """How long the API asked to wait, where it said: None almost always."""
+
+
+def transient_failure(error: BaseException) -> Transient | None:
+    """Whether a provider's failure is worth asking again, read off the SDK's own exception.
+
+    It follows `__cause__` from `error` down, because every provider raises its `ProviderError`
+    `from` the SDK's exception, and only that: an implicit `__context__` says a failure happened
+    while handling another, which is no reason to ask again. The first status found decides,
+    the status codes and headers being the SDK's own attributes, so a 529 reads the same through
+    anthropic's `OverloadedError` and openai's `InternalServerError`. With no status, the class
+    names in the MRO decide (`TIMED_OUT_ERRORS`, `NO_CONNECTION_ERRORS`). The message is never
+    read, so a `ProviderError` quackd raised itself, a refused redirect, a missing key, a reply
+    that did not parse, is never asked again, whatever its words say.
+
+    Never raises: it runs inside the handler that writes the failed call's record."""
+    try:
+        seen: set[int] = set()
+        link: BaseException | None = error
+        while link is not None and id(link) not in seen:
+            seen.add(id(link))
+            status = _status_of(link)
+            if status is not None:
+                return _by_status(link, status)
+            names = {cls.__name__ for cls in type(link).__mro__}
+            if names & TIMED_OUT_ERRORS:
+                return Transient(NO_ANSWER_IN_TIME, None, None)
+            if names & NO_CONNECTION_ERRORS:
+                return None if _built_wrong(link) else Transient(NO_CONNECTION, None, None)
+            if names & BUILT_WRONG_ERRORS:
+                return None
+            link = link.__cause__
+    except Exception:
+        return None
+    return None
+
+
+def _built_wrong(link: BaseException) -> bool:
+    """Whether a connection error was raised from a request quackd built wrong
+    (`BUILT_WRONG_ERRORS`), down its `__cause__` chain."""
+    seen: set[int] = set()
+    cause: BaseException | None = link
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if {cls.__name__ for cls in type(cause).__mro__} & BUILT_WRONG_ERRORS:
+            return True
+        cause = cause.__cause__
+    return False
+
+
+def _status_of(link: BaseException) -> int | None:
+    """The HTTP status a failure carries: `status_code` (anthropic, openai, httpx) or `code`
+    (google-genai), on the failure or on its `response`. Only an int in 100..599 counts, and
+    never a bool, which is an int to Python and a status to nobody."""
+    for holder in (link, getattr(link, "response", None)):
+        for name in ("status_code", "code"):
+            value = getattr(holder, name, None)
+            if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+                return value
+    return None
+
+
+def _by_status(link: BaseException, status: int) -> Transient | None:
+    headers = getattr(getattr(link, "response", None), "headers", None)
+    should = _header(headers, SHOULD_RETRY_HEADER)
+    said = should.strip().lower() if should is not None else None
+    if said == "false":
+        return None
+    worth = status in ASK_AGAIN_STATUSES or 500 <= status <= 599
+    if not worth and said != "true":
+        return None
+    word = STATUS_WORDS.get(status, SERVER_ERROR if worth else ASKED_TO_ASK_AGAIN)
+    return Transient(f"{word} ({status})", status, _asked_to_wait_s(link, headers))
+
+
+def _header(headers: Any, name: str) -> str | None:
+    if headers is None:
+        return None
+    try:
+        value = headers.get(name)
+    except Exception:
+        return None
+    return value if isinstance(value, str) else None
+
+
+def _asked_to_wait_s(link: BaseException, headers: Any) -> float | None:
+    """How long the API asked to wait, read the way openai 3.22.1 reads it: `retry-after-ms`,
+    then `retry-after` in seconds, then `retry-after` as an HTTP date; and for Google's APIs,
+    the `RetryInfo` detail in the error body. Only a finite, positive number of seconds counts."""
+    milliseconds = _seconds(_header(headers, "retry-after-ms"))
+    if milliseconds is not None:
+        return milliseconds / 1000.0
+    after = _header(headers, "retry-after")
+    if after is not None:
+        seconds = _seconds(after)
+        if seconds is not None:
+            return seconds
+        with contextlib.suppress(Exception):
+            when = email.utils.parsedate_to_datetime(after)
+            return _positive(when.timestamp() - time.time())
+    return _retry_info_s(getattr(link, "details", None))
+
+
+def _seconds(text: str | None) -> float | None:
+    if text is None:
+        return None
+    try:
+        return _positive(float(text.strip()))
+    except ValueError:
+        return None
+
+
+def _positive(value: float) -> float | None:
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def _retry_info_s(details: Any) -> float | None:
+    """google-genai's `APIError.details` is the error body, `{"error": {"details": [...]}}`, one
+    entry of which may be a `RetryInfo` with `retryDelay` in seconds, like `"39s"`."""
+    if not isinstance(details, dict):
+        return None
+    error = details.get("error")
+    entries = error.get("details") if isinstance(error, dict) else None
+    for entry in entries if isinstance(entries, list) else ():
+        if isinstance(entry, dict) and entry.get("@type") == RETRY_INFO_TYPE:
+            delay = entry.get("retryDelay")
+            match = re.fullmatch(r"(\d+(?:\.\d+)?)s", delay) if isinstance(delay, str) else None
+            if match:
+                return _positive(float(match.group(1)))
+    return None
 
 
 @runtime_checkable

@@ -9,8 +9,155 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **A turn the model's API could not answer is asked again.** A rate limit (429), an overloaded
+  or failing server (529, any 5xx), a request the server timed out (408), and a call that timed
+  out or lost its connection once the API has answered in the run, with a turn or a status,
+  used to end the run `error` after the SDK's own retries. The loop now waits 5, 15, 30 and then
+  60 seconds, or as long as a `retry-after` asked where that is longer, and asks the same turn again, sending the
+  same request byte for byte, with the robot holding still and the heartbeat watching it.
+  Ctrl-C, `q`, a heartbeat that fails or a flock's stop ends the wait as an abort, and the arm
+  folds as at any end. What decides is the SDK's own exception, read under the provider's
+  (`quackd.agent.providers.base.transient_failure`), never its message, so a bad key, a refused
+  request or anything quackd raised itself still ends the run at once. A connection that never
+  answered at all is tried twice more, half a second and then a second later, and then ends the
+  run, being as often a wrong address as a dropped line. A run out of tries, out of `max_minutes`, or asked by the API to
+  wait longer than 120 s ends `error` saying which. A turn asked again is not charged to
+  `max_llm_calls`.
+  [ADR-0059](docs/adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md).
+- **Every try is on the record.** A failed `llm` record gains `retry_in_s` where quackd will ask
+  again, and `llm_request` and `llm` gain `attempt` from a turn's second try; the summary gains
+  `llm_retries` and `llm_retry_wait_s` only where a run asked again, so older summaries read as
+  they did. The log shows a failure quackd will ask again as a yellow warning rather than a red
+  error, the live status line says how long it waits, and the counters under the verdict read
+  `llm calls 5 (+1 asked again)` and add `waits` to the time's split, as they do under the line a
+  run that gave up ends on.
+  `tests/fake_openrouter.py --fail N:STATUS` answers the first N chat requests with STATUS.
+- **`quackd doctor` gives the hands time to come away before it folds the arm.** It says
+  `folding NAME to its rest pose in 3 s: take your hands away from it now` and waits those
+  seconds, as `quackd robot release` does, terminal or not, `--json` on stderr, and Ctrl-C or `q`
+  while the arm connects, in those seconds or during the fold stops it with the arm held where it
+  is. Its warning before the connect asked for the arm to be supported until doctor had finished,
+  which kept a hand under the fold, and now says to take the hands away when doctor says so.
+
+### Changed
+
+- **Releasing the SO-101 means folding it first.** `quackd robot release NAME` folds the arm to
+  its recorded rest pose and lets go of it there, through the door that refuses anywhere but that
+  pose, where 0.14.0's command took torque off wherever the arm stood and let it fall into
+  whoever was holding it. Its warning, printed before it connects, says to support the arm while
+  it connects and then to take your hands away when it says so, and once connected it says it
+  folds in 3 seconds (`quackd.release.HANDS_AWAY_S`), which is when the hands come away; the
+  close ends on
+  `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`.
+  Ctrl-C or `q` during those seconds, or during the fold, stops it where it is and keeps torque
+  on.
+  [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md).
+- **A fold that misses asks twice before anything drops**, in `quackd robot release` and at the
+  end of a run, where the run used to offer one Enter that released the arm where it stood. The
+  first question asks you to clear whatever is in the arm's way and press Enter, and it folds once
+  more; only if that fold misses too does the second say that Enter now takes torque off where it
+  stands and that the arm will drop, so hold it first. Anything but Enter, at either, keeps torque
+  on: a wait that runs out (60 s each), a Ctrl-C, a `q`, a terminal with nothing to read. Neither
+  is put over an arm that stopped answering. `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are
+  gone (`quackd.release`), and the record's `release` events gain the stages `refold` and
+  `folded` and the `kept` reasons `interrupted during the fold` and
+  `the arm did not answer the second fold`.
+- **`quackd robot release --yes` skips only the question before the connect.** The two
+  questions are still put wherever a terminal can prompt. With none, a fold that arrives lets go
+  at the pose, and one that misses keeps torque on and exits 1.
+- **An arm with no rest pose is asked about before `quackd robot release` connects to it**,
+  because letting go of it where it stands is all the command can do, and connecting is where the
+  arm first goes limp: Enter connects and drops it into your hands, anything else connects
+  nothing. With no terminal the command refuses, `--yes` or not.
+- **A real SO-101 with no rest pose is kept powered by its close**, where 0.23.0 and before let go
+  of it wherever it stood and it fell. `quackd doctor` and `quackd robot list --probe` read such an
+  arm and keep it powered, saying so (`torque left on: no rest pose recorded` on the probe's line),
+  with the ways to put it down and to give it a pose. At a terminal `doctor` first asks whether to
+  drop it into your hands, the way to get a first arm limp for folding by hand: Enter, with a hand
+  under it, drops it, and anything else keeps it powered. The mock and the simulator let go as
+  before.
+- **`quackd robot rest-pose` lets go of the arm only once the pose is answered for.** Its close
+  let go of the arm before the question was answered, so a no left it let go of anyway, and an arm
+  read standing rather than folded fell. A yes, or `--yes`, records the pose and lets go of the
+  arm where it lies; a no, or a read that fails, keeps a real arm powered in its fold, and the
+  close's line says how to put it down. Without `--yes` and with no terminal to ask on, the
+  command refuses before it connects rather than after it has read the arm.
+- **A first Ctrl-C or `q` ends a model's call that is still out**, the pilot's and a decision
+  LLM's, without waiting for the answer, which is thrown away: the run ends `aborted` and the robot
+  is put down at once. The press used to be noticed only once the call returned.
+- **A first Ctrl-C or `q` stops the fold at the end of a run that ended by itself**, a success, a
+  failure or a spent budget, holding the arm where it is with torque on, where the fold used to
+  finish first. A flock stopping its members, or a heartbeat that fails, does not stop it.
+- **The SDKs retry nothing of their own.** Every anthropic and openai client is built with
+  `max_retries=0` (`quackd.agent.providers.base.NO_SDK_RETRIES`), where each made two tries inside
+  the call that a first Ctrl-C could not reach and that a `retry-after` could hold for minutes, so
+  every try is now the loop's, on the record and under the stop. A server that answers
+  `x-should-retry: true` is asked again at any status.
+- **One of quackd's own adapters from another release than the core is refused**, wherever a
+  body is described or built, with the command that reinstalls the two together. pip lets that
+  mix happen with a warning, and a core reads every declaration an older adapter does not make as
+  none, `REST_POSE_BACKENDS` among them, which would let a run of a real arm with no rest pose go
+  ahead. A third party's adapter is not asked.
+- **The close's line for an arm left holding itself up names one way out**: clear its way and run
+  `quackd robot release NAME`, which folds it and lets go at the pose, supporting the arm while
+  that connects, or cut its power. It no longer names `quackd doctor --robot NAME` to park it.
+- **A real SO-101 with no rest pose is refused a run.** `quackd run`, a dry run included,
+  `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no recorded rest pose before
+  anything connects, because there would be nothing to fold it to at the end, and its close, which
+  keeps such an arm powered rather than let it fall, as it fell at the end of every run on
+  2026-09-15, would leave it holding itself up wherever it stopped. A spec on its own,
+  `--robot lerobot:real --address PORT`, has no name to keep a pose under and is refused the same
+  way, with `quackd robot add NAME lerobot:real --address PORT, then quackd robot rest-pose NAME`
+  as the way back, and for a spec in `--robots` or a task file's `robots:`, running the flock
+  from a stored one after that, since neither reads the registry. A run is refused once its
+  task file has been judged against the arm, so a task that could never run there says so
+  first. `doctor`, `robot list --probe`, `rest-pose`, `robot release`, the mock and the
+  simulator are unaffected, and `run_pilot_flock` refuses such an arm too, for a library caller.
+  An adapter declares the backends this applies to in `REST_POSE_BACKENDS`, which
+  `quackd.adapters.factory.needs_rest_pose` reads before anything is built, and
+  `quackd robot rest-pose NAME --clear` on a real arm now says its runs are refused until a pose
+  is recorded again.
+
+### Fixed
+
+- **A pilot flock's member named with `--robot NAME` was built without its registered address,
+  cameras and rest pose.** The flock took only the spec of the robot it named, so a registered arm
+  ran as a bare `lerobot:real`, whose close would have let go of it wherever it stood. The member is
+  the registered robot now, built from its own entry.
+- **A fold that missed over servos that browned out was said to be holding the arm up.** A servo
+  that resets under stall current comes back answering every read with its torque off, and the
+  end of a run said the arm was holding itself up and offered to release it, and the close said
+  torque was left on and the arm would not fall as it stood. Where the arm's own torque read finds
+  joints off, nothing is offered or asked now, and the run, `robot release` and the close say what
+  the read found and that the arm may already have dropped. `robot list --probe` says
+  `torque reads OFF: the arm may have dropped` for it.
+- **A `q`, or any line typed at the end-of-run offer, released the arm.** The kill switch's key
+  thread took every line for Enter, so `n` and Enter was a yes, and a terminal in its usual mode
+  hands `q` over only with the Enter that sends its line, so the key that stops a run was read as
+  Enter too. A press of the kill switch is never an Enter now, at any wait, and a question whose
+  Enter moves or drops an arm takes only a bare Enter: anything typed on the line is a no, and
+  the record says `answered no`.
+- **An Enter typed before a question answered it.** The key thread reads whatever is already in
+  the terminal as it starts, so an Enter pressed while a command was starting answered the first
+  question it put. A question that moves or drops an arm passes by an Enter read within half a
+  second of being put (`quackd.safety.TYPED_AHEAD_S`).
+
 ### Documentation
 
+- **The SO-101's release, on every page that told it.** The LeRobot page's
+  [Releasing it](docs/adapters/lerobot/README.md#releasing-it) (the old anchor still works), the
+  first run, the hardware checklist, safety, the registry guide and the README say that releasing
+  folds first and what the two questions are, with output captured on `lerobot:mock`.
+  [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md) records Rok's
+  decisions, and ADR-0039 and ADR-0045 carry dated amendments.
+- **A real arm is run by its registered name.** The LeRobot page, the first run and the hardware
+  checklist run `arm-01` where they ran a bare `lerobot:real`, say that a run of a real arm with
+  no rest pose is refused and why, and quote the refusal, captured on a scratch registry. Safety,
+  the registry and MCP guides, the README and the adapter guide say the same, the adapter guide
+  documents `REST_POSE_BACKENDS`, and it no longer says that `quackd robot release` lets go of
+  the arm wherever it stands.
 - **Robot Passport's phase 7, planned in the repository.**
   [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md) says what each of
   its six pieces is, what is decided and what is left to decide, where its code goes, what done
@@ -27,6 +174,45 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   motor is energised. The README counted fifteen bundled starters, nine of them `duck: 1`, where
   eighteen ship and twelve are. Two tests in `tests/test_docs.py` hold the guide's file to the
   budget it quotes and every page's starter counts to the starters that ship.
+- **When the model's API fails**, a section of its own in
+  [docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails), with output
+  captured against the stand-in server. The OpenRouter guide no longer says a 429 ends the run,
+  and the record's fields are in docs/concepts/architecture.md.
+- **A real arm with no rest pose is kept powered, on every page that said a probe let it go.** The
+  LeRobot page, the first run, the hardware checklist, the registry and MCP guides, the adapter
+  guide and the README say what `doctor`, `robot list --probe` and `rest-pose` do with such an arm
+  and why a run of one is refused, with the refusals captured again on a scratch registry and
+  doctor's question captured over the real backend with a stand-in for the arm's bus. ADR-0058 and
+  ADR-0059 carry dated amendments, and the adapter guide says why quackd's own adapters must come
+  from the core's release.
+
+### Known limitations
+
+- **None of the folding release has run on an arm.** The fold before `quackd robot release`
+  lets go, both questions, a Ctrl-C during a fold and the release where the arm stands are
+  exercised against `lerobot:mock`, a fake arm and the simulator. The bench steps that would
+  settle them, in order, with a hand on the power switch throughout:
+  1. `quackd robot release arm-01` on an arm a run left holding itself up away from its pose:
+     support it through the connect, take your hands away, and say whether it folds and is let
+     go of at the pose, and whether it then rests there limp.
+  2. Something soft in the fold's path: the stall, the first question, Enter once it is cleared,
+     and whether the second fold arrives.
+  3. The path kept blocked: the second question; hold the arm and press Enter; say how far it
+     drops and whether one hand catches it.
+  4. Each question left for its 60 s: torque stays on and the arm holds where its fold stopped.
+  5. Ctrl-C during the release's fold: the arm stops and holds; say how far it went on after
+     the press.
+  6. A run whose teardown fold is held back by a hand: the first question, the hand taken away,
+     Enter, and the close letting go at the pose.
+  7. `quackd doctor --robot arm-01` with its rest pose cleared: the arm stays powered at the end;
+     at the question, a hand under the arm and Enter, and whether it drops into the hand.
+  8. `quackd doctor --robot arm-01` with its pose recorded: the 3 s count, the hands away, the
+     fold, and a `q` during the count holding the arm where it is.
+  9. A run that ends by itself, and Ctrl-C during its fold: the arm stops and holds there.
+- **Nothing has been asked again after a real 429 or 529.** The retry has run against stand-ins
+  of the SDKs' exceptions and against the real openai SDK talking to a stand-in server, not
+  against a vendor having a bad minute. On a simulator or a mock `max_minutes` does not bound the
+  waits, since their clock stands still while the loop waits.
 
 ## [0.23.0] — 2026-10-21
 

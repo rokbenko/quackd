@@ -79,13 +79,14 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=arm-01
    ```
 
-   It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration
-   directory is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
-   `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**, which is
-   `arm-01` unless you named the robot with `--robots <name>=lerobot:real` or registered it
-   with `quackd robot add <name> lerobot:real`. quackd reads every joint's travel out of that
-   file and refuses to drive an arm without one, and two arms sharing an id share a file with
-   nothing in it to say which arm it came from.
+   It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration directory
+   is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
+   `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**: the name step 6
+   registers the arm under with `quackd robot add <name> lerobot:real`, `arm-01` on this page,
+   which is also the id a bare `--robot lerobot:real` uses. A run needs that name, because only
+   a registered name keeps a rest pose. quackd reads every joint's travel out of that file and
+   refuses to drive an arm without one, and two arms sharing an id share a file with nothing in
+   it to say which arm it came from.
 
    Upstream will ask you to move every joint through its range **except `wrist_roll`**, and it
    records a full encoder turn for that one rather than anything you swept. That is not a
@@ -112,11 +113,13 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    the travel you swept during calibration, that torque is on, and what the servos say their
    temperature is with the arm cold. That last number is the baseline for every later step.
 
-   **Support the arm before this command finishes, and while it starts.** `configure()` runs
-   with torque off, so connecting drops it for a moment, and LeRobot's `disconnect()` disables
-   it again by default at the end of every clean session, a `doctor` probe included. An arm
-   folded somewhere awkward will fall at either end. The second half of that is what the rest
-   pose below is for, and until one is recorded this probe still lets go.
+   **Support the arm while this command starts.** `configure()` runs with torque off, so
+   connecting drops it for a moment, and an arm folded somewhere awkward falls at that moment.
+   With no rest pose recorded yet there is nothing to fold the arm to at the end, so `doctor`
+   keeps it powered where it stands rather than let it fall, which 0.23 and before did, and asks
+   first whether to drop it into your hands. Hold it and press Enter, and it is limp for you to
+   fold it by hand for the rest pose below, or leave it and it stays powered until you cut its
+   power.
 
    **Then give the arm a name.** A registered name carries the port, the camera and the rest
    pose, so from step 7 on this page writes `--robot arm-01` where it used to write the pair:
@@ -125,10 +128,12 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    uv run quackd robot add arm-01 lerobot:real --address /dev/ttyACM0
    ```
 
-   The name has to be the calibration id from step 5. `--robot lerobot:real --address
-   /dev/ttyACM0` still works everywhere below and reaches the same arm, with one difference
-   that starts mattering here: a rest pose is recorded against a name, so the spec form has
-   none and goes on letting go of the arm wherever it stops.
+   The name has to be the calibration id from step 5.
+   `--robot lerobot:real --address /dev/ttyACM0` reaches the same arm for `doctor`, and nothing
+   below takes it: a rest pose is recorded against a name, so the spec form has none, and a run
+   of a real arm with none, a dry run included, is refused before it connects, because at its
+   end there would be nothing to fold the arm to, and it would be left holding itself up
+   wherever it stopped.
 
    **Then check that a connect quackd refuses lets go of the arm.** Register the same port once
    more, under a name nothing was calibrated as, point `doctor` at it, and remove the name again:
@@ -157,7 +162,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    uv run quackd robot rest-pose arm-01
    ```
 
-   It connects, reads every joint, prints them, and asks before it writes anything. **It drives
+   It connects, reads every joint, prints them, and asks before it writes anything, and only a
+   yes lets go of the arm, where it lies: a no keeps it powered in its fold. **It drives
    nothing.** That is why it belongs at step 6 rather than after step 10: recording a pose is a
    read. The block below was captured against `lerobot:mock`, with `--yes`, which is the flag
    that skips the question. Those are the mock arm's joints, and yours are whatever you folded
@@ -200,6 +206,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    |---|---|
    | `quackd run ... --robot arm-01` | drives the arm there before the pilot gets its first turn, and a run that cannot get there aborts before the first LLM call. Returns it there between the final `stop` and the disconnect, on every exit: success, failure, infeasible, budget, abort, an error, Ctrl-C |
    | `quackd doctor --robot arm-01` | probes the arm, returns it there afterwards, and says which in a `rest pose` row |
+   | `quackd robot release arm-01` | connects, folds the arm there from wherever it stands, and lets go of it there. Where the fold misses it asks twice before anything drops, as a run at a terminal does (below) |
    | `quackd robot list --probe` | reads the arm and never moves it, so it says `torque left on: not at its rest pose` when it had to keep the arm up, or `torque unknown: the arm did not answer the close` when the arm stopped answering before the probe could tell |
    | `quackd serve-mcp --robot arm-01` | the same at both ends, and it refuses to start if it cannot get there |
    | `--dry-run` | nothing at all: a dry run never moves the arm |
@@ -210,8 +217,9 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    ```
    the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-   stands: hold it first, because connecting takes torque off every motor for a moment, then
-   run quackd robot release arm-01, or quackd doctor --robot arm-01 to park it, or cut its power
+   stands. To put it down, clear whatever is in its way and run quackd robot release arm-01,
+   which folds it to its rest pose and lets go of it there: support the arm while that connects,
+   because connecting takes torque off every motor for a moment. Or hold it and cut its power
    ```
 
    That line is for an arm that answered the close's own read. An arm that stopped answering
@@ -222,11 +230,16 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    > [!WARNING]
    > That is a change in behaviour and it is the one to read twice. A probe or a dry run on an
    > arm away from its recorded rest pose now leaves torque **on** where it used to drop it.
-   > The arm will not fall as it stands, and it will also not let go until you hold it and run
-   > `quackd robot release arm-01`, until a run or `doctor` puts it back, or until you cut its
-   > power. Hold it for every one of those, not only the first: a run, `doctor` and the release
-   > all begin by connecting, and connecting takes torque off every motor for a moment. A run at
-   > a terminal whose rest move missed asks you first: hold the arm and press Enter.
+   > The arm will not fall as it stands, and it will also not let go until
+   > `quackd robot release arm-01` folds it back to the pose and lets go of it there, until a
+   > run or `doctor` puts it back, or until you cut its power. Support it for every one of
+   > those, not only the first: a run, `doctor` and the release all begin by connecting, and
+   > connecting takes torque off every motor for a moment. The release then says it folds the
+   > arm in 3 seconds, so take your hands away then, and `doctor` does the same before it
+   > folds. A run at a terminal whose rest
+   > move missed asks you first, up to twice: clear the arm's way and press Enter for a second
+   > fold, and only if that one misses too, Enter to take torque off where the arm stands, which
+   > drops it, so hold it first. Step 14 tries both.
 
 
    The `rest pose` row in `doctor` says which of four things happened:
@@ -243,7 +256,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    green, because the arm reached the pose it can be driven to.
 
    `quackd robot rest-pose arm-01 --clear` forgets the pose again and says what that costs: a
-   run then leaves the arm where it stands, and torque drops there.
+   run, a dry run or an MCP session of the arm is refused until a pose is recorded again.
 
    > [!IMPORTANT]
    > Step 6 keeps the promise at the top of this page, because recording reads the arm and
@@ -444,12 +457,14 @@ means, and which moments move the arm without anybody asking for it.
     carry on. There is no rest pose in this one, because quackd cannot drive an arm it cannot
     reach: the arm stays where it stopped, holding itself up, which is the safe half of the two
     ways this could end. The note the run closes with cannot say so: it says quackd cannot tell
-    whether the arm is holding itself up, and to hold it and cut its power, and no release is
-    offered, because the arm did not answer. Before you plug it back in, put a hand under the
+    whether the arm is holding itself up, and to hold it and cut its power, and nothing is
+    asked, because the arm did not answer. Before you plug it back in, put a hand under the
     arm: every command that reconnects, a run, `doctor` or `quackd robot release arm-01`, takes
-    torque off every motor for a moment. Either cut its power with your hand under it, or hold
-    it and run `quackd robot release arm-01`, or `quackd doctor --robot arm-01` to park it,
-    before the next step.
+    torque off every motor for a moment. Either cut its power with your hand under it, or
+    support it while `quackd robot release arm-01` connects and take your hand away as soon as
+    it prints where the arm is, since it then folds the arm to its rest pose at once and lets go
+    of it there, or park it with `quackd doctor --robot arm-01`, supporting the arm while it
+    connects and taking your hands away when it says so, before the next step.
 
     Report the line the run ended on word for word. Since 0.15.0 a call that ran out of time
     names itself and its budget, as in step 9, and one that failed says what failed.
@@ -477,14 +492,17 @@ means, and which moments move the arm without anybody asking for it.
     pose, with a hand under the arm and the other on the switch. The second press skips
     quackd's close, so nothing lets go on purpose. The arm should still hold where it stood once
     quackd has exited, rather than fall when the process lets go of it. Before 0.15.0 that exit
-    could take torque off and drop it, which is why the hand goes under it first. Hold it and run
-    `quackd robot release arm-01`, or cut its power, before the next step.
+    could take torque off and drop it, which is why the hand goes under it first. Then put it
+    down: support it while `quackd robot release arm-01` connects, and take your hand away as
+    soon as it prints where the arm is, or cut its power with your hand under it, before the
+    next step.
 
     Then a third time, one Ctrl-C, and this time let the fold back to the rest pose stall: as it
     folds, lay a flat hand on the forearm and hold it back gently, the other hand on the switch.
     The rest move should stop where your hand stops it and hold the arm there. At a terminal the
-    run offers the release (step 6). Let its 60 s run out, so torque stays on, and take your
-    hand away: the arm should stay where it stopped. The close's line then says the arm is not
+    run then asks you to clear the arm's way and press Enter for a second fold, the first of the
+    two questions in step 6. Let its 60 s run out, so torque stays on, and take your hand away:
+    the arm should stay where it stopped. The close's line then says the arm is not
     at its rest pose, names the joint furthest from it with where it reads and its goal, says it
     has stopped moving, or that the time ran out, and goes on
     `so torque was left on and it will not fall as it stands`. Until 0.15.0 it said that joint
@@ -496,24 +514,49 @@ means, and which moments move the arm without anybody asking for it.
     to assume it. The arm should still be holding once quackd has exited. A line that says
     instead that quackd `could not keep torque on, so the arm was released where it stood` means
     the disconnect let go after all, which an arm quackd built should never do: report it, and
-    whether the arm dropped. Then hold it and run `quackd robot release arm-01`, or cut its
-    power.
+    whether the arm dropped. Then put it down: support it while `quackd robot release arm-01`
+    connects, and take your hand away as soon as it prints where the arm is, or cut its power
+    with your hand under it.
+
+    Then twice more, for the two questions a fold that missed asks at a terminal, each time with
+    one Ctrl-C and the fold back held off under a flat hand as above. The first time, answer the
+    first question: take your hand off the arm, keep both hands out of its path, and press
+    Enter. The arm should fold the rest of the way, the run should say
+    `the arm reached its rest pose this time`, and the close should let go of it there. The
+    second time, press Enter and hold the second fold back as well, gently, so that it misses
+    too. Only then should the second question come, saying that Enter now takes torque off where
+    the arm stands and that the arm will drop. Put a hand under the arm and take its weight
+    before you press Enter: it should go limp into your hand, and the run should say
+    `the arm is in your hands, so put it down before you let go of it`. Put it down. Report
+    whether each question came when it should have and at no other time, whether the second fold
+    set off from where the first had stopped, and where the arm went when torque came off.
+
+    If there is time, once more with Enter at the first question and a Ctrl-C while the second
+    fold is moving. That press should not quit: it should stop the fold where it is, at most a
+    step cap past where you pressed, keep torque on, and still end the run with its close and
+    its summary, saying `the fold was stopped where it was, and nothing was released`. Then put
+    the arm down as above. None of this has met a real arm yet: the two questions and the second
+    fold have run against `lerobot:mock` and in the test suite only.
 
 ## Handing the arm over, and taking it back
 
 `--by-hand` is one of the two ways a person can have quackd take torque off a robot, and it
 takes it off at the one pose the arm is known to hold without any: the fold you recorded in
-step 6. The other, `quackd robot release` and the offer at the end of a run that missed its
-fold, takes it off wherever the arm stands, and only after telling you to hold the arm.
+step 6. The other, `quackd robot release`, folds the arm to that pose and lets go there too. It
+lets go wherever the arm stands only on Enter at a question that says the arm will drop, put
+after two folds missed, as a run at a terminal also puts it, or before it connects to an arm
+with no rest pose.
 Everything below rests on that pose being right, which is why these two steps come after the
 ones that drove the arm there and back rather than before them. The flag wants the registered
 name from step 6 with a pose against it, and a terminal, because somebody has to press Enter.
-Without the pose it refuses before anything is touched, and there is no rehearsing this one with
-`--dry-run`, because a dry run moves nothing and this takes torque off an arm:
+Without the pose it is refused before anything is touched, as every run of an arm with none is,
+and there is no rehearsing this one with `--dry-run`, because a dry run moves nothing and this
+takes torque off an arm:
 
 ```
-✗ error: --by-hand releases the arm at its recorded rest pose, and this arm has none
-recorded
+✗ error: arm-bare (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one
+included, there is nothing to fold it to, and it would be left holding itself up wherever it
+stopped
   quackd robot rest-pose arm-bare
 ```
 
@@ -534,9 +577,11 @@ recorded
     it is let go at the edge of the travel rather than in the fold, and it is free to drop the
     rest of the way, so have your hand under that joint in particular. This is the only moment
     the hand-off releases it, because that release is refused anywhere but that pose. The
-    other way to have torque taken off is one you ask for by name while you hold the arm,
-    wherever it stands: `quackd robot release arm-01`, or Enter at the offer a run at a terminal
-    makes when its last rest move missed (step 6).
+    other way to have torque taken off is one you ask for by name:
+    `quackd robot release arm-01`, which folds the arm to this same pose and lets go of it here,
+    through the same door, and lets go wherever the arm stands only after two folds missed and
+    you pressed Enter at a question that says the arm will drop. A run at a terminal whose last
+    rest move missed asks the same two questions (step 6).
 
     Then it waits for you, and says what it is waiting for:
 

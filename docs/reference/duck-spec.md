@@ -42,7 +42,7 @@ non-comment line must be `---`.
 | `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [concepts/safety.md](../concepts/safety.md#who-the-record-says-was-asked)). |
 | `budgets.max_steps` | int 1–1000 (default 40) | no | **executor** | Maximum verb executions. |
 | `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (sim time on every simulator, `sim2d` and both bodies' `mujoco`, wall-clock on hardware). Checked before each model call and again the moment the model answers, so a provider that replies late cannot spend the overrun. A verb already running is not interrupted, so a run can overshoot by that verb's own timeout. |
-| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). |
+| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the model's API could not answer, and quackd asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). |
 | `success` | list of strings, ≥ 1 | yes | LLM (+ ground truth in sim tests) | Criteria the model judges itself against via `declare_success(reason)`. |
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |

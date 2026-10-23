@@ -66,6 +66,13 @@ SIMULATOR_BACKENDS = ("mujoco",)
 """The backends that drive a simulated arm rather than one on a desk. Read before anything is
 built (`quackd.adapters.factory.is_simulator`), so a command that must only ever run on a
 simulator refuses a real arm before connecting to it."""
+REST_POSE_BACKENDS = ("real",)
+"""The backends a run, an MCP session or a flock refuses without a recorded rest pose. Read
+before anything is built (`quackd.adapters.factory.needs_rest_pose`). An arm with no rest pose
+has nothing to be folded to at the end, and the real arm's close keeps its torque rather than let
+it fall where it stands (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`), so such a session would end
+with it holding itself up wherever it stopped (ADR-0058). The mock and the simulator have no arm
+to drop."""
 DEFAULT_ID = "arm-01"
 ROBOT_TYPE = "so101_follower"
 BLURB = (
@@ -254,8 +261,9 @@ class LeRobotAdapter:
     supports_hand_off = True
     """A person can be handed this body: quackd takes torque off at its recorded rest pose,
     waits while they place it, and holds whatever pose they left it in (`quackd run
-    --by-hand`), and a person holding it can have its torque taken off wherever it stands
-    (`quackd robot release`, and the offer at the end of a run whose rest move missed).
+    --by-hand`), and a person at it can have it folded to that pose and let go of there
+    (`quackd robot release`), or, after two folds missed, holding it, have its torque taken off
+    wherever it stands (the same command, and the end of a run whose rest move missed).
     Declared rather than inferred, because the run and the command refuse outright on a body
     that does not offer it rather than connecting and finding out."""
     supports_rest_pose = True
@@ -331,13 +339,21 @@ class LeRobotAdapter:
     async def go_to_rest(self) -> RestResult:
         return await go_to_rest_if_any(self.transport)
 
-    async def let_go(self, *, anywhere: bool = False) -> HandResult:
-        """Torque off, for a person at the arm. `anywhere` is the transport's own keyword and
-        is passed only when set, for `let_go_if_any`'s reason: without it the arm is released
-        at its rest pose or refused, which is `--by-hand`'s rule and stays the default."""
-        if anywhere:
-            return await let_go_if_any(self.transport, anywhere=True)
-        return await let_go_if_any(self.transport)
+    def rests_where_it_reads(self) -> None:
+        """The arm's own (`LeRobotReal.rests_where_it_reads`), where it has one: `rest-pose` reads
+        an arm folded by hand, and its close then lets go of it there. The mock lets go of an arm
+        with no pose as it always did, and has nothing to take."""
+        rests = getattr(self.transport, "rests_where_it_reads", None)
+        if callable(rests):
+            rests()
+
+    async def let_go(self, *, anywhere: bool = False, asked: bool = False) -> HandResult:
+        """Torque off, for a person at the arm. `anywhere` and `asked` are the transport's own
+        keywords and each is passed only when set, for `let_go_if_any`'s reason: without them
+        the arm is released at its rest pose or refused, which is `--by-hand`'s rule and stays
+        the default, and `asked` keeps that rule and changes only what the close says."""
+        kw = {k: True for k, on in (("anywhere", anywhere), ("asked", asked)) if on}
+        return await let_go_if_any(self.transport, **kw)
 
     async def take_hold(self) -> HandResult:
         return await take_hold_if_any(self.transport)

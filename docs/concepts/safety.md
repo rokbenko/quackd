@@ -71,8 +71,8 @@ The `confirm` row above records what the gate decided. The run also records the 
 itself: a `prompt` event carrying `what` (`confirm`, `decide`, `acknowledge`, `hand_off`,
 `release` or `judge`), the question in the words it was put in, and the answer. Those six are
 the confirm gate, the pilot's own question when it is unsure (below), the acknowledgement that
-somebody is watching a fall-blind robot, each half of a `--by-hand` handover, the offer to
-release an arm whose rest move missed (below), and the question a `--controller vla` run ends
+somebody is watching a fall-blind robot, each half of a `--by-hand` handover, the two questions
+put over an arm whose rest move missed (below), and the question a `--controller vla` run ends
 on, whether the arm did the task (below). What an answer *caused* was always written down by
 whoever acted on it, in `gate.answer` here, `assess.human` for a verdict and the `hand_off`
 and `release` stages for an arm. What was asked, and what somebody said back, was not.
@@ -148,24 +148,49 @@ stale costs that picture and never the run.
 
 Ctrl-C and `q` (when stdin is a terminal) set the same abort flag; the loop's `finally`
 always sends `stop`, puts a body that has a recorded rest pose back into it, and closes the
-transport. Works on Windows (signal handler, not `loop.add_signal_handler`).
+transport. Works on Windows (signal handler, not `loop.add_signal_handler`). A LeRobot arm that
+reached its rest pose is let go of there by that close, and the kill switch itself never takes
+torque off anything.
 
-A second Ctrl-C raises straight through that teardown. If it lands during the rest move the
-close is skipped, and a LeRobot arm is left holding rather than sagging. LeRobot can still
+The press does not wait on the model. A pilot's call, or a decision LLM's, still out when it
+lands is given up on the spot and its answer, whenever it comes, is thrown away, so the run
+ends `aborted` and the robot is put down without waiting a minute for a model to finish
+thinking. A run that ended by itself, a success, a failure or a spent budget, still folds the
+arm at its end, and a first press during that fold stops it where the arm is: the arm is held
+there with torque on, the close keeps it, and the run says so
+(`the fold was stopped where it was, and nothing was released: torque is as the fold left it`).
+Only a press does that. A flock stopping its members, or a heartbeat that fails, ends a run
+with the fold still to come, and the fold goes ahead.
+
+Where that rest move misses, the arm is left holding itself up where it stopped, and a run with
+you at its terminal asks two questions before it closes, the same two `quackd robot release`
+asks (under "On hardware" below). The first asks you to clear whatever is in the arm's way and
+press Enter, and the arm folds once more: if it gets there, the close lets go of it at the pose.
+Only if that fold misses too does the second ask, and it says that Enter now takes torque off
+where the arm stands and that the arm will drop, so you hold it first. Anything but Enter at
+either question leaves torque on, as a close away from the rest pose always does. Neither
+question has been asked over a real arm yet.
+
+A second Ctrl-C raises straight through that teardown. If it lands during the first rest move
+the close is skipped, and a LeRobot arm is left holding rather than sagging. LeRobot can still
 disconnect the arm as the process lets go of it, but quackd builds the arm asking that
 disconnect to keep torque, and asks for the release itself only where it may let go. That is
 the safe direction, and it is written up under "A LeRobot arm" below because it is not a tidy
 exit. In 0.14 and before the arm was built asking that disconnect for the release, so it could
 fall instead.
 
-There is one window where that is not what happens. A `--by-hand` run ends by asking whether
+There are two places where that is not what happens. A `--by-hand` run ends by asking whether
 to open the gripper before the arm folds up, and a second press landing on *that* wait is
 caught rather than let through, because it means "skip the question" and not "abandon the arm
 energised with no record written". The gripper is left exactly as the run left it, the arm is
 still folded to its recorded rest pose, the transport is still closed, and the record still
-ends with a `run_end` and a summary. It buys one press and no more: the guard is on that wait
-alone, so a third press lands somewhere without one and quits at once, on the terms of the
-paragraph above.
+ends with a `run_end` and a summary. The two questions over a missed fold are the other. A press
+at either of them keeps torque on, and so does one during the fold the first of them asked for,
+which stops that fold at most a step cap past where you pressed (5 degrees by default). One
+landing on the release that Enter at the second sends is caught as well. Either way the teardown
+still closes the transport and writes `run_end` and the summary. Each guard buys the press that
+lands on it and no more, so a press landing anywhere else, the first rest move included, quits
+at once, on the terms of the paragraph above.
 
 **SIGTERM is not one of them.** quackd installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
@@ -174,6 +199,69 @@ wrap `quackd run` in should send SIGINT instead. The Open Duck Mini's bridge and
 daemon are the other way round and settle on both, which is what a daemon has to do: one is
 started by a unit this repository ships, and the other is started by hand and stopped by
 somebody typing `kill`.
+
+## When the model's API fails
+
+A turn the model's API could not answer for now is asked again, with the robot holding still in
+between ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). A rate
+limit (429), an overloaded or failing server (529, or any 5xx), a request the server timed out
+(408), and a call that timed out or lost its connection once the API has answered in this run,
+with a turn or with a status, are each asked again, after 5, 15, 30 and 60 seconds, or after as
+long as the API asked in a `retry-after` where that is longer. Up to a quarter of each scheduled
+wait is taken off at random, so the members of a flock on one key do not all ask again at once.
+What decides is the SDK's own exception, its status and its class, and never its message.
+Everything else ends the run as it always did: a key that does not work, a request the API
+refused, a model that does not exist, a request quackd built wrong, and an answer quackd could
+not read as a turn. A connection that failed before the API had answered at all is tried twice
+more, half a second and then a second later, and then ends the run, because that is as often a
+wrong address or a server that is not running as a dropped connection. A server that answers
+`x-should-retry: true` is asked again whatever its status, and one that answers `false` is not.
+
+The SDKs retry nothing of their own: quackd builds every anthropic and openai client with
+`max_retries=0`, and google-genai retries nothing by default. Until 0.24 the first two made two
+tries of their own inside the call, about half a second and a second apart unless the API asked
+for longer, which both honoured, openai up to 120 seconds and anthropic at any length, and a
+first Ctrl-C did not reach into those waits, so a call an API asked to be left for minutes could
+hold a run that long before quackd heard of it. The two quick tries above are what they gave a
+connection that never answered, so every try is now one of quackd's, in the record and under
+the stop.
+
+Nothing moves the robot while the loop waits, the same stillness a model taking a minute to
+think leaves it in, and the heartbeat goes on watching it. Ctrl-C or `q`, a heartbeat that
+fails, or a flock that stops its members ends the wait at once: the run ends `aborted`, and the
+robot is put down as at any end. A stop pressed while the call is still out ends it there, as
+above, and nothing is asked again. A turn asked again is the same turn, sent byte for byte, so
+it is not charged to `max_llm_calls`. Captured against the stand-in server in
+`tests/fake_openrouter.py`, started with `--port 8766 --fail 1:529` so that its first chat
+request is answered 529, and this run pointed at it:
+
+```bash
+quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8766/api/v1 --robot microduck:mock
+```
+
+```
+   llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
+⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.1 s, asking again in 4.5 s
+·  note    the model's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
+   llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
+   think   turn 1: calling assess_task
+```
+
+The counters under the verdict say how many times a turn was asked again and how long the waits
+took, apart from the model's own seconds:
+
+```
+steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.0 s (model 0.2 s, waits 4.5 s) · cost $0.0097
+```
+
+A fifth failure after the fourth wait ends the run `error`, saying in how many tries, with the
+same counters under its line, and so do an API that asks to be left longer than 120 seconds and
+a wait that would run past what the task's `max_minutes` has left. That is the budget's clock, the wall's on a real robot, and a
+simulator's or a mock's own clock does not move while the loop waits, so there only the schedule
+bounds the waits. The note is said once a run, and each try after it is the log's own line. The
+decision LLM is left as it was, since a turn it could not decide already goes to the pilot. None
+of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
+against the real openai SDK talking to the stand-in server above.
 
 ## When the pilot is unsure
 
@@ -368,17 +456,29 @@ press Enter, quackd writes the pose you left the arm in as the goal *before* it 
 torque, writes it again, reads it back, and ends the run rather than starting it if a joint
 moved more than five degrees while your hand was still on it.
 
-The second is for an arm left holding itself up, and it releases the arm wherever it stands,
-because the person asking is holding it. `quackd robot release NAME` says that connecting takes
-torque off for a moment and that the release lets the arm fall, asks, and only then connects,
-releases, reads torque back off every motor and says what it read. And a run whose rest move
-missed, with you at its terminal, offers the same thing before it closes: hold the arm and press
-Enter, or leave it for 60 seconds and torque stays on as it always did. The limits are the first
-door's, less the pose. Only the arm. Only when a person asks: the command asks at a terminal
-unless `--yes` says you are already holding the arm, and refuses with neither, and the offer is
-never made on a dry run, over MCP or in a flock. And never a verb or a tool. On 2026-09-23 the
-power switch was the only other way to put down an arm a run had left energised, and every run
-that got to its end that afternoon finished there
+The second is for an arm left holding itself up, and it puts the arm down before it lets go of
+it, because an SO-101 has no brake and an arm let go of where it stands drops
+([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)).
+`quackd robot release NAME` says that connecting takes torque off every motor for a moment and
+that the arm then folds to its rest pose and is let go of there, so you support it while it
+connects and take your hands away when it says so: it waits 3 seconds for them before the fold,
+and a Ctrl-C or `q` in those seconds stops it with nothing moved. It asks, and only then connects, folds the
+arm to its rest pose, lets go of it there, reads torque back off every motor and says what it
+read. Where that fold misses, it puts the two questions a run puts at its terminal when its rest
+move missed (under "Kill switch" above): clear the arm's way and press Enter, and it folds once
+more, and only if that fold misses too, Enter to take torque off where the arm stands, which
+drops it into your hands. Anything but Enter at either question, a wait that runs out after 60
+seconds, a Ctrl-C, a `q` or a terminal with nothing to read, leaves torque on as it always did.
+An arm with no rest pose recorded has nothing to fold to, so its one question, which says the
+arm will drop, is asked before anything connects. The limits are otherwise the first door's.
+Only the arm. Only when a person asks: `--yes` skips the question before the connect and nothing
+else, so the questions about a missed fold are still put wherever a terminal can ask them, each
+needing its own Enter. With no terminal a fold that misses keeps torque on and nothing more is
+tried, an arm with no rest pose is refused, `--yes` or not, and without `--yes` the command
+refuses before it connects. The questions are never put on a dry run, over MCP, in a flock, on
+the simulator or over an arm that stopped answering. And never a verb or a tool. None of this
+has run on an arm yet. On 2026-09-23 the power switch was the only other way to put down an arm
+a run had left energised, and every run that got to its end that afternoon finished there
 ([adapters/lerobot/README.md](../adapters/lerobot/README.md#the-torque-rule)).
 
 **If a run ends while the arm is still limp in your hands and no take-hold has been refused,
@@ -574,20 +674,23 @@ write says nothing about what that write did.
   while it reads past its travel is the limit to the servo, so a joint a move had begun lifting
   keeps rising to that limit whatever the stop does. The power switch is the only stop for that
   stretch.
-- **The arm falls when a session ends, unless you have recorded a rest pose.** LeRobot's own
+- **A run needs a recorded rest pose, or the arm would fall when it ends.** LeRobot's own
   `disconnect()` disables torque by its default and quackd asks for that at the end of every
   clean session over an arm with no rest pose recorded, which is why the arm fell at the end of
-  every run on 2026-09-15. Fold the arm by hand while nothing is
-  connected, record where it sits with `quackd robot rest-pose <name>`, and quackd drives it
-  back there between the `stop` and the close, on every exit path there is: success, failure,
-  infeasible, a spent budget, an abort, an error and Ctrl-C. It drives the arm there at the
-  start of a run too, before the pilot gets control, and a run that cannot reach it aborts
-  before the first LLM call. Only the five body joints are ever driven: the gripper is recorded
-  and never commanded, for the same reason `stop` leaves it alone. With no pose recorded, the
-  old behaviour stands and the arm sags where it stopped, which is also what
-  `quackd robot rest-pose <name> --clear` returns you to. An MCP session does the same at both
-  ends and refuses to open at all if it cannot get there, because a client is about to drive a
-  body nobody has established the pose of ([guides/mcp.md](../guides/mcp.md)).
+  every run on 2026-09-15. Fold the arm by hand while nothing is connected, record where it sits
+  with `quackd robot rest-pose <name>`, and quackd drives it back there between the `stop` and
+  the close, on every exit path there is: success, failure, infeasible, a spent budget, an
+  abort, an error and Ctrl-C. It drives the arm there at the start of a run too, before the
+  pilot gets control, and a run that cannot reach it aborts before the first LLM call. Only the
+  five body joints are ever driven: the gripper is recorded and never commanded, for the same
+  reason `stop` leaves it alone. With no pose recorded, which is also where
+  `quackd robot rest-pose <name> --clear` leaves an arm, a run, a dry run, an MCP session and a
+  flock refuse a real arm before anything connects, and `doctor` lets go of it where it stops,
+  as every session once did
+  ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). An MCP session
+  parks the arm at both ends too, and refuses to open at all if it cannot get there, because a
+  client is about to drive a body nobody has established the pose of
+  ([guides/mcp.md](../guides/mcp.md)).
 - **A rest pose past the calibrated travel is parked at the edge of it.** A servo on this arm is
   never driven outside the travel its calibration recorded: LeRobot writes that travel into it
   as two limits, and it clamps every goal to them. A folded arm can still sit past them, because
@@ -608,23 +711,24 @@ write says nothing about what that write did.
   LeRobot's flag off for that one case, leaves the arm holding itself up, and prints one line:
 
   ```
-  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands: hold it first, because connecting takes torque off every motor for a moment, then run quackd robot release NAME, or quackd doctor --robot NAME to park it, or cut its power
+  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
   ```
 
   The brackets name the joint furthest from where it was asked to be, what it reads, and why
   nothing put it there. That is a joint stopped short *inside* its travel: one parked at the
   edge of its travel, or folded past it, has reached the pose. `NAME` is the name the arm was
   registered under wherever quackd knows it, and stays `NAME` where it does not, which is a
-  bare spec such as `doctor --robot lerobot:real`. Hold the arm first, then do one of the three
-  things the line says. The arm is energised, the run is over, and nothing is going to put it
-  down on its own, but "it will not fall" is true of the arm as it stands and of nothing that
-  connects to it: `quackd robot release` lets it go into your hands, `quackd doctor --robot`
-  tries the rest move again from wherever it now is and lets go at the pose if it gets there,
-  and both begin with a connect that takes torque off every motor for a moment. The power
-  switch works when neither of those can reach the arm. A run at a terminal offers the first of
-  them itself, before the line is printed, and only over an arm that answered: an arm that went
-  quiet, which is what cutting its supply looks like, gets a line that says quackd cannot tell
-  whether it is holding itself up, and to hold it and cut its power.
+  bare spec such as `doctor --robot lerobot:real`. The arm is energised, the run is over, and
+  nothing is going to put it down on its own, but "it will not fall" is true of the arm as it
+  stands and of nothing that connects to it. `quackd robot release` begins with a connect that
+  takes torque off every motor for a moment, so support the arm while it connects, and then it
+  folds the arm to its rest pose from wherever it now is and lets go of it there. Clear the way
+  first, because a fold that runs into whatever stopped the last one stops again. The power
+  switch works when the command cannot reach the arm. A run at a terminal puts its two questions
+  about a missed fold itself, before the line is printed (under "Kill switch" above), and only
+  over an arm that answered: an arm that went quiet, which is what cutting its supply looks
+  like, gets a line that says quackd cannot tell whether it is holding itself up, and to hold it
+  and cut its power.
 - **A probe and a dry run now leave torque on where they used to drop it.** A dry run never
   moves the arm and `quackd robot list --probe` never moves it either, so on an arm away from
   its recorded rest pose both end with torque on: the dry run prints the line above, and the
@@ -641,8 +745,11 @@ write says nothing about what that write did.
   quackd builds the arm asking it to and asks for the release itself only where it may let go.
   In 0.14 and before the arm was built asking that disconnect for the release, so it could fall
   there. A crash that skips the close ends the same way. That is the safe direction and it is
-  not a clean exit: the port closes with the arm still energised, so hold the arm and run
-  `quackd robot release <name>`, or cut its power.
+  not a clean exit: the port closes with the arm still energised, so clear its way and run
+  `quackd robot release <name>`, which folds it to its rest pose and lets go of it there,
+  supporting the arm while it connects, or hold it and cut its power. The fold the first
+  question over a missed fold asks for is the one end-of-run rest move that is shielded: a press
+  during it stops it and keeps torque on, and the close still happens.
 - A good first contract is the shipped `lerobot-lookout`, which moves no joint. The order to
   bring one up in, nothing moving until step 10:
   [adapters/lerobot/hardware-checklist.md](../adapters/lerobot/hardware-checklist.md).
@@ -699,7 +806,7 @@ quackd goes quiet" differs per body. Each manifest says so
 |---|---|---|---|
 | Microduck (`microduck:*`) | `robotd_deadman`: velocity zeroes when intents stop | `robot.stop` | `robot.relax`, `robot.init` |
 | Huebot (`huebot:*`) | `none` claimed on `huebot:jsonrpc`, with no deadman, until a Huebot has passed step 3 of [its checklist](../adapters/huebot/hardware-checklist.md), which tests it on a stand before anything walks. quackd relies all the same on the deadman the shim its maker is writing is asked to keep, robotd's: velocity zeroes when intents stop. Nobody has seen it | `robot.stop` | `robot.relax`, `robot.init`, and `robot.look` and `robot.head`, which the shim does not answer yet |
-| LeRobot arm (`lerobot:*`) | `torque_limit`: the gripper's torque and current caps and nothing on the five body joints (`extras.torque_limit_scope` is `gripper_only`), plus a capped step per action that quackd sets; no deadman, a position-controlled arm holds its goal | re-sends the present position as the goal (hold) for each of the five body joints that reads inside its travel, writes none for one that reads past it, and leaves the gripper's goal alone. The rest move that follows a run's last `stop` is the only thing that puts the arm down | `disable_torque`, of quackd's own accord: only a person holding the arm asks for it, with `--by-hand` at the rest pose, or with `quackd robot release` or the Enter a run offers when its last rest move missed, wherever the arm stands. LeRobot's own `disconnect()` still does, by its default, at the end of a session, but only where quackd's close asks it to, once the arm has been driven back to its recorded rest pose, or to the edge of its travel where that pose lies past it: an arm that did not get there is left holding itself up, with one line saying so, and so is an arm whose exit skipped the close. With no rest pose recorded, a clean session ends the way it always did and the arm sags |
+| LeRobot arm (`lerobot:*`) | `torque_limit`: the gripper's torque and current caps and nothing on the five body joints (`extras.torque_limit_scope` is `gripper_only`), plus a capped step per action that quackd sets; no deadman, a position-controlled arm holds its goal | re-sends the present position as the goal (hold) for each of the five body joints that reads inside its travel, writes none for one that reads past it, and leaves the gripper's goal alone. The rest move that follows a run's last `stop` is the only thing that puts the arm down | `disable_torque`, of quackd's own accord: only a person asks for it, with `--by-hand` at the rest pose, with `quackd robot release` once it has folded the arm there, or where the arm stands, which drops it, only on Enter at a question that says so: after two folds missed, at the end of a run or in that command, or before that command connects to an arm with no rest pose. LeRobot's own `disconnect()` still does, by its default, at the end of a session, but only where quackd's close asks it to, once the arm has been driven back to its recorded rest pose, or to the edge of its travel where that pose lies past it: an arm that did not get there is left holding itself up, with one line saying so, and so is an arm whose exit skipped the close. With no rest pose recorded, a real arm is refused a run, a dry run and an MCP session before anything connects, and a probe, `doctor` or `robot list --probe`, lets it sag where it stands |
 | rosbridge base (`rosbridge:*`) | `none`: neither rosbridge nor the driver has a deadman we verified | publishes a zero Twist; quackd also re-sends the Twist at 10 Hz while a verb runs | silence |
 | Open Duck Mini v2 (`open_duck:*`) | `none` in the robot, but quackd's own bridge daemon runs on it and zeroes the velocity after 300 ms of silence, inside the 50 Hz loop | zero velocity, head held, torque still on | anything that reaches torque, the head-control mode button, any direct servo or IMU read |
 | XLeRobot (`xlerobot:*`) | `none`: the host's own 500 ms watchdog is real but calls `stop_base()`, which zeroes the three wheels and **nothing else**, so the 14 arm and head servos keep holding under torque. `deadman_scope` says `base_only` | zeroes the three velocity keys and leaves every arm goal exactly where it was, deliberately not rebuilding a hold from an unstamped reading that may be cycles old | `disconnect()`, which is upstream's torque-off, and any `enable(on=False)` |

@@ -82,6 +82,14 @@ class RestResult:
     doing. True for a move the body answered and still missed, a write it refused after a read
     that came back included, and for every body that never fails this way, which is why it has
     a default."""
+    limp: tuple[str, ...] = ()
+    """The joints the body's last read of its own torque found off when a move that missed
+    ended, in the body's order: an arm whose servos lost their torque partway through the move,
+    a brown-out under stall current or a supply cut and back, still answers every read, and a
+    goal sent to a joint with no torque moves nothing. What is limp is not holding itself up,
+    whatever the move's own reason says, so a caller about to say that it is reads this
+    second. Empty where every joint read on, where nothing has read the torque since, and for
+    every body that cannot say, which is why it has a default."""
 
     @property
     def reached(self) -> bool:
@@ -176,10 +184,12 @@ async def let_go_if_any(transport: Any, **kw: Any) -> HandResult:
     Duck-typed like `go_to_rest_if_any`, and for the same reason: one body out of nine does
     this, and the other eight should not have to carry a method to say so.
 
-    `kw` goes to the body's own `let_go` untouched, and the one keyword the arm takes is
-    `anywhere`: True skips the rule that it is released only at its rest pose, for the two
-    callers a person drives from a terminal, `quackd robot release` and the offer at the end
-    of a run whose rest move missed. Nothing passes it without a person at the arm. The
+    `kw` goes to the body's own `let_go` untouched, and the arm takes two keywords. `anywhere`
+    skips the rule that it is released only at its rest pose, for the question that drops it,
+    which `quackd robot release` and the end of a run put to a person at a terminal only after
+    two folds missed (`quackd.release`). `asked` keeps that rule, for `quackd robot release`
+    once its fold arrives, and changes only what the close says: that the arm was folded and
+    let go of because the person asked. Nothing passes either without a person at the arm. The
     keywords are passed only when given, so a body whose `let_go` takes none is called exactly
     as it always was."""
     hand = getattr(transport, "let_go", None)

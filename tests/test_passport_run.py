@@ -179,7 +179,12 @@ class Person:
         pass
 
     async def wait(
-        self, text: str, *, timeout_s: float | None = None, until_abort: bool = True
+        self,
+        text: str,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
     ) -> bool:
         return True
 

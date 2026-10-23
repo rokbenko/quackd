@@ -33,6 +33,7 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from quackd.agent.providers.base import (
+    NO_SDK_RETRIES,
     Decision,
     Exchange,
     Observation,
@@ -684,6 +685,7 @@ class OpenAIProvider:
                 api_key=key,
                 base_url=address,
                 http_client=http_client,
+                max_retries=NO_SDK_RETRIES,
                 **({"default_headers": dict(self.default_headers)} if self.default_headers else {}),
             )
             self._read_back(client, sdk, address)
@@ -693,14 +695,25 @@ class OpenAIProvider:
         if any(is_sdk_own_header(n) for n in ambient_headers(os.environ.get(CUSTOM_HEADERS_ENV))):
             # Read off a client built as the SDK builds one, which sends nothing and is dropped:
             # the values are the installed release's own, and neither depends on the environment.
-            own = own_headers(sdk.client(api_key=key, base_url=address, http_client=http_client))
+            own = own_headers(
+                sdk.client(
+                    api_key=key,
+                    base_url=address,
+                    http_client=http_client,
+                    max_retries=NO_SDK_RETRIES,
+                )
+            )
         # Never OpenAI's own API here, since that is the SDK's own address, so both account
         # headers are always among the names answered.
         handed = request_headers(
             bearer, at_openai=False, omit=sdk.omit, own=own, vendor=self.default_headers
         )
         client = sdk.client(
-            api_key=key, base_url=address, default_headers=handed, http_client=http_client
+            api_key=key,
+            base_url=address,
+            default_headers=handed,
+            http_client=http_client,
+            max_retries=NO_SDK_RETRIES,
         )
         built = self._read_back(client, sdk, address, headers=True)
         if foreign_authorization(built, bearer, sdk.omit):

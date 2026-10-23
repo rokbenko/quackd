@@ -18,6 +18,7 @@ import signal
 import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
@@ -1043,6 +1044,16 @@ class Heartbeat:
             self._task = None
 
 
+TYPED_AHEAD_S = 0.5
+"""How long after a deliberate question is put an Enter is taken for one typed before it
+(`KillSwitch.wait_for_enter(deliberate=True)`). The key thread reads whatever was already in the
+terminal the moment it starts, and an Enter pressed twice, or pressed while the command was
+still starting, used to answer the question that followed it before anybody could have read it:
+one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
+arm and decides in half a second, and an Enter that comes too soon is passed by rather than
+taken, so a person who did mean it presses it again."""
+
+
 class KillSwitch:
     """Ctrl-C or `q` → abort, and Enter → the one thing a run ever waits for a person to do.
 
@@ -1075,6 +1086,29 @@ class KillSwitch:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._previous: Any = None
         self._thread: threading.Thread | None = None
+        self.declined = False
+        """The last deliberate wait ended on a line with something typed on it, which is a no:
+        `n`, `no`, anything but a bare Enter (`wait_for_enter(deliberate=True)`)."""
+        self._enters: deque[tuple[float, str]] = deque(maxlen=32)
+        """Each Enter the key thread read, as when it was read and what was typed on its line,
+        newest last. Written by the key thread and read by a deliberate wait, under the lock."""
+        self._enters_lock = threading.Lock()
+
+    def _heard_enter(self, text: str) -> None:
+        """An Enter the key thread read, recorded with what was typed on its line and when, and
+        only then announced, so a wait woken by it finds the line it answers already there."""
+        with self._enters_lock:
+            self._enters.append((time.monotonic(), text.strip()))
+        self._announce(self.entered)
+
+    def _line_since(self, since: float) -> str | None:
+        """What was typed on the first line whose Enter was read at `since` or later, or None
+        where no Enter has been read since then."""
+        with self._enters_lock:
+            for at, text in self._enters:
+                if at >= since:
+                    return text
+        return None
 
     def _fire(self, why: str) -> None:
         self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
@@ -1097,8 +1131,17 @@ class KillSwitch:
         It used to stop at the first `q` and at the abort flag, which was enough when the only
         keystroke that meant anything was the one that ended the run. A run that hands the arm
         to a person waits for Enter after the abort may already be set, and again in its own
-        teardown, so the reader has to outlive both."""
+        teardown, so the reader has to outlive both.
+
+        Every Enter is recorded with what was typed on its line (`_heard_enter`), because a
+        question that drops an arm takes only a bare one, and a terminal that ends its lines
+        with `\\r\\n` sends one Enter, not two. `q` still fires the switch the moment it is read,
+        and is part of its line too: a terminal in its usual mode hands it over only with the
+        Enter that sends the line, and a wait never takes that Enter for an answer
+        (`wait_for_enter`)."""
         typed: list[str] = []
+        line: list[str] = []
+        previous = ""
         try:
             while True:
                 ch = sys.stdin.read(1)
@@ -1119,9 +1162,13 @@ class KillSwitch:
                     continue
                 typed.clear()
                 if ch in ("\r", "\n"):
-                    if self._loop is not None:
-                        self._loop.call_soon_threadsafe(self.entered.set)
+                    if not (ch == "\n" and previous == "\r"):
+                        self._heard_enter("".join(line))
+                    line.clear()
+                    previous = ch
                     continue
+                previous = ch
+                line.append(ch)
                 if ch.strip().lower() == "q":
                     self._fire("'q' pressed")
         except Exception:
@@ -1158,7 +1205,11 @@ class KillSwitch:
                 self._loop.call_soon_threadsafe(event.set)
 
     async def wait_for_enter(
-        self, *, timeout_s: float | None = None, until_abort: bool = True
+        self,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
     ) -> bool:
         """Wait for Enter. True if it came, False if anything else ended the wait.
 
@@ -1172,25 +1223,58 @@ class KillSwitch:
         Nothing here reads stdin: the key thread is the only reader, and this waits on what it
         sets. A wait on a machine with no key thread (no terminal) ends on its timeout, which
         is why a caller who needs an answer checks for a terminal before asking for one, and on
-        `keys_ended` where the thread ran and stdin then finished under it."""
+        `keys_ended` where the thread ran and stdin then finished under it.
+
+        A press of the kill switch during the wait is never an Enter, whatever came with it. A
+        terminal in its usual mode hands `q` to the key thread only with the Enter that sends its
+        line, so the press and the Enter arrive together, and the wait used to answer True when
+        both were in by the time it looked: `q`, the key that stops the run, taken for yes.
+
+        `deliberate` is for a question whose Enter moves an arm or drops it (`quackd.release`).
+        Only a bare Enter answers it. A line with anything typed on it, `n` the commonest, is a
+        no, and the wait ends saying so (`declined`); and an Enter read within `TYPED_AHEAD_S`
+        of the question being put was typed before anybody could have read it, so the wait goes
+        on past it."""
+        loop = asyncio.get_running_loop()
+        asked_at = time.monotonic()
+        presses = self.presses
+        self.declined = False
         self.entered.clear()
         self.pressed.clear()
-        watched = [
-            asyncio.ensure_future(self.entered.wait()),
-            asyncio.ensure_future((self.abort if until_abort else self.pressed).wait()),
-            # nobody is going to press anything, so the caller is owed that answer rather than
-            # a wait that never returns
-            asyncio.ensure_future(self.keys_ended.wait()),
-        ]
-        try:
-            await asyncio.wait(watched, timeout=timeout_s, return_when=asyncio.FIRST_COMPLETED)
-            return self.entered.is_set()
-        finally:
-            for task in watched:
-                task.cancel()
-                # awaited, so a cancelled task is never left for the loop to complain about
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+        deadline = None if timeout_s is None else loop.time() + timeout_s
+        while True:
+            if deliberate and (answer := self._line_since(asked_at + TYPED_AHEAD_S)) is not None:
+                if self.presses > presses:
+                    return False
+                if answer:
+                    self.declined = True
+                    return False
+                return True
+            left = None if deadline is None else deadline - loop.time()
+            if left is not None and left <= 0:
+                return False
+            watched = [
+                asyncio.ensure_future(self.entered.wait()),
+                asyncio.ensure_future((self.abort if until_abort else self.pressed).wait()),
+                # nobody is going to press anything, so the caller is owed that answer rather
+                # than a wait that never returns
+                asyncio.ensure_future(self.keys_ended.wait()),
+            ]
+            try:
+                await asyncio.wait(watched, timeout=left, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in watched:
+                    task.cancel()
+                    # awaited, so a cancelled task is never left for the loop to complain about
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await task
+            if self.presses > presses or not self.entered.is_set():
+                return False
+            if not deliberate:
+                return True
+            # An Enter was read. Whether it answers is the check at the top: one read too soon
+            # after the question was put is passed by, and the wait goes on for the next.
+            self.entered.clear()
 
     def install(self, *, keys: bool = True) -> None:
         self._loop = asyncio.get_running_loop()

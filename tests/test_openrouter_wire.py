@@ -255,6 +255,36 @@ def test_a_200_carrying_only_an_error_ends_the_run_in_openrouters_words(tmp_path
     assert len(stand_in.posts()) == 1, "no retry of an answer that was an error"
 
 
+def test_a_busy_api_is_asked_the_same_turn_again_through_the_real_sdk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0059 end to end. The stand-in answers its first chat post with a 529, which the SDK,
+    built to retry nothing of its own (`NO_SDK_RETRIES`), hands straight up, and quackd waits and
+    asks the same turn again, which the stand-in answers: the run succeeds, the turn is one call,
+    and the request that answered is the one that failed, byte for byte. That the SDK's exception
+    arrives under quackd's own with its status on it is what this proves, since only a real SDK
+    raises one, and that it arrives after one post, which only a real SDK built so can show."""
+    import quackd.agent.loop as loop_module
+
+    waits: list[float] = []
+
+    async def wait(abort: Any, seconds: float) -> bool:
+        waits.append(seconds)
+        return False
+
+    monkeypatch.setattr(loop_module, "_wait_or_abort", wait)
+    with FakeOpenRouter(fail=1) as stand_in:
+        result = _run(stand_in, tmp_path)
+    assert result.exit_code == 0, result.output
+    summary = _summary(tmp_path)
+    assert summary["outcome"] == "success" and summary["llm_retries"] == 1, summary
+    assert len(waits) == 1
+    chats = [r for r in stand_in.posts() if r.path.endswith("/chat/completions")]
+    assert len(chats) >= 2 and chats[0].body == chats[1].body, "the SDK made a try of its own"
+    failed = next(e for e in _events(tmp_path) if e["kind"] == "llm" and "error" in e)
+    assert "529" in failed["error"] and failed["retry_in_s"] == round(waits[0], 1), failed
+
+
 def test_a_turn_that_failed_after_it_was_billed_is_in_the_run_total(tmp_path: Path) -> None:
     """A provider that gave out partway can still be billed. Through the real SDK, the third turn
     ends with `finish_reason: "error"` and a bill, and the run's total keeps that bill."""

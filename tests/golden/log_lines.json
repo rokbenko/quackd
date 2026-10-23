@@ -61,6 +61,12 @@
    "dim"
   ]
  ],
+ "llm_request_attempt": [
+  [
+   "llm>    step 2: 7 messages (1 with image) to anthropic claude-opus-5-5 (try 2)",
+   "dim"
+  ]
+ ],
  "llm_full": [
   [
    "think   the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I ... (+1060 chars in transcript.jsonl)",
@@ -101,6 +107,12 @@
   [
    "llm<    ERROR ProviderError: rate limited after 3.0 s",
    "red"
+  ]
+ ],
+ "llm_error_asked_again": [
+  [
+   "llm<    ERROR ProviderError: anthropic: API error 529: overloaded after 0.4 s, asking again in 15 s",
+   "yellow"
   ]
  ],
  "llm_bare": [
@@ -788,6 +800,7 @@
   "obs     ",
   "llm>    step 2: 7 messages (1 with image) to openai gpt-5",
   "llm>    step 2: 8 messages (0 with image) to openai gpt-5 (re-prompt: it made no tool call)",
+  "llm>    step 2: 7 messages (1 with image) to anthropic claude-opus-5-5 (try 2)",
   "think   the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I turn. the ball is behind me, so I ... (+1060 chars in transcript.jsonl)",
   "llm<    going for it.\n        the ball is close",
   "tool    go_to(target='ball', stop_distance=0.25)",
@@ -797,6 +810,7 @@
   "tool    (no tool call)",
   "tokens  in=0 out=0",
   "llm<    ERROR ProviderError: rate limited after 3.0 s",
+  "llm<    ERROR ProviderError: anthropic: API error 529: overloaded after 0.4 s, asking again in 15 s",
   "tool    stop()",
   "tokens  in=0 out=0",
   "llm<    kicking now",

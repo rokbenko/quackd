@@ -565,32 +565,52 @@ would take minutes, and an arm nobody is watching must not hold a run open that 
 
 TORQUE_LEFT_ON = (
     "the arm is not at its rest pose ({why}), so torque was left on and it will not fall as it "
-    f"stands: hold it first, because {CONNECTING_TAKES_TORQUE_OFF}, then run quackd robot "
-    "release {name}, or quackd doctor --robot {name} to park it, or cut its power"
+    "stands. To put it down, clear whatever is in its way and run quackd robot release {name}, "
+    "which folds it to its rest pose and lets go of it there: support the arm while that "
+    f"connects, because {CONNECTING_TAKES_TORQUE_OFF}. Or hold it and cut its power"
 )
 """Said once, by whichever caller closed the arm. The transport records it and prints
 nothing itself: a library that writes to a terminal has picked one, and quackd has four.
 
-It names the three ways out, because an arm left holding itself up stays that way until
-somebody does one of them, and the power switch was the only one it used to name: on the
-bench of 2026-09-23 every run that got to its end finished there. `quackd robot release` takes
-torque off where the arm stands while a person holds it; `quackd doctor --robot` connects,
-tries the rest move again from wherever the arm now is, and lets go at the pose if it gets
-there. Both are said with the name the arm was registered under, through `torque_left_on`,
+It names the two ways out, because an arm left holding itself up stays that way until somebody
+does one of them, and the power switch was the only one it used to name: on the bench of
+2026-09-23 every run that got to its end finished there. `quackd robot release` connects, folds
+the arm to its rest pose from wherever it now stands and lets go of it there, and where the fold
+misses again it asks the person to clear the way and then, only after a second miss, whether to
+let go where the arm stands (`quackd.release`). It used to take torque off where the arm stood,
+which let it fall, and `quackd doctor --robot` was named beside it as the way to park the arm
+instead; the release parks it now, and asks before it drops anything, so the line names the one
+command. It is said with the name the arm was registered under, through `torque_left_on`,
 because a command with the wrong name in it is a command that fails or, worse, reaches another
 arm.
 
-The hold comes before all three, and "it will not fall" is said of the arm as it stands and
-no further. Both commands begin by connecting, and connecting takes torque off every motor
-while LeRobot configures them (`CONNECTING_TAKES_TORQUE_OFF`), so an arm held up by torque
-alone is limp for that moment whichever command reaches it. The line used to tie the hold to
-the release alone and offer `doctor` as a separate route, which read as though the arm could
-be left to hold itself while `doctor` connected to it: the one moment it cannot."""
+"It will not fall" is said of the arm as it stands and no further, and the support comes
+before the command, not after it. The release begins by connecting, and connecting takes torque
+off every motor while LeRobot configures them (`CONNECTING_TAKES_TORQUE_OFF`), so an arm held up
+by torque alone is limp for that moment: the one moment it cannot be left to hold itself. The
+clearing comes first of all, because a fold that runs into what stopped the last one stops
+again."""
 
 UNNAMED = "NAME"
 """What `torque_left_on` and `rest_clip_note` say in place of a name nobody told the
 transport. A placeholder a person can see is one, rather than a guess at the name that reads
 like the right one."""
+
+
+NO_REST_POSE_RECORDED = "no rest pose is recorded"
+"""Why the close keeps the torque of a real arm with no rest pose: nowhere it may be let go of."""
+
+TORQUE_LEFT_ON_WITHOUT_A_POSE = (
+    "{name} has no rest pose recorded, so torque was left on rather than let go of where the arm "
+    "stands, where it would fall. To put it down, hold it and cut its power, or run quackd robot "
+    "release {name} and press Enter when it asks, holding the arm. To give it a pose, fold it by "
+    "hand once it is down and limp, then run quackd robot rest-pose {name} with its power on"
+)
+"""The close's line for a real arm with no rest pose, which it no longer lets go of where it
+stands (ADR-0058). A run of one is refused, so this is said after a probe, `doctor` or
+`robot list --probe`, which read the arm and move nothing. It names the ways out an arm with no
+pose has: the power switch, and `quackd robot release`, which with no pose to fold to asks, before
+it connects, whether to take torque off where the arm stands, and does only on Enter."""
 
 
 def torque_left_on(why: str, name: str | None) -> str:
@@ -605,17 +625,29 @@ def torque_left_on(why: str, name: str | None) -> str:
     return TORQUE_LEFT_ON.format(why=why, name=name or UNNAMED)
 
 
+TORQUE_KEPT_AFTER_REFUSAL_WITHOUT_A_POSE = (
+    "the release did not take, and with no rest pose recorded the close kept torque on rather "
+    "than let go of where the arm stands: hold it and cut its power"
+)
+"""`TORQUE_KEPT_AFTER_REFUSAL` for an arm with no rest pose, which a person had asked to have
+released where it stood (`quackd robot release`, Enter at the question it puts before it
+connects). The close keeps such an arm powered as it keeps any (ADR-0058), and "not at its rest
+pose" would name a pose it does not have."""
+
 TORQUE_KEPT_AFTER_REFUSAL = (
     "the arm is not at its rest pose ({why}) and the release did not take, so torque was left "
     "on and it will not fall as it stands: hold it and cut its power"
 )
 """The close's line for an arm a person just asked to have released, and whose release was
-refused: every motor still read torque on afterwards, or the arm did not answer before it.
+refused: every motor still read torque on afterwards, or the arm did not answer before it. A
+release asked for at the rest pose (`let_go(asked=True)`, which `quackd robot release` makes
+once its fold arrives) counts, as one asked for where the arm stood does.
 
 `TORQUE_LEFT_ON` would be wrong here in the one clause that matters. It sends the person to
 `quackd robot release`, which is the command that has just failed, or which is what the
-end-of-run offer they just answered does, in the same output. So this names the one way out
-the arm has not already refused, which is the switch, and the hold that has to come first."""
+end-of-run questions they just answered end in, in the same output. So this names the one way
+out the arm has not already refused, which is the switch, and the hold that has to come
+first."""
 
 
 def released_by_the_close(at_rest: bool) -> str:
@@ -774,9 +806,10 @@ during the wait, a heartbeat that died, a `take_hold` the arm refused. Whoever i
 arm is the one reading this, and the opposite note, the one about torque being left on, would
 tell them the arm is holding itself up while it hangs off their hand.
 
-The other way here is on purpose: `quackd robot release`, and the offer a run makes when its
-rest move missed, end every release they make with this line, because it is the right last
-thing to tell somebody holding an arm with nothing else holding it up. Only where a read of the
+The other way here is on purpose: a release where the arm stands, which `quackd robot release`
+and the end of a run make only after two folds missed and a person pressed Enter to drop the
+arm into their hands (`quackd.release`), ends on this line, because it is the right last thing
+to tell somebody holding an arm with nothing else holding it up. Only where a read of the
 torque register after the release found every motor off, though: a release some motors ignored
 ends on `still_holding_in_hand`, and one nothing read back on `UNREAD_IN_HAND`."""
 
@@ -795,6 +828,20 @@ def still_holding_in_hand(holding: tuple[str, ...], why: str) -> str:
         f"the arm is in your hands ({why}), but {_listed(list(holding))} still "
         f"{'reads' if one else 'read'} torque on and {'holds' if one else 'hold'}: keep hold of "
         f"the arm, put it down, and cut its power to let go of {'it' if one else 'them'}"
+    )
+
+
+def torque_reads_off(why: str, limp: tuple[str, ...]) -> str:
+    """The close's line for an arm away from its rest pose whose own read finds torque off on
+    `limp`, which `TORQUE_LEFT_ON` would say is holding itself up. A servo that browned out
+    under stall current comes back with its torque disabled and still answers every read, so the
+    arm reads where it lies, or where it is falling, and the joints named hold nothing."""
+    one = len(limp) == 1
+    return (
+        f"the arm is not at its rest pose ({why}), and torque reads off on {_listed(list(limp))}, "
+        f"so {'that joint is' if one else 'those joints are'} not holding it up there and the arm "
+        "may already have dropped: hold it, put it down, and cut its power before it is powered "
+        "again"
     )
 
 
@@ -830,6 +877,52 @@ there: that sentence ends "nothing moved it there" when no rest move ran, which 
 arm a person is holding, and the person already knows where it stands, having just asked for
 it to be let go of there."""
 
+UNREAD_AT_REST = (
+    "the arm was folded to its rest pose and its release went out there, but nothing read its "
+    "torque back, so it may still hold itself up in its fold, all of it or part of it: leave it "
+    "where it rests, and cut its power to be sure"
+)
+"""`UNREAD_IN_HAND` for the release `quackd robot release` asked for at the rest pose
+(`LET_GO_AT_REST`). The person was told to take their hands away before the arm folded, so
+nobody is holding it, and the in-hand line told them to put down an arm lying in its fold."""
+
+
+def still_holding_at_rest(holding: tuple[str, ...]) -> str:
+    """`still_holding_in_hand` for the release asked for at the rest pose: the last read of the
+    torque register found `holding` still on, over an arm lying in its fold with no hand on it,
+    which the in-hand line told to be put down."""
+    one = len(holding) == 1
+    return (
+        "the arm lies at its rest pose, folded and let go of there because you asked for it, but "
+        f"{_listed(list(holding))} still {'reads' if one else 'read'} torque on: leave it where "
+        f"it rests, and cut its power to let go of {'it' if one else 'them'}"
+    )
+
+
+LET_GO_AT_REST = "it was folded to its rest pose and let go of there, because you asked for it"
+"""Why the arm was let go of, after a release a person asked for at its rest pose
+(`let_go(asked=True)`): the first door, which releases nowhere but that pose, opened by
+`quackd robot release` once its fold arrived. Not `LET_GO_TO_PLACE`, which tells the person the
+arm was released for them to lift and place, which nobody asked of this one.
+
+The close says it with `LIMP_AT_REST_AS_ASKED` where its own read still finds the arm at that
+pose, and as `LIMP_IN_HAND`'s parenthesis where it finds the arm moved off it, which is an arm
+somebody lifted after it went limp and is holding now."""
+
+LIMP_AT_REST_AS_ASKED = (
+    "the arm is limp at its rest pose, where it was folded and let go of because you asked for "
+    "it, and where it still reads: it rests there with no torque, as it does at the end of every "
+    "run"
+)
+"""The close's line for an arm `quackd robot release` folded to its rest pose and let go of
+there (`LET_GO_AT_REST`), when the close's own read finds it still at that pose by the
+half-line rule and a read of the torque register found every motor off.
+
+`LIMP_AT_REST`'s ending, without its reason: that line says the arm was let go of for the
+person to place, which is `--by-hand`'s release, and a person who asked for torque off has
+nothing to place. Like that line it claims nothing no read said: the pose and the torque are
+this close's own readings."""
+
 LIMP_AT_REST = (
     "the arm is limp at its rest pose, where it was let go of for you to place and where it "
     "still reads: it rests there with no torque, as it does at the end of every run"
@@ -847,10 +940,11 @@ over that fold leaves it too, and the take-hold at Enter is refused in the same 
 (`unlifted_from_rest`), so no line before this one tells the person the arm is up and needs
 holding. Only after the first door, which releases nowhere but the rest pose: an arm a person
 asked to have released where it stood (`LET_GO_WHERE_IT_STOOD`) was released into their hands
-on purpose, since `quackd robot release` and the end-of-run offer both tell them to hold it
-before it goes, and it keeps the line for one. Nothing here claims what no read said: the pose
-and the torque are both this close's own readings, and whether somebody lifted the arm and put
-it back is not a thing quackd says."""
+on purpose, since the question that drops it tells them to hold it before it goes, and it keeps
+the line for one. And one `quackd robot release` folded and let go of at the pose ends on
+`LIMP_AT_REST_AS_ASKED`, which is this line without the placing. Nothing here claims what no
+read said: the pose and the torque are both this close's own readings, and whether somebody
+lifted the arm and put it back is not a thing quackd says."""
 
 IN_HAND_NOT_MOVED = "the arm is in a person's hands, so it is not moved"
 """The rest move's refusal while the arm is in somebody's hands (`in_hand`), which writes

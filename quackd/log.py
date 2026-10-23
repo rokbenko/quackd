@@ -611,8 +611,24 @@ def render_events(
         )
         if d.get("reprompt"):
             text += " (re-prompt: it made no tool call)"
+        # the same turn asked again after the API could not answer it: only from the second
+        # try, so every transcript recorded before quackd asked again replays line for line
+        if (attempt := d.get("attempt")) and attempt > 1:
+            text += f" (try {attempt})"
         return [LogLine("llm>", text, "dim")]
     if k == "llm":
+        if "error" in d and "retry_in_s" in d:
+            # a failure quackd will ask again after: a warning, not the run's end, which the
+            # red line below is
+            return [
+                LogLine(
+                    "llm<",
+                    f"ERROR {d['error']} after {d.get('latency_s', 0):.1f} s, asking again in "
+                    f"{d['retry_in_s']:g} s",
+                    "yellow",
+                    mark="warn",
+                )
+            ]
         if "error" in d:
             return [
                 LogLine(

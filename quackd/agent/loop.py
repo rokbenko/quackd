@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import random
 import re
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, TypeVar, cast, runtime_checkable
 
 from pydantic import ValidationError
 
@@ -55,8 +57,12 @@ from quackd.agent.providers.base import (
     LLMProvider,
     NamedPng,
     Observation,
+    ProviderError,
+    ProviderTurn,
     ToolCall,
+    Transient,
     Usage,
+    transient_failure,
 )
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import resolve_price, turn_cost
@@ -68,6 +74,13 @@ from quackd.log import A_PERSON, EventLog, Sink, a_person_was_asked, fmt_params,
 from quackd.memory import RobotMemory
 from quackd.perception import detector_for, lens_of
 from quackd.perception.base import Detection, Detector, detect_off_loop, detect_times
+from quackd.release import (
+    FOLD_STOPPED,
+    FoldStopped,
+    cancel_and_wait,
+    fold_unless_stopped,
+    settle_missed_fold,
+)
 from quackd.safety import (
     Aborted,
     Budget,
@@ -103,6 +116,92 @@ from quackd.verdict import Verdict, own_sheet_objection, solo_hint
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
 
 REPROMPT = "You must call exactly one tool. Choose now."
+
+ASK_AGAIN_AFTER_S = (5.0, 15.0, 30.0, 60.0)
+"""How long the loop waits before it asks the model's API the same turn again, try by try, after
+a failure `transient_failure` says is worth asking again: a rate limit, an overloaded or failing
+server, a request that timed out, a connection that dropped. The SDKs are built to retry
+nothing of their own (`NO_SDK_RETRIES`), so these are the only waits a failed call meets: they
+begin at five seconds and double up to a per-minute rate window, 110 s in all, with the robot
+holding still and the heartbeat watching it throughout. After the last, the run ends as it would
+have on the first (ADR-0059)."""
+
+FIRST_CONNECTION_TRIES_S = (0.5, 1.0)
+"""The waits before the two quick tries more a call gets when its connection failed, or timed
+out, before the model's API had answered once in the run. The SDKs gave a call these two of
+their own, and a connection that drops as a run starts was often back by the second; they are
+the loop's now, stoppable and on the record. After them a connection that never answered ends
+the run (`GAVE_UP_NEVER_ANSWERED`), since it is as often a wrong address as a dropped one."""
+
+ASK_AGAIN_JITTER = 0.25
+"""Up to this share of a scheduled wait is taken off it at random, so the members of a flock that
+share a key, and met one rate limit together, do not all ask again in the same instant. A wait
+the API asked for is never shortened."""
+
+LONGEST_ASKED_WAIT_S = 120.0
+"""The longest wait an API may ask for, in a `retry-after`, that the loop sits out: the openai
+SDK's own ceiling (`MAX_RETRY_AFTER_DELAY` in 3.22.1). An API that asks for longer ends the run
+at once, saying how long it asked, rather than the loop holding a robot that much longer on its
+word. The SDKs' own retries come first, inside the call, and honour such a wait themselves, the
+anthropic SDK's at any length, so a call that fails after one may already have waited it twice,
+and a first Ctrl-C does not reach into those waits; the second does."""
+
+ASKING_AGAIN = (
+    "the model's API could not answer this turn ({why}), so quackd waits and asks it the same "
+    "turn again, up to {tries} times. Nothing moves the robot while it waits, the heartbeat goes "
+    "on watching it, and Ctrl-C or q ends the run instead"
+)
+"""Said once a run, before its first wait. Each try after that is a line of the log's own, from
+the failed call's `llm` record and its `retry_in_s`."""
+
+STOPPED_WAITING = "stopped waiting to ask the model's API again: {reason}"
+"""A wait to ask again that the kill switch, the heartbeat or a flock ended. The run then ends
+`aborted`, for that reason, and the robot is put down as at the end of any run."""
+
+GAVE_UP_TRIES = (
+    "the model's API could not answer this turn in {tries} tries ({why}), so the run ends here"
+)
+GAVE_UP_TIME = (
+    "the model's API could not answer this turn ({why}), and waiting {seconds:.0f} s to ask it "
+    "again would run past the task's max_minutes, so the run ends here"
+)
+GAVE_UP_TOO_LONG = (
+    "the model's API could not answer this turn ({why}) and asked to be left {seconds:.0f} s, "
+    "longer than the {longest:.0f} s quackd waits with a robot connected, so the run ends here"
+)
+"""The three ways asking again gives up. Each is the message of the `ProviderError` the run then
+ends with, raised from the provider's own, so `run_end` says why there was no further try."""
+
+GAVE_UP_NEVER_ANSWERED = (
+    "the model's API has not answered once in this run ({why}, {tries} tries), which is as often "
+    "a wrong address or a server that is not running as a dropped connection, so it is not asked "
+    "again"
+)
+"""A connection that failed, or timed out, before the model had answered once, and again on
+each of the quick tries after (`FIRST_CONNECTION_TRIES_S`). Asking again for two minutes is no
+help to an endpoint that was never right, so the run ends with the provider's own error, and
+this note says why it was not asked again. A status such as a 429 from a server that never
+answered is asked again on the full schedule: something answered it."""
+
+KILL_SWITCH = "kill switch"
+"""The reason a run's abort carries when it was the kill switch, a Ctrl-C or `q`, that set it,
+rather than a heartbeat that failed or a flock stopping its members."""
+
+T = TypeVar("T")
+
+
+async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
+    """Wait `seconds`, or until `abort` is set, and say which: True when the abort ended it.
+
+    Of the module rather than of the loop so a test can make the wait instant. Nothing else
+    runs inside it, and the heartbeat, a task of its own, goes on pinging the robot meanwhile,
+    which is what lets a robot that stops answering end the wait."""
+    try:
+        async with asyncio.timeout(seconds):
+            await abort.wait()
+    except TimeoutError:
+        return False
+    return True
 
 
 @runtime_checkable
@@ -154,15 +253,28 @@ class HandOff(Protocol):
         ...
 
     async def wait(
-        self, text: str, *, timeout_s: float | None = None, until_abort: bool = True
+        self,
+        text: str,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
     ) -> bool:
         """Say `text`, then wait for Enter. True if it came, False if anything else ended it.
+
+        `deliberate` is a question whose Enter moves an arm or drops it (`quackd.release`):
+        only a bare Enter answers it, read after the question was put, and a line with
+        anything typed on it is a no (`KillSwitch.wait_for_enter`).
 
         A person who can say *what* else ended it sets `ended` after each wait (the CLI's
         `_TerminalHandOff` does: `enter`, `kill switch`, `no keys`, `stopped` or `timeout`),
         and the loop reads it with `getattr`, so a person that cannot say is still a
         `HandOff`. It is not a member here because this protocol is runtime-checkable, and a
-        member would be one more thing every stand-in for a person had to carry."""
+        member would be one more thing every stand-in for a person had to carry. The same goes
+        for `stopped()`, which returns when a fresh Ctrl-C or `q` is pressed, and is how a
+        person stops the second fold they asked for at the end of a run
+        (`quackd.release.fold_unless_stopped`): a person without it gets that fold awaited to
+        its end."""
         ...
 
 
@@ -203,9 +315,10 @@ class RunConfig:
     same way at the end. Only a body whose adapter declares `supports_hand_off` is offered
     this, and the CLI refuses the flag before connecting where it is not."""
     person: HandOff | None = None
-    """Somebody at a terminal, for the one question any run may put at its very end: the rest
-    move missed, torque is being kept on an arm holding itself up, and would they like it
-    released while they hold it (`AgentLoop.RELEASE_OFFER`).
+    """Somebody at a terminal, for the two questions any run may put at its very end, when the
+    rest move missed and torque is being kept on an arm holding itself up: would they clear its
+    way and have it fold once more, and, only if that fold misses too, would they hold it and
+    have torque taken off where it stands, which drops it (`quackd.release`).
 
     Separate from `hand_off` on purpose, and never a way to read "this is a by-hand run": the
     loop takes `hand_off is not None` to mean exactly that, and a run with a person at the
@@ -437,6 +550,19 @@ class AgentLoop:
         """Seconds this run spent waiting on the model, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
+        self.llm_retries = 0
+        """How many times a turn the API could not answer was asked again (ADR-0059). Never
+        charged to `max_llm_calls`, since each is the same turn again, and written into the
+        summary only when there was one."""
+        self.llm_retry_wait_s = 0.0
+        """The seconds spent waiting to ask again, which `llm_latency_s` leaves out: no model
+        was asked anything in them."""
+        self._provider_answered = False
+        """Whether the model's API has answered once this run, with a turn or with a status such
+        as a 529, which is what tells a connection that dropped from one that was never right
+        (`GAVE_UP_NEVER_ANSWERED`): a server that sent a status back is there."""
+        self._said_asking_again = False
+        """Whether this run has said `ASKING_AGAIN`, which it says once, before its first wait."""
         bills = bool(getattr(cfg.provider, "bills_per_call", False))
         self.cost_usd: float | None = 0.0 if self.price is not None or bills else None
         """What the model has cost so far, or None when there is no rate to cost it at.
@@ -509,8 +635,7 @@ class AgentLoop:
         return (
             str(self.heartbeat.failure)
             if self.heartbeat.failure
-            else (self.cfg.link.abort_reason if self.cfg.link is not None else None)
-            or "kill switch"
+            else (self.cfg.link.abort_reason if self.cfg.link is not None else None) or KILL_SWITCH
         )
 
     def _ask_recorded(self, what: str, question: str, answer: bool, asker: Any) -> None:
@@ -522,11 +647,203 @@ class AgentLoop:
 
         The consequence of the answer is already written down elsewhere (`gate.answer` for a
         confirm, `assess.human` for a verdict, the `hand_off` stages for an arm, the `release`
-        stages for the end-of-run offer, the `declare` a judged pilot makes of a `judge`). This
+        stages for the end-of-run questions, the `declare` a judged pilot makes of a `judge`). This
         is the exchange itself, which nothing held."""
         if not a_person_was_asked(asker):
             return
         self._emit("prompt", what=what, question=question, answer=answer)
+
+    async def _ask_the_model(
+        self,
+        system: str,
+        history: list[Exchange],
+        tools: list[dict[str, Any]],
+        *,
+        reprompt: bool,
+    ) -> tuple[ProviderTurn, float, int]:
+        """Ask the model for this turn, and ask it again while its API cannot answer for now.
+
+        Returns the turn, the seconds the call that answered took, and which try it was. The
+        turn is charged and put in `history` once, by the caller, before the first try, so each
+        try sends the same request: a model that binds its replayed thinking to the history it
+        is given would refuse a different one, and a retry is not a new turn to charge to
+        `max_llm_calls` either (ADR-0059).
+
+        Every try is on the record, an `llm_request` and, for one that failed, an `llm` with its
+        error, `attempt` from the second and `retry_in_s` where another follows. A failure is
+        asked again only where `transient_failure` says it is worth it, after
+        `ASK_AGAIN_AFTER_S` or as long as the API asked, whichever is longer, and only while the
+        task's minutes allow, on the budget's clock: the robot holds still in between, the
+        heartbeat watching it, and
+        a Ctrl-C, a `q`, a heartbeat that fails or a flock that stops this member ends the wait
+        as an abort, so the run folds the arm as at any end. Everything else is raised as it
+        always was, and a failure asked again until there was no point is raised as a
+        `ProviderError` saying why, from the provider's own."""
+        cfg = self.cfg
+        attempt = 1
+        quick = 0
+        """The quick tries this turn has had (`FIRST_CONNECTION_TRIES_S`), which the full
+        schedule does not count."""
+        while True:
+            self._emit(
+                "llm_request",
+                step=self.budget.steps,
+                provider=cfg.provider.name,
+                model=cfg.provider.model,
+                messages=len(history),
+                images=sum(len(ex.observation.images) for ex in history),
+                with_image=sum(1 for ex in history if ex.observation.images),
+                task_pictures=sum(len(ex.observation.attachments) for ex in history),
+                reprompt=reprompt,
+                # only from the second try, so a run that never asked again reads as it did
+                **({"attempt": attempt} if attempt > 1 else {}),
+            )
+            started = time.perf_counter()
+            try:
+                turn = await self._unless_stopped(cfg.provider.step(system, history, tools))
+            except BaseException as e:
+                # BaseException, not Exception. The second Ctrl-C raises a bare
+                # KeyboardInterrupt and a flock cancels its members, and both land here: with
+                # `Exception` the wait was dropped from `llm_latency_s` AND no `llm` record was
+                # written, so the seconds a person actually spent waiting on a hanging model
+                # could not even be recovered by hand. That is the one case the number exists
+                # for.
+                #
+                # The call that failed is part of the record: what, and after how long. Its
+                # seconds count towards `llm_latency_s` like any other call's, because the run
+                # waited every one of them, and a provider that hangs until it times out is
+                # exactly the case somebody reads that number to find.
+                latency_s = round(time.perf_counter() - started, 3)
+                self.llm_latency_s += latency_s
+                # A person's stop that landed while the call was out is not overruled by a
+                # retry, and an interrupt is never asked again. `failed` outlives the clause,
+                # which unbinds `e` as it ends.
+                failed = e
+                aborted = isinstance(e, Exception) and self.executor.abort.is_set()
+                transient = (
+                    transient_failure(e) if isinstance(e, Exception) and not aborted else None
+                )
+                if transient is not None and transient.status is not None:
+                    # a status is an answer: the server is there, whatever it said
+                    self._provider_answered = True
+                then = self._ask_again_after(transient, attempt - quick) if transient else None
+                first_try = (
+                    then is None and transient is not None and quick < len(FIRST_CONNECTION_TRIES_S)
+                )
+                if first_try:
+                    # a connection that has never answered gets the quick tries the SDK gave it
+                    then = FIRST_CONNECTION_TRIES_S[quick]
+                    quick += 1
+                self._emit(
+                    "llm",
+                    step=self.budget.steps,
+                    provider=cfg.provider.name,
+                    model=cfg.provider.model,
+                    error=f"{type(e).__name__}: {e}",
+                    latency_s=latency_s,
+                    **({"attempt": attempt} if attempt > 1 else {}),
+                    **({"retry_in_s": round(then, 1)} if isinstance(then, float) else {}),
+                    **self._cost_of_a_failed_call(e),
+                )
+                if isinstance(e, Aborted):
+                    # the stop cut the call short (`_unless_stopped`), and says so as it is
+                    raise
+                if aborted:
+                    raise Aborted(self._abort_reason()) from e
+                if isinstance(then, str):
+                    raise ProviderError(then) from e
+                if then is None:
+                    if transient is not None:
+                        self._note(GAVE_UP_NEVER_ANSWERED.format(why=transient.why, tries=attempt))
+                    raise
+            else:
+                self._provider_answered = True
+                return turn, round(time.perf_counter() - started, 3), attempt
+            # said before the first wait of the full schedule, and not before a quick try,
+            # which is over before a person could read it
+            if not self._said_asking_again and transient is not None and not first_try:
+                self._said_asking_again = True
+                self._note(ASKING_AGAIN.format(why=transient.why, tries=len(ASK_AGAIN_AFTER_S)))
+            waited = time.perf_counter()
+            try:
+                stopped = await _wait_or_abort(self.executor.abort, then)
+            finally:
+                self.llm_retry_wait_s += time.perf_counter() - waited
+            # An abort set in the tick the wait ran out in reads as a wait that ran out, so the
+            # flag is read again rather than trusted to the wait's own answer.
+            if stopped or self.executor.abort.is_set():
+                reason = self._abort_reason()
+                self._note(STOPPED_WAITING.format(reason=reason))
+                raise Aborted(reason) from failed
+            # counted once the try is going out, so a wait a stop ended asks nothing again
+            self.llm_retries += 1
+            attempt += 1
+
+    async def _unless_stopped(self, call: Awaitable[T]) -> T:
+        """`call`, unless the run's abort is set first: then `Aborted`, the call cancelled.
+
+        A model's answer can take a minute, and the first Ctrl-C used to wait for it: the abort
+        was read only once the call came back. Raced against the abort instead, as a verb is
+        raced, the call goes the moment the kill switch, a failing heartbeat or a flock's stop
+        sets it, and is waited out before `Aborted` goes up, so nothing it started is still
+        running behind the teardown. The robot was holding still meanwhile, so nothing else
+        has to stop. A call that answered as the abort was set has answered, and its turn is
+        returned: the run ends at its next check, as it did before.
+
+        The call runs in a task of its own, and asyncio hands a task's `KeyboardInterrupt` to
+        the event loop rather than to whoever awaits the task, which would skip the teardown
+        that stops and folds the robot. So an interrupt the call raises is caught in its task
+        and raised again here, in the run's own task, where it always was raised."""
+
+        async def guarded() -> tuple[T | None, BaseException | None]:
+            try:
+                return await call, None
+            except (KeyboardInterrupt, SystemExit) as e:
+                return None, e
+
+        calling = asyncio.ensure_future(guarded())
+        stopping = asyncio.ensure_future(self.executor.abort.wait())
+        try:
+            await asyncio.wait({calling, stopping}, return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            await cancel_and_wait(calling, stopping)
+            raise
+        if calling.done():
+            await cancel_and_wait(stopping)
+            answered, interrupted = calling.result()
+            if interrupted is not None:
+                raise interrupted
+            return cast(T, answered)
+        await cancel_and_wait(calling)
+        raise Aborted(self._abort_reason())
+
+    def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
+        """What follows try `attempt` of the full schedule failing for a reason worth asking
+        again: the seconds to wait before asking, the sentence the run gives up with, or None
+        for a connection that failed, or timed out, before the model had answered once this
+        run, which gets the quick tries instead (`FIRST_CONNECTION_TRIES_S`) and is then raised
+        as it is (`GAVE_UP_NEVER_ANSWERED`).
+
+        A sentence once the tries are spent, for an API that asks to be left longer than
+        `LONGEST_ASKED_WAIT_S`, and for a wait that would run past `max_minutes`, since the
+        clock is checked only between turns and a wait past it would hold the robot after the
+        task's time was up. That is the budget's clock, which is the wall's on a real robot and
+        the simulator's or the mock's own elsewhere, and theirs does not move while the loop
+        waits, so there only the schedule bounds the waits."""
+        if transient.status is None and not self._provider_answered:
+            return None
+        if attempt > len(ASK_AGAIN_AFTER_S):
+            return GAVE_UP_TRIES.format(tries=attempt, why=transient.why)
+        asked = transient.retry_after_s
+        if asked is not None and asked > LONGEST_ASKED_WAIT_S:
+            return GAVE_UP_TOO_LONG.format(
+                why=transient.why, seconds=asked, longest=LONGEST_ASKED_WAIT_S
+            )
+        scheduled = ASK_AGAIN_AFTER_S[attempt - 1] * (1.0 - ASK_AGAIN_JITTER * random.random())
+        wait = max(scheduled, asked or 0.0)
+        if wait > self.budget.limits.max_minutes * 60 - self.budget.elapsed_s:
+            return GAVE_UP_TIME.format(why=transient.why, seconds=wait)
+        return float(wait)
 
     def _note(self, text: str) -> None:
         """`log` is a contract (tests and the CLI's --verbose read it); the run's log
@@ -616,7 +933,7 @@ class AgentLoop:
         except (asyncio.CancelledError, KeyboardInterrupt):
             self._note("stopped waiting out the pause: interrupted")
 
-    async def _rest(self) -> RestResult | None:
+    async def _rest(self, *, pause: bool = True) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
 
         Called directly on the transport rather than through the executor: this runs at the
@@ -634,7 +951,11 @@ class AgentLoop:
         cfg = self.cfg
         if cfg.dry_run or getattr(cfg.transport, "rest_pose", None) is None:
             return None
-        await self._wait_out_pause()
+        # `pause` is False for the second fold a person asks for at the end of a run: the
+        # teardown has waited out every pause before it, and the wait catches a cancellation,
+        # so a press meant to stop that fold would land on it and be taken for none
+        if pause:
+            await self._wait_out_pause()
         in_hand = getattr(cfg.transport, "in_hand", None) is True
         if not in_hand:
             self._note("moving to the rest pose")
@@ -654,6 +975,38 @@ class AgentLoop:
         else:
             self._note(f"the arm did not reach its rest pose: {parked.reason}")
         return parked
+
+    async def _teardown_fold(self) -> RestResult | None:
+        """The rest move a run ends with, stopped by a press where the run ended by itself.
+
+        A run a press ended has that press behind its fold: the person asked for the fold, and
+        a second press quits at once, as it always has. A run that ended by itself folds with
+        nobody having asked, and a press during that fold used to change nothing until a second
+        one quit the process. The first press now stops it as it stops a fold a person asked
+        for (`fold_unless_stopped`): cancelled at its next await, at most a step cap past where
+        it was, then held there by a stop, with nothing released and the torque line said by
+        the close. A flock stopping its members, or a heartbeat failing, sets the same flag,
+        and is no reason to leave an arm unfolded, so only the kill switch's stop counts
+        (`_pressed_during_the_fold`). The pause has been waited out just before this, and is
+        not waited out again inside the race, where the wait would swallow the cancellation."""
+        if self.executor.abort.is_set() or self.cfg.dry_run:
+            return await self._rest()
+        try:
+            return await fold_unless_stopped(
+                functools.partial(self._rest, pause=False), self._pressed_during_the_fold
+            )
+        except FoldStopped:
+            with contextlib.suppress(Exception):
+                await self.executor.logged_transport().stop()
+            self._note(FOLD_STOPPED)
+            return None
+
+    async def _pressed_during_the_fold(self) -> None:
+        """Returns when the kill switch sets the abort during the teardown's fold, and never
+        for anything else that sets it: a flock stopping its members, a heartbeat."""
+        await self.executor.abort.wait()
+        if self._abort_reason() != KILL_SWITCH:
+            await asyncio.Event().wait()  # never: the fold goes on to its pose
 
     PLACE_IT = (
         "the arm is yours: torque is off at its rest pose, so lift it, put whatever it needs "
@@ -789,46 +1142,6 @@ class AgentLoop:
     """How long the arm waits to be unloaded at the end. It is holding its pose meanwhile, so
     the cost of waiting is an energised arm and the cost of not waiting is a jam. Bounded
     because a run must still end when the room is empty."""
-
-    RELEASE_OFFER = (
-        "the arm did not reach its rest pose ({why}), so it is holding itself up. Hold it and "
-        "press Enter to release torque now. Leave it, and after {seconds:.0f} s it stays that "
-        "way"
-    )
-    """Put to a person at the end of a run whose rest move missed, before the close keeps
-    torque on. Without it the only ways to take torque off such an arm were `quackd robot
-    release` in another terminal and the power switch, and on the bench of 2026-09-23 every
-    run that got to its end finished at the switch. It asks the person to hold the arm first,
-    because the release lets it fall from wherever it stands."""
-
-    RELEASE_OFFER_S = 60.0
-    """How long the offer waits for Enter. Bounded for `HAND_BACK_S`'s reason, a run must end
-    when the room is empty, and shorter than it, because what the wait costs is an arm holding
-    itself up against a pose it could not reach, and nothing is lost by not answering: the arm
-    is left exactly as a run without the offer leaves it."""
-
-    RELEASE_INTERRUPTED = (
-        "the release was interrupted while it was going out, so the arm may be limp, all of it "
-        "or part of it: hold it as though nothing holds it, and put it down"
-    )
-    """Said when a Ctrl-C lands on the release after Enter, once it has gone out. The person
-    pressed Enter because they were holding the arm, the release may have reached some motors
-    and not others, and the only safe reading of that is the limp one."""
-
-    RELEASE_NOT_SENT = (
-        "the release was interrupted before anything was sent, so torque is as the rest move "
-        "left it"
-    )
-    """Said when a Ctrl-C lands on the release after Enter and before it went out, on the read
-    the release begins with: the arm's own backend says so (`in_hand` still False). Nothing
-    reached a motor, which is all this line knows, so it says that and no more.
-
-    It used to go on to say the arm "still holds itself up", and nothing read after the
-    interrupt said so. On the arm the read the Ctrl-C landed on can still be out on the bus when
-    the close comes straight after it, and then the close's own read is refused and its line
-    says quackd cannot tell whether the arm is holding itself up: two lines in a row saying
-    opposite things to a person deciding whether to let go. Whether the arm holds itself up is
-    the close's line to say, from its own read, and it follows this one."""
 
     async def _hand_over(self) -> bool:
         """Let go of the arm, wait for somebody to place it, then hold what they left.
@@ -1078,44 +1391,43 @@ class AgentLoop:
         self._emit("hand_off", stage="unloaded", reason="opening the gripper")
 
     async def _offer_release(self, parked: RestResult | None) -> None:
-        """Offer the person at the terminal torque off, when the run's last rest move missed.
+        """Ask the person at the terminal about an arm whose last rest move missed.
 
         This sits between the teardown's rest move and the close. When the move reached the
-        pose there is nothing to offer, because the close lets go there anyway; when it missed,
+        pose there is nothing to ask, because the close lets go there anyway; when it missed,
         the close keeps torque on and the arm stands holding itself up at whatever pose it
         stopped in, which is right for an empty room and a dead end for a person standing next
         to it. So a person, and only a person (`cfg.person`: never MCP, never a flock member,
-        never a dry run, which moved nothing), is told to hold the arm and asked for Enter.
+        never a dry run, which moved nothing), is asked, in the two questions `quackd robot
+        release` asks too (`quackd.release.settle_missed_fold`): first to clear the arm's way
+        and press Enter to fold it once more, and only if that fold misses as well, whether to
+        take torque off where it stands, which drops it, so they hold it first.
 
-        Enter releases through `let_go_if_any(..., anywhere=True)`, the transport's own second
-        door, and the close then says the arm is limp in their hands. Anything else leaves the
-        arm exactly as a run without the offer would: a wait that ran out, no key thread to
-        read one, and a Ctrl-C. The wait watches a fresh key press rather than the abort flag
-        (`until_abort=False`), for `_hand_back`'s reason: the flag is already set on every run a
-        person ended, which are the runs most likely to have missed their fold. And a second
-        Ctrl-C landing on it is caught here for the same reason too: it means "skip this and
-        finish", and the close, `run_end` and the summary still have to happen. So is one
-        landing on the release itself, after Enter: once the release has gone out, which is the
-        one moment the arm may already be limp in part, the person is told so, and before it
-        went out, that nothing was sent and torque is as the rest move left it. Either way the
-        teardown carries on. Nothing here raises.
+        A second fold that arrives is let go of by the close, at the pose, as every run that
+        folds is. Anything but Enter at either question leaves the arm exactly as a run without
+        them would: a wait that ran out, no key thread to read one, and a Ctrl-C. A Ctrl-C or
+        `q` during the second fold stops it and keeps torque on, and one on the release itself
+        is told apart by whether the release had gone out. Every one of them is caught, because
+        it means "skip this and finish", and the close, `run_end` and the summary still have to
+        happen. Nothing here raises.
 
-        Only a miss the arm answered for gets the offer: a move that stalled or ran out of time,
-        or one refused on a write after a read that came back (`RestResult.answered`). A move that
-        failed because the arm stopped answering, which is what cutting the servo supply looks
-        like, or on a call that never came back and left the bus wedged, is nothing quackd can
-        say "holding itself up" of, and the release it would offer refuses at its first read
-        for as long as that stays so, after a person has been kept waiting for it.
+        Only a miss the arm answered for gets the questions: a move that stalled or ran out of
+        time, or one refused on a write after a read that came back (`RestResult.answered`). A
+        move that failed because the arm stopped answering, which is what cutting the servo
+        supply looks like, or on a call that never came back and left the bus wedged, is nothing
+        quackd can say "holding itself up" of, and the release it would end in refuses at its
+        first read for as long as that stays so, after a person has been kept waiting for it.
 
-        Nor is it made over an arm still in somebody's hands (`in_hand`), which is where a
+        Nor are they put over an arm still in somebody's hands (`in_hand`), which is where a
         `--by-hand` run whose take-hold was refused ends: a joint placed past its travel, a
         servo that never took torque back, or a torque write nothing read back. Nothing read
-        says that arm is holding itself up, the one thing the offer begins by saying, and it
+        says that arm is holding itself up, the one thing the questions begin by saying, and it
         is in a person's hands already. The close's own line says which arm they are holding.
 
-        Nor on a simulator (`is_simulator`), which has no arm to hold: the offer told a person
-        to hold one and press Enter, and the close then said there was nothing to hold. The
-        close's own line is what they hear, and it says what applies to a simulated arm."""
+        Nor on a simulator (`is_simulator`), which has no arm to hold: the questions told a
+        person to clear the way of an arm nobody can reach, and the close then said there was
+        nothing to hold. The close's own line is what they hear, and it says what applies to a
+        simulated arm."""
         person = self.cfg.person
         if person is None or self.cfg.dry_run or parked is None:
             return
@@ -1125,87 +1437,24 @@ class AgentLoop:
             return
         if getattr(self.cfg.transport, "is_simulator", False) is True:
             return
-        offer = self.RELEASE_OFFER.format(why=parked.reason, seconds=self.RELEASE_OFFER_S)
-        try:
-            agreed = await person.wait(offer, timeout_s=self.RELEASE_OFFER_S, until_abort=False)
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            self._emit("release", stage="kept", reason="interrupted while waiting")
-            self._note("torque stays on, and the arm holds itself up where it stopped")
-            return
-        self._ask_recorded("release", offer, agreed, person)
-        if not agreed:
-            # why the wait ended, where the person can say (`_TerminalHandOff.ended`): a first
-            # Ctrl-C ends it without raising, and "nobody pressed Enter" is not what happened
-            ended = getattr(person, "ended", None)
-            if ended == "kill switch":
-                self._emit("release", stage="kept", reason="interrupted while waiting")
-                self._note("torque stays on, and the arm holds itself up where it stopped")
-            elif ended == "no keys":
-                self._emit("release", stage="kept", reason="no key could be read")
-                self._note("no key could be read, so torque stays on and the arm holds itself up")
-            else:
-                self._emit("release", stage="kept", reason="nobody pressed Enter")
-                self._note("nobody pressed Enter, so torque stays on and the arm holds itself up")
-            return
-        try:
-            released = await let_go_if_any(self.cfg.transport, anywhere=True)
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            # A Ctrl-C after the Enter. Which side of the send it landed on is the arm's own
-            # backend's to say (`in_hand`), because the backend marks the arm in a hand the
-            # moment the release call goes out. Before that, on the read the release begins
-            # with, nothing was sent and torque is as the rest move left it, and "the arm may be
-            # limp" would be said of a release that never happened: whether the arm holds itself
-            # up is the close's line, from its own read (`RELEASE_NOT_SENT`). After it, part of
-            # the arm may already be limp in their hands, and the close says the same. A body
-            # that does not say gets the limp reading, which is the one that never drops an arm.
-            if getattr(self.cfg.transport, "in_hand", None) is False:
-                self._emit(
-                    "release", stage="kept", reason="interrupted before the release was sent"
-                )
-                said = self.RELEASE_NOT_SENT
-            else:
-                self._emit("release", stage="interrupted", reason="interrupted during the release")
-                said = self.RELEASE_INTERRUPTED
-            self._note(said)
-            with contextlib.suppress(Exception):
-                person.say(said)
-            return
-        self._emit(
-            "release",
-            stage="released",
-            how=released.how,
-            reason=released.reason,
-            joints=released.joints,
-            torque_on=list(released.torque_on) if released.torque_on is not None else None,
+        settled = await settle_missed_fold(
+            self.cfg.transport,
+            person,
+            parked,
+            # the teardown's own narrated rest move, and its own stop, so the second fold and a
+            # stop of it reach the record as every other move does
+            fold=functools.partial(self._rest, pause=False),
+            stop=self.executor.logged_transport().stop,
+            event=lambda **data: self._emit("release", **data),
+            note=self._note,
+            asked=lambda question, agreed: self._ask_recorded("release", question, agreed, person),
         )
-        # Said to the person rather than only logged, like the offer itself: they are holding
-        # the arm and act on this line, and a run with its log off prints no note at all. The
-        # close's own line follows in the log where there is one.
-        if released.ok and released.torque_on:
-            person.say(
-                f"{released.reason}: the arm is in your hands, so put it down before you let "
-                "go of it, and cut its power to let go of what still holds"
-            )
-        elif released.ok:
-            person.say(
-                f"{released.reason}: the arm is in your hands, so put it down before you let "
-                "go of it"
-            )
-        elif released.torque_on:
-            # read back: every motor said torque on, so the arm holding itself up is a reading
-            self._note(f"torque was not released: {released.reason}")
-            person.say(
-                f"torque was not released ({released.reason}): the arm is still holding itself "
-                "up, so keep hold of it and cut its power"
-            )
-        else:
-            # nothing was read back, so nothing is known about torque either way: an arm whose
-            # supply was cut reads exactly like one whose cable came out in front of live servos
-            self._note(f"torque was not released: {released.reason}")
-            person.say(
-                f"torque was not released ({released.reason}), and quackd cannot tell whether "
-                "torque is on: keep holding the arm, and cut its power"
-            )
+        # Said to the person rather than only logged: they are at the arm and act on this line,
+        # and a run with its log off prints no note at all. The close's own line follows in the
+        # log where there is one.
+        if settled.said is not None:
+            with contextlib.suppress(Exception):
+                person.say(settled.said)
 
     async def _observe(
         self,
@@ -2183,19 +2432,23 @@ class AgentLoop:
                 stepper_call: ToolCall | None = None
                 if stepper is not None:
                     try:
-                        advice = await stepper.advise(
-                            obs,
-                            cleared=self.executor.cleared,
-                            budget=self.budget.status(),
-                            stepped=self.stepped,
-                            notes=memory_text,
-                            snapshot=snapshot,
-                            # Written and flushed before the request that carries the frame is
-                            # handed over, because the `decision` event below is written only
-                            # once the turn ends, which a process killed mid-request never does.
-                            on_frame=lambda block: self._emit(
-                                "decision_frame", step=self.budget.steps, frame=dict(block)
-                            ),
+                        # raced against the stop as the model's own call is, so a first Ctrl-C
+                        # does not wait on a decision LLM's answer either (`_unless_stopped`)
+                        advice = await self._unless_stopped(
+                            stepper.advise(
+                                obs,
+                                cleared=self.executor.cleared,
+                                budget=self.budget.status(),
+                                stepped=self.stepped,
+                                notes=memory_text,
+                                snapshot=snapshot,
+                                # Written and flushed before the request that carries the frame is
+                                # handed over, because the `decision` event below is written only
+                                # once the turn ends, which a process killed mid-request never does.
+                                on_frame=lambda block: self._emit(
+                                    "decision_frame", step=self.budget.steps, frame=dict(block)
+                                ),
+                            )
                         )
                     finally:
                         # From a `finally`, so the turn is on the record however `advise` ends.
@@ -2228,50 +2481,10 @@ class AgentLoop:
                     self.history.append(Exchange(observation=obs))
                     self.budget.note_llm_call()  # may raise BudgetExceeded: then no request is made
                     history = self._history_for_provider()
-                    self._emit(
-                        "llm_request",
-                        step=self.budget.steps,
-                        provider=cfg.provider.name,
-                        model=cfg.provider.model,
-                        messages=len(history),
-                        images=sum(len(ex.observation.images) for ex in history),
-                        with_image=sum(1 for ex in history if ex.observation.images),
-                        task_pictures=sum(len(ex.observation.attachments) for ex in history),
-                        reprompt=retry_prompted,
+                    # once per turn, however many tries it takes: the same history every time
+                    turn, latency_s, attempt = await self._ask_the_model(
+                        system, history, tools, reprompt=retry_prompted
                     )
-                    llm_started = time.perf_counter()
-                    try:
-                        turn = await cfg.provider.step(system, history, tools)
-                    except BaseException as e:
-                        # BaseException, not Exception. The second Ctrl-C raises a bare
-                        # KeyboardInterrupt and a flock cancels its members, and both land
-                        # here: with `Exception` the wait was dropped from `llm_latency_s` AND
-                        # no `llm` record was written, so the seconds a person actually spent
-                        # waiting on a hanging model could not even be recovered by hand. That
-                        # is the one case the number exists for.
-                        #
-                        # The call that failed is part of the record: what, and after how long.
-                        # Its seconds count towards `llm_latency_s` like any other call's,
-                        # because the run waited every one of them, and a provider that hangs
-                        # until it times out is exactly the case somebody reads that number
-                        # to find.
-                        latency_s = round(time.perf_counter() - llm_started, 3)
-                        self.llm_latency_s += latency_s
-                        self._emit(
-                            "llm",
-                            step=self.budget.steps,
-                            provider=cfg.provider.name,
-                            model=cfg.provider.model,
-                            error=f"{type(e).__name__}: {e}",
-                            latency_s=latency_s,
-                            **self._cost_of_a_failed_call(e),
-                        )
-                        raise
-                    # One reading of the clock and one costing, used by all three records
-                    # below. They each called `perf_counter()` for themselves before, so the
-                    # shadow record and the log disagreed about the same call by however
-                    # long the lines between them took.
-                    latency_s = round(time.perf_counter() - llm_started, 3)
                     self.llm_latency_s += latency_s
                     self.usage = self.usage + turn.usage
                     turn_usage = turn.usage.model_dump()
@@ -2310,6 +2523,8 @@ class AgentLoop:
                         **({"served_by": turn.served_by} if turn.served_by else {}),
                         # and by the same rule, only when the cost is what the vendor billed
                         **({"billed": True} if costed.billed else {}),
+                        # and the try that answered, only where it was not the first
+                        **({"attempt": attempt} if attempt > 1 else {}),
                     )
                     self.budget.check_time()
 
@@ -2553,7 +2768,7 @@ class AgentLoop:
                 # after the stop and before the close: the stop holds the arm where it is,
                 # and the close is what releases torque, so this is the only window in which
                 # putting it down changes whether it falls
-                folded = await self._rest()
+                folded = await self._teardown_fold()
             with contextlib.suppress(Exception):
                 # and where it could not be put down, the person at the terminal may take
                 # torque off while they hold it, before the close keeps it on
@@ -2592,6 +2807,17 @@ class AgentLoop:
                 "wall_s": wall_s,
                 "connect_s": connect_s,
                 "llm_latency_s": round(self.llm_latency_s, 3),
+                # the tries asked again after the API could not answer a turn, and the seconds
+                # waited before asking, only where the run waited at all (ADR-0059): a wait a
+                # stop ended has seconds and no try
+                **(
+                    {
+                        "llm_retries": self.llm_retries,
+                        "llm_retry_wait_s": round(self.llm_retry_wait_s, 3),
+                    }
+                    if self.llm_retries or self.llm_retry_wait_s
+                    else {}
+                ),
                 "usage": self.usage.model_dump(),
                 # What it cost and what it was costed at. `cost_usd` is the model only: the
                 # stepper bills separately and keeps its figure in its own block below.

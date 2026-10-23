@@ -310,10 +310,12 @@ other body would have to take to earn a `go_to_rest()`: a pose the body holds wi
 off, checked before anything is released, and a refusal to release when it is not there.
 
 The other exception is a person holding the arm who asks. `quackd run --by-hand` releases a
-LeRobot arm at its rest pose so the person can set the start, and `quackd robot release`, or
-Enter at the offer a run makes when its last rest move missed, releases it wherever it stands.
-None of them is a verb, an MCP tool or a method on the `RobotAdapter` protocol, so no pilot can
-reach them ([adapters/lerobot/README.md](lerobot/README.md#the-torque-rule)).
+LeRobot arm at its rest pose so the person can set the start, and `quackd robot release` folds
+the arm to that pose and lets go of it there. Only an Enter at a question that says the arm will
+drop, put after two folds missed, releases it where it stands, and a run whose last rest move
+missed puts the same two questions. None of them is a verb, an MCP tool or a method on the
+`RobotAdapter` protocol, so no pilot can reach them
+([adapters/lerobot/README.md](lerobot/README.md#the-torque-rule)).
 
 ### If you speak a wire
 
@@ -375,6 +377,27 @@ A simulator of a real body declares itself: the module lists it in `SIMULATOR_BA
 `quackd.adapters.factory.is_simulator(spec)` reads that before anything is built. That is what
 `quackd preflight` refuses anything else by, so a command meant for a model never opens a real
 body's port. A module that declares none has none.
+
+A real body that has to be put down before it is let go of declares that in the same module.
+`REST_POSE_BACKENDS` lists the backends that a run, a dry run, an MCP session and a flock refuse
+while no rest pose is recorded for the robot, and
+`quackd.adapters.factory.needs_rest_pose(spec)` reads it before anything is built, so the
+refusal names the robot and the command that records a pose, and nothing has connected. The
+LeRobot arm's `real` is the one listed, because an SO-101 has no brake: with no pose there is
+nothing to fold the arm to at the end, and its close keeps such an arm powered rather than let
+it fall where it stands, which would leave it holding itself up wherever it stopped. Its mock and
+its simulator are not, having no arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a person supports the
+arm through and the other is how a pose comes to be recorded at all
+([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). A backend listed
+there has to support `quackd robot rest-pose` as well (`supports_rest_pose`), or every run of it
+is refused with a way back that refuses too. A module that declares none needs none.
+
+A declaration an adapter does not make reads as none, so a core beside one of its own adapters
+from an older release would read `lerobot:real` as needing no pose, and run it. pip allows that
+mix: upgrading quackd alone leaves the adapter where it was and only warns. quackd's own adapters
+are released with the core and carry its version (`__version__`), and one from another major or
+minor is refused wherever a body is described or built, with the command that reinstalls the two
+together (`factory._same_release`). A third party's adapter is never asked.
 
 A backend on its way out declares itself in the same module, as a mapping rather than a list:
 `DEPRECATED_BACKENDS` maps its name to one line saying what to use instead and the release it

@@ -3040,6 +3040,46 @@ def test_doctor_and_release_on_a_registered_simulated_arm_say_it_is_the_simulato
     ) in flat, flat
 
 
+def test_release_on_a_simulated_arm_with_a_rest_pose_folds_and_never_asks(
+    mjcf: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`robot release` folds an arm with a rest pose to it and lets go there, and the arm's
+    simulator runs the same code: its warning says the simulated arm folds, nothing is asked
+    over an arm nobody can clear the way of, and the release is the first door's, at the pose,
+    so the command ends with torque read off and exit 0."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", lambda: mjcf)
+    given = tmp_path / "arm-sim.json"
+    given.write_text(json.dumps(_synthetic(_arm(mjcf))), encoding="utf-8")
+    reg = ["--registry-dir", str(tmp_path / "registry")]
+    runner = CliRunner()
+    added = runner.invoke(
+        app, ["robot", "add", "arm-sim", "lerobot:mujoco", "--address", str(given), *reg]
+    )
+    assert added.exit_code == 0, added.output
+    recorded = runner.invoke(app, ["robot", "rest-pose", "arm-sim", "--yes", *reg])
+    flat = " ".join(recorded.output.split())
+    if "no OpenGL context" in flat and os.environ.get(REQUIRE_ENV) != "1":
+        pytest.skip("no OpenGL context for offscreen rendering")
+    assert recorded.exit_code == 0, recorded.output
+
+    released = runner.invoke(app, ["robot", "release", "arm-sim", "--yes", *reg])
+    flat = " ".join(released.output.split())
+    assert released.exit_code == 0, flat
+    assert (
+        "this is the arm's simulator: connecting takes torque off every simulated motor for a "
+        "moment, as LeRobot's connect does on a real arm, and the simulated arm then folds to "
+        "its rest pose and is let go of there, with no arm to hold"
+    ) in flat, flat
+    assert "folding arm-sim to its rest pose" in flat, flat
+    assert "torque reads off on every joint of arm-sim" in flat, flat
+    assert "Clear whatever" not in flat and "will drop" not in flat, "a simulator was asked"
+    assert "take your hands away" not in flat, "a real arm's warning over a simulated one"
+
+
 def test_doctor_connects_a_registered_simulator_that_was_given_no_address(
     mjcf: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3136,3 +3176,15 @@ def test_the_so101_model_loads_with_its_fingers_cut_to_pads() -> None:
             arm.joints[name].to_lerobot(start[name]), abs=TOL_DEG
         )
     assert all(not o.touching for o in world.truth().objects.values())
+
+
+async def test_a_simulated_arm_with_no_rest_pose_is_still_let_go_of_at_its_close(mjcf: str) -> None:
+    """A real arm with no rest pose is kept powered at its close rather than let fall where it
+    stands (ADR-0058). The simulated arm drops on nothing, and a run of it needs no pose, so its
+    close lets go of it as before (`LeRobotSim.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
+    transport = LeRobotSim(model=mjcf)
+    transport.connect_pause_s = 0.0
+    with _needs_gl():
+        await transport.connect()
+    await transport.close()
+    assert transport.close_note is None, transport.close_note

@@ -2921,6 +2921,216 @@ def test_no_page_repeats_a_claim_about_the_arms_torque_the_code_never_made() -> 
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
 
 
+#: What the pages said about releasing the arm before ADR-0058, when `quackd robot release` and
+#: the end of a run took torque off wherever the arm stood, each beside what the code does now.
+#: Checked against the living pages only: the CHANGELOG and the ADRs keep them as history.
+_RELEASE_CLAIMS_RETIRED_BY_ADR_0058 = (
+    (
+        "the release then lets the arm fall from wherever it is",
+        "`quackd robot release` folds the arm to its rest pose and lets go there; only Enter at "
+        "the question after two missed folds lets go where it stands",
+    ),
+    (
+        "Hold it and press Enter to release torque now",
+        "a run whose fold missed asks first to clear the arm's way and fold it once more, and "
+        "only then whether to drop it (`quackd.release.CLEAR_THE_WAY`)",
+    ),
+    (
+        "to park it, or cut its power",
+        "the close's torque line names `quackd robot release`, which parks the arm itself, and "
+        "no longer `doctor --robot` (`verbs.TORQUE_LEFT_ON`)",
+    ),
+    (
+        "RELEASE_OFFER",
+        "the end-of-run offer is two questions now, waiting `quackd.release.CLEAR_THE_WAY_S` and "
+        "`ENTER_DROPS_S`",
+    ),
+)
+
+
+def test_no_living_page_says_the_release_drops_the_arm_first() -> None:
+    """ADR-0058: releasing the arm means folding it first. A page that still tells a person the
+    release lets the arm fall, or that Enter at the end of a run drops it, sends them to hold an
+    arm that is about to fold, or straight past the question that asks them to clear its way."""
+    _no_living_page_says(_RELEASE_CLAIMS_RETIRED_BY_ADR_0058)
+
+
+def _no_living_page_says(claims: tuple[tuple[str, str], ...]) -> None:
+    """Fail on the first living page that still makes one of `claims`, each a wrong sentence and
+    what is true instead. `_one_line` lowercases the page, so the wrong sentence is lowercased
+    too: written as it reads, with a capital or a constant's name in it, it could never match,
+    which is how two of the release's four claims went unguarded at first."""
+    for path in _living_docs():
+        text = _one_line(path.read_text(encoding="utf-8"))
+        for wrong, true in claims:
+            if _one_line(wrong) in text:
+                pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
+
+
+_NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
+    (
+        "so that session parks nothing",
+        "a session of a real arm with no rest pose is refused before it connects "
+        "(`quackd.registry.no_rest_pose_refusal`)",
+    ),
+    (
+        "goes limp at the end of every clean session",
+        "a run, a dry run and an MCP session of a real arm with no rest pose are refused, and a "
+        "probe keeps one powered where it stands",
+    ),
+    (
+        "The arm falls when a session ends, unless you have recorded a rest pose",
+        "a run needs a recorded rest pose, and without one it is refused before anything connects",
+    ),
+    (
+        "goes on letting go of the arm wherever it stops",
+        "the spec form reaches a real arm for `doctor`, and a run of it is refused",
+    ),
+    (
+        "a clean session ends the way it always did and the arm sags",
+        "a run of a real arm with no rest pose is refused, and a probe keeps it powered",
+    ),
+    # amended 2026-10-23: the close keeps a real arm with no rest pose powered, so nothing lets go
+    # of one where it stands but a person's Enter, and doctor counts the hands away before its fold
+    (
+        "so it would fall there",
+        "a real arm's close keeps an arm with no rest pose powered, and the refusal says it would "
+        "be left holding itself up wherever it stopped (`quackd.registry.no_rest_pose_refusal`)",
+    ),
+    (
+        "lets go of an arm with none wherever it stands",
+        "a real arm's close keeps the torque of an arm with no rest pose "
+        "(`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)",
+    ),
+    (
+        "its close lets go of it wherever it stands",
+        "a real arm's close keeps the torque of an arm with no rest pose "
+        "(`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)",
+    ),
+    (
+        "its close would let go of the arm wherever it",
+        "a real arm's close keeps the torque of an arm with no rest pose, so a run of one would "
+        "leave it holding itself up wherever it stopped",
+    ),
+    (
+        "the probe ended the way it always did: limp",
+        "a probe keeps a real arm with no rest pose powered, and says so",
+    ),
+    (
+        "this probe still lets go",
+        "doctor keeps a real arm with no rest pose powered, and at a terminal asks whether to drop "
+        "it (`quackd.release.DROP_UNPOSED`)",
+    ),
+    (
+        "support the arm until doctor has finished",
+        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`), so its "
+        "warning says to take them away when it says so (`quackd.cli._doctor_warning`)",
+    ),
+    (
+        "support the arm until it has finished",
+        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`)",
+    ),
+)
+
+
+def test_no_living_page_says_a_real_arm_with_no_rest_pose_runs() -> None:
+    """ADR-0058's ninth decision: a run, a dry run, an MCP session and a flock refuse a real arm
+    with no rest pose, whose close would let go of it wherever it stood. A page that still says
+    such a run ends with the arm limp tells a reader something that no longer happens, and
+    leaves out the refusal they will meet instead."""
+    _no_living_page_says(_NO_POSE_CLAIMS_RETIRED_BY_ADR_0058)
+
+
+# The commands a page still prints with a bare real arm on purpose: the run of 2026-09-15 as it
+# was typed, kept as history, and the run the LeRobot page shows being refused.
+_BARE_REAL_RUNS_ON_PURPOSE = {
+    "README.md": 'quackd run --goal "Wave to the camera with an extended arm" --robot lerobot:real',
+    "docs/adapters/lerobot/README.md": (
+        "$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake"
+    ),
+}
+_BARE_REAL_RUN = re.compile(
+    r'quackd (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
+    r'"lerobot:real"'
+)
+
+
+def test_no_living_page_runs_a_real_arm_by_its_spec() -> None:
+    """A spec carries no name to keep a rest pose under, so `run` and `serve-mcp` refuse
+    `--robot lerobot:real` (ADR-0058), and a page that tells a reader to type one hands them
+    that refusal. Every example runs the registered `arm-01` instead; the two lines kept on
+    purpose are named above, and a third of either, or a new one, fails here."""
+    for path in _living_docs():
+        rel = path.relative_to(REPO).as_posix()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if (
+                _BARE_REAL_RUN.search(line)
+                and _BARE_REAL_RUNS_ON_PURPOSE.get(rel, "\0") not in line
+            ):
+                pytest.fail(
+                    f"{rel} runs a real arm by its spec, which is refused now: {line.strip()!r}. "
+                    "Name the registered arm, --robot arm-01, as the other examples do"
+                )
+
+
+_API_CLAIMS_RETIRED_BY_ADR_0059 = (
+    (
+        "a 429 ends the run",
+        "a 429 is asked again after a wait (`quackd.agent.loop.ASK_AGAIN_AFTER_S`)",
+    ),
+    (
+        "which ends the run once the SDK's own retries are spent",
+        "the loop asks the same turn again, and the SDKs retry nothing of their own "
+        "(`quackd.agent.providers.base.NO_SDK_RETRIES`)",
+    ),
+    # amended 2026-10-23: the SDK clients are built to retry nothing, and a first press ends a call
+    (
+        "the SDK's own retries come first",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`), so every try is the "
+        "loop's",
+    ),
+    (
+        "own two retries are spent",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`)",
+    ),
+    (
+        "four times after the SDK's own retries",
+        "every SDK client is built with `max_retries=0` (`NO_SDK_RETRIES`)",
+    ),
+    (
+        "A first Ctrl-C does not reach into those waits",
+        "a first press ends a call in flight (`AgentLoop._unless_stopped`)",
+    ),
+)
+
+
+def test_no_living_page_says_a_busy_api_ends_the_run() -> None:
+    """ADR-0059: a rate limit, an overloaded server or a dropped connection is asked again, so a
+    page that still says a 429 ends the run tells a reader to give up on a run that will wait."""
+    _no_living_page_says(_API_CLAIMS_RETIRED_BY_ADR_0059)
+
+
+def test_the_pages_quote_the_ask_again_the_loop_keeps() -> None:
+    """The schedule, the longest wait an API may ask for and the note a run says are numbers and
+    words of the loop's own, and safety.md quotes all three, the note as a run printed it. The
+    README and the OpenRouter guide count the tries in words. A change to any of them in the
+    code fails here until the pages say it too."""
+    from quackd.agent import loop
+
+    waits = loop.ASK_AGAIN_AFTER_S
+    safety = _one_line((REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8"))
+    schedule = ", ".join(f"{w:g}" for w in waits[:-1]) + f" and {waits[-1]:g} seconds"
+    assert schedule in safety, f"safety.md no longer says the waits are {schedule}"
+    longest = f"longer than {loop.LONGEST_ASKED_WAIT_S:g} seconds"
+    assert longest in safety, f"safety.md no longer says {longest!r}"
+    note = loop.ASKING_AGAIN.format(why="overloaded (529)", tries=len(waits))
+    assert _one_line(note) in safety, "safety.md's captured note is not the one a run says"
+    tries = {3: "three", 4: "four", 5: "five", 6: "six"}[len(waits)]
+    for page in ("README.md", "docs/guides/openrouter.md"):
+        text = _one_line((REPO / page).read_text(encoding="utf-8"))
+        assert f"up to {tries} times" in text, f"{page} no longer counts {len(waits)} tries"
+
+
 def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step() -> None:
     """0.15.0 built the follower to keep torque on a disconnect quackd did not ask for, so a
     second Ctrl-C during the fold back to the rest pose leaves the arm holding where 0.14.0

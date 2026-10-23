@@ -49,6 +49,7 @@ from quackd.adapters.factory import (
     RobotSpec,
     adapter_names,
     default_spec,
+    needs_rest_pose,
     parse_robot_spec,
 )
 from quackd.host import clean_token, parse_host
@@ -488,6 +489,51 @@ def unusable_spec(name: str, spec: str, why: str) -> str:
         f"{name} is registered as {spec}, which this quackd cannot build ({why}): "
         f"{install}{moves}, or quackd robot remove {name}"
     )
+
+
+def no_rest_pose_refusal(
+    resolved: Resolved,
+    *,
+    what: str,
+    address: str | None = None,
+    camera_url: str | Sequence[str] | None = None,
+    fleet: bool = False,
+) -> tuple[str, str] | None:
+    """The refusal for a real arm with no rest pose recorded, and the way out, or None for any
+    robot that may be connected without one (`needs_rest_pose`).
+
+    Such an arm has nothing to be folded to at the end of a run, a dry run, an MCP session or a
+    flock member's run, and its close keeps its torque rather than let it fall where it stands,
+    so each would end with the arm holding itself up wherever it stopped (ADR-0058). It is
+    refused before anything is built or connected. `what` is the thing refused, as the sentence
+    says it: `a run, a dry one included`, `an MCP session`. A registered arm is sent to record
+    its pose; a bare spec names no arm to record one for, so it is sent to register one first,
+    with the address and the cameras it was given. A spec in a fleet, from `--robots` or a task
+    file's `robots:`, is sent on to a stored flock as well (`fleet`), since neither spelling
+    reads the registry, and registering the arm alone would change nothing they run."""
+    if not needs_rest_pose(resolved.spec) or resolved.adapter_kwargs()["rest_pose"] is not None:
+        return None
+    falls = (
+        f"at the end of {what}, there is nothing to fold it to, and it would be left holding "
+        "itself up wherever it stopped"
+    )
+    if resolved.entry is not None:
+        name = resolved.entry.name
+        return (
+            f"{name} ({resolved.spec.key}) has no rest pose recorded, so {falls}",
+            f"quackd robot rest-pose {name}",
+        )
+    key = resolved.spec.key
+    flags = (f" --address {address}" if address else "") + "".join(
+        f' --camera-url "{url}"' for url in camera_urls(camera_url)
+    )
+    hint = f"quackd robot add NAME {key}{flags}, then quackd robot rest-pose NAME"
+    if fleet:
+        hint += (
+            ", then quackd flock create FLOCK --robot NAME, one --robot for each member, and run "
+            "it with --flock FLOCK"
+        )
+    return (f"{key} names no registered arm, so it has no rest pose, and {falls}", hint)
 
 
 class StoredFlock(BaseModel):
@@ -1040,6 +1086,14 @@ def _torque_phrase(note: str) -> str:
         return "torque could NOT be kept: the arm was released where it stood"
     if "cannot tell whether" in note:
         return "torque unknown: the arm did not answer the close"
+    if "has no rest pose recorded" in note:
+        # a real arm with none is kept powered at the close rather than let go of where it
+        # stands (ADR-0058), and a probe moves nothing, so this is the probe's own doing
+        return "torque left on: no rest pose recorded"
+    if "torque reads off on" in note:
+        # the close's own read found servos limp, a brown-out the commonest cause: the arm is
+        # not held up there, which is the other way round from the line below
+        return "torque reads OFF: the arm may have dropped"
     return "torque left on: not at its rest pose"
 
 
@@ -1084,6 +1138,7 @@ __all__ = [
     "UnknownFlock",
     "UnknownRobot",
     "check_name",
+    "no_rest_pose_refusal",
     "probe_all",
     "probe_entry",
     "registry_dir",

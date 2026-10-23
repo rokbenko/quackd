@@ -202,11 +202,21 @@ class FakeOpenRouter:
     record: Path | None = None
     port: int = 0
     """0 picks a free one, which is what a test wants."""
+    fail: int = 0
+    """How many chat posts to answer with `fail_status` before the script begins, as a vendor's
+    busy minute does. They take no turn of the script, so the run that follows is the one the
+    script describes, asked again."""
+    fail_status: int = 529
+    fail_headers: dict[str, str] = field(default_factory=lambda: {"retry-after-ms": "1"})
+    """Sent with each failure: a `retry-after-ms` of 1, a wait shorter than any of quackd's own,
+    so the wait quackd sits out is its schedule's. An SDK left to retry on its own spends its
+    tries at once on it."""
     requests: list[Recorded] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self._turns = SCRIPTS[self.script] if isinstance(self.script, str) else self.script
         self._posts = 0
+        self._failed = 0
         self._lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
 
@@ -220,6 +230,16 @@ class FakeOpenRouter:
 
     def gets(self) -> list[Recorded]:
         return [r for r in self.requests if r.method == "GET"]
+
+    def _failing(self, method: str, path: str) -> bool:
+        """Whether this request is one of the `fail` the stand-in answers with an error."""
+        if method != "POST" or path != f"{PREFIX}/chat/completions":
+            return False
+        with self._lock:
+            if self._failed >= self.fail:
+                return False
+            self._failed += 1
+            return True
 
     def _answer(self, method: str, path: str, body: Any) -> tuple[int, Any]:
         if method == "OPTIONS":
@@ -259,10 +279,18 @@ class FakeOpenRouter:
                     if stand_in.record is not None:
                         with stand_in.record.open("a", encoding="utf-8") as f:
                             f.write(json.dumps(seen.__dict__) + "\n")
-                status, answer = stand_in._answer(self.command, path, body)
+                extra: dict[str, str] = {}
+                if stand_in._failing(self.command, path):
+                    status = stand_in.fail_status
+                    answer: Any = {
+                        "error": {"code": status, "message": "the stand-in is busy, by request"}
+                    }
+                    extra = dict(stand_in.fail_headers)
+                else:
+                    status, answer = stand_in._answer(self.command, path, body)
                 payload = b"" if answer is None else json.dumps(answer).encode("utf-8")
                 self.send_response(status)
-                for key, value in CORS.items():
+                for key, value in {**CORS, **extra}.items():
                     self.send_header(key, value)
                 if answer is not None:
                     self.send_header("Content-Type", "application/json")
@@ -291,8 +319,20 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--record", type=Path, default=None, help="append each request here")
     parser.add_argument("--script", choices=sorted(SCRIPTS), default="hello-world")
+    parser.add_argument(
+        "--fail",
+        default=None,
+        metavar="N:STATUS",
+        help="answer the first N chat posts with STATUS, as a busy API does (e.g. 3:529)",
+    )
     args = parser.parse_args()
-    stand_in = FakeOpenRouter(script=args.script, record=args.record, port=args.port)
+    fail, status = (0, 529)
+    if args.fail:
+        count, _, code = str(args.fail).partition(":")
+        fail, status = int(count), int(code or 529)
+    stand_in = FakeOpenRouter(
+        script=args.script, record=args.record, port=args.port, fail=fail, fail_status=status
+    )
     with stand_in:
         print(f"stand-in for OpenRouter at {stand_in.base_url} (Ctrl+C stops it)", flush=True)
         with contextlib.suppress(KeyboardInterrupt):
