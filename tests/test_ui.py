@@ -239,6 +239,19 @@ def test_the_status_line_names_the_step_and_counts_a_long_wait() -> None:
     assert rendered.rstrip().endswith("s"), "a wait this long says how long"
 
 
+def test_a_turn_asked_again_says_it_is_waiting_rather_than_choosing() -> None:
+    """A failure quackd asks the same turn again after is followed by up to a minute in which
+    nothing happens, and "choosing a verb" over that minute says the model is thinking when it
+    is not even being asked. An answer that came still reads as before."""
+    console, _ = wide()
+    status = ui.RunStatus(console)
+    failed = {"provider": "anthropic", "error": "ProviderError: 529", "retry_in_s": 15.0}
+    status.sink(LogEvent("llm", 0.0, failed))
+    assert "waiting 15 s to ask anthropic again" in status.__rich__().plain
+    status.sink(LogEvent("llm", 0.0, {"provider": "anthropic", "tool_calls": []}))
+    assert "choosing a verb" in status.__rich__().plain
+
+
 def test_a_provider_that_names_no_model_still_reads_as_a_sentence() -> None:
     console, _ = wide()
     status = ui.RunStatus(console)

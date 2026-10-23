@@ -855,6 +855,8 @@ def test_every_kind_of_moment_keeps_the_mark_its_glyph_is_chosen_from() -> None:
     assert marks["prompt_yes"] == ["note"] and marks["prompt_no"] == ["warn"]
     assert marks["declare_success"] == ["ok"] and marks["declare_failure"] == ["fail"]
     assert marks["llm_error"] == ["fail"] and marks["llm_no_tool_call"] == ["warn"]
+    # a failure quackd asks the same turn again after is a warning: the run goes on
+    assert marks["llm_error_asked_again"] == ["warn"]
     assert marks["observation_error"] == ["fail"] and marks["enforce"] == ["warn"]
     assert marks["flock_claim"] == ["flock"] and marks["member_end"] == ["end"]
     assert marks["note"] == ["note"] and marks["memory"] == ["note"]

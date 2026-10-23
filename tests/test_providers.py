@@ -2742,3 +2742,60 @@ def test_the_factory_tells_the_list_check_where_the_id_came_from(
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError, match="from QUACKD_LLM is not on OpenRouter's model list"):
         make_provider("openrouter", model="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+
+
+# ── a failure keeps the SDK's own error beneath it, for the loop to judge ──────────────
+
+
+def _rate_limited() -> Any:
+    """A client call that fails the way a vendor's busy minute does, through the SDK stand-in."""
+    from .sdk_errors import RateLimitError
+
+    async def boom(**_: Any) -> Any:
+        raise RateLimitError(429, {"retry-after": "7"})
+
+    return boom
+
+
+def _anthropic_client(boom: Any) -> Any:
+    return AnthropicProvider(client=NS(messages=NS(create=boom), beta=NS(messages=NS(create=boom))))
+
+
+def _openai_client(boom: Any) -> Any:
+    return OpenAIProvider(
+        model="gpt-5",
+        client=NS(chat=NS(completions=NS(create=boom)), responses=NS(create=boom)),
+    )
+
+
+def _gemini_client(boom: Any) -> Any:
+    return GeminiProvider(client=NS(aio=NS(models=NS(generate_content=boom))))
+
+
+def _openrouter_client(boom: Any) -> Any:
+    return OpenRouterProvider(client=NS(chat=NS(completions=NS(create=boom))))
+
+
+def _local_client(boom: Any) -> Any:
+    from quackd.agent.providers.local import LocalProvider
+
+    return LocalProvider("m", preset="ollama", client=NS(chat=NS(completions=NS(create=boom))))
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [_anthropic_client, _openai_client, _gemini_client, _openrouter_client, _local_client],
+    ids=["anthropic", "openai", "gemini", "openrouter", "local"],
+)
+async def test_a_provider_keeps_the_sdk_error_beneath_its_own(provider: Any) -> None:
+    """The loop asks a turn again only where the SDK's own failure says it is worth it, and it
+    reads that failure through the `ProviderError` a provider raises `from` it. A provider that
+    dropped the chain would turn every rate limit into a run that ends at once, so each one that
+    talks to an SDK keeps it: the status and the wait come back through the provider's error."""
+    from quackd.agent.providers.base import transient_failure
+
+    with pytest.raises(ProviderError) as raised:
+        await provider(_rate_limited()).step("S", history()[:1], TOOLS)
+    failure = transient_failure(raised.value)
+    assert failure is not None, f"the SDK's 429 was lost beneath {raised.value!r}"
+    assert failure.status == 429 and failure.retry_after_s == 7.0, failure

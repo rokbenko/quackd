@@ -71,6 +71,19 @@ def events() -> list[tuple[str, LogEvent]]:
                 reprompt=True,
             ),
         ),
+        (
+            "llm_request_attempt",
+            _e(
+                "llm_request",
+                0.2,
+                step=2,
+                messages=7,
+                images=1,
+                provider="anthropic",
+                model="claude-opus-5-5",
+                attempt=2,
+            ),
+        ),
         # ── llm ──
         (
             "llm_full",
@@ -95,6 +108,17 @@ def events() -> list[tuple[str, LogEvent]]:
             _e("llm", 0.3, text="I think I should stop", tool_calls=[], usage={}),
         ),
         ("llm_error", _e("llm", 0.3, error="ProviderError: rate limited", latency_s=3.0)),
+        (
+            "llm_error_asked_again",
+            _e(
+                "llm",
+                0.3,
+                error="ProviderError: anthropic: API error 529: overloaded",
+                latency_s=0.4,
+                retry_in_s=15.0,
+                attempt=2,
+            ),
+        ),
         ("llm_bare", _e("llm", 0.3, tool_calls=[{"name": "stop", "arguments": {}}], usage={})),
         # ── llm: the cache buckets and the money, which ride on the same tokens line ──
         (

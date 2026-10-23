@@ -351,9 +351,13 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
     from quackd.log import fmt_duration
 
     usage = end.get("usage") or {}
+    # the tries quackd sent again for turns the API could not answer, which `llm_calls` does
+    # not count, each being a turn it counted already (ADR-0059): only where a run had one
+    retries = int(_number(end.get("llm_retries")) or 0)
     counters = [
         f"steps {int(_number(end.get('steps')) or 0)}",
-        f"llm calls {int(_number(end.get('llm_calls')) or 0)}",
+        f"llm calls {int(_number(end.get('llm_calls')) or 0)}"
+        + (f" (+{retries} asked again)" if retries else ""),
         f"tokens {usage.get('input_tokens', 0)}+{usage.get('output_tokens', 0)}",
     ]
     wall = _number(end.get("wall_s"))
@@ -379,6 +383,10 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
         # the simulator's, and a split can never be larger than the whole
         if policy_s := _number(_block(end, "policy").get("wall_s")):
             spent.append(f"policy {fmt_duration(policy_s)}")
+        # and the seconds spent waiting to ask the API again, in which no model was asked
+        # anything and so are not the model's, only where a run waited
+        if waited := _number(end.get("llm_retry_wait_s")):
+            spent.append(f"waits {fmt_duration(waited)}")
         where = f" ({', '.join(spent)})" if spent else ""
         counters.append(f"time {fmt_duration(wall)}{where}")
     if (policy := _policy_counter(end.get("policy"))) is not None:

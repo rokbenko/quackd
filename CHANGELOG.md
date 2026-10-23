@@ -9,6 +9,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **A turn the model's API could not answer is asked again.** A rate limit (429), an overloaded
+  or failing server (529, any 5xx), a request the server timed out (408), and a call that timed
+  out or lost its connection once the API has answered in the run, with a turn or a status,
+  used to end the run `error` after the SDK's own retries. The loop now waits 5, 15, 30 and then 60 seconds, or as
+  long as a `retry-after` asked where that is longer, and asks the same turn again, sending the
+  same request byte for byte, with the robot holding still and the heartbeat watching it.
+  Ctrl-C, `q`, a heartbeat that fails or a flock's stop ends the wait as an abort, and the arm
+  folds as at any end. What decides is the SDK's own exception, read under the provider's
+  (`quackd.agent.providers.base.transient_failure`), never its message, so a bad key, a refused
+  request or anything quackd raised itself still ends the run at once, and so does a connection
+  that never answered at all. A run out of tries, out of `max_minutes`, or asked by the API to
+  wait longer than 120 s ends `error` saying which. A turn asked again is not charged to
+  `max_llm_calls`.
+  [ADR-0059](docs/adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md).
+- **Every try is on the record.** A failed `llm` record gains `retry_in_s` where quackd will ask
+  again, and `llm_request` and `llm` gain `attempt` from a turn's second try; the summary gains
+  `llm_retries` and `llm_retry_wait_s` only where a run asked again, so older summaries read as
+  they did. The log shows a failure quackd will ask again as a yellow warning rather than a red
+  error, the live status line says how long it waits, and the counters under the verdict read
+  `llm calls 5 (+1 asked again)` and add `waits` to the time's split.
+  `tests/fake_openrouter.py --fail N:STATUS` answers the first N chat requests with STATUS.
+
 ### Changed
 
 - **Releasing the SO-101 means folding it first.** `quackd robot release NAME` folds the arm to
@@ -88,6 +112,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and PLAN.md points to it. `scripts/passport_readme_ratio.py` measures the README's Robot
   Passport section against the pages it summarises.
 
+- **When the model's API fails**, a section of its own in
+  [docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails), with output
+  captured against the stand-in server. The OpenRouter guide no longer says a 429 ends the run,
+  and the record's fields are in docs/concepts/architecture.md.
+
 ### Known limitations
 
 - **None of the folding release has run on an arm.** The fold before `quackd robot release`
@@ -106,6 +135,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
      the press.
   6. A run whose teardown fold is held back by a hand: the first question, the hand taken away,
      Enter, and the close letting go at the pose.
+- **Nothing has been asked again after a real 429 or 529.** The retry has run against stand-ins
+  of the SDKs' exceptions and against the real openai SDK talking to a stand-in server, not
+  against a vendor having a bad minute. A first Ctrl-C still does not end a call already out: the
+  wait after it ends at once, the call itself only when it returns, and the SDKs' own retries
+  inside it honour a `retry-after` of their own, the anthropic SDK's at any length. On a
+  simulator or a mock `max_minutes` does not bound the waits, since their clock stands still
+  while the loop waits.
 
 ## [0.23.0] — 2026-10-21
 

@@ -872,6 +872,10 @@ class RunStatus:
         elif kind == "llm_request":
             model = data.get("model") or "the first model it serves"
             self.update(f"waiting on {data.get('provider')} {model}")
+        elif kind == "llm" and "retry_in_s" in data:
+            # the API could not answer the turn, and quackd waits before asking it again: the
+            # line would otherwise say a verb is being chosen through a minute of nothing
+            self.update(f"waiting {data['retry_in_s']:.0f} s to ask {data.get('provider')} again")
         elif kind == "llm":
             self.update("choosing a verb")
         elif kind == "verb_start":

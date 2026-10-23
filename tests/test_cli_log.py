@@ -481,6 +481,29 @@ def _terminal(tmp_path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def test_a_run_that_asked_the_model_again_says_so_in_its_counters() -> None:
+    """ADR-0059: a turn the API could not answer is asked again and is not a call of its own,
+    so `llm calls` stays the task's count and the tries ride beside it, with the seconds
+    waited in the split, kept out of the model's. A run that never asked again prints exactly
+    the counters it always did."""
+    from quackd.cli import run_counters
+    from quackd.log import fmt_duration
+
+    end = {
+        "steps": 4,
+        "llm_calls": 6,
+        "usage": {"input_tokens": 10, "output_tokens": 2},
+        "wall_s": 70.0,
+        "llm_latency_s": 9.0,
+    }
+    before = run_counters(end)
+    assert before[1] == "llm calls 6" and "waits" not in before[-1], before
+    after = run_counters({**end, "llm_retries": 2, "llm_retry_wait_s": 20.0})
+    assert after[1] == "llm calls 6 (+2 asked again)", after
+    (spent,) = [c for c in after if c.startswith("time")]
+    assert f"model {fmt_duration(9.0)}, waits {fmt_duration(20.0)}" in spent, spent
+
+
 def test_the_help_offers_log_and_trace_is_no_command() -> None:
     """0.11 kept `quackd trace` alive for one release, hidden from `--help` so that nobody
     learned a name that was going, and said in twelve files that it went in 0.12. It went.

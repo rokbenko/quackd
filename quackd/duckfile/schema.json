@@ -24,7 +24,7 @@
         },
         "max_llm_calls": {
           "default": 40,
-          "description": "Maximum provider calls.",
+          "description": "Maximum provider calls. A turn the model's API could not answer, and quackd asked again, counts once.",
           "maximum": 2000,
           "minimum": 1,
           "title": "Max Llm Calls",

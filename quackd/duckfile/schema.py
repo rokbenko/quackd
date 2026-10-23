@@ -158,7 +158,15 @@ class Budgets(BaseModel):
     max_minutes: float = Field(
         default=5.0, gt=0, le=180, description="Wall-clock (or sim-clock) cap."
     )
-    max_llm_calls: int = Field(default=40, ge=1, le=2000, description="Maximum provider calls.")
+    max_llm_calls: int = Field(
+        default=40,
+        ge=1,
+        le=2000,
+        description=(
+            "Maximum provider calls. A turn the model's API could not answer, and quackd asked "
+            "again, counts once."
+        ),
+    )
 
 
 class FigureOverride(BaseModel):

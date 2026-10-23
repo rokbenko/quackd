@@ -550,6 +550,12 @@ def _finish(
             "cost_usd": results[name].summary.get("cost_usd"),
             "wall_s": results[name].summary.get("wall_s"),
             "llm_latency_s": results[name].summary.get("llm_latency_s"),
+            # the member's tries asked again and its waits, only where it waited (ADR-0059)
+            **{
+                key: results[name].summary[key]
+                for key in ("llm_retries", "llm_retry_wait_s")
+                if key in results[name].summary
+            },
             "provider": providers[name].name,
             "model": providers[name].model,
             "robot": roster[name].robot_spec.key,

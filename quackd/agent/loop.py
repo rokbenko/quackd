@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import random
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -56,8 +57,12 @@ from quackd.agent.providers.base import (
     LLMProvider,
     NamedPng,
     Observation,
+    ProviderError,
+    ProviderTurn,
     ToolCall,
+    Transient,
     Usage,
+    transient_failure,
 )
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import resolve_price, turn_cost
@@ -105,6 +110,77 @@ from quackd.verdict import Verdict, own_sheet_objection, solo_hint
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
 
 REPROMPT = "You must call exactly one tool. Choose now."
+
+ASK_AGAIN_AFTER_S = (5.0, 15.0, 30.0, 60.0)
+"""How long the loop waits before it asks the model's API the same turn again, try by try, after
+a failure `transient_failure` says is worth asking again: a rate limit, an overloaded or failing
+server, a request that timed out, a connection that dropped. By then the anthropic and openai
+SDKs have spent their own two retries, about half a second and a second apart unless the API
+asked for longer, and google-genai makes none, so these begin where an SDK leaves off and double
+up to a per-minute rate window, 110 s in all, with the robot holding still and the heartbeat
+watching it throughout. After the last, the run ends as it would have on the first (ADR-0059)."""
+
+ASK_AGAIN_JITTER = 0.25
+"""Up to this share of a scheduled wait is taken off it at random, so the members of a flock that
+share a key, and met one rate limit together, do not all ask again in the same instant. A wait
+the API asked for is never shortened."""
+
+LONGEST_ASKED_WAIT_S = 120.0
+"""The longest wait an API may ask for, in a `retry-after`, that the loop sits out: the openai
+SDK's own ceiling (`MAX_RETRY_AFTER_DELAY` in 3.22.1). An API that asks for longer ends the run
+at once, saying how long it asked, rather than the loop holding a robot that much longer on its
+word. The SDKs' own retries come first, inside the call, and honour such a wait themselves, the
+anthropic SDK's at any length, so a call that fails after one may already have waited it twice,
+and a first Ctrl-C does not reach into those waits; the second does."""
+
+ASKING_AGAIN = (
+    "the model's API could not answer this turn ({why}), so quackd waits and asks it the same "
+    "turn again, up to {tries} times. Nothing moves the robot while it waits, the heartbeat goes "
+    "on watching it, and Ctrl-C or q ends the run instead"
+)
+"""Said once a run, before its first wait. Each try after that is a line of the log's own, from
+the failed call's `llm` record and its `retry_in_s`."""
+
+STOPPED_WAITING = "stopped waiting to ask the model's API again: {reason}"
+"""A wait to ask again that the kill switch, the heartbeat or a flock ended. The run then ends
+`aborted`, for that reason, and the robot is put down as at the end of any run."""
+
+GAVE_UP_TRIES = (
+    "the model's API could not answer this turn in {tries} tries ({why}), so the run ends here"
+)
+GAVE_UP_TIME = (
+    "the model's API could not answer this turn ({why}), and waiting {seconds:.0f} s to ask it "
+    "again would run past the task's max_minutes, so the run ends here"
+)
+GAVE_UP_TOO_LONG = (
+    "the model's API could not answer this turn ({why}) and asked to be left {seconds:.0f} s, "
+    "longer than the {longest:.0f} s quackd waits with a robot connected, so the run ends here"
+)
+"""The three ways asking again gives up. Each is the message of the `ProviderError` the run then
+ends with, raised from the provider's own, so `run_end` says why there was no further try."""
+
+GAVE_UP_NEVER_ANSWERED = (
+    "the model's API has not answered once in this run ({why}), which is as often a wrong address "
+    "or a server that is not running as a dropped connection, so it is not asked again"
+)
+"""A connection that failed, or timed out, before the model had answered once. Asking again for
+two minutes is no help to an endpoint that was never right, so the run ends at once with the
+provider's own error, and this note says why it was not asked again. A status such as a 429
+from a server that never answered is asked again: something answered it."""
+
+
+async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
+    """Wait `seconds`, or until `abort` is set, and say which: True when the abort ended it.
+
+    Of the module rather than of the loop so a test can make the wait instant. Nothing else
+    runs inside it, and the heartbeat, a task of its own, goes on pinging the robot meanwhile,
+    which is what lets a robot that stops answering end the wait."""
+    try:
+        async with asyncio.timeout(seconds):
+            await abort.wait()
+    except TimeoutError:
+        return False
+    return True
 
 
 @runtime_checkable
@@ -453,6 +529,19 @@ class AgentLoop:
         """Seconds this run spent waiting on the model, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
+        self.llm_retries = 0
+        """How many times a turn the API could not answer was asked again (ADR-0059). Never
+        charged to `max_llm_calls`, since each is the same turn again, and written into the
+        summary only when there was one."""
+        self.llm_retry_wait_s = 0.0
+        """The seconds spent waiting to ask again, which `llm_latency_s` leaves out: no model
+        was asked anything in them."""
+        self._provider_answered = False
+        """Whether the model's API has answered once this run, with a turn or with a status such
+        as a 529, which is what tells a connection that dropped from one that was never right
+        (`GAVE_UP_NEVER_ANSWERED`): a server that sent a status back is there."""
+        self._said_asking_again = False
+        """Whether this run has said `ASKING_AGAIN`, which it says once, before its first wait."""
         bills = bool(getattr(cfg.provider, "bills_per_call", False))
         self.cost_usd: float | None = 0.0 if self.price is not None or bills else None
         """What the model has cost so far, or None when there is no rate to cost it at.
@@ -543,6 +632,144 @@ class AgentLoop:
         if not a_person_was_asked(asker):
             return
         self._emit("prompt", what=what, question=question, answer=answer)
+
+    async def _ask_the_model(
+        self,
+        system: str,
+        history: list[Exchange],
+        tools: list[dict[str, Any]],
+        *,
+        reprompt: bool,
+    ) -> tuple[ProviderTurn, float, int]:
+        """Ask the model for this turn, and ask it again while its API cannot answer for now.
+
+        Returns the turn, the seconds the call that answered took, and which try it was. The
+        turn is charged and put in `history` once, by the caller, before the first try, so each
+        try sends the same request: a model that binds its replayed thinking to the history it
+        is given would refuse a different one, and a retry is not a new turn to charge to
+        `max_llm_calls` either (ADR-0059).
+
+        Every try is on the record, an `llm_request` and, for one that failed, an `llm` with its
+        error, `attempt` from the second and `retry_in_s` where another follows. A failure is
+        asked again only where `transient_failure` says it is worth it, after
+        `ASK_AGAIN_AFTER_S` or as long as the API asked, whichever is longer, and only while the
+        task's minutes allow, on the budget's clock: the robot holds still in between, the
+        heartbeat watching it, and
+        a Ctrl-C, a `q`, a heartbeat that fails or a flock that stops this member ends the wait
+        as an abort, so the run folds the arm as at any end. Everything else is raised as it
+        always was, and a failure asked again until there was no point is raised as a
+        `ProviderError` saying why, from the provider's own."""
+        cfg = self.cfg
+        attempt = 1
+        while True:
+            self._emit(
+                "llm_request",
+                step=self.budget.steps,
+                provider=cfg.provider.name,
+                model=cfg.provider.model,
+                messages=len(history),
+                images=sum(len(ex.observation.images) for ex in history),
+                with_image=sum(1 for ex in history if ex.observation.images),
+                task_pictures=sum(len(ex.observation.attachments) for ex in history),
+                reprompt=reprompt,
+                # only from the second try, so a run that never asked again reads as it did
+                **({"attempt": attempt} if attempt > 1 else {}),
+            )
+            started = time.perf_counter()
+            try:
+                turn = await cfg.provider.step(system, history, tools)
+            except BaseException as e:
+                # BaseException, not Exception. The second Ctrl-C raises a bare
+                # KeyboardInterrupt and a flock cancels its members, and both land here: with
+                # `Exception` the wait was dropped from `llm_latency_s` AND no `llm` record was
+                # written, so the seconds a person actually spent waiting on a hanging model
+                # could not even be recovered by hand. That is the one case the number exists
+                # for.
+                #
+                # The call that failed is part of the record: what, and after how long. Its
+                # seconds count towards `llm_latency_s` like any other call's, because the run
+                # waited every one of them, and a provider that hangs until it times out is
+                # exactly the case somebody reads that number to find.
+                latency_s = round(time.perf_counter() - started, 3)
+                self.llm_latency_s += latency_s
+                # A person's stop that landed while the call was out is not overruled by a
+                # retry, and an interrupt is never asked again. `failed` outlives the clause,
+                # which unbinds `e` as it ends.
+                failed = e
+                aborted = isinstance(e, Exception) and self.executor.abort.is_set()
+                transient = (
+                    transient_failure(e) if isinstance(e, Exception) and not aborted else None
+                )
+                if transient is not None and transient.status is not None:
+                    # a status is an answer: the server is there, whatever it said
+                    self._provider_answered = True
+                then = self._ask_again_after(transient, attempt) if transient else None
+                self._emit(
+                    "llm",
+                    step=self.budget.steps,
+                    provider=cfg.provider.name,
+                    model=cfg.provider.model,
+                    error=f"{type(e).__name__}: {e}",
+                    latency_s=latency_s,
+                    **({"attempt": attempt} if attempt > 1 else {}),
+                    **({"retry_in_s": round(then, 1)} if isinstance(then, float) else {}),
+                    **self._cost_of_a_failed_call(e),
+                )
+                if aborted:
+                    raise Aborted(self._abort_reason()) from e
+                if isinstance(then, str):
+                    raise ProviderError(then) from e
+                if then is None:
+                    if transient is not None:
+                        self._note(GAVE_UP_NEVER_ANSWERED.format(why=transient.why))
+                    raise
+            else:
+                self._provider_answered = True
+                return turn, round(time.perf_counter() - started, 3), attempt
+            if not self._said_asking_again and transient is not None:
+                self._said_asking_again = True
+                self._note(ASKING_AGAIN.format(why=transient.why, tries=len(ASK_AGAIN_AFTER_S)))
+            waited = time.perf_counter()
+            try:
+                stopped = await _wait_or_abort(self.executor.abort, then)
+            finally:
+                self.llm_retry_wait_s += time.perf_counter() - waited
+            # An abort set in the tick the wait ran out in reads as a wait that ran out, so the
+            # flag is read again rather than trusted to the wait's own answer.
+            if stopped or self.executor.abort.is_set():
+                reason = self._abort_reason()
+                self._note(STOPPED_WAITING.format(reason=reason))
+                raise Aborted(reason) from failed
+            # counted once the try is going out, so a wait a stop ended asks nothing again
+            self.llm_retries += 1
+            attempt += 1
+
+    def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
+        """What follows try `attempt` failing for a reason worth asking again: the seconds to
+        wait before asking, the sentence the run gives up with, or None for a connection that
+        failed, or timed out, before the model had answered once this run, which is raised as
+        it is (`GAVE_UP_NEVER_ANSWERED`).
+
+        A sentence once the tries are spent, for an API that asks to be left longer than
+        `LONGEST_ASKED_WAIT_S`, and for a wait that would run past `max_minutes`, since the
+        clock is checked only between turns and a wait past it would hold the robot after the
+        task's time was up. That is the budget's clock, which is the wall's on a real robot and
+        the simulator's or the mock's own elsewhere, and theirs does not move while the loop
+        waits, so there only the schedule bounds the waits."""
+        if transient.status is None and not self._provider_answered:
+            return None
+        if attempt > len(ASK_AGAIN_AFTER_S):
+            return GAVE_UP_TRIES.format(tries=attempt, why=transient.why)
+        asked = transient.retry_after_s
+        if asked is not None and asked > LONGEST_ASKED_WAIT_S:
+            return GAVE_UP_TOO_LONG.format(
+                why=transient.why, seconds=asked, longest=LONGEST_ASKED_WAIT_S
+            )
+        scheduled = ASK_AGAIN_AFTER_S[attempt - 1] * (1.0 - ASK_AGAIN_JITTER * random.random())
+        wait = max(scheduled, asked or 0.0)
+        if wait > self.budget.limits.max_minutes * 60 - self.budget.elapsed_s:
+            return GAVE_UP_TIME.format(why=transient.why, seconds=wait)
+        return float(wait)
 
     def _note(self, text: str) -> None:
         """`log` is a contract (tests and the CLI's --verbose read it); the run's log
@@ -2144,50 +2371,10 @@ class AgentLoop:
                     self.history.append(Exchange(observation=obs))
                     self.budget.note_llm_call()  # may raise BudgetExceeded: then no request is made
                     history = self._history_for_provider()
-                    self._emit(
-                        "llm_request",
-                        step=self.budget.steps,
-                        provider=cfg.provider.name,
-                        model=cfg.provider.model,
-                        messages=len(history),
-                        images=sum(len(ex.observation.images) for ex in history),
-                        with_image=sum(1 for ex in history if ex.observation.images),
-                        task_pictures=sum(len(ex.observation.attachments) for ex in history),
-                        reprompt=retry_prompted,
+                    # once per turn, however many tries it takes: the same history every time
+                    turn, latency_s, attempt = await self._ask_the_model(
+                        system, history, tools, reprompt=retry_prompted
                     )
-                    llm_started = time.perf_counter()
-                    try:
-                        turn = await cfg.provider.step(system, history, tools)
-                    except BaseException as e:
-                        # BaseException, not Exception. The second Ctrl-C raises a bare
-                        # KeyboardInterrupt and a flock cancels its members, and both land
-                        # here: with `Exception` the wait was dropped from `llm_latency_s` AND
-                        # no `llm` record was written, so the seconds a person actually spent
-                        # waiting on a hanging model could not even be recovered by hand. That
-                        # is the one case the number exists for.
-                        #
-                        # The call that failed is part of the record: what, and after how long.
-                        # Its seconds count towards `llm_latency_s` like any other call's,
-                        # because the run waited every one of them, and a provider that hangs
-                        # until it times out is exactly the case somebody reads that number
-                        # to find.
-                        latency_s = round(time.perf_counter() - llm_started, 3)
-                        self.llm_latency_s += latency_s
-                        self._emit(
-                            "llm",
-                            step=self.budget.steps,
-                            provider=cfg.provider.name,
-                            model=cfg.provider.model,
-                            error=f"{type(e).__name__}: {e}",
-                            latency_s=latency_s,
-                            **self._cost_of_a_failed_call(e),
-                        )
-                        raise
-                    # One reading of the clock and one costing, used by all three records
-                    # below. They each called `perf_counter()` for themselves before, so the
-                    # shadow record and the log disagreed about the same call by however
-                    # long the lines between them took.
-                    latency_s = round(time.perf_counter() - llm_started, 3)
                     self.llm_latency_s += latency_s
                     self.usage = self.usage + turn.usage
                     turn_usage = turn.usage.model_dump()
@@ -2226,6 +2413,8 @@ class AgentLoop:
                         **({"served_by": turn.served_by} if turn.served_by else {}),
                         # and by the same rule, only when the cost is what the vendor billed
                         **({"billed": True} if costed.billed else {}),
+                        # and the try that answered, only where it was not the first
+                        **({"attempt": attempt} if attempt > 1 else {}),
                     )
                     self.budget.check_time()
 
@@ -2508,6 +2697,17 @@ class AgentLoop:
                 "wall_s": wall_s,
                 "connect_s": connect_s,
                 "llm_latency_s": round(self.llm_latency_s, 3),
+                # the tries asked again after the API could not answer a turn, and the seconds
+                # waited before asking, only where the run waited at all (ADR-0059): a wait a
+                # stop ended has seconds and no try
+                **(
+                    {
+                        "llm_retries": self.llm_retries,
+                        "llm_retry_wait_s": round(self.llm_retry_wait_s, 3),
+                    }
+                    if self.llm_retries or self.llm_retry_wait_s
+                    else {}
+                ),
                 "usage": self.usage.model_dump(),
                 # What it cost and what it was costed at. `cost_usd` is the model only: the
                 # stepper bills separately and keeps its figure in its own block below.

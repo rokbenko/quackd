@@ -131,9 +131,13 @@ An id ending `:free` is its own entry on OpenRouter's list, with its own provide
 limits, so it is checked like any other id quackd does not carry and has no row of its own.
 OpenRouter's limits page, read 2026-10-06, allows 20 requests a minute on them, and 50 a day until
 10 credits have been bought, 1,000 a day after. A run that goes past either is refused by
-OpenRouter with a 429, which ends the run once the SDK's own retries are spent. Which providers
-serve a free model, and what they do with a prompt, is up to them and to your OpenRouter privacy
-settings (below), which can leave a free model with no provider you allow.
+OpenRouter with an HTTP 429. quackd waits and asks the same turn again, up to four times, after
+waits that grow from 5 seconds to a minute, so a minute's limit can be waited out inside the task's
+`max_minutes` and a day's still ends the run
+([concepts/safety.md](../concepts/safety.md#when-the-models-api-fails)). An error OpenRouter sends
+inside a `200` is not asked again (below). Which providers serve a free model, and what they do
+with a prompt, is up to them and to your OpenRouter privacy settings (below), which can leave a
+free model with no provider you allow.
 
 ## Where your prompt goes
 
@@ -242,7 +246,7 @@ stepper.
 | Errors | a `200` can carry an `error` and no `choices` | a ProviderError in OpenRouter's words |
 | Variants | catalog variants, `:free` and `:batch` among them, are separate entries on the list; routing variants "are accepted on any model ID at request time" and "are not listed" | only `:free` is taken; the rest are refused on their spelling, listed or not |
 | `~` aliases | "always resolve to the newest concrete model", and the list carries them | refused on their spelling |
-| Free models | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 ends the run |
+| Free models | 20 a minute, 50 a day below 10 credits bought and 1,000 a day after | stated here; a 429 is asked again up to four times, then ends the run |
 | From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the six rows |
 | No key | a keyless POST answered `401` | none: a run with no key stops before it posts |
 
@@ -258,7 +262,7 @@ stepper.
 | `COST_IS_THE_BILL` | that `usage.cost`, with the upstream figure on BYOK, is what your key is charged | recorded as billed; `--price` overrides it |
 | `LIST_PRICE_MATCHES_BILL` | that a row's rate, or the list's, is near what a turn costs | used only for a turn that came back with no bill |
 | `NO_MAX_TOKENS` | how OpenRouter treats a request that names no `max_tokens` against a small balance | nothing; a 402 ends the run in OpenRouter's words |
-| `FREE_LIMITS` | that the limits above still hold | a 429 ends the run after the SDK's own retries |
+| `FREE_LIMITS` | that the limits above still hold | a 429 is asked again up to four times after the SDK's own retries, then ends the run |
 | `ROUTED_PROVIDER_VARIES` | which provider served a turn | not recorded |
 
 ## Status

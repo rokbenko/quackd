@@ -2976,6 +2976,45 @@ def test_no_living_page_runs_a_real_arm_by_its_spec() -> None:
                 )
 
 
+_API_CLAIMS_RETIRED_BY_ADR_0059 = (
+    (
+        "a 429 ends the run",
+        "a 429 is asked again after a wait (`quackd.agent.loop.ASK_AGAIN_AFTER_S`)",
+    ),
+    (
+        "which ends the run once the SDK's own retries are spent",
+        "the loop asks the same turn again once the SDK's own retries are spent",
+    ),
+)
+
+
+def test_no_living_page_says_a_busy_api_ends_the_run() -> None:
+    """ADR-0059: a rate limit, an overloaded server or a dropped connection is asked again, so a
+    page that still says a 429 ends the run tells a reader to give up on a run that will wait."""
+    _no_living_page_says(_API_CLAIMS_RETIRED_BY_ADR_0059)
+
+
+def test_the_pages_quote_the_ask_again_the_loop_keeps() -> None:
+    """The schedule, the longest wait an API may ask for and the note a run says are numbers and
+    words of the loop's own, and safety.md quotes all three, the note as a run printed it. The
+    README and the OpenRouter guide count the tries in words. A change to any of them in the
+    code fails here until the pages say it too."""
+    from quackd.agent import loop
+
+    waits = loop.ASK_AGAIN_AFTER_S
+    safety = _one_line((REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8"))
+    schedule = ", ".join(f"{w:g}" for w in waits[:-1]) + f" and {waits[-1]:g} seconds"
+    assert schedule in safety, f"safety.md no longer says the waits are {schedule}"
+    longest = f"longer than {loop.LONGEST_ASKED_WAIT_S:g} seconds"
+    assert longest in safety, f"safety.md no longer says {longest!r}"
+    note = loop.ASKING_AGAIN.format(why="overloaded (529)", tries=len(waits))
+    assert _one_line(note) in safety, "safety.md's captured note is not the one a run says"
+    tries = {3: "three", 4: "four", 5: "five", 6: "six"}[len(waits)]
+    for page in ("README.md", "docs/guides/openrouter.md"):
+        text = _one_line((REPO / page).read_text(encoding="utf-8"))
+        assert f"up to {tries} times" in text, f"{page} no longer counts {len(waits)} tries"
+
+
 def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step() -> None:
     """0.15.0 built the follower to keep torque on a disconnect quackd did not ask for, so a
     second Ctrl-C during the fold back to the rest pose leaves the arm holding where 0.14.0

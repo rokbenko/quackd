@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
+import quackd.agent.loop as loop_module
 from quackd.adapters.base import AdapterError, RestResult
 from quackd.agent.images import load_task_images
 from quackd.agent.loop import AgentLoop, RunConfig, run_duck
@@ -60,6 +61,7 @@ from quackd_lerobot.verbs import (
 from quackd_microduck import MicroduckAdapter
 from quackd_open_duck import OpenDuckAdapter
 from quackd_open_duck.mock import OpenDuckMock
+from tests import sdk_errors as sdk
 
 # the verdict comes first on every run now: the scripted pilot answers it as a rule, and the
 # duck's own three verbs follow exactly as they did
@@ -5104,3 +5106,396 @@ async def test_a_name_with_nothing_to_slug_is_refused_before_a_directory_exists(
             )
         )
     assert not runs.exists(), "nothing was written for a run that never started"
+
+
+# ── a turn the model's API could not answer is asked again (ADR-0059) ────────────────────
+
+
+class FlakyProvider:
+    """A pilot whose API fails some of its calls, and answers the rest as the scripted pilot.
+
+    `plan` is one entry a call, in order: an exception to raise, or None to answer, and every
+    call after it answers. Each history it is handed is kept as it was when the call was made,
+    so a test can show that a try sent exactly what the one before it did."""
+
+    def __init__(self, plan: Sequence[BaseException | None], duck: str = "hello-world") -> None:
+        self.plan = list(plan)
+        self.answers = FakeProvider.for_duck(duck)
+        self.name, self.model, self.supports_vision = "flaky", "test", False
+        self.sent: list[list[dict[str, Any]]] = []
+        self.on_failure: Callable[[], None] | None = None
+
+    async def step(self, system: str, history: Any, tools: Any) -> ProviderTurn:
+        self.sent.append([copy.deepcopy(ex.model_dump()) for ex in history])
+        failure = self.plan.pop(0) if self.plan else None
+        if failure is not None:
+            if self.on_failure is not None:
+                self.on_failure()
+            raise failure
+        return await self.answers.step(system, history, tools)
+
+
+@pytest.fixture
+def instant_waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Each wait the loop asks for before asking again, in seconds, none of them waited. The
+    jitter is off, so a wait is the schedule's own or the one the API asked for."""
+    asked: list[float] = []
+
+    async def wait(abort: asyncio.Event, seconds: float) -> bool:
+        asked.append(seconds)
+        return abort.is_set()
+
+    monkeypatch.setattr(loop_module, "_wait_or_abort", wait)
+    monkeypatch.setattr(loop_module, "ASK_AGAIN_JITTER", 0.0)
+    return asked
+
+
+def _rate_limited(headers: dict[str, str] | None = None) -> ProviderError:
+    return sdk.wrapped(sdk.RateLimitError(429, headers), "anthropic: API error 429: rate limited")
+
+
+def _overloaded() -> ProviderError:
+    return sdk.wrapped(sdk.OverloadedError(529), "anthropic: API error 529: overloaded")
+
+
+def _events(run_dir: Path, kind: str) -> list[dict[str, Any]]:
+    return [e for e in Transcript.read(run_dir / "transcript.jsonl") if e["kind"] == kind]
+
+
+async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_request(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """A 429 used to end the run: the SDK's two quick retries, then `error` and the fold. Now
+    the loop waits and asks the same turn again, and the try sends exactly what the failed one
+    did, since a model that binds its replayed thinking to the history refuses any other. The
+    turn is charged once, and every try is on the record."""
+    clean = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck("hello-world"),
+            transport=MockTransport(),
+            runs_dir=tmp_path / "clean",
+        )
+    )
+    provider = FlakyProvider([None, _rate_limited()])
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert instant_waits == [loop_module.ASK_AGAIN_AFTER_S[0]]
+    assert provider.sent[1] == provider.sent[2], "the try resends the failed call's request"
+    assert result.llm_calls == clean.llm_calls, "a turn asked again is still one turn"
+    assert result.summary["llm_retries"] == 1 and "llm_retry_wait_s" in result.summary
+    assert "llm_retries" not in clean.summary, "a run that never asked again reads as before"
+    failed = next(e for e in _events(result.run_dir, "llm") if "error" in e)
+    assert failed["retry_in_s"] == loop_module.ASK_AGAIN_AFTER_S[0] and "attempt" not in failed
+    tries = [e.get("attempt") for e in _events(result.run_dir, "llm_request")]
+    assert tries[:3] == [None, None, 2], tries
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    said = loop_module.ASKING_AGAIN.format(
+        why="rate limited (429)", tries=len(loop_module.ASK_AGAIN_AFTER_S)
+    )
+    assert notes.count(said) == 1, notes
+
+
+async def test_a_retry_is_not_charged_to_the_task_s_model_calls(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """With `max_llm_calls` at exactly the turns the task takes, three tries asked again
+    still finish it: a busy minute at the vendor does not spend the task's turns."""
+    duck = copy.deepcopy(hello_duck)
+    duck.frontmatter.budgets.max_llm_calls = len(GOLDEN_HELLO)
+    provider = FlakyProvider([_overloaded(), _overloaded(), None, _rate_limited()])
+    result = await run_duck(
+        RunConfig(duck=duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert result.llm_calls == len(GOLDEN_HELLO) and result.summary["llm_retries"] == 3
+    assert instant_waits == [5.0, 15.0, 5.0], "each turn starts its own schedule"
+
+
+@pytest.mark.parametrize(
+    ("headers", "waits"),
+    [
+        ({"retry-after": "40"}, [40.0]),
+        ({"retry-after": "1"}, [5.0]),
+        ({"retry-after-ms": "30000"}, [30.0]),
+    ],
+)
+async def test_the_wait_an_api_asks_for_is_kept_where_it_is_the_longer(
+    headers: dict[str, str],
+    waits: list[float],
+    hello_duck: DuckFile,
+    tmp_path: Path,
+    instant_waits: list[float],
+) -> None:
+    """The API's own wait is a floor, never shortened by the jitter and never cut to the
+    schedule's, and the schedule's is a floor under it, so a vendor saying `retry-after: 1`
+    after the SDK has already spent its quick retries is not asked again within the second."""
+    provider = FlakyProvider([_rate_limited(headers)])
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success" and instant_waits == waits
+
+
+async def test_an_api_that_asks_to_be_left_too_long_ends_the_run_at_once(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """Past `LONGEST_ASKED_WAIT_S` the loop does not sit with a robot connected on the API's
+    word: the run ends `error` at once, saying how long it was asked to wait."""
+    asked = loop_module.LONGEST_ASKED_WAIT_S + 1
+    provider = FlakyProvider([_rate_limited({"retry-after": f"{asked:g}"})])
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    with pytest.raises(ProviderError, match=f"asked to be left {asked:.0f} s"):
+        await run_duck(
+            RunConfig(
+                duck=hello_duck,
+                provider=provider,
+                transport=MockTransport(),
+                run_dir=run_dir,
+                runs_dir=tmp_path,
+            )
+        )
+    assert instant_waits == []
+    end = _events(run_dir, "run_end")[0]
+    assert end["outcome"] == "error" and "longer than the 120 s" in end["reason"]
+    failed = next(e for e in _events(run_dir, "llm") if "error" in e)
+    assert "retry_in_s" not in failed and "429" in failed["error"]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ProviderError("anthropic: rate limited (retry-after 7s)"),
+        sdk.wrapped(sdk.BadRequestError(400)),
+        sdk.wrapped(sdk.AuthenticationError(401)),
+        sdk.wrapped(sdk.RateLimitError(429, {"x-should-retry": "false"})),
+        sdk.wrapped(
+            sdk.caused(sdk.APIConnectionError("Connection error."), sdk.LocalProtocolError())
+        ),
+    ],
+    ids=["bare", "400", "401", "should-retry-false", "local-protocol"],
+)
+async def test_a_failure_not_worth_asking_again_ends_the_run_at_once(
+    failure: ProviderError, hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """A request the API said no to, or one quackd built wrong, is the same request the next
+    time, and so is a `ProviderError` quackd raised itself, whatever its words say: each
+    ends the run as it always did, with no wait and one try."""
+    provider = FlakyProvider([None, failure])
+    with pytest.raises(ProviderError):
+        await run_duck(
+            RunConfig(
+                duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path
+            )
+        )
+    assert instant_waits == [] and len(provider.sent) == 2
+
+
+async def test_out_of_tries_the_run_ends_in_error_and_the_arm_is_put_down(
+    tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """Every scheduled wait, then one more failure: the run ends `error`, saying how many
+    tries it made, and the teardown folds the arm and lets go at its rest pose as it does at
+    every end (`test_every_way_a_run_ends_returns_the_arm_to_rest`)."""
+    tries = len(loop_module.ASK_AGAIN_AFTER_S) + 1
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    with pytest.raises(ProviderError, match=f"in {tries} tries"):
+        await run_duck(
+            RunConfig(
+                duck=_arm_duck(),
+                provider=FlakyProvider([_overloaded()] * tries, duck="lerobot-lookout"),
+                transport=LeRobotAdapter(mock),
+                run_dir=run_dir,
+                runs_dir=tmp_path,
+            )
+        )
+    assert instant_waits == list(loop_module.ASK_AGAIN_AFTER_S)
+    end = _events(run_dir, "run_end")[0]
+    assert end["outcome"] == "error" and "overloaded (529)" in end["reason"], end["reason"]
+    assert end["llm_retries"] == tries - 1
+    assert mock.sequence[-3:] == ["stop", "rest", "close"], mock.sequence
+    assert mock.torque is False and mock.close_note is None
+
+
+async def test_a_stop_while_the_loop_waits_ends_the_run_aborted_and_puts_the_arm_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C or `q` while the loop waits to ask again ends the wait at once, as an abort,
+    and the arm folds: nobody has to sit out a minute of a vendor's outage to stop a run."""
+    monkeypatch.setattr(loop_module, "ASK_AGAIN_JITTER", 0.0)
+
+    async def pressed(abort: asyncio.Event, seconds: float) -> bool:
+        abort.set()  # what the kill switch does, from its own thread, mid-wait
+        return True
+
+    monkeypatch.setattr(loop_module, "_wait_or_abort", pressed)
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    result = await run_duck(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FlakyProvider([_overloaded()], duck="lerobot-lookout"),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    assert loop_module.STOPPED_WAITING.format(reason="kill switch") in notes, notes
+    assert mock.sequence[-3:] == ["stop", "rest", "close"], mock.sequence
+    assert result.summary.get("llm_retries", 0) == 0, "a wait a stop ended asked nothing again"
+
+
+async def test_a_stop_in_the_tick_the_wait_ran_out_sends_no_further_try(
+    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait can run out in the very tick the kill switch fires, and then it says it ran
+    out. The flag is read again after it, so no try goes out once a stop has been pressed."""
+    monkeypatch.setattr(loop_module, "ASK_AGAIN_JITTER", 0.0)
+
+    async def ran_out_as_it_was_pressed(abort: asyncio.Event, seconds: float) -> bool:
+        abort.set()
+        return False
+
+    monkeypatch.setattr(loop_module, "_wait_or_abort", ran_out_as_it_was_pressed)
+    provider = FlakyProvider([None, _overloaded()])
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
+    assert len(provider.sent) == 2, "a try went out after the stop"
+    assert result.summary.get("llm_retries", 0) == 0
+
+
+async def test_a_stop_pressed_while_the_call_was_out_is_not_overruled_by_a_retry(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """The first Ctrl-C does not cancel a call already out. When that call then fails for a
+    reason worth asking again, the stop wins: the run ends `aborted`, with no wait."""
+    provider = FlakyProvider([None, _overloaded()])
+    loop = AgentLoop(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    provider.on_failure = loop.executor.abort.set
+    result = await loop.run()
+    assert result.outcome == "aborted" and instant_waits == []
+
+
+async def test_the_heartbeat_watches_the_robot_while_the_loop_waits(
+    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait is a real one here. The robot stops answering once the call has failed, and
+    the heartbeat, still pinging it, ends the wait long before the half minute it was set for:
+    a robot that went quiet is not left unwatched while a vendor recovers."""
+    monkeypatch.setattr(loop_module, "ASK_AGAIN_AFTER_S", (30.0,))
+    monkeypatch.setattr(loop_module, "ASK_AGAIN_JITTER", 0.0)
+    transport = MockTransport()
+    provider = FlakyProvider([None, _overloaded()])
+    provider.on_failure = lambda: setattr(transport, "_fail_after", transport.heartbeats)
+    started = asyncio.get_running_loop().time()
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=provider,
+            transport=transport,
+            runs_dir=tmp_path,
+            heartbeat_period_s=0.01,
+        )
+    )
+    assert result.outcome == "aborted" and "heartbeat" in result.reason, result.reason
+    assert asyncio.get_running_loop().time() - started < 10
+    # the heartbeat is usually overdue by the time the loop yields, so the wait it ends can
+    # be shorter than the summary's millisecond, and its seconds can read 0.0
+    assert result.summary.get("llm_retries", 0) == 0, "the wait was ended: nothing asked again"
+    assert result.summary.get("llm_retry_wait_s", 0.0) < 10
+
+
+async def test_a_wait_past_the_task_s_minutes_ends_the_run_without_waiting(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """`max_minutes` is checked between turns, so a wait that would outlast it would hold the
+    robot after the task's time was up. The run ends instead, saying so."""
+    duck = copy.deepcopy(hello_duck)
+    duck.frontmatter.budgets.max_minutes = 0.05  # 3 s, under the first wait's 5
+    with pytest.raises(ProviderError, match="would run past the task's max_minutes"):
+        await run_duck(
+            RunConfig(
+                duck=duck,
+                provider=FlakyProvider([_rate_limited()]),
+                transport=MockTransport(),
+                runs_dir=tmp_path,
+            )
+        )
+    assert instant_waits == []
+
+
+async def test_a_connection_that_never_answered_is_not_asked_again(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """A connection that failed before the model answered once is as often a wrong address or
+    a server that is not running as a dropped one, and two minutes of asking again help
+    neither: the run ends at once with the provider's own error, and a note says why."""
+    provider = FlakyProvider([sdk.wrapped(sdk.APIConnectionError("Connection error."))])
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    with pytest.raises(ProviderError, match="the provider's own words"):
+        await run_duck(
+            RunConfig(
+                duck=hello_duck,
+                provider=provider,
+                transport=MockTransport(),
+                run_dir=run_dir,
+                runs_dir=tmp_path,
+            )
+        )
+    assert instant_waits == []
+    notes = [e["text"] for e in _events(run_dir, "note")]
+    said = loop_module.GAVE_UP_NEVER_ANSWERED.format(why="no connection")
+    assert said in notes, notes
+
+
+@pytest.mark.parametrize(
+    "dropped",
+    [sdk.APIConnectionError("Connection error."), sdk.APITimeoutError("Request timed out.")],
+    ids=["connection", "timeout"],
+)
+async def test_a_connection_that_drops_after_the_model_has_answered_is_asked_again(
+    dropped: BaseException, hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """Once the model has answered, the address was right, and a connection that drops or a
+    call that times out is the network or the vendor having a moment: asked again."""
+    provider = FlakyProvider([None, sdk.wrapped(dropped)])
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success" and instant_waits == [5.0]
+
+
+async def test_a_connection_dropped_after_the_api_answered_with_a_status_is_asked_again(
+    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+) -> None:
+    """A 529 on the first call is the server answering, so a connection that drops on the try
+    after it is an overload, not a wrong address: asked again, and the run goes on."""
+    provider = FlakyProvider(
+        [_overloaded(), sdk.wrapped(sdk.APIConnectionError("Connection error."))]
+    )
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    assert instant_waits == [5.0, 15.0]
+
+
+async def test_the_wait_before_asking_again_ends_on_an_abort_and_says_which_ended_it() -> None:
+    """The real wait: it runs out and says so, or an abort set from elsewhere ends it at once
+    and says that instead."""
+    abort = asyncio.Event()
+    assert await loop_module._wait_or_abort(abort, 0.01) is False
+    asyncio.get_running_loop().call_later(0.01, abort.set)
+    started = asyncio.get_running_loop().time()
+    assert await loop_module._wait_or_abort(abort, 30.0) is True
+    assert asyncio.get_running_loop().time() - started < 5

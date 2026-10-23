@@ -190,6 +190,64 @@ daemon are the other way round and settle on both, which is what a daemon has to
 started by a unit this repository ships, and the other is started by hand and stopped by
 somebody typing `kill`.
 
+## When the model's API fails
+
+A turn the model's API could not answer for now is asked again, with the robot holding still in
+between ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). A rate
+limit (429), an overloaded or failing server (529, or any 5xx), a request the server timed out
+(408), and a call that timed out or lost its connection once the API has answered in this run,
+with a turn or with a status, are each asked again, after 5, 15, 30 and 60 seconds, or after as
+long as the API asked in a `retry-after` where that is longer. Up to a quarter of each scheduled
+wait is taken off at random, so the members of a flock on one key do not all ask again at once.
+What decides is the SDK's own exception, its status and its class, and never its message.
+Everything else ends the run as it always did: a key that does not work, a request the API
+refused, a model that does not exist, a request quackd built wrong, an answer quackd could not
+read as a turn, and a connection that failed before the API had answered at all, which is as
+often a wrong address or a server that is not running as a dropped connection.
+
+The SDK's own retries come first, inside the call. The anthropic and openai SDKs make two, about
+half a second and a second apart unless the API asked for longer, which both honour, openai up
+to 120 seconds and anthropic at any length, and google-genai makes none. A first Ctrl-C does not
+reach into those waits and a second does, so a call an API asked to be left for minutes can hold
+a run that long before quackd hears of it.
+
+Nothing moves the robot while the loop waits, the same stillness a model taking a minute to
+think leaves it in, and the heartbeat goes on watching it. Ctrl-C or `q`, a heartbeat that
+fails, or a flock that stops its members ends the wait at once: the run ends `aborted`, and the
+robot is put down as at any end. A stop pressed while the call was still out wins over asking
+again. A turn asked again is the same turn, sent byte for byte, so it is not charged to
+`max_llm_calls`. Captured against the stand-in server in `tests/fake_openrouter.py`, started
+with `--port 8766 --fail 3:529` so that its first three chat requests are answered 529 and the
+openai SDK's own two retries are spent, and this run pointed at it:
+
+```bash
+quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8766/api/v1 --robot microduck:mock
+```
+
+```
+   llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
+⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.2 s, asking again in 5 s
+·  note    the model's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
+   llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
+   think   turn 1: calling assess_task
+```
+
+The counters under the verdict say how many times a turn was asked again and how long the waits
+took, apart from the model's own seconds:
+
+```
+steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.3 s (model 0.2 s, waits 4.8 s) · cost $0.0097
+```
+
+A fifth failure after the fourth wait ends the run `error`, saying in how many tries, and so do
+an API that asks to be left longer than 120 seconds and a wait that would run past what the
+task's `max_minutes` has left. That is the budget's clock, the wall's on a real robot, and a
+simulator's or a mock's own clock does not move while the loop waits, so there only the schedule
+bounds the waits. The note is said once a run, and each try after it is the log's own line. The
+decision LLM is left as it was, since a turn it could not decide already goes to the pilot. None
+of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
+against the real openai SDK talking to the stand-in server above.
+
 ## When the pilot is unsure
 
 `assess_task` has a third answer. `uncertain` means the verdict itself turns on a figure the
