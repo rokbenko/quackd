@@ -71,7 +71,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   no brake, which is how it fell at the end of every run on 2026-09-15. A spec on its own,
   `--robot lerobot:real --address PORT`, has no name to keep a pose under and is refused the same
   way, with `quackd robot add NAME lerobot:real --address PORT, then quackd robot rest-pose NAME`
-  as the way back. `doctor`, `robot list --probe`, `rest-pose`, `robot release`, the mock and the
+  as the way back, and for a spec in `--robots` or a task file's `robots:`, running the flock
+  from a stored one after that, since neither reads the registry. A run is refused once its
+  task file has been judged against the arm, so a task that could never run there says so
+  first. `doctor`, `robot list --probe`, `rest-pose`, `robot release`, the mock and the
   simulator are unaffected, and `run_pilot_flock` refuses such an arm too, for a library caller.
   An adapter declares the backends this applies to in `REST_POSE_BACKENDS`, which
   `quackd.adapters.factory.needs_rest_pose` reads before anything is built, and
@@ -80,6 +83,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **A pilot flock's member named with `--robot NAME` was built without its registered address,
+  cameras and rest pose.** The flock took only the spec of the robot it named, so a registered arm
+  ran as a bare `lerobot:real`, whose close would have let go of it wherever it stood. The member is
+  the registered robot now, built from its own entry.
 - **A `q`, or any line typed at the end-of-run offer, released the arm.** The kill switch's key
   thread took every line for Enter, so `n` and Enter was a yes, and a terminal in its usual mode
   hands `q` over only with the Enter that sends its line, so the key that stops a run was read as

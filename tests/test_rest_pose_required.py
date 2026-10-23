@@ -9,6 +9,7 @@ still run without a pose, and `doctor` and `rest-pose` never ask."""
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +120,8 @@ def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_bui
     elif how == "dry run":
         args = ["run", "lerobot-lookout", "--robot", "arm-r", "--dry-run", *common]
     elif how == "robots":
-        args = ["run", "flock-hello", "--robots", "a=lerobot:real,b=microduck:mock", *common]
+        # the file's own members, so a run that got past the refusal would build the arm
+        args = ["run", "flock-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
     else:
         Registry(tmp_path / "registry").add_flock(
             StoredFlock(name="pair", members=["arm-r", "arm-m"])
@@ -132,6 +134,9 @@ def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_bui
     assert "quackd robot rest-pose" in flat, "the refusal names no way out"
     assert "real" not in never_built, never_built
     assert not runs.exists() or not any(runs.iterdir()), "a run directory was made"
+    # refused by the run itself, before a header or a provider: a flock's own backstop would
+    # refuse it too, but only once the header was printed and every pilot built
+    assert flat.startswith(("x error", "✗ error")), flat[:300]
 
 
 def test_a_mock_arm_with_no_rest_pose_still_runs(tmp_path: Path) -> None:
@@ -185,27 +190,39 @@ def test_an_mcp_session_on_a_mock_arm_with_no_rest_pose_is_served(tmp_path: Path
 
     _add(tmp_path, "arm-m", "lerobot:mock")
     plan = fleet_from_flags(robot="arm-m", registry_dir=str(tmp_path / "registry"))
-    assert plan is not None
+    assert [spec.key for spec in plan.specs.values()] == ["lerobot:mock"], plan.specs
 
 
+@pytest.mark.parametrize(
+    ("registered", "said"),
+    [
+        (False, r"arm \(lerobot:real\) names no registered arm, so it has no rest pose"),
+        (True, r"arm \(lerobot:real\) has no rest pose recorded.*quackd robot rest-pose arm$"),
+    ],
+    ids=["spec", "registered"],
+)
 async def test_a_flock_reached_without_the_cli_refuses_the_arm_too(
-    tmp_path: Path, never_built: list[str]
+    tmp_path: Path, never_built: list[str], registered: bool, said: str
 ) -> None:
     """`run_pilot_flock` is a library call as well as the CLI's, so it holds the same rule
-    itself: a member that is a real arm with no rest pose is refused before any body is built."""
-    roster = roster_from_specs(
+    itself: a member that is a real arm with no rest pose is refused before any body is built.
+    A member from a spec is worded as one, since recording a pose for its name would change
+    nothing, and a registered member is sent to record its pose."""
+    roster: dict[str, Any] = roster_from_specs(
         {"duck": RobotSpec("microduck", "mock", "duck"), "arm": RobotSpec("lerobot", "real", "arm")}
     )
+    if registered:
+        _add(tmp_path, "arm", "lerobot:real", "--address", "COM99")
+        roster["arm"] = Registry(tmp_path / "registry").robot("arm")
     providers = {name: FakeProvider.for_duck("flock-hello") for name in roster}
-    with pytest.raises(ValueError, match=r"arm \(lerobot:real\) has no rest pose recorded"):
+    runs = tmp_path / "runs"
+    with pytest.raises(ValueError, match=said):
         await asyncio.wait_for(
-            run_pilot_flock(
-                load_duck("flock-hello"), roster, providers=providers, runs_dir=tmp_path
-            ),
+            run_pilot_flock(load_duck("flock-hello"), roster, providers=providers, runs_dir=runs),
             timeout=60,
         )
     assert "real" not in never_built, never_built
-    made = await asyncio.to_thread(lambda: any(tmp_path.iterdir()))
+    made = await asyncio.to_thread(lambda: runs.exists() and any(runs.iterdir()))
     assert not made, "a run directory was made"
 
 
@@ -225,3 +242,134 @@ def test_clearing_a_real_arm_s_pose_says_its_runs_are_refused_now(tmp_path: Path
     assert "quackd robot rest-pose arm-r" in flat and "torque drops there" not in flat, flat
     mock = runner.invoke(app, ["robot", "rest-pose", "arm-m", "--clear", *_reg(tmp_path)])
     assert "a run now leaves the arm where it stands, and torque drops there" in mock.output
+
+
+FULL_POSE = {
+    "shoulder_pan": 0.0,
+    "shoulder_lift": -90.0,
+    "elbow_flex": 90.0,
+    "wrist_flex": 0.0,
+    "wrist_roll": 0.0,
+    "gripper": 100.0,
+}
+
+
+def test_a_registered_arm_named_in_a_pilot_flock_is_built_with_its_pose_and_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--robot NAME` on a pilot flock file names the member called NAME, and that member is
+    the registered robot: built with its address and its rest pose. It used to be built as a
+    bare spec of its kind with neither, which the refusal then took for an arm with no pose,
+    and which its close would otherwise have let go of wherever it stood."""
+    import quackd_lerobot
+    from quackd.adapters.base import AdapterError
+
+    _add(tmp_path, "arm", "lerobot:real", "--address", "COM99")
+    Registry(tmp_path / "registry").update_robot("arm", {"rest_pose": FULL_POSE})
+    built: dict[str, Any] = {}
+    make = quackd_lerobot.make
+
+    def stop_at_the_arm(backend: str, **kwargs: Any) -> Any:
+        if backend == "real":
+            built.update(kwargs)
+            raise AdapterError("stopped where the arm is built")
+        return make(backend, **kwargs)
+
+    monkeypatch.setattr(quackd_lerobot, "make", stop_at_the_arm)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "flock-hello",
+            "--robot",
+            "arm",
+            "--llm",
+            "fake",
+            "--yes",
+            "--no-memory",
+            "--no-gif",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            *_reg(tmp_path),
+        ],
+    )
+    assert "no rest pose" not in result.output, result.output
+    assert built.get("address") == "COM99" and built.get("rest_pose") == FULL_POSE, built
+
+
+def test_a_spec_in_a_fleet_is_sent_to_a_stored_flock_and_a_solo_one_keeps_its_cameras(
+    tmp_path: Path, never_built: list[str]
+) -> None:
+    """`--robots` and a task file's `robots:` never read the registry, so registering the arm
+    and recording its pose would change nothing those spellings run: the way out goes on to a
+    stored flock. A solo spec's way out keeps the cameras it was given, so the command it
+    prints registers the arm the run was asked for."""
+    common = ["--llm", "fake", "--no-gif", "--runs-dir", str(tmp_path / "runs"), *_reg(tmp_path)]
+    fleet = runner.invoke(
+        app, ["run", "flock-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
+    )
+    flat = " ".join(fleet.output.split())
+    assert fleet.exit_code == 1, fleet.output
+    assert "quackd flock create FLOCK --robot NAME" in flat and "--flock FLOCK" in flat, flat
+    solo = runner.invoke(
+        app,
+        [
+            "run",
+            "lerobot-lookout",
+            "--robot",
+            "lerobot:real",
+            "--address",
+            "COM99",
+            "--camera-url",
+            "opencv://2",
+            *common,
+        ],
+    )
+    flat = " ".join(solo.output.split())
+    hint = 'quackd robot add NAME lerobot:real --address COM99 --camera-url "opencv://2"'
+    assert hint in flat and "flock create" not in flat, flat
+    assert "real" not in never_built, never_built
+
+
+def test_clearing_the_pose_of_an_entry_this_build_cannot_make_says_what_it_did(
+    tmp_path: Path,
+) -> None:
+    """A stored spec this build cannot make, one hand-written or retired since, still has its
+    pose cleared and the line said, with no traceback after it: the line is decided from the
+    stored string, which is read without ever raising."""
+    _add(tmp_path, "armx", "lerobot:mock")
+    path = tmp_path / "registry" / "robots.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["robots"]["armx"]["spec"] = "lerobot:reel"
+    data["robots"]["armx"]["rest_pose"] = FULL_POSE
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    cleared = runner.invoke(app, ["robot", "rest-pose", "armx", "--clear", *_reg(tmp_path)])
+    assert cleared.exit_code == 0, cleared.output
+    assert "cleared armx's rest pose" in cleared.output and "Traceback" not in cleared.output
+
+
+def test_a_task_that_cannot_run_on_the_arm_says_so_before_the_pose_is_asked_for(
+    tmp_path: Path, never_built: list[str]
+) -> None:
+    """A task the body cannot run is refused for that first: sending a person to fold the arm
+    and record a pose, only for the run to refuse the task on its next try, is a detour."""
+    _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "microduck-lookout",
+            "--robot",
+            "arm-r",
+            "--llm",
+            "fake",
+            "--no-gif",
+            "--runs-dir",
+            str(tmp_path / "runs"),
+            *_reg(tmp_path),
+        ],
+    )
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 1 and "cannot run on lerobot:real" in flat, flat
+    assert "no rest pose" not in flat, flat
+    assert "real" not in never_built, never_built

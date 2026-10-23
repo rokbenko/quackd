@@ -851,9 +851,8 @@ out of included, none of that happens: quackd tells you it did not take hold, na
 and leaves the arm as it is. [Section 11](#11-prove-the-safety-net) has this window and the
 other new one in full.
 
-**Five things `--by-hand` refuses**, none of which leave a run directory behind. The first
-three are checked before quackd connects to anything, and the last two before the arm is
-released:
+**Five things `--by-hand` refuses**, none of which leave a run directory behind, and all of
+them before quackd connects to anything:
 
 ```
 ✗ error: --by-hand is one person placing one arm, and this run has several robots

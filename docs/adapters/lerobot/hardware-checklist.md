@@ -79,12 +79,12 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    lerobot-calibrate --robot.type=so101_follower --robot.port=/dev/ttyACM0 --robot.id=arm-01
    ```
 
-   It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration
-   directory is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
-   `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**, which is
-   `arm-01` unless you registered the robot under another name with
-   `quackd robot add <name> lerobot:real`, which step 6 does, because a run needs a rest pose
-   and only a registered name keeps one. quackd reads every joint's travel out of that file and
+   It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration directory
+   is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
+   `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**: the name step 6
+   registers the arm under with `quackd robot add <name> lerobot:real`, `arm-01` on this page,
+   which is also the id a bare `--robot lerobot:real` uses. A run needs that name, because only
+   a registered name keeps a rest pose. quackd reads every joint's travel out of that file and
    refuses to drive an arm without one, and two arms sharing an id share a file with nothing in
    it to say which arm it came from.
 

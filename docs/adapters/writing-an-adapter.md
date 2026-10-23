@@ -387,8 +387,9 @@ LeRobot arm's `real` is the one listed, because its close lets go of an arm with
 wherever it stands, and an SO-101 has no brake. Its mock and its simulator are not, having no
 arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a person supports the
 arm through and the other is how a pose comes to be recorded at all
-([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). A module that
-declares none needs none.
+([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). A backend listed
+there has to support `quackd robot rest-pose` as well (`supports_rest_pose`), or every run of it
+is refused with a way back that refuses too. A module that declares none needs none.
 
 A backend on its way out declares itself in the same module, as a mapping rather than a list:
 `DEPRECATED_BACKENDS` maps its name to one line saying what to use instead and the release it

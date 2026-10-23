@@ -102,14 +102,20 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
    out of the three that were asked: refuse, keep torque on at the end of such a run, or leave
    it as it had been since 0.9. A dry run is refused too, because it connects and closes like
    any other. `quackd run`, `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no
-   recorded rest pose before anything is described, built or connected, naming the robot and
-   `quackd robot rest-pose NAME`. A spec on its own is refused the same way, with the
-   registration to do first. The adapter declares which of its backends this applies to
+   recorded rest pose before anything is built or connected, a run once its task file has been
+   judged against the body, so that a task that could never run there says so first. The refusal
+   names the robot and `quackd robot rest-pose NAME`. A spec on its own is refused the same way,
+   with the registration to do first, and a spec in a fleet, from `--robots` or a task file's
+   `robots:`, with a stored flock to run it from after that, since neither spelling reads the
+   registry. A pilot flock's member named by `--robot NAME` is built as that registered robot,
+   with its address, cameras and pose, where it used to be built as a bare spec of its kind with
+   none of them. The adapter declares which of its backends this applies to
    (`REST_POSE_BACKENDS`, read by `quackd.adapters.factory.needs_rest_pose`), so no LeRobot name
    enters the core, and `run_pilot_flock` refuses one as well, for a library caller. Not
-   refused: `doctor` and `robot list --probe`, which move nothing and are run with a person
-   supporting the arm; `rest-pose`, which is how a pose comes to exist; `robot release`, which
-   asks before it connects (5); the mock; and the simulator, which drops nothing real.
+   refused: `doctor` and `robot list --probe`, which on an arm with no pose move nothing and are
+   run with a person supporting the arm; `rest-pose`, which is how a pose comes to exist;
+   `robot release`, which asks before it connects (5); the mock; and the simulator, which drops
+   nothing real.
 
 What does not change: the first door's rule, the first Ctrl-C or `q` of a run, which still stops,
 folds and lets go at the pose, a second Ctrl-C during the teardown's own first fold, which still
@@ -133,6 +139,9 @@ and the last decision of ADR-0039: no verb, no MCP tool, and not on the `RobotAd
 - A real arm is no longer run by its spec. `--robot lerobot:real --address PORT` reaches it for
   `doctor`, and a run, a session or a flock wants the name it was registered under, with a pose
   recorded there. `quackd robot rest-pose NAME --clear` on a real arm says so.
+- The declaration is read from the installed adapter, so a core from this release beside an
+  adapter from an older one, a mixed install pip warns about and goes ahead with, has no backend
+  to refuse and lets such a run through as before.
 - Nothing here has run on an arm: the bench steps in the CHANGELOG are owed.
 
 ## Alternatives

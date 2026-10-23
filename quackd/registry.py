@@ -492,7 +492,12 @@ def unusable_spec(name: str, spec: str, why: str) -> str:
 
 
 def no_rest_pose_refusal(
-    resolved: Resolved, *, what: str, address: str | None = None
+    resolved: Resolved,
+    *,
+    what: str,
+    address: str | None = None,
+    camera_url: str | Sequence[str] | None = None,
+    fleet: bool = False,
 ) -> tuple[str, str] | None:
     """The refusal for a real arm with no rest pose recorded, and the way out, or None for any
     robot that may be connected without one (`needs_rest_pose`).
@@ -502,7 +507,9 @@ def no_rest_pose_refusal(
     refused before anything is built or connected. `what` is the thing refused, as the sentence
     says it: `a run, a dry one included`, `an MCP session`. A registered arm is sent to record
     its pose; a bare spec names no arm to record one for, so it is sent to register one first,
-    with the address it was given where there was one."""
+    with the address and the cameras it was given. A spec in a fleet, from `--robots` or a task
+    file's `robots:`, is sent on to a stored flock as well (`fleet`), since neither spelling
+    reads the registry, and registering the arm alone would change nothing they run."""
     if not needs_rest_pose(resolved.spec) or resolved.adapter_kwargs()["rest_pose"] is not None:
         return None
     falls = (
@@ -516,11 +523,16 @@ def no_rest_pose_refusal(
             f"quackd robot rest-pose {name}",
         )
     key = resolved.spec.key
-    at = f" --address {address}" if address else ""
-    return (
-        f"{key} names no registered arm, so it has no rest pose, and {falls}",
-        f"quackd robot add NAME {key}{at}, then quackd robot rest-pose NAME",
+    flags = (f" --address {address}" if address else "") + "".join(
+        f' --camera-url "{url}"' for url in camera_urls(camera_url)
     )
+    hint = f"quackd robot add NAME {key}{flags}, then quackd robot rest-pose NAME"
+    if fleet:
+        hint += (
+            ", then quackd flock create FLOCK --robot NAME, one --robot for each member, and run "
+            "it with --flock FLOCK"
+        )
+    return (f"{key} names no registered arm, so it has no rest pose, and {falls}", hint)
 
 
 class StoredFlock(BaseModel):

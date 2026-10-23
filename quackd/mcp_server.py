@@ -1361,7 +1361,13 @@ def fleet_from_flags(
     # and an SO-101 has no brake, so it falls there (ADR-0058). Refused before anything is
     # described or built, as `run` refuses it, a `--dry-run` session included: it connects too.
     for each in resolved:
-        refused = no_rest_pose_refusal(each, what="an MCP session", address=address)
+        refused = no_rest_pose_refusal(
+            each,
+            what="an MCP session",
+            address=address,
+            camera_url=camera_url,
+            fleet=bool(robots) or len(resolved) > 1,
+        )
         if refused is not None:
             raise SystemExit(f"{refused[0]}: {refused[1]}")
     # Refused before a manifest is described or an adapter built, as `run` refuses it.

@@ -1611,14 +1611,6 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
-    # A real arm with no rest pose is let go of wherever it stands when its run closes, and an
-    # SO-101 has no brake, so it falls there (ADR-0058). Refused before any provider, adapter or
-    # run directory exists, a dry run among them, since a dry run connects the arm too.
-    for each in resolved:
-        refused = no_rest_pose_refusal(each, what="a run, a dry one included", address=address)
-        if refused is not None:
-            _fail(refused[0], hint=refused[1])
-            return
     if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
         # Here rather than with the flags above, which run before the file is read, and before
         # the instructions, which a played file would otherwise be sent to add first. The
@@ -1844,6 +1836,22 @@ def _run_impl(
                 hint="run it from a terminal, or drop the flag and start from the rest pose",
             )
             return
+    # A real arm with no rest pose is let go of wherever it stands when its run closes, and an
+    # SO-101 has no brake, so it falls there (ADR-0058). Refused once the task file has been
+    # judged against the body, so a task that could never run on it says so first rather than
+    # sending a person off to fold the arm, and before any provider, adapter or run directory
+    # exists, a dry run among them, since a dry run connects the arm too.
+    for each in resolved:
+        refused = no_rest_pose_refusal(
+            each,
+            what="a run, a dry one included",
+            address=address,
+            camera_url=camera_url,
+            fleet=fleet,
+        )
+        if refused is not None:
+            _fail(refused[0], hint=refused[1])
+            return
     # Resolved here rather than beside the solo run below, because both flock branches return
     # before that point: `--decision-mode maybe` on a flock used to run the robots anyway, and
     # a mode that was spelled right used to be accepted and silently do nothing.
@@ -1943,6 +1951,20 @@ def _run_impl(
                     # NoRobotNamed reaches the user as a traceback rather than one line.
                     _fail(str(e), hint="name every member's body in the task file's robots:")
                     return
+                # A member named after a registered robot, as `--robot NAME` names one, is that
+                # robot: its address, its cameras and its rest pose are kept under the name, and
+                # a bare spec of its kind has none of them. It used to run as the bare spec, so a
+                # registered arm lost the pose its close would have folded it to.
+                registered = {r.entry.name: r.entry for r in resolved if r.entry is not None}
+                roster = {
+                    name: (
+                        registered[name]
+                        if name in registered
+                        and registered[name].robot_spec.key == member.robot_spec.key
+                        else member
+                    )
+                    for name, member in roster.items()
+                }
             if roster is None:
                 _fail(
                     "allocation.method: pilots needs members: name them in flock.members, "
@@ -5353,7 +5375,9 @@ def robot_rest_pose(
                 "recorded again",
                 f"  quackd robot rest-pose {name}",
             )
-            if needs_rest_pose(entry.robot_spec)
+            # the stored string, which `needs_rest_pose` reads without ever raising: the
+            # parsed spec raises for one this build cannot make, after the pose is cleared
+            if needs_rest_pose(entry.spec)
             else ("  a run now leaves the arm where it stands, and torque drops there",)
         )
         for line in after:

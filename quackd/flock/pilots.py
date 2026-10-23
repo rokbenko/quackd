@@ -253,10 +253,21 @@ async def run_pilot_flock(
     # without it, read off each member's own kwargs, since a roster is structural.
     for name, entry in roster.items():
         if needs_rest_pose(entry.robot_spec) and entry.adapter_kwargs().get("rest_pose") is None:
+            key = entry.robot_spec.key
+            # a member from a spec has no registry entry to keep a pose under, so recording one
+            # for its name would change nothing: it is sent to register the arm instead
+            said, way_out = (
+                (
+                    f"{name} ({key}) names no registered arm, so it has no rest pose",
+                    f"quackd robot add NAME {key} --address PORT, then quackd robot rest-pose "
+                    "NAME, and run the flock from the registry with --flock",
+                )
+                if isinstance(entry, SpecEntry)
+                else (f"{name} ({key}) has no rest pose recorded", f"quackd robot rest-pose {name}")
+            )
             raise ValueError(
-                f"{name} ({entry.robot_spec.key}) has no rest pose recorded, and quackd lets go "
-                "of an arm with none wherever it stands at the end of a flock's run, so it would "
-                f"fall there: quackd robot rest-pose {name}"
+                f"{said}, and quackd lets go of an arm with none wherever it stands at the end of "
+                f"a flock's run, so it would fall there: {way_out}"
             )
 
     # built before the run directory exists, so a missing extra or a bad address fails with

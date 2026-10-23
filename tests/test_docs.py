@@ -2933,6 +2933,10 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
         "goes on letting go of the arm wherever it stops",
         "the spec form reaches a real arm for `doctor`, and a run of it is refused",
     ),
+    (
+        "a clean session ends the way it always did and the arm sags",
+        "a run of a real arm with no rest pose is refused, and only a probe lets it sag",
+    ),
 )
 
 
