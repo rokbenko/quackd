@@ -615,7 +615,7 @@ uvx --from "quackd[microduck]" quackd run --goal "find the ball and kick it" --l
 # the same goal with Claude
 uvx --from "quackd[microduck,anthropic]" quackd run --goal "find the ball and kick it" --llm anthropic
 
-# a task file (fifteen ship with the core, the starter table below lists them)
+# a task file (eighteen ship with the core, the starter table below lists them)
 uvx --from "quackd[microduck]" quackd run find-and-kick --llm fake --seed 3
 ```
 
@@ -784,7 +784,7 @@ robots: microduck:sim2d                 # the default body, so `quackd run` need
 requires: [search_scan, walk_to, kick]  # the honest minimum a body must provide
 ```
 
-`quackd validate --robot` checks `requires` against a robot's manifest before anything moves: `quackd validate find-and-kick --robot lerobot:mock` exits 1 with `requires kick, but arm-01 (lerobot-so101) does not provide it`. For a `duck: 0` file the whole allowlist counts as required. Of the fifteen bundled starters, the six written before 0.4 keep their 0.3 spellings at `duck: 0` and the nine written since are `duck: 1`. A `duck: 2` file can also correct the robot's datasheet for the build in front of you with a `datasheet:` block, and the prompt labels those numbers as coming from the task file. A `duck: 3` file can hold an arm's `manipulate` to the subtasks its `policy:` block lists, how long each segment of the learned policy runs and how long they run in all ([docs/reference/duck-spec.md](docs/reference/duck-spec.md#policy-v3)). A `duck: 4` file can say `play: true`, which lets the pilot act out a part the task gives it, an animal, a person or a feeling, with the body it has, and changes no gate ([docs/guides/play.md](docs/guides/play.md)).
+`quackd validate --robot` checks `requires` against a robot's manifest before anything moves: `quackd validate find-and-kick --robot lerobot:mock` exits 1 with `requires kick, but arm-01 (lerobot-so101) does not provide it`. For a `duck: 0` file the whole allowlist counts as required. Of the eighteen bundled starters, the six written before 0.4 keep their 0.3 spellings at `duck: 0` and the twelve written since are `duck: 1`. A `duck: 2` file can also correct the robot's datasheet for the build in front of you with a `datasheet:` block, and the prompt labels those numbers as coming from the task file. A `duck: 3` file can hold an arm's `manipulate` to the subtasks its `policy:` block lists, how long each segment of the learned policy runs and how long they run in all ([docs/reference/duck-spec.md](docs/reference/duck-spec.md#policy-v3)). A `duck: 4` file can say `play: true`, which lets the pilot act out a part the task gives it, an animal, a person or a feeling, with the body it has, and changes no gate ([docs/guides/play.md](docs/guides/play.md)).
 
 | Starter | Goal | Notes |
 |---|---|---|
