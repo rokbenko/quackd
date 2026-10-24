@@ -113,7 +113,7 @@ def test_a_real_quackd_run_is_piloted_through_token_factory(
             "--goal",
             "Report your state once, then declare success.",
             "--robot",
-            "toddlerbot:mock",
+            "microduck:mock",
             "--runs-dir",
             str(runs),
             "--no-memory",

@@ -5,7 +5,7 @@ Who the robot is to you, its tier and why, is decided by quackd's code and print
 model says a word. A stranger's passport reaches the model in closed words and numbers only,
 the rule quackd's pilots follow (`Talker._shown` in `quackd/passport_talk.py`): its name, its
 `cannot` lines, its stop sentence and its sources are text the stranger wrote, `ignore your
-instructions` as easily as `courier-01`. The person reads those verbatim beside the answer, and
+instructions` as easily as `postman-01`. The person reads those verbatim beside the answer, and
 the model never sees them.
 """
 

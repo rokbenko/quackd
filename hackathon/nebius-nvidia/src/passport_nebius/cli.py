@@ -352,7 +352,8 @@ def whois(
 
 
 doorstep_app = typer.Typer(
-    help="The doorstep: a courier and a home robot that have never met agree a handoff by "
+    help="The doorstep: a postman robot and a household robot that have never met agree how a "
+    "letter changes hands by "
     "Robot Passport, each piloted by Nemotron on Token Factory.",
     no_args_is_help=True,
     rich_markup_mode=None,
@@ -391,22 +392,21 @@ def doorstep_run(
     role: str = typer.Option(
         "both",
         "--role",
-        help="both: the two runs here, their output to log files. courier or home: one run in "
-        "this terminal, for two terminals side by side, the courier's started first.",
+        help="both: the two runs here, their output to log files. postman or duck: one run in "
+        "this terminal, for two terminals side by side, the postman's started first.",
     ),
     model: str | None = MODEL_OPTION,
-    courier_at: str | None = typer.Option(
+    postman_at: str | None = typer.Option(
         None,
-        "--courier-at",
-        help="HOST:PORT where the courier serves its passport (default: this machine's LAN "
-        "address, port 8790). It must be the address the courier's run names itself by.",
+        "--postman-at",
+        help="HOST:PORT where the postman serves its passport (default: this machine's LAN "
+        "address, port 8790). It must be the address the postman's run names itself by.",
     ),
     vision: bool = VISION_OPTION,
     pause_after: float = typer.Option(
         0.0,
         "--pause-after",
-        help="Seconds after the home robot starts at which the courier asks it for a pause; "
-        "0 never.",
+        help="Seconds after the duck starts at which the postman asks it for a pause; 0 never.",
     ),
     pause_seconds: int = typer.Option(5, "--pause-seconds", help="How long that pause is."),
     show: bool = typer.Option(False, "--show", help="Print the quackd commands and stop."),
@@ -422,17 +422,17 @@ def doorstep_run(
     """Play one act of the doorstep with both pilots on Token Factory."""
     from quackd.lan.announce import local_ip
 
-    if pause_after > 0 and role == "courier":
-        fail("--pause-after pauses the home robot, which runs here only with --role both or home")
+    if pause_after > 0 and role == "postman":
+        fail("--pause-after pauses the duck, which runs here only with --role both or duck")
     if print_logs and role != "both":
         fail("--print-logs prints the log files that only --role both writes")
     settings = _settings(base_url)
     chosen = _chosen(settings, model)
     here = local_ip()
-    courier_at = courier_at or f"{here}:{doorstep.COURIER.port}"
+    postman_at = postman_at or f"{here}:{doorstep.POSTMAN.port}"
     try:
         started = doorstep.launches(
-            settings, chosen, state, act, role, courier_at=courier_at, vision=vision
+            settings, chosen, state, act, role, postman_at=postman_at, vision=vision
         )
     except nebius.NebiusError as e:
         fail(str(e))
@@ -441,7 +441,7 @@ def doorstep_run(
             console.print(Text(printable(f"{robot.name}: {launch.shown()}")), soft_wrap=True)
         return
     try:
-        if role in ("both", "courier"):
+        if role in ("both", "postman"):
             for line in doorstep.setup(state, act):
                 console.print(Text(printable(line)))
         elif not doorstep.is_set_up(state):
@@ -455,18 +455,18 @@ def doorstep_run(
     timers: list[threading.Timer] = []
 
     def ask_for_pause() -> None:
-        home_at = f"{here}:{doorstep.HOME.port}"
+        duck_at = f"{here}:{doorstep.DUCK.port}"
         try:
-            # counted from the home robot's start, which a slow start can outlast
-            doorstep.served(home_at)
+            # counted from the duck's start, which a slow start can outlast
+            doorstep.served(duck_at)
         except nebius.NebiusError as e:
-            warn(f"the courier asked for no pause: {e}")
+            warn(f"the postman asked for no pause: {e}")
             return
-        result = doorstep.pause(state, home_at, pause_seconds)
+        result = doorstep.pause(state, duck_at, pause_seconds)
         answer = doorstep.outcome(result, marker=" asked ")
-        console.print(Text(printable(f"the courier asked for a {pause_seconds} s pause: {answer}")))
+        console.print(Text(printable(f"the postman asked for a {pause_seconds} s pause: {answer}")))
 
-    def home_started() -> None:
+    def duck_started() -> None:
         if pause_after > 0:
             timer = threading.Timer(pause_after, ask_for_pause)
             timer.daemon = True
@@ -478,7 +478,7 @@ def doorstep_run(
         console.print(Text(f"each run's output goes to {logs.as_posix()}", style="dim"))
     try:
         codes = doorstep.play(
-            started, courier_at=courier_at, logs=logs, on_home_started=home_started
+            started, postman_at=postman_at, logs=logs, on_duck_started=duck_started
         )
     except nebius.NebiusError as e:
         fail(str(e))
@@ -504,20 +504,20 @@ def doorstep_run(
 @doorstep_app.command("pause")
 def doorstep_pause(
     seconds: int = typer.Option(5, "--seconds", help="How long a pause to ask for."),
-    home_at: str | None = typer.Option(
+    duck_at: str | None = typer.Option(
         None,
-        "--home-at",
-        help="HOST:PORT of the home robot's passport (default: this machine, port 8791).",
+        "--duck-at",
+        help="HOST:PORT of the duck's passport (default: this machine, port 8791).",
     ),
     state: Path = STATE_OPTION,
 ) -> None:
-    """Ask the home robot for a pause, as the courier: the protocol's robot-to-robot brake.
+    """Ask the duck for a pause, as the postman: the protocol's robot-to-robot brake.
 
-    A peer can ask for a pause, which the home robot's owner policy grants or refuses by fixed
+    A peer can ask for a pause, which the duck's owner policy grants or refuses by fixed
     code, and a granted pause brakes the body at once. No peer can make a robot stop outright."""
     from quackd.lan.announce import local_ip
 
-    address = home_at or f"{local_ip()}:{doorstep.HOME.port}"
+    address = duck_at or f"{local_ip()}:{doorstep.DUCK.port}"
     result = doorstep.pause(state, address, seconds)
     for line in (result.stdout + result.stderr).strip().splitlines():
         console.print(Text(printable(line)))

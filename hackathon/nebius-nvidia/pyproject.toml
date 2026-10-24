@@ -15,9 +15,9 @@ authors = [{ name = "Rok Benko" }]
 classifiers = ["Private :: Do Not Upload"]
 dependencies = [
   # The released passport, from PyPI: this folder is a consumer of quackd, never a part of it.
-  # openai is the local provider's client, lan the passport's discovery, and the two bodies
-  # are the doorstep's courier and home robot.
-  "quackd[openai,lan,alohamini,toddlerbot]>=0.23.0,<0.24",
+  # openai is the local provider's client, lan the passport's discovery, and microduck the
+  # doorstep's household robot. The postman, Agile ONE SN, is this folder's own (below).
+  "quackd[openai,lan,microduck]>=0.23.0,<0.24",
   "openai>=1.66,<4",
   "typer>=0.12",
   "rich>=13.7",
@@ -26,6 +26,11 @@ dependencies = [
 
 [project.scripts]
 passport-nebius = "passport_nebius.cli:main"
+
+# How a third party's robot reaches quackd: the entry point group its adapter factory reads.
+# Installed with this folder alone, so `--robot agile_one_sn:mock` exists here and nowhere else.
+[project.entry-points."quackd.adapters"]
+agile_one_sn = "passport_nebius.agile_one_sn"
 
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=1.11"]

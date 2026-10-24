@@ -7,6 +7,7 @@ quackd's command line and calls its importable passport API, from the released 0
 - `nebius`: Token Factory as this edition reaches it, a key and the live model list.
 - `pilot`: `quackd run` with its local provider pointed at Token Factory, a Nemotron pilot.
 - `doorstep`: two robots that never met agree a handoff by Robot Passport.
+- `agile_one_sn`: Agile ONE SN, the postman, as a mock body quackd finds by its entry point.
 """
 
 __version__ = "0.1.0"
