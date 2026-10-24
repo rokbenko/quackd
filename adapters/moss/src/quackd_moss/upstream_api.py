@@ -28,7 +28,6 @@ Nothing here has been run against a MOSS rover.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Literal, cast
 
@@ -1057,8 +1056,17 @@ def quoted(ref: UpstreamRef) -> tuple[str, ...]:
     return tuple(re.findall(r'"([^"]+)"', ref.name))
 
 
+def _shared_start(names: tuple[str, ...]) -> str:
+    """The longest start every one of names has. Python 3.15 deprecates os.path.commonprefix,
+    which did this, because it compares a path's letters rather than its parts."""
+    start = names[0]
+    while not all(name.startswith(start) for name in names):
+        start = start[:-1]
+    return start
+
+
 BASE_STACK, GAMEPAD_STACK, NAV_STACK, EXPLORE_STACK, ARM_STACK, LITTER_STACK = quoted(BLUEPRINTS)
-BLUEPRINT_PREFIX = os.path.commonprefix(list(quoted(BLUEPRINTS)))
+BLUEPRINT_PREFIX = _shared_start(quoted(BLUEPRINTS))
 """What every one of MOSS's blueprints starts with."""
 NOSE, WRIST = quoted(CAMERAS)
 PickPose = Literal["pick", "pick_low"]
