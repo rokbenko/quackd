@@ -157,6 +157,27 @@ async def _answer(future: Any) -> None:
         wrapped.exception()
 
 
+class AnsweredClock(SteppedClock):
+    """A stepped clock under a runner that declares no latency: a request still out when the
+    loop sleeps is answered before time moves on, so it lands on the tick after it was asked,
+    however long its thread or its server takes on the machine running the test. On a plain
+    `SteppedClock` a tick costs no wall time, and a request the loop leaves to land while the
+    arm plays (`PolicyLoop._request`) would land as many ticks later as the loop had run by the
+    time its thread got round to it. `loop` is the backend's policy loop, which the test sets.
+    A runner that never answers is waited for at every sleep, so a test of one keeps to a plain
+    `SteppedClock`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.loop: PolicyLoop | None = None
+
+    async def sleep(self, seconds: float) -> None:
+        req = self.loop._inflight if self.loop is not None else None
+        if req is not None and not req.future.done():
+            await _answer(req.future)
+        await super().sleep(seconds)
+
+
 def _tag(tick: int, index: int) -> float:
     """A pan goal that says which request it answered and where in its chunk it was."""
     return tick + index / 100
@@ -911,6 +932,38 @@ async def test_an_answer_slower_than_declared_still_lands_before_the_queue_runs_
     assert ended.stats.starved == late.get(1, usual), ended.stats
 
 
+@pytest.mark.parametrize("k", [1, HALF], ids=["a tick late", "half a chunk late"])
+async def test_a_runner_that_declares_no_latency_is_never_waited_for_with_actions_queued(
+    k: int,
+) -> None:
+    """A server started with no `--latency-s` declares none, and still takes a round trip to
+    answer, here `k` ticks on the wall's kind of clock. Its first chunk is waited for in the
+    tick that asked, with nothing to play until it lands. Every chunk after that is asked for
+    with half the last still queued and left to land while the arm plays it, as for a declared
+    latency, so the arm holds still for no round trip after the first chunk, and an answer up
+    to half a chunk late still lands with something queued."""
+    ticks = 5 * LONG
+    arm = _segment_arm()
+    runner = Gated(_long(_swing(arm)), rate_hz=RATE)
+    assert runner.latency_s() == 0
+    runner.gate(0).set()  # the first chunk answers at once, in the tick that asked for it
+    clock = GateClock(runner, k)
+    _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm)
+    clock.loop = transport._policy_loop
+    clock.sleeps = 0
+    sends = _recorded(arm, clock)
+    start = clock.t
+    try:
+        ended = await _segment_end(transport, max_s=ticks * PERIOD)
+    finally:
+        runner.open.set()
+    await adapter.close()
+    assert ended.how == "time", ended.reason
+    assert ended.stats.ticks == ticks and ended.stats.chunks >= 5, ended.stats
+    assert ended.stats.skipped == 0 and ended.stats.starved == 0, ended.stats
+    assert _gaps([(at - start, cap, action) for at, cap, action in sends], 0.0) == []
+
+
 async def test_an_empty_queue_sends_nothing_and_ends_the_segment_after_the_starve_time() -> None:
     clock = LockstepClock()
 
@@ -1040,9 +1093,9 @@ async def test_a_segment_s_chunks_are_the_ones_it_played(first: str) -> None:
 
 
 async def test_a_first_chunk_the_grace_runs_out_on_is_said_as_the_whole_grace() -> None:
-    """A runner that answers at once is waited for in its tick, on the wall's kind of clock,
-    for whatever is left of the grace. One that runs it out is said to have given nothing for
-    the grace, never for the sliver of it the last wait had."""
+    """A runner that answers at once is waited for in its tick, with nothing to play, on the
+    wall's kind of clock, for whatever is left of the grace. One that runs it out is said to
+    have given nothing for the grace, never for the sliver of it the last wait had."""
     edge = math.floor(FIRST_CHUNK_S * RATE) - 1
     assert 0 < FIRST_CHUNK_S - edge * PERIOD < STARVE_S
     runner = Gated(lambda o, s: [], rate_hz=RATE)
@@ -1191,8 +1244,9 @@ async def test_a_runner_that_never_answers_never_holds_up_the_bus() -> None:
 
 
 async def test_a_runner_that_answers_at_once_but_does_not_starves_its_tick_and_is_held() -> None:
-    """A runner that declares no latency is awaited in its own tick, for no longer than the
-    segment's patience on the wall's clock, and then the segment ends with the arm held."""
+    """A runner that declares no latency is awaited in its own tick for a first chunk, with
+    nothing to play meanwhile, for no longer than the segment's patience on the wall's clock,
+    and then the segment ends with the arm held."""
     arm = _segment_arm()
     runner = Gated(_tagged(4), rate_hz=RATE)
     _, transport, adapter, _ = await _backend(runner, arm=arm)

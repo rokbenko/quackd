@@ -72,7 +72,7 @@ from quackd_lerobot.real import (
 )
 from quackd_lerobot.verbs import JOINTS, MANIPULATE_S
 from tests.test_lerobot_adapter import FakeArm, FakeCamera, SteppedClock, _segment_arm
-from tests.test_policy_loop import STEP, LockstepClock, _segment_end
+from tests.test_policy_loop import STEP, AnsweredClock, LockstepClock, _segment_end
 
 REPO = Path(__file__).resolve().parents[1]
 HOSTD = REPO / "bridge" / "jetson" / "quackd_jetson_hostd.py"
@@ -152,10 +152,15 @@ async def _arm_on(
     runner: RemoteRunner, arm: FakeArm | None = None, clock: Any = None
 ) -> tuple[Any, Any, Any]:
     """The real backend over the fake arm, its policy the server behind `runner`, on a clock
-    that moves only when slept, so a segment of many seconds costs none of the wall's."""
+    that moves only when slept, so a segment of many seconds costs none of the wall's. Unless a
+    test gives its own, the clock waits for an answer still out before it moves
+    (`AnsweredClock`), so every chunk lands on the tick after it was asked, however long the
+    server takes on the machine running the test."""
     arm = arm if arm is not None else _segment_arm()
-    clock = clock if clock is not None else SteppedClock()
+    clock = clock if clock is not None else AnsweredClock()
     transport = LeRobotReal("COM5", robot=arm, policy=runner, clock=clock, max_step_deg=STEP)
+    if isinstance(clock, AnsweredClock):
+        clock.loop = transport._policy_loop
     adapter = LeRobotAdapter(transport)
     manifest = await adapter.connect()
     ex = Executor(registry_from_manifest(manifest, adapter), adapter, confirm=allow_all)
@@ -288,10 +293,11 @@ async def test_a_server_that_stops_answering_starves_the_segment() -> None:
     serving = _serving(S.ServeOptions(policy="scripted:sweep"), runner=built)
     runner = serving.client()
     assert runner.step_timeout_s == STEP_TIMEOUT_S > FIRST_CHUNK_S > STARVE_S
-    transport, adapter, _ = await _arm_on(runner)
+    # a plain stepped clock: one that waited for the step never answered would wait at every tick
+    transport, adapter, _ = await _arm_on(runner, clock=SteppedClock())
     loop = transport._policy_loop
     assert loop is not None
-    loop.starve_s = 0.3  # the wall's seconds: the bound this test waits out
+    loop.starve_s = 0.3  # the arm's seconds, which this clock spends none of the wall's on
     try:
         ended = await _segment_end(transport, max_s=1e6)
         assert ended.how == "starved", ended
@@ -316,7 +322,7 @@ async def test_manipulate_is_not_ok_when_the_server_stops_answering() -> None:
 
     built.script = stalls
     serving = _serving(S.ServeOptions(policy="scripted:sweep"), runner=built)
-    transport, adapter, ex = await _arm_on(serving.client())
+    transport, adapter, ex = await _arm_on(serving.client(), clock=SteppedClock())
     assert transport._policy_loop is not None
     transport._policy_loop.starve_s = 0.3
     try:
@@ -1399,6 +1405,38 @@ def test_the_bench_streams_through_the_real_client(served: Serving) -> None:
     assert f"--latency-s {declared:.2f}" in rows["latency"]
 
 
+def test_a_bench_of_a_policy_that_declares_no_latency_waits_out_its_first_chunk_alone() -> None:
+    """A server started with no --latency-s, whose every step takes `trip`, under half the
+    sweep's chunk. The bench waits for the first chunk in the tick that asked for it, as a
+    segment does with nothing to play, and leaves every later one to land while the ticks play
+    the half of the last still queued, as a segment does. So the ticks it skips are the first
+    chunk's, and none after the first has nothing to send. Waiting out every chunk in its tick
+    would skip that many again for each."""
+    trip = 0.2
+    built, _ = S.served_policy(S.ServeOptions(policy="scripted:sweep"))
+    script = built.script
+
+    def slow(observation: Observation, sent: Mapping[str, float]) -> Any:
+        time.sleep(trip)
+        return script(observation, sent)
+
+    built.script = slow
+    serving = _serving(S.ServeOptions(policy="scripted:sweep"), runner=built)
+    try:
+        result = S.bench(serving.client(), seconds=2.0)
+    finally:
+        serving.http.shutdown()
+        serving.http.server_close()
+        serving.app.close()
+    assert result.waited and result.declared_s == 0, result
+    first = math.ceil(trip * result.rate_hz)  # the ticks the first chunk's round trip spans
+    assert result.chunk is not None and 2 * first < result.chunk // 2, "a step that slow starves"
+    assert result.starved == 0, result
+    # room for the first wait to run long on a busy machine, and none for a second wait
+    assert result.skipped <= 2 * first, result
+    assert built.requests >= 2 + 3, "the stream asked for too few chunks to tell"
+
+
 def test_the_suggested_latency_covers_most_steps_timed_and_rests_on_no_one_of_them() -> None:
     """One step timed on its own is one draw, and two benches of one checkpoint on one laptop
     suggested latencies too far apart to serve with either. The suggestion is read at
@@ -1417,8 +1455,9 @@ def test_the_suggested_latency_covers_most_steps_timed_and_rests_on_no_one_of_th
 
 def test_a_bench_says_what_its_skipped_ticks_were_and_whether_its_latency_covers_it() -> None:
     """A tick the pacer skipped sent nothing, as a starved one did, and is not counted as
-    starved, so the bench says what it was: with no --latency-s declared, the wait for a chunk
-    in the tick that asked for it, as a segment waits, and otherwise a pacer that woke late.
+    starved, so the bench says what it was: with no --latency-s declared, the wait in the tick
+    that asked for a chunk with nothing left to play, as a segment waits, and otherwise a pacer
+    that woke late.
     Its latency row says to bench again served with the latency it suggests, and on that
     second bench, that the latency it was served with covers what it timed."""
     rate, seconds, trip = 10.0, 2.0, 0.5  # synthetic: a step takes five ticks

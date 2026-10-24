@@ -47,8 +47,12 @@ nothing sleeps on it, so a runner's inference is awaited in the loop's own turn 
 time. Its answer is then held back `k` ticks, `k` from the runner's declared latency, while the
 pacer goes on ticking and playing the old queue, and is judged only when it is let go: that is
 where it would have landed on the arm, a chunk thrown away and an error raised included.
-A runner that answers at once (`k` of 0) is awaited in its own tick on either clock, which is
-how a `PolicyLike` has always run: one `act` a tick, its goal sent that tick.
+A runner that answers at once (`k` of 0) is awaited in its own tick on the simulator's clock,
+and on the wall's when there is nothing left to play, which is how a `PolicyLike` has always
+run, one `act` a tick and its goal sent that tick, and how a segment's first chunk is waited
+for. On the wall's clock a request made with something still queued is never waited for,
+whatever latency the runner declares: a server started with none still takes a round trip to
+answer, and a tick that waited it out would hold the arm still through it, every chunk.
 
 **Tick mode** (`Features.per_tick`): a runner that carries state from tick to tick is asked
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
@@ -322,6 +326,11 @@ class _Run:
     starved: int = 0
     stale: int = 0
     late: int = 0
+
+    def left(self, tick: int) -> int:
+        """How many queued actions are for `tick` or a tick after it: what the arm still has to
+        play from this tick on."""
+        return sum(1 for at, _ in self.queue if at >= tick)
 
 
 @dataclass
@@ -763,22 +772,22 @@ class PolicyLoop:
             return True
         if run.held_back:
             return False  # a request held back on its way is the one outstanding
-        left = sum(1 for at, _ in run.queue if at >= tick)
-        return refill_due(left, plan.latency_ticks, run.last_len)
+        return refill_due(run.left(tick), plan.latency_ticks, run.last_len)
 
     async def _request(
         self, arm: LeRobotReal, run: _Run, observation: Observation, plan: Plan, lockstep: bool
     ) -> SegmentEnd | None:
         """Ask the runner for a chunk, stamped with this tick. On a lockstep clock the answer is
         awaited here, with time standing still, and held back its `k` ticks whole, to be judged
-        when it is let go as the arm would judge it on arrival. A runner that answers at once is
-        awaited here on the wall's clock too, within what is left of the segment's patience.
-        Otherwise the answer is left on the worker and taken in on the tick it has come back
-        by."""
+        when it is let go as the arm would judge it on arrival. On the wall's clock a runner that
+        answers at once is awaited here too, within what is left of the segment's patience, but
+        only with nothing left to play from this tick on: a first chunk, or a runner that
+        answers one action at a time. Otherwise the answer is left on the worker and taken in on
+        the tick it has come back by, while the arm plays what is queued."""
         future = self._submit(self.runner.next_chunk, observation, dict(run.last_sent))
         req = _Request(self.epoch, observation.tick, future)
         self._inflight = req
-        if not lockstep and plan.latency_ticks > 0:
+        if not lockstep and (plan.latency_ticks > 0 or run.left(observation.tick)):
             return None
         patience = None
         if not lockstep:

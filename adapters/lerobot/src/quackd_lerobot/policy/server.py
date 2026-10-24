@@ -1235,8 +1235,9 @@ class BenchResult:
     time the server reported for it. `before_first` is how many of the starved ticks came
     before the stream's first chunk was back. `latency_s` is one warm step timed on its own
     before the stream, from the request going out to its chunk back. `declared_s` is the
-    `--latency-s` the server was started with, and `waited` whether the bench waited for each
-    chunk in the tick that asked for it, as a segment waits for a policy that declares none.
+    `--latency-s` the server was started with, and `waited` whether the bench, with nothing left
+    to play, waited out a chunk in the tick that asked for it, its first chunk among them, as a
+    segment waits for a policy that declares none.
     `chunk` is how many actions a chunk the server answers plays, and `per_tick` whether it
     answers one action a tick, which bound the `--latency-s` it can be served with
     (`latency_too_long`)."""
@@ -1312,9 +1313,10 @@ def describe_bench(result: BenchResult) -> list[tuple[str, str]]:
     ]
     if result.skipped:
         why = (
-            "the policy declares no --latency-s, so each chunk was waited for in the tick that "
-            "asked for it, as a segment waits for one, and the ticks that passed meanwhile sent "
-            "nothing: the arm would have held still through them"
+            "the policy declares no --latency-s, so a chunk asked for with nothing left to play, "
+            "its first among them, was waited for in the tick that asked for it, as a segment "
+            "waits for one, and the ticks that passed meanwhile sent nothing: the arm would have "
+            "held still through them"
             if result.waited
             else "the pacer woke too late for them, and they sent nothing, as a machine too "
             "busy to keep the policy's rate would leave the arm"
@@ -1443,9 +1445,10 @@ def bench(
     queues a segment (`loop.py`): a tick every period from the start, a request when what is
     left of the last chunk is down to half of it or to twice the ticks the declared latency
     comes to, whichever is more (`refill_due`), one request out at most, and a chunk's actions
-    for ticks already played dropped as it lands. A policy that declares no latency is waited
-    for in the tick that asked, as the loop waits for it, and any other is left to land while
-    the ticks go on. The observation is every motor at 0 and a frame of seeded noise per camera
+    for ticks already played dropped as it lands. A request to a policy that declares no
+    latency is waited for in the tick that asked when nothing is left to play, the first among
+    them, as the loop waits for it, and any other is left to land while the ticks go on and the
+    queue plays. The observation is every motor at 0 and a frame of seeded noise per camera
     the server maps, which JPEG compresses worst, so a round trip measured here is not
     flattered by an easy picture. Before the stream one warm step is timed on its own
     (`BenchResult.latency_s`), and the latency the bench suggests is read over it and every
@@ -1525,7 +1528,7 @@ def bench(
                 and (features.per_tick or refill_due(left, late, last_len))
             ):
                 inflight = (tick, worker.submit(ask, tick, dict(sent)))
-                if waits:
+                if waits and not left:
                     concurrent.futures.wait([inflight[1]])
                     take_in(tick)
             while queue and queue[0][0] < tick:

@@ -793,9 +793,12 @@ it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
   declared latency comes to where that is more, so any answer within half a chunk lands with
   something still queued, and never while it has not answered. The next can be asked for no
   sooner than the last lands, so a chunk has to last while it lands and while the next one
-  does, twice the latency, and `serve` refuses a latency past half a chunk (below). A tick with
-  nothing queued sends nothing, the arm holding its last goal, and 1 s of that ends the
-  segment, with 5 s of grace for the first chunk.
+  does, twice the latency, and `serve` refuses a latency past half a chunk (below). On the arm
+  a chunk asked for with something still queued is never waited for, whatever latency the
+  policy declares, and the arm plays what is queued while it lands. A policy that declares no
+  latency is waited for in the tick that asked only when nothing is left to play, as for a
+  segment's first chunk. A tick with nothing queued sends nothing, the arm holding its last
+  goal, and 1 s of that ends the segment, with 5 s of grace for the first chunk.
 - **The policy has a thread of its own.** Every call on it runs on a worker of its own, never
   on the threads the bus's calls use, so a policy that stops answering cannot hold up a read,
   a stop or the heartbeat. A segment starts only once the policy has finished whatever the last
@@ -871,9 +874,9 @@ says the `--latency-s` to give: the 95th percentile of every step it timed, the 
 stream's (`LATENCY_QUANTILE`), rounded up to the hundredth of a second. One step timed on its
 own is one draw, and two benches of one checkpoint on one laptop suggested latencies too far
 apart to serve with either. A tick the pacer skipped sent nothing, as a starved one did, and is
-not counted as starved: with no `--latency-s` declared, a segment waits for each chunk in the
-tick that asked for it, and the ticks that pass meanwhile are skipped, so bench again served
-with the latency the first bench suggests
+not counted as starved: with no `--latency-s` declared, a segment waits out a chunk in the tick
+that asked for it when it had nothing left to play, its first chunk among them, and the ticks
+that pass meanwhile are skipped. So bench again served with the latency the first bench suggests
 ([guides/policies.md](../../guides/policies.md#on-the-laptop-alone) has both benches of a trained
 ACT, and what a good second one looks like). A policy whose steps take longer than a segment waits
 for its first chunk, or longer than half a chunk's actions, rounded down, take to play
