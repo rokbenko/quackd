@@ -111,13 +111,12 @@ def perform_params(motions: tuple[str, ...] = MOTIONS) -> type[BaseModel]:
     sentence is, so the two cannot disagree."""
     if tuple(motions) == MOTIONS:
         return PerformParams
+    # A Literal built at run time from what the daemon reported, which no type checker can read.
+    motion: Any = Literal[motions]
     return create_model(
         "PerformParams",
         __config__=ConfigDict(extra="forbid"),
-        motion=(
-            Literal[motions],  # type: ignore[valid-type]
-            Field(..., description=PerformParams.model_fields["motion"].description),
-        ),
+        motion=(motion, Field(..., description=PerformParams.model_fields["motion"].description)),
     )
 
 
