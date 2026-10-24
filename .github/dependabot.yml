@@ -14,11 +14,12 @@ updates:
       python-deps:
         patterns: ["*"]
     # Dependabot asks uv for one version of a package in every split of the lock at once, the
-    # newest PyPI has, and for the first five below uv finds none while something else in the
-    # lock holds them back. Each of those has failed the whole job every week since 2026-09-11.
-    # Only the versions the hold rules out are ignored, so a release inside it still comes in
-    # the group. Drop an entry once what holds it back moves. hatchling, the last, is the build
-    # backend, which the updater cannot move.
+    # newest PyPI has, and for the first six below uv finds none while something else in the
+    # lock holds them back. Each failed the whole job until it was ignored, pillow on every run
+    # from 2026-10-20 and the others every week from 2026-09-11. Only the versions the hold rules
+    # out are ignored, so a release inside it still comes in the group. Drop an entry once what
+    # holds it back moves. hatchling, the last, is the build backend, which the updater cannot
+    # move.
     ignore:
       # lerobot 0.6, the arm's SDK on Python 3.12 and later, pins numpy>=2.0.0,<2.3.0.
       - dependency-name: "numpy"
@@ -26,6 +27,9 @@ updates:
       # lerobot 0.6 pins opencv-python-headless>=4.9.0,<4.14.0 the same way.
       - dependency-name: "opencv-python-headless"
         versions: [">=4.14.0"]
+      # lerobot 0.6 pins pillow>=10.0.0,<13.0.0 too.
+      - dependency-name: "pillow"
+        versions: [">=13.0.0"]
       # From 8.4.124 on, ultralytics wants numpy under 2.0 or past 2.3.4 on macOS, and lerobot's
       # numpy>=2.0.0,<2.3.0 leaves it nothing there. The other platforms' split can still move:
       # a person runs uv lock --upgrade-package ultralytics.

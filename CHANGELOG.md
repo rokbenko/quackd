@@ -37,6 +37,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Its weights were not loaded. mujoco 3.16.0 and onnxruntime 1.31.0 passed the physics job, and
   the nightly jobs that load the Microduck's real model and the arm's run on them from the night
   after the merge. No requirement a user installs against moved.
+- **Dependabot ignores pillow 13, which lerobot 0.6 rules out.** lerobot 0.6.1, the arm's SDK on
+  Python 3.12 and later, asks for `Pillow>=10.0.0,<13.0.0`, and Dependabot's uv job asks uv for
+  one version of a package in every split of the lock at once, so from 2026-10-20 every run of
+  it ended red on pillow 13.0.0, though the rest of the group still came through.
+  `.github/dependabot.yml` now ignores pillow from 13.0.0, as it does numpy and
+  opencv-python-headless past lerobot's pins, so a 12.x release still comes in the group. The
+  configuration ships in no package, so this needs no release.
 
 ## [0.24.0] — 2026-10-23
 
