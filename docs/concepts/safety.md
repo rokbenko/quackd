@@ -278,6 +278,14 @@ as a `decide` prompt ([above](#who-the-record-says-was-asked)).
 A no ends the run `aborted` and exits 1, not `infeasible` and 3, because a person
 stopping a robot is the kill switch's kind of act rather than a statement about the body.
 
+Until a verdict is recorded, when a detector looks at the frame and finds nothing, an
+observation a `quackd run` pilot is handed ends with a line that says this at the moment it
+decides: nothing detected yet is not by itself a reason for `uncertain`, which is for a limit
+that turns on that unseen thing's mass or size, or on a figure the datasheet does not publish.
+The description says it once, at the top of a run, and on the one model measured that was not
+enough: most of its doubts were still about where the ball was
+([guides/local-llms.md](../guides/local-llms.md#honest-notes)).
+
 A go is told to the pilot as a go: its doubt is recorded, a person read it and said go, the
 verbs that move the body now run, and it should not assess again on the same doubt, only on
 something new it sees. Up to 0.13.0 it heard only that motion now ran, which reads the same

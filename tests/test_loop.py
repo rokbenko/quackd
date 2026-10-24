@@ -19,6 +19,7 @@ import quackd.agent.loop as loop_module
 from quackd.adapters.base import AdapterError, RestResult
 from quackd.agent.images import load_task_images
 from quackd.agent.loop import AgentLoop, RunConfig, run_duck
+from quackd.agent.prompts import NOTHING_DETECTED_BEFORE_VERDICT
 from quackd.agent.providers import pricing
 from quackd.agent.providers.base import (
     Exchange,
@@ -33,6 +34,7 @@ from quackd.agent.providers.fake import FakeProvider
 from quackd.agent.providers.openai import render_messages
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.schema import Budgets, DuckFile
+from quackd.perception.base import Detection
 from quackd.release import (
     CLEAR_THE_WAY,
     CLEAR_THE_WAY_S,
@@ -980,6 +982,159 @@ async def test_a_verb_before_any_verdict_is_refused_and_the_pilot_is_told_why(
     gate = next(e for e in events if e["kind"] == "gate" and e.get("gate") == "verdict")
     assert gate["outcome"] == "refused"
     assert [i.kind for i in transport.intents if i.kind == "move"] == []
+
+
+class _Finds:
+    """A detector that finds the same things on every frame: nothing, unless it is told."""
+
+    name = "scripted"
+
+    def __init__(self, *found: Detection) -> None:
+        self.found = list(found)
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return list(self.found)
+
+
+def _observed(run_dir: Path) -> list[str]:
+    """The text of every observation the run handed its pilot, in order."""
+    events = Transcript.read(run_dir / "transcript.jsonl")
+    return [e["text"] for e in events if e["kind"] == "observation"]
+
+
+async def test_until_a_verdict_an_empty_frame_says_it_is_not_by_itself_a_reason_for_uncertain(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """#25: a pilot that had read in `assess_task` that an unfound target is not by itself a
+    reason for `uncertain` still answered `uncertain` because the camera had found nothing, on
+    the README's own goal, most of the time. The line saying so goes under the observation it
+    decides from, and only until a verdict is recorded: once the pilot has answered, an empty
+    frame is the task going on and nobody needs telling."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck("hello-world"),
+            transport=MockTransport(),
+            detector=_Finds(),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    texts = _observed(result.run_dir)
+    assert len(texts) > 1, "the run made too few observations to show anything"
+    assert "camera: nothing detected" in texts[0], texts[0]
+    assert texts[0].endswith("\n" + NOTHING_DETECTED_BEFORE_VERDICT), texts[0]
+    assert not any(NOTHING_DETECTED_BEFORE_VERDICT in t for t in texts[1:]), texts[1:]
+
+
+async def test_a_frame_that_found_something_gets_no_such_line(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """The line is for an empty frame. Where the camera found something the pilot has a thing
+    to judge, and the line would be telling it about a frame it is not looking at."""
+    ball = Detection(label="ball", cx=0.5, cy=0.5, area=0.05)
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck("hello-world"),
+            transport=MockTransport(),
+            detector=_Finds(ball),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    texts = _observed(result.run_dir)
+    assert texts and "camera: nothing detected" not in texts[0], texts[:1]
+    assert not any(NOTHING_DETECTED_BEFORE_VERDICT in t for t in texts), texts
+
+
+async def test_a_run_no_detector_looks_for_is_never_told_nothing_was_detected_yet(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A body with no camera, or a run with no detector, detects nothing on every turn, and a
+    line saying "yet" on each of them would be false. It goes only where a detector looked."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck("hello-world"),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    texts = _observed(result.run_dir)
+    assert texts and not any(NOTHING_DETECTED_BEFORE_VERDICT in t for t in texts), texts
+
+
+async def test_an_uncertain_nobody_can_answer_is_not_followed_by_the_line(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """With nobody to ask, an `uncertain` is told to decide again, feasible or infeasible
+    (`NOBODY_TO_ASK`). A line under the next frame naming `uncertain` as an answer would pull
+    the other way, so it stops at the first verdict recorded rather than at the first that
+    clears the gate."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    ToolCall(
+                        name="assess_task",
+                        arguments={"verdict": "uncertain", "reason": "cannot see the ball"},
+                    ),
+                    ToolCall(
+                        name="assess_task",
+                        arguments={"verdict": "feasible", "reason": "the body fits the task"},
+                    ),
+                    ToolCall(name="declare_success", arguments={"reason": "quacked"}),
+                ]
+            ),
+            transport=MockTransport(),
+            detector=_Finds(),
+            decide=None,
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    texts = _observed(result.run_dir)
+    assert len(texts) >= 3, texts
+    assert NOTHING_DETECTED_BEFORE_VERDICT in texts[0], texts[0]
+    assert not any(NOTHING_DETECTED_BEFORE_VERDICT in t for t in texts[1:]), texts[1:]
+
+
+async def test_a_feasible_its_own_sheet_refuses_brings_the_line_back(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A `feasible` naming a figure the body's datasheet does not publish is refused, and no
+    verdict stands after it, so the next frame is where the first one was: the line comes
+    back, and with it the half that sends an unpublished figure to `uncertain`."""
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    ToolCall(
+                        name="assess_task",
+                        arguments={
+                            "verdict": "feasible",
+                            "reason": "it fits",
+                            "needs": {"endurance_min": 45},
+                        },
+                    ),
+                    ToolCall(name="declare_failure", arguments={"reason": "stopped"}),
+                ]
+            ),
+            transport=MicroduckAdapter(MockTransport()),
+            detector=_Finds(),
+            runs_dir=tmp_path,
+        )
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    refused = [e for e in events if e["kind"] == "assess" and e.get("ok") is False]
+    assert refused and "not published" in refused[0]["summary"], refused
+    texts = _observed(result.run_dir)
+    assert len(texts) == 2, texts
+    assert all(NOTHING_DETECTED_BEFORE_VERDICT in t for t in texts), texts
 
 
 async def test_an_infeasible_verdict_ends_the_run_before_anything_moves(

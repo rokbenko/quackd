@@ -41,6 +41,7 @@ from quackd.agent.prompts import (
     ASSESS_TASK_NAME,
     DECLARE_NAMES,
     META_TOOLS,
+    NOTHING_DETECTED_BEFORE_VERDICT,
     REMEMBER,
     REMEMBER_NAME,
     TELL_NAME,
@@ -1483,7 +1484,9 @@ class AgentLoop:
         cameras = camera_names_of(self.cfg.transport) or [f.name for f in frames]
         img = primary_of(frames)
         detections: list[Detection] = []
+        looked = False  # whether a detector read this turn's frame, found something or not
         if img is not None and self.cfg.detector is not None:
+            looked = True
             # the primary camera and only it: the detections line describes one view, and a
             # bearing is only meaningful from the lens --fov-deg measured. Off the loop when
             # the detector waits on a board, so a body's keepalives are not held up by it.
@@ -1529,6 +1532,14 @@ class AgentLoop:
             stepped=stepped,
             nearby=near,
         )
+        no_verdict_yet = self.executor.require_verdict and self.executor.verdict is None
+        if looked and not detections and no_verdict_yet:
+            # the moment a pilot takes an empty frame for doubt about the body, so it is said
+            # here and not only in the description it read once at the top of the run (#25).
+            # Only where a detector looked: a body with no camera would hear "yet" every turn.
+            # And only before any verdict, not while an `uncertain` waits on an answer, where
+            # the pilot has been told to choose feasible or infeasible (`NOBODY_TO_ASK`).
+            text += "\n" + NOTHING_DETECTED_BEFORE_VERDICT
         features = observation_features(
             state=state,
             detections=detections,
