@@ -43,23 +43,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   arm's page. A segment now waits in the tick only for a chunk it has nothing left to play
   from, a first chunk among them, and leaves every other to land while the arm plays what is
   queued, as it always did for a declared latency. On this project's laptop on 2026-10-24 the
-  guide's ACT, 100 actions at 30 Hz and about 0.4 s a step on its CPU, reached 22.1 Hz of 30
-  over a 30 s bench with no `--latency-s` before the change and 29.5 Hz after it, and the only
-  ticks it skipped were the 16 its first chunk took to come back. The wait cost a round trip's
-  ticks out of every half chunk, so a policy of 50 actions, as SmolVLA and pi05 are by
-  LeRobot's defaults, lost twice the share an ACT of 100 did to the same round trip. No round
-  trip through a rented GPU has been timed, and no policy has driven the arm: a bench streams
-  synthetic observations. `--latency-s` still sets how long the simulator holds each chunk
-  back, how early a segment asks for the next once twice the latency is more than half a
-  chunk, and the refusal past half a chunk. `quackd policy check --bench` paces by the same
-  rule, so a first bench of a policy served with no latency skips only its first chunk's ticks,
-  and the guide's benches are today's
-  ([docs/guides/policies.md](docs/guides/policies.md#on-the-laptop-alone)). Tests hold a chunk
-  asked for with actions queued to landing while the arm plays, a tick late and half a chunk
-  late, and a bench to skipping its first chunk's ticks alone. The tests that run a segment
-  through the real server on a clock that moves only when slept now have that clock wait for
-  each answer, since one left to land would otherwise land as late as the machine running them
-  was slow.
+  guide's ACT, 100 actions at 30 Hz, reached 22.1 Hz of 30 over a 30 s bench with no
+  `--latency-s` before the change and 29.5 Hz after it, its median step 408 ms and then 396 ms
+  on the laptop's CPU, and the only ticks it skipped after the change were the 16 its first
+  chunk took to come back. The wait cost a round trip's ticks out of every half chunk, so a
+  policy of 50 actions, as SmolVLA and pi05 are by LeRobot 0.6.1's defaults, lost twice the
+  share an ACT of 100 did to the same round trip. No round trip through a rented GPU has been
+  timed, and no policy has driven the arm: a bench streams synthetic observations. A server
+  that stops answering is noticed once what was queued has played out, as it always was for a
+  declared latency. On the simulator a chunk of a policy that declares no latency, asked for
+  with something still queued, is held back a tick, the soonest the arm takes it in, so a
+  rehearsal of one that answers within a tick still plays what the arm would, seam for seam.
+  `--latency-s` still sets how long the simulator holds each chunk back, how early a segment
+  asks for the next once twice the latency is more than half a chunk, and the refusal past
+  half a chunk. `quackd policy check --bench` paces by the same rule, so a first bench of a
+  policy served with no latency waits out its first chunk alone, and its skipped row says
+  which ticks passed in that wait and which a pacer woke too late for. The guide's benches
+  are today's ([docs/guides/policies.md](docs/guides/policies.md#on-the-laptop-alone)). Tests
+  hold a chunk asked for with actions queued to landing while the arm plays, a tick late and
+  half a chunk late, a lockstep rehearsal of one to the trajectory the wall's clock plays, and
+  a bench to waiting out its first chunk alone. The tests that run a segment through the real
+  server on a clock that moves only when slept now wait there for each answer they expect,
+  since one left to land would otherwise land as late as the machine running them was slow.
 
 ### Documentation
 

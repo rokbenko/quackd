@@ -164,16 +164,17 @@ class AnsweredClock(SteppedClock):
     `SteppedClock` a tick costs no wall time, and a request the loop leaves to land while the
     arm plays (`PolicyLoop._request`) would land as many ticks later as the loop had run by the
     time its thread got round to it. `loop` is the backend's policy loop, which the test sets.
-    A runner that never answers is waited for at every sleep, so a test of one keeps to a plain
-    `SteppedClock`."""
+    A request asked at tick `leave` is not waited for, so a test can leave one that is never
+    answered: a clock that waited for it would wait at every sleep."""
 
-    def __init__(self) -> None:
+    def __init__(self, leave: int | None = None) -> None:
         super().__init__()
+        self.leave = leave
         self.loop: PolicyLoop | None = None
 
     async def sleep(self, seconds: float) -> None:
         req = self.loop._inflight if self.loop is not None else None
-        if req is not None and not req.future.done():
+        if req is not None and req.tick != self.leave and not req.future.done():
             await _answer(req.future)
         await super().sleep(seconds)
 
@@ -1329,6 +1330,36 @@ async def test_a_runner_three_ticks_slow_plays_one_trajectory_in_lockstep_and_on
     first = _untag(_pans(lockstep_sends)[0])
     assert first == (0, k), "the first chunk was not held back its latency"
     assert lockstep_sends[0][0] == pytest.approx(k * PERIOD)
+
+
+async def test_no_latency_declared_plays_one_trajectory_in_lockstep_and_on_the_wall() -> None:
+    """With no latency declared, a chunk asked for with something still queued reaches the arm
+    by the next tick's look at the soonest, which is when it lands from a runner that answers
+    within a tick, and the lockstep clock holds it back that one tick. So the arm is sent the
+    same goals at the same times either way, seam for seam, and the segments count the same.
+    The first chunk, with nothing to play before it, is played in the tick that asked."""
+    chunk, ticks = 8, 40
+    runs: list[tuple[list[tuple[float, float, dict[str, float]]], SegmentEnd]] = []
+    for lockstep in (True, False):
+        arm = _segment_arm()
+        runner = ScriptedRunner(_tagged(chunk), rate_hz=RATE)
+        clock: SteppedClock = LockstepClock() if lockstep else AnsweredClock()
+        _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm)
+        if isinstance(clock, AnsweredClock):
+            clock.loop = transport._policy_loop
+        sends = _recorded(arm, clock)
+        start = clock.t
+        ended = await _segment_end(transport, max_s=ticks * PERIOD)
+        assert ended.how == "time", ended.reason
+        runs.append(([(at - start, cap, action) for at, cap, action in sends], ended))
+        await adapter.close()
+    (lockstep_sends, lockstep_end), (wall_sends, wall_end) = runs
+    assert lockstep_sends == wall_sends
+    assert lockstep_end.stats == wall_end.stats
+    played = [_untag(p) for p in _pans(lockstep_sends)]
+    assert played[0] == (0, 0), "the first chunk was not played in the tick that asked"
+    seam = chunk - refill_at(0, chunk)  # the tick the second chunk is asked at
+    assert played[seam] == (0, seam) and played[seam + 1] == (seam, 1), played
 
 
 @pytest.mark.parametrize("how", ["stamped", "raises"])

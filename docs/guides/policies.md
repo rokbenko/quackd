@@ -169,7 +169,7 @@ fine-tune from, not a policy for your task: [SmolVLA and ACT](#smolvla-and-act) 
 the `--fps` its checks were given:
 
 ```bash
-quackd policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.89
+quackd policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.79
 ```
 
 A checkpoint that took `--fps` to be checked takes it to be served, and without it `serve`

@@ -47,12 +47,14 @@ nothing sleeps on it, so a runner's inference is awaited in the loop's own turn 
 time. Its answer is then held back `k` ticks, `k` from the runner's declared latency, while the
 pacer goes on ticking and playing the old queue, and is judged only when it is let go: that is
 where it would have landed on the arm, a chunk thrown away and an error raised included.
-A runner that answers at once (`k` of 0) is awaited in its own tick on the simulator's clock,
-and on the wall's when there is nothing left to play, which is how a `PolicyLike` has always
-run, one `act` a tick and its goal sent that tick, and how a segment's first chunk is waited
-for. On the wall's clock a request made with something still queued is never waited for,
-whatever latency the runner declares: a server started with none still takes a round trip to
-answer, and a tick that waited it out would hold the arm still through it, every chunk.
+A runner that answers at once (`k` of 0) is held back a tick where something is still queued,
+since on the arm its answer is left to land then and the next tick's look is the soonest that
+takes it in. With nothing left to play it is awaited in its own tick on either clock, which is
+how a `PolicyLike` has always run, one `act` a tick and its goal sent that tick, and how a
+segment's first chunk is waited for. On the wall's clock a request made with something still
+queued is never waited for, whatever latency the runner declares: a server started with none
+still takes a round trip to answer, and a tick that waited it out would hold the arm still
+through it, every chunk.
 
 **Tick mode** (`Features.per_tick`): a runner that carries state from tick to tick is asked
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
@@ -778,16 +780,18 @@ class PolicyLoop:
         self, arm: LeRobotReal, run: _Run, observation: Observation, plan: Plan, lockstep: bool
     ) -> SegmentEnd | None:
         """Ask the runner for a chunk, stamped with this tick. On a lockstep clock the answer is
-        awaited here, with time standing still, and held back its `k` ticks whole, to be judged
-        when it is let go as the arm would judge it on arrival. On the wall's clock a runner that
-        answers at once is awaited here too, within what is left of the segment's patience, but
-        only with nothing left to play from this tick on: a first chunk, or a runner that
-        answers one action at a time. Otherwise the answer is left on the worker and taken in on
-        the tick it has come back by, while the arm plays what is queued."""
+        awaited here, with time standing still, and held back its `k` ticks whole, or one tick
+        where `k` is 0 and something is still queued, to be judged when it is let go as the arm
+        would judge it on arrival. On the wall's clock a runner that answers at once is awaited
+        here too, within what is left of the segment's patience, but only with nothing left to
+        play from this tick on: a first chunk, or a runner that answers one action at a time.
+        Otherwise the answer is left on the worker and taken in on the tick it has come back by,
+        while the arm plays what is queued."""
         future = self._submit(self.runner.next_chunk, observation, dict(run.last_sent))
         req = _Request(self.epoch, observation.tick, future)
         self._inflight = req
-        if not lockstep and (plan.latency_ticks > 0 or run.left(observation.tick)):
+        queued = run.left(observation.tick)
+        if not lockstep and (plan.latency_ticks > 0 or queued):
             return None
         patience = None
         if not lockstep:
@@ -810,8 +814,11 @@ class PolicyLoop:
         if not answered:
             return await self._starved(arm, run)
         self._inflight = None
-        if lockstep and plan.latency_ticks > 0:
-            run.held_back.append((req.tick + plan.latency_ticks, req))
+        # asked with something queued, an answer reaches the arm by the next tick's look at the
+        # soonest, however fast it comes back, so the simulator holds it back at least that long
+        held = plan.latency_ticks or (1 if queued else 0)
+        if lockstep and held:
+            run.held_back.append((req.tick + held, req))
             return None
         self._received(run, req, observation.tick, plan)
         return None

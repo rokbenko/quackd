@@ -805,9 +805,11 @@ it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
   segment left it doing, waiting up to 5 s and refusing after, and an answer from an earlier
   segment is thrown away.
 - **On the simulator** time stands still while the policy thinks, and its answer is taken in
-  the policy's declared latency after it was asked for, which is where it would have landed on
-  the arm, and only then judged, so an answer thrown away and an error land there too. A
-  rehearsal plays the trajectory the arm would, and proves nothing about a rate.
+  the policy's declared latency after it was asked for, or a tick after where it declares none
+  and something was still queued, the soonest the arm would take it in. That is where it would
+  have landed on the arm, and only there is it judged, so an answer thrown away and an error
+  land there too. A rehearsal plays the trajectory the arm would, and proves nothing about a
+  rate.
 - **A policy asked every tick** is one that carries state from tick to tick. A tick it never
   saw, skipped by the pacer or not answered before the next, ends the segment with the arm held
   and resets the policy. It is asked again only once it has answered, so it has to answer
