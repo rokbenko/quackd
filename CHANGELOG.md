@@ -7,6 +7,37 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Documentation
+
+- **uv.lock takes fifteen updates from Dependabot's #39:** typer 0.27.3, pydantic 2.14.1,
+  python-dotenv 1.2.4, mcp 2.3.0, cryptography 50.0.2, anthropic 1.17.0, openai 3.35.1,
+  google-genai 2.32.0, typesafe-sdk 0.7.5, laya 0.4.12, ruff 0.17.1, mypy 2.4.0, pre-commit
+  4.7.0, mujoco 3.16.0 and onnxruntime 1.31.0. ruff and pydantic each found one line on main,
+  changed there before the merge without changing what quackd does. ruff 0.17's new RUF071 flags
+  `os.path.commonprefix`, which Python 3.15 deprecates, so MOSS works out what its blueprints'
+  names start with by a helper of its own, and pydantic 2.14 types `create_model`'s fields as a
+  `TypeForm`, so ToddlerBot's narrowed `perform` hands it the motions' `Literal` as `Any`. Every
+  CI job passed on the pull request. CI installs none of the five provider SDKs, though, so its
+  green run says the lock resolves and no more, and each was run here on the lock instead. A
+  real `hello-world` on anthropic, on openai through the Responses API and through Chat
+  Completions, and on google-genai, each against a stand-in for its API on 127.0.0.1, sent the
+  same request bodies as anthropic 1.9.0, openai 3.22.1 and google-genai 2.25.0 had, camera
+  frames aside, and read its tool calls back to the run's success. anthropic's went to the beta
+  endpoint with both of quackd's betas, `fallbacks` and `block_binding`. typesafe-sdk 0.7.5
+  reworks its transport and adds images, multipart bodies and compression, and a shadow run
+  against a System One server on 127.0.0.1 sent the same requests as 0.7.2 and recorded a
+  decision on every turn. It compresses a body of 1024 bytes or more with zstd wherever it can,
+  which is Python 3.14 and later or with the `typesafe-sdk[zstd]` extra, and hello-world's
+  requests were over 2 KB. On 3.12 without that extra it sent plain JSON, as 0.7.2 did. laya's
+  `Router` and `predict` take quackd's arguments as before, `typed-decisions` is still one of its
+  checkpoints, and its answers carry the same `choice`, `confidence` and `noul`. Its own default
+  checkpoint is now `multilingual`, which quackd does not use, since it names the one it loads.
+  Its weights were not loaded. mujoco 3.16.0 and onnxruntime 1.31.0 passed the physics job, and
+  the nightly jobs that load the Microduck's real model and the arm's run on them from the night
+  after the merge. No requirement a user installs against moved.
+
 ## [0.24.0] — 2026-10-23
 
 0.24.0 makes letting go of the SO-101 mean putting it down first. `quackd robot release` folds the
