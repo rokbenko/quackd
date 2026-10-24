@@ -1,20 +1,23 @@
-"""The doorstep: a courier robot and a home robot that have never met, each with its own owner,
-registry and Nemotron pilot, meet by Robot Passport and settle what happens to two parcels.
+"""The doorstep: a postman robot and a household robot that have never met, each with its own
+owner, registry and Nemotron pilot, meet by Robot Passport and settle how a letter changes hands.
 
-Every step is quackd 0.23 as released; this module only sets the scene and starts the runs.
+The postman is Agile ONE SN, Agile Robots' humanoid built on NVIDIA Isaac GR00T, as a mock body
+(`agile_one_sn.py`). The household robot is Microduck, Pollen Robotics' 25 cm duck, on quackd's
+2D simulator. Every step is quackd 0.23 as released; this module only sets the scene and starts
+the runs.
 
 * `stranger`: nobody pinned anybody. Each robot is a stranger to the other, so quackd shows
   each pilot the other's passport in closed words and numbers only and withholds what the other
   says. No handoff can be agreed, which is the point: a robot's words reach another robot's
   model only after a person decided to trust it.
-* `appointment`: each side pinned the other first, as a delivery booking would record both
-  robots, so each is `known` to the other, their words reach each other's pilots, and they can
-  agree who carries what.
+* `appointment`: each side pinned the other first, as the household's booking would record
+  the postman, so each is `known` to the other. Their words reach each other's pilots, and the
+  postman reads in the duck's passport what its beak cannot do.
 
-One machine, one or two terminals: the courier serves its passport and talk inbox on 8790, and
-the home robot serves its own on 8791 and says hello to the courier as it starts. quackd sends a
-reply only to a talk channel on the host a passport came from, and a run names the address its
-machine routes to the LAN by, so the home robot meets the courier on that address.
+One machine, one or two terminals: the postman serves its passport and talk inbox on 8790, and
+the duck serves its own on 8791 and says hello to the postman as it starts. quackd sends a reply
+only to a talk channel on the host a passport came from, and a run names the address its machine
+routes to the LAN by, so the duck meets the postman on that address.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from .nebius import Model, NebiusError, Settings
 from .pilot import QUACKD, Launch, child_env, run_launch, start, wait
 
 ACTS = ("stranger", "appointment")
-ROLES = ("both", "courier", "home")
+ROLES = ("both", "postman", "duck")
 SCENARIOS = Path(__file__).resolve().parents[2] / "scenarios"
 SERVE_WITHIN_S = 90.0
 #: How long a run this command has to end is given before it is killed.
@@ -49,26 +52,25 @@ class Robot:
     port: int
 
 
-#: AlohaMini, a mobile robot with two arms on a lift, as the courier; ToddlerBot, a 56 cm
-#: humanoid, as the home's robot. Both run on quackd's 2D simulator, and both publish a payload
-#: with a source, which is what the two pilots compare. The stop lines say what is true of a
-#: simulated robot, since a passport's safety lines are for a person standing next to it.
-COURIER = Robot(
-    name="courier-01",
-    spec="alohamini:sim2d",
-    owner="Courier company (demo)",
+#: The postman: Agile ONE SN as this folder's mock, holding one letter. The duck: quackd's own
+#: Microduck on its 2D simulator, whose passport says what its beak cannot do. The stop lines say
+#: what is true of a simulated robot, since a passport's safety lines are for a person next to it.
+POSTMAN = Robot(
+    name="postman-01",
+    spec="agile_one_sn:mock",
+    owner="Postal service (demo)",
     estop="none",
     how_to_stop="Simulated: press Ctrl+C in the terminal running it.",
-    duck="courier.duck",
+    duck="postman.duck",
     port=8790,
 )
-HOME = Robot(
-    name="home-01",
-    spec="toddlerbot:sim2d",
+DUCK = Robot(
+    name="duck-01",
+    spec="microduck:sim2d",
     owner="Household (demo)",
     estop="none",
     how_to_stop="Simulated: press Ctrl+C in the terminal running it.",
-    duck="home.duck",
+    duck="microduck.duck",
     port=8791,
 )
 
@@ -160,7 +162,7 @@ def setup(state: Path, act: str) -> list[str]:
         raise NebiusError(f"--act is one of {', '.join(ACTS)}")
     done: list[str] = []
     state.mkdir(parents=True, exist_ok=True)
-    for robot in (COURIER, HOME):
+    for robot in (POSTMAN, DUCK):
         where = str(registry(state, robot))
         if Registry(where).get_robot(robot.name) is None:
             _must(
@@ -200,7 +202,7 @@ def setup(state: Path, act: str) -> list[str]:
             ),
             f"writing {robot.name}'s signed passport",
         )
-    for robot, other in ((HOME, COURIER), (COURIER, HOME)):
+    for robot, other in ((DUCK, POSTMAN), (POSTMAN, DUCK)):
         where = str(registry(state, robot))
         wanted = passport_id(state, other)
         pins = PassportStore(where).known()
@@ -238,7 +240,7 @@ def is_set_up(state: Path) -> bool:
 
     return all(
         Registry(str(registry(state, robot))).get_robot(robot.name) is not None
-        for robot in (COURIER, HOME)
+        for robot in (POSTMAN, DUCK)
     )
 
 
@@ -271,22 +273,22 @@ def launches(
     act: str,
     role: str,
     *,
-    courier_at: str,
+    postman_at: str,
     vision: bool = False,
 ) -> list[tuple[Robot, Launch]]:
-    """The runs `role` starts, in the order they start: the courier first, since the home
-    robot says hello to it as it begins."""
+    """The runs `role` starts, in the order they start: the postman first, since the duck
+    says hello to it as it begins."""
     if role not in ROLES:
         raise NebiusError(f"--role is one of {', '.join(ROLES)}")
     if act not in ACTS:
         raise NebiusError(f"--act is one of {', '.join(ACTS)}")
     chosen: list[tuple[Robot, Launch]] = []
-    if role in ("both", "courier"):
-        args = run_args(COURIER, state, act, meet=None)
-        chosen.append((COURIER, run_launch(settings, model, args, vision=vision)))
-    if role in ("both", "home"):
-        args = run_args(HOME, state, act, meet=courier_at)
-        chosen.append((HOME, run_launch(settings, model, args, vision=vision)))
+    if role in ("both", "postman"):
+        args = run_args(POSTMAN, state, act, meet=None)
+        chosen.append((POSTMAN, run_launch(settings, model, args, vision=vision)))
+    if role in ("both", "duck"):
+        args = run_args(DUCK, state, act, meet=postman_at)
+        chosen.append((DUCK, run_launch(settings, model, args, vision=vision)))
     return chosen
 
 
@@ -306,7 +308,7 @@ def served(
     while time.monotonic() < deadline:
         if alive is not None and alive.poll() is not None:
             raise NebiusError(
-                f"the courier's run ended ({alive.returncode}) before it served its passport"
+                f"the postman's run ended ({alive.returncode}) before it served its passport"
             )
         try:
             fetch_passport(url, timeout=2.0)
@@ -316,27 +318,27 @@ def served(
     raise NebiusError(f"no passport answered at {address} within {within:.0f} s")
 
 
-def pause(state: Path, home_at: str, seconds: int) -> subprocess.CompletedProcess[str]:
-    """The courier asks the home robot for a pause, as itself: a hello signed by the courier's
-    own key in a session of its own, then the ask, then a bye that ends that session only. The
-    home robot's owner policy decides, by fixed code, and a pause brakes the body at once. A peer
-    can never make a robot stop for good."""
+def pause(state: Path, duck_at: str, seconds: int) -> subprocess.CompletedProcess[str]:
+    """The postman asks the duck for a pause, as itself: a hello signed by the postman's own key
+    in a session of its own, then the ask, then a bye that ends that session only. The duck's
+    owner policy decides, by fixed code, and a pause brakes the body at once. A peer can never
+    make a robot stop for good."""
     return quackd(
         "meet",
-        home_at,
+        duck_at,
         "--as",
-        COURIER.name,
+        POSTMAN.name,
         "--ask",
         f"pause:{seconds}",
         "--registry-dir",
-        str(registry(state, COURIER)),
+        str(registry(state, POSTMAN)),
     )
 
 
 def logged(logs: Path) -> list[tuple[str, str]]:
-    """Each run's log under `logs`, the courier's first, as its robot's name and its text."""
+    """Each run's log under `logs`, the postman's first, as its robot's name and its text."""
     found = []
-    for robot in (COURIER, HOME):
+    for robot in (POSTMAN, DUCK):
         path = logs / f"{robot.name}.log"
         if path.is_file():
             found.append((robot.name, path.read_text(encoding="utf-8", errors="replace")))
@@ -362,12 +364,12 @@ def stop(processes: Sequence[subprocess.Popen[bytes]]) -> None:
 def play(
     started: Sequence[tuple[Robot, Launch]],
     *,
-    courier_at: str,
+    postman_at: str,
     logs: Path | None,
-    on_home_started: Callable[[], None] | None = None,
+    on_duck_started: Callable[[], None] | None = None,
 ) -> dict[str, int]:
-    """Start the runs, the home robot only once the courier's passport is served, and wait for
-    every one of them.
+    """Start the runs, the duck only once the postman's passport is served, and wait for every
+    one of them.
 
     With `logs`, each run's output goes to a file there, since two runs writing to one terminal
     cannot be read, and neither run reads the terminal: a question a run puts to a person then
@@ -379,9 +381,9 @@ def play(
     try:
         try:
             for robot, launch in started:
-                if robot is HOME:
-                    courier = processes[0][1] if processes else None
-                    served(courier_at, alive=courier)
+                if robot is DUCK:
+                    postman = processes[0][1] if processes else None
+                    served(postman_at, alive=postman)
                 if logs is not None:
                     logs.mkdir(parents=True, exist_ok=True)
                     f = (logs / f"{robot.name}.log").open("wb")
@@ -392,8 +394,8 @@ def play(
                 else:
                     process = start(launch)
                 processes.append((robot, process))
-                if robot is HOME and on_home_started is not None:
-                    on_home_started()
+                if robot is DUCK and on_duck_started is not None:
+                    on_duck_started()
         except KeyboardInterrupt:
             for _robot, process in processes:
                 wait(process)

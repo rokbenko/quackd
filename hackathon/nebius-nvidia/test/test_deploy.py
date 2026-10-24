@@ -54,18 +54,18 @@ def test_what_the_job_runs_exists() -> None:
     assert "--print-logs" in shown and "--act" in shown
 
 
-def test_a_jobs_log_gets_both_runs_the_courier_first(tmp_path: Path) -> None:
-    (tmp_path / "home-01.log").write_text("home robot heard it\n", encoding="utf-8")
-    (tmp_path / "courier-01.log").write_text("courier told it\n", encoding="utf-8")
+def test_a_jobs_log_gets_both_runs_the_postman_first(tmp_path: Path) -> None:
+    (tmp_path / "duck-01.log").write_text("the duck heard it\n", encoding="utf-8")
+    (tmp_path / "postman-01.log").write_text("the postman told it\n", encoding="utf-8")
     assert doorstep.logged(tmp_path) == [
-        ("courier-01", "courier told it\n"),
-        ("home-01", "home robot heard it\n"),
+        ("postman-01", "the postman told it\n"),
+        ("duck-01", "the duck heard it\n"),
     ]
     assert doorstep.logged(tmp_path / "nothing-here") == []
 
 
 def test_print_logs_needs_the_logs_only_role_both_writes(tokenfactory: FakeTokenFactory) -> None:
-    args = ["doorstep", "run", "--role", "home", "--print-logs", "--model", TEXT_MODEL]
+    args = ["doorstep", "run", "--role", "duck", "--print-logs", "--model", TEXT_MODEL]
     result = runner.invoke(app, args)
     assert result.exit_code == 1
     assert "--print-logs prints the log files that only --role both writes" in result.output
