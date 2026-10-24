@@ -7,7 +7,12 @@ from pydantic import ValidationError
 
 from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, Span, VerbSpec
-from quackd.agent.prompts import ASSESS_TASK, DECLARE_NAMES, META_TOOL_NAMES
+from quackd.agent.prompts import (
+    ASSESS_TASK,
+    DECLARE_NAMES,
+    META_TOOL_NAMES,
+    NOTHING_DETECTED_BEFORE_VERDICT,
+)
 from quackd.safety import Executor, VerdictRequired
 from quackd.transport.mock import MockTransport
 from quackd.verbs.aliases import ALIASES, canonical
@@ -146,6 +151,9 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
         ),
         # a played run's pilot is told about the verdict there too, so it is held to both halves
         "the play section": play_section(still=True, voice=None, memory=False, joints=True),
+        # and so is the line under an empty frame until a verdict is recorded, which is the
+        # surface said closest to the moment the pilot decides
+        "the empty frame's note": NOTHING_DETECTED_BEFORE_VERDICT,
     }
     for where, text in surfaces.items():
         assert "not by itself" in text, f"{where} states the rule absolutely"

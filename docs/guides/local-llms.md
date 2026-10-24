@@ -442,10 +442,26 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   yet"*. On six it answers about the body, *"No payload, reach, or height requirements exceed
   the robot's limits"*.
 
-  What changed here is the words rather than the allowlist: `assess_task` named "the object is
-  out of view" as a reason to be unsure, and the verdict is about the body against its
-  datasheet. **Whether that moves those numbers is unmeasured.** Nobody here runs that model,
-  and the six cells want running again on a build that has this in it.
+  What changed first was the words rather than the allowlist: `assess_task` named "the object
+  is out of view" as a reason to be unsure, and the verdict is about the body against its
+  datasheet. They measured that on the builds that carried it, and it did not move the
+  verdicts: 4 of 30 `feasible` before it and 3 of 30 after, and 5 of 30 on 0.10.0, where they
+  coded the reasons blind and 23 of the 25 `uncertain` were still about where the ball was. It
+  moved the reasons only a little: of the `uncertain` answers, 42 of 42 had rested on where the
+  target was before it and 44 of 51 did after. What moved the verdicts is a line of theirs,
+  which quackd now puts under an observation until a verdict is recorded, when a detector
+  looked at the frame and found nothing: that is not by itself a reason for `uncertain`, which
+  is for a limit that turns on the unseen thing's mass or size, or on a figure the datasheet
+  does not publish. On 0.10.0 with that line, `feasible` was 27 of 30, and every one of those
+  runs found the ball and kicked it. On 02411b3, a build of 2026-09-17, a task the body cannot
+  do, carrying the ball, went from 5 of 30 `infeasible` to 17 of 30 with it, and `feasible`
+  stayed at none either way. The line they measured had no "by itself", which quackd added so
+  it says what the rule line says, and nobody has measured it on a build since 0.14.0, which
+  changed what the prompt says about a figure nobody published. They also found that a cell of
+  six cannot show this: quackd sends a model no temperature, top_p or seed, so each verdict is
+  a draw at the server's own sampling unless `--extra-body` pins it, and the same configuration
+  measured at six, thirty and eighty runs told three different stories. These are cells of
+  thirty, on one model, Qwen3-32B-AWQ with thinking off.
 - Each cloud vendor keeps the `tool_choice` its own documentation allows: `required` on OpenAI,
   Grok and DeepSeek, `any` on Mistral, `auto` on Qwen, Kimi, GLM and Meta, none at all on
   Cohere, and per row on OpenRouter. `parallel_tool_calls=False` goes to OpenAI, Grok, Mistral

@@ -969,6 +969,25 @@ def inbox_lines(inbox: Sequence[Mapping[str, Any]], me: str | None) -> list[str]
     return out
 
 
+NOTHING_DETECTED_BEFORE_VERDICT = (
+    "note: nothing detected yet. That is not by itself a reason for `uncertain`: the verdict "
+    "is about this body's limits, not about where the target is. Answer `uncertain` only if a "
+    "limit turns on that unseen thing's mass or size, or on a figure the datasheet does not "
+    "publish."
+)
+"""The line under an observation until a verdict is recorded, when a detector looked and found
+nothing, which is the moment a pilot takes for doubt about the body (#25). The `assess_task`
+description says the same once, at the top of a run. Measured on Qwen3-32B-AWQ with the line as
+it was written, without "by itself": on 0.10.0, `quackd run --goal "Find the ball and kick
+it."` was `feasible` 5 times in 30 without it, 23 of its 25 doubts about where the ball was, and
+27 in 30 with it, every one of those runs finding the ball and kicking it. On 02411b3, a build
+of 2026-09-17, a task the body cannot do, carrying the ball, was `infeasible` 5 times in 30
+without it and 17 with it, and `feasible` none either way. Nothing has measured it since 0.14.0,
+which changed what the prompt says about a figure nobody published. "By itself" is there
+because the line carries both halves of what `uncertain` is for, as every surface that speaks
+of the verdict must (`tests/test_verdict.py`)."""
+
+
 def build_observation_text(
     *,
     step: int,

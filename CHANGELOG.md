@@ -9,6 +9,33 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty frame before the verdict comes with the rule beside it.** 0.10.0 reworded
+  `assess_task` so that a target the pilot has not found yet is not by itself a reason for
+  `uncertain`, and on Qwen3-32B-AWQ that did not move the verdicts: on 0.10.0,
+  `quackd run --goal "Find the ball and kick it."`, the README's own goal, was `feasible` 5
+  times in 30, and 23 of its 25 `uncertain` reasons, coded blind, were about where the ball
+  was. Until a verdict is recorded, when a detector looks at the frame and finds nothing, the
+  observation now ends with a line saying that is not by itself a reason for `uncertain`, and
+  keeping `uncertain` for a limit that turns on the unseen thing's mass or size, or on a figure
+  the datasheet does not publish. On 0.10.0 with that line the same goal was `feasible` 27
+  times in 30, and every one of those runs found the ball and kicked it. On 02411b3, a build of
+  2026-09-17, a task the body cannot do, carrying the ball, was `infeasible` 5 times in 30
+  without it and 17 with it, and `feasible` none either way. The shipped line adds "by itself",
+  so it says what every other surface that speaks of the verdict says, and those two words are
+  the one part of it nobody has measured. Nor has anybody measured the line on a build since
+  0.14.0, which changed what the prompt says about a figure nobody published, or on any model
+  but that one, with thinking off. Tests hold it to both halves of the rule, keep it off a
+  frame with something in it, off a run with no detector and off the turn after an `uncertain`
+  nobody could answer, and bring it back after a `feasible` the body's own sheet refuses.
+  Thanks to [@Vallhalen](https://github.com/Vallhalen) (#25), who measured the rewording, found
+  it did not move the verdicts and moved the reasons only a little, and wrote and measured this
+  line. The local LLM guide said the rewording was unmeasured, which it has not been since
+  2026-09-18, and gives their numbers now
+  ([docs/guides/local-llms.md](docs/guides/local-llms.md#honest-notes),
+  [docs/concepts/safety.md](docs/concepts/safety.md#when-the-pilot-is-unsure)).
+
 ### Documentation
 
 - **uv.lock takes fifteen updates from Dependabot's #39:** typer 0.27.3, pydantic 2.14.1,
