@@ -201,6 +201,24 @@ def test_a_hub_token_is_named_by_its_variable_and_is_never_the_account_token(
     assert E.hub_token_from("HUB_READ", ACCOUNT_TOKEN) == HUB_TOKEN
 
 
+def test_a_refusal_from_hugging_face_says_what_was_asked_and_holds_no_token(
+    hf: FakeAPI,
+) -> None:
+    """A token the API refuses is said with what it was asked to do and where the token came
+    from, and a refusal of anything else with what Hugging Face said, scrubbed."""
+    hf.token = "hf_" + "SomebodyElse" * 3
+    with pytest.raises(E.EndpointError) as refused:
+        E.HFEndpoints(ACCOUNT_TOKEN).whoami()
+    said = str(refused.value)
+    assert refused.value.status == 401 and ACCOUNT_TOKEN not in said
+    assert "refused the token when asked to say whose token it is (HTTP 401" in said
+    assert "HF_TOKEN or the file hf auth login writes" in said
+    hf.token = ACCOUNT_TOKEN
+    hf.refuse_create = 409
+    with pytest.raises(E.EndpointError, match="would not create arm \\(HTTP 409\\)"):
+        E.HFEndpoints(ACCOUNT_TOKEN).create("rok", {"name": "arm"})
+
+
 # ── this machine's record ───────────────────────────────────────────────────────────────
 
 

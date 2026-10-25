@@ -346,6 +346,18 @@ def test_the_record_is_kept_before_the_endpoint_is_created_and_dropped_if_it_is_
     assert _cli(*UP, "--yes").exit_code == 0 and _store().get("arm") is not None
 
 
+def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
+    result = _cli(*UP, "--yes", "--no-wait")
+    said = _flat(result.output)
+    assert result.exit_code == 0 and "created arm on rok's account" in said, result.output
+    assert "Not waiting: quackd policy endpoint up arm waits until it serves" in said
+    assert "state " not in said
+    record = _store().get("arm")
+    assert record is not None and record.url is None and len(_posts(hf)) == 1
+    waited = _cli("policy", "endpoint", "up", "arm")
+    assert waited.exit_code == 0 and "gpu yes" in _flat(waited.output), waited.output
+
+
 def test_up_with_no_terminal_and_no_yes_creates_nothing(hf: FakeAPI) -> None:
     result = _cli(*UP)
     assert result.exit_code == 1 and "no terminal to ask" in _flat(result.output), result.output

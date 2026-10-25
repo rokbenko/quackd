@@ -347,13 +347,15 @@ class HFEndpoints:
             ) from None
 
     def _refusal(self, reply: Reply, what: str) -> EndpointError:
+        """What Hugging Face's refusal to `what`, a phrase such as `create arm`, means, in one
+        sentence with what it said, every token taken out of it."""
         status = reply.status
         said = _said(reply, self.scrub)
         if status in (401, 403):
             return EndpointError(
-                f"Hugging Face refused the token for {what} (HTTP {status}: {said}): it has to "
-                "be a token of the account, allowed to manage its Inference Endpoints, which a "
-                "fine-grained token is given on huggingface.co",
+                f"Hugging Face refused the token when asked to {what} (HTTP {status}: {said}): "
+                "check that it is the one meant, in HF_TOKEN or the file hf auth login writes, "
+                "and that it may do that",
                 status=status,
             )
         if 300 <= status < 400:
@@ -367,7 +369,9 @@ class HFEndpoints:
                 "payment method to the account on huggingface.co",
                 status=status,
             )
-        return EndpointError(f"Hugging Face refused {what} (HTTP {status}): {said}", status=status)
+        return EndpointError(
+            f"Hugging Face would not {what} (HTTP {status}): {said}", status=status
+        )
 
     def _call(
         self,

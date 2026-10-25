@@ -5134,8 +5134,8 @@ def endpoint_up(
             _endpoint_resume(ep, api, record, yes=yes)
         if no_wait:
             _endpoint_note(
-                f"It is starting: quackd policy endpoint up {name} waits until it serves, and a "
-                "run that reaches it before then is told it is not serving yet."
+                f"Not waiting: quackd policy endpoint up {name} waits until it serves, and a run "
+                "that reaches it before then is told it is not serving yet."
             )
             return
         _wait_and_say(ep, api, store, record, wait_minutes)
