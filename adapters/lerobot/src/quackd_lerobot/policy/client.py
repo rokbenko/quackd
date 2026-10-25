@@ -26,6 +26,14 @@ no dependency from a policy: no torch, no LeRobot, no HTTP library.
   raises, and the URL is held redacted from the moment it is given (`quackd.command`). One a
   header cannot carry, or too short to guard an arm, is refused before anything is sent
   (`protocol.clean_token`), in a sentence that never quotes it.
+- **where a Hugging Face token goes.** A server on a Hugging Face Inference Endpoint sits
+  behind Hugging Face's proxy, which wants the account's token as `Authorization: Bearer`
+  besides the server's own. That token goes to the one address this machine's `quackd policy
+  endpoint up` recorded (`endpoint.reach`), and the client refuses one handed to it for any
+  address whose whole authority is not an endpoint's, over https on port 443
+  (`is_endpoint_host`), before it connects. It is scrubbed out of every error as the server's
+  token is. A refusal from that proxy, which is not one of the server's, is said as what it is:
+  an endpoint that is not serving, a token Hugging Face refused, or an endpoint that is gone.
 - **the reply.** At most `MAX_REPLY_BYTES`, parsed with every non-finite number refused, then
   validated strictly (`protocol.py`). A reply whose session or sequence is not the request's
   is dropped, and the loop asks again.
@@ -66,6 +74,7 @@ import io
 import math
 import numbers
 import os
+import re
 import socket
 import ssl
 import time
@@ -76,6 +85,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
+from quackd.adapters.base import POLICY_ENDPOINT
 from quackd.command import readable_url, redacted_url
 from quackd_lerobot.policy import protocol as wire
 from quackd_lerobot.policy.fit import Fit, PolicyMisfit, fit
@@ -103,6 +113,52 @@ READ_CHUNK_BYTES = 64 << 10
 RETRIED = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)
 """What a kept-alive socket the server has since closed fails with. `RemoteDisconnected` is one
 of the resets."""
+ENDPOINT_AUTHORITY = re.compile(
+    r"^[a-z0-9-]+(\.[a-z0-9-]+)*\.endpoints\.huggingface\.cloud(:443)?$"
+)
+"""The whole authority of a Hugging Face Inference Endpoint's address, which Hugging Face gives
+as `https://<id>.endpoints.huggingface.cloud` (`endpoint_upstream_api.STATUS_URL`), with or
+without the port https uses anyway. Matched whole (`fullmatch`, since `$` alone takes a line
+break before the end), so a user, a backslash, a bracket, a trailing dot or another port makes
+it somebody else's. A suffix is not a lock: anyone can start an endpoint under that domain, so
+an address that matches is one the token may go to only once `endpoint.reach` has found it in
+this machine's own record."""
+PROXY_UNSERVED = frozenset({500, 502, 503, 504})
+"""What Hugging Face's proxy answers for an endpoint with no replica ready: 503 while one starts
+on its autoscaling page, 502 on an older one (`endpoint_upstream_api.PROXY_WHILE_STARTING`)."""
+
+
+def is_endpoint_host(url: str) -> bool:
+    """Whether `url` is an address a Hugging Face token may go to as the bearer a server on an
+    Inference Endpoint is reached with: https, and an authority that is wholly an endpoint's
+    (`ENDPOINT_AUTHORITY`), compared as the client is handed it rather than as `urlsplit`'s
+    `hostname` reads it, which need not be how an HTTP client reads it
+    (`openai_headers.is_openai_host` says how the two readings have differed). The tests point it
+    at a stand-in on 127.0.0.1 by replacing this function, and the suite's guard keeps a rule of
+    its own (`tests/conftest.py`)."""
+    try:
+        parts = urlsplit(url.strip())
+    except ValueError:
+        return False
+    return parts.scheme == "https" and ENDPOINT_AUTHORITY.fullmatch(parts.netloc) is not None
+
+
+def _clean_bearer(bearer: str) -> str:
+    """The Hugging Face token as it goes in the header, or a ValueError that never quotes it: one
+    a header cannot carry is refused for the reason `protocol.clean_token` gives, and so is one
+    too short to scrub out of an error without eating the letters around it."""
+    cleaned = bearer.strip()
+    if not (cleaned.isascii() and cleaned.isprintable()) or any(c.isspace() for c in cleaned):
+        raise ValueError(
+            "the Hugging Face token has a space, a line break or another character an HTTP "
+            "header cannot carry: make a new one on huggingface.co"
+        )
+    if len(cleaned) < wire.MIN_TOKEN_CHARS:
+        raise ValueError(
+            f"the Hugging Face token is shorter than {wire.MIN_TOKEN_CHARS} characters, which no "
+            "token Hugging Face makes is: check HF_TOKEN"
+        )
+    return cleaned
 
 
 class PolicyServerError(RuntimeError):
@@ -269,7 +325,13 @@ class RemoteRunner:
     the server reported for it, for `quackd policy check --bench` to read. Every step's round
     trip is added up as well, for a run's record (`round_trips`), which also names the server
     and what it serves (`record`). `accept_frame_size` and `accept_other_frame` are the two
-    overrides `fit_arm` takes, and the second is `--accept-other-frame`."""
+    overrides `fit_arm` takes, and the second is `--accept-other-frame`.
+
+    `bearer` and `endpoint` are a server on a Hugging Face Inference Endpoint: the account's
+    token, sent as `Authorization: Bearer` to the proxy in front, and the `hf:NAME` the endpoint
+    goes by, which the record names and the proxy's refusals are said about. A bearer for an
+    address that is not an endpoint's (`is_endpoint_host`) is refused here, before anything
+    connects, and so is either of the two without the other."""
 
     def __init__(
         self,
@@ -280,10 +342,27 @@ class RemoteRunner:
         cameras: Sequence[wire.CameraInfo] = (),
         accept_frame_size: bool = False,
         accept_other_frame: bool = False,
+        bearer: str | None = None,
+        endpoint: str | None = None,
     ) -> None:
         self.scheme, self.host, self.port, self._prefix = policy_address(url)
         self.url = redacted_url(url.strip())
         self._token = wire.clean_token(token, "the caller")
+        if (bearer is None) != (endpoint is None):
+            raise ValueError(
+                "a Hugging Face Endpoint is reached with its hf:NAME and the account's token "
+                "together: the client was given one without the other"
+            )
+        if endpoint is not None and not POLICY_ENDPOINT.match(endpoint):
+            raise ValueError(f"{endpoint[:40]!r} is not an endpoint's hf:NAME")
+        if bearer is not None and not is_endpoint_host(url):
+            raise ValueError(
+                f"{self.url} is not a Hugging Face Endpoint's https address, so the Hugging Face "
+                "token was not sent there: it goes to the address quackd policy endpoint up "
+                "recorded for an endpoint, and to nothing else"
+            )
+        self._bearer = None if bearer is None else _clean_bearer(bearer)
+        self.endpoint = endpoint
         self.motors = tuple(motors)
         self.cameras = tuple(cameras)
         self.accept_frame_size = accept_frame_size
@@ -484,11 +563,14 @@ class RemoteRunner:
         took a policy learned on another arm's frame (`--accept-other-frame`), the policy, the
         rate it runs at and where that rate came from, every repository it loaded at the
         revision it loaded it at, and the JPEG quality frames go to it at, or None for raw
-        frames. The address and the override alone before the server has answered."""
+        frames. The address and the override alone before the server has answered. A server
+        on a Hugging Face Endpoint adds the `hf:NAME` it was reached by (`endpoint`)."""
         said: dict[str, Any] = {
             "server": self.url,
             "accept_other_frame": self.accept_other_frame,
         }
+        if self.endpoint is not None:
+            said["endpoint"] = self.endpoint
         info = self.info
         if info is not None:
             said.update(
@@ -564,14 +646,20 @@ class RemoteRunner:
 
     # ── the wire ────────────────────────────────────────────────────────────────────────
 
+    def _scrub(self, text: str) -> str:
+        """`text` with both tokens taken out: the server's, and the Hugging Face token a server
+        on an endpoint is reached with."""
+        text = text.replace(self._token, "<token>")
+        return text if self._bearer is None else text.replace(self._bearer, "<token>")
+
     def _fail(self, message: str, *, status: int | None = None) -> PolicyServerError:
-        """Every error this client raises is built here, with the token taken out of it."""
-        return PolicyServerError(message.replace(self._token, "<token>"), status=status)
+        """Every error this client raises is built here, with the tokens taken out of it."""
+        return PolicyServerError(self._scrub(message), status=status)
 
     def _said(self, text: str, limit: int = 200) -> str:
-        """A string the server sent, made safe for a sentence on somebody's terminal: the token
-        out first, since a cut could fall inside it, then control characters, then the length."""
-        flat = "".join(c if c.isprintable() else " " for c in text.replace(self._token, "<token>"))
+        """A string the server sent, made safe for a sentence on somebody's terminal: the tokens
+        out first, since a cut could fall inside one, then control characters, then the length."""
+        flat = "".join(c if c.isprintable() else " " for c in self._scrub(text))
         return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
     def _json(self, raw: bytes, path: str) -> Any:
@@ -623,6 +711,9 @@ class RemoteRunner:
         """One request and its whole reply, which is a 200's body or an error that says why
         not. A reused connection that turns out to be closed is replaced once."""
         headers = {wire.TOKEN_HEADER: self._token, "Accept": "application/json"}
+        if self._bearer is not None:
+            # for the proxy in front of an endpoint, at the one address `__init__` let it go to
+            headers["Authorization"] = f"Bearer {self._bearer}"
         if body is not None:
             headers["Content-Type"] = "application/json"
         for attempt in (0, 1):
@@ -734,13 +825,28 @@ class RemoteRunner:
         return int(response.status), b"".join(chunks)
 
     def _refusal(self, status: int, raw: bytes, path: str) -> PolicyServerError:
+        """What a reply other than a 200 says, as one sentence. Through an endpoint, a reply
+        that is not one of the server's refusals (`protocol.Refusal`) is the proxy's, and is
+        said as the proxy's (`_proxy_refusal`), so a 503 from an endpoint still starting is
+        never taken for the server being busy."""
         try:
             said = wire.loads(raw)
         except wire.ProtocolError:
             said = None
         reason = said.get("reason") if isinstance(said, dict) else None
         text = self._said(reason) if isinstance(reason, str) and reason.strip() else None
-        if status == 401:
+        servers = isinstance(said, dict) and said.get("ok") is False and isinstance(reason, str)
+        if self.endpoint is not None and not servers:
+            proxy = self._proxy_refusal(status)
+            if proxy is not None:
+                return self._fail(proxy, status=status)
+        if status == 401 and self.endpoint is not None:
+            message = (
+                f"the server on {self.endpoint} refused the token this machine keeps for it, "
+                "which is not the one the endpoint was started with: give --policy-token the "
+                "right one, or delete the endpoint and start it again"
+            )
+        elif status == 401:
             message = (
                 f"{self.url} refused the token it was given: give it the one in the token file "
                 f"quackd policy serve printed, with --policy-token or {wire.TOKEN_ENV}"
@@ -756,6 +862,32 @@ class RemoteRunner:
             message = f"{self.url} answered {path} with HTTP {status}"
         return self._fail(message, status=status)
 
+    def _proxy_refusal(self, status: int) -> str | None:
+        """What Hugging Face's proxy in front of an endpoint meant by `status`, or None for a
+        status it gives no meaning to here. Each sentence says the status came from Hugging
+        Face and not from quackd's server, and what to do."""
+        endpoint = str(self.endpoint)
+        name = endpoint.removeprefix("hf:")
+        if status in PROXY_UNSERVED:
+            return (
+                f"{endpoint} is not serving (HTTP {status} from Hugging Face, not from quackd's "
+                "server): it is starting, paused or scaled to zero. quackd policy endpoint up "
+                f"{name} wakes it and waits until it answers"
+            )
+        if status in (401, 403):
+            return (
+                f"Hugging Face refused the token {endpoint} was reached with (HTTP {status}, not "
+                "from quackd's server): set HF_TOKEN to a token of the account the endpoint runs "
+                "on, one allowed to use its Inference Endpoints"
+            )
+        if status == 404:
+            return (
+                f"Hugging Face has no endpoint at {self.url} (HTTP 404, not from quackd's "
+                f"server): {endpoint} was deleted or moved. quackd policy endpoint list says "
+                "what there is"
+            )
+        return None
+
 
 def _number(value: Any) -> float:
     """`value` as a float when it is a real number, whatever library made it, and never a bool,
@@ -768,9 +900,11 @@ def _number(value: Any) -> float:
 __all__ = [
     "CALL_TIMEOUT_S",
     "CONNECT_TIMEOUT_S",
+    "ENDPOINT_AUTHORITY",
     "STEP_TIMEOUT_S",
     "PolicyServerError",
     "RemoteRunner",
     "client_token",
+    "is_endpoint_host",
     "policy_address",
 ]

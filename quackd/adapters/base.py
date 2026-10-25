@@ -10,6 +10,7 @@ supplies the verbs only this robot has. `heartbeat()` stays the watchdog contrac
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -293,6 +294,12 @@ def one_camera_url(value: str | Sequence[str] | None, *, spec: str) -> str | Non
 
 
 # ── a policy server ─────────────────────────────────────────────────────────────────────
+
+POLICY_ENDPOINT = re.compile(r"^hf:([a-z0-9-]{1,32})$")
+"""`--policy-url hf:NAME`: a policy server `quackd policy endpoint up NAME` started on a Hugging
+Face Inference Endpoint, by the name Hugging Face gives an endpoint, lower-case letters, digits
+and hyphens up to 32 of them. The name is all the flag carries: where the endpoint is and its
+token are in the record this machine's `up` wrote, and nothing else says either."""
 
 POLICY_SPECS = ("lerobot:real", "lerobot:mujoco")
 """The bodies that hand a segment to a policy served by `quackd policy serve`. Named here for
