@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -502,6 +503,47 @@ def test_a_run_that_asked_the_model_again_says_so_in_its_counters() -> None:
     assert after[1] == "llm calls 6 (+2 asked again)", after
     (spent,) = [c for c in after if c.startswith("time")]
     assert f"model {fmt_duration(9.0)}, waits {fmt_duration(20.0)}" in spent, spent
+
+
+def test_the_counters_say_how_the_calls_spread_and_when_the_robot_first_moved() -> None:
+    """The median, the ninetieth percentile and the longest call of the model and of the
+    stepper, and how long the robot took to move and after how many model calls, each said only
+    where its keys are. A record written before them replays with the counters it always had,
+    and a spread with one figure missing is no spread rather than a counter with a hole in it."""
+    from quackd.cli import run_counters
+    from quackd.log import fmt_duration
+
+    end: dict[str, Any] = {
+        "steps": 4,
+        "llm_calls": 6,
+        "usage": {"input_tokens": 10, "output_tokens": 2},
+        "wall_s": 79.0,
+        "llm_latency_s": 62.1,
+    }
+    old = run_counters(end)
+    spread = {"llm_latency_p50_s": 6.2, "llm_latency_p90_s": 8.0, "llm_latency_max_s": 8.2}
+    stepper = {"latency_p50_s": 0.31, "latency_p90_s": 0.62, "latency_max_s": 0.7}
+    new = run_counters(
+        {
+            **end,
+            **spread,
+            "decision": {"latency_s": 2.0, **stepper},
+            "first_motion_s": 25.5,
+            "first_motion_llm_calls": 3,
+        }
+    )
+    model = f"model calls p50 {fmt_duration(6.2)}, p90 {fmt_duration(8.0)}, max {fmt_duration(8.2)}"
+    assert model in new, new
+    assert f"stepper p50 {fmt_duration(0.31)}, p90 {fmt_duration(0.62)}" in " · ".join(new), new
+    assert f"first motion at {fmt_duration(25.5)}, after 3 model calls" in new, new
+    assert not any(c.startswith(("model calls", "stepper p50", "first motion")) for c in old), old
+
+    one = run_counters({**end, "first_motion_s": 9.0, "first_motion_llm_calls": 1})
+    assert f"first motion at {fmt_duration(9.0)}, after 1 model call" in one, one
+    unmoved = run_counters({**end, "first_motion_s": None, "first_motion_llm_calls": None})
+    assert not any(c.startswith("first motion") for c in unmoved), unmoved
+    half = run_counters({**end, "llm_latency_p50_s": 6.2, "llm_latency_max_s": 8.2})
+    assert not any(c.startswith("model calls") for c in half), half
 
 
 def test_the_help_offers_log_and_trace_is_no_command() -> None:

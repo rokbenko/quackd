@@ -50,6 +50,7 @@ from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import SELF_HOSTED, cost_usd
 from quackd.command import redacted_url
 from quackd.duckfile.schema import POLICY_VERB
+from quackd.latency import spread as latency_spread
 from quackd.verbs.registry import Verb
 from quackd.verdict import BEFORE_VERDICT, MOVES_THE_BODY
 
@@ -763,6 +764,11 @@ class Stepper:
     answer, the way a request's questions are counted as sent, so a turn that failed, ran out of
     its second or was cut off after its frame left still counts it."""
     latency_s: float = 0.0
+    answered_s: list[float] = field(default_factory=list, init=False, repr=False)
+    """The seconds of each request that came back with an answer, in order, which the block's
+    percentiles are read off (`quackd.latency`). `latency_s` above counts every request, and one
+    that ran out of its second or failed is in it and not here: its seconds are how long a
+    failure took, not how long this decision LLM takes to answer."""
     last_request_ended: float | None = field(default=None, init=False, repr=False)
     """When this stepper's previous request ended with an answer, on `time.perf_counter`'s clock,
     or None where no connection can be said to be waiting: before its first request, and after
@@ -915,6 +921,11 @@ class Stepper:
             "refusals": self.refusals,
             "frames_sent": self.frames_sent,
             "latency_s": round(self.latency_s, 3),
+            # the typical answer and the bad one, only where one came back (`quackd.latency`)
+            **{
+                f"latency_{figure}_s": seconds
+                for figure, seconds in (latency_spread(self.answered_s) or {}).items()
+            },
             # What the stepper asked for and what that cost, kept apart from the model's own
             # `usage` and `cost_usd` at the top of the summary rather than folded into them:
             # they are two different things at rates that can be three orders of magnitude
@@ -1196,6 +1207,7 @@ class Stepper:
         self.asked += 1
         took = round(ended - started, 3)
         self.latency_s += took
+        self.answered_s.append(took)
         record["latency_s"] = took
         record["idle_s"] = idle
         record["questions"] = len(questions)

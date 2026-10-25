@@ -4815,6 +4815,61 @@ async def test_the_seconds_spent_waiting_on_the_model_count_the_call_that_raised
     assert loop.llm_latency_s == pytest.approx(sum(c["latency_s"] for c in calls), abs=1e-9)
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["llm_latency_s"] == pytest.approx(loop.llm_latency_s, abs=0.0005)
+    # the one call that answered is the whole spread, and the failure is in none of it
+    answered = calls[0]["latency_s"]
+    assert (
+        summary["llm_latency_p50_s"],
+        summary["llm_latency_p90_s"],
+        summary["llm_latency_max_s"],
+    ) == (answered, answered, answered)
+
+
+async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_moved(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A total says where a run's time went and nothing about the calls that spent it, and the
+    question a person standing by the robot asks first is how long it took to do anything. So
+    the summary carries the model's median, ninetieth percentile and longest call, by nearest
+    rank over the calls that answered, and when the first verb that moves the body was handed
+    over, on the record's own clock and after how many model calls. Read off the run's own
+    records rather than off a clock the test keeps, so no figure here is a timing guess. A dry
+    run hands nothing over, so nothing in it moved."""
+    from quackd.latency import nearest_rank
+
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck(hello_duck.name),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    llm = [e for e in events if e["kind"] == "llm"]
+    seconds = [e["latency_s"] for e in llm]
+    assert len(seconds) == len(GOLDEN_HELLO)
+    assert summary["llm_latency_p50_s"] == nearest_rank(seconds, 0.5)
+    assert summary["llm_latency_p90_s"] == nearest_rank(seconds, 0.9)
+    assert summary["llm_latency_max_s"] == max(seconds)
+
+    walked = GOLDEN_HELLO.index("walk")
+    assert summary["first_motion_llm_calls"] == walked + 1, "the call that chose it included"
+    ended = next(e for e in events if e["kind"] == "verb_end" and e.get("name") == "walk")
+    assert llm[walked]["t"] <= summary["first_motion_s"] <= ended["t"] <= summary["wall_s"]
+
+    dry = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck(hello_duck.name),
+            transport=MockTransport(),
+            runs_dir=tmp_path / "dry",
+            dry_run=True,
+        )
+    )
+    unmoved = json.loads((dry.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert unmoved["first_motion_s"] is None and unmoved["first_motion_llm_calls"] is None
 
 
 async def test_every_call_is_costed_at_the_rate_the_environment_named(

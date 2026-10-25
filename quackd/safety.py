@@ -283,6 +283,15 @@ class Executor:
     """How many times `stop` has been asked for through this executor, from any caller. A
     verb's context compares it with the count when the verb began (`VerbContext.interrupted`),
     so a verb that runs for a while ends on a brake pulled from beside it."""
+    first_motion_at: float | None = None
+    """When the first verb that may move the body (`_may_move`) was handed to the transport, on
+    `time.monotonic()`'s clock, or None until one has been. Never on a dry run, which hands
+    nothing over. The loop writes it as `first_motion_s` on the record's own clock, which is how
+    long somebody standing by the robot waited for it to do anything at all: on the README's arm
+    run two model calls and the serial port's ten seconds came first."""
+    first_motion_llm_calls: int | None = None
+    """How many model calls the run had made when that verb went, the one that chose it
+    included, or None until one has gone."""
     segment: str | None = field(default=None, init=False)
     """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check
     against `policy_total_s` and its charge, or None. Another is refused meanwhile."""
@@ -785,6 +794,12 @@ class Executor:
             )
 
         self.log(f"→ {name}({parsed.model_dump()})")
+        if self.first_motion_at is None and self._may_move(canonical, verb):
+            # Here, after every gate, the state read, the preconditions and the dry run's branch,
+            # so a verb that was refused, a dry run and a read never count as the robot moving.
+            self.first_motion_at = time.monotonic()
+            budget = self.budget
+            self.first_motion_llm_calls = budget.llm_calls if budget is not None else None
         robot_before = self._robot_now() if timed else None
         result: VerbResult | None = None
         try:

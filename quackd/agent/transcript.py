@@ -162,6 +162,12 @@ class Transcript:
         the whole run, wall seconds, start to finish."""
         return time.monotonic() - self._t0
 
+    def at(self, monotonic: float) -> float:
+        """A `time.monotonic()` reading as seconds on this record's clock, the one every `t` is
+        on, rounded as a `t` is: where in the run something stamped elsewhere happened
+        (`Executor.first_motion_at`)."""
+        return round(monotonic - self._t0, 3)
+
     def ended_at_iso(self, wall_s: float) -> str:
         """`started_at` plus the run's own span, rather than a second reading of the clock.
 

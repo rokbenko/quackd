@@ -1954,6 +1954,41 @@ async def test_each_request_says_how_long_since_the_last_one_ended(
     assert second.record["idle_s"] == 7.0, "not measured from when the last request ended"
 
 
+async def test_the_block_gives_the_typical_answer_and_the_slow_one_beside_the_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`latency_s` is every request added up, the failed ones with them, because the run waited
+    on all of them. A total cannot say whether a decision LLM is quick with one slow answer or
+    slow throughout, so the block carries the answers' median, ninetieth percentile and longest,
+    by nearest rank. A request that failed is in the total and in no percentile: its seconds are
+    how long a failure took. A stepper whose every request failed has no figures at all."""
+    clock = _clocked(monkeypatch)
+    llm = _Takes(clock, 0.25, {"answers": _answered()})
+    stepper, adapter, _m = await _arm(llm=llm)
+    obs = await _observation(adapter)
+    for seconds in (0.25, 0.25, 0.9):
+        llm.seconds = seconds
+        await stepper.advise(obs, cleared=True, budget=BUDGET)
+    llm.seconds, llm.fails = 5.0, True
+    await stepper.advise(obs, cleared=True, budget=BUDGET)
+    block = stepper.summary()
+    assert block["latency_s"] == pytest.approx(0.25 + 0.25 + 0.9 + 5.0)
+    assert (block["latency_p50_s"], block["latency_p90_s"], block["latency_max_s"]) == (
+        0.25,
+        0.9,
+        0.9,
+    ), block
+
+    failing = _Takes(clock, 0.4, {"answers": _answered()})
+    failing.fails = True
+    lost, _adapter, _m = await _arm(llm=failing)
+    await lost.advise(obs, cleared=True, budget=BUDGET)
+    await adapter.disconnect()
+    await _adapter.disconnect()
+    assert lost.summary()["latency_s"] == 0.4
+    assert not {"latency_p50_s", "latency_p90_s", "latency_max_s"} & set(lost.summary())
+
+
 async def test_a_failed_request_leaves_no_warm_connection_and_an_unsent_turn_moves_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

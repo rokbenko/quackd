@@ -71,6 +71,7 @@ from quackd.agent.transcript import Transcript, new_run_dir, run_label
 from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
+from quackd.latency import spread
 from quackd.log import A_PERSON, EventLog, Sink, a_person_was_asked, fmt_params, who_answered
 from quackd.memory import RobotMemory
 from quackd.perception import detector_for, lens_of
@@ -551,6 +552,10 @@ class AgentLoop:
         """Seconds this run spent waiting on the model, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
+        self.llm_answered_s: list[float] = []
+        """The seconds of each call that answered, in order, which the summary's percentiles
+        are read off (`quackd.latency.spread`). A call that raised is in the total above and not
+        here: its seconds are how long a failure took, not how long the model takes to answer."""
         self.llm_retries = 0
         """How many times a turn the API could not answer was asked again (ADR-0059). Never
         charged to `max_llm_calls`, since each is the same turn again, and written into the
@@ -2504,6 +2509,7 @@ class AgentLoop:
                         system, history, tools, reprompt=retry_prompted
                     )
                     self.llm_latency_s += latency_s
+                    self.llm_answered_s.append(latency_s)
                     self.usage = self.usage + turn.usage
                     turn_usage = turn.usage.model_dump()
                     costed = turn_cost(turn_usage, self.price, turn.billed_usd)
@@ -2825,6 +2831,22 @@ class AgentLoop:
                 "wall_s": wall_s,
                 "connect_s": connect_s,
                 "llm_latency_s": round(self.llm_latency_s, 3),
+                # The typical call and the bad one beside the total, by nearest rank over the
+                # calls that answered, only where one did, so a run that never asked the model
+                # anything says nothing it did not measure (`quackd.latency`).
+                **{
+                    f"llm_latency_{figure}_s": seconds
+                    for figure, seconds in (spread(self.llm_answered_s) or {}).items()
+                },
+                # How long the robot took to do anything at all, on this record's clock with the
+                # connect in it, and after how many model calls: null where nothing moved, a dry
+                # run among them, since it hands nothing over (`Executor.first_motion_at`).
+                "first_motion_s": (
+                    self.transcript.at(moved)
+                    if (moved := self.executor.first_motion_at) is not None
+                    else None
+                ),
+                "first_motion_llm_calls": self.executor.first_motion_llm_calls,
                 # the tries asked again after the API could not answer a turn, and the seconds
                 # waited before asking, only where the run waited at all (ADR-0059): a wait a
                 # stop ended has seconds and no try

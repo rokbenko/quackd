@@ -390,6 +390,17 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
             spent.append(f"waits {fmt_duration(waited)}")
         where = f" ({', '.join(spent)})" if spent else ""
         counters.append(f"time {fmt_duration(wall)}{where}")
+    # The typical answer and the bad one, which a total cannot tell apart, and how long the robot
+    # took to do anything at all: each only where its keys are, so a record from before them
+    # replays with exactly the counters it always had (`quackd.latency`).
+    if (calls := _spread_counter("model calls", end, "llm_latency")) is not None:
+        counters.append(calls)
+    if (asked := _spread_counter("stepper", _block(end, "decision"), "latency")) is not None:
+        counters.append(asked)
+    if (first := _number(end.get("first_motion_s"))) is not None:
+        made = _number(end.get("first_motion_llm_calls"))
+        after = "" if made is None else f", after {int(made)} model call{'' if made == 1 else 's'}"
+        counters.append(f"first motion at {fmt_duration(first)}{after}")
     if (policy := _policy_counter(end.get("policy"))) is not None:
         counters.append(policy)
     decision_block = end.get("decision") or {}
@@ -421,6 +432,20 @@ def run_counters(end: Mapping[str, Any]) -> list[str]:
             total = model_cost + (decision_cost or 0.0)
             counters.append(f"cost {'~' if estimated else ''}{fmt_usd(total)}")
     return counters
+
+
+def _spread_counter(label: str, block: Mapping[str, Any], prefix: str) -> str | None:
+    """`model calls p50 6.2 s, p90 8.2 s, max 8.2 s` from a block's `<prefix>_p50_s` and its
+    two siblings, or None unless all three are numbers: a half-written spread is no spread."""
+    from quackd.latency import SPREAD
+    from quackd.log import fmt_duration
+
+    figures = [(name, _number(block.get(f"{prefix}_{name}_s"))) for name in SPREAD]
+    if any(seconds is None for _name, seconds in figures):
+        return None
+    return f"{label} " + ", ".join(
+        f"{name} {fmt_duration(seconds)}" for name, seconds in figures if seconds is not None
+    )
 
 
 def _block(end: Mapping[str, Any], key: str) -> Mapping[str, Any]:
