@@ -370,7 +370,7 @@ different questions and no two of them are interchangeable:
   calls had been made by then, the one that chose it included. Both are null where nothing
   moved, and a refused verb, a dry run and a read never count. It is the wait a person standing
   by the robot feels first
-  ([ADR-0062](../adr/0062-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
+  ([ADR-0064](../adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
 - `llm_retries` and `llm_retry_wait_s`, only on a run that waited to ask a turn again: how
   many tries went out again, and the seconds waited before them, a wait a stop ended among
   them, which no model was asked anything in and so are not in `llm_latency_s`

@@ -1,4 +1,4 @@
-# ADR-0062: A run says where its seconds went, and waits for less
+# ADR-0064: A run says where its seconds went, and waits for less
 
 **Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (in `--decision-mode shadow` the stepper is asked beside the model's call, not in front of it), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the summary says how the calls spread and when the body first moved, and `run_start` what the pilot was asked to reason at) and [ADR-0059](0059-a-turn-the-api-could-not-answer-is-asked-again.md) (a call is raced against the task's minutes as well as the stop) · Implemented in `quackd/latency.py`, `quackd/agent/loop.py` (`_unless_stopped`, `_minutes_spent`, `_guarded`, `_settle_beside`, `_Warming`), `quackd/safety.py` (`Executor.first_motion_at`), `quackd/agent/transcript.py` (`save_frames_off_loop`), `quackd/agent/providers/sdk_warm.py`, `quackd/agent/providers/factory.py` (`EFFORTS`, `effort_refusal`), `quackd/ui.py` and `quackd/cli.py` (`--effort`, `run_counters`)
 

@@ -38,7 +38,7 @@ backend reported no count, is `usage_estimated` on its record and sets the run's
 its money, so a server you run prints `~$0` there, as it did before ADR-0052. Only the run's
 cost counter keeps its `~` for a stepper total above zero. Nothing else in this ADR changes.
 
-**Amended 2026-10-26 by [ADR-0061](0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md) and [ADR-0062](0062-a-run-says-where-its-seconds-went-and-waits-for-less.md):** the cache buckets
+**Amended 2026-10-26 by [ADR-0063](0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md) and [ADR-0064](0064-a-run-says-where-its-seconds-went-and-waits-for-less.md):** the cache buckets
 below are no longer empty on Claude, whose requests now mark the prompt for the cache. The
 summary also says how the model's answered calls spread (`llm_latency_p50_s`,
 `llm_latency_p90_s` and `llm_latency_max_s`, and the same three in the stepper's block)

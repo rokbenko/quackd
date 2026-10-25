@@ -22,7 +22,7 @@ Two more came with them. `x-should-retry: true` asks again at any status, as the
 where only `false` was read before. And a run that gave up prints its counters under the line it
 ended on, as a run that ended any other way prints them under its panel.
 
-**Amended 2026-10-26 by [ADR-0062](0062-a-run-says-where-its-seconds-went-and-waits-for-less.md):** each try is raced against the task's
+**Amended 2026-10-26 by [ADR-0064](0064-a-run-says-where-its-seconds-went-and-waits-for-less.md):** each try is raced against the task's
 minutes as well as the stop, so a call that hangs ends the run on its budget once
 `max_minutes` is spent, its `llm` record saying so, rather than holding the robot for as
 long as the vendor's own clock allows.

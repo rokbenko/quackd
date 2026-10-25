@@ -121,7 +121,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
   loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
   with no marker in the history, and the 32 with pictures fail with one at the end of each
-  request ([ADR-0061](docs/adr/0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
+  request ([ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
 - **The pilot's client is warmed while the robot connects.** A client of Anthropic's or OpenAI's
   SDK starts its first request by asking which platform it runs on, on Windows a WMI query or a
   subprocess, and by importing anyio's asyncio backend, and the pilot paid both in its first
@@ -136,7 +136,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `interrupted` when the model's call ends the run. The turn that finds the LLM calls spent asks
   neither, where it used to ask the stepper and then refuse the model. A shadow turn's
   `decision` line follows its `llm` line now. `on` is unchanged: the stepper still answers first,
-  since its answer can take the turn ([ADR-0062](docs/adr/0062-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
+  since its answer can take the turn ([ADR-0064](docs/adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
 - **The status line names the call the model chose.** After the model answered, the line under
   the log said "choosing a verb", which was over by then. It names the call the model chose now,
   says that it answered without one or that the call failed, and a wait on the model carries the
@@ -184,8 +184,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `.env.example` does. architecture.md describes the new record fields, safety.md the minutes
   bound, and the decision guide what shadow costs a turn now. The FAQ's two refusals of an
   unknown model, and the counters lines the FAQ and safety.md quote, were captured again.
-  [ADR-0061](docs/adr/0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)
-  records the cache and [ADR-0062](docs/adr/0062-a-run-says-where-its-seconds-went-and-waits-for-less.md)
+  [ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)
+  records the cache and [ADR-0064](docs/adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)
   the rest, and they amend ADR-0010, ADR-0040, ADR-0041 and ADR-0059.
 
 ### Known limitations

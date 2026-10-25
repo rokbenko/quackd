@@ -39,7 +39,7 @@ own SDK reads, `ANTHROPIC_CUSTOM_HEADERS` and `ANTHROPIC_AUTH_TOKEN` among them 
 release, go where that SDK points by itself, Anthropic's API, `ANTHROPIC_BASE_URL` or a profile's
 address, which is the same rule.
 
-**Amended 2026-10-26 by [ADR-0061](0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md):** the Anthropic request marks blocks for
+**Amended 2026-10-26 by [ADR-0063](0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md):** the Anthropic request marks blocks for
 the prompt cache. Its system prompt goes as one text block marked `cache_control`, and at
 most two blocks of its history are marked where the loop foresees the next call still
 matching it. `QUACKD_ANTHROPIC_CACHE=0` sends the request unmarked, as before.

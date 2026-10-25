@@ -1,4 +1,4 @@
-# ADR-0061: The pilot's prompt is cached up to where the next request still matches
+# ADR-0063: The pilot's prompt is cached up to where the next request still matches
 
 **Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0010](0010-providers.md) (the Anthropic request now marks blocks for the prompt cache: its system prompt, and at most two blocks of its history) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the cache buckets it prices are no longer empty on Claude) · Implemented in `quackd/agent/loop.py` (`_with_cache_point`, and `_history_for_provider` and `_last_invalidated` taking the history to build from), `quackd/agent/providers/base.py` (`Exchange.cache_points`) and `quackd/agent/providers/anthropic.py` (`_system`, `_marked`, `render_messages`, `CACHE_ENV`)
 
