@@ -148,7 +148,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
   pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
   against the Hub, which takes the gated tokenizer's grant.
+- **`quackd doctor` said a vendor's key was unset when only its second name was exported.**
+  Cohere's provider reads `CO_API_KEY` when `COHERE_API_KEY` is empty, Meta's reads
+  `MODEL_API_KEY` after `META_API_KEY` and Gemini's `GOOGLE_API_KEY` after `GEMINI_API_KEY`, so
+  a run with only the second one exported worked while doctor's row said `COHERE_API_KEY unset`.
+  The three second names are now one table, `KEY_FALLBACKS`, which the providers and doctor
+  both read, and doctor's row shows the masked key with the name it came from
+  (`from CO_API_KEY`), which `doctor --json` carries as `key_from`.
 
+### Documentation
+
+- **`GOOGLE_API_KEY` is named where keys are configured.** The Gemini provider has read it
+  after `GEMINI_API_KEY` since 0.1.0, and the README's API keys row and `.env.example` said so
+  for Cohere's and Meta's second names only. A test now holds both to every name in
+  `KEY_FALLBACKS`.
 ### Known limitations
 
 - **No pi0 has run.** quackd has not loaded, benched or served one, on a laptop or on a GPU, and

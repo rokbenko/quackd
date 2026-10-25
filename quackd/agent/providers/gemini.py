@@ -5,6 +5,9 @@ PNG parts; tool results go back as `function_response` parts. Gemini's schema di
 rejects a few JSON-Schema keywords, so `render_tools` strips them. Thought summaries are
 asked for (`thinking_config.include_thoughts`) so the log can show them; a model that
 rejects the field gets one retry without it, and `QUACKD_GEMINI_THOUGHTS=0` never asks.
+
+The key is read from `GEMINI_API_KEY`, then `GOOGLE_API_KEY`, which google-genai itself reads
+too (`KEY_FALLBACKS`).
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from quackd.agent.providers.base import (
     Usage,
     picture_parts,
 )
-from quackd.agent.providers.catalogue import default_model_for
+from quackd.agent.providers.catalogue import KEY_FALLBACKS, default_model_for
 
 UNSUPPORTED_SCHEMA_KEYS = {
     "additionalProperties",
@@ -221,7 +224,11 @@ class GeminiProvider:
             )
         self.include_thoughts = include_thoughts
         if client is None:
-            key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            key = (
+                api_key
+                or os.environ.get("GEMINI_API_KEY")
+                or os.environ.get(KEY_FALLBACKS["gemini"])
+            )
             if not key:
                 raise ProviderMissingKey("gemini", "GEMINI_API_KEY")
             try:

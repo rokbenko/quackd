@@ -32,6 +32,7 @@ from quackd.agent.providers.factory import (
     DEFAULT_LLM,
     EXTRA_FOR,
     KEY_ENV,
+    KEY_FALLBACKS,
     LLM_ENV,
     LOCAL_NAMES,
     OPENAI_COMPATIBLE,
@@ -698,7 +699,7 @@ def test_each_openai_shaped_vendor_is_wired_the_same_way(name: str) -> None:
 def test_each_openai_shaped_vendor_names_its_own_key(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for env in set(KEY_ENV.values()) | {"CO_API_KEY", "MODEL_API_KEY"}:
+    for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
         monkeypatch.delenv(env, raising=False)
     module = importlib.import_module(f"quackd.agent.providers.{name}")
     vendor = getattr(module, OPENAI_COMPATIBLE[name])
@@ -706,26 +707,22 @@ def test_each_openai_shaped_vendor_names_its_own_key(
         vendor()
 
 
-@pytest.mark.parametrize(
-    ("name", "fallback"), [("cohere", "CO_API_KEY"), ("meta", "MODEL_API_KEY")]
-)
-def test_the_two_vendors_with_a_second_key_name_accept_it(
+@pytest.mark.parametrize(("name", "fallback"), sorted(KEY_FALLBACKS.items()))
+def test_a_vendor_with_a_second_key_name_accepts_it(
     name: str, fallback: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Both vendors' own examples export a different variable than their docs head with, and a
-    reader who has one exported should not be told they have none.
+    """Each of these vendors' own SDK or examples export a different variable than the one its
+    docs head with, and a reader who has that one exported should not be told they have none.
 
-    Built with no `client=`, deliberately. `OpenAIProvider` reads a key only when it has to make
-    one, so passing a stub skips `_fallback_key` entirely and this test would pass with both
-    overrides deleted. Without the SDK installed the constructor then gets as far as the import
-    and raises `ProviderNotInstalled`, which is itself the proof: it got past the key.
+    Built through `make_provider` with no client, deliberately. A provider reads a key only when
+    it has to make a client, so passing a stub would skip the fallback entirely and this test
+    would pass with it deleted. Without the SDK installed the constructor then gets as far as
+    the import and raises `ProviderNotInstalled`, which is itself the proof: it got past the key.
     """
     monkeypatch.delenv(KEY_ENV[name], raising=False)
     monkeypatch.setenv(fallback, "sk-test")
-    module = importlib.import_module(f"quackd.agent.providers.{name}")
-    vendor = getattr(module, OPENAI_COMPATIBLE[name])
     try:
-        vendor()
+        make_provider(name)
     except ProviderMissingKey:  # pragma: no cover - the failure this test is here to catch
         pytest.fail(f"{name} has {fallback} exported and still says {KEY_ENV[name]} is unset")
     except ProviderNotInstalled:
@@ -737,7 +734,7 @@ def test_a_vendor_with_neither_key_name_still_says_which_one_it_wants(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The other half: with nothing exported, the error names the variable the docs head with."""
-    for env in set(KEY_ENV.values()) | {"CO_API_KEY", "MODEL_API_KEY"}:
+    for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
         monkeypatch.delenv(env, raising=False)
     module = importlib.import_module(f"quackd.agent.providers.{name}")
     with pytest.raises(ProviderMissingKey, match=KEY_ENV[name]):

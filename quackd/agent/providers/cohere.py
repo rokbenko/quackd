@@ -6,13 +6,14 @@ the one vendor here that cannot be *told* to call a tool, only asked: a turn tha
 prose costs the loop its one re-prompt. It is the vendor's surface, not a setting to tune.
 
 The key is read from `COHERE_API_KEY`, and from `CO_API_KEY` after that, because Cohere's own SDK
-and its docs disagree about which one a reader will already have exported.
+and its docs disagree about which one a reader will already have exported (`KEY_FALLBACKS`).
 """
 
 from __future__ import annotations
 
 import os
 
+from quackd.agent.providers.catalogue import KEY_FALLBACKS
 from quackd.agent.providers.openai import OpenAIProvider
 
 
@@ -25,4 +26,4 @@ class CohereProvider(OpenAIProvider):
     send_parallel_flag = False
 
     def _fallback_key(self) -> str | None:
-        return os.environ.get("CO_API_KEY")
+        return os.environ.get(KEY_FALLBACKS[self.name])

@@ -26,6 +26,7 @@ from quackd.agent.providers.base import LLMProvider, ProviderError
 from quackd.agent.providers.catalogue import CATALOGUE as CATALOGUE
 from quackd.agent.providers.catalogue import CLOUD_NAMES as CLOUD_NAMES
 from quackd.agent.providers.catalogue import DEFAULT_LLM as DEFAULT_LLM
+from quackd.agent.providers.catalogue import KEY_FALLBACKS as KEY_FALLBACKS
 from quackd.agent.providers.catalogue import LLM_ENV as LLM_ENV
 from quackd.agent.providers.catalogue import LOCAL_NAMES as LOCAL_NAMES
 from quackd.agent.providers.catalogue import OPEN_ENDED as OPEN_ENDED
@@ -58,6 +59,8 @@ KEY_ENV = {
     "openrouter": "OPENROUTER_API_KEY",
     **{name: "LOCAL_API_KEY" for name in LOCAL_NAMES},
 }
+# `KEY_FALLBACKS`, imported above from the catalogue, is the second name a few of these are read
+# from when the first is empty.
 
 # Which `quackd[...]` extra installs the SDK a provider needs. Most of these are the same wheel
 # under a different name, because most vendors speak OpenAI's API: the extra exists so the error

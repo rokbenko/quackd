@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
-from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, default_model_for
+from quackd.agent.providers.factory import (
+    CLOUD_NAMES,
+    KEY_ENV,
+    KEY_FALLBACKS,
+    default_model_for,
+)
 from quackd.verbs.registry import default_registry
 from quackd_microduck import upstream_api as up
 from tests.adapter_layout import adapter_module
@@ -626,6 +631,18 @@ def test_every_provider_key_is_named_where_keys_are_configured() -> None:
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     for name in CLOUD_NAMES:
         assert f"\n{KEY_ENV[name]}=" in env_example, f".env.example has no {KEY_ENV[name]} line"
+
+
+def test_every_key_a_vendor_falls_back_to_is_named_where_keys_are_configured() -> None:
+    """`GOOGLE_API_KEY` was read by the Gemini provider since 0.1.0 and named nowhere a reader
+    looks, so somebody with only that one exported was told by nothing that it would work."""
+    env_example = (REPO / ".env.example").read_text(encoding="utf-8")
+    row = next(line for line in README.splitlines() if line.startswith("| API keys |"))
+    for name, fallback in KEY_FALLBACKS.items():
+        assert f"`{KEY_ENV[name]}` (or `{fallback}`)" in row, (
+            f"the README's API keys row does not say {KEY_ENV[name]} falls back to {fallback}"
+        )
+        assert fallback in env_example, f".env.example never names {fallback}"
 
 
 def test_the_catalogue_is_documented_where_it_is_configured() -> None:
