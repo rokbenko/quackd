@@ -76,11 +76,8 @@ address rules are the standard library alone, so `factory` asks them on a machin
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import importlib
 import math
 import os
-import platform
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
@@ -108,6 +105,8 @@ from quackd.agent.providers.openai_headers import (
     request_headers,
     sdk_parts,
 )
+from quackd.agent.providers.sdk_warm import ANYIO_BACKEND as ANYIO_BACKEND
+from quackd.agent.providers.sdk_warm import warm_client
 from quackd.command import readable_url, redacted_url
 
 if TYPE_CHECKING:
@@ -228,62 +227,19 @@ def client_problem(spec: DecisionSpec) -> str | None:
     return None
 
 
-_UNSET = object()
-"""What `getattr` hands back for an attribute a client does not have, which no answer can be."""
-
-ANYIO_BACKEND = "anyio._backends._asyncio"
-"""The module `anyio` imports the first time it is asked for its asyncio backend, which the
-SDK's HTTP client asks for on its first connection (`warm_platform`)."""
-
-
 def warm_platform(client: Any) -> None:
-    """Ask now the one question the SDK asks before its first request: which platform it is on.
+    """Ask now what OpenAI's SDK asks before its first request, while this client is built and
+    the robot is not yet connected, so no stepper turn spends its second on it.
 
-    Each release of the SDK read for this starts a client's first request with
-    `self._platform = await asyncify(get_platform)()` while it has no answer, in a worker thread
-    (`openai/_base_client.py`, the eleven releases from 1.66.0 to 3.22.1 that uv had cached, read
-    2026-10-10). `get_platform` reads `platform.system()` and `platform.platform()`, and on Linux
-    the distribution's own file. On Windows `platform.platform()` asks the system for its version,
-    by a WMI query from Python 3.12 and by `cmd /c ver` in a subprocess on 3.11, and CPython keeps
-    the answer for the life of the process, so it is paid once, and it was paid inside the first
-    stepper turn and against that turn's second: on a loaded machine most of the second, and now and
-    then all of it, when the turn was cancelled before anything was sent and was recorded and billed
-    as a request that had left. Reading a built client's headers back, as `DecisionsAPILLM` does at
-    a server of your own, happens to ask it as well, through `default_headers`, but leaves the
-    client without the answer, so its first request still stopped to ask again.
-
-    So it is asked here, on purpose, while the client is built and the robot is not yet connected,
-    where a slow answer costs a moment of start-up and nothing else. The SDK's own `get_platform` is
-    asked rather than the standard library's functions alone, so whatever a release reads gets
-    read, and its answer is handed to the client where the client keeps one, which spares the
-    first request even the worker thread it would have started to ask again; under a release
-    that kept it elsewhere the caches are warm all the same. Where the SDK has no such function,
-    the standard library's two are asked instead, which is most of the cost on every platform.
-
-    The first request paid one more thing that has nothing to do with the platform. The SDK's HTTP
-    client reaches the network through `anyio`, which imports its asyncio backend, a module of its
-    own, the first time it is asked for one (`ANYIO_BACKEND`). Timed on 2026-10-10 on a machine
-    running the whole suite beside it, the first turn imported it and took some 10 to 15 ms longer
-    than the turns after it. So it is imported here as well.
-
-    Nothing here may stop the build, because this only saves a turn some time: a client left to
-    ask for itself is the client as it was."""
-    try:
-        probe = getattr(importlib.import_module(f"{SDK}._base_client"), "get_platform", None)
-    except Exception:
-        probe = None
-    try:
-        if not callable(probe):
-            platform.system()
-            platform.platform()
-        else:
-            found = probe()
-            if getattr(client, "_platform", _UNSET) is None:
-                client._platform = found
-    except Exception:
-        pass
-    with contextlib.suppress(Exception):
-        importlib.import_module(ANYIO_BACKEND)
+    The question is which platform it runs on, and on Windows that is a WMI query or `cmd /c
+    ver` in a subprocess, which used to be paid inside the first stepper turn and against that
+    turn's one second: on a loaded machine most of it, and now and then all of it, when the turn
+    was cancelled before anything was sent and was recorded and billed as a request that had
+    left. Reading a built client's headers back, as `DecisionsAPILLM` does at a server of your
+    own, happens to ask it as well, through `default_headers`, but leaves the client without the
+    answer, so its first request still stopped to ask again. `sdk_warm.warm_client` is where the
+    asking lives, since the pilot's client is warmed the same way, and it never raises."""
+    warm_client(client, SDK)
 
 
 # ── the translation ─────────────────────────────────────────────────────────────────────

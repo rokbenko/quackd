@@ -12,6 +12,7 @@ import contextlib
 import functools
 import random
 import re
+import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -204,6 +205,57 @@ async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
     except TimeoutError:
         return False
     return True
+
+
+class _Warming:
+    """The pilot's `warm()`, in a daemon thread of its own while the robot connects.
+
+    A provider built on Anthropic's or OpenAI's SDK starts its first request by asking which
+    platform it runs on, and on Windows that is a WMI query or a subprocess, paid in the seconds a
+    person waits for the robot to move (`providers.sdk_warm`). Asked while the robot connects,
+    which on the README's arm took ten seconds of opening a serial port, it is paid inside that
+    wait instead.
+
+    Not awaited. Waiting for it after the connect would only move the same seconds from the first
+    call to before it: the gain is the overlap and nothing else, so a warm-up still going when
+    the run starts is left to finish beside the first request, which then finds the answer or
+    asks for it as it always did. A daemon thread rather than `asyncio.to_thread`, because
+    `asyncio.run` waits for its executor's threads at exit, and a probe that hung would hang the
+    end of the run with it. `record` says what became of it by `run_start`."""
+
+    def __init__(self, warm: Callable[[], None]) -> None:
+        self._outcome: dict[str, Any] = {}
+        self._thread = threading.Thread(
+            target=self._run, args=(warm,), name="quackd-pilot-warm", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self, warm: Callable[[], None]) -> None:
+        started = time.perf_counter()
+        try:
+            warm()
+        except Exception as e:
+            # a warm-up only ever saves the first request some time, so a failed one is a
+            # line in the record and nothing else
+            outcome: dict[str, Any] = {"failed": type(e).__name__}
+        else:
+            outcome = {"ok": True}
+        outcome["s"] = round(time.perf_counter() - started, 3)
+        self._outcome = outcome
+
+    def record(self) -> dict[str, Any]:
+        """`run_start.pilot_warm`: `{"ok": true, "s": ...}`, `{"failed": "<type>", "s": ...}`,
+        or `{"finished": false}` for one still going when the run started."""
+        if self._thread.is_alive() or not self._outcome:
+            return {"finished": False}
+        return dict(self._outcome)
+
+
+def _start_warming(provider: Any) -> _Warming | None:
+    """A `_Warming` for a pilot that offers `warm()`, or None for one that does not: the scripted
+    pilot, the VLA one, Gemini, and anything a test builds."""
+    warm = getattr(provider, "warm", None)
+    return _Warming(warm) if callable(warm) else None
 
 
 @runtime_checkable
@@ -2113,6 +2165,10 @@ class AgentLoop:
 
     async def run(self) -> RunResult:
         cfg = self.cfg
+        # The pilot's client asks what it asks before its first request while the robot
+        # connects, in a thread of its own, so the connect's seconds cover it (`_Warming`).
+        # Started before the connect's clock, so `connect_s` stays the connect and nothing else.
+        warming = _start_warming(cfg.provider)
         # connect FIRST: an adapter answers with its manifest, and the vocabulary (tools,
         # prompt, allowlist universe) is built from that, not hardcoded (ADR-0017)
         connect_started = time.perf_counter()
@@ -2347,6 +2403,9 @@ class AgentLoop:
                 images=[p.name for p in cfg.task_images],
                 flock=cfg.link.describe() if cfg.link is not None else None,
                 connect_s=connect_s,
+                # what became of the pilot's warm-up by now, only for a pilot that offers one, so
+                # every record from a run with the scripted pilot reads as it did (`_Warming`)
+                **({"pilot_warm": warming.record()} if warming is not None else {}),
                 # Which detector read the frames, or null for a body with nothing to look at,
                 # and the board when `--host` named one. The same detector for the whole run,
                 # so this is the answer for every detection in the transcript.

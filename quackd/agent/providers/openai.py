@@ -773,6 +773,14 @@ class OpenAIProvider:
             return None
         return {"value": self.reasoning_effort, "from": self.effort_from or "the caller"}
 
+    def warm(self) -> None:
+        """What the SDK's client asks before its first request, asked now, while the robot
+        connects (`sdk_warm.warm_client`). Every vendor and server reached through OpenAI's SDK
+        shares it. Sends nothing and never raises."""
+        from quackd.agent.providers.sdk_warm import warm_client
+
+        warm_client(self.client, "openai")
+
     def _params(
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
     ) -> dict[str, Any]:

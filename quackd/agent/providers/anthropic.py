@@ -349,6 +349,13 @@ class AnthropicProvider:
             return None
         return {"value": self.effort, "from": self.effort_from}
 
+    def warm(self) -> None:
+        """What the SDK's client asks before its first request, asked now, while the robot
+        connects (`sdk_warm.warm_client`). Sends nothing and never raises."""
+        from quackd.agent.providers.sdk_warm import warm_client
+
+        warm_client(self.client, "anthropic")
+
     def without_thinking(self, decision: Decision) -> Decision:
         """The same turn with its thinking and redacted thinking blocks left out.
 
