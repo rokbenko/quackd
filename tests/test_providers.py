@@ -201,7 +201,8 @@ async def test_anthropic_request_and_response_mapping() -> None:
     turn = await p.step("SYS", history(), TOOLS)
     assert client.beta_used
     kw = client.kwargs
-    assert kw["model"] == "claude-opus-5" and kw["system"] == "SYS"
+    assert kw["model"] == "claude-opus-5"
+    assert kw["system"] == [{"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]
     assert kw["tool_choice"] == {"type": "any", "disable_parallel_tool_use": True}
     assert kw["output_config"] == {"effort": "medium"}
     # adaptive is the model's default; `display` is what makes the blocks carry text at all,
@@ -224,6 +225,35 @@ async def test_anthropic_request_and_response_mapping() -> None:
     assert turn.tool_calls == [ToolCall(id="toolu_1", name="walk", arguments={"vx": 0.2})]
     assert turn.usage.input_tokens == 120 and turn.stop_reason == "tool_use"
     assert turn.raw[0]["type"] == "thinking"  # replayed verbatim next turn
+
+
+async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Anthropic caches only what a request marks, and orders a request tools, then system,
+    then messages, so one breakpoint on the system block caches the rules, the verbs, the
+    datasheet and the task, which are the bulk of every call and the same on every call. The
+    marked block is byte for byte the same from call to call, or the cache could never be read.
+    `QUACKD_ANTHROPIC_CACHE=0` sends the string as it always was."""
+    import json
+
+    monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
+    client = FakeAnthropic(anthropic_response())
+    p = AnthropicProvider(model="claude-opus-5", client=client)
+    sent = []
+    for _ in range(2):
+        await p.step("SYS", history(), TOOLS)
+        sent.append(json.dumps(client.kwargs["system"], sort_keys=True))
+    assert sent[0] == sent[1]
+    assert json.loads(sent[0]) == [
+        {"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}
+    ]
+
+    for off in ("0", "false", "no"):
+        monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
+        plain = FakeAnthropic(anthropic_response())
+        await AnthropicProvider(model="claude-opus-5", client=plain).step("SYS", history(), TOOLS)
+        assert plain.kwargs["system"] == "SYS", off
 
 
 def test_anthropic_names_each_camera_before_its_picture_in_both_kinds_of_turn() -> None:

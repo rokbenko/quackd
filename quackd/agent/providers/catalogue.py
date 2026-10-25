@@ -217,11 +217,12 @@ class ModelSpec:
 #   while Gemini and OpenAI double the input and cache rates and charge 1.5x the output. A
 #   long-prompt run is therefore under-costed here, and the vendor comments name the thresholds
 #   so a reader knows when to distrust the figure.
-# - **The five minute cache-write TTL**, where a vendor sells two. quackd sets no cache itself,
-#   and on Anthropic, which caches only what a request marks, that is the whole story. On most
-#   of the others it is not. By their own pages OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and
-#   Meta cache a repeated prompt without being asked, and so does Alibaba for the models its
-#   implicit cache covers, so a run on one of them pays the cached-input rate on ordinary turns.
+# - **The five minute cache-write TTL**, where a vendor sells two. On Anthropic, which caches
+#   only what a request marks, quackd marks the system prompt with the five minute lifetime these
+#   write rates are (`AnthropicProvider._system`). The other vendors are marked nothing, and by
+#   their own pages OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and Meta cache a repeated prompt
+#   without being asked, and so does Alibaba for the models its implicit cache covers, so a run
+#   on one of them pays the cached-input rate on ordinary turns.
 #   Two of them write a cache unasked and bill the write as well: OpenAI on GPT-5.6 and later,
 #   at 1.25x input once a prompt passes 1,024 tokens, and Kimi on K3, at its 5 minute rate. A
 #   vendor that sells no cache write at all, billing the tokens that fill a cache at the input

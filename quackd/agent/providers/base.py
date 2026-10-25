@@ -76,9 +76,10 @@ class Usage(BaseModel):
     run recorded before there was a field for it."""
     cache_write_tokens: int = 0
     """The part of `input_tokens` written INTO a prompt cache, billed at the write rate where
-    the vendor has one. Anthropic charges for it when a request marks a cache, which quackd
-    never does, and OpenAI on GPT-5.6 and later and Kimi on K3 charge for the cache they write by
-    themselves. Elsewhere a cache costs nothing to create and this stays 0."""
+    the vendor has one. Anthropic charges for it when a request marks a cache, which quackd's
+    does on every call (`AnthropicProvider._system`), and OpenAI on GPT-5.6 and later and Kimi on
+    K3 charge for the cache they write by themselves. Elsewhere a cache costs nothing to create
+    and this stays 0."""
 
     def __add__(self, other: Usage) -> Usage:
         return Usage(

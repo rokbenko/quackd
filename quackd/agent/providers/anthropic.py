@@ -54,6 +54,9 @@ BINDING_BETA = "thinking-binding-controls-2026-08-01"
 #: window of two, against two for every other model.
 BINDING_TRIM_PERIOD = 8
 
+CACHE_ENV = "QUACKD_ANTHROPIC_CACHE"
+"""Set to 0, false or no to send the system prompt unmarked, so nothing is cached (`_system`)."""
+
 
 def _image_block(png: bytes) -> dict[str, Any]:
     return {
@@ -169,9 +172,9 @@ def parse_response(response: Any) -> ProviderTurn:
     # Anthropic is the one vendor that reports its three input buckets DISJOINT: `input_tokens`
     # is what was neither read from a cache nor written to one. quackd's `input_tokens` is the
     # whole prompt (`providers.base.Usage`), so the three are added back up here and the two
-    # cache numbers ride along beside it for the rates they are actually billed at. Nothing in
-    # quackd sets `cache_control` today, so both are 0 on every run so far, and this is the
-    # arithmetic that stops being a no-op on the day one is set.
+    # cache numbers ride along beside it for the rates they are actually billed at. quackd marks
+    # the system prompt for the cache on every request (`_system`), so from a run's second call
+    # the read bucket carries it, and the first call's write is billed at the write rate.
     cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
     # `cache_creation_input_tokens`, not the `cache_creation` object beside it: that object is
     # a breakdown of this same number by cache lifetime (5 minute and 1 hour), and adding both
@@ -293,6 +296,11 @@ class AnthropicProvider:
         if not effort:
             self.effort_from = "QUACKD_EFFORT" if os.environ.get("QUACKD_EFFORT") else "default"
         env_fb = os.environ.get("QUACKD_ANTHROPIC_FALLBACKS", "1") not in ("0", "false", "no")
+        #: Whether requests mark the prompt for Anthropic's cache (`_system`). On unless
+        #: `QUACKD_ANTHROPIC_CACHE` says 0, false or no, beside the fallbacks switch above: a
+        #: marked prompt is read at a tenth of the input rate from the second call on and
+        #: prefilled sooner, and the one write it costs is a quarter more than an unmarked call.
+        self.caches = os.environ.get(CACHE_ENV, "1").strip().lower() not in ("0", "false", "no")
         self.fallbacks = env_fb if fallbacks is None else fallbacks
         # `summarized` is what makes the thinking blocks carry text. `omitted` keeps the
         # request but hides the text; an empty value sends no `thinking` parameter at all.
@@ -321,7 +329,7 @@ class AnthropicProvider:
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "system": system,
+            "system": self._system(system),
             "messages": render_messages(history),
             "tools": render_tools(tools),
             "tool_choice": _tool_choice(forced=self.forced_tools),
@@ -339,6 +347,24 @@ class AnthropicProvider:
                 thinking["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
             params["thinking"] = thinking
         return params
+
+    def _system(self, system: str) -> str | list[dict[str, Any]]:
+        """The system prompt as it is sent: one text block marked for the cache, or the string.
+
+        The prompt is built once per run and the tools are the same list every call, and
+        Anthropic orders a request tools, then system, then messages, so one breakpoint on the
+        system block caches both, which is the bulk of every request quackd makes: the rules,
+        the verbs, the datasheet and the task. Five minutes is the cache's own lifetime, longer
+        than any pause between two turns of a run, and the write rate in every catalogue row is
+        that lifetime's (`catalogue.py`). A prompt below the model's smallest cacheable size is
+        sent marked and simply not cached, which Anthropic answers with no error and a write of
+        0. A marker sits outside what a model that binds its thinking binds a block to, and one
+        text block is the same system prompt as the string it holds, so the trim's arithmetic
+        (`loop._history_for_provider`) is untouched. With `QUACKD_ANTHROPIC_CACHE=0` it is the
+        string as it always was."""
+        if not self.caches or not system:
+            return system
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
 
     @property
     def asked_effort(self) -> dict[str, str] | None:
