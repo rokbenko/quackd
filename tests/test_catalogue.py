@@ -757,12 +757,13 @@ def test_every_vendor_file_is_reachable_from_the_factory() -> None:
     """A provider module nobody dispatches to is a vendor that silently does not exist.
 
     `vla` is plumbing rather than a vendor: `--controller vla` builds it, never `--llm`. So is
-    `openai_headers`, the rule every client built on OpenAI's SDK is handed its headers by."""
+    `openai_headers`, the rule every client built on OpenAI's SDK is handed its headers by, and
+    `sdk_warm`, what a client of either SDK asks before its first request, asked early."""
     directory = REPO / "quackd" / "agent" / "providers"
     modules = {p.stem for p in directory.glob("*.py")}
     plumbing = {
         *("__init__", "base", "catalogue", "factory", "fake", "local", "openai", "pricing"),
-        *("openai_headers", "vla"),
+        *("openai_headers", "sdk_warm", "vla"),
     }
     assert modules - plumbing - {"anthropic", "gemini"} == set(OPENAI_COMPATIBLE)
 
