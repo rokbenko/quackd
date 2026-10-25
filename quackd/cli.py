@@ -5172,7 +5172,8 @@ def _endpoint_create(
 ) -> Any:
     """Check everything that can be checked before an endpoint exists to bill, ask, and create
     it. The record is kept before the endpoint is created, so one that exists is never one this
-    machine has no token for, and forgotten again if the create is refused."""
+    machine has no token for, forgotten again if the create is refused, and kept when the
+    answer is lost and the endpoint is there all the same (`endpoint.create_endpoint`)."""
     if policy is None:
         _fail(
             f"--policy REPO@REVISION is needed the first time {name} is started: the LeRobot "
@@ -5225,19 +5226,15 @@ def _endpoint_create(
         **where,
     )
     _ask_or_refuse(ep.confirmation(record, check), yes)
-    api.also_scrub(record.token)
     payload = ep.create_payload(
         record,
         accelerator=check.compute.accelerator,
         exclude_newer=check.exclude_newer,
         hub_token=hub,
     )
-    store.save(record)
-    try:
-        api.create(check.namespace, payload)
-    except ep.EndpointError:
-        store.forget(name)
-        raise
+    lost = ep.create_endpoint(api, store, record, payload)
+    if lost is not None:
+        _endpoint_note(f"Hugging Face's answer was lost ({lost}), and it has {name} all the same.")
     _endpoint_row(
         "created",
         f"{name} on {check.namespace}'s account, {record.instance} x1 in {record.vendor} "

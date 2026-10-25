@@ -899,6 +899,48 @@ def create_payload(
     }
 
 
+def create_endpoint(
+    api: HFEndpoints, store: EndpointStore, record: EndpointRecord, payload: Mapping[str, Any]
+) -> str | None:
+    """Create `record`'s endpoint from `payload`, with the record kept first, so an endpoint that
+    exists is never one this machine holds no token for. None once Hugging Face has answered.
+
+    A refusal, a 4xx, created nothing, and the record is forgotten again. Any other failure, no
+    answer within the deadline, a connection that dropped or a 5xx, may have come after the
+    endpoint was made, and forgetting the record then would leave one billing that this machine
+    has no token for and cannot reach. So the endpoint is read: one that is there, with quackd's
+    tag, is taken as created, the record kept, and what became of the answer comes back for
+    `up` to say; one that is not there forgets the record and raises the failure; and one that
+    cannot be read keeps the record, saying `up` finds out and `delete` removes it."""
+    api.also_scrub(record.token)
+    store.save(record)
+    try:
+        api.create(record.namespace, payload)
+        return None
+    except EndpointError as e:
+        if e.status is not None and 400 <= e.status < 500:
+            store.forget(record.name)
+            raise
+        lost = e
+    try:
+        found = api.get(record.namespace, record.name)
+        if found is not None:
+            confirmed(found, namespace=record.namespace, name=record.name, url=None)
+    except Unconfirmed:
+        store.forget(record.name)  # another's by that name, so this create made nothing
+        raise lost from None
+    except EndpointError:
+        raise EndpointError(
+            f"{str(lost).rstrip('.')}, and whether {record.name} was created could not be read "
+            "either, so this machine keeps its record and its token: quackd policy endpoint up "
+            f"{record.name} finds out, and delete {record.name} removes it"
+        ) from None
+    if found is None:
+        store.forget(record.name)
+        raise lost
+    return str(lost)
+
+
 # ── before anything is created ──────────────────────────────────────────────────────────
 
 
@@ -1378,6 +1420,7 @@ __all__ = [
     "confirmed",
     "container_args",
     "container_command",
+    "create_endpoint",
     "create_payload",
     "exclude_newer",
     "find_compute",

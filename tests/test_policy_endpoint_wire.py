@@ -348,6 +348,54 @@ def test_the_record_is_kept_before_the_endpoint_is_created_and_dropped_if_it_is_
     assert _cli(*UP, "--yes").exit_code == 0 and _store().get("arm") is not None
 
 
+@pytest.mark.parametrize("made", ["made", "not made", "unreadable"])
+def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_exist(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, made: str
+) -> None:
+    """A 504, or no answer at all, may come after the endpoint was made, and forgetting the
+    record then would leave one billing that this machine has no token for. So the endpoint is
+    read: made, the record is kept and up goes on; not made, the record is forgotten; and when
+    that read fails too, the record is kept and up says how to find out."""
+    real = FakeAPI._create
+    after = {"create": False}
+
+    def lost(self: FakeAPI, namespace: str, body: Any) -> Any:
+        if made != "not made":
+            real(self, namespace, body)
+        after["create"] = True
+        return 504, {"Content-Type": "text/plain"}, b"Gateway Timeout"
+
+    read = FakeAPI._endpoint
+
+    def unreadable(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+        if made == "unreadable" and after["create"] and method == "GET" and len(path) == 2:
+            return 502, {"Content-Type": "text/plain"}, b"Bad Gateway"
+        return read(self, method, path, seen, query)
+
+    monkeypatch.setattr(FakeAPI, "_create", lost)
+    monkeypatch.setattr(FakeAPI, "_endpoint", unreadable)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    kept = _store().get("arm")
+    if made == "made":
+        assert result.exit_code == 0 and "gpu yes" in said, said
+        assert (
+            "Hugging Face's answer was lost (Hugging Face would not create arm (HTTP 504)" in said
+        )
+        assert kept is not None and kept.url in hf.proxies
+        secrets = hf.endpoints[("rok", "arm")].payload["model"]["secrets"]
+        assert secrets[wire.TOKEN_ENV] == kept.token
+    elif made == "not made":
+        assert result.exit_code == 1 and "would not create arm (HTTP 504)" in said, said
+        assert kept is None and ("rok", "arm") not in hf.endpoints
+    else:
+        assert result.exit_code == 1, said
+        assert "whether arm was created could not be read either" in said
+        assert "quackd policy endpoint up arm finds out" in said
+        assert kept is not None and ("rok", "arm") in hf.endpoints
+    assert ACCOUNT_TOKEN not in result.output
+
+
 def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
     result = _cli(*UP, "--yes", "--no-wait")
     said = _flat(result.output)
