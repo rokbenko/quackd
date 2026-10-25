@@ -786,6 +786,9 @@ class RunStatus:
         self._text = "starting"
         self._since = clock()
         self._status: Any = None
+        self._last_call_s: float | None = None
+        """How long the model's previous answer took, read off its `llm` record, so a wait on
+        the next one says roughly how long it is likely to be. None until a call has answered."""
 
     # ── the line itself ─────────────────────────────────────────────────────────────
 
@@ -871,13 +874,21 @@ class RunStatus:
             self.update("observing", step=_step_of(data))
         elif kind == "llm_request":
             model = data.get("model") or "the first model it serves"
-            self.update(f"waiting on {data.get('provider')} {model}")
+            # the previous answer's seconds beside the count, because the count alone says how
+            # long this wait has been and nothing about how long it is likely to be
+            last = (
+                f" (last call {self._last_call_s:.1f} s)" if self._last_call_s is not None else ""
+            )
+            self.update(f"waiting on {data.get('provider')} {model}{last}")
         elif kind == "llm" and "retry_in_s" in data:
             # the API could not answer the turn, and quackd waits before asking it again: the
             # line would otherwise say a verb is being chosen through a minute of nothing
             self.update(f"waiting {data['retry_in_s']:g} s to ask {data.get('provider')} again")
         elif kind == "llm":
-            self.update("choosing a verb")
+            self.update(_answered(data))
+            seconds = data.get("latency_s")
+            if "error" not in data and isinstance(seconds, (int, float)):
+                self._last_call_s = float(seconds)
         elif kind == "verb_start":
             from quackd.log import fmt_params
 
@@ -900,6 +911,26 @@ class RunStatus:
             caption = flock_caption(kind, data)
             if caption is not None:
                 self.update(f"{caption[0].lower()} {caption[1]}")
+
+
+def _answered(data: Mapping[str, Any]) -> str:
+    """What the model's answer was, in the words of the line that stands until the verb starts.
+
+    It said "choosing a verb", which was true while the model was being asked and false by the
+    time the line said it: the `llm` record is the answer, written after the call came back. So
+    it names the call the model chose, which is what the run is about to do, or says that the
+    model answered without one, which is what the re-prompt that follows is about, or that the
+    call failed. Only the first of several calls is named and runs, and the line says so."""
+    from quackd.log import fmt_params
+
+    if "error" in data:
+        return f"the call to {data.get('provider')} failed"
+    calls = [call for call in data.get("tool_calls") or () if isinstance(call, Mapping)]
+    if not calls:
+        return "the model answered without a call"
+    first = calls[0]
+    chosen = f"the model chose {first.get('name')}({fmt_params(first.get('arguments'))})"
+    return chosen if len(calls) == 1 else f"{chosen}, the first of {len(calls)}"
 
 
 @contextlib.contextmanager
