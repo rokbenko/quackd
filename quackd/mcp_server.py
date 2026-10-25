@@ -1326,6 +1326,7 @@ def fleet_from_flags(
             policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            registry_dir=registry_dir,
         )
     except ValueError as e:
         raise SystemExit(str(e)) from e

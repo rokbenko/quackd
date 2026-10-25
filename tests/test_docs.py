@@ -1061,14 +1061,22 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
     how the arm plays its chunks (`PolicyLoop.served`), and the summary's block starts with it,
     so the architecture page's `run_start` row names each of its keys. `accept_other_frame` went
     missing from that row when `--accept-other-frame` added it, and a reader of a run taken
-    under the override would have met a key no page explained."""
+    under the override would have met a key no page explained. The runner here is one reached
+    by `--policy-url hf:NAME`, which has every key a block can hold, `endpoint` among them."""
     from quackd_lerobot.policy import server
     from quackd_lerobot.policy.client import RemoteRunner
     from quackd_lerobot.policy.loop import PolicyLoop
     from quackd_lerobot.verbs import JOINTS
 
     _, info = server.served_policy(server.ServeOptions(policy="scripted:hold"))
-    runner = RemoteRunner("http://127.0.0.1:1", token="0" * 64, motors=JOINTS)
+    # a server on a Hugging Face Endpoint, which adds the hf:NAME it was reached by
+    runner = RemoteRunner(
+        "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud",
+        token="0" * 64,
+        motors=JOINTS,
+        bearer="hf_" + "1" * 34,
+        endpoint="hf:arm",
+    )
     runner.info = info  # as the connect heard it, with nothing asked
     row = next(
         line

@@ -509,3 +509,80 @@ def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
     assert ("rok", "arm") not in hf.endpoints and _store().get("arm") is None
     gone = _cli("policy", "endpoint", "pause", "arm")
     assert gone.exit_code == 1 and "no endpoint called arm is recorded" in _flat(gone.output)
+
+
+# ── a run's client, by --policy-url hf:NAME ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("forwarded", [True, False])
+def test_check_benches_an_endpoint_by_its_name_through_the_proxy(
+    hf: FakeAPI, forwarded: bool
+) -> None:
+    """`up`, then `quackd policy check --policy-url hf:arm --bench`, end to end through the
+    stand-in proxy to the server in the stand-in container. Every request to the proxy carries
+    the account's token as the bearer and the record's token for the server, and nothing reaches
+    the server with the account's token unless the proxy passes it on, which the server's log
+    then says once."""
+    hf.forward_authorization = forwarded
+    assert _cli(*UP, "--yes").exit_code == 0
+    record = _store().get("arm")
+    assert record is not None
+    ep = hf.endpoints[("rok", "arm")]
+    ep.proxy.requests.clear()
+    result = _cli("policy", "check", "--policy-url", "hf:arm", "--bench", "--seconds", "1")
+    said = _flat(result.output)
+    assert result.exit_code == 0, result.output
+    assert f"hf:arm at {record.url}" in said and "policy scripted:sweep" in said
+    assert "achieved" in said and "round trip" in said
+    assert ep.proxy.requests and all(
+        r.headers.get("authorization") == f"Bearer {ACCOUNT_TOKEN}"
+        and r.headers.get(wire.TOKEN_HEADER.lower()) == record.token
+        for r in ep.proxy.requests
+    )
+    # said once in the server's own log, the first time up's wait reached it, and never after
+    told = [line for line in ep.log if "Authorization header" in line]
+    assert len(told) == (1 if forwarded else 0), ep.log
+    assert ACCOUNT_TOKEN not in result.output and record.token not in result.output
+
+
+def test_a_paused_endpoint_is_not_serving_and_says_how_to_wake_it(hf: FakeAPI) -> None:
+    assert _cli(*UP, "--yes").exit_code == 0
+    assert _cli("policy", "endpoint", "pause", "arm").exit_code == 0
+    result = _cli("policy", "check", "--policy-url", "hf:arm")
+    said = _flat(result.output)
+    assert result.exit_code == 1, result.output
+    assert "hf:arm is not serving (HTTP 503 from Hugging Face, not from quackd's server)" in said
+    assert "quackd policy endpoint up arm wakes it and waits until it answers" in said
+
+
+def test_check_of_an_endpoint_with_no_record_or_no_account_token_refuses_before_it_asks(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unknown = _cli("policy", "check", "--policy-url", "hf:arm")
+    assert unknown.exit_code == 1 and "no endpoint called arm is recorded" in _flat(unknown.output)
+    assert _cli(*UP, "--yes").exit_code == 0
+    monkeypatch.setenv("HF_TOKEN", "")
+    before = len(hf.endpoints[("rok", "arm")].proxy.requests)
+    tokenless = _cli("policy", "check", "--policy-url", "hf:arm")
+    said = _flat(tokenless.output)
+    assert tokenless.exit_code == 1 and "no Hugging Face token to reach hf:arm" in said
+    assert len(hf.endpoints[("rok", "arm")].proxy.requests) == before
+
+
+def test_a_run_reaches_an_endpoint_by_its_name_and_the_record_names_both(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The arm a run builds asks the endpoint what it serves, as `quackd run` asks before the arm
+    connects, and what the record will say names the server by its address and the endpoint by
+    its name, and holds neither token."""
+    from quackd.adapters.base import PolicyChoice
+    from quackd.adapters.factory import make_adapter
+
+    assert _cli(*UP, "--yes").exit_code == 0
+    record = _store().get("arm")
+    assert record is not None
+    adapter = make_adapter("lerobot:mujoco", policy=PolicyChoice("hf:arm"), seed=0)
+    said = adapter.ask_policy()  # type: ignore[attr-defined]
+    assert said is not None and said["server"] == record.url and said["endpoint"] == "hf:arm"
+    assert said["policy"] == "scripted:sweep"
+    assert ACCOUNT_TOKEN not in json.dumps(said) and record.token not in json.dumps(said)

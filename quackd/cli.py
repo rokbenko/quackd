@@ -1555,6 +1555,7 @@ def _run_impl(
             policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            registry_dir=registry_dir,
         )
     except ValueError as e:
         _fail(str(e))
@@ -3415,7 +3416,8 @@ _POLICY_URL = typer.Option(
     None,
     "--policy-url",
     help="The policy server the arm hands pick and manipulate to, as http://127.0.0.1:PORT, or "
-    "https:// for one behind TLS: the address quackd policy serve printed. A LeRobot arm only, "
+    "https:// for one behind TLS: the address quackd policy serve printed, or hf:NAME for one "
+    "quackd policy endpoint up started on a Hugging Face GPU. A LeRobot arm only, "
     "lerobot:real or lerobot:mujoco, and one robot only. It is asked what it serves before the "
     "arm connects, and the connect checks that the policy fits the arm before any torque. No "
     "variable sets it, so a policy drives the arm only when a command names one.",
@@ -3804,6 +3806,7 @@ def _preflight_impl(
             policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            registry_dir=registry_dir,
         )
     except ValueError as e:
         _fail(str(e))
@@ -4685,8 +4688,8 @@ def policy_check(
     policy_url: str | None = typer.Option(
         None,
         "--policy-url",
-        help="A policy server that is running, as http://127.0.0.1:PORT, or https:// for one "
-        "behind TLS. Instead of --policy.",
+        help="A policy server that is running, as http://127.0.0.1:PORT, https:// for one "
+        "behind TLS, or hf:NAME for one quackd policy endpoint up started. Instead of --policy.",
     ),
     policy_token: str | None = typer.Option(
         None,
@@ -4718,6 +4721,7 @@ def policy_check(
     threads: int | None = _POLICY_THREADS,
     jpeg_quality: int | None = _POLICY_JPEG,
     pins: list[str] | None = _POLICY_PINS,
+    registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Ask a policy what it serves, and with --bench how well it keeps up."""
     if (policy is None) == (policy_url is None):
@@ -4760,6 +4764,7 @@ def policy_check(
         client_token,
         policy_address,
     )
+    from quackd_lerobot.policy.endpoint import reach
     from quackd_lerobot.verbs import JOINTS
 
     served: Any = None
@@ -4782,13 +4787,28 @@ def policy_check(
                 token=secrets.token_hex(32),
             )
             url, token = served.url, served.token
+            runner = RemoteRunner(url, token=token, motors=JOINTS)
+        elif reached := reach(
+            str(policy_url), policy_token=policy_token, registry_dir=registry_dir
+        ):
+            # an endpoint this machine started: its record's address and token, and the
+            # account's token as the bearer for Hugging Face's proxy
+            url = reached.url
+            runner = RemoteRunner(
+                url,
+                token=reached.token,
+                motors=JOINTS,
+                bearer=reached.bearer,
+                endpoint=reached.endpoint,
+            )
         else:
             url = str(policy_url)
             policy_address(url)  # a URL that will be refused is said before a missing token
-            token = client_token(policy_token)
-        runner = RemoteRunner(url, token=token, motors=JOINTS)
+            runner = RemoteRunner(url, token=client_token(policy_token), motors=JOINTS)
         info = runner.policy()
         where = f"served here for the check, at {url}" if served is not None else runner.url
+        if runner.endpoint is not None:
+            where = f"{runner.endpoint} at {runner.url}"
         ui.console.print(Text(f"  {where}", style=ui.STYLES["muted"]), soft_wrap=True)
         ui.console.print(ui.kv_grid(server.describe(info)), soft_wrap=True)
         if bench:
