@@ -1,4 +1,4 @@
-"""The policy server's wire protocol: four calls, their messages, and how a number is read.
+"""The policy server's wire protocol: five calls, their messages, and how a number is read.
 
 A served policy runs in a process of its own, never in the one that owns the arm's serial bus
 (`upstream_api.PROCESSOR_CLASS_IMPORT`: loading a checkpoint can run code it names). The arm's
@@ -23,6 +23,11 @@ change to both.
   camera, and the command the arm last sent. It answers a chunk of actions, one a tick from
   that tick, or null for a policy with nothing more to do, with the session and sequence
   echoed and how long inference took (`StepReply`).
+- `GET /v1/health` says whether the server serves, `{"ready": true}`, or is stopping, a 503 and
+  `{"ready": false}`, and nothing else. It is the one call that needs no token, because what
+  asks it is a platform's readiness probe, which holds none, and it reads no body and touches
+  no session. A server listens only once its policy is built, so one that answers is ready.
+  It is a call added to version 1, and a client that never asks it sees nothing change.
 
 It is not LeRobot's own async inference, which unpickles what it is sent over an insecure
 port, needs torch in the client, and skips an observation near the last one
@@ -88,6 +93,9 @@ POLICY_PATH = "/v1/policy"
 RESET_PATH = "/v1/reset"
 STEP_PATH = "/v1/step"
 END_PATH = "/v1/end"
+HEALTH_PATH = "/v1/health"
+"""The route a readiness probe asks, answered before any token is asked for. It says whether the
+server serves and nothing else: no policy, no session, no version."""
 
 MAX_MOTORS = 32
 """The most motors a reset may name. An SO-101 has six, and a bimanual arm or a humanoid a few
@@ -527,6 +535,7 @@ __all__ = [
     "DEFAULT_PORT",
     "DEFAULT_TOKEN_FILE",
     "END_PATH",
+    "HEALTH_PATH",
     "LOOPBACK",
     "MAX_BODY_BYTES",
     "MAX_CAMERAS",

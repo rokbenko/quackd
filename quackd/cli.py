@@ -4561,6 +4561,13 @@ def policy_serve(
         help="A file holding the token clients must send. Without it, the token in "
         "~/.quackd/policy.token, written there the first time.",
     ),
+    token_env: str | None = typer.Option(
+        None,
+        "--token-env",
+        help="The name of a variable holding the token clients must send, instead of a file: "
+        "how a platform that keeps a container's secrets hands one over. Only the name is "
+        "printed, never what it holds.",
+    ),
     behind_tls: bool = typer.Option(
         False,
         "--behind-tls",
@@ -4581,6 +4588,7 @@ def policy_serve(
         bind=bind,
         port=server.wire.DEFAULT_PORT if port is None else port,
         token_file=token_file,
+        token_env=token_env,
         behind_tls=behind_tls,
         threads=threads,
         jpeg_quality=jpeg_quality,
@@ -4595,7 +4603,12 @@ def policy_serve(
     info = served.app.info
     rows = [
         ("serving", f"{info.policy} at {served.url}"),
-        ("token", f"{served.token_path} ({how})"),
+        (
+            # the variable's name, and never what it holds
+            ("token", f"from ${served.token_env}")
+            if served.token_env
+            else ("token", f"{served.token_path} ({how})")
+        ),
         ("rate", f"{info.rate_hz:g} Hz, from {info.rate_source}"),
     ]
     if info.loaded:

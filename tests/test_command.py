@@ -361,6 +361,9 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         # `quackd policy serve`'s: it names the file the token is in and never holds the value,
         # which is the reason the flag exists rather than a `--token` on that command
         "--token-file",
+        # `quackd policy serve`'s too: it names the variable the token is in and never holds the
+        # value, and a value that is not a variable's name is refused without being quoted
+        "--token-env",
     }
     secret_words = ("key", "token", "secret", "password", "passwd", "credential")
     url_words = ("url", "address", "endpoint", "host", "broker")

@@ -20,6 +20,7 @@ import contextlib
 import http.client
 import importlib.util
 import json
+import logging
 import math
 import re
 import socket
@@ -840,6 +841,139 @@ def test_serve_writes_a_token_and_says_where(
     flat = " ".join(result.output.split())
     assert "(written now)" in flat and path.read_text(encoding="utf-8").strip()
     assert "scripted:hold at http://127.0.0.1:" in flat
+
+
+TOKEN_VAR = "QUACKD_TEST_SERVE_TOKEN"
+"""A variable `--token-env` is pointed at, which no developer's `.env` holds."""
+
+
+def test_serve_reads_its_token_from_the_variable_token_env_names_and_never_says_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """How a platform that keeps a container's secrets hands the server its token: the token is
+    read from the variable, stripped as a file's is, and the serving rows name the variable and
+    never what it holds. No token file is read or written beside it."""
+    default = tmp_path / ".quackd" / "policy.token"
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(default))
+    monkeypatch.setenv(TOKEN_VAR, f"  {TOKEN}\n")
+    assert S.server_token(None, TOKEN_VAR) == (TOKEN, None, False)
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", TOKEN_VAR],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"token from ${TOKEN_VAR}" in " ".join(result.output.split())
+    assert TOKEN not in result.output and not default.exists()
+
+
+@pytest.mark.parametrize(
+    ("value", "needle"),
+    [
+        (None, "is not set"),
+        ("   ", "is empty"),
+        ("SECRET-1", "shorter than"),
+        ("SECRET-PART-ONE SECRET-PART-TWO", "a space"),
+    ],
+)
+def test_a_token_env_that_holds_no_token_a_short_one_or_one_no_header_carries_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None, needle: str
+) -> None:
+    # a server that ignored the variable would write its default file, and never the real one
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    if value is None:
+        monkeypatch.delenv(TOKEN_VAR, raising=False)
+    else:
+        monkeypatch.setenv(TOKEN_VAR, value)
+    with pytest.raises(S.ServeRefused) as refused:
+        S.server_token(None, TOKEN_VAR)
+    said = str(refused.value)
+    assert needle in said and f"${TOKEN_VAR}" in said and "SECRET" not in said, said
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", TOKEN_VAR],
+    )
+    assert result.exit_code == 1 and "SECRET" not in result.output, result.output
+
+
+def test_token_env_beside_token_file_and_a_value_where_its_name_belongs_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two places for one token is one too many to know which was meant, and is refused before
+    a policy is built. A token typed where the variable's name belongs is refused without being
+    quoted back."""
+    named = tmp_path / "policy.token"
+    named.write_text(TOKEN + "\n", encoding="utf-8")
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    with pytest.raises(S.ServeRefused, match="give one of them"):
+        S.server_token(str(named), TOKEN_VAR)
+    both = S.ServeOptions(policy="scripted:hold", port=0, token_file=str(named), token_env="X")
+    with pytest.raises(S.ServeRefused, match="give one of them"):
+        S.open_server(both)
+    pasted = "0" + TOKEN  # a token begins with a digit as often as not
+    with pytest.raises(S.ServeRefused) as refused:
+        S.server_token(None, pasted)
+    assert "not a variable's name" in str(refused.value) and TOKEN not in str(refused.value)
+
+
+# ── the health route, and what a proxy in front passes on ──────────────────────────────
+
+
+def test_the_health_route_needs_no_token_reads_no_body_and_says_only_whether_it_serves(
+    served: Serving,
+) -> None:
+    """A platform's readiness probe holds no token, so `GET /v1/health` is answered before the
+    token is asked for, and says nothing a probe could not learn from the port answering at
+    all: whether the server serves. It starts no session and reads no body: a POST is answered
+    405, and a body brought to it closes the connection with the body unread. Once the server
+    is stopping it says so, with a 503. Every other route still wants the token."""
+    for token in (None, "not-the-token-" + TOKEN[14:], TOKEN):
+        assert served.raw("GET", wire.HEALTH_PATH, token=token) == (200, {"ready": True}, False)
+    assert served.raw("GET", wire.HEALTH_PATH + "?probe=1", token=None)[:2] == (
+        200,
+        {"ready": True},
+    )
+    status, said, closed = served.raw(
+        "POST", wire.HEALTH_PATH, b"x" * 1000, token=None, headers={"Content-Length": "1000"}
+    )
+    assert status == 405 and said["ok"] is False and closed
+    status, said, closed = served.raw(
+        "GET", wire.HEALTH_PATH, b"x" * 1000, token=None, headers={"Content-Length": "1000"}
+    )
+    assert (status, said, closed) == (200, {"ready": True}, True)
+    assert served.app.resets == served.app.steps == 0 and served.app._session is None
+    assert served.raw("GET", wire.POLICY_PATH, token=None)[0] == 401
+    served.app.close()
+    assert served.raw("GET", wire.HEALTH_PATH, token=None)[:2] == (503, {"ready": False})
+
+
+def test_a_request_carrying_authorization_is_said_once_and_its_value_never(
+    served: Serving, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The bearer a Hugging Face Endpoint wants is for the proxy in front of the server, and
+    quackd's client never sends one to the server itself. So the first request that arrives
+    carrying an `Authorization` header says, as a warning and once, that the proxy passes a
+    client's credentials on, whatever route it asked and whether or not it held the token, and
+    nothing the server logs has the header's value in it."""
+    secret = "hf_" + "Q" * 34
+    caplog.set_level(logging.DEBUG, logger="quackd.policy")
+
+    def warned() -> list[logging.LogRecord]:
+        return [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "Authorization" in r.getMessage()
+        ]
+
+    served.client().policy()
+    assert not warned(), "the client sends no Authorization header of its own"
+    bearer = {"Authorization": f"Bearer {secret}"}
+    served.raw("GET", wire.HEALTH_PATH, token=None, headers=bearer)
+    served.raw("GET", wire.POLICY_PATH, headers=bearer)
+    served.raw("GET", wire.POLICY_PATH, token=None, headers=bearer)
+    assert len(warned()) == 1
+    assert all(secret not in r.getMessage() for r in caplog.records)
 
 
 # ── numbers, sizes and frames ───────────────────────────────────────────────────────────
