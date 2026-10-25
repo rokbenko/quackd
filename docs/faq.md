@@ -372,7 +372,7 @@ the run so far, `summary.json` carries the run's `cost_usd` beside its `usage` a
 rate it was charged at, and the counters under the verdict print the total:
 
 ```
-steps 4 · llm calls 6 · tokens 7688+96 · time 0.2 s (model 0.0 s) · cost $0.0245
+steps 4 · llm calls 6 · tokens 8354+96 · time 0.4 s (model 0.0 s) · model calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 0.1 s, after 2 model calls · cost $0.0265
 ```
 
 Cached input is billed at the cache rate wherever a vendor reports the cached slice, and a

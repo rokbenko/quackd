@@ -241,17 +241,18 @@ quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8
 
 ```
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
-⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.1 s, asking again in 4.5 s
+⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.6 s, asking again in 4.6 s
 ·  note    the model's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
    think   turn 1: calling assess_task
 ```
 
 The counters under the verdict say how many times a turn was asked again and how long the waits
-took, apart from the model's own seconds:
+took, apart from the model's own seconds, and the call that failed is in the model's seconds
+and in none of the spread beside them:
 
 ```
-steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.0 s (model 0.2 s, waits 4.5 s) · cost $0.0097
+steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.7 s (model 0.7 s, waits 4.6 s) · model calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 5.6 s, after 3 model calls · cost $0.0097
 ```
 
 A fifth failure after the fourth wait ends the run `error`, saying in how many tries, with the
@@ -262,6 +263,16 @@ bounds the waits. The note is said once a run, and each try after it is the log'
 decision LLM is left as it was, since a turn it could not decide already goes to the pilot. None
 of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
 against the real openai SDK talking to the stand-in server above.
+
+A call that never answers is bounded by the same minutes. A model's answer used to be checked
+against `max_minutes` only once it came, so a call that hung held the robot past the task's
+whole budget for as long as the vendor's own clock allowed, ten minutes on both SDKs. The call
+is raced against the task's minutes now, as it is against the stop: once they are spent it is
+cancelled, its `llm` record says it failed on the budget, it is not asked again, and the run ends
+on its budget, with the robot put down as at any end. A stop pressed in the same moment wins.
+It is the budget's clock again, so on a simulator, whose clock stands still while a model
+thinks, a call is never cut off this way. No single call has a ceiling of its own, which would
+cut long thinking short and bill the retry twice.
 
 ## When the pilot is unsure
 

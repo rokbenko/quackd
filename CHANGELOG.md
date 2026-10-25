@@ -62,6 +62,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   peft among them. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
   check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
   refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
+- **`--effort low|medium|high` says how hard the pilot's model reasons, on `run` and
+  `preflight`.** It reaches Anthropic's `output_config.effort`, OpenAI's reasoning effort on
+  either API and a model server of your own, which speaks OpenAI's API, and it beats
+  `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
+  Three levels, the ones both vendors have. It is refused before anything connects where it
+  cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort page
+  does not list, and a vendor that documents no such field, OpenRouter told that its own
+  `reasoning` field goes through `--extra-body`. `run_start.effort` records the level every
+  request was sent at and whose word it was, and the run header gains an `effort` row only when
+  the flag asked ([README.md](README.md#configuration)).
+- **The summary says how the model's calls spread and when the body first moved.**
+  `summary.json` gains `llm_latency_p50_s`, `llm_latency_p90_s` and `llm_latency_max_s`, by
+  nearest rank over the calls that answered and only where one did, and the stepper's block the
+  same three. `first_motion_s` is when the first verb that may move the body went to the
+  transport, on the record's own clock with the connect in it, and `first_motion_llm_calls` how
+  many model calls came first. Both are null where nothing moved, and a refused verb, a dry run
+  and a read never count. The counters under the verdict print them, as `model calls p50 0.0 s,
+  p90 0.0 s, max 0.0 s · first motion at 0.1 s, after 3 model calls` on a scripted run, and only
+  where the keys are, so a record from before replays with the counters it always had
+  ([docs/concepts/architecture.md](docs/concepts/architecture.md#time-and-money)).
+- **`gpt-6.1-sol` is an OpenAI row.** $2 in, $10 out, $0.10 cached and $2.50 for a cache write,
+  read off OpenAI's pages on 2026-10-26 and dated so on its row, and on the Responses API as the
+  other GPT-6 rows are. `--llm openai` still means `gpt-6-sol`, which OpenAI still serves with no
+  shutdown date.
 
 ### Changed
 
@@ -85,6 +109,41 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   adapter merged into its weights. None of the five models the served families' checkpoints
   name, read on the Hub on 2026-10-25, holds one. A test holds a pinned directory with one to
   being refused.
+- **Claude's requests are marked for Anthropic's prompt cache.** Every request sent its whole
+  prompt again at the full input rate, and nothing asked Anthropic to cache any of it. The system
+  prompt goes as one marked text block now, which caches the tools with it, and the loop marks
+  the last block of the history the next call will still send unchanged, which it can foresee
+  because it owns the trim that changes the history. Where the two differ, the previous call's
+  marker goes out again beside it, since a read looks back twenty blocks at most. That is three
+  markers at most, under Anthropic's four, never on a thinking block, and a retry resends the
+  same marked request. From the second call on, the part of a request the last call already sent
+  is meant to be read back at a tenth of the input rate, after one write at a quarter more.
+  `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
+  loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
+  with no marker in the history, and the 32 with pictures fail with one at the end of each
+  request ([ADR-0061](docs/adr/0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
+- **The pilot's client is warmed while the robot connects.** A client of Anthropic's or OpenAI's
+  SDK starts its first request by asking which platform it runs on, on Windows a WMI query or a
+  subprocess, and by importing anyio's asyncio backend, and the pilot paid both in its first
+  call, in the seconds a person waits for the robot to move. Every provider built on those SDKs
+  asks both in a daemon thread started before the connect's clock, so `connect_s` stays the
+  connect. Nothing waits for it, it sends nothing and it never raises, and `run_start.pilot_warm`
+  says what became of it. The decision LLM's client has done the same since 0.19.0.
+- **In shadow mode the stepper is asked beside the model's call, not before it.** Its answer
+  changes nothing about a turn there, and a run being measured waited up to the stepper's second
+  on every turn for the measuring. Its request goes out with the model's now and is settled once
+  the model's answer is on the record: raced against the stop as before, or cut off on the gate
+  `interrupted` when the model's call ends the run. The turn that finds the LLM calls spent asks
+  neither, where it used to ask the stepper and then refuse the model. A shadow turn's
+  `decision` line follows its `llm` line now. `on` is unchanged: the stepper still answers first,
+  since its answer can take the turn ([ADR-0062](docs/adr/0062-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
+- **The status line names the call the model chose.** After the model answered, the line under
+  the log said "choosing a verb", which was over by then. It names the call the model chose now,
+  says that it answered without one or that the call failed, and a wait on the model carries the
+  last answer's seconds.
+- **A turn's picture is encoded once.** Every frame was encoded to PNG twice, once for `frames/`
+  and once more for the request. The save hands back the bytes it wrote and the model is sent
+  those, so the file a reader opens is the picture the pilot was shown.
 
 ### Fixed
 
@@ -108,6 +167,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
   pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
   against the Hub, which takes the gated tokenizer's grant.
+- **A pilot call that hangs ends the run when the task's minutes are spent.** `max_minutes` was
+  read only once an answer came back, so a call that hung held the robot past the task's whole
+  budget for as long as the vendor's own clock allowed, ten minutes on both SDKs, and only a
+  Ctrl-C ended it sooner. The call is raced against the task's minutes as it is against the stop,
+  and once they are spent it is cancelled, its `llm` record says so, and the run ends on its
+  budget. On a simulator the budget's clock is the simulator's and stands still while a model
+  thinks, so a simulated run is never cut off this way
+  ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
+
+### Documentation
+
+- **The README says where a run's seconds go and what shortens them.** Its Performance section
+  quotes the new counters from a real scripted run and names the four changes above that shorten
+  a turn, and its configuration table gains `--effort` and `QUACKD_ANTHROPIC_CACHE`, as
+  `.env.example` does. architecture.md describes the new record fields, safety.md the minutes
+  bound, and the decision guide what shadow costs a turn now. The FAQ's two refusals of an
+  unknown model, and the counters lines the FAQ and safety.md quote, were captured again.
+  [ADR-0061](docs/adr/0061-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)
+  records the cache and [ADR-0062](docs/adr/0062-a-run-says-where-its-seconds-went-and-waits-for-less.md)
+  the rest, and they amend ADR-0010, ADR-0040, ADR-0041 and ADR-0059.
 
 ### Known limitations
 
@@ -133,6 +212,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   which the server refuses in every model it loads, and serving it would take the first exemption
   from that rule, which was deferred rather than written
   ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+- **None of the seconds or dollars this release saves has been measured on a real model.** The
+  cache's reads, the warm-up's seconds, what `--effort low` takes off a turn and what shadow no
+  longer costs one were checked against stand-ins alone. The check is one paid run per vendor with
+  the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd` and
+  `latency_s` per call, and timed requests to each keyed decision LLM.
+- **The cache markers and `drop_block` have not met.** On Opus 5.5 and Fable 5.1 the loop leaves
+  out the thinking a trim invalidates and has the API drop the one block it may not leave out.
+  That markers can move around it freely comes from Anthropic's guidance, and no paid request has
+  proved it.
 
 ## [0.25.0] — 2026-10-25
 

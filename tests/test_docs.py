@@ -783,6 +783,35 @@ def test_the_log_is_documented_where_it_is_configured() -> None:
             assert needle in text, f"{path} does not mention {needle!r}"
 
 
+def test_how_long_a_run_waits_is_documented_where_it_is_configured() -> None:
+    """The effort a pilot reasons at, Claude's prompt cache and the seconds a run reports are what
+    somebody goes looking for after a slow run, so each is held to the pages that say how it
+    works, by the rule the log and the price are held to: the settings where they are set, the
+    fields where the record is described, and the bound on a call where the bounds are."""
+    for path, needles in (
+        (
+            "README.md",
+            ("--effort", "QUACKD_ANTHROPIC_CACHE", "model calls p50", "first motion at"),
+        ),
+        (".env.example", ("--effort", "QUACKD_ANTHROPIC_CACHE=")),
+        (
+            "docs/concepts/architecture.md",
+            (
+                "llm_latency_p50_s",
+                "first_motion_s",
+                "first_motion_llm_calls",
+                "`effort`",
+                "`pilot_warm`",
+            ),
+        ),
+        ("docs/concepts/safety.md", ("bounded by the same minutes", "max_minutes")),
+        ("docs/guides/decision-llms/README.md", ("asked beside the model's call",)),
+    ):
+        text = (REPO / path).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle in text, f"{path} does not mention {needle!r}"
+
+
 def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
     """The same rule the log and the catalogue are held to, for the thing that decides
     whether a run's cost counter reads a number or `cost unpriced`.
