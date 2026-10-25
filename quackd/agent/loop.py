@@ -67,7 +67,7 @@ from quackd.agent.providers.base import (
 )
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import resolve_price, turn_cost
-from quackd.agent.transcript import Transcript, new_run_dir, png_bytes, run_label
+from quackd.agent.transcript import Transcript, new_run_dir, run_label
 from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
@@ -873,7 +873,9 @@ class AgentLoop:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
 
-    async def _on_frames_off_loop(self, frames: Sequence[CameraFrame], caption: str) -> int | None:
+    async def _on_frames_off_loop(
+        self, frames: Sequence[CameraFrame], caption: str
+    ) -> tuple[int | None, list[bytes]]:
         """`_on_frames` for the turn's own observation, with the PNGs written in a worker thread
         (`Transcript.save_frames_off_loop`). A verb's frames still go through `_on_frames`,
         which the executor calls from inside the verb.
@@ -881,17 +883,20 @@ class AgentLoop:
         Returns the number this step's pictures are filed under in `frames/`, or None where there
         were none. It is the transcript's count as the save is called, which the save takes as
         its own before it waits on anything (`Transcript.save_frames_off_loop`), so the JPEG a
-        decision LLM is shown of this step is filed under the same number as the step's PNG."""
+        decision LLM is shown of this step is filed under the same number as the step's PNG.
+
+        And the PNG bytes each file was written with, in `frames` order, which are the bytes the
+        model is sent of them (`SavedFrame`): empty where there were no frames."""
         if not frames:
-            return None
+            return None, []
         number = self.transcript.frame_count
-        await self.transcript.save_frames_off_loop(
+        saved = await self.transcript.save_frames_off_loop(
             list(frames), caption, several=len(camera_names_of(self.cfg.transport)) > 1
         )
         if self.cfg.on_frame is not None:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
-        return number
+        return number, [one.png for one in saved]
 
     async def _park_before_the_run_began(self) -> None:
         """Put the body down and let go, for a failure between the connect and the first step.
@@ -1494,13 +1499,15 @@ class AgentLoop:
             error = getattr(self.cfg.detector, "error", None)
             self._detector_said(error if isinstance(error, str) and error else None)
         number: int | None = None
+        pngs: list[bytes] = []
         if frames:
             # saved even when the primary gave nothing, because the other views are still what
-            # the model is about to be shown. Off the loop's thread, like the encoding for the
-            # model below: a body's heartbeat waits on that thread. The detector above and the
-            # provider's own SDK stay where they are, the first because only a board's detector
-            # waits on anything, the second because it is somebody else's code.
-            number = await self._on_frames_off_loop(
+            # the model is about to be shown. Off the loop's thread: a body's heartbeat waits on
+            # that thread. The detector above and the provider's own SDK stay where they are,
+            # the first because only a board's detector waits on anything, the second because
+            # it is somebody else's code. Each picture is encoded once, in that save, and the
+            # bytes it wrote are the ones the model is sent below.
+            number, pngs = await self._on_frames_off_loop(
                 frames, f"step {self.budget.steps}: {last_verb or 'start'}"
             )
         snapshot: Snapshot | None = None
@@ -1550,10 +1557,10 @@ class AgentLoop:
             flock=link.describe() if link is not None else None,
             nearby=near,
         )
+        # The file's own bytes, not a second encoding of the same pixels (`SavedFrame`), in the
+        # order the save was handed the frames, which is the order they were read.
         images = (
-            await asyncio.to_thread(
-                lambda: [NamedPng(name=f.name, png=png_bytes(f.image)) for f in frames]
-            )
+            [NamedPng(name=f.name, png=png) for f, png in zip(frames, pngs, strict=True)]
             if self.cfg.provider.supports_vision and frames
             else []
         )

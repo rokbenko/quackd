@@ -2258,9 +2258,9 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
 ) -> None:
     """Encoding a frame to PNG holds whichever thread does it, and a body's heartbeat waits on
     the event loop's for an answer: a second of encoding there was a heartbeat reported as not
-    answering. Every turn's frames are written, and the model's copies encoded, in a worker
-    thread, and the record reads as it did: each turn's frames, numbered in turn, before the
-    observation they were taken for."""
+    answering. Every turn's frames are encoded and written in a worker thread, the model is sent
+    the bytes that wrote them, and the record reads as it did: each turn's frames, numbered in
+    turn, before the observation they were taken for."""
     import threading
 
     loop_thread = threading.get_ident()
@@ -2292,6 +2292,41 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
     assert seen and all(
         names == [f"{n:04d}-top.png", f"{n:04d}-side.png"] for n, names in enumerate(seen)
     ), turns
+
+
+async def test_each_picture_is_encoded_once_and_the_model_is_sent_the_file(
+    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn's picture used to be encoded twice, once for `frames/` and once more for the
+    request: the same pixels through the same encoder, a second time, on a worker thread a
+    body's heartbeat shares the machine with. It is encoded once now. Every PNG encoded in the
+    run is a file in `frames/`, and what the model is sent of a picture is that file's bytes,
+    so the picture a reader opens afterwards is the one the pilot was shown."""
+    encodes: list[str] = []
+    save = Image.Image.save
+
+    def counting(image: Image.Image, fp: Any, format: Any = None, **params: Any) -> None:
+        if str(format or "").upper() == "PNG":
+            encodes.append(str(fp))
+        save(image, fp, format, **params)
+
+    monkeypatch.setattr(Image.Image, "save", counting)
+    provider = SeeingProvider(
+        ToolCall(name="quack", arguments={"text": "hi"}),
+        ToolCall(name="declare_success", arguments={"reason": "seen"}),
+    )
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    frames = result.run_dir / "frames"
+    files = sorted(frames.glob("*.png"))
+    assert files and len(encodes) == len(files), (len(encodes), [f.name for f in files])
+
+    first = provider.observations[0]
+    assert [image.name for image in first.images] == ["top", "side"]
+    assert first.images[0].png == (frames / "0000-top.png").read_bytes()
+    assert first.images[1].png == (frames / "0000-side.png").read_bytes()
 
 
 async def test_only_the_last_n_exchanges_keep_their_images(
