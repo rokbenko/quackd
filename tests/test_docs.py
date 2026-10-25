@@ -545,6 +545,34 @@ def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     assert not stale, f"the arm's own tables still carry policy rows: {stale}"
 
 
+def test_adapter_doc_lists_every_endpoint_upstream_ref() -> None:
+    """Hugging Face's Inference Endpoints, where `quackd policy endpoint` starts a policy server,
+    are read from the API's own document, Hugging Face's pages and huggingface_hub at its tag, in
+    `quackd_lerobot.policy.endpoint_upstream_api`, and the arm's page carries them in a section
+    of their own. Each ref needs a row of its own in the table for its status, as the policies'
+    do, and the section says when it was read, at which commit and API version, and that quackd
+    has never created an endpoint."""
+    from quackd_lerobot.policy import endpoint_upstream_api as endpoints
+
+    doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
+    heading = "\n## The endpoint's upstream: Hugging Face Inference Endpoints\n"
+    section = doc.split(heading, 1)[1].split("\n## ", 1)[0]
+    verified, unverified = section.split("\n### UNVERIFIED (", 1)
+    tables = {"VERIFIED": verified.split("\n### VERIFIED (", 1)[1], "UNVERIFIED": unverified}
+    missing = [
+        f"{ref.status} {ref.name}"
+        for ref in endpoints.all_refs()
+        if f"\n| `{ref.name}` |" not in tables[ref.status]
+    ]
+    assert not missing, (
+        f"docs/adapters/lerobot/README.md has no row for these endpoint refs: {missing}"
+    )
+    assert endpoints.PIN[:7] in section and endpoints.READ_ON in section
+    assert f"version {endpoints.API_VERSION}" in section
+    # the honesty label
+    assert "quackd has never created a Hugging Face Endpoint" in section
+
+
 def test_readme_promises() -> None:
     for needle in (
         "not affiliated with or endorsed by Pollen Robotics",

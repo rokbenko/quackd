@@ -576,9 +576,10 @@ class PolicyServer:
         `X-Quackd-Token`, and the bearer a Hugging Face Endpoint wants is for the proxy in front
         (`client.RemoteRunner`). So one arriving here means that proxy passes a client's own
         credentials on to the container, and whatever else runs in it could read them. Whether
-        it does is not written down anywhere quackd could read, so the first endpoint to serve
-        says, in its own log. The header's value is never read, kept or printed, only that it
-        was there."""
+        it does is not written down anywhere quackd could read
+        (`endpoint_upstream_api.AUTHORIZATION_FORWARDED`), so the first endpoint to serve says,
+        in its own log. The header's value is never read, kept or printed, only that it was
+        there."""
         with self._lock:
             if self._told_authorization:
                 return
