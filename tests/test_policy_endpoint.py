@@ -482,6 +482,61 @@ def test_preflight_refuses_before_anything_is_created(
     assert all(r.method == "GET" for r in hf.requests), "nothing was created"
 
 
+@pytest.mark.parametrize(
+    ("where", "shape", "needle"),
+    [
+        ("quotas", {"vendors": 7}, "quota listing for rok is not the shape it documents"),
+        (
+            "quotas",
+            {"vendors": [{"name": "aws", "quotas": 5}]},
+            "quota listing for rok is not the shape it documents",
+        ),
+        ("provider", {"vendors": [{"name": "aws", "regions": 3}]}, "list of GPUs is not the shape"),
+        (
+            "provider",
+            {"vendors": [{"name": "aws", "regions": [{"name": "us-east-1", "computes": "all"}]}]},
+            "list of GPUs is not the shape it documents",
+        ),
+        ("pypi", {"info": {}, "urls": 5}, "PyPI gave no upload time"),
+    ],
+)
+def test_an_answer_not_the_shape_documented_is_refused_in_a_sentence(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, where: str, shape: Any, needle: str
+) -> None:
+    """A number or a string where Hugging Face documents a list is refused before anything is
+    created, in a sentence, where reading it as a list would crash."""
+    from tests import fake_hugging_face
+
+    if where == "quotas":
+        monkeypatch.setattr(FakeAPI, "_quotas", lambda self: shape)
+    elif where == "provider":
+        monkeypatch.setattr(fake_hugging_face, "provider_listing", lambda: shape)
+    else:
+        body = json.dumps(shape).encode("utf-8")
+        monkeypatch.setattr(
+            FakeAPI, "_pypi", lambda self, path: (200, {"Content-Type": "application/json"}, body)
+        )
+    with pytest.raises(E.EndpointError, match=needle) as refused:
+        _preflight()
+    assert ACCOUNT_TOKEN not in str(refused.value)
+    assert all(r.method == "GET" for r in hf.requests), "nothing was created"
+
+
+def test_a_list_of_endpoints_not_the_shape_documented_is_refused_in_a_sentence(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = FakeAPI._endpoint
+
+    def numbered(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+        if method == "GET" and len(path) == 1:
+            return 200, {"Content-Type": "application/json"}, b'{"items": 5}'
+        return real(self, method, path, seen, query)
+
+    monkeypatch.setattr(FakeAPI, "_endpoint", numbered)
+    with pytest.raises(E.EndpointError, match="list of rok's endpoints is not the shape"):
+        E.HFEndpoints(ACCOUNT_TOKEN).list_endpoints("rok")
+
+
 def test_a_gated_checkpoint_is_read_with_the_hub_token_the_endpoint_will_fetch_it_with(
     hf: FakeAPI,
 ) -> None:

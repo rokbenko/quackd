@@ -306,6 +306,17 @@ def _printable(text: str, scrub: Sequence[str], limit: int) -> str:
     return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
 
+def _listed(value: Any, what: str) -> list[Any]:
+    """`value` where Hugging Face documents a list, none being an empty one, or a refusal saying
+    `what` is not the shape it documents: a number or a string there would otherwise crash the
+    loop that reads it with a TypeError, and say nothing a person could act on."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise EndpointError(f"Hugging Face's {what} is not the shape it documents")
+    return value
+
+
 def _said(reply: Reply, scrub: Sequence[str]) -> str:
     """What Hugging Face said with a refusal, made safe for a terminal: the `error` or the
     `message` of a JSON answer, or its text, every token scrubbed out, at most 200 characters."""
@@ -462,8 +473,11 @@ class HFEndpoints:
                 query["cursor"] = cursor
             path = f"{self._path(namespace)}?{urlencode(query)}"
             said = self._api("GET", path, f"list {namespace}'s endpoints")
-            items = said.get("items") if isinstance(said, dict) else None
-            found.extend(i for i in items or [] if isinstance(i, dict))
+            items = _listed(
+                said.get("items") if isinstance(said, dict) else None,
+                f"list of {namespace}'s endpoints",
+            )
+            found.extend(i for i in items if isinstance(i, dict))
             cursor = said.get("nextCursor") if isinstance(said, dict) else None
             if not cursor or not items:
                 break
@@ -969,21 +983,24 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
     what there is instead. A compute that is not a GPU is refused, an Inferentia `neuron` above
     all, since the server's torch build has no backend for one, and so is one Hugging Face does
     not offer now."""
-    vendors = {v.get("name"): v for v in listing.get("vendors", []) if isinstance(v, dict)}
+    gpus_listed = "list of GPUs"
+    listed = _listed(listing.get("vendors"), gpus_listed)
+    vendors = {v.get("name"): v for v in listed if isinstance(v, dict)}
     found = vendors.get(vendor)
     if found is None:
         raise EndpointError(
             f"Hugging Face has no vendor called {vendor}: --vendor is one of "
             f"{', '.join(sorted(str(v) for v in vendors))}"
         )
-    regions = {r.get("name"): r for r in found.get("regions", []) if isinstance(r, dict)}
+    in_vendor = _listed(found.get("regions"), gpus_listed)
+    regions = {r.get("name"): r for r in in_vendor if isinstance(r, dict)}
     place = regions.get(region)
     if place is None:
         raise EndpointError(
             f"{vendor} has no region {region} on Hugging Face: --region is one of "
             f"{', '.join(sorted(str(r) for r in regions))}"
         )
-    computes = [c for c in place.get("computes", []) if isinstance(c, dict)]
+    computes = [c for c in _listed(place.get("computes"), gpus_listed) if isinstance(c, dict)]
     gpus = sorted({str(c.get("instanceType")) for c in computes if c.get("accelerator") == "gpu"})
     match = next(
         (
@@ -1025,10 +1042,12 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
 
 def exclude_newer(*releases: Mapping[str, Any]) -> str:
     """The container's `--exclude-newer`: an hour after the last file of `releases` was
-    uploaded, as PyPI's JSON says (`endpoint_upstream_api.PYPI_RELEASE`), as RFC 3339 in UTC."""
+    uploaded, as PyPI's JSON says (`endpoint_upstream_api.PYPI_RELEASE`), as RFC 3339 in UTC.
+    A `urls` that is not a list holds no upload time."""
     times = []
     for release in releases:
-        for file in release.get("urls") or []:
+        files = release.get("urls")
+        for file in files if isinstance(files, list) else []:
             when = file.get("upload_time_iso_8601") if isinstance(file, dict) else None
             if isinstance(when, str):
                 try:
@@ -1139,11 +1158,13 @@ def preflight(
 
 def _check_quota(quotas: Mapping[str, Any], namespace: str, vendor: str, instance: str) -> None:
     """Refuse an instance type the quota listing names with no room left for one more, and leave
-    one it does not name to Hugging Face (`endpoint_upstream_api.QUOTA_LISTING`)."""
-    for entry in quotas.get("vendors", []) if isinstance(quotas, Mapping) else []:
+    one it does not name to Hugging Face (`endpoint_upstream_api.QUOTA_LISTING`). A listing
+    that is not the shape documented is refused, rather than taken for room."""
+    listed = f"quota listing for {namespace}"
+    for entry in _listed(quotas.get("vendors") if isinstance(quotas, Mapping) else None, listed):
         if not isinstance(entry, dict) or entry.get("name") != vendor:
             continue
-        for quota in entry.get("quotas", []):
+        for quota in _listed(entry.get("quotas"), listed):
             if not isinstance(quota, dict) or quota.get("instanceType") != instance:
                 continue
             most, used = quota.get("maxAccelerators"), quota.get("usedAccelerators")

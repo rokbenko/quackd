@@ -488,6 +488,19 @@ def test_up_refuses_before_anything_is_created(
     assert ACCOUNT_TOKEN not in result.output
 
 
+def test_up_given_a_quota_listing_not_the_shape_documented_says_so_and_creates_nothing(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        FakeAPI, "_quotas", lambda self: {"vendors": [{"name": "aws", "quotas": 5}]}
+    )
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
+    assert "Hugging Face's quota listing for rok is not the shape it documents" in said, said
+    assert not _posts(hf) and _store().get("arm") is None
+
+
 def test_up_with_no_token_or_a_name_hugging_face_would_refuse_asks_nothing(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
