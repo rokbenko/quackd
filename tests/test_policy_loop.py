@@ -1424,6 +1424,83 @@ async def test_no_async_chunks_leaves_a_runner_of_one_action_a_tick_as_it_was() 
     assert _gaps([(at - start, cap, action) for at, cap, action in sends], 0.0) == []
 
 
+async def test_no_async_chunks_still_stalls_a_policy_holding_the_arm_in_short_chunks() -> None:
+    """One chunk at a time, the arm holds still between chunks, and a chunk can be shorter than
+    a stall's second. The hold stops the stall's clock rather than starting it again, so a
+    policy that keeps the arm where it is in chunks of a few actions is still stalled after a
+    second of its goals, as without the flag, and not left pressing for the whole segment."""
+    arm = _segment_arm()
+    here = arm.positions["shoulder_pan"]
+    chunk = 8
+    clock = AnsweredClock()
+    runner = ScriptedRunner(lambda o, s: [{"shoulder_pan": here}] * chunk, rate_hz=RATE)
+    _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm, async_chunks=False)
+    clock.loop = transport._policy_loop
+    sends = _recorded(arm, clock)
+    ended = await _segment_end(transport, max_s=10 * STALL_S)
+    await adapter.close()
+    assert ended.how == "stall", ended.reason
+    goals = [action for _, _, action in sends if not _whole_hold(action)]
+    assert STALL_S * RATE <= len(goals) <= STALL_S * RATE + chunk, len(goals)
+    assert ended.stats.chunks > 2, ended.stats  # it took several chunks, each a hold apart
+
+
+async def test_a_refill_whose_tick_ran_long_still_sends_its_goal() -> None:
+    """A tick that asks for the next chunk with half the last still queued waits for nothing in
+    it, and on a busy machine its own work can run past the next tick's deadline. That tick
+    still sends its goal, late, as it always did: only a tick that waited for a chunk in it,
+    and so judged the arm on a reading from before the wait, leaves its goal out."""
+    arm = _segment_arm()
+    clock = AnsweredClock()
+    runner = ScriptedRunner(_long(_swing(arm)), rate_hz=RATE)
+    _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm)
+    clock.loop = transport._policy_loop
+    frames = transport._loop_frames
+    asks = 0
+
+    async def slow_on_the_refill(obs: Any) -> Any:
+        nonlocal asks
+        asks += 1
+        if asks == 2:  # the refill's, with half the first chunk still queued
+            clock.t += 1.5 * PERIOD
+        return await frames(obs)
+
+    transport._loop_frames = slow_on_the_refill  # type: ignore[method-assign]
+    sends = _recorded(arm, clock)
+    start = clock.t
+    ended = await _segment_end(transport, max_s=LONG * PERIOD)
+    await adapter.close()
+    assert ended.how == "time", ended.reason
+    refill = LONG - refill_at(0, LONG)  # the tick the second chunk is asked at
+    periods = [math.floor((at - start) / PERIOD + 1e-9) for at, _, _ in sends]
+    # its goal went out late, in the period after its own, and the pacer then skipped that one
+    assert periods[refill - 1 : refill + 2] == [refill - 1, refill + 1, refill + 2], periods
+    assert ended.stats.skipped == 1, ended.stats
+
+
+async def test_a_slow_answer_with_nothing_in_it_is_starved_out_as_any_other() -> None:
+    """A policy that declares no latency, with nothing left to play, is waited for in the tick
+    that asked. An answer with nothing in it that comes back slower than a tick leaves that
+    tick nothing to play either, so it is starved, and a second of such ticks ends the segment,
+    as it always did, rather than being let off as a tick a wait held still."""
+    clock = AnsweredClock()
+
+    def first_then_nothing(o: Observation, _s: Mapping[str, float]) -> list[dict[str, float]]:
+        if runner.requests == 1:
+            return [{"shoulder_pan": _tag(o.tick, i)} for i in range(4)]
+        if runner.requests > 2:
+            clock.t += 2 * PERIOD  # waited for in its tick, with nothing queued
+        return []
+
+    runner = ScriptedRunner(first_then_nothing, rate_hz=RATE)
+    _, transport, adapter, _ = await _backend(runner, clock=clock)
+    clock.loop = transport._policy_loop
+    ended = await asyncio.wait_for(_segment_end(transport, max_s=10 * STARVE_S), 10.0)
+    await adapter.close()
+    assert ended.how == "starved", ended.reason
+    assert f"gave no action for {STARVE_S:g} s, waiting for a chunk" in ended.reason, ended
+
+
 async def test_a_first_chunk_slower_than_a_stall_is_not_taken_for_one() -> None:
     """A first chunk asked for with nothing to play is waited for in the tick that asked. One
     slower than `STALL_S` had its first goal sent on the reading taken before the wait, and the

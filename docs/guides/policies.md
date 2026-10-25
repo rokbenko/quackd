@@ -80,28 +80,28 @@ it at, the rate it achieved, the ticks it had nothing to send and the ones it sk
 trip, and the `--latency-s` to serve it with, read at the 95th percentile of every step it timed
 from the request going out to its chunk back. Here is the first bench of an ACT trained on an
 SO-101 and published on the Hub, on this project's laptop, an Intel Core i5-10210U with no GPU,
-on 2026-10-24. Its training config names its dataset at no revision, so it takes `--fps`, and the
+on 2026-10-25. Its training config names its dataset at no revision, so it takes `--fps`, and the
 rows about the policy itself are cut:
 
 ```
 $ quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench
-achieved    28.2 Hz of 30: 282 of the 300 ticks in 10.0 s sent an action
+achieved    28.3 Hz of 30: 283 of the 300 ticks in 10.0 s sent an action
 starved     0 ticks with nothing to send
-skipped     18 ticks: the policy declares no --latency-s, so a chunk asked for with nothing left to
+skipped     17 ticks: the policy declares no --latency-s, so a chunk asked for with nothing left to
             play, its first among them, was waited for in the tick that asked for it, as a segment
             waits for one, and the ticks that passed meanwhile sent nothing: the arm would have
             held still through them
-round trip  median 523.1 ms, p99 653.8 ms, max 653.8 ms over 6 requests
-inference   median 512.1 ms on the server
-latency     653.8 ms or less for 95% of the 7 steps timed, from the request to its chunk back:
-            serve with --latency-s 0.66, so the simulator holds each chunk back as long, and bench
+round trip  median 453.4 ms, p99 515.8 ms, max 515.8 ms over 6 requests
+inference   median 428.9 ms on the server
+latency     515.8 ms or less for 95% of the 7 steps timed, from the request to its chunk back:
+            serve with --latency-s 0.52, so the simulator holds each chunk back as long, and bench
             again with it
 ```
 
 A first bench is served with no `--latency-s`, and a segment waits for the first chunk of such a
 policy in the tick that asked for it, as it waits for any chunk asked for with nothing left to
 play. Every tick that passes while it waits is skipped, which on the arm is a tick that sends
-nothing while the arm holds still, and here those are the 18 ticks the first chunk took to come
+nothing while the arm holds still, and here those are the 17 ticks the first chunk took to come
 back. Every chunk after it was asked for with half the last one still queued, and landed while
 the arm played that half. Skipped ticks are not counted as starved: a starved tick is one with a
 chunk on its way and nothing left to play. The latency the bench suggests is what the simulator
@@ -109,25 +109,25 @@ holds each chunk back by, so that a rehearsal there plays what the arm would. **
 again**, served with that latency and with the `--fps` the first bench needed:
 
 ```bash
-quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench --latency-s 0.66
+quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench --latency-s 0.52
 ```
 
 A good second bench skips no tick, starves only while its first chunk is on its way, which a
 segment gives five seconds for, achieves close to the policy's rate, and says the `--latency-s`
 it was served with covers what it timed. A step's time moves from bench to bench on a laptop's
 CPU, and a bench over a few seconds times only a few steps, so the one here suggested more: its
-second bench timed a step at 782.2 ms and said to serve with 0.79. Served with that, and given
+second bench timed a step at 930.4 ms and said to serve with 0.94. Served with that, and given
 `--seconds 30` for more steps to read the percentile from, it looked like this:
 
 ```
-$ quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.79 --bench --seconds 30
-achieved    29.4 Hz of 30: 881 of the 900 ticks in 30.0 s sent an action
-starved     19 ticks with nothing to send, waiting for a chunk to come back, every one before the
+$ quackd policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94 --bench --seconds 30
+achieved    29.4 Hz of 30: 883 of the 900 ticks in 30.0 s sent an action
+starved     17 ticks with nothing to send, waiting for a chunk to come back, every one before the
             first came back, which a segment gives time for
-round trip  median 416.6 ms, p99 589.6 ms, max 589.6 ms over 18 requests
-inference   median 407.2 ms on the server
-latency     647.2 ms or less for 95% of the 19 steps timed, from the request to its chunk back: the
-            --latency-s 0.79 it is served with covers that
+round trip  median 418.8 ms, p99 1052.2 ms, max 1052.2 ms over 22 requests
+inference   median 403.6 ms on the server
+latency     676.3 ms or less for 95% of the 23 steps timed, from the request to its chunk back: the
+            --latency-s 0.94 it is served with covers that
 ```
 
 A CPU that cannot keep up shows here, before an arm is involved, as starved ticks after the
@@ -176,7 +176,7 @@ fine-tune from, not a policy for your task: [SmolVLA and ACT](#smolvla-and-act) 
 the `--fps` its checks were given:
 
 ```bash
-quackd policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.79
+quackd policy serve --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --latency-s 0.94
 ```
 
 A checkpoint that took `--fps` to be checked takes it to be served, and without it `serve`
@@ -319,7 +319,7 @@ this project's laptop, an Intel Core i5-10210U with no GPU, and drove a twin of 
 through two 10 s segments over `quackd serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that
 twin with `quackd run --goal` and `--policy-url`, handed the same ACT two more and declared
 failure on seeing no blue cap, since the simulator's table holds a red cube and a pen. Those runs
-prove the plumbing, and nothing about whether it would do its task on an arm. On 2026-10-24 the
+prove the plumbing, and nothing about whether it would do its task on an arm. On 2026-10-25 the
 same ACT answered a step there in about half a second (the benches above).
 
 **SmolVLA wants a GPU.** It is a small vision-language-action model, about 450M parameters by its

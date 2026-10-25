@@ -59,18 +59,21 @@ through it, every chunk.
 **Chunks one at a time** (`async_chunks` False, `--no-async-chunks`), as LeRobot's own loop
 plays them: a chunk is played out before the next is asked for, the arm holds its last goal
 while that one is on its way, and it is played from its first action at the tick it lands,
-since the arm has not moved on from where it was asked. Nothing is waited for in a tick, so
-every tick of the wait still reads and judges the arm, a stall is not counted while nothing is
-sent, and the wait is starved out with the patience a first chunk gets, since the arm waits for
-every chunk by design. The simulator holds each back its declared latency, or a tick for a
-runner that declares none, the soonest the arm takes one in. A runner that answers one action
-at a time is asked as it always was, and a runner in tick mode plays no chunks, either way.
+since the arm has not moved on from where it was asked. No chunk is waited for in a tick, so
+every tick of the wait still reads and judges the arm, the stall's clock stops while nothing is
+sent and goes on when sending does, and the wait is starved out with the patience a first chunk
+gets, since the arm waits for every chunk by design. The simulator holds each back its declared
+latency, or a tick for a runner that declares none, the soonest the arm takes one in. A runner
+that has answered nothing but one action at a time is asked as it always was, and a runner in
+tick mode plays no chunks, either way.
 
-**A wait for a chunk that outlasts its tick** sends nothing in it: the arm held still through
-the wait, and the tick that is due when it ends reads the arm and judges it before anything
-more is sent, as a first chunk slower than a tick would otherwise have been played on a reading
-taken before it. A runner that answers one action at a time has its late answer sent in the
-tick it was asked for, since it is the only goal there is for it.
+**A wait in a tick for a chunk that outlasts the tick** sends nothing in it: the arm held still
+through the wait, and the tick that is due when it ends reads the arm and judges it before
+anything more is sent, as a first chunk slower than a tick would otherwise have been played on
+a reading taken before it. The tick is counted as one the pacer skipped. A wait that leaves
+nothing to play is starved as any other tick with nothing to send, and a runner that answers
+one action at a time has its late answer sent in the tick it was asked for, since it is the
+only goal there is for it.
 
 **Tick mode** (`Features.per_tick`): a runner that carries state from tick to tick is asked
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
@@ -347,6 +350,12 @@ class _Run:
     waits_each: bool = False
     """Chunks go one at a time (`PolicyLoop.async_chunks` off, for a runner not in tick
     mode)."""
+    longest: int = 0
+    """The most actions a chunk of this segment has held, 0 before the first."""
+    awaited: bool = False
+    """This tick's request was waited for in it, on the wall's clock."""
+    paused_at: float | None = None
+    """When the stall's clock stopped for a hold between chunks, one at a time, or None."""
 
     def left(self, tick: int) -> int:
         """How many queued actions are for `tick` or a tick after it: what the arm still has to
@@ -355,9 +364,10 @@ class _Run:
 
     def one_at_a_time(self) -> bool:
         """Whether the next chunk waits for the last to be played out, and the arm holds still
-        while it is on its way (`waits_each`). A runner that answered one action at a time is
-        asked as it always was, every tick and awaited in it."""
-        return self.waits_each and self.last_len != 1
+        while it is on its way (`waits_each`). A runner that has answered nothing but one action
+        at a time is asked as it always was, every tick and awaited in it, and one that has
+        answered a longer chunk once is played one chunk at a time from then on."""
+        return self.waits_each and self.longest != 1
 
 
 @dataclass
@@ -651,22 +661,27 @@ class PolicyLoop:
                     arm, run, f"it had not answered tick {tick - 1} by tick {tick}"
                 )
             self._take_in(run, tick, plan)
-            waited_out = False
+            run.awaited = False
             if self._wants(run, tick, plan, segment):
                 if (why := await arm._loop_frames(obs)) is not None:
                     return await self._held(arm, run, why)
                 ended = await self._request(arm, run, Observation(tick, obs), plan, lockstep)
                 if ended is not None:
                     return ended
-                # a wait for a chunk that outlasted this tick sends nothing in it, and the tick
-                # due when it ended reads and judges the arm first (the module's note)
-                waited_out = (
-                    run.last_len != 1 and arm.now() >= started + (tick + 1) * plan.period_s - EXACT
-                )
             while run.queue and run.queue[0][0] < tick:
                 run.queue.popleft()  # meant for a tick the pacer skipped
             action = run.queue.popleft()[1] if run.queue and run.queue[0][0] == tick else None
+            # a wait in this tick for a chunk that outlasted it sends nothing in it, and the tick
+            # due when it ended reads and judges the arm first (the module's note)
+            waited_out = (
+                action is not None
+                and run.awaited
+                and run.last_len != 1
+                and not plan.features.per_tick
+                and arm.now() >= started + (tick + 1) * plan.period_s - EXACT
+            )
             if waited_out:
+                run.skipped += 1  # its tick passed while it waited, as if the pacer had skipped it
                 run.still = None  # an arm held through a wait is not a stalled one
             elif action is None:
                 ended = await self._idle(arm, run, segment, now)
@@ -678,7 +693,8 @@ class PolicyLoop:
                 if ended is not None:
                     return ended
             arm._tick_timing.add(time.perf_counter() - ticked)
-            run.ticks += 1
+            if not waited_out:
+                run.ticks += 1
             following = await self._pace(arm, run, plan, started, tick + 1)
             if isinstance(following, SegmentEnd):
                 return following
@@ -790,6 +806,7 @@ class PolicyLoop:
                 if chunk.tick + i >= tick
             ]
         run.last_len = len(chunk.actions)
+        run.longest = max(run.longest, run.last_len)
         if not fresh:
             # every action was for a tick already played: counted as thrown away, and not as
             # the segment's first chunk, whose grace still runs for the next
@@ -843,6 +860,7 @@ class PolicyLoop:
             return None
         patience = None
         if not lockstep:
+            run.awaited = True
             patience = (
                 self._patience(run)
                 if run.got_first
@@ -876,8 +894,14 @@ class PolicyLoop:
         self, arm: LeRobotReal, run: _Run, segment: Segment, now: float
     ) -> SegmentEnd | None:
         """A tick with nothing to send: a runner that is done, a segment whose chunks are all
-        played, or starvation, which the grace and `STARVE_S` bound."""
-        run.still = None  # an arm left alone is not a stalled one
+        played, or starvation, which the grace and `STARVE_S` bound. One chunk at a time, the
+        hold between chunks stops the stall's clock rather than starting it again (`_stall`),
+        since only ticks that sent count, and a short chunk would never last a stall's second."""
+        if run.one_at_a_time():
+            if run.still is not None and run.paused_at is None:
+                run.paused_at = now
+        else:
+            run.still = None  # an arm left alone is not a stalled one
         outstanding = self._outstanding() or bool(run.held_back)
         if run.done:
             if segment.ends_on_holding:
@@ -945,7 +969,12 @@ class PolicyLoop:
         `STALL_S`, on ticks that sent, with the arm held where it is, as a verb's own stall
         holds it (`verbs._drive`). An arm stopped by something in its way still has the
         policy's last goal past it, and the servo would push on toward it through the pilot's
-        thinking. The hold leaves the gripper's goal alone, so a grasp keeps its squeeze."""
+        thinking. The hold leaves the gripper's goal alone, so a grasp keeps its squeeze. A hold
+        between chunks, one at a time, is left out of the second (`_idle`)."""
+        if run.paused_at is not None:
+            if run.still is not None:
+                run.still = (run.still[0] + now - run.paused_at, run.still[1])
+            run.paused_at = None
         joints = {j: arm._joints[j] for j in JOINTS if j in arm._joints}
         anchor = run.still
         if anchor is None or any(

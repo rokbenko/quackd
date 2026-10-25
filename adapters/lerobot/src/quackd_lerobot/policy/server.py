@@ -1534,11 +1534,11 @@ def bench(
     inflight: tuple[int, concurrent.futures.Future[Chunk]] | None = None
     sent: dict[str, float] = {}
     done = False
-    last_len = ticks = played = starved = skipped = waited_ticks = before_first = 0
+    last_len = longest = ticks = played = starved = skipped = waited_ticks = before_first = 0
     worker = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="quackd-bench")
 
     def take_in(tick: int) -> None:
-        nonlocal inflight, queue, done, last_len
+        nonlocal inflight, queue, done, last_len, longest
         if inflight is None or not inflight[1].done():
             return
         asked, future = inflight
@@ -1551,6 +1551,7 @@ def bench(
         else:
             fresh = [(asked + i, a) for i, a in enumerate(chunk.actions) if asked + i >= tick]
         last_len = len(chunk.actions) or last_len
+        longest = max(longest, len(chunk.actions))
         if fresh:
             queue = deque(e for e in queue if e[0] < fresh[0][0])
             queue.extend(fresh)
@@ -1561,7 +1562,7 @@ def bench(
         while clock() - start < seconds:
             take_in(tick)
             left = sum(1 for at, _ in queue if at >= tick)
-            each = one_at_a_time and last_len != 1  # as `_Run.one_at_a_time`
+            each = one_at_a_time and longest != 1  # as `_Run.one_at_a_time`
             due = not left if each else refill_due(left, late, last_len)
             waited_here = False
             if inflight is None and not done and (features.per_tick or due):
@@ -1570,23 +1571,31 @@ def bench(
                     concurrent.futures.wait([inflight[1]])
                     take_in(tick)
                     waited_here = True
-            # a wait for a chunk that outlasted its tick sends nothing in it, as a segment's does
-            waited_out = (
-                waited_here and last_len != 1 and clock() >= start + (tick + 1) * period - EXACT
-            )
             while queue and queue[0][0] < tick:
                 queue.popleft()
+            playable = bool(queue) and queue[0][0] == tick
+            # a wait in the tick for a chunk that outlasted it sends nothing in it, and counts as
+            # a tick the pacer skipped, as a segment's does
+            waited_out = (
+                playable
+                and waited_here
+                and last_len != 1
+                and not features.per_tick
+                and clock() >= start + (tick + 1) * period - EXACT
+            )
             if waited_out:
-                if queue and queue[0][0] == tick:
-                    queue.popleft()  # its tick has passed by the time the wait ended
-            elif queue and queue[0][0] == tick:
+                queue.popleft()  # its tick had passed by the time the wait ended
+                skipped += 1
+                waited_ticks += 1
+            elif playable:
                 sent = {k: float(v) for k, v in queue.popleft()[1].items()}
                 played += 1
             else:
                 starved += 1
                 if not played:
                     before_first += 1  # the first chunk still on its way
-            ticks += 1
+            if not waited_out:
+                ticks += 1
             tick += 1
             now = clock()
             if now > start + tick * period:

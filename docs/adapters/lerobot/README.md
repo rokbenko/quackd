@@ -802,7 +802,7 @@ it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
   arm plays each chunk out and holds still while the next is on its way
   ([below](#a-run-with-a-policy-server)). A tick with nothing queued sends nothing, the arm
   holding its last goal, and 1 s of that ends the segment, with 5 s of grace for the first
-  chunk, and for every chunk with `--no-async-chunks`.
+  chunk, and between chunks with `--no-async-chunks`.
 - **The policy has a thread of its own.** Every call on it runs on a worker of its own, never
   on the threads the bus's calls use, so a policy that stops answering cannot hold up a read,
   a stop or the heartbeat. A segment starts only once the policy has finished whatever the last
