@@ -415,6 +415,11 @@ def test_a_smolvla_that_names_no_backbone_is_refused_before_its_weights(tmp_path
             json.dumps({"auto_map": {"AutoTokenizer": ["code.Tokenizer", None]}}),
             "maps its classes to code",
         ),
+        (
+            "adapter_config.json",
+            json.dumps({"peft_type": "LORA", "base_model_name_or_path": "Other/Base"}),
+            "holds a PEFT adapter",
+        ),
     ],
 )
 def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
@@ -422,8 +427,9 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
 ) -> None:
     """What is fetched of a pinned model is configs, tokenizer files and safetensors, but the
     Hub's cache keeps one directory per commit, and it may hold what an earlier fetch left
-    there. A file of any other kind in it, or a config mapping a class to code, refuses the
-    load before anything is built from it."""
+    there. A file of any other kind in it, a config mapping a class to code, or a PEFT
+    adapter's config, which transformers would load onto the model, refuses the load before
+    anything is built from it."""
     hub = _smolvla(tmp_path)
     where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
     for fine, said in (

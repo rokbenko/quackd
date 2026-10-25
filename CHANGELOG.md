@@ -35,7 +35,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the gripper into -1 or 1. Its domain step's domain has to be one of the model's own. Its
   Florence-2 is built from its config, so BART's tokenizer is the one model it names, pinned and
   fetched without weights, it runs with a camera it is not given padded, and its own loader is
-  strict. The extra is `lerobot[smolvla,pi,xvla]` now, which adds nothing to the lock. Tests
+  strict. The extra brings LeRobot's `[xvla]` now, which adds nothing to the lock. Tests
   hold a stand-in shaped like an SO-101 fine-tune on the Hub to every check and each refusal to
   fetching no weight, and CI's `policy` job installs LeRobot's `[xvla]` extra and serves a tiny
   random X-VLA beside the tiny ACT, offline, through the real server and client, its tokenizer a
@@ -57,11 +57,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   keeps none, so the server reads them from there and the arm's frame check is made on them. One
   that learned absolute joints decodes by its dataset's statistics and is read as every other
   type is. It pads no missing camera, so the arm needs one for every image, and a checkpoint
-  whose processors look for a camera its config has no image for is refused. The extra is
-  `lerobot[smolvla,pi,groot,xvla]` now, which adds GR00T's dependencies, decord on x86 alone, to
-  the lock. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every check, the
-  reported percentiles to the grouped q01 and q99 and not their min and max, and each refusal to
-  fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
+  whose processors look for a camera its config has no image for is refused. The extra brings
+  LeRobot's `[groot]` now, which adds GR00T's dependencies to the lock, decord on x86 alone and
+  peft among them. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
+  check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
+  refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
 
 ### Changed
 
@@ -77,13 +77,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   step. `quackd.adapters.policies` says which policy types the server serves and which it does
   not, and why, as data the core prints with no LeRobot installed, and a test ties its rows to
   the server's types ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+- **A pinned model that holds a PEFT adapter is refused.** GR00T's extra brings peft, and with
+  peft installed transformers loads a PEFT adapter it finds in a model's directory onto that
+  model, or, when the directory has no `config.json`, loads the base model the adapter names,
+  which no pin fixes. A pinned model whose directory holds an `adapter_config.json` was loaded
+  without its adapter before, and is refused now, in a sentence saying to pin a model with the
+  adapter merged into its weights. None of the five models the served families' checkpoints
+  name, read on the Hub on 2026-10-25, holds one. A test holds a pinned directory with one to
+  being refused.
 
 ### Fixed
 
 - **The policy server's extra brings LeRobot's `[pi]`.** `quackd[lerobot-vla]` was LeRobot's
   `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
-  guide said. It is `lerobot[smolvla,pi]` now, which adds SciPy, and a pi05 or a pi0 needs
-  nothing more than the extra and a Hub token granted its gated tokenizer.
+  guide said. It brings `[pi]` as well now, which adds SciPy, and a pi05 or a pi0 needs nothing
+  more than the extra and a Hub token granted its gated tokenizer.
 - **A pinned model is fetched from the Hub's cache alone with `HF_HUB_OFFLINE` set.** The
   server says it answers from the cache alone offline, and a model a checkpoint names inside
   itself was fetched with `snapshot_download`, which at a commit asks the Hub for the commit's

@@ -25,10 +25,10 @@ server imports it with none of them installed, and serves a scripted policy that
    (`upstream_api.TRAIN_DATASET`).
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
    pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
-   either (`nested_patterns`), and refused if their directory holds any all the same or maps a
-   class to code (`check_pinned`). The policy is built on the device `auto_select_torch_device`
-   picks (`upstream_api.AUTO_DEVICE`), with every weight the file holds loaded into it or none
-   (`build_policy`). An ACT's ImageNet backbone is never fetched
+   either (`nested_patterns`), and refused if their directory holds any all the same, maps a
+   class to code or holds a PEFT adapter (`check_pinned`). The policy is built on the device
+   `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the file
+   holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never fetched
    (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put where the
    policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
 
@@ -141,6 +141,11 @@ nothing loads."""
 CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+ADAPTER_CONFIG = "adapter_config.json"
+"""The file that makes a directory a PEFT adapter. With peft installed, which LeRobot's
+`[groot]` extra brings, transformers building a model from a directory that holds one loads the
+adapter onto it, or, with no `config.json` beside it, loads the base model the adapter names,
+which no pin fixes."""
 LENIENT_LOADERS = frozenset({"pi05", "pi0"})
 """The policy types whose own `from_pretrained` returns the model without its weights when they
 do not load, having printed why (`upstream_api.PI05_FROM_PRETRAINED`, `PI0_FROM_PRETRAINED`)."""
@@ -796,7 +801,10 @@ def check_pinned(directory: Path, spec: str) -> None:
     included. So every file in it is one `NESTED_FILES` or `NESTED_DOCS` names, and no JSON in
     it maps a class to code (`CODE_MAP_KEY`), which is what would have transformers ask to run
     a repository's own code: SmolVLA's build asks for its backbone without saying
-    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). Nor does it
+    hold a PEFT adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's
+    are, and which the build would load onto the model, or swap the model for a base no pin
+    names."""
     fresh = (
         "point HF_HUB_CACHE at a cache that has not fetched this revision before, or delete "
         f"{directory} and serve again"
@@ -808,6 +816,13 @@ def check_pinned(directory: Path, spec: str) -> None:
                 f"{spec} in this machine's Hub cache holds {name[:80]!r}, which is not a "
                 "config, a tokenizer file or safetensors, and could be code or a pickle a "
                 f"load would run: {fresh}"
+            )
+        if name == ADAPTER_CONFIG:
+            raise PipelineRefused(
+                f"{spec} holds a PEFT adapter ({name}), which transformers loads onto a model it "
+                "builds from that directory, or, with no config.json beside it, loads the base "
+                "model the adapter names in its place, which no pin fixes: pin a model with the "
+                "adapter merged into its weights"
             )
         said = _json(path, f"{spec}'s {name}") if name.endswith(".json") else None
         if isinstance(said, Mapping) and CODE_MAP_KEY in said:

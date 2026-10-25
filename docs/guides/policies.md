@@ -455,7 +455,7 @@ actions and decodes by its dataset's statistics. Both are served. A group decode
 effector's pose (EEF) is refused, and so is LIBERO's gripper, which the decode turns into -1 or
 1, a decode with no statistics, whose actions would reach the arm still normalised to -1..1, and
 any GR00T N1.5 checkpoint, which LeRobot 0.6.1 no longer serves. Its chunks are 40 actions by
-LeRobot's default and 16 in the SO-101 fine-tunes.
+LeRobot's default, and 16, 32 or 40 in the SO-101 fine-tunes read on the Hub on 2026-10-25.
 
 **Every camera, and its frame.** A GR00T pads no camera it is not given: it would see fewer
 views than it learned on, so the arm needs a camera for every image it looks at, and a
@@ -483,7 +483,7 @@ gripper with LIBERO's transform, to -1 or 1, and an SO-101's gripper takes 0..10
 fine-tuned on this arm's own data (upstream_api.GROOT_DECODE)
 ```
 
-An N1.5 fine-tune is refused on its processors' first step, 3,333 bytes fetched:
+An N1.5 fine-tune is refused on its pre-processor's pack step, with 3,333 bytes fetched:
 
 ```
 ✗ error: step 2 of
@@ -596,7 +596,8 @@ server reads before it builds:
   processor step names, comes without its weights, and a backbone the checkpoint's config names
   comes with them. Its directory in the Hub's cache is refused if it holds any other kind of
   file, or a config that maps a class to code, with a sentence saying to point `HF_HUB_CACHE` at
-  a fresh cache.
+  a fresh cache. One that holds a PEFT adapter is refused too, since GR00T's extra installs
+  peft, and with it transformers would load the adapter onto the model.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
   run's record.

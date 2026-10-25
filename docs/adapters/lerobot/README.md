@@ -1000,10 +1000,13 @@ Loading one reads before it builds, and refuses rather than guesses:
   LeRobot would fill in a default of its own at no revision. A pinned model a processor step
   names is a tokenizer, and is fetched as its configs and tokenizer files alone, and one
   `config.json` names, a backbone or a base the policy is built from, with its safetensors as
-  well, and neither with a `.py` or a pickle. Either is handed over as that directory. The Hub's cache keeps one directory per commit, holding
-  whatever was fetched at that commit before, so a pinned model whose directory holds any other
-  kind of file, or whose configs map a class to code of their own (`auto_map`), is refused, with
-  a sentence saying to point `HF_HUB_CACHE` at a fresh cache.
+  well, and neither with a `.py` or a pickle. Either is handed over as that directory. The Hub's
+  cache keeps one directory per commit, holding whatever was fetched at that commit before, so a
+  pinned model whose directory holds any other kind of file, or whose configs map a class to code
+  of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE` at a
+  fresh cache. So is one that holds a PEFT adapter (`adapter_config.json`): with peft installed,
+  as GR00T's extra installs it, transformers would load the adapter onto the model, or, with no
+  `config.json` beside it, load the base model the adapter names, which no pin fixes.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
   That revision is the checkpoint's choice, so it is taken only when it is a whole commit, or a

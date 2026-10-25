@@ -79,6 +79,10 @@ Reading for more families turned up two things wrong with what the server alread
 - Serving a pinned model offline found that `snapshot_download` asks the Hub for a commit's file
   list whatever `HF_HUB_OFFLINE` says, so the server now asks it for the cache's own files
   offline, and CI serves a tiny random X-VLA beside its tiny ACT.
+- The plan left peft out. GR00T's extra brings it, and with it installed transformers loads a
+  PEFT adapter it finds in a model's directory onto that model, or, when the directory has no
+  `config.json`, loads the base model the adapter names, which no pin fixes, so a pinned model
+  whose directory holds an `adapter_config.json` is refused.
 
 ## Why not
 
@@ -108,5 +112,7 @@ Reading for more families turned up two things wrong with what the server alread
 - A pi05 fetches its tokenizer's 21.9 MB and not PaliGemma's 11.69 GB of weights.
 - An ACT, a SmolVLA or a pi05 that names a step another type uses is refused where it was
   served. No checkpoint LeRobot's own processor factories write does that.
+- A pinned model whose directory holds a PEFT adapter is refused where it was loaded without
+  the adapter.
 - [ADR-0048](0048-policies-are-the-arms-executor.md) carries a note pointing here, and its
   decision is extended, not reversed: the server still serves only what it has read.
