@@ -1013,6 +1013,12 @@ def _complete_llm(ctx: typer.Context, incomplete: str) -> list[tuple[str, str]]:
 # ── list-models ───────────────────────────────────────────────────────────────────────────
 
 
+MODEL_KINDS = ("pilot", "decision", "policy", "all")
+"""What `quackd list-models --kind` lists: the pilot ids `--llm` takes, the decision LLMs
+`--decision-llm` names, the policy types `quackd policy serve` serves and the ones it refuses,
+or all three. The first is the default, so the command prints what it always has."""
+
+
 @app.command("list-models", rich_help_panel="Inspect")
 def list_models_cmd(
     llm: str | None = typer.Option(
@@ -1023,9 +1029,39 @@ def list_models_cmd(
         "vendor, so --llm claude-opus-5 lists anthropic. Omitted: every vendor.",
         autocompletion=_complete_llm,
     ),
+    kind: str = typer.Option(
+        MODEL_KINDS[0],
+        "--kind",
+        metavar="pilot|decision|policy|all",
+        help="Which models. pilot, the default, is the ids --llm takes, decision the decision "
+        "LLMs --decision-llm names, policy the policy types quackd policy serve serves and the "
+        "ones it refuses, and all is the three.",
+    ),
     as_json: bool = _JSON,
 ) -> None:
-    """List the model ids quackd carries for each cloud vendor, for --llm VENDOR:MODEL."""
+    """List the models quackd can use: the ids each cloud vendor offers for --llm VENDOR:MODEL,
+    and with --kind the decision LLMs and the learned policies as well."""
+    wanted = kind.strip().lower()
+    if wanted not in MODEL_KINDS:
+        _fail(f"--kind is {', '.join(MODEL_KINDS[:-1])} or {MODEL_KINDS[-1]}, not {kind!r}")
+        return
+    if llm is not None and wanted != MODEL_KINDS[0]:
+        _fail(
+            f"--llm narrows the pilot rows only, and --kind {wanted} lists more than those",
+            hint="drop --llm, or drop --kind",
+        )
+        return
+    if wanted in ("pilot", "all"):
+        _list_pilots(llm, as_json)
+    if wanted in ("decision", "all"):
+        _list_decision_llms(as_json)
+    if wanted in ("policy", "all"):
+        _list_policies(as_json)
+
+
+def _list_pilots(llm: str | None, as_json: bool) -> None:
+    """The pilot rows: every id each cloud vendor offers, or one vendor's, and the notes that say
+    what the table cannot."""
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import parse_llm
 
@@ -1054,6 +1090,7 @@ def list_models_cmd(
     vendors = [provider] if provider in CLOUD_NAMES else list(CLOUD_NAMES)
     rows = [
         {
+            "kind": "pilot",
             "provider": str(name),
             "id": m.id,
             "label": m.label,
@@ -1130,6 +1167,132 @@ def list_models_cmd(
             notes.append(f"{LLM_ENV}={pinned} is refused: {e}")
     for note in notes:
         ui.console.print(Text(note, style=ui.STYLES["muted"]), soft_wrap=True)
+
+
+def _list_decision_llms(as_json: bool) -> None:
+    """Every decision LLM quackd names, in the order `quackd doctor` prints them, which until
+    `--kind decision` was the only command that said they existed."""
+    from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
+
+    rows = [PRESETS[name] for name in PRESET_NAMES]
+    if as_json:
+        for spec in rows:
+            print(
+                json.dumps(
+                    {
+                        "kind": "decision",
+                        "name": spec.name,
+                        "backend": spec.backend,
+                        "model": spec.model,
+                        "key_env": spec.key_env,
+                        "extra": spec.extra,
+                        "url": spec.url,
+                        "price": spec.price.record() if spec.price else None,
+                        "sees": spec.sees,
+                    }
+                )
+            )
+        return
+    table = ui.table("decision LLMs (--decision-llm NAME[:MODEL], QUACKD_DECISION_LLM)")
+    table.add_column("name", style=ui.STYLES["key"], no_wrap=True)
+    table.add_column("model", style=ui.STYLES["key"], overflow="fold")
+    table.add_column("key")
+    table.add_column("extra")
+    table.add_column("what it is", overflow="fold")
+    for spec in rows:
+        table.add_row(
+            Text(spec.name),
+            Text(spec.model or "the server's own"),
+            Text(spec.key_env or "none"),
+            Text(f"quackd[{spec.extra}]" if spec.extra else "none"),
+            Text(spec.summary, style=ui.STYLES["muted"]),
+        )
+    ui.console.print(table)
+    ui.console.print(
+        Text(
+            "Off unless a run names one. --decision-mode shadow asks it every turn and changes "
+            "nothing, which is where to start (docs/models/decision-llms.md).",
+            style=ui.STYLES["muted"],
+        ),
+        soft_wrap=True,
+    )
+
+
+def _list_policies(as_json: bool) -> None:
+    """The policy types `quackd policy serve` serves, and the ones people ask about that it does
+    not, with why. Read from `quackd.adapters.policies`, which imports nothing from the arm's
+    package, so this lists them on a machine with no LeRobot."""
+    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+
+    if as_json:
+        for family in FAMILIES:
+            print(
+                json.dumps(
+                    {
+                        "kind": "policy",
+                        "served": True,
+                        "type": family.type,
+                        "label": family.label,
+                        "maker": family.maker,
+                        "takes_words": family.takes_words,
+                        "extra": family.extra,
+                        "needs": list(family.needs),
+                        "gpu": family.gpu,
+                        "licence": family.licence,
+                        "licence_url": family.licence_url,
+                        "ran": family.ran,
+                    }
+                )
+            )
+        for refused in NOT_SERVED:
+            print(
+                json.dumps(
+                    {
+                        "kind": "policy",
+                        "served": False,
+                        "name": refused.name,
+                        "maker": refused.maker,
+                        "type": refused.type,
+                        "why": refused.why,
+                        "would_change": refused.would_change,
+                    }
+                )
+            )
+        return
+    table = ui.table("policy types (quackd policy serve --policy OWNER/NAME@REVISION)")
+    table.add_column("type", style=ui.STYLES["key"], no_wrap=True)
+    table.add_column("family")
+    table.add_column("maker", overflow="fold")
+    table.add_column("words")
+    table.add_column("needs", overflow="fold")
+    table.add_column("has run", overflow="fold")
+    for family in FAMILIES:
+        table.add_row(
+            Text(family.type),
+            Text(family.label),
+            Text(family.maker),
+            Text("yes" if family.takes_words else "no"),
+            Text("; ".join(family.needs) if family.needs else "nothing more"),
+            Text(family.ran, style=ui.STYLES["muted"]),
+        )
+    ui.console.print(table)
+    for refused in NOT_SERVED:
+        ui.console.print(
+            Text(
+                f"not served: {refused.name}, by {refused.maker}: {refused.why}.",
+                style=ui.STYLES["muted"],
+            ),
+            soft_wrap=True,
+        )
+    ui.console.print(
+        Text(
+            f"Each type is served on Python 3.12 with {FAMILIES[0].extra}, in a process of its "
+            "own and never the arm's: beside the arm, on a rented GPU or on a Hugging Face "
+            "Endpoint (docs/models/vlas.md).",
+            style=ui.STYLES["muted"],
+        ),
+        soft_wrap=True,
+    )
 
 
 # ── run / record ────────────────────────────────────────────────────────────────────────

@@ -660,6 +660,16 @@ def test_the_catalogue_is_documented_where_it_is_configured() -> None:
             assert needle in text, f"{path} does not mention {needle!r}"
 
 
+def test_the_list_models_row_names_every_kind_it_lists() -> None:
+    """`--kind` is how a reader finds the decision LLMs and the policy types from a terminal, so
+    the command table says each one it takes."""
+    from quackd.cli import MODEL_KINDS
+
+    row = next(line for line in README.splitlines() if line.startswith("| `quackd list-models` |"))
+    for kind in MODEL_KINDS:
+        assert f"`--kind {kind}`" in row, f"the README's list-models row never names --kind {kind}"
+
+
 #: The one dash the README is allowed: the leading one of a blockquote attribution,
 #: `> — Name, Month Year`. That dash is the convention for signing a quote, not punctuation
 #: inside a sentence, which is what the rule below is actually about. Only the prefix is

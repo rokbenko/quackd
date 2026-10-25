@@ -11,6 +11,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Added
 
+- **`quackd list-models --kind` lists the decision LLMs and the learned policies too.**
+  `--kind decision` prints every decision LLM `--decision-llm` names, in the order `quackd
+  doctor` does, which until now was the one command that said they existed. `--kind policy`
+  prints the policy types `quackd policy serve` serves, what each needs and how far it has got,
+  and the ones people ask about that it does not serve, with why, read from data in the core so
+  that a machine with no LeRobot can be told. `--kind all` prints the three, and `--kind pilot`,
+  the default, prints what the command always has, byte for byte. Every `--json` row now says
+  which kind it is, and `--llm`, which narrows the pilot rows to one vendor, is refused beside
+  another kind rather than ignored.
 - **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
   is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
   with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
