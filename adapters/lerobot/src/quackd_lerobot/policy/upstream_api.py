@@ -18,8 +18,8 @@ server (`server.py`), because the server is where a checkpoint is loaded (`pipel
 the arm's process never imports torch or LeRobot's policies at all: `client.py` reaches the
 server over HTTP. POLICY_PIPELINE is the one row a job exercises: CI's torch job runs a tiny
 random ACT and a tiny random X-VLA through the real server (`tests/test_policy_pipeline.py`).
-No trained checkpoint has been loaded, no trained X-VLA has run, and SmolVLA, pi05, pi0 and
-tick mode have not run at all: VLA_PIPELINE and TICK_MODE say what quackd does about that.
+No trained checkpoint has been loaded, no trained X-VLA has run, and SmolVLA, pi05, pi0, GR00T
+and tick mode have not run at all: VLA_PIPELINE and TICK_MODE say what quackd does about that.
 """
 
 from __future__ import annotations
@@ -59,6 +59,10 @@ _PI05 = "src/lerobot/policies/pi05"
 _PI0 = "src/lerobot/policies/pi0"
 _PI0_FAST = "src/lerobot/policies/pi0_fast"
 _XVLA = "src/lerobot/policies/xvla"
+_GROOT = "src/lerobot/policies/groot"
+_GROOT_CFG = f"{_GROOT}/configuration_groot.py"
+_GROOT_PROC = f"{_GROOT}/processor_groot.py"
+_GROOT_N17 = f"{_GROOT}/groot_n1_7.py"
 _ACT_MODEL = "src/lerobot/policies/act/modeling_act.py"
 _RELATIVE = "src/lerobot/processor/relative_action_processor.py"
 _SMOLVLM = "src/lerobot/policies/smolvla/smolvlm_with_expert.py"
@@ -154,8 +158,8 @@ CHUNK_SIZE = UpstreamRef(
     "them are played before the next (line 86), both counted in environment steps, and "
     "`n_action_steps` may not exceed `chunk_size` (line 143). SmolVLA's defaults are 50 and 50 "
     f"({src(_SMOLVLA_CFG, 29)}), and so are pi0's ({src(f'{_PI0}/configuration_pi0.py', 36)}). "
-    f"X-VLA's are 32 and 32 ({src(f'{_XVLA}/configuration_xvla.py', 89)}). The policy server "
-    "reports both",
+    f"X-VLA's are 32 and 32 ({src(f'{_XVLA}/configuration_xvla.py', 89)}), and GR00T's 40 and "
+    f"40 ({src(_GROOT_CFG, 248)}). The policy server reports both",
 )
 TEMPORAL_ENSEMBLE = UpstreamRef(
     "ACTConfig.temporal_ensemble_coeff",
@@ -251,17 +255,17 @@ FEATURE_TYPES = UpstreamRef(
     "other, since an arm has nothing to give an ENV or a LANGUAGE feature from",
 )
 POLICY_TYPES = UpstreamRef(
-    '"act", "smolvla", "pi05", "pi0", "xvla"',
+    '"act", "smolvla", "pi05", "pi0", "xvla", "groot"',
     "VERIFIED",
     src(_ACT_CFG, 22),
     "the `type` config.json names its policy by, as ACTConfig, SmolVLAConfig "
     f"({src(_SMOLVLA_CFG, 24)}), PI05Config ({src(_PI05_CFG, 28)}), PI0Config "
-    f"({src(f'{_PI0}/configuration_pi0.py', 28)}) and XVLAConfig "
-    f"({src(f'{_XVLA}/configuration_xvla.py', 76)}) register it. These are the types whose "
-    "processors the policy server's allowlist was read from, each its own, and any other type "
-    "is refused before a byte of its weights is fetched",
+    f"({src(f'{_PI0}/configuration_pi0.py', 28)}), XVLAConfig "
+    f"({src(f'{_XVLA}/configuration_xvla.py', 76)}) and GrootConfig ({src(_GROOT_CFG, 241)}) "
+    "register it. These are the types whose processors the policy server's allowlist was read "
+    "from, each its own, and any other type is refused before a byte of its weights is fetched",
 )
-SERVED_TYPES = ("act", "smolvla", "pi05", "pi0", "xvla")
+SERVED_TYPES = ("act", "smolvla", "pi05", "pi0", "xvla", "groot")
 DEFAULT_PROCESSOR_STEPS = UpstreamRef(
     "rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, "
     "unnormalizer_processor",
@@ -372,6 +376,146 @@ XVLA_SERVED_MODE = "auto"
 XVLA_DEFAULT_MODE = "ee6d"
 """The one mode XVLA_ACTION_MODES says the server serves, and the one a config that names no
 `action_mode` decodes in."""
+GROOT_PROCESSOR_STEPS = UpstreamRef(
+    "groot_n1_7_pack_inputs_v1, groot_n1_7_vlm_encode_v1, groot_n1_7_action_decode_v1, "
+    "groot_action_unpack_unnormalize_v2, relative_actions_processor, absolute_actions_processor",
+    "VERIFIED",
+    src(_GROOT_PROC, 1254),
+    "the steps GR00T N1.7's processors are built from besides the default ones "
+    "(`make_groot_pre_post_processors`, to line 1325): the step that packs the cameras, the "
+    "state and the task (registered at line 1532), the one that encodes them with the "
+    "backbone's own processor (line 2039), and one of two that decode the answer, the one for a "
+    "checkpoint whose statistics come grouped by the actions they normalise (line 2299) and the "
+    "one for a checkpoint that took its dataset's (line 2463), with the relative and absolute "
+    "steps a checkpoint that learned relative actions with no grouped statistics adds (lines "
+    "1283 and 1324). With the default ones, the only steps a GR00T may name",
+)
+GROOT_STEP_NAMES = (
+    "groot_n1_7_pack_inputs_v1",
+    "groot_n1_7_vlm_encode_v1",
+    "groot_n1_7_action_decode_v1",
+    "groot_action_unpack_unnormalize_v2",
+    "relative_actions_processor",
+    "absolute_actions_processor",
+)
+GROOT_PACK_STEP, GROOT_VLM_STEP, GROOT_DECODE_STEP, GROOT_DATASET_DECODE_STEP = GROOT_STEP_NAMES[:4]
+GROOT_BASE_MODEL = UpstreamRef(
+    "GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise",
+    "VERIFIED",
+    src(_GROOT_CFG, 280),
+    "the GR00T a checkpoint is built from before its own weights replace it: `__post_init__` "
+    "fills a missing one with `nvidia/GR00T-N1.7-3B` (lines 382 and 383), which the server "
+    "refuses rather than let LeRobot load at no revision, as it refuses a SmolVLA naming no "
+    "backbone. `GrootPolicy` builds `GR00TN17.from_pretrained(base_model_path)` "
+    f"({src(f'{_GROOT}/modeling_groot.py', 107)}), which `snapshot_download`s the whole "
+    f"repository at no revision unless it is a local directory ({src(_GROOT_N17, 902)}, to "
+    "line 912) and loads its weights, and the checkpoint's own are loaded over them, strictly "
+    "(modeling_groot.py lines 204 to 241). The server pins it, fetches its configs and "
+    "safetensors, and hands the build that directory. The backbone is built from a config "
+    "LeRobot carries and never fetched (line 897, and lines 353 to 357), but only while the "
+    "base's config.json names `nvidia/Cosmos-Reason2-2B` as its `model_name`, or none, which "
+    "means the same (line 79, and line 747): any other is fetched as an AutoConfig trusting its "
+    "repository's code, at no revision (line 356), so the server reads the pinned base's "
+    "config.json before any weight and refuses another backbone",
+)
+GROOT_BACKBONE = "nvidia/Cosmos-Reason2-2B"
+"""The backbone GROOT_BASE_MODEL says LeRobot builds from a config of its own."""
+GROOT_VLM_PROCESSOR = UpstreamRef(
+    "GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True",
+    "VERIFIED",
+    src(_GROOT_PROC, 1369),
+    "`_build_n1_7_processor` loads `AutoTokenizer`, `Qwen2VLImageProcessor` and "
+    "`Qwen3VLVideoProcessor` from the step's `model_name` with trust_remote_code=True, hard-wired "
+    "(to line 1373), the first time the step runs (`proc`, line 2069, to line 2073), so on a "
+    "session's first chunk and not when the server starts. `nvidia/Cosmos-Reason2-2B`, the one "
+    "LeRobot's factory names (line 1259), is gated. The server pins `model_name`, fetches its "
+    "configs and tokenizer files and no `.py` and no weight, and refuses its directory if it "
+    "holds anything else or maps a class to code (`auto_map`), so with trust_remote_code set "
+    "there is no code of the repository's own for it to trust",
+)
+GROOT_DECODE = UpstreamRef(
+    "groot_n1_7_action_decode_v1 unnormalises each action group and makes a relative one "
+    "absolute against the state the pack step cached",
+    "VERIFIED",
+    src(_GROOT_PROC, 2299),
+    "each group the checkpoint's `modality_config` names is unnormalised by its own statistics "
+    "(lines 2362 to 2391), its `rep` and `type` read lowered (`config_value`, utils.py line 88), "
+    "and a RELATIVE NON_EEF group has the raw state the pack step cached "
+    "added back (lines 2393 to 2416), where an EEF one is a pose composed with xyz+rot6d "
+    "(lines 2417 and 2418). With no `raw_stats` or `modality_config` it hands the action back "
+    "still normalised (lines 2333 and 2334), and LIBERO's transform makes the gripper -1 or 1 "
+    "(line 2280, to 2293), as `action_decode_transform` says, which `libero_sim` gets "
+    f"unless it says otherwise ({src(_GROOT_CFG, 393)}, to line 396, and processor_groot.py line "
+    "523). A checkpoint that took its dataset's statistics decodes through "
+    "`groot_action_unpack_unnormalize_v2` instead, over its state file's `action` min and max "
+    "(lines 2488 to 2509), still normalised with no statistics or `normalize_min_max` off, and "
+    "with LIBERO's gripper -1 or 1 (lines 2511 to 2518). The server serves a GR00T whose every "
+    "group is NON_EEF, with its statistics, and no LIBERO transform",
+)
+GROOT_NON_EEF = "non_eef"
+GROOT_EEF = "eef"
+GROOT_LIBERO = "libero"
+GROOT_LIBERO_EMBODIMENT = "libero_sim"
+GROOT_AUTO_TRANSFORM = "auto"
+"""The group type GROOT_DECODE serves and the end effector's it refuses, lowered as LeRobot
+reads them (`config_value`, utils.py line 88), LIBERO's transform, the embodiment that gets it
+by default, and the `action_decode_transform` that means that default."""
+GROOT_WHOLE_CHUNK = UpstreamRef(
+    "a relative GR00T's chunk is decoded whole, against the state it was predicted from",
+    "VERIFIED",
+    src(_GROOT_PROC, 2345),
+    "the decode step refuses to decode a relative checkpoint's actions one at a time (to line "
+    f"2350), and `GrootPolicy.select_action` refuses a relative policy outright "
+    f"({src(f'{_GROOT}/modeling_groot.py', 517)}, to line 523): it is predict_action_chunk and "
+    "the post-processor over the whole chunk, which is how the server runs every chunked "
+    "policy (POLICY_PIPELINE)",
+)
+GROOT_PERCENTILE_STATS = UpstreamRef(
+    "a relative GR00T keeps its state's percentiles in the pack step's raw_stats",
+    "VERIFIED",
+    src(f"{_GROOT}/utils.py", 127),
+    "the pack step's statistics, the ones its state file holds, are min, max, mean and std "
+    "flattened from the grouped ones, with q01 and q99 standing in for min and max under "
+    "`use_percentiles` (lines 158 to 164), and its state_dict is those alone "
+    f"({src(_GROOT_PROC, 2016)}), so no `observation.state.q01` is where NORMALIZER_STATS looks "
+    "and the frame check would go unmade. The grouped statistics are the pack step's "
+    "`raw_stats`, the state's and the absolute action's grouped as the actions are (lines "
+    "1037 to 1045), so the server reads the state's and the action's q01 and q99 from there, "
+    "group by group in `modality_config`'s order, before any weight. A checkpoint that took its "
+    "dataset's statistics keeps them in its state file, q01 and q99 among them where the "
+    "dataset had them, and is read as every other type's is",
+)
+GROOT_N1_5_REMOVED = UpstreamRef(
+    "LeRobot 0.6.1 serves GR00T N1.7 alone, and refuses N1.5's step names",
+    "VERIFIED",
+    src(_GROOT_PROC, 2582),
+    "N1.5's processors name `groot_pack_inputs_v3`, `groot_eagle_encode_v3`, "
+    "`groot_eagle_collate_v3` and `groot_action_unpack_unnormalize_v1` (to line 2587), which "
+    "LeRobot registers only as stubs that fail with its removal guidance, and an N1.5 config "
+    f"sets `tokenizer_assets_repo` ({src(_GROOT_CFG, 357)}, refused at line 375) or names an "
+    "N1.5 base (`infer_groot_model_version`, lines 102 to 116). The server refuses each in a "
+    "sentence of its own, before a pin or a weight",
+)
+GROOT_N1_5_STEP_NAMES = (
+    "groot_pack_inputs_v3",
+    "groot_eagle_encode_v3",
+    "groot_eagle_collate_v3",
+    "groot_action_unpack_unnormalize_v1",
+)
+GROOT_N1_5_BASES = ("gr00t-n1.5", "gr00t_n1.5")
+"""What GROOT_N1_5_REMOVED says an N1.5 base path holds, lowered."""
+GROOT_IMAGE_FALLBACK = UpstreamRef(
+    "GR00T's pack step feeds every camera in alphabetical order when none is one its video "
+    "modality keys name",
+    "VERIFIED",
+    src(_GROOT_PROC, 1563),
+    "the pack step orders the views it hands the backbone by the checkpoint's "
+    "`video_modality_keys` (to line 1621): a key no camera matches is dropped, so the model sees "
+    "fewer views than it learned on, and with none matching it falls back to every camera in "
+    "alphabetical order (lines 1587 to 1598). It pads no missing view, so the arm needs a camera "
+    "for every image a GR00T looks at, and the server refuses a checkpoint whose modality keys "
+    "name an image its config.json does not",
+)
 XVLA_LIBERO_ROTATION = UpstreamRef(
     "xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the "
     "gripper into -1 or 1",
@@ -448,7 +592,8 @@ MISSING_IMAGES_PADDED = UpstreamRef(
     f"{src(f'{_PI0}/modeling_pi0.py', 995)}, which pads each missing one with -1 and a mask of "
     "zero, to line 1044). X-VLA stacks the images it is given and pads them out to "
     f"`num_image_views` with zeros and a mask of zero ({src(f'{_XVLA}/modeling_xvla.py', 311)}, "
-    "to line 341, only all of them missing raising). ACT takes every image it names "
+    "to line 341, only all of them missing raising). ACT takes every image it names, and so "
+    "does GR00T (GROOT_IMAGE_FALLBACK) "
     f"(`predict_action_chunk` stacks each, {src(_ACT_MODEL, 131)}), so the arm's side "
     "refuses an ACT with an image no camera is mapped to, and says which of the others' go "
     "padded",
@@ -583,9 +728,11 @@ VLA_PIPELINE = UpstreamRef(
     "refused, and pi05's and pi0's relative actions made absolute over a whole chunk at once, "
     "against the state it was predicted from. That last one is not what LeRobot's own loop "
     "does (RELATIVE_ACTIONS), and it is how training made the chunk relative, so a trained "
-    "pi05 or pi0 is taken to want it. No job runs a SmolVLA, a pi05 or a pi0, and the X-VLA "
-    "CI's job serves is a tiny random one (POLICY_PIPELINE), so no trained one of the four has "
-    "run anywhere. An X-VLA is served in its "
+    "pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its "
+    "processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its "
+    "frame read from the pack step's raw_stats (GROOT_PERCENTILE_STATS). No job runs a SmolVLA, "
+    "a pi05, a pi0 or a GR00T, and the X-VLA CI's job serves is a tiny random one "
+    "(POLICY_PIPELINE), so no trained one of the five has run anywhere. An X-VLA is served in its "
     "`auto` action mode alone (XVLA_ACTION_MODES), taken to answer in the joints of the arm it "
     "learned from. quackd loads them through the allowlist each type has and the pins and "
     "refusals ACT's go through, says in /v1/policy which images go padded, and a first run "

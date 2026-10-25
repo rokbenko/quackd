@@ -809,8 +809,8 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
             policies,
             "docs/adapters/lerobot/README.md",
             f"a trained checkpoint: read at lerobot {policies.VERSION}, and CI's policy job serves "
-            "a tiny random ACT and a tiny random X-VLA alone, so SmolVLA, pi05, pi0 and tick mode "
-            "have never run, nor a trained X-VLA",
+            "a tiny random ACT and a tiny random X-VLA alone, so SmolVLA, pi05, pi0, GR00T and "
+            "tick mode have never run, nor a trained X-VLA",
         ),
     )
 

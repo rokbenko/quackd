@@ -285,6 +285,8 @@ def test_a_step_that_could_trust_remote_code_is_told_not_to(tmp_path: Path) -> N
         ("act", "relative_actions_processor"),
         ("smolvla", "pi05_prepare_state_tokenizer_processor_step"),
         ("pi05", "smolvla_new_line_processor"),
+        ("act", "groot_n1_7_pack_inputs_v1"),
+        ("xvla", "groot_n1_7_vlm_encode_v1"),
     ],
 )
 def test_a_step_is_allowed_by_the_type_that_names_it_and_no_other(
@@ -706,6 +708,293 @@ def test_an_xvla_that_would_not_answer_in_this_arms_joints_is_refused_before_its
         _fetch(hub, fps=float(FPS), pins=(f"{BART}@{PINNED}",))
     assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
     assert not hub.snapshots
+
+
+GROOT_BASE = "nvidia/GR00T-N1.7-3B"
+COSMOS = up.GROOT_BACKBONE
+"""The base and the backbone's tokenizer a GR00T N1.7 checkpoint names, as LeRobot's own
+training writes them."""
+_GROUPS = (("single_arm", 5, "RELATIVE"), ("gripper", 1, "ABSOLUTE"))
+"""The action groups the SO-101 GR00T fine-tunes on the Hub decode by, read on 2026-10-25: the
+five arm joints relative to the state, the gripper absolute, both joints."""
+
+
+def _group_stats(n: int, offset: int) -> dict[str, list[float]]:
+    """One group's statistics as the pack step keeps them, each a list per joint, its 1st and
+    99th percentiles inside its min and max, as a dataset's are, so that a reading of the one
+    is never the other."""
+    q01 = [-40.0 - offset - i for i in range(n)]
+    q99 = [40.0 + offset + i for i in range(n)]
+    return {
+        "min": [v - 1.0 for v in q01],
+        "max": [v + 1.0 for v in q99],
+        "mean": [0.0] * n,
+        "std": [10.0] * n,
+        "count": [100],
+        "q01": q01,
+        "q99": q99,
+    }
+
+
+def _groot(
+    tmp_path: Path,
+    *,
+    grouped: bool = True,
+    groups: Sequence[tuple[str, int, str]] = _GROUPS,
+    types: Mapping[str, str] | None = None,
+    cameras: Sequence[str] = ("front",),
+    backbone: Any = COSMOS,
+    drop: Sequence[str] = (),
+    decode: Mapping[str, Any] | None = None,
+    **over: Any,
+) -> FakeHub:
+    """A GR00T N1.7 as the SO-101 fine-tunes on the Hub were saved, read on 2026-10-25. With
+    `grouped`, as `jammyyang/groot17_so101_pick_place` is: relative actions with the gripper
+    left absolute, decoded group by group by the statistics its pack step keeps in `raw_stats`.
+    Without, as `haydendoo/so101_pickup_groot_medium_new_v1` is: absolute actions decoded by its
+    dataset's statistics in a state file. Six motors, a front camera, chunks of 16, the base and
+    the backbone's tokenizer named, and the base's own `config.json` in the Hub naming
+    `backbone`. `types` gives a group another type, `drop` leaves keys out of its config and
+    `decode` merges into its decode step's config."""
+    n = len(JOINTS)
+    rename, batch, device = up.DEFAULT_STEP_NAMES[:3]
+    config: dict[str, Any] = {
+        "type": "groot",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}front": {"type": "VISUAL", "shape": [3, 480, 640]},
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 16,
+        "n_action_steps": 16,
+        "base_model_path": GROOT_BASE,
+        "embodiment_tag": "new_embodiment",
+        "use_relative_actions": grouped,
+        "relative_exclude_joints": ["gripper"] if grouped else [],
+        "action_decode_transform": None,
+        "tokenizer_assets_repo": None,
+        "max_state_dim": 132,
+        "max_action_dim": 132,
+        "normalization_mapping": {"VISUAL": "IDENTITY", "STATE": "IDENTITY", "ACTION": "IDENTITY"},
+        **over,
+    }
+    for key in drop:
+        del config[key]
+    keys = [name for name, _, _ in groups]
+    raw = {
+        "state": {name: _group_stats(size, i) for i, (name, size, _) in enumerate(groups)},
+        "action": {name: _group_stats(size, i + 5) for i, (name, size, _) in enumerate(groups)},
+    }
+    modalities = {
+        "state": {"modality_keys": keys},
+        "action": {
+            "modality_keys": keys,
+            "action_configs": [
+                {"rep": rep, "type": (types or {}).get(name, "NON_EEF"), "format": "DEFAULT"}
+                for name, _, rep in groups
+            ],
+            "delta_indices": list(range(40)),
+        },
+        "video": {"modality_keys": list(cameras), "delta_indices": [0]},
+    }
+    pack: dict[str, Any] = {
+        "action_horizon": 40 if grouped else 16,
+        "valid_action_horizon": 16,
+        "embodiment_tag": "new_embodiment",
+        "normalize_min_max": True,
+        "use_percentiles": grouped,
+        "video_modality_keys": list(cameras) if grouped else None,
+        "raw_stats": raw if grouped else None,
+        "modality_config": modalities if grouped else None,
+    }
+    vlm = {"model_name": COSMOS, "image_target_size": [256, 256], "device": "cuda"}
+    if grouped:
+        decoder: dict[str, Any] = {
+            "registry_name": up.GROOT_DECODE_STEP,
+            "config": {
+                "env_action_dim": n,
+                "raw_stats": raw,
+                "modality_config": modalities,
+                "use_percentiles": True,
+                "use_relative_action": True,
+                "action_decode_transform": None,
+                **(decode or {}),
+            },
+        }
+    else:
+        decoder = {
+            "registry_name": up.GROOT_DATASET_DECODE_STEP,
+            "config": {
+                "env_action_dim": n,
+                "normalize_min_max": True,
+                "clip_normalized_action": True,
+                "libero_gripper_action": False,
+                **(decode or {}),
+            },
+            "state_file": f"policy_postprocessor_step_0_{up.GROOT_DATASET_DECODE_STEP}.safetensors",
+        }
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {}},
+            {"registry_name": batch, "config": {}},
+            {
+                "registry_name": up.GROOT_PACK_STEP,
+                "config": pack,
+                "state_file": f"policy_preprocessor_step_2_{up.GROOT_PACK_STEP}.safetensors",
+            },
+            {"registry_name": up.GROOT_VLM_STEP, "config": vlm},
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [decoder, {"registry_name": device, "config": {"device": "cpu"}}],
+    }
+    hub = _hub(tmp_path, config=config, pre=pre, post=post)
+    base = {"model_type": "Gr00tN1d7", "action_horizon": 40}
+    if backbone is not None:
+        base["model_name"] = backbone
+    hub.files[(GROOT_BASE, PINNED)] = {up.CONFIG_FILE: base}
+    return hub
+
+
+GROOT_PINS = (f"{GROOT_BASE}@{PINNED}", f"{COSMOS}@{PINNED}")
+
+
+def test_a_groot_n1_7_is_served_with_its_base_and_its_backbones_tokenizer_pinned(
+    tmp_path: Path,
+) -> None:
+    """A GR00T N1.7 names the base it is built from in its config and its backbone's tokenizer
+    in a step, so both are pinned: the base fetched with its weights, the tokenizer without,
+    and the base's own `config.json` read before any weight. It pads no camera it is not given.
+    Its frame is the 1st and 99th percentiles its pack step keeps in `raw_stats`, its groups'
+    joined in their order, which is what `/v1/policy` reports for the arm to check: its state
+    file holds a min and a max in their place (`upstream_api.GROOT_PERCENTILE_STATS`)."""
+    hub = _groot(tmp_path)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {GROOT_BASE}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    checkpoint = _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("groot", 16, 16)
+    assert not shape.pads_images and not shape.per_tick
+    assert {repo: patterns for repo, _, patterns in hub.snapshots} == {
+        GROOT_BASE: P.NESTED_FILES,
+        COSMOS: P.TOKENIZER_FILES,
+    }
+    asked = [(repo, filename) for repo, _, filename in hub.asked]
+    assert asked.index((GROOT_BASE, up.CONFIG_FILE)) < asked.index((REPO, up.WEIGHTS_FILE))
+    base = str(hub.snapshot(GROOT_BASE, PINNED, P.NESTED_FILES))
+    assert checkpoint.config_overrides["base_model_path"] == base
+    cosmos = str(hub.snapshot(COSMOS, PINNED, P.TOKENIZER_FILES))
+    assert checkpoint.pre_overrides[up.GROOT_VLM_STEP] == {"device": "cpu", "model_name": cosmos}
+    assert f"base_model_path {GROOT_BASE}@{PINNED}" in checkpoint.loaded
+    assert f"model_name {COSMOS}@{PINNED}" in checkpoint.loaded
+    raw = _groot_stats()
+    for got, modality in (
+        (checkpoint.state_quantiles, "state"),
+        (checkpoint.action_quantiles, "action"),
+    ):
+        assert got is not None, modality
+        assert got.q01 == [v for name, _, _ in _GROUPS for v in raw[modality][name]["q01"]]
+        assert got.q99 == [v for name, _, _ in _GROUPS for v in raw[modality][name]["q99"]]
+        assert got.q01 != [v for name, _, _ in _GROUPS for v in raw[modality][name]["min"]]
+
+
+def _groot_stats() -> dict[str, dict[str, dict[str, list[float]]]]:
+    """The `raw_stats` `_groot` gives its pack step, built the way it builds them."""
+    return {
+        "state": {name: _group_stats(size, i) for i, (name, size, _) in enumerate(_GROUPS)},
+        "action": {name: _group_stats(size, i + 5) for i, (name, size, _) in enumerate(_GROUPS)},
+    }
+
+
+def test_a_groot_decoded_by_its_datasets_statistics_is_left_to_the_normalisers_frame(
+    tmp_path: Path,
+) -> None:
+    """A GR00T fine-tuned with no relative actions decodes by its dataset's statistics, which
+    its state files hold, the percentiles among them where the dataset had them, so its frame is
+    read as every other type's is, and the checkpoint carries none of its own."""
+    checkpoint = _fetch(_groot(tmp_path, grouped=False), fps=float(FPS), pins=GROOT_PINS)
+    assert checkpoint.shape.policy_type == "groot"
+    assert checkpoint.state_quantiles is None and checkpoint.action_quantiles is None
+
+
+_N1_5_PACK = {"registry_name": up.GROOT_N1_5_STEP_NAMES[0], "config": {}}
+
+
+@pytest.mark.parametrize(
+    ("kw", "needle"),
+    [
+        ({"base_model_path": "nvidia/GR00T-N1.5-3B"}, "is a GR00T N1.5 checkpoint"),
+        (
+            {"tokenizer_assets_repo": "lerobot/eagle2hg-processor-groot-n1p5"},
+            "is a GR00T N1.5 checkpoint",
+        ),
+        ({"action_decode_transform": "libero"}, "LIBERO's transform, to -1 or 1"),
+        (
+            {"action_decode_transform": "auto", "embodiment_tag": "libero_sim"},
+            "LIBERO's transform, to -1 or 1",
+        ),
+        (
+            {"drop": ["action_decode_transform"], "embodiment_tag": "libero_sim"},
+            "LIBERO's transform, to -1 or 1",
+        ),
+        ({"action_decode_transform": "fancy"}, "none LeRobot 0.6.1 knows"),
+        ({"types": {"single_arm": "EEF"}}, "single_arm as an end-effector pose (EEF)"),
+        ({"types": {"gripper": "BODY"}}, "gripper the type 'BODY', which is not joints"),
+        (
+            {"decode": {"raw_stats": None}},
+            "still normalised to -1..1, which the arm would take as degrees",
+        ),
+        (
+            {"grouped": False, "decode": {"normalize_min_max": False}},
+            "still normalised to -1..1",
+        ),
+        ({"cameras": ("front", "wrist")}, "looks for the cameras wrist"),
+        ({"drop": ["base_model_path"]}, "names no base_model_path"),
+        ({"backbone": "SomeOrg/Other-VLM"}, "'SomeOrg/Other-VLM' as its backbone"),
+    ],
+)
+def test_a_groot_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
+    tmp_path: Path, kw: dict[str, Any], needle: str
+) -> None:
+    """Each in a sentence of its own, before a weight is fetched: an N1.5, which LeRobot 0.6.1
+    no longer serves; LIBERO's gripper of -1 or 1; a group decoded as an end effector's pose; a
+    decode with no statistics, whose actions would reach the arm still normalised; a pack step
+    looking for a camera its config has no image for; a config naming no base, which LeRobot
+    would fill with its own at no revision; and a base whose backbone LeRobot would fetch
+    trusting its repository's code."""
+    hub = _groot(tmp_path, **kw)
+    with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    assert not hub.snapshots
+
+
+def test_a_groot_whose_steps_are_n1_5s_or_whose_decode_is_missing_is_refused(
+    tmp_path: Path,
+) -> None:
+    """N1.5's step names are LeRobot's stubs for its removal, refused by name before anything
+    else of the checkpoint is read past its processors, and a post-processor with no step to
+    decode GR00T's answer would hand it back still normalised."""
+    hub = _groot(tmp_path / "n1_5")
+    pre = hub.files[(REPO, _commit(REPO))][up.PREPROCESSOR_FILE]
+    pre["steps"][2] = {**_N1_5_PACK, "state_file": None}
+    with pytest.raises(P.PipelineRefused, match=re.escape("only GR00T N1.5's processors name")):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    hub = _groot(tmp_path / "undecoded")
+    post = hub.files[(REPO, _commit(REPO))][up.POSTPROCESSOR_FILE]
+    post["steps"] = post["steps"][1:]
+    with pytest.raises(P.PipelineRefused, match="no step that decodes GR00T's actions"):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    hub = _groot(tmp_path / "baseless")
+    hub.files[(GROOT_BASE, PINNED)] = {}
+    with pytest.raises(P.PipelineRefused, match=f"has no {up.CONFIG_FILE}, so it is not a GR00T"):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
 
 
 class _Stat:

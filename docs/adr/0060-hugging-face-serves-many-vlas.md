@@ -63,6 +63,23 @@ Reading for more families turned up two things wrong with what the server alread
    of the arm's, as `catalogue.py` does not for the robots, so a page or a command can print it
    on a machine with no LeRobot, and a test ties its rows to the types the server serves.
 
+**Where the code settled differently from the plan.**
+
+- The plan had GR00T decode through grouped statistics alone. Half the SO-101 GR00T fine-tunes
+  read on the day decode through their dataset's statistics instead
+  (`groot_action_unpack_unnormalize_v2`), absolute joints too, so both are served, each refused
+  when it has no statistics to unnormalise with.
+- The plan pinned GR00T's base and took its backbone to be built from LeRobot's own config. It
+  is, only while the base's `config.json` names `nvidia/Cosmos-Reason2-2B`, and any other
+  backbone is fetched trusting its repository's code, so the pinned base's `config.json` is read
+  before any weight and another backbone refused.
+- The plan had every step checked for `checkpoint_path` and `discrete_action_tokenizer`, and a
+  `checkpoint_revision` that disagrees with its pin refused. Those are MolmoAct2's keys alone,
+  and MolmoAct2 is deferred, so they wait for it.
+- Serving a pinned model offline found that `snapshot_download` asks the Hub for a commit's file
+  list whatever `HF_HUB_OFFLINE` says, so the server now asks it for the cache's own files
+  offline, and CI serves a tiny random X-VLA beside its tiny ACT.
+
 ## Why not
 
 - **A vendor that serves many VLAs.** None existed on 2026-10-25, for the reasons above. A
@@ -84,8 +101,10 @@ Reading for more families turned up two things wrong with what the server alread
 
 ## Consequences
 
-- **None of the new families has run anywhere.** Their checkpoints are read against stand-ins of
-  the real ones' files, and none has been loaded, benched or served, on a laptop or on a GPU.
+- **No trained checkpoint of the new families has run anywhere.** Their checks are written
+  against stand-ins of the real ones' files, and none has been loaded, benched or served, on a
+  laptop or on a GPU. CI serves a tiny random X-VLA, which proves the plumbing and nothing about
+  what a trained one does.
 - A pi05 fetches its tokenizer's 21.9 MB and not PaliGemma's 11.69 GB of weights.
 - An ACT, a SmolVLA or a pi05 that names a step another type uses is refused where it was
   served. No checkpoint LeRobot's own processor factories write does that.

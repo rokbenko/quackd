@@ -557,6 +557,17 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     assert api.XVLA_DOMAIN_STEP in api.XVLA_STEP_NAMES
     assert f"`num_domains` is {api.XVLA_DEFAULT_DOMAINS} unless" in api.XVLA_PROCESSOR_STEPS.note
     assert f"`domain_id`, {api.XVLA_DEFAULT_DOMAIN} unless" in api.XVLA_PROCESSOR_STEPS.note
+    # and GR00T's
+    assert f"`{api.GROOT_BACKBONE}`" in api.GROOT_BASE_MODEL.note
+    for name in api.GROOT_N1_5_STEP_NAMES:
+        assert f"`{name}`" in api.GROOT_N1_5_REMOVED.note, name
+    steps = (api.GROOT_PACK_STEP, api.GROOT_VLM_STEP, api.GROOT_DECODE_STEP)
+    assert set(steps) | {api.GROOT_DATASET_DECODE_STEP} <= set(api.GROOT_STEP_NAMES)
+    assert api.GROOT_DECODE_STEP in api.GROOT_DECODE.name
+    assert api.GROOT_DATASET_DECODE_STEP in api.GROOT_DECODE.note
+    for word in ("RELATIVE NON_EEF", "EEF", "still normalised", "LIBERO"):
+        assert word in api.GROOT_DECODE.note, word
+    assert f"`{api.GROOT_LIBERO_EMBODIMENT}`" in api.GROOT_DECODE.note
     keys = api.FEATURE_KEYS.name
     assert api.STATE_KEY in keys and api.IMAGES_PREFIX in keys and api.ACTION_KEY in keys
     for stat in api.QUANTILE_STATS:
@@ -574,6 +585,7 @@ _FAMILY_STEPS = (
     (lerobot_policy_api.PI05_PROCESSOR_STEPS, lerobot_policy_api.PI05_STEP_NAMES),
     (lerobot_policy_api.PI0_PROCESSOR_STEPS, lerobot_policy_api.PI0_STEP_NAMES),
     (lerobot_policy_api.XVLA_PROCESSOR_STEPS, lerobot_policy_api.XVLA_STEP_NAMES),
+    (lerobot_policy_api.GROOT_PROCESSOR_STEPS, lerobot_policy_api.GROOT_STEP_NAMES),
 )
 
 

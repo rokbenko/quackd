@@ -129,6 +129,23 @@ FAMILIES: tuple[PolicyFamily, ...] = (
             "mode is served"
         ),
     ),
+    PolicyFamily(
+        type="groot",
+        label="GR00T N1.7",
+        maker="NVIDIA",
+        takes_words=True,
+        extra=_EXTRA,
+        needs=(
+            "--pin nvidia/GR00T-N1.7-3B@REVISION, the base its config names (base_model_path)",
+            "--pin nvidia/Cosmos-Reason2-2B@REVISION, its backbone's tokenizer",
+            "a Hub token granted nvidia/Cosmos-Reason2-2B, which is gated",
+        ),
+        gpu="wants one (not measured)",
+        licence="NVIDIA Open Model License",
+        licence_url="https://huggingface.co/nvidia/GR00T-N1.7-3B",
+        licence_read="2026-10-25",
+        ran="has not run, and only checkpoints whose every action group is joints are served",
+    ),
 )
 """The types the server serves, in `upstream_api.SERVED_TYPES`' order."""
 

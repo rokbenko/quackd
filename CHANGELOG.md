@@ -41,6 +41,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   random X-VLA beside the tiny ACT, offline, through the real server and client, its tokenizer a
   few words pinned at a commit in a Hub cache of its own
   ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
+- **`quackd policy serve` serves a GR00T N1.7 whose every action group is joints.** A GR00T names
+  two models inside itself, the base it was fine-tuned from, `nvidia/GR00T-N1.7-3B`, and its
+  backbone's tokenizer, `nvidia/Cosmos-Reason2-2B`, which is gated, and both are pinned with
+  `--pin`, the base fetched with its weights and the tokenizer without. A config that names no
+  base is refused, since LeRobot would fill in its own at no revision, and the pinned base's
+  `config.json` is read before any weight, since LeRobot builds the backbone from a config of its
+  own only while the base names Cosmos-Reason2-2B and fetches any other trusting its
+  repository's code. It decodes its answer group by group, and a group decoded as an end
+  effector's pose, LIBERO's gripper of -1 or 1, a decode with no statistics, whose actions would
+  reach the arm still normalised to -1..1, and any N1.5 checkpoint are each refused in a sentence
+  of their own, before a weight. A fine-tune that learned relative joints decodes by statistics
+  its processors keep grouped, a whole chunk at a time against the state it was predicted from,
+  and keeps the percentiles of the state it learned from there too, where LeRobot's normaliser
+  keeps none, so the server reads them from there and the arm's frame check is made on them. One
+  that learned absolute joints decodes by its dataset's statistics and is read as every other
+  type is. It pads no missing camera, so the arm needs one for every image, and a checkpoint
+  whose processors look for a camera its config has no image for is refused. The extra is
+  `lerobot[smolvla,pi,groot,xvla]` now, which adds GR00T's dependencies, decord on x86 alone, to
+  the lock. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every check, the
+  reported percentiles to the grouped q01 and q99 and not their min and max, and each refusal to
+  fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
 
 ### Changed
 
@@ -88,8 +109,22 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   21.9 MB, beside it.
 - **No trained X-VLA has run.** quackd has not loaded, benched or served one, and its checks
   rest on a stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25,
-  whose weights are 1.76 GB, and on the tiny random one CI serves. Several SO-101 X-VLAs there keep the eight-number state of the base they were
-  fine-tuned from, and the server serves one, which the arm's connect then refuses on its count.
+  whose weights are 1.76 GB, and on the tiny random one CI serves. Several SO-101 X-VLAs there
+  keep the eight-number state of the base they were fine-tuned from, and the server serves one,
+  which the arm's connect then refuses on its count.
+- **No GR00T has run, and serving one fetches about 16 to 20 GB.** quackd has not loaded,
+  benched or served a GR00T N1.7, and its checks rest on stand-ins of
+  `jammyyang/groot17_so101_pick_place` and `haydendoo/so101_pickup_groot_medium_new_v1`, read on
+  the Hub on 2026-10-25. Their weights were 9.34 GB and 12.58 GB, and the base's 6.91 GB more.
+  Its backbone's processors are built the first time it is asked for a chunk, so a session's
+  first chunk takes longer than the rest, and nobody has timed whether the 5 s a segment gives a
+  first chunk covers it. LeRobot ties the backbone's unused output head to its input
+  embeddings before the checkpoint's weights load strictly over the base's, and that strict load
+  has not been run either.
+- **MolmoAct2 is not served.** Its base model maps its classes to code of its own (`auto_map`),
+  which the server refuses in every model it loads, and serving it would take the first exemption
+  from that rule, which was deferred rather than written
+  ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
 
 ## [0.25.0] — 2026-10-25
 

@@ -23,10 +23,11 @@ sdk = ["lerobot[feetech]>=0.6; python_version >= '3.12'"]
 sim = ["mujoco>=3.12,<4"]
 # The policy server's, `quackd policy serve --policy REPO@REVISION`, in a process of its own and
 # never the arm's: LeRobot with torch, and the extras of every type the server serves that has
-# one, `[smolvla]`, `[pi]` for pi05 and pi0 and `[xvla]`, which bring the transformers their
-# tokenizers load with. No `[feetech]`, since the server never opens a serial port. A pi05 or a
-# pi0 also wants a Hub token for its gated tokenizer (docs/adapters/lerobot/README.md).
-vla = ["lerobot[smolvla,pi,xvla]>=0.6,<0.7; python_version >= '3.12'"]
+# one, `[smolvla]`, `[pi]` for pi05 and pi0, `[groot]` and `[xvla]`, which bring the transformers
+# their tokenizers load with and GR00T's own dependencies, decord on x86 alone. No `[feetech]`,
+# since the server never opens a serial port. A pi05, a pi0 or a GR00T also wants a Hub token
+# for its gated tokenizer (docs/adapters/lerobot/README.md).
+vla = ["lerobot[smolvla,pi,groot,xvla]>=0.6,<0.7; python_version >= '3.12'"]
 
 [project.entry-points."quackd.adapters"]
 lerobot = "quackd_lerobot"

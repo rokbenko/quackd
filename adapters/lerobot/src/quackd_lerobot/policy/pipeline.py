@@ -80,6 +80,7 @@ STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
     "pi05": frozenset(up.DEFAULT_STEP_NAMES + up.PI05_STEP_NAMES),
     "pi0": frozenset(up.DEFAULT_STEP_NAMES + up.PI0_STEP_NAMES),
     "xvla": frozenset(up.DEFAULT_STEP_NAMES + up.XVLA_STEP_NAMES),
+    "groot": frozenset(up.DEFAULT_STEP_NAMES + up.GROOT_STEP_NAMES),
 }
 """The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
 registers it under: the steps every policy is built from, which are all of ACT's, and those
@@ -97,6 +98,13 @@ REFUSED_STEPS: Mapping[str, str] = {
         "SO-101 takes joint positions: serve an X-VLA fine-tuned in 'auto' mode, whose "
         "post-processor has no such step (upstream_api.XVLA_LIBERO_ROTATION)"
     ),
+    **{
+        name: (
+            "which only GR00T N1.5's processors name, and LeRobot 0.6.1 serves GR00T N1.7 alone: "
+            "serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+        )
+        for name in up.GROOT_N1_5_STEP_NAMES
+    },
 }
 """Steps no type may name, each with why in the words its refusal goes on with, refused before
 the sentence that lists what a type allows, since that one would not say what is wrong."""
@@ -109,14 +117,16 @@ REFUSED_TYPES: Mapping[str, str] = {
 }
 """Types quackd has read and will not serve, each with why in the words its refusal goes on
 with, refused before anything else of a checkpoint is read."""
-NESTED_STEP_KEYS = ("tokenizer_name",)
-"""The keys of a step's config that name a model to load from the Hub, a tokenizer each
-(`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`), so `TOKENIZER_FILES` are what is fetched of it."""
-NESTED_CONFIG_KEYS = {"smolvla": ("vlm_model_name",)}
-"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone,
-which the policy is built from, so `NESTED_FILES` are what is fetched of it. A config that
-leaves one out is refused, because LeRobot fills it with its own default, a Hub name it would
-then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+NESTED_STEP_KEYS = ("tokenizer_name", "model_name")
+"""The keys of a step's config that name a model to load from the Hub, a tokenizer each, or
+GR00T's backbone's tokenizer and processors (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`,
+`GROOT_VLM_PROCESSOR`), so `TOKENIZER_FILES` are what is fetched of it."""
+NESTED_CONFIG_KEYS = {"smolvla": ("vlm_model_name",), "groot": ("base_model_path",)}
+"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone and
+GR00T's base, which the policy is built from, so `NESTED_FILES` are what is fetched of it. A
+config that leaves one out is refused, because LeRobot fills it with its own default, a Hub
+name it would then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`,
+`GROOT_BASE_MODEL`)."""
 TRUST_KEY = "trust_remote_code"
 TOKENIZER_FILES = ("*.json", "*.txt", "*.model", "*.jinja")
 """What is fetched of a pinned model a step names: its configs and tokenizer files, which are
@@ -442,6 +452,8 @@ def check_family(
     is checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
     if config.get("type") == "xvla":
         _check_xvla(config, steps, spec)
+    if config.get("type") == "groot":
+        return _check_groot(config, steps, spec)
     return Family()
 
 
@@ -473,6 +485,167 @@ def _check_xvla(config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], s
                 f"has {domains} domains, numbered from 0: serve a checkpoint whose step names one "
                 "of them (upstream_api.XVLA_PROCESSOR_STEPS)"
             )
+
+
+def _check_groot(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
+) -> Family:
+    """A GR00T N1.7, read as its processors decode it (`upstream_api.GROOT_DECODE`): no N1.5,
+    no LIBERO gripper, a pack step that looks for the cameras its config names, and a decode
+    that answers every action group as joints, unnormalised by statistics it has. A checkpoint
+    that decodes by grouped statistics keeps its frame in its pack step's `raw_stats`, where the
+    normaliser's reading would never find it, so those percentiles are what comes back
+    (`upstream_api.GROOT_PERCENTILE_STATS`)."""
+    base = config.get("base_model_path")
+    n1_5 = isinstance(base, str) and any(mark in base.lower() for mark in up.GROOT_N1_5_BASES)
+    if n1_5 or config.get("tokenizer_assets_repo") is not None:
+        raise PipelineRefused(
+            f"{spec} is a GR00T N1.5 checkpoint, and LeRobot 0.6.1 serves GR00T N1.7 alone: serve "
+            "a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+        )
+    transform = config.get("action_decode_transform", up.GROOT_AUTO_TRANSFORM)
+    named = transform.lower() if isinstance(transform, str) else transform
+    if named not in (None, "none", "", up.GROOT_AUTO_TRANSFORM, up.GROOT_LIBERO):
+        raise PipelineRefused(
+            f"{spec}'s action_decode_transform is {str(transform)[:80]!r}, which is none LeRobot "
+            "0.6.1 knows (upstream_api.GROOT_DECODE)"
+        )
+    if named == up.GROOT_LIBERO or (
+        named == up.GROOT_AUTO_TRANSFORM
+        and config.get("embodiment_tag") == up.GROOT_LIBERO_EMBODIMENT
+    ):
+        raise PipelineRefused(
+            f"{spec} decodes its gripper with LIBERO's transform, to -1 or 1, and an SO-101's "
+            "gripper takes 0..100: serve a GR00T fine-tuned on this arm's own data "
+            "(upstream_api.GROOT_DECODE)"
+        )
+    pack: Mapping[str, Any] = next(
+        (s["config"] for s in steps if s["registry_name"] == up.GROOT_PACK_STEP), {}
+    )
+    cameras = pack.get("video_modality_keys")
+    images = [k for k in config.get("input_features", {}) if k.startswith(up.IMAGES_PREFIX)]
+    if isinstance(cameras, list):
+        unknown = [str(k) for k in cameras if f"{up.IMAGES_PREFIX}{k}" not in images]
+        if unknown:
+            raise PipelineRefused(
+                f"{spec}'s pack step looks for the cameras {', '.join(unknown)[:120]}, which its "
+                f"{up.CONFIG_FILE} names no image for, so the model would see other views than it "
+                "learned on: serve a checkpoint whose config names every camera its pack step "
+                "does (upstream_api.GROOT_IMAGE_FALLBACK)"
+            )
+    decoders = [
+        s
+        for s in steps
+        if s["registry_name"] in (up.GROOT_DECODE_STEP, up.GROOT_DATASET_DECODE_STEP)
+    ]
+    still = (
+        "so it would hand back its actions still normalised to -1..1, which the arm would take as "
+        "degrees: serve a checkpoint saved with its statistics (upstream_api.GROOT_DECODE)"
+    )
+    if not decoders:
+        raise PipelineRefused(
+            f"{spec}'s post-processor has no step that decodes GR00T's actions, {still}"
+        )
+    for step in decoders:
+        decode = step["config"]
+        if step["registry_name"] == up.GROOT_DATASET_DECODE_STEP:
+            if step["state_file"] is None or decode.get("normalize_min_max", True) is not True:
+                raise PipelineRefused(
+                    f"{spec}'s {up.GROOT_DATASET_DECODE_STEP} step keeps no statistics to "
+                    f"unnormalise with, {still}"
+                )
+            continue
+        raw, modalities = decode.get("raw_stats"), decode.get("modality_config")
+        if not isinstance(raw, Mapping) or not isinstance(modalities, Mapping):
+            raise PipelineRefused(
+                f"{spec}'s {up.GROOT_DECODE_STEP} step names no raw_stats or modality_config, "
+                f"{still}"
+            )
+        action = modalities.get("action")
+        action = action if isinstance(action, Mapping) else {}
+        groups, kinds = action.get("modality_keys"), action.get("action_configs")
+        if not isinstance(groups, list) or not isinstance(kinds, list) or not groups:
+            raise PipelineRefused(
+                f"{spec}'s {up.GROOT_DECODE_STEP} step names no action groups to decode, {still}"
+            )
+        joints = "and quackd serves a GR00T whose every action group is joints (NON_EEF)"
+        for n, group in enumerate(groups):
+            kind = kinds[n] if n < len(kinds) and isinstance(kinds[n], Mapping) else {}
+            said = str(kind.get("type")).lower()
+            if said == up.GROOT_EEF:
+                raise PipelineRefused(
+                    f"{spec} decodes {str(group)[:80]} as an end-effector pose (EEF), {joints} "
+                    "(upstream_api.GROOT_DECODE)"
+                )
+            if said != up.GROOT_NON_EEF:
+                raise PipelineRefused(
+                    f"{spec} gives its action group {str(group)[:80]} the type "
+                    f"{str(kind.get('type'))[:40]!r}, which is not joints, {joints} "
+                    "(upstream_api.GROOT_DECODE)"
+                )
+    raw, modalities = pack.get("raw_stats"), pack.get("modality_config")
+    if not isinstance(raw, Mapping) or not isinstance(modalities, Mapping):
+        return Family()
+    return Family(
+        state_quantiles=_grouped_quantiles(raw, modalities, "state"),
+        action_quantiles=_grouped_quantiles(raw, modalities, "action"),
+    )
+
+
+def _grouped_quantiles(
+    raw: Mapping[str, Any], modalities: Mapping[str, Any], modality: str
+) -> wire.Quantiles | None:
+    """The 1st and 99th percentiles of `modality`, its groups' joined in `modality_config`'s
+    order as the pack step slices them (`upstream_api.GROOT_PERCENTILE_STATS`), or None where a
+    group lacks either or they are not finite numbers."""
+    section = modalities.get(modality)
+    keys = section.get("modality_keys") if isinstance(section, Mapping) else None
+    stats = raw.get(modality)
+    if not isinstance(keys, list) or not keys or not isinstance(stats, Mapping):
+        return None
+    q01: list[float] = []
+    q99: list[float] = []
+    for key in keys:
+        entry = stats.get(key)
+        low, high = (
+            entry.get(q) if isinstance(entry, Mapping) else None for q in up.QUANTILE_STATS
+        )
+        if not isinstance(low, list) or not isinstance(high, list) or len(low) != len(high):
+            return None
+        for value in (*low, *high):
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                return None
+        q01 += [float(v) for v in low]
+        q99 += [float(v) for v in high]
+    if len(q01) > wire.MAX_MOTORS or not all(math.isfinite(v) for v in q01 + q99):
+        return None
+    return wire.Quantiles(q01=q01, q99=q99)
+
+
+def check_groot_base(
+    hub: Hub, config: Mapping[str, Any], pins: Mapping[str, str], spec: str
+) -> None:
+    """A GR00T's pinned base, its `config.json` read before any weight: LeRobot builds the
+    backbone from a config of its own only while the base names that backbone, and fetches any
+    other as an AutoConfig trusting its repository's code, at no revision
+    (`upstream_api.GROOT_BASE_MODEL`)."""
+    base = str(config.get("base_model_path"))
+    revision = pins[base]
+    path = hub.file(base, revision, up.CONFIG_FILE)
+    if path is None:
+        raise PipelineRefused(
+            f"{base}@{revision}, {spec}'s base_model_path, has no {up.CONFIG_FILE}, so it is not a "
+            "GR00T N1.7 quackd can build from: pin nvidia/GR00T-N1.7-3B at a commit you have read"
+        )
+    said = _json(path, f"{base}@{revision}'s {up.CONFIG_FILE}")
+    backbone = said.get("model_name", up.GROOT_BACKBONE) if isinstance(said, Mapping) else None
+    if backbone != up.GROOT_BACKBONE:
+        raise PipelineRefused(
+            f"{base}@{revision}'s {up.CONFIG_FILE} names {str(backbone)[:80]!r} as its backbone, "
+            "which LeRobot would fetch at no revision and load trusting its repository's code: "
+            f"serve a GR00T whose base is built on {up.GROOT_BACKBONE}, whose config LeRobot "
+            "carries (upstream_api.GROOT_BASE_MODEL)"
+        )
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────
@@ -807,6 +980,8 @@ def fetch_checkpoint(
             "--pin names",
             "pin a whole commit you have read, or a tag with the Hub in reach",
         )
+    if shape.policy_type == "groot":
+        check_groot_base(hub, config, pinned, spec)
     rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub)
     # the code-free part is checked: now the weights, the processors' state and the models
     _required(hub, repo, revision, up.WEIGHTS_FILE, beside=directory)
@@ -1139,6 +1314,7 @@ __all__ = [
     "check_config",
     "check_family",
     "check_fixed",
+    "check_groot_base",
     "check_pinned",
     "check_processor",
     "fetch_checkpoint",
