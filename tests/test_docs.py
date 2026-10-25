@@ -995,6 +995,109 @@ def test_play_is_documented_where_it_is_configured() -> None:
     assert "QUACKD_PLAY" not in env_example, "no variable sets play"
 
 
+def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> None:
+    """`quackd policy endpoint` rents a GPU that bills by the hour, so somebody about to start one
+    has to find what it costs, what it asks, where each token goes and that quackd has never
+    created one: the front page's command and Policy rows, the guide's section with its warning,
+    SECURITY.md, `.env.example`, the architecture page, the ADR and its note on ADR-0048, the
+    changelog and PLAN.md's item for the first real one. The question the guide quotes is the
+    one `up` asks, and the refusal it quotes is the one the client says, each built here by the
+    code itself, so a change to either fails here until the page has it."""
+    from quackd_lerobot.policy import endpoint
+    from quackd_lerobot.policy.client import RemoteRunner
+    from quackd_lerobot.verbs import JOINTS
+    from tests.fake_hugging_face import provider_listing
+
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    row = next(
+        line for line in rows if line.startswith("| `quackd policy serve\\|check\\|endpoint`")
+    )
+    for needle in ("endpoint up NAME --policy", "--policy-url hf:NAME", "never created one"):
+        assert needle in row, f"the README's policy row does not say {needle!r}"
+    policy_row = next(line for line in README.splitlines() if line.startswith("| Policy |"))
+    assert "`hf:NAME`" in policy_row and "quackd policy endpoint up NAME" in policy_row
+    guide = (REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8")
+    section = guide.split("\n## On a Hugging Face Endpoint\n", 1)[1].split("\n## ", 1)[0]
+    warning = (
+        "quackd has never created a Hugging Face Endpoint: everything here ran against the test "
+        "suite's stand-ins on 127.0.0.1 with a scripted policy behind them."
+    )
+    unquoted = re.sub(r"^> ?", "", section, flags=re.M).replace("**", "")
+    assert section.lstrip().startswith("> [!WARNING]") and _one_line(warning) in _one_line(unquoted)
+    for needle in (
+        "--hub-token-from",
+        "--region eu-west-1 --instance nvidia-a10g",
+        "quackd policy endpoint pause",
+        "--idle-minutes",
+        "2026-10-25",
+        "python tests/fake_hugging_face.py",
+        "quackd policy check --policy-url hf:arm-smolvla --bench",
+    ):
+        assert needle in section, f"docs/guides/policies.md's endpoint section lacks {needle!r}"
+    record = endpoint.EndpointRecord(
+        name="arm-smolvla",
+        namespace="rok",
+        policy="lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28",
+        instance="nvidia-l4",
+        vendor="aws",
+        region="us-east-1",
+        idle_minutes=15,
+        token="0" * 64,
+        created="2026-10-25T00:00:00Z",
+        version="0",
+    )
+    compute = endpoint.find_compute(provider_listing(), "aws", "us-east-1", "nvidia-l4")
+    asked = endpoint.confirmation(record, compute)
+    assert f"{asked} [y/N]: y\n" in section, "the guide does not quote the question up asks"
+    client = RemoteRunner(
+        "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud",
+        token="0" * 64,
+        motors=JOINTS,
+        bearer="hf_" + "1" * 34,
+        endpoint="hf:arm-smolvla",
+    )
+    refused = client._proxy_refusal(503)
+    assert refused is not None and _one_line(refused) in _one_line(section)
+    security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
+    for needle in ("`GET /v1/health`", "quackd policy endpoint", "QUACKD_POLICY_TOKEN", "--yes"):
+        assert needle in security, f"SECURITY.md does not mention {needle!r}"
+    architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
+    assert "`endpoint.py`" in architecture and "`policy/endpoint_upstream_api.py`" in architecture
+    adr = _adr("0061")
+    assert "Amends [ADR-0048](0048-" in _notes("0061") and "never created" in adr
+    assert "0061-a-hugging-face-endpoint" in _notes("0048"), "ADR-0048 has no note by ADR-0061"
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("\n## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
+    for needle in ("quackd policy endpoint up", "hf:NAME", "/v1/health", "--token-env"):
+        assert needle in unreleased, f"CHANGELOG.md's [Unreleased] does not name {needle!r}"
+    assert "never created a Hugging Face Endpoint" in unreleased.split("### Known limitations")[1]
+    assert "**A first real Hugging Face Endpoint.**" in (REPO / "PLAN.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_nothing_names_an_address_for_hugging_face_but_the_code() -> None:
+    """The account's token goes to `endpoint.API` and `endpoint.HUB`, which are constants: a
+    variable that moved one, as `HF_ENDPOINT` moves huggingface_hub's, would move where the token
+    goes. So `.env.example` names the token and no address for it, and the one module that sends
+    it reads no variable but the token's own lookup and the Hub token `--hub-token-from` names."""
+    env_example = (REPO / ".env.example").read_text(encoding="utf-8")
+    assert "\n# HF_TOKEN=\n" in env_example, ".env.example does not name HF_TOKEN"
+    assert not re.search(r"^#?\s*(HF_ENDPOINT|QUACKD_HF\w*|\w*ENDPOINTS?_URL)=", env_example, re.M)
+    source = (
+        REPO / "adapters" / "lerobot" / "src" / "quackd_lerobot" / "policy" / "endpoint.py"
+    ).read_text(encoding="utf-8")
+    read = set(re.findall(r"os\.environ\.get\(([^)]*)\)", source))
+    assert read == {
+        "name",
+        "up.TOKEN_PATH_VARIABLE",
+        '"XDG_CACHE_HOME"',
+        "up.HOME_VARIABLE",
+        "variable",
+    }, read
+    assert "os.getenv" not in source and "environ[" not in source
+
+
 def test_the_controller_is_documented_where_it_is_configured() -> None:
     """`--controller vla` takes the model out of a run and leaves its success to a person, so
     somebody choosing it has to find what it asks of them: the front page's `run` row and its

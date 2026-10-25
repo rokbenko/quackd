@@ -301,6 +301,132 @@ A tunnel that drops mid-segment ends the segment with the arm held, and `manipul
 saying why. The server's port is 9875 unless `--port` says otherwise, the one after the Jetson
 daemon's 9874, and [SECURITY.md](../../SECURITY.md) lists it with the rest.
 
+Hugging Face rents a GPU by the hour as well, with no machine of yours to set up and no tunnel,
+and quackd starts the server on it for you ([below](#on-a-hugging-face-endpoint)).
+
+## On a Hugging Face Endpoint
+
+> [!WARNING]
+> **quackd has never created a Hugging Face Endpoint: everything here ran against the test
+> suite's stand-ins on 127.0.0.1 with a scripted policy behind them.** The stand-ins answer as
+> Hugging Face's own pages say the API and its proxy do. What those pages leave out is in
+> [the endpoint's table](../adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints),
+> each row UNVERIFIED until a first real endpoint settles it, and no bench through one has been
+> timed.
+
+Instead of a GPU machine of your own, `quackd policy endpoint up` rents one from Hugging Face by
+the hour, as an [Inference Endpoint](https://huggingface.co/docs/inference-endpoints), and runs
+the same `quackd policy serve` on it, behind Hugging Face's TLS. The arm's process stays on the
+laptop and reaches it with `--policy-url hf:NAME`, and the arm checks it before any torque as it
+checks any server. Each time the endpoint starts, its container installs this release of quackd
+from PyPI with `uvx`, so a build from a checkout cannot start one, and nothing uploaded after an
+hour past the release is installed, so a start a month later resolves the same torch as the
+first.
+
+**What it needs.** A Hugging Face account with a way to pay, since an Inference Endpoint bills
+it by the minute, and a token of that account that may create, pause and delete its endpoints,
+which the API's own document marks as writes. Make it on huggingface.co, fine-grained where you
+can, since what the token may do goes wherever it does. quackd finds it where huggingface_hub
+does, in `HF_TOKEN`, then `HUGGING_FACE_HUB_TOKEN`, then the file `hf auth login` writes, and no
+variable moves where it is sent. The laptop needs `quackd[lerobot]` and nothing more: the
+container installs the server's extra itself.
+
+**Start it**, with the flags the checkpoint needs, as `quackd policy serve` would take them:
+
+```bash
+quackd policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
+```
+
+Before anything bills, `up` checks what it can: that this quackd is a release on PyPI, that the
+instance is a GPU Hugging Face offers in that region and its price that day, that the account has
+quota left for one, that the checkpoint and every `--pin` exist at their revisions and are not
+gated or private, and that the checkpoint's `config.json` is one the server serves. Every flag is
+checked as `quackd policy serve` checks it, and a scripted policy is refused, since it needs no
+GPU. Then it asks, and with no terminal to ask at it needs `--yes`. Here it is against the test
+suite's stand-ins, run with `python tests/fake_hugging_face.py`, with the `y` a person types:
+
+```
+$ quackd policy endpoint up arm-smolvla --policy lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 --pin HuggingFaceTB/SmolVLM2-500M-Video-Instruct@7b375e1b73b11138ff12fe22c8f2822d8fe03467 --fps 30
+This starts a Hugging Face Inference Endpoint on rok's account: arm-smolvla, serving lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28 on nvidia-l4 x1 in aws us-east-1. It bills $0.80 an hour while it runs (Hugging Face's price, read just now), scales to zero after 15 minutes with no request, and bills nothing then or while paused. Start it? [y/N]: y
+created  arm-smolvla on rok's account, nvidia-l4 x1 in aws us-east-1, $0.80 an hour while it runs
+state    pending at 0 s
+state    initializing at 1 s
+state    running at 2 s
+url      http://127.0.0.1:51814
+token    kept in ~/.quackd/endpoints.json, for hf:arm-smolvla
+serving  scripted:sweep (quackd-policy 1, quackd 0.25.0), gpu yes
+  Run with --policy-url hf:arm-smolvla. quackd policy endpoint pause arm-smolvla stops the bill.
+```
+
+That is the stand-ins' output, and three of its rows would read otherwise on a real endpoint. Its
+`url` is `https://<id>.endpoints.huggingface.cloud`, its states take minutes rather than seconds,
+since the container installs torch and the checkpoint is fetched as it starts, and `serving`
+names the checkpoint, where the stand-in container serves `scripted:sweep` in its place. `up`
+waits 30 minutes unless `--wait-minutes` says otherwise, and returns at once with `--no-wait`. An
+endpoint that fails, that does not serve in time, or whose server says it has no GPU is paused,
+which stops its bill, and the last lines of its log are quoted, every token taken out of them.
+
+**Check it and run on it**, as on any server, with no tunnel and no token to hand over:
+
+```bash
+quackd policy check --policy-url hf:arm-smolvla --bench
+quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
+```
+
+**Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
+
+```bash
+quackd policy endpoint pause arm-smolvla
+```
+
+A run that reaches a paused endpoint, or one still starting, is told so before the arm connects.
+Against the stand-ins:
+
+```
+✗ error: hf:arm-smolvla is not serving (HTTP 503 from Hugging Face, not from quackd's server): it
+is starting, paused or scaled to zero. quackd policy endpoint up arm-smolvla wakes it and waits
+until it answers
+```
+
+`quackd policy endpoint list` says what this machine started and how each is now, and `delete`
+removes one from Hugging Face and forgets it here. An endpoint that has no request for
+`--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and bills nothing, and the
+next request wakes it, which takes minutes: start it with `up` before a run rather than waking it
+with one. quackd starts no endpoint that never scales to zero.
+
+**What it costs.** Hugging Face's price list, `GET /v2/provider`, which `up` reads with no token
+before it asks you, said this of AWS on 2026-10-25. An endpoint bills by the minute while it is
+initializing or running, and nothing while it is paused or scaled to zero:
+
+| GPU | `--instance` | Memory | Where (`--region`) | An hour |
+|---|---|---|---|---|
+| NVIDIA T4 | `nvidia-t4` | 16 GB | `us-east-1`, `eu-west-1` | $0.50 |
+| NVIDIA L4, the default | `nvidia-l4` | 24 GB | `us-east-1` | $0.80 |
+| NVIDIA A10G | `nvidia-a10g` | 24 GB | `us-east-1`, `eu-west-1` | $1.00 |
+
+In Europe there was no L4 that day, so give `--region eu-west-1 --instance nvidia-a10g`.
+
+**Where each token goes.** The endpoint is `authenticated`, which Hugging Face's configuration
+page says any Hugging Face account can reach, so the lock on a policy whose answers move an arm
+is the server's own token, which no account holds:
+
+| Token | Where it comes from | Where it goes | Where it never goes |
+|---|---|---|---|
+| Your Hugging Face token | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` or `hf auth login`'s file | huggingface.co and api.endpoints.huggingface.cloud, to manage the endpoint, and as the bearer to the one endpoint address `up` recorded | the endpoint, PyPI, the price list, any other address |
+| The server's token | made by `up`, 64 hex digits | the endpoint's secrets as `QUACKD_POLICY_TOKEN`, and `~/.quackd/endpoints.json` | a URL, a run's record, the terminal |
+| A Hub token for a gated checkpoint | the variable `--hub-token-from` names | the endpoint's secrets as `HF_TOKEN`, and huggingface.co, to read the checkpoint's config | refused when it is your account's own token |
+
+**Gated and private checkpoints.** The endpoint fetches its checkpoint with a token of its own or
+none, so `up` refuses a checkpoint or a `--pin` that is gated or private, pi05's PaliGemma
+tokenizer among them, unless `--hub-token-from VAR` names a variable holding a read token granted
+it. Make that a fine-grained read token for those repositories alone, since it goes into the
+endpoint: your account's own token is refused there.
+
+What a first real endpoint would settle, an ACT on a T4 for a few cents, is an open item in
+[PLAN.md](../../PLAN.md), and why quackd starts a server for you here, where
+[ADR-0048](../adr/0048-policies-are-the-arms-executor.md) has you start it, is
+[ADR-0061](../adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md).
+
 ## The policies
 
 quackd's server serves three LeRobot policy types, ACT, SmolVLA and pi05, the three whose

@@ -3065,8 +3065,9 @@ have not run at all.
 
 `quackd policy endpoint` starts [the policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve)
 on a Hugging Face Inference Endpoint, a GPU rented by the hour behind Hugging Face's proxy, and a
-run reaches it with `--policy-url hf:NAME` ([guides/policies.md](../../guides/policies.md)). The
-names it relies on were read on 2026-10-25 from the API's own
+run reaches it with `--policy-url hf:NAME`
+([guides/policies.md](../../guides/policies.md#on-a-hugging-face-endpoint)). The names it relies
+on were read on 2026-10-25 from the API's own
 [OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
 from Hugging Face's pages about the service, from uv's and PyPI's documentation for what a
 container installs, and from huggingface_hub 1.29.0, the version `uv.lock` holds, at the commit
