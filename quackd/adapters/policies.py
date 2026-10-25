@@ -113,6 +113,19 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         licence_read="2026-10-25",
         ran="has not run",
     ),
+    PolicyFamily(
+        type="xvla",
+        label="X-VLA",
+        maker="Jinliang Zheng et al. (2toINF)",
+        takes_words=True,
+        extra=_EXTRA,
+        needs=("--pin facebook/bart-large@REVISION, its tokenizer",),
+        gpu="wants one (not measured)",
+        licence="Apache-2.0",
+        licence_url="https://huggingface.co/lerobot/xvla-base",
+        licence_read="2026-10-25",
+        ran="has not run, and only its auto action mode is served",
+    ),
 )
 """The types the server serves, in `upstream_api.SERVED_TYPES`' order."""
 

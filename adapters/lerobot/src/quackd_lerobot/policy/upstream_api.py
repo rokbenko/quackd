@@ -18,8 +18,8 @@ server (`server.py`), because the server is where a checkpoint is loaded (`pipel
 the arm's process never imports torch or LeRobot's policies at all: `client.py` reaches the
 server over HTTP. POLICY_PIPELINE is the one row a job exercises: CI's torch job runs a tiny
 random ACT through the real server (`tests/test_policy_pipeline.py`). No trained checkpoint has
-been loaded, and SmolVLA, pi05, pi0 and tick mode have not run at all: VLA_PIPELINE and
-TICK_MODE say what quackd does about that.
+been loaded, and SmolVLA, pi05, pi0, X-VLA and tick mode have not run at all: VLA_PIPELINE
+and TICK_MODE say what quackd does about that.
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ _SMOLVLA = "src/lerobot/policies/smolvla"
 _PI05 = "src/lerobot/policies/pi05"
 _PI0 = "src/lerobot/policies/pi0"
 _PI0_FAST = "src/lerobot/policies/pi0_fast"
+_XVLA = "src/lerobot/policies/xvla"
 _ACT_MODEL = "src/lerobot/policies/act/modeling_act.py"
 _RELATIVE = "src/lerobot/processor/relative_action_processor.py"
 _SMOLVLM = "src/lerobot/policies/smolvla/smolvlm_with_expert.py"
@@ -153,7 +154,8 @@ CHUNK_SIZE = UpstreamRef(
     "them are played before the next (line 86), both counted in environment steps, and "
     "`n_action_steps` may not exceed `chunk_size` (line 143). SmolVLA's defaults are 50 and 50 "
     f"({src(_SMOLVLA_CFG, 29)}), and so are pi0's ({src(f'{_PI0}/configuration_pi0.py', 36)}). "
-    "The policy server reports both",
+    f"X-VLA's are 32 and 32 ({src(f'{_XVLA}/configuration_xvla.py', 89)}). The policy server "
+    "reports both",
 )
 TEMPORAL_ENSEMBLE = UpstreamRef(
     "ACTConfig.temporal_ensemble_coeff",
@@ -181,8 +183,8 @@ TOKENIZER_TRUSTS_REMOTE_CODE = UpstreamRef(
     src(_TOKENIZER, 348),
     "the action tokenizer step (`action_tokenizer_processor`, line 327) loads its tokenizer "
     "trusting the repository's own code unless told not to. The observation tokenizer "
-    "SmolVLA, pi05 and pi0 use (`tokenizer_processor`, line 55) loads one by `tokenizer_name` "
-    "at no "
+    "SmolVLA, pi05, pi0 and X-VLA use (`tokenizer_processor`, line 55) loads one by "
+    "`tokenizer_name` at no "
     "revision (line 111), and SmolVLA names its backbone by an unpinned Hub name "
     f"(`vlm_model_name`, {src(_SMOLVLA_CFG, 84)}). The policy server allows no action "
     "tokenizer, forces trust_remote_code False on any step that has it, and pins every such "
@@ -249,16 +251,17 @@ FEATURE_TYPES = UpstreamRef(
     "other, since an arm has nothing to give an ENV or a LANGUAGE feature from",
 )
 POLICY_TYPES = UpstreamRef(
-    '"act", "smolvla", "pi05", "pi0"',
+    '"act", "smolvla", "pi05", "pi0", "xvla"',
     "VERIFIED",
     src(_ACT_CFG, 22),
     "the `type` config.json names its policy by, as ACTConfig, SmolVLAConfig "
-    f"({src(_SMOLVLA_CFG, 24)}), PI05Config ({src(_PI05_CFG, 28)}) and PI0Config "
-    f"({src(f'{_PI0}/configuration_pi0.py', 28)}) register it. These are the types whose "
+    f"({src(_SMOLVLA_CFG, 24)}), PI05Config ({src(_PI05_CFG, 28)}), PI0Config "
+    f"({src(f'{_PI0}/configuration_pi0.py', 28)}) and XVLAConfig "
+    f"({src(f'{_XVLA}/configuration_xvla.py', 76)}) register it. These are the types whose "
     "processors the policy server's allowlist was read from, each its own, and any other type "
     "is refused before a byte of its weights is fetched",
 )
-SERVED_TYPES = ("act", "smolvla", "pi05", "pi0")
+SERVED_TYPES = ("act", "smolvla", "pi05", "pi0", "xvla")
 DEFAULT_PROCESSOR_STEPS = UpstreamRef(
     "rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, "
     "unnormalizer_processor",
@@ -322,6 +325,75 @@ PI0_STEP_NAMES = (
     "relative_actions_processor",
     "absolute_actions_processor",
 )
+XVLA_PROCESSOR_STEPS = UpstreamRef(
+    "tokenizer_processor, xvla_image_to_float, xvla_imagenet_normalize, xvla_add_domain_id, "
+    "xvla_image_scale",
+    "VERIFIED",
+    src(f"{_XVLA}/processor_xvla.py", 62),
+    "the steps X-VLA's pre-processor adds to the default ones (to line 70), and "
+    "`xvla_image_scale` (line 203), which its own factory does not use, under the names they "
+    f"register ({src(_TOKENIZER, 55)}, lines 253, 327 and 404). Each but the tokenizer is a fixed "
+    "transform of the data: `xvla_image_to_float` takes an image from 0..255 to 0..1, "
+    "`xvla_imagenet_normalize` normalises it by ImageNet's statistics, `xvla_image_scale` takes "
+    "it from 0..1 back to 0..255, and `xvla_add_domain_id` hands the model the domain its data "
+    "came from (`domain_id`, 0 unless it says otherwise, line 415). That domain picks one of "
+    "`num_domains` rows in every domain-aware layer and in the soft prompts "
+    f"({src(f'{_XVLA}/soft_transformer.py', 226)} and line 344), and `num_domains` is 30 unless "
+    f"config.json says otherwise ({src(f'{_XVLA}/configuration_xvla.py', 113)}), so a domain "
+    "past them is refused. With the default ones, the only steps an X-VLA may name",
+)
+XVLA_STEP_NAMES = (
+    "tokenizer_processor",
+    "xvla_image_to_float",
+    "xvla_imagenet_normalize",
+    "xvla_add_domain_id",
+    "xvla_image_scale",
+)
+XVLA_DOMAIN_STEP = "xvla_add_domain_id"
+XVLA_DEFAULT_DOMAIN = 0
+XVLA_DEFAULT_DOMAINS = 30
+"""The step XVLA_PROCESSOR_STEPS reads the domain from, the domain it hands over when its config
+names none, and the `num_domains` an X-VLA config has when it names none."""
+XVLA_ACTION_MODES = UpstreamRef(
+    "X-VLA's action_mode: ee6d, joint, agibot_ee6d, franka_joint7, auto, so101_bimanual",
+    "VERIFIED",
+    src(f"{_XVLA}/action_hub.py", 113),
+    "the spaces X-VLA's head decodes its answer in, chosen by config.json's `action_mode`, lowered "
+    f"({src(f'{_XVLA}/modeling_xvla.py', 68)}), and `ee6d` unless it says otherwise "
+    f"({src(f'{_XVLA}/configuration_xvla.py', 120)}). `ee6d` and `agibot_ee6d` (line 220) are an "
+    "end effector's position, its rotation in six numbers and a gripper, `joint` (line 175) is "
+    "two arms of six joints with their grippers put through a sigmoid, `franka_joint7` (line "
+    "270) is a Franka Panda's joints and `so101_bimanual` (line 428) two SO-101s. `auto` (line "
+    "345, to line 425) is the dataset's own action, the model's answer trimmed back to its "
+    "length, which on an SO-101 is the arm's own joint positions. The server serves `auto` "
+    "alone, and refuses every other mode before a pin or a weight",
+)
+XVLA_SERVED_MODE = "auto"
+XVLA_DEFAULT_MODE = "ee6d"
+"""The one mode XVLA_ACTION_MODES says the server serves, and the one a config that names no
+`action_mode` decodes in."""
+XVLA_LIBERO_ROTATION = UpstreamRef(
+    "xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the "
+    "gripper into -1 or 1",
+    "VERIFIED",
+    src(f"{_XVLA}/processor_xvla.py", 450),
+    "the post-processor step LIBERO's X-VLA is built with (`make_xvla_libero_pre_post_processors`, "
+    "line 515, to line 535): it reads an end effector's position and rotation out of the action, "
+    "turns the rotation into an axis and an angle and the gripper into -1 or 1 (to line 500), "
+    "for LIBERO's simulator. No served type allows it, and the server refuses it in a sentence "
+    "of its own",
+)
+XVLA_STRICT_LOAD = UpstreamRef(
+    "XVLAPolicy.from_pretrained loads its weights strictly",
+    "VERIFIED",
+    src(f"{_XVLA}/modeling_xvla.py", 424),
+    "whatever `strict` it is passed (line 436), it loads its state dict with strict=True (line "
+    "506), once it has put back the tied embedding a save drops (lines 497 to 504), so the "
+    "server's strict=True asks nothing more of it. Its Florence-2 is built from config.json's "
+    f"`florence_config` ({src(f'{_XVLA}/configuration_xvla.py', 168)}, and line 86 here), never "
+    "fetched, so the only model an X-VLA names is its tokenizer's, `facebook/bart-large` unless "
+    "it says otherwise (configuration_xvla.py line 103)",
+)
 DEVICE_OVERRIDE = UpstreamRef(
     'overrides={"device_processor": {"device": device}}',
     "VERIFIED",
@@ -367,14 +439,16 @@ ACTION_FEATURE_NAMES = UpstreamRef(
     "has them, and the arm's side checks them against its bus's motors",
 )
 MISSING_IMAGES_PADDED = UpstreamRef(
-    "SmolVLA, pi05 and pi0 run with some of their images missing",
+    "SmolVLA, pi05, pi0 and X-VLA run with some of their images missing",
     "VERIFIED",
     src(f"{_SMOLVLA}/modeling_smolvla.py", 340),
     "an image key with nothing under it is left out (SmolVLA pads up to `empty_cameras` of "
     "them, line 373), and only all of them missing raises (line 343, pi05's "
     f"{src(f'{_PI05}/modeling_pi05.py', 965)}, and pi0's "
     f"{src(f'{_PI0}/modeling_pi0.py', 995)}, which pads each missing one with -1 and a mask of "
-    "zero, to line 1044). ACT takes every image it names "
+    "zero, to line 1044). X-VLA stacks the images it is given and pads them out to "
+    f"`num_image_views` with zeros and a mask of zero ({src(f'{_XVLA}/modeling_xvla.py', 311)}, "
+    "to line 341, only all of them missing raising). ACT takes every image it names "
     f"(`predict_action_chunk` stacks each, {src(_ACT_MODEL, 131)}), so the arm's side "
     "refuses an ACT with an image no camera is mapped to, and says which of the others' go "
     "padded",
@@ -495,19 +569,21 @@ VLA_PIPELINE = UpstreamRef(
     "VLA_PIPELINE",
     "UNVERIFIED",
     src(f"{_SMOLVLA}/processor_smolvla.py", 68),
-    "that SmolVLA, pi05 and pi0 run through the same pipeline as ACT: their tokenizer step, the "
-    "nested repositories pinned with --pin and fetched without any code in them, the images "
-    "a camera does not give left padded, their weights loaded strictly (SmolVLA's by LeRobot's "
-    "own loader, pi05's and pi0's by quackd's copy of theirs, PI05_FROM_PRETRAINED and "
-    "PI0_FROM_PRETRAINED), so a checkpoint saved with weights its model does not have would be "
+    "that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer "
+    "step, the nested repositories pinned with --pin and fetched without any code in them, the "
+    "images a camera does not give left padded, their weights loaded strictly (SmolVLA's and "
+    "X-VLA's by LeRobot's own loaders, XVLA_STRICT_LOAD, pi05's and pi0's by quackd's copy of "
+    "theirs, PI05_FROM_PRETRAINED and PI0_FROM_PRETRAINED), so a checkpoint saved with weights "
+    "its model does not have would be "
     "refused, and pi05's and pi0's relative actions made absolute over a whole chunk at once, "
     "against the state it was predicted from. That last one is not what LeRobot's own loop "
     "does (RELATIVE_ACTIONS), and it is how training made the chunk relative, so a trained "
     "pi05 or pi0 is taken to want it. No job runs them, since the lab's venv and CI install no "
-    "transformers, and pi05 and pi0 have not run anywhere. quackd loads them through the "
-    "allowlist each type has and the pins and refusals ACT's go through, says in /v1/policy "
-    "which images go padded, and a first run should be on the simulator with "
-    "`quackd policy check --bench` first",
+    "transformers, and pi05, pi0 and X-VLA have not run anywhere. An X-VLA is served in its "
+    "`auto` action mode alone (XVLA_ACTION_MODES), taken to answer in the joints of the arm it "
+    "learned from. quackd loads them through the allowlist each type has and the pins and "
+    "refusals ACT's go through, says in /v1/policy which images go padded, and a first run "
+    "should be on the simulator with `quackd policy check --bench` first",
 )
 TICK_MODE = UpstreamRef(
     "TICK_MODE",

@@ -79,6 +79,7 @@ STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
     "smolvla": frozenset(up.DEFAULT_STEP_NAMES + up.SMOLVLA_STEP_NAMES),
     "pi05": frozenset(up.DEFAULT_STEP_NAMES + up.PI05_STEP_NAMES),
     "pi0": frozenset(up.DEFAULT_STEP_NAMES + up.PI0_STEP_NAMES),
+    "xvla": frozenset(up.DEFAULT_STEP_NAMES + up.XVLA_STEP_NAMES),
 }
 """The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
 registers it under: the steps every policy is built from, which are all of ACT's, and those
@@ -90,6 +91,11 @@ REFUSED_STEPS: Mapping[str, str] = {
         "which loads its tokenizer trusting the repository's own code unless told not to, and "
         "turns actions into tokens for training, which a server never does: serve a checkpoint "
         "whose processors tokenise no actions (upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE)"
+    ),
+    "xvla_rotation_6d_to_axis_angle": (
+        "which turns an end-effector rotation into axis-angle and the gripper into -1 or 1, and an "
+        "SO-101 takes joint positions: serve an X-VLA fine-tuned in 'auto' mode, whose "
+        "post-processor has no such step (upstream_api.XVLA_LIBERO_ROTATION)"
     ),
 }
 """Steps no type may name, each with why in the words its refusal goes on with, refused before
@@ -134,7 +140,7 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 """A commit, as the Hub's cache names the directory a revision's files land in."""
 STATE_FILE = re.compile(r"^[\w.\-]+\.safetensors$", re.ASCII)
 """A processor step's `state_file`: a plain file name beside the JSON, never a path."""
-PADDED_TYPES = frozenset({"smolvla", "pi05", "pi0"})
+PADDED_TYPES = frozenset({"smolvla", "pi05", "pi0", "xvla"})
 """The policy types that run with some of their images missing
 (`upstream_api.MISSING_IMAGES_PADDED`)."""
 
@@ -432,9 +438,41 @@ def check_family(
 ) -> Family:
     """A checkpoint's config and its processors' steps read the way its own type's code reads
     them, before any pin is checked or any weight fetched, or a refusal that says what in them
-    could not drive an arm's joints. ACT, SmolVLA and pi05 have nothing past what every type is
-    checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
+    could not drive an arm's joints. ACT, SmolVLA, pi05 and pi0 have nothing past what every type
+    is checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
+    if config.get("type") == "xvla":
+        _check_xvla(config, steps, spec)
     return Family()
+
+
+def _check_xvla(config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str) -> None:
+    """An X-VLA decodes its answer in the space `action_mode` names, lowered, `ee6d` when it
+    names none, and only `auto` is an arm's own joints. Its domain step hands the model a
+    domain, which picks a row of every domain-aware layer, so it is a whole number below
+    `num_domains` (`upstream_api.XVLA_ACTION_MODES`, `XVLA_PROCESSOR_STEPS`)."""
+    mode = config.get("action_mode", up.XVLA_DEFAULT_MODE)
+    if not isinstance(mode, str) or mode.lower() != up.XVLA_SERVED_MODE:
+        raise PipelineRefused(
+            f"{spec} is an X-VLA whose action_mode is {mode!r}, which is not this arm's joints, "
+            f"and quackd serves an X-VLA in {up.XVLA_SERVED_MODE!r} mode "
+            "(upstream_api.XVLA_ACTION_MODES)"
+        )
+    domains = _count(config.get("num_domains", up.XVLA_DEFAULT_DOMAINS))
+    if domains is None:
+        raise PipelineRefused(
+            f"{spec}'s num_domains is {config.get('num_domains')!r}, which is not a count of "
+            "domains (upstream_api.XVLA_PROCESSOR_STEPS)"
+        )
+    for step in steps:
+        if step["registry_name"] != up.XVLA_DOMAIN_STEP:
+            continue
+        domain = step["config"].get("domain_id", up.XVLA_DEFAULT_DOMAIN)
+        if isinstance(domain, bool) or not isinstance(domain, int) or not 0 <= domain < domains:
+            raise PipelineRefused(
+                f"{spec}'s {up.XVLA_DOMAIN_STEP} step hands the model domain {domain!r}, and it "
+                f"has {domains} domains, numbered from 0: serve a checkpoint whose step names one "
+                "of them (upstream_api.XVLA_PROCESSOR_STEPS)"
+            )
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────

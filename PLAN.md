@@ -141,8 +141,8 @@ before.
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md)). Nobody has handed the arm to a
   policy through quackd. Besides the tiny random ACT CI builds, one trained ACT from the Hub has
   been served, on the laptop's CPU on 2026-09-28, and drove the arm's twin on the simulator.
-  SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05 and pi0 have not
-  run ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
+  SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05, pi0 and X-VLA
+  have not run ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
   [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md) is the order: a run
   with `scripted:hold`, then `scripted:sweep`, then a checkpoint checked with
   `quackd policy check --bench`, each rehearsed on the arm's twin first, with a hand on the

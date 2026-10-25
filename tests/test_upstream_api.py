@@ -547,7 +547,16 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
         assert ref.status == "VERIFIED", ref
     assert api.DEVICE_STEP in api.DEFAULT_STEP_NAMES and api.DEVICE_STEP in api.DEVICE_OVERRIDE.name
     assert api.POLICY_TYPES.name == ", ".join(f'"{t}"' for t in api.SERVED_TYPES)
-    assert set(api.SERVED_TYPES) <= set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
+    # LeRobot's own async server lists no X-VLA, and quackd never runs that server
+    # (ASYNC_PICKLE), so its list says only which served types it would also take
+    served_there = set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
+    assert set(api.SERVED_TYPES) - served_there == {"xvla"}
+    # the X-VLA facts the pipeline reads as data, beside the refs that read them
+    assert api.XVLA_SERVED_MODE in api.XVLA_ACTION_MODES.name.split(": ", 1)[1].split(", ")
+    assert api.XVLA_DEFAULT_MODE in api.XVLA_ACTION_MODES.name
+    assert api.XVLA_DOMAIN_STEP in api.XVLA_STEP_NAMES
+    assert f"`num_domains` is {api.XVLA_DEFAULT_DOMAINS} unless" in api.XVLA_PROCESSOR_STEPS.note
+    assert f"`domain_id`, {api.XVLA_DEFAULT_DOMAIN} unless" in api.XVLA_PROCESSOR_STEPS.note
     keys = api.FEATURE_KEYS.name
     assert api.STATE_KEY in keys and api.IMAGES_PREFIX in keys and api.ACTION_KEY in keys
     for stat in api.QUANTILE_STATS:
@@ -564,6 +573,7 @@ _FAMILY_STEPS = (
     (lerobot_policy_api.SMOLVLA_PROCESSOR_STEPS, lerobot_policy_api.SMOLVLA_STEP_NAMES),
     (lerobot_policy_api.PI05_PROCESSOR_STEPS, lerobot_policy_api.PI05_STEP_NAMES),
     (lerobot_policy_api.PI0_PROCESSOR_STEPS, lerobot_policy_api.PI0_STEP_NAMES),
+    (lerobot_policy_api.XVLA_PROCESSOR_STEPS, lerobot_policy_api.XVLA_STEP_NAMES),
 )
 
 

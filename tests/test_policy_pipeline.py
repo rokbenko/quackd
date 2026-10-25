@@ -23,6 +23,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -570,6 +571,140 @@ def test_a_family_quackd_read_and_will_not_serve_is_refused_from_its_config_alon
         _fetch(hub, fps=float(FPS))
     assert "instead" in str(refused.value)
     assert [filename for _, _, filename in hub.asked] == [up.CONFIG_FILE]
+
+
+BART = "facebook/bart-large"
+"""The tokenizer an X-VLA's processor names unless its config says otherwise."""
+
+
+def _xvla(
+    tmp_path: Path,
+    *,
+    drop: Sequence[str] = (),
+    domain_id: Any = 0,
+    post_step: Mapping[str, Any] | None = None,
+    **over: Any,
+) -> FakeHub:
+    """An X-VLA as `mertkirgil/xvla-so101-renkli-kalem` was saved, read on 2026-10-25: `auto`
+    mode, six motors, a front camera, chunks of 30, 30 domains with its step handing over the
+    first, BART's tokenizer named in its step, Florence-2 described in its config and never
+    named as a model, and its actions normalised by their mean and deviation. `drop` leaves
+    keys out of its config, and `post_step` adds a step to its post-processor."""
+    n = len(JOINTS)
+    rename, batch, device, normalizer, unnormalizer = up.DEFAULT_STEP_NAMES
+    tokenizer, to_float, imagenet, domain, _ = up.XVLA_STEP_NAMES
+    config = {
+        "type": "xvla",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}front": {"type": "VISUAL", "shape": [3, 480, 640]},
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 30,
+        "n_action_steps": 30,
+        "action_mode": "auto",
+        "num_domains": 30,
+        "domain_feature_key": None,
+        "tokenizer_name": BART,
+        "max_action_dim": 20,
+        "max_state_dim": 20,
+        "num_image_views": 3,
+        "use_proprio": True,
+        "florence_config": {"vision_config": {"model_type": "davit"}, "text_config": {}},
+        "normalization_mapping": {"STATE": "IDENTITY", "ACTION": "MEAN_STD", "VISUAL": "IDENTITY"},
+        **over,
+    }
+    for key in drop:
+        del config[key]
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {"rename_map": {}}},
+            {"registry_name": batch, "config": {}},
+            {"registry_name": tokenizer, "config": {"max_length": 50, "tokenizer_name": BART}},
+            {"registry_name": domain, "config": {"domain_id": domain_id}},
+            {"registry_name": to_float, "config": {"image_keys": None, "validate_range": True}},
+            {"registry_name": imagenet, "config": {"image_keys": None}},
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+            {
+                "registry_name": normalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_preprocessor_step_7_{normalizer}.safetensors",
+            },
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [
+            {
+                "registry_name": unnormalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_postprocessor_step_0_{unnormalizer}.safetensors",
+            },
+            *([post_step] if post_step is not None else []),
+            {"registry_name": device, "config": {"device": "cpu", "float_dtype": None}},
+        ],
+    }
+    return _hub(tmp_path, config=config, pre=pre, post=post)
+
+
+def test_an_xvla_in_auto_mode_is_served_with_its_tokenizer_pinned(tmp_path: Path) -> None:
+    """An X-VLA in `auto` mode answers in the dataset's own action, an SO-101's joints. Its
+    Florence-2 is built from its config, so BART's tokenizer is the one model it names, pinned
+    and fetched without weights, and it runs with a camera it is not given padded. LeRobot lowers
+    the mode before it reads it, so the server does too (`upstream_api.XVLA_ACTION_MODES`)."""
+    hub = _xvla(tmp_path)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {BART}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    checkpoint = _fetch(hub, fps=float(FPS), pins=(f"{BART}@{PINNED}",))
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("xvla", 30, 30)
+    assert shape.pads_images and not shape.per_tick
+    ((repo, revision, patterns),) = hub.snapshots
+    assert (repo, revision, patterns) == (BART, PINNED, P.TOKENIZER_FILES)
+    where = str(hub.snapshot(repo, revision, patterns))
+    assert checkpoint.pre_overrides["tokenizer_processor"] == {"tokenizer_name": where}
+    assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+    upper = _xvla(tmp_path / "upper", action_mode="AUTO")
+    assert _fetch(upper, fps=float(FPS), pins=(f"{BART}@{PINNED}",)).shape.policy_type == "xvla"
+
+
+_ROTATION = {
+    "registry_name": "xvla_rotation_6d_to_axis_angle",
+    "config": {"expected_action_dim": 10},
+}
+
+
+@pytest.mark.parametrize(
+    ("kw", "needle"),
+    [
+        ({"action_mode": "ee6d"}, "action_mode is 'ee6d', which is not this arm's joints"),
+        ({"action_mode": "joint"}, "action_mode is 'joint'"),
+        ({"action_mode": "so101_bimanual"}, "action_mode is 'so101_bimanual'"),
+        ({"action_mode": "franka_joint7"}, "action_mode is 'franka_joint7'"),
+        ({"drop": ["action_mode"]}, "action_mode is 'ee6d'"),
+        ({"action_mode": 7}, "action_mode is 7"),
+        ({"domain_id": 30}, "domain 30, and it has 30 domains"),
+        ({"domain_id": -1}, "hands the model domain -1"),
+        ({"domain_id": True}, "hands the model domain True"),
+        ({"domain_id": "0"}, "hands the model domain '0'"),
+        ({"num_domains": 0}, "not a count of domains"),
+        ({"post_step": _ROTATION}, "axis-angle and the gripper into -1 or 1"),
+    ],
+)
+def test_an_xvla_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
+    tmp_path: Path, kw: dict[str, Any], needle: str
+) -> None:
+    """Every mode but `auto` decodes the answer as an end effector's pose or another robot's
+    joints, and LIBERO's rotation step turns it into an axis and an angle and a gripper of -1 or
+    1, none of which an SO-101 takes. A domain past the model's is a row it does not have. Each
+    is refused in a sentence of its own, before the tokenizer's pin or a weight is fetched."""
+    hub = _xvla(tmp_path, **kw)
+    with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
+        _fetch(hub, fps=float(FPS), pins=(f"{BART}@{PINNED}",))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    assert not hub.snapshots
 
 
 class _Stat:

@@ -18,9 +18,9 @@ is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 > twin of the lab's arm on the simulator through `quackd policy serve` and `quackd serve-mcp`,
 > and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `quackd run --goal`.
 > SmolVLA loaded on the same laptop and never answered a step in time on its CPU
-> ([below](#smolvla-and-act)), pi05 and pi0 have not run, and FLUX 3 Action is not served at
-> all. Rehearse on the simulator first, keep a hand on the arm's power switch the first time a
-> policy drives it, and send back what happened
+> ([below](#smolvla-and-act)), pi05, pi0 and X-VLA have not run, and FLUX 3 Action is not
+> served at all. Rehearse on the simulator first, keep a hand on the arm's power switch the first
+> time a policy drives it, and send back what happened
 > ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#14-what-to-report)).
 
 ## Two processes, two terminals
@@ -257,7 +257,7 @@ ones with nothing to send, the ticks a second and the round trip.
 
 ## On a rented GPU
 
-Pi0.5, Pi0 and SmolVLA want a GPU. The server runs there, bound to that
+Pi0.5, Pi0, X-VLA and SmolVLA want a GPU. The server runs there, bound to that
 machine's own loopback, and the laptop reaches it through an ssh tunnel. The arm's process stays
 on the laptop, with the arm.
 
@@ -303,10 +303,10 @@ daemon's 9874, and [SECURITY.md](../../SECURITY.md) lists it with the rest.
 
 ## The policies
 
-quackd's server serves four LeRobot policy types, ACT, SmolVLA, pi05 and pi0, each allowed
-the processor steps read for it at LeRobot 0.6.1 and no other type's. Any other type is refused
-before a byte of its weights is fetched, and pi0-FAST in a sentence of its own
-([below](#pi0-and-why-not-pi0-fast)).
+quackd's server serves five LeRobot policy types, ACT, SmolVLA, pi05, pi0 and X-VLA, each
+allowed the processor steps read for it at LeRobot 0.6.1 and no other type's, and an X-VLA in its
+`auto` action mode alone ([below](#x-vla)). Any other type is refused before a byte of its
+weights is fetched, and pi0-FAST in a sentence of its own ([below](#pi0-and-why-not-pi0-fast)).
 
 ### SmolVLA and ACT
 
@@ -387,6 +387,42 @@ repository brings with it: serve a pi0 or pi05 instead (upstream_api.PI0_FAST_RE
 What would change that is LeRobot loading the FAST tokenizer without its repository's code,
 which [PLAN.md](../../PLAN.md) carries.
 
+### X-VLA
+
+`xvla` is X-VLA, Jinliang Zheng and his co-authors' soft-prompted VLA, in LeRobot's port. Its
+Florence-2 is built from its own `config.json` and never fetched, so the one model it names is
+BART's tokenizer, `facebook/bart-large`, which is not gated. Pin it with
+`--pin facebook/bart-large@REVISION`, and the server fetches its tokenizer files, 2.7 MB on
+2026-10-25, since BART publishes no safetensors at all. What its answer means is set by
+`action_mode` in its config, and quackd serves `auto` alone: the dataset's own action, which for
+an SO-101's data is the arm's own joint positions. `ee6d`, the default, and `agibot_ee6d` are an
+end effector's pose, and `joint`, `franka_joint7` and `so101_bimanual` other robots' joints, so
+each is refused before a pin or a weight, and so is LIBERO's post-processor step,
+`xvla_rotation_6d_to_axis_angle`, which turns an end-effector rotation into axis-angle and the
+gripper into -1 or 1 (`XVLA_ACTION_MODES` and `XVLA_LIBERO_ROTATION` in
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)). Its
+domain step hands the model the domain its data came from, which has to be one of the model's
+own. Its chunks are 32 actions by LeRobot's default and 30 in the SO-101 fine-tunes, it runs with
+a camera it is not given padded, and its own loader is strict.
+
+**X-VLA has not run anywhere.** quackd has not loaded, benched or served one, on this project's
+laptop or on a GPU. Its checks were written against `mertkirgil/xvla-so101-renkli-kalem` at
+commit `7498e90c61112a03ba7640199a8a363e6c34f276`, in `auto` mode with six motors and a front
+camera, whose `model.safetensors` was 1.76 GB on 2026-10-25. Several SO-101 X-VLAs on the Hub
+keep the eight-number state of `lerobot/xvla-base`, which they were fine-tuned from,
+`fabono/xvla_so101_black_quad` at `78a2bb71d3dd95287652a392b45c9e496ce4ef7a` among them. The
+server serves one of those, and the arm's connect refuses it, since its state is not as long as
+an SO-101 has motors. Others name their tokenizer by a path on the machine that trained them,
+which the server refuses, since it loads nothing by a path a checkpoint wrote. Here is the base
+itself, in `ee6d`, checked in LeRobot 0.6.1's environment on 2026-10-25, which fetched its
+`config.json` and its two processor files and none of its 3.52 GB of weights:
+
+```
+✗ error: lerobot/xvla-base@cdb7964e4fe842935d671bfab5a5ebe00a96648c is an X-VLA whose action_mode
+is 'ee6d', which is not this arm's joints, and quackd serves an X-VLA in 'auto' mode
+(upstream_api.XVLA_ACTION_MODES)
+```
+
 ### FLUX 3 Action
 
 Black Forest Labs' action model has an official SO-101 checkpoint,
@@ -422,7 +458,7 @@ application must enforce those limits and keep a hardware stop within reach."
 
 A policy's weights are your download, under their own licence, and quackd ships none of them.
 LeRobot, which the server runs them in, is Apache-2.0. This table is what each one's own page
-said on 2026-09-28, and the Pi0 row's on 2026-10-25, and it is not legal advice:
+said on 2026-09-28, and the Pi0 and X-VLA rows' on 2026-10-25, and it is not legal advice:
 
 | Policy | Weights | What to know |
 |---|---|---|
@@ -430,6 +466,7 @@ said on 2026-09-28, and the Pi0 row's on 2026-10-25, and it is not legal advice:
 | SmolVLA ([`lerobot/smolvla_base`](https://huggingface.co/lerobot/smolvla_base)) | Apache-2.0, on its card | its backbone, [`HuggingFaceTB/SmolVLM2-500M-Video-Instruct`](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct), is Apache-2.0 on its card too |
 | Pi0.5 ([`lerobot/pi05_base`](https://huggingface.co/lerobot/pi05_base)) | the Hub card says `gemma`, and no licence file is shipped | [LeRobot's pi05 page](https://huggingface.co/docs/lerobot/pi05#license) says the model follows the Apache 2.0 licence of OpenPI, so the two disagree. Its tokenizer, [`google/paligemma-3b-pt-224`](https://huggingface.co/google/paligemma-3b-pt-224), is gated behind a licence you accept on the Hub |
 | Pi0 ([`lerobot/pi0_base`](https://huggingface.co/lerobot/pi0_base)) | the Hub card says `gemma`, and no licence file is shipped | [LeRobot's pi0 page](https://huggingface.co/docs/lerobot/pi0#license) says the model follows the Apache 2.0 licence of OpenPI, so the two disagree, as pi05's do. Its tokenizer is pi05's, gated the same way |
+| X-VLA ([`lerobot/xvla-base`](https://huggingface.co/lerobot/xvla-base)) | Apache-2.0, on its card | its tokenizer, [`facebook/bart-large`](https://huggingface.co/facebook/bart-large), is Apache-2.0 on its card, and not gated |
 | FLUX 3 Action ([`black-forest-labs/flux-3-action-so101`](https://huggingface.co/black-forest-labs/flux-3-action-so101)) | the [FLUX Kommunity License v1.0](https://huggingface.co/black-forest-labs/flux-3-action-so101/blob/main/LICENSE.md): non-commercial use, non-commercial Robotics Uses included | It calls any physical AI application a Robotics Use, control signals for any physical device included, and grants Robotics Uses for non-commercial purposes (Section 2.a). A Qualifying User, whose gross annualised revenue with its affiliates is under US$5,000,000, may also use the model's Outputs commercially, on the conditions of Section 2.e: content filtering or a review of Output, and saying Output was made with AI where the law requires it. The licence does not say that this reaches a Robotics Use, and anything it does not expressly authorise needs a licence from Black Forest Labs ([bfl.ai/licensing](https://bfl.ai/licensing)), so ask them before any commercial use on an arm. No output may be used to improve another model that does what a FLUX model does |
 
 ## Recording episodes, and training

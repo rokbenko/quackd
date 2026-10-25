@@ -1728,6 +1728,9 @@ smolvla = [
     { name = "num2words" },
     { name = "transformers", version = "5.5.4", source = { registry = "https://pypi.org/simple" } },
 ]
+xvla = [
+    { name = "transformers", version = "5.5.4", source = { registry = "https://pypi.org/simple" } },
+]
 
 [[package]]
 name = "librt"
@@ -3901,13 +3904,13 @@ sim = [
     { name = "mujoco" },
 ]
 vla = [
-    { name = "lerobot", extra = ["pi", "smolvla"], marker = "python_full_version >= '3.12'" },
+    { name = "lerobot", extra = ["pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12'" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "lerobot", extras = ["feetech"], marker = "python_full_version >= '3.12' and extra == 'sdk'", specifier = ">=0.6" },
-    { name = "lerobot", extras = ["pi", "smolvla"], marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.6,<0.7" },
+    { name = "lerobot", extras = ["pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.6,<0.7" },
     { name = "mujoco", marker = "extra == 'sim'", specifier = ">=3.12,<4" },
     { name = "quackd", editable = "." },
 ]

@@ -26,6 +26,18 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   SO-101 fine-tunes on the Hub to every check, a pi0-FAST to being refused with nothing but its
   config fetched, and a lenient pi0 loader to raising on a weight it lacks
   ([docs/guides/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)).
+- **`quackd policy serve` serves an X-VLA in its `auto` action mode.** X-VLA's answer means
+  what `action_mode` in its config says, and `auto` is the dataset's own action, which for an
+  SO-101's data is the arm's own joints. Every other mode, an end effector's pose (`ee6d`, the
+  default, and `agibot_ee6d`) or another robot's joints (`joint`, `franka_joint7`,
+  `so101_bimanual`), is refused before a pin or a weight, in a sentence that names the mode, and
+  so is LIBERO's post-processor step, which turns an end-effector rotation into axis-angle and
+  the gripper into -1 or 1. Its domain step's domain has to be one of the model's own. Its
+  Florence-2 is built from its config, so BART's tokenizer is the one model it names, pinned and
+  fetched without weights, it runs with a camera it is not given padded, and its own loader is
+  strict. The extra is `lerobot[smolvla,pi,xvla]` now, which adds nothing to the lock. Tests
+  hold a stand-in shaped like an SO-101 fine-tune on the Hub to every check and each refusal to
+  fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
 
 ### Changed
 
@@ -48,7 +60,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
   guide said. It is `lerobot[smolvla,pi]` now, which adds SciPy, and a pi05 or a pi0 needs
   nothing more than the extra and a Hub token granted its gated tokenizer.
-
 - **A pi05 no longer fetches PaliGemma's weights to load its tokenizer.** A model a checkpoint
   names inside itself was fetched with its configs, its tokenizer files and its safetensors,
   whichever key named it, so serving a pi05, whose tokenizer step names
@@ -65,6 +76,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   its checks rest on stand-ins of the SO-101 fine-tunes read on the Hub on 2026-10-25. Each of
   those fine-tunes is 8.89 GB of weights, and the server fetches PaliGemma's tokenizer files,
   21.9 MB, beside it.
+- **No X-VLA has run.** quackd has not loaded, benched or served one, and its checks rest on a
+  stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25, whose weights
+  are 1.76 GB. Several SO-101 X-VLAs there keep the eight-number state of the base they were
+  fine-tuned from, and the server serves one, which the arm's connect then refuses on its count.
 
 ## [0.25.0] — 2026-10-25
 
