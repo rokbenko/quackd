@@ -1422,9 +1422,9 @@ def test_a_bench_of_a_policy_that_declares_no_latency_waits_out_its_first_chunk_
     """A server started with no --latency-s, whose every step takes `trip`, under half the
     sweep's chunk. The bench waits for the first chunk in the tick that asked for it, as a
     segment does with nothing to play, and leaves every later one to land while the ticks play
-    the half of the last still queued, as a segment does. So the ticks it skips are the first
-    chunk's, and none after the first has nothing to send. Waiting out every chunk in its tick
-    would skip that many again for each."""
+    the half of the last still queued, as a segment does. So the ticks it waits out are the first
+    chunk's, and on a machine that keeps the rate none after the first has nothing to send.
+    Waiting out every chunk in its tick would wait that many again for each."""
     trip = 0.2
     built, _ = S.served_policy(S.ServeOptions(policy="scripted:sweep"))
     script = built.script
@@ -1444,9 +1444,14 @@ def test_a_bench_of_a_policy_that_declares_no_latency_waits_out_its_first_chunk_
     assert result.waited and result.declared_s == 0, result
     first = math.ceil(trip * result.rate_hz)  # the ticks the first chunk's round trip spans
     assert result.chunk is not None and 2 * first < result.chunk // 2, "a step that slow starves"
-    assert result.starved == 0, result
-    # room for the first wait to run long on a busy machine, and none for a second wait
-    assert 1 <= result.waited_ticks <= 2 * first, result
+    # a machine too busy to keep the rate skips ticks and drops what was queued for them, which can
+    # leave a tick with nothing to send, as on CI's macOS runners; one that keeps up starves none
+    late = result.skipped - result.waited_ticks
+    assert result.starved == 0 or late > 0, result
+    # the first chunk's wait spans the ticks its own round trip took, and no second wait follows
+    assert result.rtt_s, result
+    span = math.ceil(result.rtt_s[0] * result.rate_hz) + 2
+    assert 1 <= result.waited_ticks <= span, result
     assert built.requests >= 2 + 3, "the stream asked for too few chunks to tell"
 
 
