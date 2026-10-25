@@ -968,7 +968,8 @@ read at LeRobot 0.6.1, an X-VLA in its `auto` action mode alone
 ([guides/policies.md](../../guides/policies.md#x-vla)), and refuses pi0-FAST, whose policy runs
 its tokenizer's own code ([guides/policies.md](../../guides/policies.md#pi0-and-why-not-pi0-fast)).
 CI's `policy` job builds a tiny random ACT, puts it in a Hub cache of its own and serves it
-offline through the real server to the real client and an arm behind it (`POLICY_PIPELINE` in
+offline through the real server to the real client and an arm behind it, and serves a tiny random
+X-VLA the same way, its tokenizer pinned at a commit (`POLICY_PIPELINE` in
 [the policies' table](#the-policies-upstream-lerobot-061)). On 2026-09-28 a trained ACT from the
 Hub, `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was
 served on a laptop's CPU and drove a twin of the lab's arm on the simulator, and
@@ -3012,8 +3013,8 @@ compared file by file that day, and every file these rows cite was the same. Eve
 [`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
 
 **No trained checkpoint has been loaded by quackd in CI or on a GPU.** CI's `policy` job loads a
-tiny random ACT through the real server, on the CPU and offline, which is what `POLICY_PIPELINE`
-below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
+tiny random ACT and a tiny random X-VLA through the real server, on the CPU and offline, which is
+what `POLICY_PIPELINE` below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
 the Hub drove a twin of the lab's arm on the simulator and `lerobot/smolvla_base` never answered
 a step in time ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05, pi0,
 X-VLA and tick mode have not run at all.
@@ -3066,13 +3067,13 @@ X-VLA and tick mode have not run at all.
 | `the async robot client imports torch` | and the arm's process is the one quackd keeps free of torch |
 | `observations_similar(obs1, obs2, lerobot_features, atol=1)` | the async server skips an observation near the last one it ran, and quackd's runs every step it is asked |
 | `SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"]` | the policies the async server will load, and anything else is refused there |
-| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). ACT on the CPU and nothing else, and a random one, so nothing about what a trained policy does to an arm follows from it |
+| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). Beside it a tiny random X-VLA, its Florence-2 built from its config and a tokenizer of a few words pinned at a commit, fetched from the cache alone and served through the same server and client. ACT and X-VLA on the CPU and nothing else, and random ones, so nothing about what a trained policy does to an arm follows from it |
 
 ### UNVERIFIED (our assumptions about policies, and what quackd does about each)
 
 | Name | What quackd does |
 |---|---|
-| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is not what LeRobot's own loop does (`RelativeActionsProcessorStep caches the state each time the pre-processor runs`), and it is how training made the chunk relative, so a trained pi05 or pi0 is taken to want it. No job runs them, since neither the lab's environment nor CI installs transformers, and pi05, pi0 and X-VLA have not run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
+| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is not what LeRobot's own loop does (`RelativeActionsProcessorStep caches the state each time the pre-processor runs`), and it is how training made the chunk relative, so a trained pi05 or pi0 is taken to want it. No job runs a SmolVLA, a pi05 or a pi0, and the X-VLA CI serves is a tiny random one, so no trained one of the four has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
 | `LOAD_POLICY` | `load_policy()` in the arm's backend builds a policy in the arm's own process, the one no checkpoint is to load in, and hands the pre-processor a raw observation `build_inference_frame` would have shaped first. Nothing calls it and nothing has run it. What reaches the arm from any policy is quackd's rule: the verbs' step cap, and a goal outside the travel clipped and counted, unlike a verb's goal, which is refused |
 

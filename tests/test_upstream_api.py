@@ -530,7 +530,7 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     api = lerobot_policy_api
     assert api.POLICY_PIPELINE.status == "VERIFIED"
     assert "tests/test_policy_pipeline.py" in api.POLICY_PIPELINE.note
-    assert "ACT and nothing else" in api.POLICY_PIPELINE.note
+    assert "a tiny ACT and a tiny X-VLA and nothing else" in api.POLICY_PIPELINE.note
     for name in ("SmolVLA", "pi05"):
         assert name in api.VLA_PIPELINE.note, name
     assert api.CHECKPOINT_FILES.name.split(", ") == [

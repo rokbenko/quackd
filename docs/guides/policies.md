@@ -18,9 +18,9 @@ is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 > twin of the lab's arm on the simulator through `quackd policy serve` and `quackd serve-mcp`,
 > and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `quackd run --goal`.
 > SmolVLA loaded on the same laptop and never answered a step in time on its CPU
-> ([below](#smolvla-and-act)), pi05, pi0 and X-VLA have not run, and FLUX 3 Action is not
-> served at all. Rehearse on the simulator first, keep a hand on the arm's power switch the first
-> time a policy drives it, and send back what happened
+> ([below](#smolvla-and-act)), pi05, pi0 and a trained X-VLA have not run, and FLUX 3 Action
+> is not served at all. Rehearse on the simulator first, keep a hand on the arm's power switch the
+> first time a policy drives it, and send back what happened
 > ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#14-what-to-report)).
 
 ## Two processes, two terminals
@@ -405,17 +405,21 @@ domain step hands the model the domain its data came from, which has to be one o
 own. Its chunks are 32 actions by LeRobot's default and 30 in the SO-101 fine-tunes, it runs with
 a camera it is not given padded, and its own loader is strict.
 
-**X-VLA has not run anywhere.** quackd has not loaded, benched or served one, on this project's
-laptop or on a GPU. Its checks were written against `mertkirgil/xvla-so101-renkli-kalem` at
-commit `7498e90c61112a03ba7640199a8a363e6c34f276`, in `auto` mode with six motors and a front
-camera, whose `model.safetensors` was 1.76 GB on 2026-10-25. Several SO-101 X-VLAs on the Hub
-keep the eight-number state of `lerobot/xvla-base`, which they were fine-tuned from,
-`fabono/xvla_so101_black_quad` at `78a2bb71d3dd95287652a392b45c9e496ce4ef7a` among them. The
-server serves one of those, and the arm's connect refuses it, since its state is not as long as
-an SO-101 has motors. Others name their tokenizer by a path on the machine that trained them,
-which the server refuses, since it loads nothing by a path a checkpoint wrote. Here is the base
-itself, in `ee6d`, checked in LeRobot 0.6.1's environment on 2026-10-25, which fetched its
-`config.json` and its two processor files and none of its 3.52 GB of weights:
+**No trained X-VLA has run anywhere.** quackd has not loaded, benched or served one, on this
+project's laptop or on a GPU. CI's `policy` job serves a tiny random one, offline, through the
+real server and client: a Florence-2 a layer or two deep, built from its config, and a tokenizer
+of a few words pinned at a commit in a Hub cache of its own, which proves the plumbing and
+nothing about what a trained one does. Its checks were written against
+`mertkirgil/xvla-so101-renkli-kalem` at commit `7498e90c61112a03ba7640199a8a363e6c34f276`, in
+`auto` mode with six motors and a front camera, whose `model.safetensors` was 1.76 GB on
+2026-10-25. Several SO-101 X-VLAs on the Hub keep the eight-number state of `lerobot/xvla-base`,
+which they were fine-tuned from, `fabono/xvla_so101_black_quad` at
+`78a2bb71d3dd95287652a392b45c9e496ce4ef7a` among them. The server serves one of those, and the
+arm's connect refuses it, since its state is not as long as an SO-101 has motors. Others name
+their tokenizer by a path on the machine that trained them, which the server refuses, since it
+loads nothing by a path a checkpoint wrote. Here is the base itself, in `ee6d`, checked in
+LeRobot 0.6.1's environment on 2026-10-25, which fetched its `config.json` and its two processor
+files and none of its 3.52 GB of weights:
 
 ```
 ✗ error: lerobot/xvla-base@cdb7964e4fe842935d671bfab5a5ebe00a96648c is an X-VLA whose action_mode

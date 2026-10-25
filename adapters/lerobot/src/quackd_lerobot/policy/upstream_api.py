@@ -17,9 +17,9 @@ The policy refs used to live in the arm's own file. They moved here when quackd 
 server (`server.py`), because the server is where a checkpoint is loaded (`pipeline.py`), and
 the arm's process never imports torch or LeRobot's policies at all: `client.py` reaches the
 server over HTTP. POLICY_PIPELINE is the one row a job exercises: CI's torch job runs a tiny
-random ACT through the real server (`tests/test_policy_pipeline.py`). No trained checkpoint has
-been loaded, and SmolVLA, pi05, pi0, X-VLA and tick mode have not run at all: VLA_PIPELINE
-and TICK_MODE say what quackd does about that.
+random ACT and a tiny random X-VLA through the real server (`tests/test_policy_pipeline.py`).
+No trained checkpoint has been loaded, no trained X-VLA has run, and SmolVLA, pi05, pi0 and
+tick mode have not run at all: VLA_PIPELINE and TICK_MODE say what quackd does about that.
 """
 
 from __future__ import annotations
@@ -559,8 +559,13 @@ POLICY_PIPELINE = UpstreamRef(
     "build_inference_frame, predict_action_chunk cut to n_action_steps, the post-processor "
     "over the whole chunk, make_robot_action per row with every row checked against what "
     "select_action plays, the resets of the policy and both processors, the normaliser's "
-    "quantiles, and the rate read from TRAIN_DATASET. It runs ACT and nothing else, on the "
-    "CPU, and a random one: nothing about what a trained policy does to an arm follows from it",
+    "quantiles, and the rate read from TRAIN_DATASET. Beside it the job serves a tiny random "
+    "X-VLA in `auto` mode, offline, its Florence-2 built from its config and a tokenizer of a "
+    "few words pinned at a commit in a Hub cache of its own, which runs the per-type allowlist, "
+    "a pin's TOKENIZER_FILES fetched from the cache alone, check_pinned on them, "
+    "XVLA_STRICT_LOAD, its processors with the pinned tokenizer, and a chunk back through the "
+    "real client. It runs a tiny ACT and a tiny X-VLA and nothing else, on the CPU, and random "
+    "ones: nothing about what a trained policy does to an arm follows from it",
 )
 
 # ── UNVERIFIED: our assumptions, and what quackd does about each ────────────────────────
@@ -578,8 +583,9 @@ VLA_PIPELINE = UpstreamRef(
     "refused, and pi05's and pi0's relative actions made absolute over a whole chunk at once, "
     "against the state it was predicted from. That last one is not what LeRobot's own loop "
     "does (RELATIVE_ACTIONS), and it is how training made the chunk relative, so a trained "
-    "pi05 or pi0 is taken to want it. No job runs them, since the lab's venv and CI install no "
-    "transformers, and pi05, pi0 and X-VLA have not run anywhere. An X-VLA is served in its "
+    "pi05 or pi0 is taken to want it. No job runs a SmolVLA, a pi05 or a pi0, and the X-VLA "
+    "CI's job serves is a tiny random one (POLICY_PIPELINE), so no trained one of the four has "
+    "run anywhere. An X-VLA is served in its "
     "`auto` action mode alone (XVLA_ACTION_MODES), taken to answer in the joints of the arm it "
     "learned from. quackd loads them through the allowlist each type has and the pins and "
     "refusals ACT's go through, says in /v1/policy which images go padded, and a first run "

@@ -505,7 +505,8 @@ def _one_line(error: BaseException) -> str:
 
 class HubFetch:
     """The Hub, through huggingface_hub's own cache, at a revision always. With `HF_HUB_OFFLINE`
-    set it answers from that cache alone, which is how CI's torch job runs."""
+    set it answers from that cache alone, a pinned model's snapshot included, which is how CI's
+    torch job runs."""
 
     def file(
         self, repo: str, revision: str, filename: str, *, dataset: bool = False
@@ -535,10 +536,19 @@ class HubFetch:
             ) from None
 
     def snapshot(self, repo: str, revision: str, patterns: Sequence[str]) -> Path:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import constants, snapshot_download
 
         try:
-            return Path(snapshot_download(repo, revision=revision, allow_patterns=list(patterns)))
+            # offline, the cache's own files: left to itself, snapshot_download asks the Hub for
+            # a commit's file list it has not cached, offline or not
+            return Path(
+                snapshot_download(
+                    repo,
+                    revision=revision,
+                    allow_patterns=list(patterns),
+                    local_files_only=constants.HF_HUB_OFFLINE,
+                )
+            )
         except Exception as e:
             raise PipelineRefused(
                 f"{repo}@{revision} could not be fetched: {_one_line(e)}"

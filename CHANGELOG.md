@@ -37,7 +37,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   fetched without weights, it runs with a camera it is not given padded, and its own loader is
   strict. The extra is `lerobot[smolvla,pi,xvla]` now, which adds nothing to the lock. Tests
   hold a stand-in shaped like an SO-101 fine-tune on the Hub to every check and each refusal to
-  fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
+  fetching no weight, and CI's `policy` job installs LeRobot's `[xvla]` extra and serves a tiny
+  random X-VLA beside the tiny ACT, offline, through the real server and client, its tokenizer a
+  few words pinned at a commit in a Hub cache of its own
+  ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
 
 ### Changed
 
@@ -60,6 +63,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
   guide said. It is `lerobot[smolvla,pi]` now, which adds SciPy, and a pi05 or a pi0 needs
   nothing more than the extra and a Hub token granted its gated tokenizer.
+- **A pinned model is fetched from the Hub's cache alone with `HF_HUB_OFFLINE` set.** The
+  server says it answers from the cache alone offline, and a model a checkpoint names inside
+  itself was fetched with `snapshot_download`, which at a commit asks the Hub for the commit's
+  file list whenever it has not cached one, offline or not, so a SmolVLA's backbone or a pi05's
+  tokenizer in a cache filled some other way than by fetching it online was refused as
+  unreachable. huggingface_hub 1.29.0, the locked version, and 1.33.0 both do it. It is asked
+  for the cache's own files now, and the tiny X-VLA CI serves offline fails without it.
 - **A pi05 no longer fetches PaliGemma's weights to load its tokenizer.** A model a checkpoint
   names inside itself was fetched with its configs, its tokenizer files and its safetensors,
   whichever key named it, so serving a pi05, whose tokenizer step names
@@ -76,9 +86,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   its checks rest on stand-ins of the SO-101 fine-tunes read on the Hub on 2026-10-25. Each of
   those fine-tunes is 8.89 GB of weights, and the server fetches PaliGemma's tokenizer files,
   21.9 MB, beside it.
-- **No X-VLA has run.** quackd has not loaded, benched or served one, and its checks rest on a
-  stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25, whose weights
-  are 1.76 GB. Several SO-101 X-VLAs there keep the eight-number state of the base they were
+- **No trained X-VLA has run.** quackd has not loaded, benched or served one, and its checks
+  rest on a stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25,
+  whose weights are 1.76 GB, and on the tiny random one CI serves. Several SO-101 X-VLAs there keep the eight-number state of the base they were
   fine-tuned from, and the server serves one, which the arm's connect then refuses on its count.
 
 ## [0.25.0] — 2026-10-25

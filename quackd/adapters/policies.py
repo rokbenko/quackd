@@ -124,7 +124,10 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         licence="Apache-2.0",
         licence_url="https://huggingface.co/lerobot/xvla-base",
         licence_read="2026-10-25",
-        ran="has not run, and only its auto action mode is served",
+        ran=(
+            "CI serves a tiny random one, and no trained one has run, and only its auto action "
+            "mode is served"
+        ),
     ),
 )
 """The types the server serves, in `upstream_api.SERVED_TYPES`' order."""

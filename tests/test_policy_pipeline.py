@@ -8,11 +8,12 @@ rate comes from, and what the build is told. These run in the default suite, ove
 The second is CI's torch job (`.github/workflows/ci.yml`, `policy`): a tiny random ACT, built
 here with no pretrained backbone and saved naming LeRobot's default one, both processors saved,
 put in a Hub cache of its own at a commit and a tag, and served with the Hub and torchvision
-offline by the real server to the real client and an arm behind it. It is skipped where torch
-or LeRobot is missing, unless `QUACKD_REQUIRE_TORCH` is set, as it is in that job, where a
-missing one fails the run rather than leaving it green having loaded nothing. It is what moves
-POLICY_PIPELINE to VERIFIED (`policy/upstream_api.py`), for ACT on the CPU and nothing else,
-and a random policy says nothing about what a trained one does to an arm.
+offline by the real server to the real client and an arm behind it, and a tiny random X-VLA
+served the same way, with a tokenizer of a few words pinned at a commit. It is skipped where
+torch, LeRobot or transformers is missing, unless `QUACKD_REQUIRE_TORCH` is set, as it is in
+that job, where a missing one fails the run rather than leaving it green having loaded nothing.
+It is what moves POLICY_PIPELINE to VERIFIED (`policy/upstream_api.py`), for those two on the
+CPU and nothing else, and a random policy says nothing about what a trained one does to an arm.
 """
 
 from __future__ import annotations
@@ -1005,13 +1006,19 @@ def test_a_repository_is_named_in_ascii_at_a_revision(spec: str) -> None:
 # ── a tiny random ACT, served for real (CI's torch job) ─────────────────────────────────
 
 TORCHLESS = importlib.util.find_spec("torch") is None or importlib.util.find_spec("lerobot") is None
-if TORCHLESS and os.environ.get("QUACKD_REQUIRE_TORCH"):
+TRANSFORMERLESS = importlib.util.find_spec("transformers") is None
+if (TORCHLESS or TRANSFORMERLESS) and os.environ.get("QUACKD_REQUIRE_TORCH"):
     raise RuntimeError(
-        "QUACKD_REQUIRE_TORCH is set and torch or LeRobot is not installed here, so the tiny "
-        "ACT would be skipped and prove nothing: install both, as CI's policy job does"
+        "QUACKD_REQUIRE_TORCH is set and torch, LeRobot or transformers is not installed here, so "
+        "the tiny ACT or the tiny X-VLA would be skipped and prove nothing: install them, as CI's "
+        "policy job does"
     )
 NEEDS_TORCH = pytest.mark.skipif(
     TORCHLESS, reason="torch and LeRobot are CI's torch job's, not the default suite's"
+)
+NEEDS_TRANSFORMERS = pytest.mark.skipif(
+    TORCHLESS or TRANSFORMERLESS,
+    reason="an X-VLA's Florence-2 and its tokenizer are transformers', which CI's torch job has",
 )
 
 
@@ -1423,3 +1430,200 @@ def test_torch_gets_as_many_threads_however_often_a_checkpoint_loads(offline: Ti
         assert counts[0] == counts[1] == max(1, P.torch_threads() - 1), counts
     finally:
         torch.set_num_threads(before)
+
+
+# ── a tiny random X-VLA, served for real (CI's torch job, with transformers) ────────────
+
+TINY_TOKENIZER = "quackd-test/tiny-tokenizer"
+TINY_XVLA = "quackd-test/tiny-xvla"
+
+
+@dataclass(frozen=True)
+class TinyXvla:
+    """A tiny random X-VLA and the tokenizer it names, in a Hub cache of their own, each at a
+    commit, and the percentiles its state was normalised with, in `JOINTS`' order."""
+
+    cache: Path
+    q01: tuple[float, ...]
+    q99: tuple[float, ...]
+
+    @property
+    def spec(self) -> str:
+        return f"{TINY_XVLA}@{_commit(TINY_XVLA)}"
+
+    @property
+    def pin(self) -> str:
+        return f"{TINY_TOKENIZER}@{_commit(TINY_TOKENIZER)}"
+
+
+@pytest.fixture(scope="module")
+def tiny_xvla(tmp_path_factory: pytest.TempPathFactory) -> TinyXvla:
+    """Built once per run, fetching nothing: an X-VLA in `auto` mode whose Florence-2 is a layer
+    or two deep, described in its config as a checkpoint's is, with chunks of `CHUNK_SIZE` of
+    which `N_ACTION_STEPS` are played, a state and an action the size of the arm's bus, a front
+    camera the size of the suite's frames, and its actions normalised by their mean and
+    deviation as the SO-101 fine-tunes' are. Its tokenizer is a word-level one of a few words,
+    saved where a pinned repository lands in the Hub's cache, and its processor names it by that
+    repository, as a pushed checkpoint names BART's."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
+    from lerobot.policies.factory import make_pre_post_processors
+    from lerobot.policies.xvla.configuration_xvla import XVLAConfig
+    from lerobot.policies.xvla.modeling_xvla import XVLAPolicy
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    cache = tmp_path_factory.mktemp("xvla-hub")
+    words = ["[PAD]", "[UNK]", "reach", "the", "cube", "place", "it"]
+    vocabulary = Tokenizer(models.WordLevel({w: i for i, w in enumerate(words)}, unk_token="[UNK]"))
+    vocabulary.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer = _cached(cache, TINY_TOKENIZER, "models", TINY_TOKENIZER)
+    PreTrainedTokenizerFast(
+        tokenizer_object=vocabulary, unk_token="[UNK]", pad_token="[PAD]"
+    ).save_pretrained(tokenizer)
+    n = len(JOINTS)
+    florence = {
+        "vision_config": {
+            "model_type": "davit",
+            "depths": [1, 1],
+            "dim_embed": [16, 32],
+            "num_heads": [1, 2],
+            "num_groups": [1, 2],
+            "patch_size": [7, 3],
+            "patch_stride": [4, 2],
+            "patch_padding": [3, 1],
+            "patch_prenorm": [False, True],
+            "window_size": 4,
+            "projection_dim": 32,
+            "image_pos_embed": {"type": "learned_abs_2d", "max_pos_embeddings": 50},
+            "visual_temporal_embedding": {"type": "COSINE", "max_temporal_embeddings": 4},
+            "image_feature_source": ["spatial_avg_pool", "temporal_avg_pool"],
+        },
+        "text_config": {
+            "vocab_size": 64,
+            "d_model": 32,
+            "encoder_layers": 1,
+            "decoder_layers": 1,
+            "encoder_attention_heads": 2,
+            "decoder_attention_heads": 2,
+            "encoder_ffn_dim": 64,
+            "decoder_ffn_dim": 64,
+            "max_position_embeddings": 128,
+        },
+        "projection_dim": 32,
+        "vocab_size": 64,
+    }
+    config = XVLAConfig(
+        input_features={
+            up.STATE_KEY: PolicyFeature(type=FeatureType.STATE, shape=(n,)),
+            f"{up.IMAGES_PREFIX}front": PolicyFeature(
+                type=FeatureType.VISUAL, shape=(3, FRAME_H, FRAME_W)
+            ),
+        },
+        output_features={up.ACTION_KEY: PolicyFeature(type=FeatureType.ACTION, shape=(n,))},
+        normalization_mapping={
+            "VISUAL": NormalizationMode.IDENTITY,
+            "STATE": NormalizationMode.IDENTITY,
+            "ACTION": NormalizationMode.MEAN_STD,
+        },
+        florence_config=florence,
+        action_mode=up.XVLA_SERVED_MODE,
+        chunk_size=CHUNK_SIZE,
+        n_action_steps=N_ACTION_STEPS,
+        hidden_size=32,
+        depth=1,
+        num_heads=2,
+        num_domains=2,
+        len_soft_prompts=2,
+        max_len_seq=128,
+        max_action_dim=8,
+        max_state_dim=8,
+        num_denoising_steps=2,
+        tokenizer_name=str(tokenizer),
+        tokenizer_max_length=8,
+        device="cpu",
+    )
+    torch.manual_seed(0)
+    policy = XVLAPolicy(config)
+    q01, q99 = tuple(-30.0 - i for i in range(n)), tuple(30.0 + i for i in range(n))
+    lo, hi = torch.tensor(q01), torch.tensor(q99)
+    stats = {
+        "mean": (lo + hi) / 2,
+        "std": (hi - lo) / 2,
+        "min": lo,
+        "max": hi,
+        "q01": lo,
+        "q99": hi,
+    }
+    pre, post = make_pre_post_processors(
+        config, dataset_stats={up.STATE_KEY: stats, up.ACTION_KEY: dict(stats)}
+    )
+    snapshot = _cached(cache, TINY_XVLA, "models", TINY_XVLA)
+    policy.save_pretrained(snapshot)
+    pre.save_pretrained(snapshot)
+    post.save_pretrained(snapshot)
+    # a pushed checkpoint names its tokenizer by its Hub id, and the pin says at which commit
+    for name in (up.CONFIG_FILE, up.PREPROCESSOR_FILE):
+        saved = json.loads((snapshot / name).read_text(encoding="utf-8"))
+        if "tokenizer_name" in saved:
+            saved["tokenizer_name"] = TINY_TOKENIZER
+        for step in saved.get("steps", []):
+            if "tokenizer_name" in step.get("config", {}):
+                step["config"]["tokenizer_name"] = TINY_TOKENIZER
+        (snapshot / name).write_text(json.dumps(saved), encoding="utf-8")
+    return TinyXvla(cache, q01, q99)
+
+
+@pytest.fixture
+def offline_xvla(tiny_xvla: TinyXvla, monkeypatch: pytest.MonkeyPatch) -> TinyXvla:
+    """The Hub is the tiny X-VLA's cache and nothing else, offline, as CI's job runs it."""
+    from huggingface_hub import constants
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setattr(constants, "HF_HUB_OFFLINE", True)
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tiny_xvla.cache))
+    return tiny_xvla
+
+
+@NEEDS_TRANSFORMERS
+def test_a_tiny_xvla_is_served_offline_with_its_tokenizer_pinned(offline_xvla: TinyXvla) -> None:
+    """The second family CI's job serves through the real server and client: its config,
+    processors and pin read and checked as every checkpoint's are, its tokenizer fetched from
+    the cache alone and with no weight, its Florence-2 built from its config, its weights loaded
+    by X-VLA's own strict loader, and a chunk back with a finite goal for every motor. A random
+    policy says nothing about what a trained one does to an arm."""
+    runner, info = S.served_policy(
+        S.ServeOptions(policy=offline_xvla.spec, fps=float(FPS), pins=(offline_xvla.pin,))
+    )
+    app_ = S.PolicyServer(runner, info, TOKEN)
+    http = S.serve(app_, "127.0.0.1", 0)
+    camera = wire.CameraInfo(name="front", height=FRAME_H, width=FRAME_W)
+    client = RemoteRunner(
+        f"http://127.0.0.1:{int(http.server_address[1])}",
+        token=TOKEN,
+        motors=JOINTS,
+        cameras=[camera],
+    )
+    try:
+        said = client.policy()
+        loaded = [f"checkpoint {offline_xvla.spec}", f"tokenizer_name {offline_xvla.pin}"]
+        assert said.loaded == loaded
+        assert said.features.pads_images and said.cameras == {"front": f"{up.IMAGES_PREFIX}front"}
+        assert (said.chunk_size, said.n_action_steps) == (CHUNK_SIZE, N_ACTION_STEPS)
+        assert said.state_quantiles is not None
+        assert said.state_quantiles.q01 == pytest.approx(offline_xvla.q01)
+        assert said.state_quantiles.q99 == pytest.approx(offline_xvla.q99)
+        reading: dict[str, Any] = {f"{m}.pos": 0.0 for m in JOINTS}
+        reading["front"] = _front()
+        client.reset("reach the cube")
+        chunk = client.next_chunk(Observation(0, reading), {})
+    finally:
+        client.close()
+        http.shutdown()
+        http.server_close()
+        app_.close()
+    assert len(chunk.actions) == N_ACTION_STEPS
+    for action in chunk.actions:
+        assert set(action) == set(JOINTS)
+        assert all(math.isfinite(v) for v in action.values())
