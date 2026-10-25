@@ -758,7 +758,9 @@ class AgentLoop:
             )
             started = time.perf_counter()
             try:
-                turn = await self._unless_stopped(cfg.provider.step(system, history, tools))
+                turn = await self._unless_stopped(
+                    cfg.provider.step(system, history, tools), minutes=True
+                )
             except BaseException as e:
                 # BaseException, not Exception. The second Ctrl-C raises a bare
                 # KeyboardInterrupt and a flock cancels its members, and both land here: with
@@ -837,7 +839,7 @@ class AgentLoop:
             self.llm_retries += 1
             attempt += 1
 
-    async def _unless_stopped(self, call: Awaitable[T]) -> T:
+    async def _unless_stopped(self, call: Awaitable[T], *, minutes: bool = False) -> T:
         """`call`, unless the run's abort is set first: then `Aborted`, the call cancelled.
 
         A model's answer can take a minute, and the first Ctrl-C used to wait for it: the abort
@@ -847,6 +849,13 @@ class AgentLoop:
         running behind the teardown. The robot was holding still meanwhile, so nothing else
         has to stop. A call that answered as the abort was set has answered, and its turn is
         returned: the run ends at its next check, as it did before.
+
+        With `minutes`, the pilot's own call is raced against the task's minutes as well
+        (`_minutes_spent`): `max_minutes` was read only once an answer came back, so a call that
+        hung held the robot past the task's whole budget for as long as the vendor's own clock
+        allowed, ten minutes on both SDKs. Cut off there instead, it ends the run as a late answer
+        always did, on `BudgetExceeded` in the budget's own words, and is not asked again. The
+        decision LLM's call has its own one second and is not raced against the minutes.
 
         The call runs in a task of its own, and asyncio hands a task's `KeyboardInterrupt` to
         the event loop rather than to whoever awaits the task, which would skip the teardown
@@ -861,19 +870,42 @@ class AgentLoop:
 
         calling = asyncio.ensure_future(guarded())
         stopping = asyncio.ensure_future(self.executor.abort.wait())
+        timing = asyncio.ensure_future(self._minutes_spent()) if minutes else None
+        racing: set[asyncio.Future[Any]] = {calling, stopping}
+        if timing is not None:
+            racing.add(timing)
         try:
-            await asyncio.wait({calling, stopping}, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait(racing, return_when=asyncio.FIRST_COMPLETED)
         except BaseException:
-            await cancel_and_wait(calling, stopping)
+            await cancel_and_wait(*racing)
             raise
         if calling.done():
-            await cancel_and_wait(stopping)
+            await cancel_and_wait(*(racing - {calling}))
             answered, interrupted = calling.result()
             if interrupted is not None:
                 raise interrupted
             return cast(T, answered)
-        await cancel_and_wait(calling)
+        if timing is not None and timing.done() and not stopping.done():
+            await cancel_and_wait(calling, stopping)
+            raise BudgetExceeded(timing.result())
+        await cancel_and_wait(*(racing - {stopping}))
         raise Aborted(self._abort_reason())
+
+    async def _minutes_spent(self) -> str:
+        """Wait until the task's minutes are spent, and return the budget's own sentence for it.
+
+        Read off the budget's clock, which `check_time` is the one reading of, every heartbeat
+        period: a model call is not a place to be sharper than the heartbeat that watches the
+        robot through it. On a simulator that clock is the simulator's and stands still while a
+        model thinks, so a simulated run is never cut off here, only past its minutes in a verb,
+        as it always was."""
+        period = max(self.cfg.heartbeat_period_s, 0.01)
+        while True:
+            try:
+                self.budget.check_time()
+            except BudgetExceeded as e:
+                return str(e)
+            await asyncio.sleep(period)
 
     def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
         """What follows try `attempt` of the full schedule failing for a reason worth asking

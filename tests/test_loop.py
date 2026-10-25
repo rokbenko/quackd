@@ -239,6 +239,63 @@ async def test_provider_response_before_time_budget_is_processed(
     assert "declare" in [event["kind"] for event in events]
 
 
+class HangsPastTheMinutes:
+    """A pilot that spends the task's minutes on the robot's own clock and then never answers,
+    the way a call to a vendor that hung does."""
+
+    name = "hangs"
+    model = "test"
+    supports_vision = False
+
+    def __init__(self, transport: MockTransport, seconds: float) -> None:
+        self.transport = transport
+        self.seconds = seconds
+        self.cancelled = False
+
+    async def step(
+        self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
+    ) -> ProviderTurn:
+        await self.transport.sleep(self.seconds)
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        raise AssertionError("a hung call never answers")
+
+
+async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budget(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """`max_minutes` was read only once an answer came back, so a call that hung held the robot
+    past the task's whole budget for as long as the vendor's own clock allowed. The call is raced
+    against the minutes as it is raced against the stop: cut off once they are spent, recorded
+    as the call that failed, never asked again, and the run ends on its budget in the budget's
+    own words, as it would have for an answer that came back late. Bounded by `wait_for` only so
+    that the code before this, which waits for ever, fails rather than hangs."""
+    hello_duck.frontmatter.budgets = Budgets(max_minutes=0.1)
+    transport = MockTransport()
+    provider = HangsPastTheMinutes(transport, 0.1 * 60 + 1)
+    result = await asyncio.wait_for(
+        run_duck(
+            RunConfig(
+                duck=hello_duck,
+                provider=provider,
+                transport=transport,
+                runs_dir=tmp_path,
+                heartbeat_period_s=0.05,
+            )
+        ),
+        timeout=30,
+    )
+    assert result.outcome == "budget", result.reason
+    assert "max_minutes (0.1) exceeded" in result.reason
+    assert provider.cancelled, "the call was left running behind the teardown"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    (call,) = [e for e in events if e["kind"] == "llm"]
+    assert "BudgetExceeded" in call["error"] and "retry_in_s" not in call, call
+
+
 async def test_budget_ends_the_run(hello_duck: DuckFile, tmp_path: Path) -> None:
     forever = FakeProvider(script=[ToolCall(name="quack", arguments={})])
     result = await run_duck(
