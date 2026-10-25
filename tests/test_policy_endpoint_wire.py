@@ -580,6 +580,70 @@ def test_a_paused_endpoint_is_resumed_by_up_after_asking_again(hf: FakeAPI) -> N
     assert "gpu yes" in said and hf.endpoints[("rok", "arm")].state == "running"
 
 
+def test_an_endpoint_at_zero_is_woken_by_up_only_after_asking(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Waking one that scaled to zero bills again, as resuming a paused one does, so up asks
+    first, with the price, and with no terminal it needs --yes. A yes wakes it with one request,
+    with --no-wait too, which sends no other."""
+    from quackd import cli
+
+    assert _cli(*UP, "--yes").exit_code == 0
+    ep = hf.endpoints[("rok", "arm")]
+
+    def to_zero() -> None:
+        E._request("POST", E.API, "/v2/endpoint/rok/arm/scale-to-zero", bearer=ACCOUNT_TOKEN)
+        assert ep.state == "scaledToZero"
+
+    to_zero()
+    before = len(ep.proxy.requests)
+    unasked = _cli("policy", "endpoint", "up", "arm")
+    assert unasked.exit_code == 1 and "no terminal to ask" in _flat(unasked.output)
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    refused = _cli("policy", "endpoint", "up", "arm", given="n\n")
+    said = _flat(refused.output)
+    assert refused.exit_code == 1 and "This wakes a Hugging Face Inference Endpoint" in said
+    assert "It bills $0.80 an hour while it runs" in said and "Wake it?" in said
+    assert ep.state == "scaledToZero" and len(ep.proxy.requests) == before
+    woken = _cli("policy", "endpoint", "up", "arm", "--yes")
+    said = _flat(woken.output)
+    assert woken.exit_code == 0 and "waking arm, $0.80 an hour while it runs" in said, said
+    assert "gpu yes" in said and ep.state == "running"
+    to_zero()
+    unwaited = _cli("policy", "endpoint", "up", "arm", "--yes", "--no-wait")
+    assert unwaited.exit_code == 0 and "waking arm" in _flat(unwaited.output)
+    assert ep.state != "scaledToZero"
+
+
+def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One that failed is said with the last of its log and its message, and either may hold the
+    server's token, a container's argv being what it is, or what a terminal would act on: both
+    are taken out, and the message is cut."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    record = _store().get("arm")
+    assert record is not None
+    ep = hf.endpoints[("rok", "arm")]
+    hf._stop(ep)
+    ep.state, ep.ahead = "failed", []
+    ep.log = [f"Traceback: argv held {record.token}"]
+    real = FakeAPI._status
+
+    def status(self: FakeAPI, e: Any) -> dict[str, Any]:
+        said = real(self, e)
+        said["status"]["message"] = f"exited 1 with {record.token} \x1b]0;owned\x07 " + "x" * 600
+        return said
+
+    monkeypatch.setattr(FakeAPI, "_status", status)
+    result = _cli("policy", "endpoint", "up", "arm")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "hf:arm is failed: exited 1 with <token>" in said, said
+    assert "Traceback: argv held <token>" in said
+    assert record.token not in result.output and "\x1b" not in result.output
+    assert "x" * 400 not in said.replace(" ", ""), "the message was not cut"
+
+
 def test_up_again_with_anything_other_than_what_it_was_started_with_is_refused(
     hf: FakeAPI,
 ) -> None:

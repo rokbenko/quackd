@@ -394,8 +394,8 @@ Also in scope:
   `adapters/lerobot/src/quackd_lerobot/policy/endpoint.py`,
   [docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint)), which rents a
   GPU that bills by the hour and runs that same server on it. quackd has never created one: it
-  has run against the test suite's stand-ins alone. It asks before it creates or resumes one,
-  and with no terminal and no `--yes` it refuses before anything exists. The endpoint is
+  has run against the test suite's stand-ins alone. It asks before it creates, resumes or wakes
+  one, and with no terminal and no `--yes` it refuses before anything exists. The endpoint is
   `authenticated`, which Hugging Face's own page says any Hugging Face account can reach, so the
   lock is the server's own token, made by quackd and sent only as the endpoint's secret
   `QUACKD_POLICY_TOKEN` and kept in `~/.quackd/endpoints.json`, readable by its owner alone where
@@ -419,8 +419,8 @@ Also in scope:
   log line or refusal quoted has every token taken out. What would be a security issue: the
   account's token reaching any other host, an address the API has not confirmed, the endpoint, a
   record or the terminal, the server's token reaching a URL, a run's record or the terminal, an
-  endpoint created or resumed without a yes, or resumed, paused or deleted when quackd did not
-  start it, created `public` or with more than one replica, or one that never scales to zero.
+  endpoint created, resumed or woken without a yes, or resumed, paused or deleted when quackd did
+  not start it, created `public` or with more than one replica, or one that never scales to zero.
 - **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
   `hmac.compare_digest`, but a token is only required if one is configured, and binding it

@@ -420,8 +420,11 @@ def test_the_question_says_whose_account_what_where_and_what_it_bills() -> None:
         "(Hugging Face's price, read just now), scales to zero after 15 minutes with no "
         "request, and bills nothing then or while paused. Start it?"
     )
-    resumed = E.confirmation(record, compute, resuming=True)
+    resumed = E.confirmation(record, compute, doing="resume")
     assert resumed.startswith("This resumes a Hugging Face") and resumed.endswith("Resume it?")
+    woken = E.confirmation(record, compute, doing="wake")
+    assert woken.startswith("This wakes a Hugging Face") and woken.endswith("Wake it?")
+    assert "It bills $0.80 an hour while it runs" in woken
 
 
 # ── before anything is created ──────────────────────────────────────────────────────────

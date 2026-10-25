@@ -403,7 +403,8 @@ address than the one `up` recorded, as one made on huggingface.co after yours wa
 would be: `delete NAME --forget` forgets such a record and asks Hugging Face nothing. An endpoint
 that has no request for `--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and
 bills nothing, and the next request wakes it, which takes minutes: start it with `up` before a
-run rather than waking it with one. quackd starts no endpoint that never scales to zero.
+run rather than waking it with one. `up` asks before it wakes one, as before it resumes a paused
+one. quackd starts no endpoint that never scales to zero.
 
 **What it costs.** Hugging Face's price list, `GET /v2/provider`, which `up` reads with no token
 before it asks you, said this of AWS on 2026-10-25. An endpoint bills by the minute while it is

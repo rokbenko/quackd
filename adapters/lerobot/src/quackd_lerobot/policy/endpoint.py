@@ -339,6 +339,11 @@ class HFEndpoints:
     def also_scrub(self, *tokens: str | None) -> None:
         self.scrub.extend(t for t in tokens if t)
 
+    def printable(self, text: str, limit: int = 300) -> str:
+        """`text` from Hugging Face, an endpoint's message above all, as a terminal may show it:
+        every token this client scrubs taken out, nothing a terminal would act on, and cut."""
+        return _printable(text, self.scrub, limit)
+
     @property
     def token(self) -> str:
         return self._token
@@ -1148,13 +1153,22 @@ def _check_quota(quotas: Mapping[str, Any], namespace: str, vendor: str, instanc
                 )
 
 
+_ASKED = {
+    "start": ("starts", "Start it?"),
+    "resume": ("resumes", "Resume it?"),
+    "wake": ("wakes", "Wake it?"),
+}
+
+
 def confirmation(
-    record: EndpointRecord, check: Preflight | Compute, *, resuming: bool = False
+    record: EndpointRecord, check: Preflight | Compute, *, doing: str = "start"
 ) -> str:
-    """The question `up` asks before it creates or resumes an endpoint, with the price read
-    from Hugging Face's listing on the day (`endpoint_upstream_api.BILLING`)."""
+    """The question `up` asks before it creates an endpoint, resumes a paused one or wakes one
+    that scaled to zero, each of which bills from then on, with the price read from Hugging
+    Face's listing on the day (`endpoint_upstream_api.BILLING`). `doing` is `start`, `resume`
+    or `wake`."""
     compute = check.compute if isinstance(check, Preflight) else check
-    verb, start = ("resumes", "Resume it?") if resuming else ("starts", "Start it?")
+    verb, start = _ASKED[doing]
     return (
         f"This {verb} a Hugging Face Inference Endpoint on {record.namespace}'s account: "
         f"{record.name}, serving {record.policy} on {record.instance} {INSTANCE_SIZE} in "

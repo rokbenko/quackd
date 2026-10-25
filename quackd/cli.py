@@ -5244,11 +5244,13 @@ def _endpoint_create(
 
 
 def _endpoint_resume(ep: Any, api: Any, record: Any, *, yes: bool) -> None:
-    """Wake an endpoint this machine started: resume one that is paused, after asking, since it
-    bills again, and leave one that is starting, running or scaled to zero to the wait, whose
-    first request wakes the last. One that failed is said with its log, and not waited for. It
-    is read first and held to the record (`endpoint.confirm`), so one by that name that quackd
-    did not start, or at another address, is left as it is."""
+    """Wake an endpoint this machine started: resume one that is paused, or wake one that
+    scaled to zero with a request to its health route, each after asking, since it bills again,
+    and leave one that is starting or running to the wait. One that failed is said with its log
+    and its message, every token taken out, and not waited for. It is read first and held to
+    the record (`endpoint.confirm`), so one by that name that quackd did not start, or at
+    another address, is left as it is."""
+    api.also_scrub(record.token)
     found = ep.confirm(api, record)
     if found is None:
         _fail(
@@ -5256,21 +5258,25 @@ def _endpoint_resume(ep: Any, api: Any, record: Any, *, yes: bool) -> None:
             f"more: quackd policy endpoint delete {record.name} forgets it here, and up then "
             "starts it afresh"
         )
-    state, _, message = ep.state_of(found)
+    state, url, message = ep.state_of(found)
     if state in ep.FAILED:
         for line in api.logs(record.namespace, record.name):
             _endpoint_note(f"  {line}")
+        why = api.printable(message)
         _fail(
-            f"{record.endpoint} is {state}{': ' + message if message else ''}. quackd policy "
-            f"endpoint delete {record.name}, then up, starts it afresh"
+            f"{record.endpoint} is {state}{': ' + why if why else ''}. quackd policy endpoint "
+            f"delete {record.name}, then up, starts it afresh"
         )
-    if state == ep.PAUSED:
+    if state in (ep.PAUSED, ep.ASLEEP):
         compute = ep.find_compute(api.provider(), record.vendor, record.region, record.instance)
-        _ask_or_refuse(ep.confirmation(record, compute, resuming=True), yes)
-        api.also_scrub(record.token)
-        api.resume(record.namespace, record.name)
+        doing = "resume" if state == ep.PAUSED else "wake"
+        _ask_or_refuse(ep.confirmation(record, compute, doing=doing), yes)
+        if state == ep.PAUSED:
+            api.resume(record.namespace, record.name)
+        elif url is not None and record.url is not None:
+            api.health(record.url)  # a request wakes it, and --no-wait sends no other
         _endpoint_row(
-            "resumed",
+            "resumed" if state == ep.PAUSED else "waking",
             f"{record.name}, ${compute.price_per_hour:.2f} an hour while it runs",
         )
 
