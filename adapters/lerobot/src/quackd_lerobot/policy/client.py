@@ -143,7 +143,7 @@ def is_endpoint_host(url: str) -> bool:
     return parts.scheme == "https" and ENDPOINT_AUTHORITY.fullmatch(parts.netloc) is not None
 
 
-def _clean_bearer(bearer: str) -> str:
+def clean_bearer(bearer: str) -> str:
     """The Hugging Face token as it goes in the header, or a ValueError that never quotes it: one
     a header cannot carry is refused for the reason `protocol.clean_token` gives, and so is one
     too short to scrub out of an error without eating the letters around it."""
@@ -361,7 +361,7 @@ class RemoteRunner:
                 "token was not sent there: it goes to the address quackd policy endpoint up "
                 "recorded for an endpoint, and to nothing else"
             )
-        self._bearer = None if bearer is None else _clean_bearer(bearer)
+        self._bearer = None if bearer is None else clean_bearer(bearer)
         self.endpoint = endpoint
         self.motors = tuple(motors)
         self.cameras = tuple(cameras)
@@ -904,6 +904,7 @@ __all__ = [
     "STEP_TIMEOUT_S",
     "PolicyServerError",
     "RemoteRunner",
+    "clean_bearer",
     "client_token",
     "is_endpoint_host",
     "policy_address",
