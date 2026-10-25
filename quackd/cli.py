@@ -4925,25 +4925,28 @@ def _changed_flags(given: dict[str, tuple[Any, Any]]) -> list[str]:
 
 
 def _paused_and_quoted(ep: Any, api: Any, record: Any, why: str) -> None:
-    """Pause an endpoint that cannot serve, quote the last of its log, and fail saying why."""
-    lines, unpaused = ep.pause_and_quote(api, record)
+    """Pause an endpoint that cannot serve, quote the last of its log, and fail saying why and
+    how its bill stands (`endpoint.pause_and_quote`)."""
+    lines, bill = ep.pause_and_quote(api, record)
     if lines:
         _endpoint_note("its log ended:")
         for line in lines:
             _endpoint_note(f"  {line}")
-    if unpaused is not None:
-        _fail(f"{why}, {unpaused}")
+    above = " Its log is above." if lines else ""
     _fail(
-        f"{why}, so it was paused, and bills nothing now. Its log is above. quackd policy "
-        f"endpoint up {record.name} tries again, and delete {record.name} removes it"
+        f"{why.rstrip('.')}, {bill}.{above} quackd policy endpoint up {record.name} tries "
+        f"again, and delete {record.name} removes it"
     )
 
 
 def _wait_and_say(ep: Any, api: Any, store: Any, record: Any, minutes: float) -> None:
     """Wait for `record`'s endpoint to serve, saying each state it passes as it does, then ask
     its server what it serves and say where it is and how a run reaches it. An endpoint that
-    fails, that does not serve in time, or whose server has no GPU, is paused, which stops its
-    bill, and its log quoted (`endpoint.pause_and_quote`)."""
+    fails, that does not serve in time, whose server has no GPU, or that the wait stops on for
+    any other reason, Hugging Face's answer, the record's write or the server's refusal, is
+    paused, which stops its bill, and its log quoted (`endpoint.pause_and_quote`): one left
+    starting would bill until it idled to zero. Ctrl-C alone leaves it, and says how to pause
+    it."""
     from quackd_lerobot.policy.client import PolicyServerError, RemoteRunner
     from quackd_lerobot.verbs import JOINTS
 
@@ -4959,21 +4962,25 @@ def _wait_and_say(ep: Any, api: Any, store: Any, record: Any, minutes: float) ->
             f"{record.name} stops its bill now",
             code=130,
         )
-    except ep.EndpointFailed as e:
-        _paused_and_quoted(ep, api, record, str(e))
-    except ep.EndpointTimeout as e:
+    except ep.EndpointError as e:  # failed, timed out, or anything else on the way
         _paused_and_quoted(ep, api, record, str(e))
     _endpoint_row("url", str(record.url))
     _endpoint_row("token", f"kept in {_home_relative(store.path)}, for {record.endpoint}")
-    runner = RemoteRunner(
-        record.url, token=record.token, bearer=api.token, endpoint=record.endpoint, motors=JOINTS
-    )
+    runner: Any = None
     try:
+        runner = RemoteRunner(
+            record.url,
+            token=record.token,
+            bearer=api.token,
+            endpoint=record.endpoint,
+            motors=JOINTS,
+        )
         info = runner.policy()
-    except PolicyServerError as e:
-        _fail(str(e))
+    except (PolicyServerError, ValueError) as e:
+        _paused_and_quoted(ep, api, record, str(e))
     finally:
-        runner.close()
+        if runner is not None:
+            runner.close()
     gpu = "gpu yes" if info.gpu else "gpu no"
     _endpoint_row(
         "serving",

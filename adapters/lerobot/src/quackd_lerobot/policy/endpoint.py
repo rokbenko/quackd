@@ -530,8 +530,10 @@ class HFEndpoints:
         """Whether the server at an endpoint's `url` answers `GET /v1/health` with ready, which
         is the request that wakes an endpoint scaled to zero too. The account's token goes there
         as the bearer only when `url` is wholly an endpoint's (`client.is_endpoint_host`), and a
-        caller hands over only the address `up` recorded. Not ready yet is False, and a token
-        Hugging Face refuses, or an endpoint that is gone, an `EndpointError`."""
+        caller hands over only the address `up` recorded. Not ready yet is False, and so is a
+        404, which a proxy may answer before it has a route to a replica that is starting:
+        whether the endpoint is gone is the API's to say, on the wait's next read of it. A token
+        Hugging Face refuses is an `EndpointError`."""
         if not client.is_endpoint_host(url):
             raise EndpointError(
                 f"{url[:80]} is not a Hugging Face Endpoint's https address, so the Hugging Face "
@@ -541,7 +543,7 @@ class HFEndpoints:
             reply = _request("GET", url.strip().rstrip("/"), wire.HEALTH_PATH, bearer=self._token)
         except EndpointError:
             return False  # not answering yet is what a starting endpoint does
-        if reply.status in (401, 403, 404):
+        if reply.status in (401, 403):
             raise self._refusal(reply, "reach the endpoint")
         if reply.status != 200:
             return False
@@ -1182,20 +1184,23 @@ def wait_until_serving(
         sleep(POLL_S)
 
 
-def pause_and_quote(api: HFEndpoints, record: EndpointRecord) -> tuple[list[str], str | None]:
+def pause_and_quote(api: HFEndpoints, record: EndpointRecord) -> tuple[list[str], str]:
     """Pause `record`'s endpoint, which stops its bill, and hand back the last lines of its log,
-    scrubbed of every token, for the refusal to quote, with why the pause failed, or None when
-    it did not. A pause that fails is no reason to hide the log, and is said beside it."""
+    scrubbed of every token, for the refusal to quote, with a clause saying how its bill stands
+    now: paused, gone from Hugging Face, or not paused, and why. A pause that fails is no
+    reason to hide the log, and is said beside it."""
     api.also_scrub(record.token)
     lines = api.logs(record.namespace, record.name)
     try:
         api.pause(record.namespace, record.name)
     except EndpointError as e:
+        if e.status == 404:
+            return lines, "and Hugging Face has no such endpoint any more, so it bills nothing"
         return lines, (
-            f"and it could not be paused, so it may still bill: {e}. Pause it with quackd "
-            f"policy endpoint pause {record.name}, or on huggingface.co"
+            f"and it could not be paused, so it may still bill: {str(e).rstrip('.')}. Pause it "
+            f"with quackd policy endpoint pause {record.name}, or on huggingface.co"
         )
-    return lines, None
+    return lines, "so it was paused, and bills nothing now"
 
 
 # ── how a run reaches one ───────────────────────────────────────────────────────────────

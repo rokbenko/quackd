@@ -442,6 +442,72 @@ def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_with_no_token_in_it
     assert hf.endpoints[("rok", "arm")].state == "paused"
 
 
+@pytest.mark.parametrize("fault", ["the api", "the record", "the server"])
+def test_up_pauses_an_endpoint_whatever_stops_its_wait(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    """An endpoint left starting bills until it idles to zero, so a wait that stops for any
+    reason pauses it: a 502 from the API on a read of it, a record that cannot be written once
+    its address is known, or a refusal from the proxy when the server is asked what it serves."""
+    if fault == "the api":
+        real = FakeAPI._endpoint
+        reads = {"n": 0}
+
+        def flaky(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+            if method == "GET" and len(path) == 2:
+                reads["n"] += 1  # the first is up's look for a name already taken
+                if reads["n"] == 3:
+                    return 502, {"Content-Type": "text/plain"}, b"Bad Gateway"
+            return real(self, method, path, seen, query)
+
+        monkeypatch.setattr(FakeAPI, "_endpoint", flaky)
+    elif fault == "the record":
+        save = E.EndpointStore.save
+
+        def unwritable(self: E.EndpointStore, record: E.EndpointRecord) -> None:
+            if record.url is not None:
+                raise E.EndpointError(f"cannot write {self.path}: the disk is full")
+            save(self, record)
+
+        monkeypatch.setattr(E.EndpointStore, "save", unwritable)
+    else:
+        answer = FakeProxy._reply
+
+        def refusing(self: FakeProxy, seen: Recorded) -> Any:
+            if seen.path == wire.POLICY_PATH:
+                return 502, {"Content-Type": "text/plain"}, b"Bad Gateway"
+            return answer(self, seen)
+
+        monkeypatch.setattr(FakeProxy, "_reply", refusing)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "so it was paused, and bills nothing now" in said, said
+    assert hf.endpoints[("rok", "arm")].state == "paused"
+    assert [r for r in hf.requests if r.path.endswith("/arm/pause")]
+
+
+def test_a_404_from_the_proxy_before_it_has_a_route_is_waited_out_and_not_fatal(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A proxy may answer 404 before it has a route to a replica that is starting, and whether
+    the endpoint is gone is the API's to say: the wait asks again, and up serves."""
+    answer = FakeProxy._reply
+    asked = {"n": 0}
+
+    def unrouted(self: FakeProxy, seen: Recorded) -> Any:
+        if seen.path == wire.HEALTH_PATH:
+            asked["n"] += 1
+            if asked["n"] == 1:
+                return 404, {"Content-Type": "application/json"}, b'{"error":"not found yet"}'
+        return answer(self, seen)
+
+    monkeypatch.setattr(FakeProxy, "_reply", unrouted)
+    result = _cli(*UP, "--yes")
+    assert result.exit_code == 0 and "gpu yes" in _flat(result.output), result.output
+    assert asked["n"] >= 2 and hf.endpoints[("rok", "arm")].state == "running"
+    assert not [r for r in hf.requests if r.path.endswith("/pause")]
+
+
 def test_an_endpoint_that_does_not_serve_in_time_is_paused(hf: FakeAPI) -> None:
     hf.stuck = True
     result = _cli(*UP, "--yes", "--wait-minutes", "0.001")

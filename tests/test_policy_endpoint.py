@@ -567,8 +567,8 @@ def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_without_a_token(
         E.wait_until_serving(api, record, minutes=1, store=store)
     ep = hf.endpoints[("rok", "arm")]
     ep.log += [f"QUACKD_POLICY_TOKEN={record.token}", f"Authorization: Bearer {ACCOUNT_TOKEN}"]
-    lines, failed = E.pause_and_quote(api, record)
-    assert failed is None and ep.state == "paused"
+    lines, bill = E.pause_and_quote(api, record)
+    assert bill == "so it was paused, and bills nothing now" and ep.state == "paused"
     assert lines[-2:] == ["QUACKD_POLICY_TOKEN=<token>", "Authorization: Bearer <token>"]
     assert not any(record.token in line or ACCOUNT_TOKEN in line for line in lines)
 
