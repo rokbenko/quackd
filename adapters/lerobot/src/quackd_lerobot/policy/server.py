@@ -1481,12 +1481,13 @@ def bench(
     queue plays, and a wait for a chunk that outlasted its tick sends nothing in it, as a
     segment's does. With `async_chunks` off (`--no-async-chunks`) a policy that plays chunks
     has each played out before the next is asked for, the ticks between holding still, as a
-    segment plays chunks one at a time (`loop._Run.one_at_a_time`). The observation is every
-    motor at 0 and a frame of seeded noise per camera
-    the server maps, which JPEG compresses worst, so a round trip measured here is not
-    flattered by an easy picture. Before the stream one warm step is timed on its own
-    (`BenchResult.latency_s`), and the latency the bench suggests is read over it and every
-    step of the stream (`BenchResult.declare_s`)."""
+    segment plays chunks one at a time (`loop._Run.one_at_a_time`). A policy asked every tick
+    (`Features.per_tick`) has each answer played on the tick it is taken in, the tick after it
+    was asked where it declares a tick to answer, as a segment plays it. The observation is
+    every motor at 0 and a frame of seeded noise per camera the server maps, which JPEG
+    compresses worst, so a round trip measured here is not flattered by an easy picture. Before
+    the stream one warm step is timed on its own (`BenchResult.latency_s`), and the latency the
+    bench suggests is read over it and every step of the stream (`BenchResult.declare_s`)."""
     info = runner.policy()
     runner.cameras = tuple(_synthetic_cameras(info))
     if info.features.state is not None and len(runner.motors) != info.features.state:
@@ -1545,6 +1546,12 @@ def bench(
         inflight = None
         chunk = future.result()  # a server that failed fails the check, and says so
         done = done or chunk.done
+        if features.per_tick:
+            # asked every tick, it answers for the tick its answer is played at, as a segment
+            # plays it (`loop.PolicyLoop._merge`)
+            if chunk.actions:
+                queue = deque([(tick, chunk.actions[0])])
+            return
         if one_at_a_time:
             # played from its first action at the tick it lands, as a segment plays it so
             fresh = [(tick + i, a) for i, a in enumerate(chunk.actions)]

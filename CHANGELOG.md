@@ -79,6 +79,17 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   paces by the same rule, and tests hold a first answer slower than a stall to a second of
   goals, a refill whose own tick ran long to sending its goal late, and slow answers with
   nothing in them to being starved out.
+- **A bench of a policy asked every tick played none of its answers once it declared a
+  latency.** A policy in tick mode, as an ACT trained with temporal ensembling is served, is
+  asked every tick, and a segment plays each answer on the tick it takes it in, the tick after
+  it was asked where the server declares a tick to answer. `quackd policy check --bench` kept
+  each answer for the tick it was asked at instead, so it was a tick stale when it was taken in
+  and thrown away. A scripted server in tick mode that answered in about a millisecond,
+  declaring a tick at 10 Hz, benched 0 of 100 ticks over 10 s, said all 100 starved ticks came
+  before its first answer, which a segment gives time for, and said the latency it was served
+  with covered what it timed. It now benches 99 of 100, starving only the tick before its first
+  answer came back, and a test holds a bench of it to playing its answers. A policy in tick
+  mode that declares no latency was waited for in each tick and played, and still is.
 - **An empty frame before the verdict comes with the rule beside it.** 0.10.0 reworded
   `assess_task` so that a target the pilot has not found yet is not by itself a reason for
   `uncertain`, and on Qwen3-32B-AWQ that did not move the verdicts: on 0.10.0,
