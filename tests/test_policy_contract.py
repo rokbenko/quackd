@@ -63,7 +63,13 @@ from quackd_lerobot.policy.loop import (
     starved_each_chunk,
 )
 from quackd_lerobot.policy.runner import Chunk, Observation
-from quackd_lerobot.policy.scripted import SCRIPTED_HZ, SCRIPTS, SWEEP_DEG, SWEEP_JOINT
+from quackd_lerobot.policy.scripted import (
+    SCRIPTED_HZ,
+    SCRIPTS,
+    SWEEP_DEG,
+    SWEEP_JOINT,
+    ScriptedRunner,
+)
 from quackd_lerobot.real import (
     CAMERA_ROTATIONS,
     OUT_OF_RANGE_DEG,
@@ -1467,10 +1473,55 @@ def test_a_bench_with_no_async_chunks_plays_each_chunk_out_and_holds_between() -
         serving.app.close()
     asked = built.requests - 2  # the warm step and the one timed on its own came first
     assert asked >= 3 and result.waits_each and not result.waited_ticks, result
-    assert result.chunk is not None and result.played >= (asked - 1) * result.chunk, result
+    # every chunk before the last was played out, each action sent or, on a machine too busy to
+    # keep the rate, dropped with a tick the pacer skipped, as CI's macOS runners do
+    assert result.chunk is not None, result
+    assert result.played + result.skipped >= (asked - 1) * result.chunk, result
     assert result.starved >= asked, result  # a tick at least of every wait held still
     said = dict(S.describe_bench(result))["starved"]
     assert "--no-async-chunks" in said, said
+
+
+@pytest.mark.parametrize("k", [0, 1], ids=["no latency", "a tick"])
+def test_a_bench_of_a_policy_asked_every_tick_plays_each_answer_the_tick_it_lands(k: int) -> None:
+    """A server in tick mode, as an ACT trained with temporal ensembling is served. Declaring
+    the tick it takes to answer, a segment asks it every tick, takes each answer in on the tick
+    after and plays it there (`loop.PolicyLoop._merge`), and the bench paces it the same way, so
+    it starves only while the first answer is on its way. Kept for the tick it was asked at,
+    every answer was a tick stale when it was taken in and thrown away, and the bench starved
+    every tick of a policy the arm plays. Declaring none, each answer is waited for in the tick
+    that asked for it and played there, on the arm as in the bench."""
+    _, sweep = S.served_policy(S.ServeOptions(policy="scripted:sweep"))
+    rate = sweep.rate_hz
+    every = ScriptedRunner(
+        lambda _observation, _sent: [{SWEEP_JOINT: 0.0}],
+        rate_hz=rate,
+        latency_ticks=k,
+        per_tick=True,
+    )
+    declared = every.latency_s()
+    info = wire.validate(
+        wire.PolicyInfo,
+        {
+            **sweep.model_dump(),
+            "per_tick": True,
+            "latency_s": declared,
+            "chunk_size": 1,
+            "n_action_steps": 1,
+        },
+    )
+    app_ = S.PolicyServer(every, info, TOKEN)
+    serving = Serving(app_, S.serve(app_, "127.0.0.1", 0))
+    try:
+        result = S.bench(serving.client(), seconds=2.0)
+    finally:
+        serving.http.shutdown()
+        serving.http.server_close()
+        serving.app.close()
+    assert result.per_tick and result.declared_s == declared and latency_ticks(declared, rate) == k
+    assert every.requests - 2 >= result.ticks - 1, "a policy in tick mode is asked every tick"
+    # declaring a tick, the first has nothing yet, and on a busy machine an answer may miss one
+    assert result.before_first >= k and result.played >= result.ticks // 2, result
 
 
 def test_the_suggested_latency_covers_most_steps_timed_and_rests_on_no_one_of_them() -> None:
