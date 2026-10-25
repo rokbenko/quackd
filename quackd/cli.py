@@ -628,6 +628,7 @@ def _header_rows(
     policy: Mapping[str, Any] | None = None,
     play: str | None = None,
     talk: str | None = None,
+    effort: str | None = None,
 ) -> list[tuple[str, Any]]:
     """The things worth knowing before a run starts, and nothing else: who pilots, which body,
     what reads its frames, the board when there is one, and the policy server the arm hands its
@@ -638,8 +639,12 @@ def _header_rows(
 
     rows: list[tuple[str, Any]] = [
         ("provider", f"{provider.name} ({provider.model or 'the first model it serves'})"),
-        ("robot", robot + (f"  seed {seed}" if seed is not None else "")),
     ]
+    # only when the flag asked for it, so a header quoted anywhere from a run without one stays
+    # what it was; the record has the level and where it came from on every run (`run_start`)
+    if effort is not None:
+        rows.append(("effort", f"{effort.strip().lower()} (--effort)"))
+    rows.append(("robot", robot + (f"  seed {seed}" if seed is not None else "")))
     rows.append(("detector", _detector_row(detector, hello, backend, sees=sees)))
     if board is not None and hello is not None:
         rows.append(("host", _host_row(board, hello, host_camera)))
@@ -1489,6 +1494,7 @@ def _run_impl(
     talk: bool = False,
     meet: Sequence[str] = (),
     talk_port: int = 8790,
+    effort: str | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError as _AdapterError
     from quackd.adapters.base import policy_choice, policy_hint
@@ -2041,6 +2047,7 @@ def _run_impl(
                 run_name=run_name,
                 price=price,
                 play=play,
+                effort=effort,
             )
             return
         if roster is not None:
@@ -2086,6 +2093,7 @@ def _run_impl(
             log_prompt=log_prompt,
             run_name=run_name,
             price=price,
+            effort=effort,
         )
         return
     # The lens a detector built now measures through: --fov-deg, else the body's own. Never
@@ -2111,6 +2119,14 @@ def _run_impl(
         return
     try:
         pilot: LLMProvider
+        if vla and effort is not None:
+            # the scripted VLA pilot asks no model anything, so a reasoning level has nobody to
+            # reach, and the flag is a mistake to say rather than a setting to drop quietly
+            _fail(
+                "--effort says how hard a model reasons, and --controller vla asks no model: "
+                "the policy server drives the arm and the scripted pilot only reads it the steps"
+            )
+            return
         if vla:
             from quackd.agent.providers.vla import VlaProvider
 
@@ -2145,6 +2161,7 @@ def _run_impl(
                 # only a host a person named for this run or this robot: QUACKD_HOST sits
                 # below QUACKD_BASE_URL, and the local provider reads it there for itself
                 host=host_choice.explicit,
+                effort=effort,
             )
         duck_transport = make_adapter(
             spec,
@@ -2391,6 +2408,7 @@ def _run_impl(
                     *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
                 ),
                 talk=nearby.inbox if nearby is not None else None,
+                effort=effort,
             ),
             hint="Ctrl-C or q stops the duck. Press it twice to quit at once.",
         )
@@ -2560,6 +2578,7 @@ def _run_pilots_impl(
     run_name: str | None = None,
     price: str | None = None,
     play: bool | None = None,
+    effort: str | None = None,
 ) -> None:
     """A pilot per body, all at once. The other flock is `_run_flock_impl`."""
     from quackd.agent.loop import resolve_play
@@ -2590,6 +2609,7 @@ def _run_pilots_impl(
                 api_key=api_key,
                 vision=vision,
                 extra_body=extra_body,
+                effort=effort,
             )
     except (ProviderError, ImportError) as e:
         _fail(str(e))
@@ -2785,6 +2805,7 @@ def _run_flock_impl(
     log_prompt: bool | None = None,
     run_name: str | None = None,
     price: str | None = None,
+    effort: str | None = None,
 ) -> None:
     from quackd.agent.providers.base import ProviderError
     from quackd.agent.providers.factory import make_provider, resolve_llm
@@ -2837,6 +2858,7 @@ def _run_flock_impl(
             api_key=api_key,
             vision=vision,
             extra_body=extra_body,
+            effort=effort,
         )
     except (ProviderError, ImportError) as e:
         _fail(str(e))
@@ -3125,6 +3147,17 @@ _EXTRA_BODY = typer.Option(
     "a field the server wants and quackd never sends. Qwen3 on vLLM stops thinking with "
     '\'{"chat_template_kwargs": {"enable_thinking": false}}\'. QUACKD_EXTRA_BODY does the '
     "same when the flag is absent, and spares you the shell quoting.",
+    rich_help_panel="Model",
+)
+_EFFORT = typer.Option(
+    None,
+    "--effort",
+    metavar="low|medium|high",
+    help="How hard the pilot's model reasons before each answer: Anthropic's effort and "
+    "OpenAI's reasoning effort, and a model server of your own's. Lower answers sooner. "
+    "Beats QUACKD_EFFORT and QUACKD_OPENAI_REASONING_EFFORT, and is refused for a vendor "
+    "or a model that takes no such setting. Default: medium on Claude, the model's own on "
+    "OpenAI.",
     rich_help_panel="Model",
 )
 _VISION = typer.Option(
@@ -3554,6 +3587,7 @@ def run(
     api_key: str | None = _APIKEY,
     vision: bool | None = _VISION,
     extra_body: str | None = _EXTRA_BODY,
+    effort: str | None = _EFFORT,
     decision_llm: str | None = _DECISION_LLM,
     decision_url: str | None = _DECISION_URL,
     decision_mode: str | None = _DECISION_MODE,
@@ -3622,6 +3656,7 @@ def run(
             talk=talk,
             meet=meet,
             talk_port=talk_port,
+            effort=effort,
         )
 
 
@@ -3725,6 +3760,7 @@ def preflight(
         autocompletion=_complete_llm,
         rich_help_panel="Model",
     ),
+    effort: str | None = _EFFORT,
     camera_url: list[str] = typer.Option(
         [],
         "--camera-url",
@@ -3790,6 +3826,7 @@ def preflight(
         accept_other_frame=accept_other_frame,
         async_chunks=async_chunks,
         play=play,
+        effort=effort,
     )
 
 
@@ -3812,6 +3849,7 @@ def _preflight_impl(
     accept_other_frame: bool = False,
     async_chunks: bool = True,
     play: bool | None = None,
+    effort: str | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError, policy_choice
     from quackd.adapters.factory import describe, make_adapter
@@ -3850,7 +3888,7 @@ def _preflight_impl(
         refuse_default_pilot(source)
         # one pilot built now and thrown away: a missing key or extra is a sentence before any
         # world is loaded, rather than the same error on every seed of every file
-        probe = make_provider(vendor, model=model_id, source=source)
+        probe = make_provider(vendor, model=model_id, source=source, effort=effort)
     except (PreflightError, ProviderError) as e:
         _fail(str(e))
         return
@@ -3894,7 +3932,9 @@ def _preflight_impl(
             return
 
     def pilot(duck: Any) -> Any:
-        return make_provider(vendor, model=model_id, source=source, duck_name=duck.name)
+        return make_provider(
+            vendor, model=model_id, source=source, duck_name=duck.name, effort=effort
+        )
 
     rehearsal = Rehearsal(
         spec=here.spec,

@@ -552,6 +552,12 @@ class OpenAIProvider:
         self.reasoning_effort = reasoning_effort or _os.environ.get(
             "QUACKD_OPENAI_REASONING_EFFORT"
         )
+        #: Where `reasoning_effort` came from, for the record (`asked_effort`): whoever built this
+        #: provider, which the factory renames `--effort`, or the variable. None where nothing is
+        #: sent, so the model's own default applies, which quackd does not know and does not guess.
+        self.effort_from: str | None = "the caller" if reasoning_effort else None
+        if not reasoning_effort and self.reasoning_effort:
+            self.effort_from = "QUACKD_OPENAI_REASONING_EFFORT"
         #: Fields the server wants and quackd never sends, merged into the top level of every
         #: request body by the SDK's own `extra_body`, on either API. `{"chat_template_kwargs":
         #: {"enable_thinking": false}}` is how Qwen3's thinking is turned off on vLLM (#12).
@@ -757,6 +763,15 @@ class OpenAIProvider:
                 "not built"
             )
         return built
+
+    @property
+    def asked_effort(self) -> dict[str, str] | None:
+        """What every request of this run asks the model to reason at, and where that came from,
+        as `run_start.effort` records it, or None where nothing is sent and the model's own
+        default applies."""
+        if not self.reasoning_effort:
+            return None
+        return {"value": self.reasoning_effort, "from": self.effort_from or "the caller"}
 
     def _params(
         self, system: str, history: list[Exchange], tools: list[dict[str, Any]]

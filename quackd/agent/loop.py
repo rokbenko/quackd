@@ -2329,6 +2329,9 @@ class AgentLoop:
                 # `authorization` header is the canonical such field; it also arrives
                 # from `QUACKD_EXTRA_BODY`, which no amount of argv redaction can reach.
                 extra_body=redacted_body(getattr(cfg.provider, "extra_body", None)),
+                # what every request asks the model to reason at, and whose word that was:
+                # `--effort`, a variable, or quackd's own default, and null where nothing is sent
+                effort=getattr(cfg.provider, "asked_effort", None),
                 transport=backend_name(cfg.transport),
                 adapter=adapter_name(cfg.transport),
                 robot=manifest.model_dump(mode="json") if manifest is not None else None,

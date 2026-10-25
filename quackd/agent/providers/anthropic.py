@@ -287,6 +287,11 @@ class AnthropicProvider:
             self.supports_vision = vision
         self.max_tokens = max_tokens or int(os.environ.get("QUACKD_MAX_TOKENS", "16000"))
         self.effort = effort or os.environ.get("QUACKD_EFFORT", "medium")
+        #: Where `effort` came from, for the record (`asked_effort`): whoever built this provider,
+        #: which the factory renames `--effort`, then `QUACKD_EFFORT`, then quackd's own medium.
+        self.effort_from = "the caller"
+        if not effort:
+            self.effort_from = "QUACKD_EFFORT" if os.environ.get("QUACKD_EFFORT") else "default"
         env_fb = os.environ.get("QUACKD_ANTHROPIC_FALLBACKS", "1") not in ("0", "false", "no")
         self.fallbacks = env_fb if fallbacks is None else fallbacks
         # `summarized` is what makes the thinking blocks carry text. `omitted` keeps the
@@ -334,6 +339,15 @@ class AnthropicProvider:
                 thinking["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
             params["thinking"] = thinking
         return params
+
+    @property
+    def asked_effort(self) -> dict[str, str] | None:
+        """What every request of this run asks the model to reason at, and where that came from,
+        as `run_start.effort` records it, or None for a model that is sent no effort at all
+        (`ModelSpec.effort`, or `QUACKD_EFFORT` set blank)."""
+        if not (self.effort and self.sends_effort):
+            return None
+        return {"value": self.effort, "from": self.effort_from}
 
     def without_thinking(self, decision: Decision) -> Decision:
         """The same turn with its thinking and redacted thinking blocks left out.

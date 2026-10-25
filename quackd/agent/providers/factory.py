@@ -336,6 +336,50 @@ def resolve_llm(
     return DEFAULT_LLM, None, "default"
 
 
+EFFORTS = ("low", "medium", "high")
+"""What `--effort` takes: the levels Anthropic's `output_config.effort` and OpenAI's reasoning
+effort both have. Each API names more of its own, and a level only one of them knows would be a
+flag that works on one vendor and is refused by the other's server at the first turn, with the
+robot connected."""
+
+EFFORT_TAKERS = ("anthropic", "openai", *LOCAL_NAMES)
+"""The pilots `--effort` reaches: Anthropic's `output_config.effort`, OpenAI's reasoning effort,
+and a model server of your own, which speaks OpenAI's API and passes the field through. The
+other vendors document no such field quackd sends, so the flag is refused for them rather than
+sent to be ignored or answered with a 400. `QUACKD_OPENAI_REASONING_EFFORT` still reaches every
+pilot built on OpenAI's SDK, as it always has: it is the expert's passthrough, and this is the
+promise."""
+
+
+def effort_refusal(name: str, model: str | None, effort: str) -> str | None:
+    """Why `--effort` cannot be honoured for this pilot, as the sentence the CLI refuses with, or
+    None where it can. Read before anything is built or connected."""
+    if effort not in EFFORTS:
+        return f"--effort is one of {', '.join(EFFORTS)}, not {effort!r}"
+    if name == "fake":
+        return (
+            "--effort says how hard a model reasons, and the scripted pilot (--llm fake) has no "
+            "model to ask: drop --effort, or name the model to set it for"
+        )
+    if name not in EFFORT_TAKERS:
+        how = (
+            ", and OpenRouter takes its own `reasoning` field, which --extra-body carries"
+            if name == "openrouter"
+            else ""
+        )
+        return (
+            f"--effort is sent to {', '.join(EFFORT_TAKERS[:2])} and a model server of your own, "
+            f"and {name} documents no such field quackd sends{how}"
+        )
+    spec = find_model(name, model or "") if name == "anthropic" else None
+    if spec is not None and not spec.effort:
+        return (
+            f"{model} takes no effort setting: Anthropic's effort page does not list it, so "
+            "quackd sends it none and --effort would change nothing"
+        )
+    return None
+
+
 def _extra_body(text: str | None) -> dict[str, Any] | None:
     """`--extra-body` as the dict a provider takes, parsed here so a bad value names the flag
     and stops before a key is read or a packet is sent. None hands the provider nothing, and it
@@ -359,6 +403,7 @@ def make_provider(
     vision: bool | None = None,
     extra_body: str | None = None,
     host: str | None = None,
+    effort: str | None = None,
 ) -> LLMProvider:
     name = name.lower()
     # Before the branches, so a typo is refused the same way whichever provider was named,
@@ -366,6 +411,15 @@ def make_provider(
     # but ignoring a field is not the same as swallowing a mistake, and `--llm fake`
     # is then the cheapest way to find out whether a shell mangled the quoting.
     body = _extra_body(extra_body)
+    # `--effort` beats `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which each provider
+    # still reads for itself when nothing is handed down. Refused here, before anything is built,
+    # for a pilot it cannot reach: a Claude model is resolved first, because only its catalogue
+    # row says whether it takes effort at all, and the sentence names it.
+    if effort is not None:
+        effort = effort.strip().lower()
+        which = resolve_model(name, model or None, source=source) if name == "anthropic" else model
+        if (why := effort_refusal(name, which, effort)) is not None:
+            raise ProviderError(why)
     if name == "fake":
         from quackd.agent.providers.fake import FakeProvider
 
@@ -381,17 +435,24 @@ def make_provider(
     if name == "anthropic":
         from quackd.agent.providers.anthropic import AnthropicProvider
 
-        return AnthropicProvider(model=model, vision=vision)
+        claude = AnthropicProvider(model=model, vision=vision, effort=effort)
+        if effort is not None:
+            claude.effort_from = "--effort"
+        return claude
     if name == "openai":
         from quackd.agent.providers.openai import OpenAIProvider
 
-        return OpenAIProvider(
+        gpt = OpenAIProvider(
             model=model,
             api_key=api_key,
             base_url=base_url,
             vision=vision,
             extra_body=body,
+            reasoning_effort=effort,
         )
+        if effort is not None:
+            gpt.effort_from = "--effort"
+        return gpt
     if name == "gemini":
         from quackd.agent.providers.gemini import GeminiProvider
 
@@ -417,7 +478,7 @@ def make_provider(
         # `host` reaches the local presets and nothing else. It moves a preset's localhost to
         # the board `--host` names, and a vendor's API has no localhost to move: OpenAI and
         # the rest are reached at their own address whatever board the robot uses.
-        return LocalProvider(
+        own = LocalProvider(
             model,
             preset=name,
             base_url=base_url,
@@ -425,5 +486,10 @@ def make_provider(
             api_key=api_key,
             vision=vision,
             extra_body=body,
+            # only when asked, so a run without the flag hands the preset exactly what it did
+            **({"reasoning_effort": effort} if effort is not None else {}),
         )
+        if effort is not None:
+            own.effort_from = "--effort"
+        return own
     raise ProviderError(f"unknown provider {name!r}; choose one of {', '.join(PROVIDER_NAMES)}")
