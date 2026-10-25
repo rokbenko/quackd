@@ -33,7 +33,9 @@ no dependency from a policy: no torch, no LeRobot, no HTTP library.
   held to (`_BoundedReader`), so a server that trickles its reply is cut off as surely as one
   that stops. On the arm a step's is longer than any patience the loop has, so a server that
   stops answering starves the segment, which ends it with the arm held, before the call gives
-  up. On the simulator the loop's patience is on the world's clock, which stands still while
+  up, unless what was still queued when it stopped plays for longer than that deadline less
+  the loop's patience: then the call's error ends the segment, and the verb stops the arm on
+  it. On the simulator the loop's patience is on the world's clock, which stands still while
   the loop waits for a chunk, so there this deadline is what ends the segment, and the
   segment says the policy raised the `PolicyServerError` it ended on.
 
@@ -90,9 +92,12 @@ CALL_TIMEOUT_S = 3.0
 what the server holds, and a reset only clears a policy's queue."""
 STEP_TIMEOUT_S = 2 * FIRST_CHUNK_S
 """How long a step may take to answer. Longer than the loop's own patience (`FIRST_CHUNK_S`
-for a first chunk and less after it), so on the arm a server that stops answering starves the
-segment and the loop says so, holding the arm, before this call gives up and frees the loop's
-worker. On the simulator, whose clock stands still while the loop waits, this is what ends the
+for a first chunk and for every chunk played one at a time, `--no-async-chunks`, and less after
+it otherwise), so on the arm a server that stops answering starves the segment and the loop
+says so, holding the arm, before this call gives up and frees the loop's worker, as long as
+what was still queued when it stopped plays out within this less that patience. A queue
+longer than that ends on this call's `PolicyServerError` instead, which the verb stops the arm
+on. On the simulator, whose clock stands still while the loop waits, this is what ends the
 wait, as a `PolicyServerError` the segment ends on."""
 READ_CHUNK_BYTES = 64 << 10
 RETRIED = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)

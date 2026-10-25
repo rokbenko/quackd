@@ -508,19 +508,20 @@ class LeRobotAdapter:
 
     def ask_policy(self) -> dict[str, Any] | None:
         """Ask the policy server what it serves, now, and say it as the record names it
-        (`RemoteRunner.record`), or None for an arm whose policy is not served by another
-        process. It blocks for as long as the client's own timeouts let a call take, and raises
-        the client's sentence when the server does not answer. `quackd run` asks this before the
-        arm connects, so its header can name the checkpoint and a server that is not there is a
-        run refused with nothing energised. The connect asks again, and checks what it hears
-        against the arm (`LeRobotReal._fit_policy`)."""
+        (`RemoteRunner.record`, with how the arm plays its chunks, `PolicyLoop.served`), or None
+        for an arm whose policy is not served by another process. It blocks for as long as the
+        client's own timeouts let a call take, and raises the client's sentence when the server
+        does not answer. `quackd run` asks this before the arm connects, so its header can name
+        the checkpoint and a server that is not there is a run refused with nothing energised.
+        The connect asks again, and checks what it hears against the arm
+        (`LeRobotReal._fit_policy`)."""
         loop = getattr(self.transport, "policy_loop", None)
         runner = getattr(loop, "runner", None)
         ask, record = getattr(runner, "policy", None), getattr(runner, "record", None)
-        if not callable(ask) or not callable(record):
+        if loop is None or not callable(ask) or not callable(record):
             return None
         ask()
-        return dict(record())
+        return dict(loop.served())
 
     @property
     def policy_served(self) -> dict[str, Any] | None:
@@ -687,7 +688,8 @@ def make(
     `policy` is the policy server the arm hands its `pick` and `manipulate` segments to
     (`--policy-url`), reached through a `RemoteRunner` (`_policy_runner`), which the real
     backend and the simulator both take as their policy and check against the arm at connect,
-    before torque (`LeRobotReal._fit_policy`). The mock refuses one (`_refuse_policy`)."""
+    before torque (`LeRobotReal._fit_policy`), and play the chunks of as `--async-chunks` says
+    (`PolicyLoop.async_chunks`). The mock refuses one (`_refuse_policy`)."""
     _check_rest_pose(rest_pose)
     if policy is not None:
         _refuse_policy(backend)
@@ -736,6 +738,7 @@ def make(
                 registered_name=registered_name,
                 scene=scene,
                 policy=_policy_runner(policy),
+                async_chunks=policy is None or policy.async_chunks,
             ),
             robot_id=robot_id,
         )
@@ -751,6 +754,7 @@ def make(
                 rest_pose=rest_pose,
                 registered_name=registered_name,
                 policy=_policy_runner(policy),
+                async_chunks=policy is None or policy.async_chunks,
             ),
             robot_id=robot_id,
         )

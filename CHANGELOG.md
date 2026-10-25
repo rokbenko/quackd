@@ -9,8 +9,76 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`--async-chunks/--no-async-chunks` says how the arm plays a policy server's chunks.** It
+  goes beside `--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`,
+  refused without it, and with `--bench` on `quackd policy check`. `--async-chunks`, the
+  default, asks for each chunk while the arm still plays the last (below). `--no-async-chunks`
+  plays each chunk out before it asks for the next, holds the arm still while that one is on
+  its way and plays it from its first action as it lands, whatever latency the server
+  declares, as LeRobot's own loop plays chunks. No chunk is waited for in a tick, so every tick
+  of the wait still reads and judges the arm, the stall's clock stops while nothing is sent and
+  goes on when sending does, and a wait is starved out after the 5 s a first chunk gets. The
+  simulator holds each chunk back its declared latency, or a tick for a server that declares
+  none, and a test holds its clock and the wall's kind to the same goals. A policy that answers
+  one action at a time has its first answer land a tick later and then runs as it did, and one
+  asked every tick runs as it did. On this project's laptop on 2026-10-25 the guide's ACT,
+  served with no `--latency-s`, reached 29.3 Hz of 30 over a 30 s bench by default and 26.2 Hz
+  with `--no-async-chunks`, whose 113 starved ticks were the waits for its 8 chunks. The bench
+  says so in its starved row, and the `policy` block of `run_start` and `summary.json` carries
+  `async_chunks`
+  ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#a-run-with-a-policy-server)).
+
+### Changed
+
+- **A policy served with no `--latency-s` no longer holds the arm still through every round
+  trip.** `quackd policy serve` declares no latency unless it is given one, and a segment
+  waited for each chunk of such a policy in the tick that asked for it, with half the last
+  chunk still queued, so the arm held its last goal for the whole round trip, once every half
+  chunk. The guide's rented GPU, where SmolVLA and pi05 run, served with no `--latency-s`, and
+  so did the arm's page. A segment now waits in the tick only for a chunk it has nothing left
+  to play from, a first chunk among them, and leaves every other to land while the arm plays
+  what is queued, as it always did for a declared latency, unless `--no-async-chunks` says to
+  play each chunk out first (above). On this project's laptop on 2026-10-25 the guide's ACT, 100
+  actions at 30 Hz, reached 22.6 Hz of 30 over a 30 s bench with no `--latency-s` before the
+  change and 29.3 Hz after it, its median round trip 390 ms and then 455 ms on the laptop's CPU,
+  and the only ticks it skipped after the change were the 20 its first chunk took to come back.
+  The wait cost a round trip's ticks out of every half chunk, so a policy of 50 actions, as
+  SmolVLA and pi05 are by LeRobot 0.6.1's defaults, lost twice the share an ACT of 100 did to
+  the same round trip. No round trip through a rented GPU has been timed, and no policy has
+  driven the arm: a bench streams synthetic observations. A server that stops answering is
+  noticed once what was queued has played out, as it always was for a declared latency. On
+  the simulator a chunk of a policy that declares no latency, asked for with something still
+  queued, is held back a tick, the soonest the arm takes it in, so a rehearsal of one that
+  answers within a tick still plays what the arm would, seam for seam. `--latency-s` still
+  sets how long the simulator holds each chunk back, how early a segment asks for the next
+  once twice the latency is more than half a chunk, and the refusal past half a chunk.
+  `quackd policy check --bench` paces by the same rule, so a first bench of a policy served
+  with no latency waits out its first chunk alone, and its skipped row says which ticks passed
+  in that wait and which a pacer woke too late for. The guide's benches are today's
+  ([docs/guides/policies.md](docs/guides/policies.md#on-the-laptop-alone)). Tests hold a chunk
+  asked for with actions queued to landing while the arm plays, a tick late and half a chunk
+  late, a lockstep rehearsal of one to the trajectory the wall's clock plays, and a bench to
+  waiting out its first chunk alone. The tests that run a segment through the real server on
+  a clock that moves only when slept now wait there for each answer they expect, since one
+  left to land would otherwise land as late as the machine running them was slow.
+
 ### Fixed
 
+- **A first chunk slower than a second could be taken for a stall.** A segment waits for the
+  first chunk of a policy that declares no latency in the tick that asked for it, then sent
+  the chunk's first goal on the reading taken before the wait, with the stall's clock started
+  there. So a policy that held the arm still was taken for stalled on its second goal, and
+  `manipulate` called the segment ok, and a hot joint or torque that went off during the wait
+  was seen only after that goal had gone out. A tick a wait for a chunk outlasts now sends
+  nothing, and the tick due when it ends reads the arm, judges it and plays, so a stall is a
+  second of goals, as the arm's page says. A policy that answers one action at a time still has
+  its late answer sent in the tick that asked, since that is the only goal there is, and a tick
+  that waits for nothing in it, or whose wait brings nothing to play, runs as it did. The bench
+  paces by the same rule, and tests hold a first answer slower than a stall to a second of
+  goals, a refill whose own tick ran long to sending its goal late, and slow answers with
+  nothing in them to being starved out.
 - **An empty frame before the verdict comes with the rule beside it.** 0.10.0 reworded
   `assess_task` so that a target the pilot has not found yet is not by itself a reason for
   `uncertain`, and on Qwen3-32B-AWQ that did not move the verdicts: on 0.10.0,

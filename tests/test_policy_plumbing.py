@@ -693,6 +693,54 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
     assert plain.ask_policy()["accept_other_frame"] is False  # type: ignore[attr-defined]
 
 
+def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
+    tmp_path: Path, held: Serving
+) -> None:
+    """`--no-async-chunks` has the arm wait for every chunk of a policy server's, and means
+    nothing without a server: refused alone on all three commands that take `--policy-url`, and
+    on `policy check` without `--bench`, whose pace it sets. With a server it reaches the arm's
+    policy loop and the record, and asking for chunks while the arm plays is the default."""
+    with pytest.raises(ValueError, match="--no-async-chunks goes with --policy-url"):
+        policy_choice(None, async_chunks=False)
+    refusals = [
+        _run(tmp_path, "--robot", "lerobot:mujoco", "--no-async-chunks"),
+        runner.invoke(
+            app,
+            [
+                "preflight",
+                "hello-world",
+                "--robot",
+                "lerobot:mujoco",
+                "--llm",
+                "fake",
+                "--no-async-chunks",
+                "--runs-dir",
+                str(tmp_path / "runs"),
+            ],
+        ),
+        runner.invoke(app, ["serve-mcp", "--robot", "lerobot:mujoco", "--no-async-chunks"]),
+    ]
+    for refused in refusals:
+        assert refused.exit_code != 0, refused.output
+        assert "--no-async-chunks goes with --policy-url" in _flat(refused.output)
+    check = runner.invoke(app, ["policy", "check", "--policy-url", held.url, "--no-async-chunks"])
+    assert check.exit_code != 0 and "--no-async-chunks goes with --bench" in _flat(check.output)
+    choice = PolicyChoice(held.url, TOKEN, async_chunks=False)
+    adapter = make_adapter("lerobot:mujoco", policy=choice, seed=0)
+    assert adapter.transport.policy_loop.async_chunks is False  # type: ignore[attr-defined]
+    said = adapter.ask_policy()  # type: ignore[attr-defined]
+    assert said is not None and said["async_chunks"] is False
+    from quackd.mcp_server import fleet_from_flags
+
+    plan = fleet_from_flags(
+        robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN, async_chunks=False
+    )
+    (served,) = [a.policy_served for a in plan.adapters.values()]
+    assert served is not None and served["async_chunks"] is False
+    plain = make_adapter("lerobot:mujoco", policy=PolicyChoice(held.url, TOKEN), seed=0)
+    assert plain.ask_policy()["async_chunks"] is True  # type: ignore[attr-defined]
+
+
 def test_preflight_refuses_a_policy_server_that_is_not_there(tmp_path: Path) -> None:
     duck = tmp_path / "hold.duck"
     duck.write_text(

@@ -1284,6 +1284,7 @@ def fleet_from_flags(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    async_chunks: bool = True,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1320,7 +1321,12 @@ def fleet_from_flags(
     if len(named) > 1:
         raise SystemExit(f"choose one: {', '.join(named)}")
     try:
-        policy = policy_choice(policy_url, policy_token, accept_other_frame=accept_other_frame)
+        policy = policy_choice(
+            policy_url,
+            policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
+        )
     except ValueError as e:
         raise SystemExit(str(e)) from e
     policy_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
@@ -1541,6 +1547,7 @@ def serve(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    async_chunks: bool = True,
     talk: bool = False,
     talk_port: int = 8790,
 ) -> None:
@@ -1560,6 +1567,7 @@ def serve(
         policy_url=policy_url,
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
+        async_chunks=async_chunks,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"

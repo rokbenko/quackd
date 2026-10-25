@@ -793,18 +793,27 @@ it sooner, while a verb that sends a goal meanwhile is refused, as on the arm.
   declared latency comes to where that is more, so any answer within half a chunk lands with
   something still queued, and never while it has not answered. The next can be asked for no
   sooner than the last lands, so a chunk has to last while it lands and while the next one
-  does, twice the latency, and `serve` refuses a latency past half a chunk (below). A tick with
-  nothing queued sends nothing, the arm holding its last goal, and 1 s of that ends the
-  segment, with 5 s of grace for the first chunk.
+  does, twice the latency, and `serve` refuses a latency past half a chunk (below). On the arm
+  a chunk asked for with something still queued is never waited for, whatever latency the
+  policy declares, and the arm plays what is queued while it lands. A policy that declares no
+  latency is waited for in the tick that asked only when nothing is left to play, as for a
+  segment's first chunk, and a wait for a chunk that outlasts its tick sends nothing in it:
+  the tick due when it ends reads the arm and judges it first. With `--no-async-chunks` the
+  arm plays each chunk out and holds still while the next is on its way
+  ([below](#a-run-with-a-policy-server)). A tick with nothing queued sends nothing, the arm
+  holding its last goal, and 1 s of that ends the segment, with 5 s of grace for the first
+  chunk, and between chunks with `--no-async-chunks`.
 - **The policy has a thread of its own.** Every call on it runs on a worker of its own, never
   on the threads the bus's calls use, so a policy that stops answering cannot hold up a read,
   a stop or the heartbeat. A segment starts only once the policy has finished whatever the last
   segment left it doing, waiting up to 5 s and refusing after, and an answer from an earlier
   segment is thrown away.
 - **On the simulator** time stands still while the policy thinks, and its answer is taken in
-  the policy's declared latency after it was asked for, which is where it would have landed on
-  the arm, and only then judged, so an answer thrown away and an error land there too. A
-  rehearsal plays the trajectory the arm would, and proves nothing about a rate.
+  the policy's declared latency after it was asked for, or a tick after where it declares none
+  and something was still queued, the soonest the arm would take it in. That is where it would
+  have landed on the arm, and only there is it judged, so an answer thrown away and an error
+  land there too. A rehearsal plays the trajectory the arm would, and proves nothing about a
+  rate.
 - **A policy asked every tick** is one that carries state from tick to tick. A tick it never
   saw, skipped by the pacer or not answered before the next, ends the segment with the arm held
   and resets the policy. It is asked again only once it has answered, so it has to answer
@@ -871,9 +880,9 @@ says the `--latency-s` to give: the 95th percentile of every step it timed, the 
 stream's (`LATENCY_QUANTILE`), rounded up to the hundredth of a second. One step timed on its
 own is one draw, and two benches of one checkpoint on one laptop suggested latencies too far
 apart to serve with either. A tick the pacer skipped sent nothing, as a starved one did, and is
-not counted as starved: with no `--latency-s` declared, a segment waits for each chunk in the
-tick that asked for it, and the ticks that pass meanwhile are skipped, so bench again served
-with the latency the first bench suggests
+not counted as starved: with no `--latency-s` declared, a segment waits out a chunk in the tick
+that asked for it when it had nothing left to play, its first chunk among them, and the ticks
+that pass meanwhile are skipped. So bench again served with the latency the first bench suggests
 ([guides/policies.md](../../guides/policies.md#on-the-laptop-alone) has both benches of a trained
 ACT, and what a good second one looks like). A policy whose steps take longer than a segment waits
 for its first chunk, or longer than half a chunk's actions, rounded down, take to play
@@ -1123,6 +1132,16 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
   connects, so a server that is not there is one sentence with nothing energised, and the run
   header names the server and its checkpoint. The connect then checks the policy against the
   arm before any torque ([above](#whether-the-policy-fits-the-arm)).
+- **Chunks while the arm plays, unless told otherwise.** A segment asks for each chunk while
+  the arm still plays the last ([above](#manipulate-and-the-loop-a-policy-runs-in)). With
+  `--no-async-chunks`, refused without `--policy-url`, it plays each chunk out before it asks
+  for the next, holds the arm still while that one is on its way, every tick of the wait still
+  reading and judging the arm, and plays it from its first action as it lands, whatever
+  latency the server declares, as LeRobot's own loop plays chunks. The simulator holds each
+  back the declared latency, and a server that declares none is rehearsed as answering within
+  a tick. It is slower by a round trip a chunk, and is there to compare against or to fall
+  back on. `quackd policy check --bench --no-async-chunks` paces a bench the same way, and the
+  `policy` block of `run_start` and `summary.json` says which it was (`async_chunks`).
 - **A goal run asks at a terminal before each segment.** A `--goal` allows only verbs that are
   safe, and `manipulate` is not one. With a policy server it is allowed all the same, behind a
   confirm, so a person at a terminal is asked before each segment, and without one a goal is

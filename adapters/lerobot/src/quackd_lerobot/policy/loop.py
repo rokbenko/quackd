@@ -47,8 +47,33 @@ nothing sleeps on it, so a runner's inference is awaited in the loop's own turn 
 time. Its answer is then held back `k` ticks, `k` from the runner's declared latency, while the
 pacer goes on ticking and playing the old queue, and is judged only when it is let go: that is
 where it would have landed on the arm, a chunk thrown away and an error raised included.
-A runner that answers at once (`k` of 0) is awaited in its own tick on either clock, which is
-how a `PolicyLike` has always run: one `act` a tick, its goal sent that tick.
+A runner that answers at once (`k` of 0) is held back a tick where something is still queued,
+since on the arm its answer is left to land then and the next tick's look is the soonest that
+takes it in. With nothing left to play it is awaited in its own tick on either clock, which is
+how a `PolicyLike` has always run, one `act` a tick and its goal sent that tick, and how a
+segment's first chunk is waited for. On the wall's clock a request made with something still
+queued is never waited for, whatever latency the runner declares: a server started with none
+still takes a round trip to answer, and a tick that waited it out would hold the arm still
+through it, every chunk.
+
+**Chunks one at a time** (`async_chunks` False, `--no-async-chunks`), as LeRobot's own loop
+plays them: a chunk is played out before the next is asked for, the arm holds its last goal
+while that one is on its way, and it is played from its first action at the tick it lands,
+since the arm has not moved on from where it was asked. No chunk is waited for in a tick, so
+every tick of the wait still reads and judges the arm, the stall's clock stops while nothing is
+sent and goes on when sending does, and the wait is starved out with the patience a first chunk
+gets, since the arm waits for every chunk by design. The simulator holds each back its declared
+latency, or a tick for a runner that declares none, the soonest the arm takes one in. A runner
+that has answered nothing but one action at a time is asked as it always was, and a runner in
+tick mode plays no chunks, either way.
+
+**A wait in a tick for a chunk that outlasts the tick** sends nothing in it: the arm held still
+through the wait, and the tick that is due when it ends reads the arm and judges it before
+anything more is sent, as a first chunk slower than a tick would otherwise have been played on
+a reading taken before it. The tick is counted as one the pacer skipped. A wait that leaves
+nothing to play is starved as any other tick with nothing to send, and a runner that answers
+one action at a time has its late answer sent in the tick it was asked for, since it is the
+only goal there is for it.
 
 **Tick mode** (`Features.per_tick`): a runner that carries state from tick to tick is asked
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
@@ -322,6 +347,27 @@ class _Run:
     starved: int = 0
     stale: int = 0
     late: int = 0
+    waits_each: bool = False
+    """Chunks go one at a time (`PolicyLoop.async_chunks` off, for a runner not in tick
+    mode)."""
+    longest: int = 0
+    """The most actions a chunk of this segment has held, 0 before the first."""
+    awaited: bool = False
+    """This tick's request was waited for in it, on the wall's clock."""
+    paused_at: float | None = None
+    """When the stall's clock stopped for a hold between chunks, one at a time, or None."""
+
+    def left(self, tick: int) -> int:
+        """How many queued actions are for `tick` or a tick after it: what the arm still has to
+        play from this tick on."""
+        return sum(1 for at, _ in self.queue if at >= tick)
+
+    def one_at_a_time(self) -> bool:
+        """Whether the next chunk waits for the last to be played out, and the arm holds still
+        while it is on its way (`waits_each`). A runner that has answered nothing but one action
+        at a time is asked as it always was, every tick and awaited in it, and one that has
+        answered a longer chunk once is played one chunk at a time from then on."""
+        return self.waits_each and self.longest != 1
 
 
 @dataclass
@@ -385,10 +431,14 @@ class PolicyLoop:
     from one segment to the next.
 
     `starve_s`, `first_chunk_s` and `reset_s` are `STARVE_S`, `FIRST_CHUNK_S` and `RESET_S`,
-    as attributes a test can shorten. `tally` adds up every segment it has run (`record`)."""
+    as attributes a test can shorten. `tally` adds up every segment it has run (`record`).
+    `async_chunks` is whether a chunk is asked for while the arm plays the last
+    (`--async-chunks`, the default) or each is played out before the next is asked for, the arm
+    holding still between (`--no-async-chunks`), and the record says which."""
 
-    def __init__(self, runner: PolicyRunner) -> None:
+    def __init__(self, runner: PolicyRunner, *, async_chunks: bool = True) -> None:
         self.runner = runner
+        self.async_chunks = async_chunks
         self.tally = Tally()
         self.epoch = 0
         """The segment the loop is on, counted from 1. A chunk asked for under another is
@@ -477,10 +527,11 @@ class PolicyLoop:
     def served(self) -> dict[str, Any]:
         """What the runner says it is, as a run's record names it: for a policy served by
         another process, where the server is, what it serves and every repository it loaded
-        (`RemoteRunner.record`), as last asked, with nothing asked now. Empty for a runner that
-        says nothing about itself, an in-process one."""
+        (`RemoteRunner.record`), as last asked, with nothing asked now, and whether its chunks
+        are asked for while the arm plays (`async_chunks`). Empty for a runner that says
+        nothing about itself, an in-process one."""
         said = getattr(self.runner, "record", None)
-        return dict(said()) if callable(said) else {}
+        return {**said(), "async_chunks": self.async_chunks} if callable(said) else {}
 
     def record(self) -> dict[str, Any]:
         """The policy block of a run's record: what the runner is (`served`), what every
@@ -558,6 +609,7 @@ class PolicyLoop:
         The runner's own error, raised where its answer is judged, ends it `error` with the
         counts up to there, and with no hold: the verb waiting on it stops the arm."""
         run = _Run(started, registers_at, arm._range_clips)
+        run.waits_each = not self.async_chunks and not plan.features.per_tick
         # the wall's clock beside the arm's, which on the simulator is the simulator's (`Tally`)
         walled = time.perf_counter()
         try:
@@ -609,6 +661,7 @@ class PolicyLoop:
                     arm, run, f"it had not answered tick {tick - 1} by tick {tick}"
                 )
             self._take_in(run, tick, plan)
+            run.awaited = False
             if self._wants(run, tick, plan, segment):
                 if (why := await arm._loop_frames(obs)) is not None:
                     return await self._held(arm, run, why)
@@ -618,7 +671,19 @@ class PolicyLoop:
             while run.queue and run.queue[0][0] < tick:
                 run.queue.popleft()  # meant for a tick the pacer skipped
             action = run.queue.popleft()[1] if run.queue and run.queue[0][0] == tick else None
-            if action is None:
+            # a wait in this tick for a chunk that outlasted it sends nothing in it, and the tick
+            # due when it ended reads and judges the arm first (the module's note)
+            waited_out = (
+                action is not None
+                and run.awaited
+                and run.last_len != 1
+                and not plan.features.per_tick
+                and arm.now() >= started + (tick + 1) * plan.period_s - EXACT
+            )
+            if waited_out:
+                run.skipped += 1  # its tick passed while it waited, as if the pacer had skipped it
+                run.still = None  # an arm held through a wait is not a stalled one
+            elif action is None:
                 ended = await self._idle(arm, run, segment, now)
                 if ended is not None:
                     return ended
@@ -628,7 +693,8 @@ class PolicyLoop:
                 if ended is not None:
                     return ended
             arm._tick_timing.add(time.perf_counter() - ticked)
-            run.ticks += 1
+            if not waited_out:
+                run.ticks += 1
             following = await self._pace(arm, run, plan, started, tick + 1)
             if isinstance(following, SegmentEnd):
                 return following
@@ -729,12 +795,18 @@ class PolicyLoop:
             run.got_first = True
             run.queue = deque([(tick, chunk.actions[0])])
             return
-        fresh = [
-            (chunk.tick + i, action)
-            for i, action in enumerate(chunk.actions)
-            if chunk.tick + i >= tick
-        ]
+        if run.waits_each:
+            # one chunk at a time it is played from its first action at the tick it lands: the
+            # arm held still while it was on its way, so none of it is for a tick already played
+            fresh = [(tick + i, action) for i, action in enumerate(chunk.actions)]
+        else:
+            fresh = [
+                (chunk.tick + i, action)
+                for i, action in enumerate(chunk.actions)
+                if chunk.tick + i >= tick
+            ]
         run.last_len = len(chunk.actions)
+        run.longest = max(run.longest, run.last_len)
         if not fresh:
             # every action was for a tick already played: counted as thrown away, and not as
             # the segment's first chunk, whose grace still runs for the next
@@ -750,11 +822,11 @@ class PolicyLoop:
     def _wants(self, run: _Run, tick: int, plan: Plan, segment: Segment) -> bool:
         """Whether this tick asks the runner for more: never after it said it was done or once
         the segment has played its chunks, never with a request of its own outstanding, every
-        tick in tick mode, and otherwise once the queue is down to `refill_at` of the last
-        chunk's length and the runner's latency (`refill_due`). A chunk is one that had
-        something to play (`_merge`), so an answer thrown away is asked over rather than
-        counted, and a runner whose answers never play ends on the grace or `STARVE_S` rather
-        than on its chunks."""
+        tick in tick mode, one chunk at a time once the last has been played out, and otherwise
+        once the queue is down to `refill_at` of the last chunk's length and the runner's latency
+        (`refill_due`). A chunk is one that had something to play (`_merge`), so an answer
+        thrown away is asked over rather than counted, and a runner whose answers never play
+        ends on the grace or `STARVE_S` rather than on its chunks."""
         if run.done or self._outstanding():
             return False
         if segment.max_chunks is not None and run.chunks >= segment.max_chunks:
@@ -763,27 +835,34 @@ class PolicyLoop:
             return True
         if run.held_back:
             return False  # a request held back on its way is the one outstanding
-        left = sum(1 for at, _ in run.queue if at >= tick)
-        return refill_due(left, plan.latency_ticks, run.last_len)
+        if run.one_at_a_time():
+            return not run.left(tick)  # the next chunk once the last has been played out
+        return refill_due(run.left(tick), plan.latency_ticks, run.last_len)
 
     async def _request(
         self, arm: LeRobotReal, run: _Run, observation: Observation, plan: Plan, lockstep: bool
     ) -> SegmentEnd | None:
         """Ask the runner for a chunk, stamped with this tick. On a lockstep clock the answer is
-        awaited here, with time standing still, and held back its `k` ticks whole, to be judged
-        when it is let go as the arm would judge it on arrival. A runner that answers at once is
-        awaited here on the wall's clock too, within what is left of the segment's patience.
-        Otherwise the answer is left on the worker and taken in on the tick it has come back
-        by."""
+        awaited here, with time standing still, and held back its `k` ticks whole, or one tick
+        where `k` is 0 and something is still queued or chunks go one at a time, to be judged
+        when it is let go as the arm would judge it on arrival. On the wall's clock a runner
+        that answers at once is awaited here too, within what is left of the segment's
+        patience, but only with nothing left to play from this tick on: a first chunk, or a
+        runner that answers one action at a time. Otherwise the answer is left on the worker and
+        taken in on the tick it has come back by, while the arm plays what is queued, or, one
+        chunk at a time (`_Run.one_at_a_time`), holds still."""
         future = self._submit(self.runner.next_chunk, observation, dict(run.last_sent))
         req = _Request(self.epoch, observation.tick, future)
         self._inflight = req
-        if not lockstep and plan.latency_ticks > 0:
+        each = run.one_at_a_time()
+        queued = run.left(observation.tick)
+        if not lockstep and (each or plan.latency_ticks > 0 or queued):
             return None
         patience = None
         if not lockstep:
+            run.awaited = True
             patience = (
-                self.starve_s
+                self._patience(run)
                 if run.got_first
                 else max(0.0, self.first_chunk_s - (arm.now() - run.started))
             )
@@ -801,8 +880,12 @@ class PolicyLoop:
         if not answered:
             return await self._starved(arm, run)
         self._inflight = None
-        if lockstep and plan.latency_ticks > 0:
-            run.held_back.append((req.tick + plan.latency_ticks, req))
+        # asked with something queued, or one chunk at a time, an answer reaches the arm by the
+        # next tick's look at the soonest, however fast it comes back, so the simulator holds it
+        # back at least that long
+        held = plan.latency_ticks or (1 if queued or each else 0)
+        if lockstep and held:
+            run.held_back.append((req.tick + held, req))
             return None
         self._received(run, req, observation.tick, plan)
         return None
@@ -811,8 +894,14 @@ class PolicyLoop:
         self, arm: LeRobotReal, run: _Run, segment: Segment, now: float
     ) -> SegmentEnd | None:
         """A tick with nothing to send: a runner that is done, a segment whose chunks are all
-        played, or starvation, which the grace and `STARVE_S` bound."""
-        run.still = None  # an arm left alone is not a stalled one
+        played, or starvation, which the grace and `STARVE_S` bound. One chunk at a time, the
+        hold between chunks stops the stall's clock rather than starting it again (`_stall`),
+        since only ticks that sent count, and a short chunk would never last a stall's second."""
+        if run.one_at_a_time():
+            if run.still is not None and run.paused_at is None:
+                run.paused_at = now
+        else:
+            run.still = None  # an arm left alone is not a stalled one
         outstanding = self._outstanding() or bool(run.held_back)
         if run.done:
             if segment.ends_on_holding:
@@ -880,7 +969,12 @@ class PolicyLoop:
         `STALL_S`, on ticks that sent, with the arm held where it is, as a verb's own stall
         holds it (`verbs._drive`). An arm stopped by something in its way still has the
         policy's last goal past it, and the servo would push on toward it through the pilot's
-        thinking. The hold leaves the gripper's goal alone, so a grasp keeps its squeeze."""
+        thinking. The hold leaves the gripper's goal alone, so a grasp keeps its squeeze. A hold
+        between chunks, one at a time, is left out of the second (`_idle`)."""
+        if run.paused_at is not None:
+            if run.still is not None:
+                run.still = (run.still[0] + now - run.paused_at, run.still[1])
+            run.paused_at = None
         joints = {j: arm._joints[j] for j in JOINTS if j in arm._joints}
         anchor = run.still
         if anchor is None or any(
@@ -901,8 +995,10 @@ class PolicyLoop:
 
     def _patience(self, run: _Run) -> float:
         """How long the segment may go without an action: `FIRST_CHUNK_S` until its first chunk,
-        and `STARVE_S` after it."""
-        return self.starve_s if run.got_first else self.first_chunk_s
+        and `STARVE_S` after it, unless chunks go one at a time (`_Run.one_at_a_time`) and each
+        is waited for as the first is: a runner the arm waits for by design has not fallen
+        behind it."""
+        return self.starve_s if run.got_first and not run.one_at_a_time() else self.first_chunk_s
 
     async def _starved(self, arm: LeRobotReal, run: _Run) -> SegmentEnd:
         """End a segment that went its whole patience without an action, which is said as that

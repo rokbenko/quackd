@@ -90,6 +90,7 @@ from quackd_lerobot.policy.fit import (
     longest_latency_s,
 )
 from quackd_lerobot.policy.loop import (
+    EXACT,
     FIRST_CHUNK_S,
     latency_ticks,
     longest_latency,
@@ -1235,8 +1236,12 @@ class BenchResult:
     time the server reported for it. `before_first` is how many of the starved ticks came
     before the stream's first chunk was back. `latency_s` is one warm step timed on its own
     before the stream, from the request going out to its chunk back. `declared_s` is the
-    `--latency-s` the server was started with, and `waited` whether the bench waited for each
-    chunk in the tick that asked for it, as a segment waits for a policy that declares none.
+    `--latency-s` the server was started with, and `waited` whether the bench, with nothing left
+    to play, waited out a chunk in the tick that asked for it, its first chunk among them, as a
+    segment waits for a policy that declares none. `waited_ticks` is how many of the skipped
+    ticks passed while it did, and the rest are ticks the pacer woke too late for. `waits_each`
+    is chunks one at a time (`--no-async-chunks`), each played out before the next is asked for
+    while the arm holds still, which are starved ticks rather than skipped ones.
     `chunk` is how many actions a chunk the server answers plays, and `per_tick` whether it
     answers one action a tick, which bound the `--latency-s` it can be served with
     (`latency_too_long`)."""
@@ -1256,6 +1261,8 @@ class BenchResult:
     before_first: int = 0
     chunk: int | None = None
     per_tick: bool = False
+    waited_ticks: int = 0
+    waits_each: bool = False
 
     @property
     def achieved_hz(self) -> float:
@@ -1291,11 +1298,43 @@ def _starved(result: BenchResult) -> str:
     if not result.starved:
         return said
     said += ", waiting for a chunk to come back"
+    if result.waits_each:
+        return said + ", as --no-async-chunks has the arm hold still while each is on its way"
     if result.before_first == result.starved:
         return said + ", every one before the first came back, which a segment gives time for"
     if result.before_first:
         return said + f", {result.before_first} of them before the first came back"
     return said
+
+
+def _skipped(result: BenchResult) -> str:
+    """What a bench's skipped ticks were, said as what each would have been on the arm: the
+    ones that passed while a chunk was waited for in the tick that asked for it, and the ones
+    the pacer woke too late for."""
+    waited = min(result.skipped, result.waited_ticks) if result.waited else 0
+    late = result.skipped - waited
+    if not late:
+        return (
+            "the policy declares no --latency-s, so a chunk asked for with nothing left to play, "
+            "its first among them, was waited for in the tick that asked for it, as a segment "
+            "waits for one, and the ticks that passed meanwhile sent nothing: the arm would have "
+            "held still through them"
+        )
+    if not waited:
+        return (
+            "the pacer woke too late for them, and they sent nothing, as a machine too busy to "
+            "keep the policy's rate would leave the arm"
+        )
+    why = (
+        "a chunk asked for with nothing left to play, its first among them, was waited for in "
+        "the tick that asked for it, since the policy declares no --latency-s, as a segment "
+        "waits for one"
+    )
+    return (
+        f"{waited} passed while {why}, and the pacer woke too late for {late} more, as a machine "
+        "too busy to keep the policy's rate would leave the arm. None of them sent anything: "
+        "the arm would have held still through them"
+    )
 
 
 def describe_bench(result: BenchResult) -> list[tuple[str, str]]:
@@ -1311,15 +1350,7 @@ def describe_bench(result: BenchResult) -> list[tuple[str, str]]:
         ("starved", _starved(result)),
     ]
     if result.skipped:
-        why = (
-            "the policy declares no --latency-s, so each chunk was waited for in the tick that "
-            "asked for it, as a segment waits for one, and the ticks that passed meanwhile sent "
-            "nothing: the arm would have held still through them"
-            if result.waited
-            else "the pacer woke too late for them, and they sent nothing, as a machine too "
-            "busy to keep the policy's rate would leave the arm"
-        )
-        rows.append(("skipped", f"{_ticks(result.skipped)}: {why}"))
+        rows.append(("skipped", f"{_ticks(result.skipped)}: {_skipped(result)}"))
     if result.rtt_s:
         ms = [1000 * t for t in result.rtt_s]
         rows.append(
@@ -1437,15 +1468,21 @@ def bench(
     seconds: float = BENCH_S,
     clock: Callable[[], float] = time.perf_counter,
     sleep: Callable[[float], None] = time.sleep,
+    async_chunks: bool = True,
 ) -> BenchResult:
     """Stream synthetic observations through `runner` (a `RemoteRunner`) at the rate its server
     declares, for `seconds` of the wall's clock, paced and queued as the policy loop paces and
     queues a segment (`loop.py`): a tick every period from the start, a request when what is
     left of the last chunk is down to half of it or to twice the ticks the declared latency
     comes to, whichever is more (`refill_due`), one request out at most, and a chunk's actions
-    for ticks already played dropped as it lands. A policy that declares no latency is waited
-    for in the tick that asked, as the loop waits for it, and any other is left to land while
-    the ticks go on. The observation is every motor at 0 and a frame of seeded noise per camera
+    for ticks already played dropped as it lands. A request to a policy that declares no
+    latency is waited for in the tick that asked when nothing is left to play, the first among
+    them, as the loop waits for it, and any other is left to land while the ticks go on and the
+    queue plays, and a wait for a chunk that outlasted its tick sends nothing in it, as a
+    segment's does. With `async_chunks` off (`--no-async-chunks`) a policy that plays chunks
+    has each played out before the next is asked for, the ticks between holding still, as a
+    segment plays chunks one at a time (`loop._Run.one_at_a_time`). The observation is every
+    motor at 0 and a frame of seeded noise per camera
     the server maps, which JPEG compresses worst, so a round trip measured here is not
     flattered by an easy picture. Before the stream one warm step is timed on its own
     (`BenchResult.latency_s`), and the latency the bench suggests is read over it and every
@@ -1465,6 +1502,7 @@ def bench(
     period = 1.0 / rate
     declared = float(runner.latency_s())
     late = latency_ticks(declared, rate)
+    one_at_a_time = not async_chunks and not features.per_tick
     waits = late == 0
     noise = np.random.default_rng(0)
     frames = {
@@ -1496,19 +1534,24 @@ def bench(
     inflight: tuple[int, concurrent.futures.Future[Chunk]] | None = None
     sent: dict[str, float] = {}
     done = False
-    last_len = ticks = played = starved = skipped = before_first = 0
+    last_len = longest = ticks = played = starved = skipped = waited_ticks = before_first = 0
     worker = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="quackd-bench")
 
     def take_in(tick: int) -> None:
-        nonlocal inflight, queue, done, last_len
+        nonlocal inflight, queue, done, last_len, longest
         if inflight is None or not inflight[1].done():
             return
         asked, future = inflight
         inflight = None
         chunk = future.result()  # a server that failed fails the check, and says so
         done = done or chunk.done
-        fresh = [(asked + i, a) for i, a in enumerate(chunk.actions) if asked + i >= tick]
+        if one_at_a_time:
+            # played from its first action at the tick it lands, as a segment plays it so
+            fresh = [(tick + i, a) for i, a in enumerate(chunk.actions)]
+        else:
+            fresh = [(asked + i, a) for i, a in enumerate(chunk.actions) if asked + i >= tick]
         last_len = len(chunk.actions) or last_len
+        longest = max(longest, len(chunk.actions))
         if fresh:
             queue = deque(e for e in queue if e[0] < fresh[0][0])
             queue.extend(fresh)
@@ -1519,30 +1562,47 @@ def bench(
         while clock() - start < seconds:
             take_in(tick)
             left = sum(1 for at, _ in queue if at >= tick)
-            if (
-                inflight is None
-                and not done
-                and (features.per_tick or refill_due(left, late, last_len))
-            ):
+            each = one_at_a_time and longest != 1  # as `_Run.one_at_a_time`
+            due = not left if each else refill_due(left, late, last_len)
+            waited_here = False
+            if inflight is None and not done and (features.per_tick or due):
                 inflight = (tick, worker.submit(ask, tick, dict(sent)))
-                if waits:
+                if waits and not left and not each:
                     concurrent.futures.wait([inflight[1]])
                     take_in(tick)
+                    waited_here = True
             while queue and queue[0][0] < tick:
                 queue.popleft()
-            if queue and queue[0][0] == tick:
+            playable = bool(queue) and queue[0][0] == tick
+            # a wait in the tick for a chunk that outlasted it sends nothing in it, and counts as
+            # a tick the pacer skipped, as a segment's does
+            waited_out = (
+                playable
+                and waited_here
+                and last_len != 1
+                and not features.per_tick
+                and clock() >= start + (tick + 1) * period - EXACT
+            )
+            if waited_out:
+                queue.popleft()  # its tick had passed by the time the wait ended
+                skipped += 1
+                waited_ticks += 1
+            elif playable:
                 sent = {k: float(v) for k, v in queue.popleft()[1].items()}
                 played += 1
             else:
                 starved += 1
                 if not played:
                     before_first += 1  # the first chunk still on its way
-            ticks += 1
+            if not waited_out:
+                ticks += 1
             tick += 1
             now = clock()
             if now > start + tick * period:
                 after = max(tick + 1, math.floor((now - start) / period) + 1)
                 skipped += after - tick
+                if waited_here:
+                    waited_ticks += after - tick  # the wait's, rather than a late pacer's
                 tick = after
             sleep(max(0.0, start + tick * period - clock()))
         elapsed = clock() - start
@@ -1564,6 +1624,8 @@ def bench(
         before_first=before_first,
         chunk=info.n_action_steps,
         per_tick=info.per_tick,
+        waited_ticks=waited_ticks,
+        waits_each=one_at_a_time,
     )
 
 
