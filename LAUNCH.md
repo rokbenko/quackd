@@ -43,11 +43,13 @@ rover, and that a `dangerous` verb runs only when a person answers it, though no
 a MOSS rover yet. 0.23's was that a robot can introduce itself to one it has never met, through
 Robot Passport, an open protocol quackd is the first to implement, and that two robots that have
 met can talk and one can ask the other for a short pause, which fixed code grants and never a
-pilot, though none of it has run between two machines or on a robot yet. **0.24's is that letting
+pilot, though none of it has run between two machines or on a robot yet. 0.24's was that letting
 go of the SO-101 means putting it down first, with a fold that misses asking twice before anything
 drops and an arm with no rest pose never let fall, and that a turn the model's API could not
 answer is asked again with the robot holding still, though none of it has run on the arm or met a
-real 429 yet.**
+real 429 yet. **0.25's is that the SO-101 plays on while a policy's next chunk is on its way,
+whatever latency its server declares, and that `--no-async-chunks` plays each chunk out first, as
+LeRobot's own loop does, though no policy has driven the arm through either yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

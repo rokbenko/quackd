@@ -7,27 +7,50 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]
+## [0.25.0] — 2026-10-25
+
+0.25.0 keeps the SO-101 playing while a policy's next chunk is on its way. A policy served with
+no `--latency-s`, which is how `quackd policy serve` starts one unless told otherwise and how the
+guide serves SmolVLA and pi05 on a rented GPU, had the arm hold still through every round trip,
+once every half chunk. A segment now waits in a tick only for a chunk it has nothing left to
+play from, a first chunk among them, and the guide's ACT, benched on this project's laptop with
+no `--latency-s`, went from 22.6 Hz of 30 to 29.3.
+
+`--async-chunks/--no-async-chunks` says which way a run plays a policy server's chunks, beside
+`--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`, and with `--bench` on
+`quackd policy check`. `--async-chunks` is the default. `--no-async-chunks` plays each chunk out
+before it asks for the next, as LeRobot's own loop does, and holds the arm still while the next
+is on its way, every tick of the wait still reading and judging the arm. The same ACT benched
+26.2 Hz with it.
+
+A first chunk slower than a second is no longer taken for a stall, a bench of a policy asked
+every tick that declares a latency plays its answers, where it played none, and until a verdict
+is recorded an empty frame comes with the rule that a target not found yet is not by itself a
+reason for `uncertain`, from a line [@Vallhalen](https://github.com/Vallhalen) wrote and
+measured (#25).
+
+No policy has driven the arm through any of it, and no round trip through a rented GPU has been
+timed. What that leaves owed is under Known limitations.
 
 ### Added
 
 - **`--async-chunks/--no-async-chunks` says how the arm plays a policy server's chunks.** It
-  goes beside `--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`,
-  refused without it, and with `--bench` on `quackd policy check`. `--async-chunks`, the
-  default, asks for each chunk while the arm still plays the last (below). `--no-async-chunks`
-  plays each chunk out before it asks for the next, holds the arm still while that one is on
-  its way and plays it from its first action as it lands, whatever latency the server
-  declares, as LeRobot's own loop plays chunks. No chunk is waited for in a tick, so every tick
-  of the wait still reads and judges the arm, the stall's clock stops while nothing is sent and
-  goes on when sending does, and a wait is starved out after the 5 s a first chunk gets. The
-  simulator holds each chunk back its declared latency, or a tick for a server that declares
-  none, and a test holds its clock and the wall's kind to the same goals. A policy that answers
-  one action at a time has its first answer land a tick later and then runs as it did, and one
-  asked every tick runs as it did. On this project's laptop on 2026-10-25 the guide's ACT,
-  served with no `--latency-s`, reached 29.3 Hz of 30 over a 30 s bench by default and 26.2 Hz
-  with `--no-async-chunks`, whose 113 starved ticks were the waits for its 8 chunks. The bench
-  says so in its starved row, and the `policy` block of `run_start` and `summary.json` carries
-  `async_chunks`
+  goes beside `--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`, and
+  beside `--bench` on `quackd policy check`, and `--no-async-chunks` is refused without the flag
+  it goes beside. `--async-chunks`, the default, asks for each chunk while the arm still plays
+  the last (below). `--no-async-chunks` plays each chunk out before it asks for the next, holds
+  the arm still while that one is on its way and plays it from its first action as it lands,
+  whatever latency the server declares, as LeRobot's own loop plays chunks. No chunk is waited
+  for in a tick, so every tick of the wait still reads and judges the arm, the stall's clock
+  stops while nothing is sent and goes on when sending does, and a wait is starved out after the
+  5 s a first chunk gets. The simulator holds each chunk back its declared latency, or a tick
+  for a server that declares none, and a test holds a lockstep clock, the simulator's kind, and
+  the wall's kind to the same goals. A policy that answers one action at a time has its first
+  answer land a tick later and then runs as it did, and one asked every tick runs as it did. On
+  this project's laptop on 2026-10-25 the guide's ACT, served with no `--latency-s`, reached
+  29.3 Hz of 30 over a 30 s bench by default and 26.2 Hz with `--no-async-chunks`, whose 113
+  starved ticks were the waits for its 8 chunks. The bench says so in its starved row, and the
+  `policy` block of `run_start` and `summary.json` carries `async_chunks`
   ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#a-run-with-a-policy-server)).
 
 ### Changed
@@ -56,7 +79,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   once twice the latency is more than half a chunk, and the refusal past half a chunk.
   `quackd policy check --bench` paces by the same rule, so a first bench of a policy served
   with no latency waits out its first chunk alone, and its skipped row says which ticks passed
-  in that wait and which a pacer woke too late for. The guide's benches are today's
+  in that wait and which a pacer woke too late for. The guide's benches are from 2026-10-25
   ([docs/guides/policies.md](docs/guides/policies.md#on-the-laptop-alone)). Tests hold a chunk
   asked for with actions queued to landing while the arm plays, a tick late and half a chunk
   late, a lockstep rehearsal of one to the trajectory the wall's clock plays, and a bench to
@@ -152,6 +175,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `.github/dependabot.yml` now ignores pillow from 13.0.0, as it does numpy and
   opencv-python-headless past lerobot's pins, so a 12.x release still comes in the group. The
   configuration ships in no package, so this needs no release.
+
+### Known limitations
+
+- **No policy has driven the arm through 0.25.0's chunking.** A segment asking for each chunk
+  while the arm plays, from a server that declares no latency, has run against a fake arm, on
+  the simulator and in benches, which stream synthetic observations, and one playing each chunk
+  out with `--no-async-chunks` against a fake arm, on a lockstep clock and on the wall's kind,
+  and in benches. The run that would settle both is the guide's ACT on the arm, served with no
+  `--latency-s`, once as it is and once with `--no-async-chunks`, each run's `policy` block sent
+  back with its `hz`, `starved_ticks`, `round_trip_ms` and `async_chunks`, which the
+  learned-policy item in [PLAN.md](PLAN.md) now asks for.
+- **No round trip through a rented GPU has been timed,** so what the change is worth to SmolVLA
+  and pi05, whose chunks hold half the guide's ACT's actions, is the arithmetic in the entry
+  under Changed and not a bench.
+- **A bench of a policy asked every tick says less than a segment would.** A segment ends on
+  the first tick such a policy has not answered by, and the bench counts that tick as starved
+  or skipped and goes on. It also suggests a `--latency-s` past a tick for one whose steps take
+  that long, which `quackd policy serve` takes and every segment then refuses, since a policy
+  asked every tick has to answer within one. Tick mode has not run with a real policy: the one
+  quackd serves in it, an ACT trained with temporal ensembling, is refused without a GPU.
 
 ## [0.24.0] — 2026-10-23
 
@@ -7942,7 +7985,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/rokbenko/quackd/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/rokbenko/quackd/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/rokbenko/quackd/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/rokbenko/quackd/compare/v0.21.0...v0.22.0
