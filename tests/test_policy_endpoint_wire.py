@@ -396,6 +396,36 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
     assert ACCOUNT_TOKEN not in result.output
 
 
+def test_a_refused_create_that_quotes_the_body_back_shows_no_token(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hugging Face may quote what it refused, and the body holds the server's token as a secret:
+    the refusal is said with it taken out, and the record is forgotten."""
+
+    def quotes(self: FakeAPI, namespace: str, body: Any) -> Any:
+        secret = body["model"]["secrets"][wire.TOKEN_ENV]
+        said = {"error": f"secrets.{wire.TOKEN_ENV} {secret} is not allowed"}
+        return 422, {"Content-Type": "application/json"}, json.dumps(said).encode("utf-8")
+
+    monkeypatch.setattr(FakeAPI, "_create", quotes)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "would not create arm (HTTP 422)" in said, said
+    assert f"secrets.{wire.TOKEN_ENV} <token> is not allowed" in said
+    (created,) = _posts(hf)
+    assert created.json()["model"]["secrets"][wire.TOKEN_ENV] not in result.output
+    assert _store().get("arm") is None
+
+
+def test_up_with_a_token_where_the_hub_tokens_variable_belongs_does_not_say_it(
+    hf: FakeAPI,
+) -> None:
+    hub = "hf_" + "HubReadToken" * 3  # a name as far as the rule goes, and set nowhere
+    result = _cli(*UP, "--yes", "--hub-token-from", hub)
+    assert result.exit_code == 1 and "is not set" in _flat(result.output), result.output
+    assert hub not in result.output and not _posts(hf)
+
+
 def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
     result = _cli(*UP, "--yes", "--no-wait")
     said = _flat(result.output)

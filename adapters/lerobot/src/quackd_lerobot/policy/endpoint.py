@@ -53,7 +53,7 @@ import secrets
 import ssl
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -177,9 +177,11 @@ def no_token() -> EndpointError:
 
 def hub_token_from(variable: str, account_token: str) -> str:
     """The Hub token in the variable `--hub-token-from` names, for a gated or private checkpoint
-    an endpoint fetches with a token of its own, or a refusal that never quotes what it holds.
-    The account's own token is refused there, since it would then sit in an endpoint's secrets,
-    where an `authenticated` endpoint's container is no place for it."""
+    an endpoint fetches with a token of its own, or a refusal that quotes neither what the
+    variable holds nor its name: a token typed where the name belongs is a name as far as the
+    rule goes, and is quoted back by nothing. The account's own token is refused there, since it
+    would then sit in an endpoint's secrets, where an `authenticated` endpoint's container is no
+    place for it."""
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", variable):
         raise EndpointError(
             "--hub-token-from takes the name of the variable that holds the Hub token, such "
@@ -188,15 +190,15 @@ def hub_token_from(variable: str, account_token: str) -> str:
     value = os.environ.get(variable)
     if value is None or not value.strip():
         raise EndpointError(
-            f"${variable}, which --hub-token-from names, is not set: put a read token there "
-            "that has been granted the gated repository"
+            "the variable --hub-token-from names is not set: put a read token there that has "
+            "been granted the gated repository"
         )
     token = clean_bearer(value)
     if hmac.compare_digest(token.encode("utf-8"), account_token.encode("utf-8")):
         raise EndpointError(
-            f"${variable} holds the account's own token, which never goes into an endpoint: "
-            "make a fine-grained read token on huggingface.co that can read the gated "
-            "repository and nothing else, and name its variable with --hub-token-from"
+            "the variable --hub-token-from names holds the account's own token, which never goes "
+            "into an endpoint: make a fine-grained read token on huggingface.co that can read the "
+            "gated repository and nothing else, and name its variable with --hub-token-from"
         )
     return token
 
@@ -595,7 +597,7 @@ class EndpointRecord:
     vendor: str
     region: str
     idle_minutes: int
-    token: str
+    token: str = field(repr=False)
     created: str
     version: str
     pins: tuple[str, ...] = ()
@@ -1328,8 +1330,8 @@ class Reached:
     its server, the account's token as the bearer for the proxy, and its `hf:NAME`."""
 
     url: str
-    token: str
-    bearer: str
+    token: str = field(repr=False)
+    bearer: str = field(repr=False)
     endpoint: str
 
 

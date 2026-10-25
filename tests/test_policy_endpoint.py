@@ -191,8 +191,13 @@ def test_a_hub_token_is_named_by_its_variable_and_is_never_the_account_token(
     with pytest.raises(E.EndpointError, match="not a variable's name"):
         E.hub_token_from("hf_abc def", ACCOUNT_TOKEN)
     monkeypatch.delenv("HUB_READ", raising=False)
-    with pytest.raises(E.EndpointError, match="is not set"):
+    with pytest.raises(E.EndpointError, match="is not set") as refused:
         E.hub_token_from("HUB_READ", ACCOUNT_TOKEN)
+    assert "HUB_READ" not in str(refused.value)
+    # a token typed where the name belongs is a name as far as the rule goes, and is not set
+    with pytest.raises(E.EndpointError, match="is not set") as refused:
+        E.hub_token_from(HUB_TOKEN, ACCOUNT_TOKEN)
+    assert HUB_TOKEN not in str(refused.value)
     monkeypatch.setenv("HUB_READ", f" {ACCOUNT_TOKEN} ")
     with pytest.raises(E.EndpointError, match="the account's own token") as refused:
         E.hub_token_from("HUB_READ", ACCOUNT_TOKEN)
@@ -600,6 +605,28 @@ def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_without_a_token(
     assert bill == "so it was paused, and bills nothing now" and ep.state == "paused"
     assert lines[-2:] == ["QUACKD_POLICY_TOKEN=<token>", "Authorization: Bearer <token>"]
     assert not any(record.token in line or ACCOUNT_TOKEN in line for line in lines)
+
+
+def test_pause_and_quote_scrubs_the_records_token_whoever_calls_it(hf: FakeAPI) -> None:
+    """`up`'s wait is not the only way here: a client that never waited, and so never added the
+    record's token to what it scrubs, has the log quoted with that token taken out all the
+    same."""
+    record = _record()
+    _created(hf, record)
+    hf.endpoints[("rok", "arm")].log = [f"argv: --token {record.token}"]
+    lines, bill = E.pause_and_quote(E.HFEndpoints(ACCOUNT_TOKEN), record)
+    assert lines == ["argv: --token <token>"], lines
+    assert bill == "so it was paused, and bills nothing now"
+
+
+def test_no_token_is_in_the_repr_of_a_record_or_of_what_a_run_reaches() -> None:
+    """A record or what `reach` hands the client can land in a traceback, a log line or a
+    debugger's view, and says neither token there."""
+    record = _record(url=GOOD_URL)
+    reached = E.Reached(GOOD_URL, record.token, ACCOUNT_TOKEN, "hf:arm")
+    assert record.token not in repr(record) and "name='arm'" in repr(record)
+    assert record.token not in repr(reached) and ACCOUNT_TOKEN not in repr(reached)
+    assert GOOD_URL in repr(reached) and "hf:arm" in repr(reached)
 
 
 def test_an_endpoint_that_does_not_serve_in_time_is_a_timeout(hf: FakeAPI, tmp_path: Path) -> None:

@@ -888,7 +888,8 @@ def test_a_token_env_that_holds_no_token_a_short_one_or_one_no_header_carries_re
     with pytest.raises(S.ServeRefused) as refused:
         S.server_token(None, TOKEN_VAR)
     said = str(refused.value)
-    assert needle in said and f"${TOKEN_VAR}" in said and "SECRET" not in said, said
+    assert needle in said and "the variable --token-env names" in said, said
+    assert TOKEN_VAR not in said and "SECRET" not in said, said
     monkeypatch.setattr(S.Served, "wait", lambda self: None)
     result = CliRunner().invoke(
         app,
@@ -915,6 +916,18 @@ def test_token_env_beside_token_file_and_a_value_where_its_name_belongs_are_refu
     with pytest.raises(S.ServeRefused) as refused:
         S.server_token(None, pasted)
     assert "not a variable's name" in str(refused.value) and TOKEN not in str(refused.value)
+    # and with a letter as often, when it is a name as far as the rule goes, and is not set
+    lettered = "a" + TOKEN[1:]
+    monkeypatch.delenv(lettered, raising=False)
+    with pytest.raises(S.ServeRefused, match="is not set") as refused:
+        S.server_token(None, lettered)
+    assert TOKEN[1:] not in str(refused.value)
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", lettered],
+    )
+    assert result.exit_code == 1 and TOKEN[1:] not in result.output, result.output
 
 
 # ── the health route, and what a proxy in front passes on ──────────────────────────────

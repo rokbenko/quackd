@@ -437,20 +437,21 @@ def _token_env_refusal(name: str) -> str | None:
 
 
 def _read_token_env(name: str) -> str:
-    """The token in the variable `--token-env` names, or a refusal that names the variable and
-    never says what it holds. A name that is not one a variable could have is refused first, in
-    a sentence that does not quote it: what was typed there may be the token itself."""
+    """The token in the variable `--token-env` names, or a refusal that quotes neither what the
+    variable holds nor its name: what was typed there may be the token itself, which a name that
+    is not one a variable could have shows at once, and one that is, a token beginning with a
+    letter, does not. So no refusal here says the name, as none says the value."""
     if (why := _token_env_refusal(name)) is not None:
         raise ServeRefused(why)
     value = os.environ.get(name)
     if value is None or not value.strip():
         said = "is not set" if value is None else "is empty"
         raise ServeRefused(
-            f"${name}, which --token-env names, {said}: put the token clients must send in it. "
+            f"the variable --token-env names {said}: put the token clients must send in it. "
             "Refusing to serve a policy with no token"
         )
     try:
-        return wire.clean_token(value, f"${name} (--token-env)")
+        return wire.clean_token(value, "the variable --token-env names")
     except ValueError as e:
         raise ServeRefused(f"{e}. Refusing to serve a policy with that token") from None
 
