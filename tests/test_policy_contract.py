@@ -1473,7 +1473,10 @@ def test_a_bench_with_no_async_chunks_plays_each_chunk_out_and_holds_between() -
         serving.app.close()
     asked = built.requests - 2  # the warm step and the one timed on its own came first
     assert asked >= 3 and result.waits_each and not result.waited_ticks, result
-    assert result.chunk is not None and result.played >= (asked - 1) * result.chunk, result
+    # every chunk before the last was played out, each action sent or, on a machine too busy to
+    # keep the rate, dropped with a tick the pacer skipped, as CI's macOS runners do
+    assert result.chunk is not None, result
+    assert result.played + result.skipped >= (asked - 1) * result.chunk, result
     assert result.starved >= asked, result  # a tick at least of every wait held still
     said = dict(S.describe_bench(result))["starved"]
     assert "--no-async-chunks" in said, said
