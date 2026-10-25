@@ -227,7 +227,8 @@ NOT_SERVED: tuple[NotServed, ...] = (
         type=None,
         why=(
             "it is offered to partners only. Gemini Robotics-ER 2, which is public, is a planner, "
-            "and quackd already flies it as a pilot (gemini-robotics-er-2-preview)"
+            "and quackd already carries it as a pilot row (gemini-robotics-er-2-preview), which "
+            "nothing on record has flown"
         ),
         would_change="public access to the VLA itself",
     ),

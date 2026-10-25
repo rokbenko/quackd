@@ -13,7 +13,8 @@ many language models behind one key. The research that day found none:
 - Physical Intelligence's Pi API, a beta since 2026-10-13, serves its own models behind a
   waitlist and publishes no protocol.
 - The Gemini Robotics VLA is offered to partners only. Gemini Robotics-ER 2 is public, and it
-  is a planner, which quackd already flies as a pilot (`gemini-robotics-er-2-preview`).
+  is a planner, which quackd already carries as a pilot row (`gemini-robotics-er-2-preview`)
+  and nothing on record has flown.
 - vLLM-Omni serves several VLAs over OpenPI's WebSocket protocol, but it is a server you run,
   not a vendor.
 
@@ -54,9 +55,10 @@ Reading for more families turned up two things wrong with what the server alread
    and what its code does that the others' does not is checked as its code would read it,
    before any pin is checked or any weight fetched (`check_family`). What it keeps that the arm's
    frame check needs, where the normaliser's statistics would not have it, comes back with the
-   checkpoint and is what `/v1/policy` reports (`Family`). Rok decided on 2026-10-25 which
-   families: pi0, X-VLA in its `auto` action mode and GR00T N1.7 with joint action groups are
-   served, pi0-FAST is refused, and MolmoAct2 is deferred.
+   checkpoint and is what `/v1/policy` reports (`Family`). Rok asked on 2026-10-25 for GR00T
+   N1.7, pi0, pi0-FAST, X-VLA and MolmoAct2, and their reading decided the rest: pi0, X-VLA in its
+   `auto` action mode and GR00T N1.7 with joint action groups are served, pi0-FAST is refused,
+   and MolmoAct2 is deferred, at Rok's word.
 4. **What is served, and what is not, is data in the core.** `quackd/adapters/policies.py`
    holds a row per served type, in the server's order, and a row per policy or service people
    ask about that quackd does not serve, with why and what would change that. It imports nothing
