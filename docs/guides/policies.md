@@ -363,8 +363,9 @@ That is the stand-ins' output, and three of its rows would read otherwise on a r
 since the container installs torch and the checkpoint is fetched as it starts, and `serving`
 names the checkpoint, where the stand-in container serves `scripted:sweep` in its place. `up`
 waits 30 minutes unless `--wait-minutes` says otherwise, and returns at once with `--no-wait`. An
-endpoint that fails, that does not serve in time, or whose server says it has no GPU is paused,
-which stops its bill, and the last lines of its log are quoted, every token taken out of them.
+endpoint that fails, that does not serve in time, whose server says it has no GPU, or that meets
+any other error while `up` waits is paused, which stops its bill, and the last lines of its log
+are quoted, every token taken out of them.
 
 **Check it and run on it**, as on any server, with no tunnel and no token to hand over:
 
@@ -389,10 +390,13 @@ until it answers
 ```
 
 `quackd policy endpoint list` says what this machine started and how each is now, and `delete`
-removes one from Hugging Face and forgets it here. An endpoint that has no request for
-`--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and bills nothing, and the
-next request wakes it, which takes minutes: start it with `up` before a run rather than waking it
-with one. quackd starts no endpoint that never scales to zero.
+removes one from Hugging Face and forgets it here. `up`, `pause` and `delete` each read the
+endpoint first, and leave alone one by that name that quackd did not start, or that is at another
+address than the one `up` recorded, as one made on huggingface.co after yours was deleted there
+would be: `delete NAME --forget` forgets such a record and asks Hugging Face nothing. An endpoint
+that has no request for `--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and
+bills nothing, and the next request wakes it, which takes minutes: start it with `up` before a
+run rather than waking it with one. quackd starts no endpoint that never scales to zero.
 
 **What it costs.** Hugging Face's price list, `GET /v2/provider`, which `up` reads with no token
 before it asks you, said this of AWS on 2026-10-25. An endpoint bills by the minute while it is

@@ -125,6 +125,13 @@ class EndpointTimeout(EndpointError):
     """An endpoint that did not serve within the minutes `up` was given to wait."""
 
 
+class Unconfirmed(EndpointError):
+    """An endpoint by a recorded name that Hugging Face's answer does not confirm is the one this
+    machine's `up` started: one without quackd's tag, or at another address than the recorded
+    one, as one made on huggingface.co after quackd's was deleted there would be. quackd sends it
+    nothing and changes nothing on it, and the refusal says how to forget the record."""
+
+
 # ── the account's token ─────────────────────────────────────────────────────────────────
 
 
@@ -700,13 +707,19 @@ class EndpointStore:
         raw = self._load().get(name)
         return None if raw is None else self._record(name, raw)
 
-    def namespace_of(self, name: str) -> str | None:
-        """The account `name`'s record says its endpoint is on, read without checking the rest
-        of the record, for `delete` to remove an endpoint whose record went wrong. None for a
-        name with no record, or a record that names no account."""
+    def located(self, name: str) -> tuple[str | None, str | None]:
+        """The account `name`'s record says its endpoint is on, and the address it recorded,
+        each read without checking the rest of the record, for `delete` to remove an endpoint
+        whose record went wrong, held to that address first (`confirmed`). None for either one
+        the record does not hold as `up` writes it, and for both with no record."""
         raw = self._load().get(name)
-        space = raw.get("namespace") if isinstance(raw, dict) else None
-        return space if isinstance(space, str) and ACCOUNT.match(space) else None
+        if not isinstance(raw, dict):
+            return None, None
+        space, url = raw.get("namespace"), raw.get("url")
+        return (
+            space if isinstance(space, str) and ACCOUNT.match(space) else None,
+            url if isinstance(url, str) and client.is_endpoint_host(url) else None,
+        )
 
     def recorded(self, name: str) -> bool:
         return name in self._load()
@@ -1108,6 +1121,47 @@ def confirmation(
     )
 
 
+# ── whether an endpoint is the one recorded ─────────────────────────────────────────────
+
+
+def _same_address(a: str, b: str) -> bool:
+    return a.strip().rstrip("/").lower() == b.strip().rstrip("/").lower()
+
+
+def confirmed(found: Mapping[str, Any], *, namespace: str, name: str, url: str | None) -> None:
+    """Refuse `found`, an endpoint as the API answered a read of `name` on `namespace`, unless it
+    is the one this machine's `up` started: it carries quackd's tag, as every endpoint `up`
+    creates does, and its address is the recorded `url` wherever both are known, since an
+    endpoint keeps its address for its life (`endpoint_upstream_api.ADDRESS_KEPT`) and one made
+    by that name after it was deleted has an address of its own. A record outlives what it
+    records: an endpoint deleted on huggingface.co leaves this machine's record behind, and
+    another by that name would otherwise be resumed, paused or deleted in its place."""
+    tags = found.get("tags") if isinstance(found, Mapping) else None
+    if not isinstance(tags, list) or TAG not in tags:
+        raise Unconfirmed(
+            f"{namespace}'s endpoint called {name} carries no {TAG} tag, so quackd did not "
+            f"start it and leaves it as it is: this machine's record of hf:{name} is out of "
+            f"date, and quackd policy endpoint delete {name} --forget forgets the record"
+        )
+    there = state_of(found)[1]
+    if url is not None and there is not None and not _same_address(there, url):
+        raise Unconfirmed(
+            f"{namespace}'s endpoint called {name} is not at the address this machine recorded "
+            "for it, so it is another endpoint by that name, and quackd leaves it as it is: "
+            f"quackd policy endpoint delete {name} --forget forgets the record"
+        )
+
+
+def confirm(api: HFEndpoints, record: EndpointRecord) -> dict[str, Any] | None:
+    """`record`'s endpoint as Hugging Face has it now, read with the account's token, or None when
+    it has none by that name, and `Unconfirmed` when the one it has is not the one `up` started
+    here (`confirmed`). What `up` and `pause` read before they change anything."""
+    found = api.get(record.namespace, record.name)
+    if found is not None:
+        confirmed(found, namespace=record.namespace, name=record.name, url=record.url)
+    return found
+
+
 # ── waiting for it to serve ─────────────────────────────────────────────────────────────
 
 
@@ -1138,12 +1192,14 @@ def wait_until_serving(
     """Read the endpoint every `POLL_S` until it is `running` with an address and its server
     answers ready on `/v1/health` there, as huggingface_hub waits for one
     (`endpoint_upstream_api.WAIT_POLL`), and say each state it passes with the seconds since the
-    wait began. The address is recorded the moment Hugging Face gives it, before the account's
-    token goes there as the bearer, and only an address wholly an endpoint's is
-    (`EndpointStore`). One that scaled to zero is woken by the first health request. An endpoint
-    that fails is `EndpointFailed`, one paused or deleted meanwhile an `EndpointError`, and one
-    that does not serve within `minutes` `EndpointTimeout`. The record, with its address, comes
-    back."""
+    wait began. The address is recorded the moment Hugging Face gives it, when the record holds
+    none, before the account's token goes there as the bearer, and only an address wholly an
+    endpoint's is (`EndpointStore`). Every read is held to the record first (`confirmed`): an
+    endpoint by that name without quackd's tag, or at another address than one already
+    recorded, is `Unconfirmed`, and is sent nothing. One that scaled to zero is woken by the
+    first health request. An endpoint that fails is `EndpointFailed`, one paused or deleted
+    meanwhile an `EndpointError`, and one that does not serve within `minutes`
+    `EndpointTimeout`. The record, with its address, comes back."""
     api.also_scrub(record.token)
     start = clock()
     deadline = start + 60.0 * minutes
@@ -1155,6 +1211,7 @@ def wait_until_serving(
                 f"Hugging Face has no endpoint called {record.name} any more: quackd policy "
                 f"endpoint delete {record.name} forgets the record"
             )
+        confirmed(endpoint, namespace=record.namespace, name=record.name, url=record.url)
         state, url, message = state_of(endpoint)
         if state != last:
             said(state, clock() - start)
@@ -1167,7 +1224,7 @@ def wait_until_serving(
                 f"{record.endpoint} was paused while quackd waited for it: quackd policy endpoint "
                 f"up {record.name} resumes it"
             )
-        if url is not None and url != record.url:
+        if url is not None and record.url is None:
             if not client.is_endpoint_host(url):
                 raise EndpointError(
                     f"Hugging Face gave {record.endpoint} an address that is not an endpoint's, "
@@ -1215,10 +1272,6 @@ class Reached:
     token: str
     bearer: str
     endpoint: str
-
-
-def _same_address(a: str, b: str) -> bool:
-    return a.strip().rstrip("/").lower() == b.strip().rstrip("/").lower()
 
 
 def reach(
@@ -1289,7 +1342,10 @@ __all__ = [
     "HFEndpoints",
     "Preflight",
     "Reached",
+    "Unconfirmed",
+    "confirm",
     "confirmation",
+    "confirmed",
     "container_args",
     "container_command",
     "create_payload",

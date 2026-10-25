@@ -21,13 +21,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   checks that this quackd is a release on PyPI, the instance, its price on the day, the quota,
   that the checkpoint and its pins are neither gated nor private without `--hub-token-from`, and
   the checkpoint's `config.json`, then asks with the price, and refuses with no terminal and no
-  `--yes`. An endpoint that fails, does not serve in time or has no GPU is paused, its log quoted
-  with every token taken out. The container installs this release from PyPI with `uvx` in uv's
-  own image, pinned by digest, with nothing uploaded after an hour past the release, and the
-  endpoint is `authenticated`, on one replica, with a token of quackd's own as its one secret.
-  The account's token goes to huggingface.co and the API, and as the bearer to the one endpoint
-  address `up` recorded, and nowhere else. `list` merges this machine's records with what the API
-  says, `pause` stops the bill and `delete` removes one
+  `--yes`. An endpoint that fails, does not serve in time, has no GPU or meets any other error
+  while `up` waits is paused, its log quoted with every token taken out. The container installs
+  this release from PyPI with `uvx` in uv's own image, pinned by digest, with nothing uploaded
+  after an hour past the release, and the endpoint is `authenticated`, on one replica, with a
+  token of quackd's own as its one secret. The account's token goes to huggingface.co and the API,
+  and as the bearer to the one endpoint address `up` recorded, and nowhere else. `list` merges
+  this machine's records with what the API says, `pause` stops the bill and `delete` removes one.
+  `up`, `pause` and `delete` read the endpoint first, and leave alone one by that name that quackd
+  did not start, or that is at another address than the one recorded, and `delete --forget`
+  forgets such a record and asks Hugging Face nothing
   ([docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint),
   [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
 - **`--policy-url hf:NAME`** on `quackd run`, `quackd preflight`, `quackd serve-mcp` and

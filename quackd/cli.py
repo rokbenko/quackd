@@ -4945,8 +4945,9 @@ def _wait_and_say(ep: Any, api: Any, store: Any, record: Any, minutes: float) ->
     fails, that does not serve in time, whose server has no GPU, or that the wait stops on for
     any other reason, Hugging Face's answer, the record's write or the server's refusal, is
     paused, which stops its bill, and its log quoted (`endpoint.pause_and_quote`): one left
-    starting would bill until it idled to zero. Ctrl-C alone leaves it, and says how to pause
-    it."""
+    starting would bill until it idled to zero. Ctrl-C leaves it, and says how to pause it, and
+    an endpoint by that name that turns out not to be the one recorded (`endpoint.Unconfirmed`)
+    is left as it is, since it is not quackd's to pause."""
     from quackd_lerobot.policy.client import PolicyServerError, RemoteRunner
     from quackd_lerobot.verbs import JOINTS
 
@@ -4962,6 +4963,8 @@ def _wait_and_say(ep: Any, api: Any, store: Any, record: Any, minutes: float) ->
             f"{record.name} stops its bill now",
             code=130,
         )
+    except ep.Unconfirmed as e:  # another endpoint by that name: nothing is sent or changed
+        _fail(str(e))
     except ep.EndpointError as e:  # failed, timed out, or anything else on the way
         _paused_and_quoted(ep, api, record, str(e))
     _endpoint_row("url", str(record.url))
@@ -5246,8 +5249,10 @@ def _endpoint_create(
 def _endpoint_resume(ep: Any, api: Any, record: Any, *, yes: bool) -> None:
     """Wake an endpoint this machine started: resume one that is paused, after asking, since it
     bills again, and leave one that is starting, running or scaled to zero to the wait, whose
-    first request wakes the last. One that failed is said with its log, and not waited for."""
-    found = api.get(record.namespace, record.name)
+    first request wakes the last. One that failed is said with its log, and not waited for. It
+    is read first and held to the record (`endpoint.confirm`), so one by that name that quackd
+    did not start, or at another address, is left as it is."""
+    found = ep.confirm(api, record)
     if found is None:
         _fail(
             f"Hugging Face has no endpoint called {record.name} on {record.namespace} any "
@@ -5362,15 +5367,20 @@ def endpoint_pause(name: str = _ENDPOINT_NAME, registry_dir: str | None = _REGIS
     record = _endpoint_record(ep, store, name)
     api = _endpoint_client(ep)
     api.also_scrub(record.token)
+    gone = (
+        f"Hugging Face has no endpoint called {name} on {record.namespace} any more: quackd "
+        f"policy endpoint delete {name} forgets it here"
+    )
+    paused: dict[str, Any] | None = None
     try:
-        paused = api.pause(record.namespace, name)
+        # read first, so an endpoint by that name that quackd did not start is left as it is
+        if ep.confirm(api, record) is not None:
+            paused = api.pause(record.namespace, name)
     except ep.EndpointError as e:
-        if e.status == 404:
-            _fail(
-                f"Hugging Face has no endpoint called {name} on {record.namespace} any more: "
-                f"quackd policy endpoint delete {name} forgets it here"
-            )
-        _fail(str(e))
+        _fail(gone if e.status == 404 else str(e))
+    if paused is None:
+        _fail(gone)
+        return
     state = ep.state_of(paused)[0]
     said = (
         "which bills nothing now" if state == ep.PAUSED else f"which Hugging Face says is {state}"
@@ -5383,33 +5393,57 @@ def endpoint_pause(name: str = _ENDPOINT_NAME, registry_dir: str | None = _REGIS
 def endpoint_delete(
     name: str = _ENDPOINT_NAME,
     yes: bool = typer.Option(False, "--yes", help="Delete it without asking."),
+    forget: bool = typer.Option(
+        False,
+        "--forget",
+        help="Only forget this machine's record of it, and leave Hugging Face as it is: for a "
+        "record whose endpoint was deleted on huggingface.co, or that quackd did not start.",
+    ),
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Delete an endpoint this machine started, and forget it here."""
     ep = _endpoints()
     store = ep.EndpointStore(registry_dir)
     try:
-        recorded, namespace = store.recorded(name), store.namespace_of(name)
+        recorded, (namespace, url) = store.recorded(name), store.located(name)
     except ep.EndpointError as e:
         _fail(str(e))
+        return
     if not recorded:
         _fail(
             f"no endpoint called {name} is recorded on this machine: quackd policy endpoint "
             "list says what there is"
         )
+    doing = "forgetting" if forget else "deleting"
+    if not yes and not _can_prompt():
+        _fail(
+            f"{doing} hf:{name} cannot be undone, and there is no terminal to ask before it is: "
+            "run it at one, or pass --yes"
+        )
     where = f"from {namespace}'s account" if namespace else "from this machine's record"
+    api: Any = None
+    if namespace is not None and not forget:
+        # read first, so an endpoint by that name that quackd did not start is left as it is
+        api = _endpoint_client(ep)
+        try:
+            found = api.get(namespace, name)
+            if found is not None:
+                ep.confirmed(found, namespace=namespace, name=name, url=url)
+            else:
+                api = None  # gone already: nothing to delete
+        except ValueError as e:
+            _fail(str(e))
+    question = (
+        f"forget hf:{name} here, and leave whatever Hugging Face has by that name as it is?"
+        if forget
+        else f"delete hf:{name} {where}, and forget it here?"
+    )
     if not yes:
-        if not _can_prompt():
-            _fail(
-                f"deleting hf:{name} cannot be undone, and there is no terminal to ask before "
-                "it is: run it at one, or pass --yes"
-            )
         with ui.pause_status():
-            if not typer.confirm(f"delete hf:{name} {where}, and forget it here?", default=False):
+            if not typer.confirm(question, default=False):
                 raise typer.Exit(code=1)
     existed = False
-    if namespace is not None:
-        api = _endpoint_client(ep)
+    if api is not None:
         try:
             existed = api.delete(namespace, name)
         except ValueError as e:
@@ -5420,7 +5454,7 @@ def endpoint_delete(
         _fail(str(e))
     if existed:
         ui.console.print(_ok_line(f"deleted {name} {where}"))
-    elif namespace is not None:
+    elif namespace is not None and not forget:
         ui.console.print(_ok_line(f"Hugging Face had no {name} on {namespace} any more"))
     _endpoint_note(f"forgot {name} in {_home_relative(store.path)}.")
 

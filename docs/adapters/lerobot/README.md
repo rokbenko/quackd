@@ -3122,6 +3122,7 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 | `PAUSED_ANSWERS` | what the proxy answers for a paused or a deleted endpoint. The client says any 5xx as not serving and a 404 as gone, and `list` reads the state from the API |
 | `LOGS_BODY` | what the log route answers, which the API's document leaves out. quackd takes a JSON list of entries when it is one and text when not, bounded, scrubbed of both tokens and cut to a few lines |
 | `QUOTA_LISTING` | whether the quota listing names every instance type or only those with quota. A type it names with no room is refused, and one it does not name is left to Hugging Face to refuse |
+| `ADDRESS_KEPT` | that an endpoint keeps its `status.url` for its life, through a pause, a resume and a scale to zero, which the API's document does not say. quackd records the first address it is given, and takes an endpoint by that name at another address for another one, which `up`, `pause` and `delete` leave as it is, and `delete --forget` forgets the record |
 | `GPU_IN_CONTAINER` | that torch from PyPI finds the endpoint's GPU in the container, which a CUDA build newer than the host's driver would not. `up` asks the server whether it has one and pauses an endpoint that has none, quoting its log |
 
 ## Status

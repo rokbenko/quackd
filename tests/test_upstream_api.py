@@ -630,6 +630,7 @@ def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_i
         "PAUSED_ANSWERS",
         "LOGS_BODY",
         "QUOTA_LISTING",
+        "ADDRESS_KEPT",
         "GPU_IN_CONTAINER",
     }
     assert "never created an Inference Endpoint" in (api.__doc__ or "")

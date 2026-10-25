@@ -376,6 +376,19 @@ QUOTA_LISTING = UpstreamRef(
     "has quota on. quackd refuses before it creates an endpoint on a type the listing names "
     "with no room left, and leaves a type it does not name to Hugging Face's own refusal",
 )
+ADDRESS_KEPT = UpstreamRef(
+    "ADDRESS_KEPT",
+    "UNVERIFIED",
+    API_DOC,
+    "that an endpoint keeps the `status.url` it was given for its life, through a pause, a resume "
+    "and a scale to zero. The API's document calls it the URL the endpoint is reachable at and "
+    "says nothing of when it changes, and its pause and resume routes say nothing of it. quackd "
+    "records the address the first time Hugging Face gives one, and takes an endpoint by that "
+    "name at another address for another endpoint, one made after it was deleted: `up`, "
+    "`pause` and `delete` leave that one as it is, and `delete --forget` forgets the record. "
+    "Were Hugging Face to move an endpoint, `up` would refuse its own the same way, which a "
+    "first real pause and resume settles",
+)
 GPU_IN_CONTAINER = UpstreamRef(
     "GPU_IN_CONTAINER",
     "UNVERIFIED",

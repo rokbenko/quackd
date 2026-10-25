@@ -555,6 +555,32 @@ def test_one_that_scaled_to_zero_is_woken_by_the_wait_and_waited_for(
     assert said == ["scaledToZero", "initializing", "running"]
 
 
+@pytest.mark.parametrize("other", ["untagged", "elsewhere"])
+def test_the_wait_takes_an_address_only_when_none_is_recorded_and_holds_every_read_to_it(
+    hf: FakeAPI, tmp_path: Path, other: str
+) -> None:
+    """An address is recorded once, the first time Hugging Face gives one. An endpoint by that
+    name that carries no quackd tag, or that is at another address than the one recorded, is
+    another endpoint: the wait refuses it before anything is sent to it, and the record keeps
+    what it had."""
+    store = E.EndpointStore(tmp_path)
+    record = _record()
+    store.save(record)
+    api = _created(hf, record)
+    ep = hf.endpoints[("rok", "arm")]
+    if other == "untagged":
+        ep.payload["tags"] = ["production"]
+        needle = "carries no quackd-policy tag"
+    else:
+        record = replace(record, url=GOOD_URL)  # recorded before, and not where this one is
+        store.save(record)
+        needle = "is not at the address this machine recorded"
+    with pytest.raises(E.Unconfirmed, match=needle) as refused:
+        E.wait_until_serving(api, record, minutes=1, store=store)
+    assert "delete arm --forget" in str(refused.value)
+    assert store.get("arm") == record and not ep.proxy.requests
+
+
 def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_without_a_token(
     hf: FakeAPI, tmp_path: Path
 ) -> None:

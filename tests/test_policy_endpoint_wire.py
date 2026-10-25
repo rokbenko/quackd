@@ -577,6 +577,109 @@ def test_list_says_what_this_machine_started_and_what_hugging_face_says_of_it(
     assert record is not None and all(record.token not in json.dumps(row) for row in rows)
 
 
+def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: bool) -> Any:
+    """quackd's arm deleted on huggingface.co, and another endpoint called arm made there in its
+    place, running at an address of its own: untagged, as one made on huggingface.co would be,
+    or with quackd's tag, as another machine's `up` would make it. The address the record holds
+    stays one the client's rule takes, as a real endpoint's would once it is gone."""
+    taken = set(hf.proxies)
+    monkeypatch.setattr(
+        C,
+        "is_endpoint_host",
+        lambda url: url.strip().rstrip("/") in taken | set(hf.proxies) or is_endpoint_host(url),
+    )
+    E._request("DELETE", E.API, "/v2/endpoint/rok/arm", bearer=ACCOUNT_TOKEN)
+    body = {
+        "name": "arm",
+        "type": "authenticated",
+        "provider": {"vendor": "aws", "region": "us-east-1"},
+        "compute": {"accelerator": "gpu", "instanceType": "nvidia-a10g", "instanceSize": "x1"},
+        "model": {"repository": "someone/llm", "framework": "custom", "image": {}},
+        "tags": [E.TAG] if tagged else ["production"],
+    }
+    E._request("POST", E.API, "/v2/endpoint/rok", bearer=ACCOUNT_TOKEN, body=body)
+    other = hf.endpoints[("rok", "arm")]
+    other.state, other.ahead = "running", []
+    return other
+
+
+@pytest.mark.parametrize("tagged", [False, True], ids=["untagged", "elsewhere"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["policy", "endpoint", "up", "arm", "--wait-minutes", "0.001"],
+        ["policy", "endpoint", "pause", "arm"],
+        ["policy", "endpoint", "delete", "arm", "--yes"],
+    ],
+    ids=["up", "pause", "delete"],
+)
+def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_another(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, command: list[str], tagged: bool
+) -> None:
+    """An endpoint deleted on huggingface.co leaves this machine's record behind, and another
+    made by that name is not quackd's to wake, pause or delete. Each command reads it first and
+    leaves it as it is when it carries no quackd tag, or is at another address than the one
+    recorded, saying how to forget the record: nothing is changed on it, nothing is sent to it,
+    and the record is kept."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    other = _made_elsewhere(hf, monkeypatch, tagged=tagged)
+    before = len(hf.requests)
+    result = _cli(*command)
+    said = _flat(result.output)
+    needle = (
+        "is not at the address this machine recorded for it"
+        if tagged
+        else "carries no quackd-policy tag, so quackd did not start it"
+    )
+    assert result.exit_code == 1 and needle in said, said
+    assert "quackd policy endpoint delete arm --forget forgets the record" in said
+    assert hf.endpoints.get(("rok", "arm")) is other and other.state == "running"
+    changed = [r for r in hf.requests[before:] if r.method in ("POST", "DELETE")]
+    assert not changed and not other.proxy.requests, changed
+    assert _store().get("arm") is not None
+
+
+def test_delete_forget_forgets_the_record_and_leaves_hugging_face_as_it_is(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The way out of a record whose endpoint is not quackd's any more: it asks, or needs --yes,
+    since the server's token is kept nowhere else, needs no Hugging Face token, and asks
+    Hugging Face nothing."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    other = _made_elsewhere(hf, monkeypatch, tagged=False)
+    monkeypatch.setenv("HF_TOKEN", "")
+    before = len(hf.requests)
+    unasked = _cli("policy", "endpoint", "delete", "arm", "--forget")
+    assert unasked.exit_code == 1, unasked.output
+    assert "forgetting hf:arm cannot be undone" in _flat(unasked.output)
+    assert _store().get("arm") is not None
+    forgot = _cli("policy", "endpoint", "delete", "arm", "--forget", "--yes")
+    said = _flat(forgot.output)
+    assert forgot.exit_code == 0 and "forgot arm in" in said, said
+    assert "deleted" not in said and "Hugging Face had no" not in said
+    assert _store().get("arm") is None and hf.endpoints.get(("rok", "arm")) is other
+    assert len(hf.requests) == before
+
+
+def test_an_endpoint_the_wait_finds_is_not_the_recorded_one_is_not_paused(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every other reason a wait stops pauses the endpoint, and this one does not: an endpoint by
+    that name that is not the one recorded is not quackd's to pause."""
+
+    def swapped(*args: Any, **kw: Any) -> Any:
+        raise E.Unconfirmed(
+            "rok's endpoint called arm is not at the address this machine recorded for it"
+        )
+
+    monkeypatch.setattr(E, "wait_until_serving", swapped)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "not at the address this machine recorded" in said, said
+    assert "paused" not in said and not [r for r in hf.requests if r.path.endswith("/pause")]
+    assert hf.endpoints[("rok", "arm")].state != "paused"
+
+
 def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
     assert _cli(*UP, "--yes").exit_code == 0
     unasked = _cli("policy", "endpoint", "delete", "arm")
