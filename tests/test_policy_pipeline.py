@@ -17,6 +17,7 @@ and a random policy says nothing about what a trained one does to an arm.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -239,7 +240,10 @@ def test_a_checkpoint_is_read_before_anything_that_could_run_is_fetched(tmp_path
             {"registry_name": up.DEFAULT_STEP_NAMES[0], "class": "evil.Step", "config": {}},
             "named by its class",
         ),
-        ({"registry_name": "action_tokenizer_processor", "config": {}}, "not one of"),
+        (
+            {"registry_name": "action_tokenizer_processor", "config": {}},
+            "turns actions into tokens",
+        ),
         ({"registry_name": "some_step_of_its_own", "config": {}}, "not one of"),
         ({"registry_name": [up.DEVICE_STEP], "config": {}}, "not one of"),
         ({"registry_name": {"name": up.DEVICE_STEP}, "config": {}}, "not one of"),
@@ -264,17 +268,81 @@ def test_a_step_that_is_code_the_checkpoint_chose_is_refused_before_its_weights(
 
 
 def test_a_step_that_could_trust_remote_code_is_told_not_to(tmp_path: Path) -> None:
-    tokenizer = up.VLA_STEP_NAMES[1]
+    tokenizer = "tokenizer_processor"
+    assert tokenizer in up.PI05_STEP_NAMES
     pre, post = _processors(extra_pre=[{"registry_name": tokenizer, "config": {P.TRUST_KEY: True}}])
-    checkpoint = _fetch(_hub(tmp_path, pre=pre, post=post), fps=float(FPS))
+    hub = _hub(tmp_path, config=_act_config(type="pi05"), pre=pre, post=post)
+    checkpoint = _fetch(hub, fps=float(FPS))
     assert checkpoint.pre_overrides[tokenizer] == {P.TRUST_KEY: False}
+
+
+@pytest.mark.parametrize(
+    ("policy_type", "step"),
+    [
+        ("act", "tokenizer_processor"),
+        ("act", "relative_actions_processor"),
+        ("smolvla", "pi05_prepare_state_tokenizer_processor_step"),
+        ("pi05", "smolvla_new_line_processor"),
+    ],
+)
+def test_a_step_is_allowed_by_the_type_that_names_it_and_no_other(
+    tmp_path: Path, policy_type: str, step: str
+) -> None:
+    """Every step another type's processors use is one LeRobot registers, and one quackd read for
+    that type alone: an ACT naming a tokenizer is code nobody read for an ACT. The refusal says
+    what the type does allow, before any weight is fetched."""
+    assert any(step in allowed for allowed in P.STEPS_BY_TYPE.values()), step
+    assert step not in P.STEPS_BY_TYPE[policy_type]
+    pre, post = _processors(extra_pre=[{"registry_name": step, "config": {}}])
+    hub = _hub(tmp_path, config=_act_config(type=policy_type), pre=pre, post=post)
+    with pytest.raises(P.PipelineRefused, match=f"allows for a {policy_type!r} policy") as refused:
+        _fetch(hub, fps=float(FPS))
+    assert str(refused.value).endswith(", ".join(sorted(P.STEPS_BY_TYPE[policy_type])))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+
+
+def test_a_tokenizer_a_step_names_is_fetched_without_its_weights(tmp_path: Path) -> None:
+    """A model a processor step names is a tokenizer, and a tokenizer loads its configs and its
+    vocabulary and never a weight, so its weights are not fetched: a pi05 used to fetch every
+    safetensors file of the gated model whose tokenizer it uses. A model `config.json` names is
+    one the policy is built from, SmolVLA's backbone, and its weights come with it, so a
+    repository named both ways is fetched whole, and one named only by the step is not."""
+    tokenizer = "SomeOrg/Some-Tokenizer"
+    pre, post = _processors(
+        extra_pre=[
+            {"registry_name": "tokenizer_processor", "config": {"tokenizer_name": tokenizer}}
+        ]
+    )
+    hub = _hub(tmp_path / "pi05", config=_act_config(type="pi05"), pre=pre, post=post)
+    _fetch(hub, fps=float(FPS), pins=(f"{tokenizer}@{PINNED}",))
+    ((repo, _, patterns),) = hub.snapshots
+    assert repo == tokenizer and patterns == P.TOKENIZER_FILES
+    assert not any(p.endswith(".safetensors") for p in patterns), patterns
+    hub = _smolvla(tmp_path / "smolvla")
+    _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+    ((_, _, patterns),) = hub.snapshots
+    assert patterns == P.NESTED_FILES and "*.safetensors" in patterns
+    newline = up.SMOLVLA_STEP_NAMES[0]
+    pre, post = _processors(
+        extra_pre=[
+            {"registry_name": newline, "config": {}},
+            {"registry_name": "tokenizer_processor", "config": {"tokenizer_name": tokenizer}},
+        ]
+    )
+    config = _act_config(type="smolvla", vlm_model_name="SomeOrg/Some-VLM")
+    hub = _hub(tmp_path / "apart", config=config, pre=pre, post=post)
+    _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}", f"{tokenizer}@{PINNED}"))
+    assert {repo: patterns for repo, _, patterns in hub.snapshots} == {
+        "SomeOrg/Some-VLM": P.NESTED_FILES,
+        tokenizer: P.TOKENIZER_FILES,
+    }
 
 
 def _smolvla(tmp_path: Path) -> FakeHub:
     """A SmolVLA-shaped checkpoint that names its backbone in its config and its tokenizer in a
     step, the same repository both times, as SmolVLA's processor factory writes it."""
     backbone = "SomeOrg/Some-VLM"
-    newline, tokenizer = up.VLA_STEP_NAMES[:2]
+    newline, tokenizer = up.SMOLVLA_STEP_NAMES
     pre, post = _processors(
         extra_pre=[
             {"registry_name": newline, "config": {}},
@@ -297,7 +365,7 @@ def test_a_model_the_checkpoint_names_inside_itself_is_pinned_or_refused(tmp_pat
     assert "*.py" not in patterns and not any(p.endswith((".bin", ".pt", ".pkl")) for p in patterns)
     where = str(hub.snapshot(repo, revision, patterns))
     assert pinned.config_overrides["vlm_model_name"] == where
-    assert pinned.pre_overrides[up.VLA_STEP_NAMES[1]] == {"tokenizer_name": where}
+    assert pinned.pre_overrides[up.SMOLVLA_STEP_NAMES[1]] == {"tokenizer_name": where}
     assert f"vlm_model_name SomeOrg/Some-VLM@{PINNED}" in pinned.loaded
     assert pinned.shape.pads_images
     for pins, needle in (
@@ -375,13 +443,70 @@ def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path
     """A pi05's relative actions are made absolute over the whole chunk, against the state it
     was predicted from, as its training made them relative: it is not a policy asked every
     tick, whatever LeRobot's own loop does with one (`upstream_api.VLA_PIPELINE`)."""
-    relative, absolute = up.VLA_STEP_NAMES[3:5]
+    relative, absolute = "relative_actions_processor", "absolute_actions_processor"
+    assert {relative, absolute} <= set(up.PI05_STEP_NAMES)
     pre, post = _processors(extra_pre=[{"registry_name": relative, "config": {"enabled": True}}])
     post["steps"].insert(1, {"registry_name": absolute, "config": {"enabled": True}})
     checkpoint = _fetch(_hub(tmp_path, config=_act_config(type="pi05"), pre=pre, post=post))
     assert not checkpoint.shape.per_tick and checkpoint.shape.pads_images
     assert checkpoint.shape.n_action_steps == N_ACTION_STEPS
     assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+
+
+class _Stat:
+    """A statistic as a step's `state_dict` holds it, with what `_quantiles` asks a tensor."""
+
+    def __init__(self, values: Sequence[float]) -> None:
+        self.values = list(values)
+
+    def detach(self) -> _Stat:
+        return self
+
+    def cpu(self) -> _Stat:
+        return self
+
+    def reshape(self, *shape: int) -> _Stat:
+        return self
+
+    def tolist(self) -> list[float]:
+        return list(self.values)
+
+
+class _Normaliser:
+    """A pre-processor whose one step keeps the state's percentiles, as the normaliser does."""
+
+    def __init__(self, q01: Sequence[float], q99: Sequence[float]) -> None:
+        stats = {f"{up.STATE_KEY}.q01": _Stat(q01), f"{up.STATE_KEY}.q99": _Stat(q99)}
+        step = type("Step", (), {"state_dict": lambda self: stats})()
+        self.steps = [step]
+
+
+def test_percentiles_a_type_keeps_elsewhere_come_before_the_normalisers(tmp_path: Path) -> None:
+    """A type whose own steps keep the state's percentiles somewhere the normaliser's are not
+    says them in the checkpoint (`Family`), and those are what the runner reports, which the
+    arm holds against its travel. Without them the normaliser's are reported, as before."""
+    n = len(JOINTS)
+    normalised = _Normaliser([-1.0] * n, [1.0] * n)
+    empty = _Normaliser([], [])
+    empty.steps = []
+    checkpoint = _fetch(_hub(tmp_path), fps=float(FPS))
+
+    def runner(checkpoint: P.Checkpoint) -> P.LeRobotRunner:
+        return P.LeRobotRunner(
+            checkpoint,
+            policy=object(),
+            preprocessor=normalised,
+            postprocessor=empty,
+            cameras={},
+            threads=1,
+            latency_s=0.0,
+        )
+
+    assert runner(checkpoint).state_quantiles == wire.Quantiles(q01=[-1.0] * n, q99=[1.0] * n)
+    own = wire.Quantiles(q01=[-2.0] * n, q99=[2.0] * n)
+    acted = wire.Quantiles(q01=[-3.0] * n, q99=[3.0] * n)
+    kept = dataclasses.replace(checkpoint, state_quantiles=own, action_quantiles=acted)
+    assert (runner(kept).state_quantiles, runner(kept).action_quantiles) == (own, acted)
 
 
 def test_a_reset_resets_the_policy_and_both_processors(tmp_path: Path) -> None:
@@ -672,7 +797,6 @@ def tiny_act(tmp_path_factory: pytest.TempPathFactory) -> TinyAct:
     never fetches one (`upstream_api.ACT_BACKBONE_WEIGHTS`, and `offline`)."""
     torch = pytest.importorskip("torch")
     pytest.importorskip("lerobot")
-    import dataclasses
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.policies.act.configuration_act import ACTConfig

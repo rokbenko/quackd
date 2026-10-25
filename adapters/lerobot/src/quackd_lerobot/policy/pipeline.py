@@ -11,23 +11,26 @@ server imports it with none of them installed, and serves a scripted policy that
    of the repository yet (`upstream_api.CHECKPOINT_FILES`).
 2. They are checked. The policy is one of the types whose processors were read at the pin
    (`upstream_api.POLICY_TYPES`), and its features are a state, images and an action. Every
-   processor step is named by a registry name read at the pin (`ALLOWED_STEPS`), and a step
-   named by a `class` key is refused, so nothing is imported from a path a checkpoint chose.
-   A step that could trust a repository's own code is told not to, and a model a checkpoint
-   names inside itself, SmolVLA's backbone or a tokenizer, is refused unless `--pin
-   REPO@REVISION` says which revision to fetch it at (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`).
-   A SmolVLA config that names no backbone is refused too, since LeRobot would fill in its own.
-   A pin is a commit or a tag, and never a branch, which moves (`check_fixed`).
+   processor step is named by a registry name read at the pin for that type (`STEPS_BY_TYPE`),
+   and a step named by a `class` key is refused, so nothing is imported from a path a
+   checkpoint chose. A step that could trust a repository's own code is told not to, and a
+   model a checkpoint names inside itself, SmolVLA's backbone or a tokenizer, is refused unless
+   `--pin REPO@REVISION` says which revision to fetch it at
+   (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). A SmolVLA config that names no backbone is
+   refused too, since LeRobot would fill in its own. A pin is a commit or a tag, and never a
+   branch, which moves (`check_fixed`). What a type's own code reads besides is read as it
+   reads it (`check_family`).
 3. The rate is `--fps`, or else the fps of the dataset `train_config.json` names, read at the
    revision it names, a commit or a tag, or else the server refuses to start
    (`upstream_api.TRAIN_DATASET`).
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
-   pinned models with no code and no pickle in what is fetched, and refused if their directory
-   holds any all the same or maps a class to code (`check_pinned`). The policy is built on the
-   device `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the
-   file holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never
-   fetched (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put
-   where the policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
+   pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
+   either (`nested_patterns`), and refused if their directory holds any all the same or maps a
+   class to code (`check_pinned`). The policy is built on the device `auto_select_torch_device`
+   picks (`upstream_api.AUTO_DEVICE`), with every weight the file holds loaded into it or none
+   (`build_policy`). An ACT's ImageNet backbone is never fetched
+   (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put where the
+   policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
 
 Every repository fetched is recorded with its revision (`Checkpoint.loaded`), and the server
 says them in `/v1/policy`.
@@ -71,23 +74,41 @@ REPO_ID = re.compile(r"^[A-Za-z0-9][\w.\-]*/[\w.\-]+$", re.ASCII)
 MAX_SPEC_CHARS = 150
 """The longest `REPO@REVISION` taken: a Hub id is at most 96 characters, and a revision a
 commit's 40 or a short tag, with room left for what `/v1/policy` says it is."""
-ALLOWED_STEPS = frozenset(up.DEFAULT_STEP_NAMES + up.VLA_STEP_NAMES)
-"""The processor steps a checkpoint may name, each by the registry name LeRobot registers it
-under: ACT's, which are the steps every policy is built from, and those SmolVLA and pi05 add.
-Each is one of LeRobot's own classes, found in its registry, never imported by a path. The
-action tokenizer is not among them: it trusts a repository's code by default, and it tokenises
-actions for training, which a server never does."""
+STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
+    "act": frozenset(up.DEFAULT_STEP_NAMES),
+    "smolvla": frozenset(up.DEFAULT_STEP_NAMES + up.SMOLVLA_STEP_NAMES),
+    "pi05": frozenset(up.DEFAULT_STEP_NAMES + up.PI05_STEP_NAMES),
+}
+"""The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
+registers it under: the steps every policy is built from, which are all of ACT's, and those
+the type's own processors add. Each is one of LeRobot's own classes, found in its registry,
+never imported by a path, and a type may name no other type's: an ACT that names a VLA's step
+is code nobody read for an ACT."""
+REFUSED_STEPS: Mapping[str, str] = {
+    "action_tokenizer_processor": (
+        "which loads its tokenizer trusting the repository's own code unless told not to, and "
+        "turns actions into tokens for training, which a server never does: serve a checkpoint "
+        "whose processors tokenise no actions (upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE)"
+    ),
+}
+"""Steps no type may name, each with why in the words its refusal goes on with, refused before
+the sentence that lists what a type allows, since that one would not say what is wrong."""
 NESTED_STEP_KEYS = ("tokenizer_name",)
-"""The keys of a step's config that name a model to load from the Hub
-(`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+"""The keys of a step's config that name a model to load from the Hub, a tokenizer each
+(`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`), so `TOKENIZER_FILES` are what is fetched of it."""
 NESTED_CONFIG_KEYS = {"smolvla": ("vlm_model_name",)}
-"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone. A
-config that leaves one out is refused, because LeRobot fills it with its own default, a Hub
-name it would then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone,
+which the policy is built from, so `NESTED_FILES` are what is fetched of it. A config that
+leaves one out is refused, because LeRobot fills it with its own default, a Hub name it would
+then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
 TRUST_KEY = "trust_remote_code"
-NESTED_FILES = ("*.json", "*.txt", "*.model", "*.jinja", "*.safetensors")
-"""What is fetched of a pinned model: configs, tokenizer files and safetensors weights, and
-never a `.py` that remote code would run from, nor a pickle a load would run."""
+TOKENIZER_FILES = ("*.json", "*.txt", "*.model", "*.jinja")
+"""What is fetched of a pinned model a step names: its configs and tokenizer files, which are
+all a tokenizer loads, and never its weights, a `.py` that remote code would run from, nor a
+pickle a load would run."""
+NESTED_FILES = (*TOKENIZER_FILES, "*.safetensors")
+"""What is fetched of a pinned model `config.json` names, one the policy is built from: the
+same, and its safetensors weights."""
 NESTED_DOCS = ("*.md", ".gitattributes")
 """What else a pinned model's directory may hold: a repository's own words about itself, which
 nothing loads."""
@@ -260,16 +281,18 @@ def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
     )
 
 
-def check_processor(doc: Any, filename: str, spec: str) -> list[dict[str, Any]]:
+def check_processor(doc: Any, filename: str, spec: str, policy_type: str) -> list[dict[str, Any]]:
     """A processor JSON's steps, each checked, or a refusal naming the step that is not allowed.
 
-    A step is named by a registry name in `ALLOWED_STEPS` or it is refused, and a step with a
-    `class` key is refused whatever else it says, because loading one imports that path
+    A step is named by a registry name its type allows (`STEPS_BY_TYPE`) or it is refused, one
+    no type may name with a sentence of its own (`REFUSED_STEPS`), and a step with a `class`
+    key is refused whatever else it says, because loading one imports that path
     (`upstream_api.PROCESSOR_CLASS_IMPORT`). A state file is a plain `.safetensors` name
     beside the JSON."""
     steps = doc.get("steps") if isinstance(doc, Mapping) else None
     if not isinstance(steps, list):
         raise PipelineRefused(f"{spec}'s {filename} is not a processor: it has no list of steps")
+    allowed = STEPS_BY_TYPE[policy_type]
     checked: list[dict[str, Any]] = []
     for n, step in enumerate(steps):
         if not isinstance(step, Mapping):
@@ -282,10 +305,15 @@ def check_processor(doc: Any, filename: str, spec: str) -> list[dict[str, Any]]:
                 "name it has read, and nothing else"
             )
         name = step.get("registry_name")
-        if not isinstance(name, str) or name not in ALLOWED_STEPS:
+        if isinstance(name, str) and name in REFUSED_STEPS:
+            raise PipelineRefused(
+                f"step {n} of {spec}'s {filename} is {name!r}, {REFUSED_STEPS[name]}"
+            )
+        if not isinstance(name, str) or name not in allowed:
             raise PipelineRefused(
                 f"step {n} of {spec}'s {filename} is {str(name)[:80]!r}, which is not one of the "
-                f"processor steps quackd has read and allows: {', '.join(sorted(ALLOWED_STEPS))}"
+                f"processor steps quackd has read and allows for a {policy_type!r} policy: "
+                f"{', '.join(sorted(allowed))}"
             )
         config = step.get("config", {})
         if not isinstance(config, Mapping):
@@ -317,9 +345,7 @@ def nested_models(
                 f"a copy of the checkpoint whose {up.CONFIG_FILE} names it, and pin that with "
                 "--pin REPO@REVISION"
             )
-    named = [(key, config.get(key)) for keys in NESTED_CONFIG_KEYS.values() for key in keys]
-    named += [(key, s["config"].get(key)) for s in steps for key in NESTED_STEP_KEYS]
-    for key, value in named:
+    for key, value, _ in _named(config, steps):
         if value is None:
             continue
         if not isinstance(value, str) or not REPO_ID.match(value):
@@ -329,6 +355,36 @@ def nested_models(
             )
         found.setdefault(value, key)
     return found
+
+
+def _named(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> list[tuple[str, Any, tuple[str, ...]]]:
+    """Every (key, value, what is fetched of it) a checkpoint could name a model by: each key
+    `NESTED_CONFIG_KEYS` has for any type, whatever this config's type, and each of
+    `NESTED_STEP_KEYS` on every step."""
+    named: list[tuple[str, Any, tuple[str, ...]]] = [
+        (key, config.get(key), NESTED_FILES) for keys in NESTED_CONFIG_KEYS.values() for key in keys
+    ]
+    named += [
+        (key, s["config"].get(key), TOKENIZER_FILES) for s in steps for key in NESTED_STEP_KEYS
+    ]
+    return named
+
+
+def nested_patterns(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> dict[str, tuple[str, ...]]:
+    """What is fetched of each model a checkpoint names (`nested_models`), by the keys that name
+    it. One a step names is a tokenizer, so `TOKENIZER_FILES` and no weight, which a tokenizer
+    never loads. One `config.json` names is a model the policy is built from, so `NESTED_FILES`,
+    its weights among them, and a repository named both ways, as SmolVLA's backbone is by its
+    config and by its tokenizer step, gets those."""
+    patterns: dict[str, tuple[str, ...]] = {}
+    for _, value, fetched in _named(config, steps):
+        if isinstance(value, str) and patterns.get(value) != NESTED_FILES:
+            patterns[value] = fetched  # TOKENIZER_FILES is NESTED_FILES without the weights
+    return patterns
 
 
 def pinned_models(nested: Mapping[str, str], pins: Mapping[str, str], spec: str) -> None:
@@ -346,6 +402,26 @@ def pinned_models(nested: Mapping[str, str], pins: Mapping[str, str], spec: str)
                 f"--pin names {repo}, and {spec} names no such model: pin only the models it "
                 f"names{', which are ' + ', '.join(nested) if nested else ', and it names none'}"
             )
+
+
+@dataclass(frozen=True)
+class Family:
+    """What a type's own reading of a checkpoint found, beyond what every type's finds: the 1st
+    and 99th percentiles of the state and the action it learned from, for a type that keeps
+    them where the normaliser's statistics are not (`LeRobotRunner`), or None."""
+
+    state_quantiles: wire.Quantiles | None = None
+    action_quantiles: wire.Quantiles | None = None
+
+
+def check_family(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
+) -> Family:
+    """A checkpoint's config and its processors' steps read the way its own type's code reads
+    them, before any pin is checked or any weight fetched, or a refusal that says what in them
+    could not drive an arm's joints. ACT, SmolVLA and pi05 have nothing past what every type is
+    checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
+    return Family()
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────
@@ -481,8 +557,8 @@ def _json(path: Path, what: str) -> Any:
 def check_pinned(directory: Path, spec: str) -> None:
     """A pinned model's directory as it is handed to the build, checked, or a refusal.
 
-    What was fetched of it is `NESTED_FILES` alone, but the Hub's cache keeps one directory per
-    commit, and it holds whatever was fetched at that commit before, a `.py` or a pickle
+    What was fetched of it is `NESTED_FILES` at most, but the Hub's cache keeps one directory
+    per commit, and it holds whatever was fetched at that commit before, a `.py` or a pickle
     included. So every file in it is one `NESTED_FILES` or `NESTED_DOCS` names, and no JSON in
     it maps a class to code (`CODE_MAP_KEY`), which is what would have transformers ask to run
     a repository's own code: SmolVLA's build asks for its backbone without saying
@@ -603,6 +679,10 @@ class Checkpoint:
     post_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     config_overrides: dict[str, Any] = field(default_factory=dict)
     loaded: tuple[str, ...] = ()
+    state_quantiles: wire.Quantiles | None = None
+    action_quantiles: wire.Quantiles | None = None
+    """The percentiles the checkpoint's type keeps where the normaliser's are not (`Family`),
+    which `LeRobotRunner` reports in their place, or None for the normaliser's."""
 
 
 def _overrides(
@@ -652,8 +732,10 @@ def fetch_checkpoint(
     steps: dict[str, list[dict[str, Any]]] = {}
     for filename in (up.PREPROCESSOR_FILE, up.POSTPROCESSOR_FILE):
         path = _required(hub, repo, revision, filename, beside=directory)
-        steps[filename] = check_processor(_json(path, f"{spec}'s {filename}"), filename, spec)
+        doc = _json(path, f"{spec}'s {filename}")
+        steps[filename] = check_processor(doc, filename, spec, shape.policy_type)
     every = steps[up.PREPROCESSOR_FILE] + steps[up.POSTPROCESSOR_FILE]
+    family = check_family(config, every, spec)
     nested = nested_models(config, every, spec)
     pinned_models(nested, pinned, spec)
     for m in nested:
@@ -670,7 +752,8 @@ def fetch_checkpoint(
     for step in every:
         if step["state_file"] is not None:
             _required(hub, repo, revision, step["state_file"], beside=directory)
-    fetched = {m: hub.snapshot(m, pinned[m], NESTED_FILES) for m in nested}
+    patterns = nested_patterns(config, every)
+    fetched = {m: hub.snapshot(m, pinned[m], patterns[m]) for m in nested}
     for m, where in fetched.items():
         check_pinned(where, f"{m}@{pinned[m]}")
     config_overrides: dict[str, Any] = {"device": device}
@@ -700,6 +783,8 @@ def fetch_checkpoint(
             *rate_loaded,
             *(f"{nested[m]} {_landed(f'{m}@{pinned[m]}', fetched[m], pinned[m])}" for m in nested),
         ),
+        state_quantiles=family.state_quantiles,
+        action_quantiles=family.action_quantiles,
     )
 
 
@@ -775,9 +860,16 @@ class LeRobotRunner:
         self.threads = threads
         self.gpu = checkpoint.device != "cpu"
         self.loaded = checkpoint.loaded
-        self.state_quantiles = _quantiles(preprocessor.steps, up.STATE_KEY)
-        self.action_quantiles = _quantiles(
-            [*preprocessor.steps, *postprocessor.steps], up.ACTION_KEY
+        # a type that keeps its percentiles elsewhere says so in the checkpoint (`Family`)
+        self.state_quantiles = (
+            checkpoint.state_quantiles
+            if checkpoint.state_quantiles is not None
+            else _quantiles(preprocessor.steps, up.STATE_KEY)
+        )
+        self.action_quantiles = (
+            checkpoint.action_quantiles
+            if checkpoint.action_quantiles is not None
+            else _quantiles([*preprocessor.steps, *postprocessor.steps], up.ACTION_KEY)
         )
         self._policy = policy
         self._pre = preprocessor
@@ -973,8 +1065,9 @@ def load(
 
 
 __all__ = [
-    "ALLOWED_STEPS",
+    "STEPS_BY_TYPE",
     "Checkpoint",
+    "Family",
     "Hub",
     "HubFetch",
     "LeRobotRunner",
@@ -983,12 +1076,14 @@ __all__ = [
     "build_policy",
     "camera_map",
     "check_config",
+    "check_family",
     "check_fixed",
     "check_pinned",
     "check_processor",
     "fetch_checkpoint",
     "load",
     "nested_models",
+    "nested_patterns",
     "parse_pins",
     "parse_repo",
     "pinned_models",

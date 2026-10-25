@@ -272,22 +272,29 @@ DEFAULT_STEP_NAMES = (
     "normalizer_processor",
     "unnormalizer_processor",
 )
-VLA_PROCESSOR_STEPS = UpstreamRef(
-    "smolvla_new_line_processor, tokenizer_processor, pi05_prepare_state_tokenizer_processor_step, "
-    "relative_actions_processor, absolute_actions_processor",
+SMOLVLA_PROCESSOR_STEPS = UpstreamRef(
+    "smolvla_new_line_processor, tokenizer_processor",
     "VERIFIED",
     src(f"{_SMOLVLA}/processor_smolvla.py", 68),
-    "the steps SmolVLA's pre-processor adds to the default ones (lines 68 and 69) and pi05's "
-    f"({src(f'{_PI05}/processor_pi05.py', 123)} to line 151), under the names they register "
-    f"({src(f'{_PROCESSOR}/newline_task_processor.py', 24)}, {src(_TOKENIZER, 55)}, "
-    f"{src(f'{_PI05}/processor_pi05.py', 42)}, "
-    f"{src(f'{_PROCESSOR}/relative_action_processor.py', 84)} and line 162)",
+    "the steps SmolVLA's pre-processor adds to the default ones (lines 68 and 69), under the "
+    f"names they register ({src(f'{_PROCESSOR}/newline_task_processor.py', 24)} and "
+    f"{src(_TOKENIZER, 55)}). With the default ones, the only steps a SmolVLA may name",
 )
-VLA_STEP_NAMES = (
-    "smolvla_new_line_processor",
-    "tokenizer_processor",
-    "pi05_prepare_state_tokenizer_processor_step",
+SMOLVLA_STEP_NAMES = ("smolvla_new_line_processor", "tokenizer_processor")
+PI05_PROCESSOR_STEPS = UpstreamRef(
+    "relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, "
+    "tokenizer_processor, absolute_actions_processor",
+    "VERIFIED",
+    src(f"{_PI05}/processor_pi05.py", 123),
+    "the steps pi05's processors add to the default ones (to line 151), under the names they "
+    f"register ({src(_RELATIVE, 84)}, {src(f'{_PI05}/processor_pi05.py', 42)}, "
+    f"{src(_TOKENIZER, 55)} and {src(_RELATIVE, 162)}). With the default ones, the only steps "
+    "a pi05 may name",
+)
+PI05_STEP_NAMES = (
     "relative_actions_processor",
+    "pi05_prepare_state_tokenizer_processor_step",
+    "tokenizer_processor",
     "absolute_actions_processor",
 )
 DEVICE_OVERRIDE = UpstreamRef(

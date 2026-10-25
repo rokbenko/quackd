@@ -979,21 +979,24 @@ Loading one reads before it builds, and refuses rather than guesses:
 - **The JSON first.** `config.json` and both processor JSONs are fetched at the revision named,
   and nothing else of the repository. A policy type other than those three is refused, so is a
   feature that is neither the state, an image nor the action, and so is a processor step named
-  by a `class` key or by any registry name outside the ones those three policies' processors
-  use. A step named by class is imported from wherever it says, which is code the checkpoint
-  chose, so the weights are never fetched for one.
+  by a `class` key or by any registry name outside the ones the checkpoint's own type uses: the
+  steps every policy is built from, and the ones that type's processors add. An ACT that names a
+  pi05's tokenizer is refused, in a sentence that lists what an ACT allows. A step named by
+  class is imported from wherever it says, which is code the checkpoint chose, so the weights
+  are never fetched for one.
 - **No repository's own code.** A step that could trust a repository's code is told not to. A
   model a checkpoint names inside itself, SmolVLA's backbone or a tokenizer, would load at
   whatever revision the Hub has that day, so it is refused unless `--pin REPO@REVISION` names
   the revision, once per model. That is a whole commit, or a tag the Hub says is one, and never
   a branch or a pull request, which name whatever was last pushed to them. A SmolVLA whose
   `config.json` names no backbone is refused as well, since LeRobot would fill in a default of
-  its own at no revision. The pinned model is fetched with its configs, tokenizer files and
-  safetensors and no `.py` and no pickle, and handed over as that directory. The Hub's cache
-  keeps one directory per commit, holding whatever was fetched at that commit before, so a
-  pinned model whose directory holds any other kind of file, or whose configs map a class to
-  code of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE`
-  at a fresh cache.
+  its own at no revision. A pinned model a processor step names is a tokenizer, and is fetched
+  as its configs and tokenizer files alone, and one `config.json` names, a backbone the policy is
+  built from, with its safetensors as well, and neither with a `.py` or a pickle. Either is
+  handed over as that directory. The Hub's cache keeps one directory per commit, holding
+  whatever was fetched at that commit before, so a pinned model whose directory holds any other
+  kind of file, or whose configs map a class to code of their own (`auto_map`), is refused, with
+  a sentence saying to point `HF_HUB_CACHE` at a fresh cache.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
   That revision is the checkpoint's choice, so it is taken only when it is a whole commit, or a
@@ -3037,7 +3040,8 @@ have not run at all.
 | `FeatureType: "STATE", "VISUAL", "ENV", "ACTION", "REWARD", "LANGUAGE"` | a checkpoint whose inputs are anything but one state and some images, or whose output is anything but one action, is refused, since an arm has nothing to give the rest from |
 | `"act", "smolvla", "pi05"` | the types whose processors the allowlist was read from, and any other is refused before its weights are fetched |
 | `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | the steps every policy's processors are built from, and all of ACT's |
-| `smolvla_new_line_processor, tokenizer_processor, pi05_prepare_state_tokenizer_processor_step, relative_actions_processor, absolute_actions_processor` | the steps SmolVLA's and pi05's pre-processors add. With the row above, the only steps a checkpoint may name |
+| `smolvla_new_line_processor, tokenizer_processor` | the steps SmolVLA's pre-processor adds. With the row above, the only steps a SmolVLA may name, and the server allows each type its own steps and no other type's |
+| `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name |
 | `overrides={"device_processor": {"device": device}}` | how upstream's own loops put a loaded pre-processor on their device. The server does the same and puts the post-processor's on the CPU, where the answers are read |
 | `lerobot.utils.device_utils.auto_select_torch_device()` | the device a checkpoint is loaded on, and whether the server says it has a GPU |
 | `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does |

@@ -427,13 +427,17 @@ why no quackd command loads a checkpoint in the process that holds the serial bu
 server reads before it builds:
 
 - `config.json` and both processor files are fetched first, at the revision named, and a step
-  named by a `class` key or by any name outside the ones ACT's, SmolVLA's and pi05's processors
-  use is refused before any weights are fetched.
+  named by a `class` key, or by any name outside the ones the checkpoint's own type uses, is
+  refused before any weights are fetched. Each type is allowed the steps every policy is built
+  from and the ones its own processors add, read at LeRobot 0.6.1, and no other type's, so an
+  ACT that names a pi05's tokenizer is refused.
 - A step that could trust a repository's code is told not to.
 - A model the checkpoint names inside itself is refused unless `--pin` fixes it at a whole
-  commit or a tag, and is fetched with no `.py` and no pickle. Its directory in the Hub's cache
-  is refused if it holds any other kind of file, or a config that maps a class to code, with a
-  sentence saying to point `HF_HUB_CACHE` at a fresh cache.
+  commit or a tag, and is fetched with no `.py` and no pickle. A tokenizer, which is what a
+  processor step names, comes without its weights, and a backbone the checkpoint's config names
+  comes with them. Its directory in the Hub's cache is refused if it holds any other kind of
+  file, or a config that maps a class to code, with a sentence saying to point `HF_HUB_CACHE` at
+  a fresh cache.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
   run's record.

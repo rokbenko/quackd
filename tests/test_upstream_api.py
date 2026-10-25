@@ -542,7 +542,9 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     ]
     assert api.DATASET_INFO_FILE in api.TRAIN_DATASET.name
     assert api.DEFAULT_PROCESSOR_STEPS.name.split(", ") == list(api.DEFAULT_STEP_NAMES)
-    assert api.VLA_PROCESSOR_STEPS.name.split(", ") == list(api.VLA_STEP_NAMES)
+    for ref, names in _FAMILY_STEPS:
+        assert ref.name.split(", ") == list(names), ref.name
+        assert ref.status == "VERIFIED", ref
     assert api.DEVICE_STEP in api.DEFAULT_STEP_NAMES and api.DEVICE_STEP in api.DEVICE_OVERRIDE.name
     assert api.POLICY_TYPES.name == ", ".join(f'"{t}"' for t in api.SERVED_TYPES)
     assert set(api.SERVED_TYPES) <= set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
@@ -552,7 +554,59 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
         assert stat in api.NORMALIZER_STATS.note, stat
     # the action tokenizer, which trusts remote code by default, is not a step the server allows
     assert "action_tokenizer_processor" in api.TOKENIZER_TRUSTS_REMOTE_CODE.note
-    assert "action_tokenizer_processor" not in api.DEFAULT_STEP_NAMES + api.VLA_STEP_NAMES
+    for _, names in _FAMILY_STEPS:
+        assert "action_tokenizer_processor" not in api.DEFAULT_STEP_NAMES + names
+
+
+#: Each served type's own processor steps, as the ref that read them names them and as the tuple
+#: the pipeline allows them from.
+_FAMILY_STEPS = (
+    (lerobot_policy_api.SMOLVLA_PROCESSOR_STEPS, lerobot_policy_api.SMOLVLA_STEP_NAMES),
+    (lerobot_policy_api.PI05_PROCESSOR_STEPS, lerobot_policy_api.PI05_STEP_NAMES),
+)
+
+
+def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> None:
+    """The pipeline's allowlist is by type: the steps every policy is built from and the ones
+    that type's own processors add, read at the pin. A type served with no allowlist could not
+    load, and an allowlist for a type nobody serves would be steps read for nothing. Every step
+    a type allows past the defaults is one its own ref names."""
+    from quackd_lerobot.policy import pipeline
+
+    api = lerobot_policy_api
+    assert set(pipeline.STEPS_BY_TYPE) == set(api.SERVED_TYPES)
+    assert pipeline.STEPS_BY_TYPE["act"] == frozenset(api.DEFAULT_STEP_NAMES)
+    own = {name for _, names in _FAMILY_STEPS for name in names}
+    for policy_type, allowed in pipeline.STEPS_BY_TYPE.items():
+        assert set(api.DEFAULT_STEP_NAMES) <= allowed, policy_type
+        assert allowed - set(api.DEFAULT_STEP_NAMES) <= own, policy_type
+        assert not allowed & set(pipeline.REFUSED_STEPS), policy_type
+
+
+def test_the_policy_families_are_the_types_the_server_serves() -> None:
+    """`quackd.adapters.policies` says, in the core and as data, which learned policies quackd
+    serves and which it does not and why, for the pages and the commands that print them on a
+    machine with no LeRobot. Its rows are the served types in the server's order, none of the
+    ones it does not serve is a type it does, and importing it costs nothing."""
+    import subprocess
+    import sys
+
+    from quackd.adapters import policies
+
+    assert tuple(f.type for f in policies.FAMILIES) == lerobot_policy_api.SERVED_TYPES
+    assert len({f.label for f in policies.FAMILIES}) == len(policies.FAMILIES)
+    refused = [row.type for row in policies.NOT_SERVED if row.type is not None]
+    assert not set(refused) & set(lerobot_policy_api.SERVED_TYPES), refused
+    for row in policies.NOT_SERVED:
+        assert row.why and row.would_change, row.name
+    heavy = ("torch", "lerobot", "transformers", "huggingface_hub", "quackd_lerobot", "pydantic")
+    probe = (
+        f"import sys, quackd.adapters.policies\nprint([m for m in {heavy!r} if m in sys.modules])"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60, check=True
+    )
+    assert done.stdout.strip() == "[]", done.stdout + done.stderr
 
 
 def test_the_arm_models_zero_and_sign_cite_lerobot_at_its_pin_and_leave_out_the_gripper() -> None:

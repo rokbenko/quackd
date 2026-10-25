@@ -148,6 +148,7 @@ quackd_lerobot.policy.pipeline.check_processor(
     {{"steps": [{{"registry_name": "device_processor", "config": {{"device": "cpu"}}}}]}},
     "policy_preprocessor.json",
     "owner/policy@main",
+    "act",
 )
 try:
     quackd_lerobot.policy.server.served_policy(

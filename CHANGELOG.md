@@ -7,6 +7,35 @@ headings of its own, Documentation and Known limitations, and this project adher
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
 mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]
+
+### Changed
+
+- **A processor step is allowed by the type that names it.** `quackd policy serve` and
+  `quackd policy check` allowed a checkpoint any step that ACT's, SmolVLA's or pi05's processors
+  used, whatever its own type, so an ACT could name pi05's tokenizer, which nobody had read for
+  an ACT. Each type now allows the steps every policy is built from and the ones its own
+  processors add, read at LeRobot 0.6.1, and a step another type uses is refused before any
+  weight is fetched, in a sentence that lists what that type does allow. The action tokenizer,
+  which no type may name, is refused in a sentence of its own, saying that it trusts its
+  repository's code unless told not to and turns actions into tokens for training, which a
+  server never does. No checkpoint LeRobot's own processor factories write names another type's
+  step. `quackd.adapters.policies` says which policy types the server serves and which it does
+  not, and why, as data the core prints with no LeRobot installed, and a test ties its rows to
+  the server's types ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+
+### Fixed
+
+- **A pi05 no longer fetches PaliGemma's weights to load its tokenizer.** A model a checkpoint
+  names inside itself was fetched with its configs, its tokenizer files and its safetensors,
+  whichever key named it, so serving a pi05, whose tokenizer step names
+  `google/paligemma-3b-pt-224`, fetched 11.69 GB of weights that nothing loads, for 21.9 MB of
+  tokenizer files, both sizes read off the Hub on 2026-10-25. A model a processor step names is
+  now fetched as its configs and tokenizer files alone, and one `config.json` names, a backbone
+  the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
+  pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
+  against the Hub, which takes the gated tokenizer's grant.
+
 ## [0.25.0] — 2026-10-25
 
 0.25.0 keeps the SO-101 playing while a policy's next chunk is on its way. A policy served with
