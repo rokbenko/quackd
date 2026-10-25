@@ -55,7 +55,8 @@ BINDING_BETA = "thinking-binding-controls-2026-08-01"
 BINDING_TRIM_PERIOD = 8
 
 CACHE_ENV = "QUACKD_ANTHROPIC_CACHE"
-"""Set to 0, false or no to send the system prompt unmarked, so nothing is cached (`_system`)."""
+"""Set to 0, false or no to send every request unmarked, its system prompt and its messages
+alike, so nothing is cached (`_system`, `render_messages`)."""
 
 
 def _image_block(png: bytes) -> dict[str, Any]:
@@ -84,9 +85,11 @@ def _marked(blocks: list[Any]) -> list[Any]:
     return blocks
 
 
-def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
+def render_messages(history: list[Exchange], *, marks: bool = True) -> list[dict[str, Any]]:
     """quackd's vendor-neutral history → Messages API `messages`, with the cache breakpoint the
-    loop chose (`Exchange.cache_points`) on the last block of each half they name."""
+    loop chose (`Exchange.cache_points`) on the last block of each half they name. The loop
+    marks every run's history alike, and whether a run caches at all is the provider's to say:
+    with `marks` False (`QUACKD_ANTHROPIC_CACHE=0`) no block carries one."""
     messages: list[dict[str, Any]] = []
     for ex in history:
         obs = ex.observation
@@ -98,7 +101,7 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
             ]
         else:
             content = [*pictures, {"type": "text", "text": obs.text}]
-        if "observation" in ex.cache_points:
+        if marks and "observation" in ex.cache_points:
             content = _marked(content)
         messages.append({"role": "user", "content": content})
         if ex.decision is not None:
@@ -112,7 +115,7 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
                 blocks.append(
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
                 )
-            if "decision" in ex.cache_points:
+            if marks and "decision" in ex.cache_points:
                 blocks = _marked(blocks)
             messages.append({"role": "assistant", "content": blocks})
     return messages
@@ -316,10 +319,11 @@ class AnthropicProvider:
         if not effort:
             self.effort_from = "QUACKD_EFFORT" if os.environ.get("QUACKD_EFFORT") else "default"
         env_fb = os.environ.get("QUACKD_ANTHROPIC_FALLBACKS", "1") not in ("0", "false", "no")
-        #: Whether requests mark the prompt for Anthropic's cache (`_system`). On unless
-        #: `QUACKD_ANTHROPIC_CACHE` says 0, false or no, beside the fallbacks switch above: a
-        #: marked prompt is read at a tenth of the input rate from the second call on and
-        #: prefilled sooner, and the one write it costs is a quarter more than an unmarked call.
+        #: Whether requests mark the prompt, and the points the loop chose in the history, for
+        #: Anthropic's cache (`_system`, `render_messages`). On unless `QUACKD_ANTHROPIC_CACHE`
+        #: says 0, false or no, beside the fallbacks switch above: a marked prompt is read at a
+        #: tenth of the input rate from the second call on and prefilled sooner, and the one
+        #: write it costs is a quarter more than an unmarked call.
         self.caches = os.environ.get(CACHE_ENV, "1").strip().lower() not in ("0", "false", "no")
         self.fallbacks = env_fb if fallbacks is None else fallbacks
         # `summarized` is what makes the thinking blocks carry text. `omitted` keeps the
@@ -350,7 +354,7 @@ class AnthropicProvider:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "system": self._system(system),
-            "messages": render_messages(history),
+            "messages": render_messages(history, marks=self.caches),
             "tools": render_tools(tools),
             "tool_choice": _tool_choice(forced=self.forced_tools),
         }

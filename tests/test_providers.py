@@ -256,6 +256,29 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
         assert plain.kwargs["system"] == "SYS", off
 
 
+async def test_anthropic_opted_out_of_its_cache_marks_none_of_the_points_the_loop_chose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loop marks every run's history where the next call will still match it
+    (`Exchange.cache_points`), on any vendor, and whether a run caches at all is Anthropic's
+    provider's to say. With `QUACKD_ANTHROPIC_CACHE=0` nothing in the request carries a marker,
+    the system prompt's nor one the loop chose, and with it on each half the loop named carries
+    one."""
+    first, second = history()
+    marked = [first.model_copy(update={"cache_points": ("observation", "decision")}), second]
+
+    monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
+    on = FakeAnthropic(anthropic_response())
+    await AnthropicProvider(model="claude-opus-5", client=on).step("SYS", marked, TOOLS)
+    assert json.dumps(on.kwargs, default=str).count('"cache_control"') == 3
+
+    for off in ("0", "false", "no"):
+        monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
+        plain = FakeAnthropic(anthropic_response())
+        await AnthropicProvider(model="claude-opus-5", client=plain).step("SYS", marked, TOOLS)
+        assert "cache_control" not in json.dumps(plain.kwargs, default=str), off
+
+
 def test_anthropic_names_each_camera_before_its_picture_in_both_kinds_of_turn() -> None:
     """Two pictures in one message are two views of a room with nothing to say which is which.
 
