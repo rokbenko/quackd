@@ -35,6 +35,7 @@ from tests.fake_hugging_face import (
     UPLOADED,
     FakeAPI,
     FakeContainer,
+    point,
     provider_listing,
 )
 
@@ -50,23 +51,10 @@ AFTER = "2026-10-25T14:08:57Z"
 """An hour after `UPLOADED`, to the second, which is the container's `--exclude-newer`."""
 
 
-def _point(monkeypatch: pytest.MonkeyPatch, api: FakeAPI) -> None:
-    """The module's three addresses at `api`, no wait between reads, and the client's rule for
-    where the account's token may go as a bearer taking the stand-in proxies' addresses besides
-    an endpoint's own. Compared on the whole address."""
-    for name in ("API", "HUB", "PYPI"):
-        monkeypatch.setattr(E, name, api.url)
-    monkeypatch.setattr(E, "POLL_S", 0.0)
-    real = C.is_endpoint_host
-    monkeypatch.setattr(
-        C, "is_endpoint_host", lambda url: url.strip().rstrip("/") in api.proxies or real(url)
-    )
-
-
 @pytest.fixture
 def hf(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAPI]:
     with FakeAPI() as api:
-        _point(monkeypatch, api)
+        point(monkeypatch, api)
         monkeypatch.setenv("HF_TOKEN", ACCOUNT_TOKEN)
         yield api
 

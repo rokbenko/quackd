@@ -364,6 +364,10 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         # `quackd policy serve`'s too: it names the variable the token is in and never holds the
         # value, and a value that is not a variable's name is refused without being quoted
         "--token-env",
+        # `quackd policy endpoint up`'s: it names the variable a Hub token for a gated checkpoint
+        # is in and never holds the value, which goes into the endpoint's secrets and nowhere
+        # a record or a terminal could show it
+        "--hub-token-from",
     }
     secret_words = ("key", "token", "secret", "password", "passwd", "credential")
     url_words = ("url", "address", "endpoint", "host", "broker")

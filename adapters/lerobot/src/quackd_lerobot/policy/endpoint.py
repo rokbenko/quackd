@@ -623,6 +623,14 @@ class EndpointStore:
         self.path = registry_dir(base_dir) / STORE_FILE
 
     def read(self) -> dict[str, EndpointRecord]:
+        """Every record, each checked, or an `EndpointError` naming the first that is not what
+        `up` writes."""
+        return {name: self._record(name, raw) for name, raw in sorted(self._load().items())}
+
+    def _load(self) -> dict[str, Any]:
+        """The records as the file holds them, unchecked but for the file being one: what
+        `save` and `forget` rewrite, so one bad record never stops another being kept or
+        forgotten, and `delete` can still forget the bad one."""
         if not self.path.exists():
             return {}
         try:
@@ -640,7 +648,7 @@ class EndpointStore:
         section = loaded.get("endpoints") or {}
         if not isinstance(section, dict):
             raise EndpointError(f"{self.path}: endpoints must be an object of name -> record")
-        return {name: self._record(name, raw) for name, raw in sorted(section.items())}
+        return section
 
     def _record(self, name: str, raw: Any) -> EndpointRecord:
         def bad(why: str) -> EndpointError:
@@ -683,13 +691,22 @@ class EndpointStore:
         )
 
     def get(self, name: str) -> EndpointRecord | None:
-        return self.read().get(name)
+        raw = self._load().get(name)
+        return None if raw is None else self._record(name, raw)
 
-    def _write(self, records: Mapping[str, EndpointRecord]) -> None:
-        payload = {
-            "version": STORE_VERSION,
-            "endpoints": {name: asdict(records[name]) for name in sorted(records)},
-        }
+    def namespace_of(self, name: str) -> str | None:
+        """The account `name`'s record says its endpoint is on, read without checking the rest
+        of the record, for `delete` to remove an endpoint whose record went wrong. None for a
+        name with no record, or a record that names no account."""
+        raw = self._load().get(name)
+        space = raw.get("namespace") if isinstance(raw, dict) else None
+        return space if isinstance(space, str) and ACCOUNT.match(space) else None
+
+    def recorded(self, name: str) -> bool:
+        return name in self._load()
+
+    def _write(self, section: Mapping[str, Any]) -> None:
+        payload = {"version": STORE_VERSION, "endpoints": {k: section[k] for k in sorted(section)}}
         try:
             write_json(self.path, payload, private=True)
         except RegistryError as e:
@@ -698,15 +715,15 @@ class EndpointStore:
             raise EndpointError(f"cannot write {self.path}: {e}") from None
 
     def save(self, record: EndpointRecord) -> None:
-        records = self.read()
-        records[record.name] = record
-        self._write(records)
+        section = self._load()
+        section[record.name] = asdict(record)
+        self._write(section)
 
     def forget(self, name: str) -> bool:
-        records = self.read()
-        gone = records.pop(name, None) is not None
+        section = self._load()
+        gone = section.pop(name, None) is not None
         if gone:
-            self._write(records)
+            self._write(section)
         return gone
 
 

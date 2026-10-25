@@ -45,6 +45,7 @@ import dataclasses
 import http.client
 import io
 import json
+import logging
 import os
 import shlex
 import sys
@@ -270,13 +271,29 @@ class FakeContainer:
             f"stand-in container: serving scripted:sweep in place of {self.options.policy}, "
             "which would need torch and a GPU",
         ]
+        # what the server logs goes to the endpoint's log, as a container's would, and not to
+        # the terminal of the run that reached it
+        self._kept = _Kept(self.log)
+        logging.getLogger("quackd.policy").addHandler(self._kept)
 
     @property
     def url(self) -> str:
         return self.served.url
 
     def close(self) -> None:
+        logging.getLogger("quackd.policy").removeHandler(self._kept)
         self.served.close()
+
+
+class _Kept(logging.Handler):
+    """A container's own log, as lines."""
+
+    def __init__(self, lines: list[str]) -> None:
+        super().__init__(logging.INFO)
+        self.lines = lines
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(f"{record.levelname} {record.getMessage()}")
 
 
 # ── the API, the Hub and PyPI ───────────────────────────────────────────────────────────
@@ -391,7 +408,13 @@ class FakeAPI:
     releases: dict[str, list[str]] | None = None
     quota: int | None = 1
     fail: bool = False
+    stuck: bool = False
+    """An endpoint that stays `pending`, for the wait that times out."""
+    refuse_create: int | None = None
+    """A status every create is refused with, 402 for an account with no way to pay."""
     gpu: bool = True
+    log: list[str] = field(default_factory=list)
+    """The lines every endpoint's log starts with."""
     forward_authorization: bool = True
     requests: list[Recorded] = field(default_factory=list)
     endpoints: dict[tuple[str, str], FakeEndpoint] = field(default_factory=dict)
@@ -447,7 +470,8 @@ class FakeAPI:
             ep.state = "failed"
             ep.log.append(f"stand-in container failed to start: {type(e).__name__}: {e}")
             return
-        ep.log.extend(ep.container.log)
+        ep.container.log[:0] = ep.log  # the endpoint's log goes on in the container's
+        ep.log = ep.container.log
         ep.proxy.backend = ep.container.url
 
     def _stop(self, ep: FakeEndpoint) -> None:
@@ -470,6 +494,8 @@ class FakeAPI:
                 ep.state, ep.ahead = "initializing", ["running"]
 
     def _ahead(self) -> list[str]:
+        if self.stuck:
+            return []
         return ["initializing", "failed" if self.fail else "running"]
 
     # ── the routes ──────────────────────────────────────────────────────────────────────
@@ -589,6 +615,8 @@ class FakeAPI:
         return _json_reply(404, {"error": f"the stand-in has no {method} for that"})
 
     def _create(self, namespace: str, body: Any) -> Reply:
+        if self.refuse_create is not None:
+            return _json_reply(self.refuse_create, {"error": "no payment method on the account"})
         if not isinstance(body, dict):
             return _json_reply(400, {"error": "the body is not an endpoint"})
         missing = [k for k in ("name", "type", "provider", "compute", "model") if k not in body]
@@ -606,6 +634,7 @@ class FakeAPI:
             proxy,
             ahead=self._ahead(),
             created=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            log=list(self.log),
         )
         proxy.woken = lambda: self._wake(ep)
         self.endpoints[(namespace, name)] = ep
@@ -624,6 +653,22 @@ class FakeAPI:
 
 
 # ── pointing quackd at it ───────────────────────────────────────────────────────────────
+
+
+def point(monkeypatch: Any, api: FakeAPI) -> None:
+    """quackd's endpoint module pointed at `api` for one test: its three addresses, no wait
+    between reads, and the client's rule for where the account's token may go as a bearer
+    taking the stand-in proxies' addresses besides an endpoint's own, compared on the whole
+    address. `monkeypatch` is pytest's, and puts all of it back."""
+    from quackd_lerobot.policy import client, endpoint
+
+    for name in ("API", "HUB", "PYPI"):
+        monkeypatch.setattr(endpoint, name, api.url)
+    monkeypatch.setattr(endpoint, "POLL_S", 0.0)
+    real = client.is_endpoint_host
+    monkeypatch.setattr(
+        client, "is_endpoint_host", lambda url: url.strip().rstrip("/") in api.proxies or real(url)
+    )
 
 
 @contextlib.contextmanager
@@ -657,8 +702,14 @@ def run_by_hand(commands: Sequence[Sequence[str]], *, poll_s: float, answer: str
     from quackd import cli
 
     with tempfile.TemporaryDirectory(prefix="quackd-fake-hf-") as scratch:
-        for name in ("QUACKD_REGISTRY_DIR", "QUACKD_MEMORY_DIR", "QUACKD_CACHE_DIR", "HF_HOME"):
-            os.environ[name] = str(Path(scratch) / name.lower())
+        # a home of its own, so nothing it writes lands in the real one, and every path it
+        # prints reads as the pages name it, under ~/.quackd
+        home = Path(scratch)
+        os.environ["HOME"] = os.environ["USERPROFILE"] = str(home)
+        os.environ["QUACKD_REGISTRY_DIR"] = str(home / ".quackd")
+        os.environ["QUACKD_MEMORY_DIR"] = str(home / ".quackd" / "memory")
+        os.environ["QUACKD_CACHE_DIR"] = str(home / ".quackd" / "cache")
+        os.environ["HF_HOME"] = str(home / ".cache" / "huggingface")
         os.environ["HF_TOKEN"] = ACCOUNT_TOKEN
         os.environ.pop("HF_TOKEN_PATH", None)
         if answer is not None:
