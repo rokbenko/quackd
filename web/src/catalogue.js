@@ -129,6 +129,14 @@ export const CATALOGUE = {
         "forced_tools": true
       },
       {
+        "id": "gpt-6.1-sol",
+        "label": "GPT-6.1 Sol",
+        "status": "current",
+        "vision": true,
+        "api": "responses",
+        "forced_tools": true
+      },
+      {
         "id": "gpt-6-astra",
         "label": "GPT-6 Astra",
         "status": "current",

@@ -412,7 +412,7 @@ regional hosts, whose premium OpenAI publish for no Decisions row
 
 > [!NOTE]
 > A rate quackd does not have records `null` and prints `cost unpriced`, never `0`. Four of
-> the catalogue's 123 models are unpriced today, all of them Cohere's, the Command A family and
+> the catalogue's 124 models are unpriced today, all of them Cohere's, the Command A family and
 > North Mini Code, for which Cohere publish no per-token rate at all. A model that is genuinely free is a rate of
 > zero and prints `$0`, which is a different claim from "nobody knows". Where a rate is missing
 > but the tokens are not, the estimate goes up rather than down: an unpublished cache rate is

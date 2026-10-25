@@ -304,22 +304,31 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
     # shutdown dates in 2026, so none of it is here. The one exception is `gpt-5-search-api`,
     # still priced with no shutdown, whose own model page no longer loads, so nothing here can
     # say it takes function tools. The Daybreak, Cyber and Rosalind models need their own
-    # approval. `gpt-oss-*` are weights, not an endpoint. The three GPT-6 models open on the
+    # approval. `gpt-oss-*` are weights, not an endpoint. The four GPT-6 models open on the
     # Responses API: Sol and Luna take function tools on Chat Completions only at
-    # `reasoning_effort` none and default to medium, and OpenAI's Astra release note says its
-    # tool calling requires the Responses API.
+    # `reasoning_effort` none and default to medium, OpenAI's Astra release note says its tool
+    # calling requires the Responses API, and 6.1 Sol's own page says Chat Completions is
+    # "supported without tool calling" and lists no `reasoning_effort` none at all. 6.1 Sol was
+    # read on 2026-10-26, which its rate says (`checked`); 6 Sol is still served, with no
+    # shutdown date, so it stays the default.
     #
     # Prices: the short-context band. A prompt over 272k tokens is billed at 2x input and cache
     # rates and 1.5x output for the WHOLE request, and nothing here sees that coming. That band
-    # is not only the flagships: the page carries long-context columns for ten of these ids, the
-    # six 5.6-and-later models plus gpt-5.5, gpt-5.4, gpt-5.5-pro and gpt-5.4-pro, while
-    # gpt-5.2-pro has none. Cache writes are 1.25x input on GPT-5.6 and later. Before it there is
-    # no write rate at all (a dash on the page, and "No additional cache-write charge" in the
-    # caching guide), so those rows carry None and a written token is charged at the input rate,
-    # which is what OpenAI bills. gpt-5.6-sol's rate is promotional, and OpenAI promise it only
-    # "at least through November 21, 2026".
+    # is not only the flagships: the page carried long-context columns for ten of these ids on
+    # `PRICES_CHECKED`, the six 5.6-and-later models plus gpt-5.5, gpt-5.4, gpt-5.5-pro and
+    # gpt-5.4-pro, while gpt-5.2-pro had none, and 6.1 Sol has them too. Cache writes are 1.25x
+    # input on GPT-5.6 and later. Before it there is no write rate at all (a dash on the page,
+    # and "No additional cache-write charge" in the caching guide), so those rows carry None and
+    # a written token is charged at the input rate, which is what OpenAI bills. gpt-5.6-sol's
+    # rate is promotional, and OpenAI promise it only "at least through November 21, 2026".
     "openai": (
         ModelSpec("gpt-6-sol", "GPT-6 Sol", api="responses", price=Price(2.0, 10.0, 0.2, 2.5)),
+        ModelSpec(
+            "gpt-6.1-sol",
+            "GPT-6.1 Sol",
+            api="responses",
+            price=Price(2.0, 10.0, 0.1, 2.5, checked="2026-10-26"),
+        ),
         ModelSpec(
             "gpt-6-astra", "GPT-6 Astra", api="responses", price=Price(10.0, 50.0, 1.0, 12.5)
         ),

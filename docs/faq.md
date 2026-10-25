@@ -120,7 +120,7 @@ command that fixes it: the provider one names `quackd[anthropic]`, the robot one
 extra for itself, but it does need a body to drive.
 
 **Which models can I pick?** Whatever the catalogue lists for the vendor you named. It is one
-hand-written table of 123 ids across twelve cloud vendors, and `quackd list-models` prints it,
+hand-written table of 124 ids across twelve cloud vendors, and `quackd list-models` prints it,
 `--llm mistral` (or any other name) narrowing it to one vendor. Every row carries a status
 — `current`, `legacy`, `preview`, `specialised` or `open` — and a notes column that marks three
 things worth knowing before you pass an id: `default`, `Responses API` for the OpenAI models
@@ -146,14 +146,14 @@ checks before it reads a key or opens a connection, so nothing was sent anywhere
 
 ```
 $ quackd run hello-world --llm openai:gpt-5 --robot microduck:mock
-✗ error: openai: unknown model 'gpt-5' from --llm. Valid ids: gpt-6-sol (default), gpt-6-astra,
-gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.4-nano,
-gpt-5.2, gpt-5.1, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro, gpt-5.4-pro,
-gpt-5.2-pro, gpt-5.3-codex, chat-latest. See `quackd list-models --llm openai`.
+✗ error: openai: unknown model 'gpt-5' from --llm. Valid ids: gpt-6-sol (default), gpt-6.1-sol,
+gpt-6-astra, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini,
+gpt-5.4-nano, gpt-5.2, gpt-5.1, gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro,
+gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex, chat-latest. See `quackd list-models --llm openai`.
 
 $ quackd run hello-world --llm openai:grok-4.6 --robot microduck:mock
 ✗ error: openai: unknown model 'grok-4.6' from --llm ('grok-4.6' is a grok model: --llm
-grok:grok-4.6). Valid ids: gpt-6-sol (default), gpt-6-astra, gpt-6-luna, gpt-5.6-sol,
+grok:grok-4.6). Valid ids: gpt-6-sol (default), gpt-6.1-sol, gpt-6-astra, gpt-6-luna, gpt-5.6-sol,
 gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.2, gpt-5.1,
 gpt-4.1, gpt-4.1-mini, gpt-4o, gpt-4o-mini, gpt-5.5-pro, gpt-5.4-pro, gpt-5.2-pro, gpt-5.3-codex,
 chat-latest. See `quackd list-models --llm openai`.
@@ -366,7 +366,7 @@ text.
 tokens (mostly the system prompt and one image) and a short tool call. quackd works the
 dollars out itself rather than leaving you to multiply a token count by a rate you looked up:
 the catalogue carries a price per model in USD per million tokens, read off that vendor's own
-pricing page and dated with the day it was read, and 119 of the 123 ids have one. So every
+pricing page and dated with the day it was read, and 120 of the 124 ids have one. So every
 `llm` record in `transcript.jsonl` carries `cost_usd` for that call and `cost_usd_total` for
 the run so far, `summary.json` carries the run's `cost_usd` beside its `usage` and the exact
 rate it was charged at, and the counters under the verdict print the total:

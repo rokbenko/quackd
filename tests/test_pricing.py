@@ -557,14 +557,20 @@ def test_a_rate_that_carries_its_own_check_date_records_that_date() -> None:
 
 
 def test_every_openrouter_row_was_read_off_openrouters_list_on_its_own_date() -> None:
+    """And every other row on `PRICES_CHECKED`, but for one added since, which says the later day
+    its rate was read rather than be dated to a reading it never had."""
     for name in cat.CLOUD_NAMES:
         for m in cat.models_for(name):
             if m.price is None:
                 continue
             if name == "openrouter":
                 assert m.price.checked == cat.OPENROUTER_PRICES_CHECKED, m.id
-            else:
-                assert m.price.checked is None, f"{m.id} carries a date of its own"
+            elif m.price.checked is not None:
+                read = dt.date.fromisoformat(m.price.checked)
+                assert read > dt.date.fromisoformat(PRICES_CHECKED), (
+                    f"{m.id} carries a date of its own that is not after the table's"
+                )
+                assert m.price.record()["checked"] == m.price.checked, m.id
     assert dt.date.fromisoformat(cat.OPENROUTER_PRICES_CHECKED) >= dt.date.fromisoformat(
         PRICES_CHECKED
     )
