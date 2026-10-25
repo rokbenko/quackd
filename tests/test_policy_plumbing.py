@@ -886,13 +886,26 @@ def test_hf_name_is_taken_on_the_flag_alone_and_a_name_hugging_face_would_refuse
     assert describe(parse_robot_spec("lerobot:real"), policy=choice).provides("manipulate")
 
 
+@pytest.fixture
+def hf_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """The stand-in for Hugging Face's API, with quackd pointed at it and the plumbing's own
+    account token, which a run's `hf:NAME` asks before it builds the arm's client."""
+    from tests.fake_hugging_face import FakeAPI, point
+
+    with FakeAPI(token=HF_TOKEN) as api:
+        point(monkeypatch, api)
+        yield api
+
+
 def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_token(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hf_api: Any
 ) -> None:
     """The address and the token are the record's, the bearer the account's, and
     `QUACKD_POLICY_TOKEN`, which is another server's, is not read. `--policy-token` beats the
-    record, as it beats everything on any server."""
+    record, as it beats everything on any server. Each build asks Hugging Face's API first,
+    here its stand-in, which has the endpoint at the recorded address."""
     record = _recorded(tmp_path)
+    hf_api.seed("rok", "arm", url=ENDPOINT_URL)
     monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
     monkeypatch.setenv(wire.TOKEN_ENV, "e" * 64)
     choice = PolicyChoice("hf:arm", registry_dir=str(tmp_path))
@@ -909,6 +922,7 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
     typed = PolicyChoice("hf:arm", "f" * 64, registry_dir=str(tmp_path))
     made = make_adapter("lerobot:mujoco", policy=typed, seed=0)
     assert made.transport.policy_loop.runner._token == "f" * 64  # type: ignore[attr-defined]
+    assert len(hf_api.sent("/v2/endpoint/rok/arm")) == 2
 
 
 @pytest.mark.parametrize("case", ["no record", "no account token"])

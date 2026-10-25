@@ -374,6 +374,13 @@ quackd policy check --policy-url hf:arm-smolvla --bench
 quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
 ```
 
+Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
+that token to the endpoint only when the API says the endpoint by that name carries quackd's tag
+at the address `up` recorded. The record is a file, and a project's `.env` can name another
+registry with `QUACKD_REGISTRY_DIR`, so a record you did not make, or one left behind by an
+endpoint deleted on huggingface.co, is refused unless the API confirms it, and your token goes
+nowhere else.
+
 **Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
 
 ```bash
@@ -416,7 +423,7 @@ is the server's own token, which no account holds:
 
 | Token | Where it comes from | Where it goes | Where it never goes |
 |---|---|---|---|
-| Your Hugging Face token | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` or `hf auth login`'s file | huggingface.co and api.endpoints.huggingface.cloud, to manage the endpoint, and as the bearer to the one endpoint address `up` recorded | the endpoint, PyPI, the price list, any other address |
+| Your Hugging Face token | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN` or `hf auth login`'s file | huggingface.co and api.endpoints.huggingface.cloud, to manage the endpoint, and as the bearer to the one endpoint address `up` recorded, once the API has said it still is that endpoint's | the endpoint, PyPI, the price list, any other address |
 | The server's token | made by `up`, 64 hex digits | the endpoint's secrets as `QUACKD_POLICY_TOKEN`, and `~/.quackd/endpoints.json` | a URL, a run's record, the terminal |
 | A Hub token for a gated checkpoint | the variable `--hub-token-from` names | the endpoint's secrets as `HF_TOKEN`, and huggingface.co, to read the checkpoint's config | refused when it is your account's own token |
 

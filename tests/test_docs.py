@@ -1058,9 +1058,13 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     )
     refused = client._proxy_refusal(503)
     assert refused is not None and _one_line(refused) in _one_line(section)
+    # a run asks the API about the endpoint before the account's token goes to it
+    read_first = "reads the endpoint from Hugging Face's API first"
+    assert _one_line(read_first) in _one_line(section), "the guide says no API read comes first"
     security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
     for needle in ("`GET /v1/health`", "quackd policy endpoint", "QUACKD_POLICY_TOKEN", "--yes"):
         assert needle in security, f"SECURITY.md does not mention {needle!r}"
+    assert "`NAMESPACE_READS`" in security, "SECURITY.md does not say what the bind trusts"
     architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     assert "`endpoint.py`" in architecture and "`policy/endpoint_upstream_api.py`" in architecture
     adr = _adr("0061")
@@ -1070,6 +1074,7 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     unreleased = changelog.split("\n## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
     for needle in ("quackd policy endpoint up", "hf:NAME", "/v1/health", "--token-env"):
         assert needle in unreleased, f"CHANGELOG.md's [Unreleased] does not name {needle!r}"
+    assert _one_line(read_first) in _one_line(unreleased), "the changelog says no API read first"
     assert "never created a Hugging Face Endpoint" in unreleased.split("### Known limitations")[1]
     assert "**A first real Hugging Face Endpoint.**" in (REPO / "PLAN.md").read_text(
         encoding="utf-8"

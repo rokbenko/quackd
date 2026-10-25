@@ -21,8 +21,10 @@ runs and the arm's process never does.
 - **The account's Hugging Face token** (`hf_token`), found where huggingface_hub finds it
   (`endpoint_upstream_api.TOKEN_LOOKUP`). It goes to `HUB` and `API` for the account's own
   business, and as the bearer to the one address this machine's `up` recorded for an endpoint,
-  which the client holds to (`client.is_endpoint_host`). `GET /v2/provider` and PyPI are asked
-  with no token. It never goes into an endpoint: an `authenticated` endpoint admits any account
+  which the client holds to (`client.is_endpoint_host`), once the API, asked with it, has said
+  the endpoint by that name is quackd's and at that address (`confirm`): a record is a file in a
+  directory a project's `.env` can name. `GET /v2/provider` and PyPI are asked with no token. It
+  never goes into an endpoint: an `authenticated` endpoint admits any account
   (`endpoint_upstream_api.AUTHENTICATED_ADMITS`), and nothing in the container needs it.
 - **quackd's token**, `secrets.token_hex(32)` made by `up`, which is the lock on the server
   whatever the proxy does. It goes into the endpoint's secrets as `QUACKD_POLICY_TOKEN`, which
@@ -1155,7 +1157,8 @@ def confirmed(found: Mapping[str, Any], *, namespace: str, name: str, url: str |
 def confirm(api: HFEndpoints, record: EndpointRecord) -> dict[str, Any] | None:
     """`record`'s endpoint as Hugging Face has it now, read with the account's token, or None when
     it has none by that name, and `Unconfirmed` when the one it has is not the one `up` started
-    here (`confirmed`). What `up` and `pause` read before they change anything."""
+    here (`confirmed`). What `up` and `pause` read before they change anything, and what a run
+    reads before the account's token goes to the recorded address as the bearer (`reach`)."""
     found = api.get(record.namespace, record.name)
     if found is not None:
         confirmed(found, namespace=record.namespace, name=record.name, url=record.url)
@@ -1286,7 +1289,18 @@ def reach(
     the account's token (`hf_token`). `hf:NAME` with no record, or with no address yet, or
     with no account token to send, is a ValueError that says what to do, before anything
     connects. A record that cannot be read refuses `hf:NAME`, and leaves an https address to be
-    reached as any other."""
+    reached as any other.
+
+    Then the endpoint is read from the API with the account's token, one request, and the
+    record is bound to what Hugging Face answers before the token goes anywhere else: the
+    endpoint by that name on the recorded account has to carry quackd's tag and the recorded
+    address (`confirm`). The record is a file in the registry's directory, which a `.env` in
+    the working directory can name with `QUACKD_REGISTRY_DIR`, so a project cloned from
+    somebody else could plant one naming an endpoint of theirs, and a record outlives an
+    endpoint deleted on huggingface.co. Either is refused here, in a sentence, and nothing is
+    sent to the address it holds. That the API answers a read of an account's endpoints only to
+    that account and its organisations' members is what this trusts
+    (`endpoint_upstream_api.NAMESPACE_READS`)."""
     text = given.strip()
     match = POLICY_ENDPOINT.fullmatch(text)
     store = EndpointStore(registry_dir)
@@ -1325,6 +1339,22 @@ def reach(
     if policy_token is not None and policy_token.strip():
         token = wire.clean_token(policy_token, "--policy-token")
     assert record.url is not None
+    api = HFEndpoints(account[0])
+    api.also_scrub(record.token, token)
+    live = confirm(api, record)
+    if live is None:
+        raise EndpointError(
+            f"Hugging Face has no endpoint called {record.name} on {record.namespace}'s account, "
+            f"so nothing was sent to the address this machine recorded for {record.endpoint}: "
+            f"quackd policy endpoint delete {record.name} forgets the record"
+        )
+    state, url, _ = state_of(live)
+    if url is None:
+        raise EndpointError(
+            f"Hugging Face gives {record.endpoint} no address while it is {state}, so nothing was "
+            f"sent to the one this machine recorded: quackd policy endpoint up {record.name} "
+            "waits until it has one"
+        )
     return Reached(record.url, token, account[0], record.endpoint)
 
 

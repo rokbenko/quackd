@@ -621,27 +621,70 @@ def test_an_endpoint_that_does_not_serve_in_time_is_a_timeout(hf: FakeAPI, tmp_p
 
 
 def test_hf_name_reaches_the_recorded_address_with_its_token_and_the_accounts_bearer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The token is `--policy-token` when one was typed, else the record's, and never
     `QUACKD_POLICY_TOKEN` or the file `quackd policy serve` writes, which are other servers'.
-    The recorded https address reaches the same endpoint, and any other address is not one."""
+    The recorded https address reaches the same endpoint, and any other address is not one.
+    Each is read from the API first, once, with the account's token."""
     store = E.EndpointStore(tmp_path)
     record = _record(url=GOOD_URL)
     store.save(record)
-    monkeypatch.setenv("HF_TOKEN", ACCOUNT_TOKEN)
+    hf.seed("rok", "arm", url=GOOD_URL)
     monkeypatch.setenv(wire.TOKEN_ENV, "e" * 64)
     reached = E.reach("hf:arm", registry_dir=tmp_path)
     assert reached == E.Reached(GOOD_URL, record.token, ACCOUNT_TOKEN, "hf:arm")
     assert E.reach(" hf:arm ", policy_token="f" * 64, registry_dir=tmp_path).token == "f" * 64  # type: ignore[union-attr]
     assert E.reach(GOOD_URL + "/", registry_dir=tmp_path) == reached
+    read = hf.sent("/v2/endpoint/rok/arm")
+    assert len(read) == 3 and len(hf.requests) == 3
+    assert all(r.headers["authorization"] == f"Bearer {ACCOUNT_TOKEN}" for r in read)
     assert E.reach("https://gpu.example.com", registry_dir=tmp_path) is None
     assert E.reach("http://127.0.0.1:9875", registry_dir=tmp_path) is None
+    assert len(hf.requests) == 3, "an address that is no record's is not asked about"
+
+
+@pytest.mark.parametrize(
+    ("case", "needle"),
+    [
+        ("gone", "Hugging Face has no endpoint called arm on rok's account, so nothing was sent"),
+        ("untagged", "carries no quackd-policy tag, so quackd did not start it"),
+        ("elsewhere", "is not at the address this machine recorded for it"),
+        ("no address now", "Hugging Face gives hf:arm no address while it is paused"),
+        ("refused", "Hugging Face refused the token when asked to say how arm is (HTTP 401"),
+    ],
+)
+def test_hf_name_is_reached_only_once_the_api_confirms_the_record(
+    hf: FakeAPI, tmp_path: Path, case: str, needle: str
+) -> None:
+    """The bearer goes to the recorded address only when Hugging Face, asked with the account's
+    token, has an endpoint by that name on that account, with quackd's tag, at that address: a
+    record of one deleted on huggingface.co, of another by that name, of one that has no
+    address now, or of an account the token cannot read, is refused, without the token."""
+    store = E.EndpointStore(tmp_path)
+    record = _record(url=GOOD_URL)
+    store.save(record)
+    if case == "untagged":
+        hf.seed("rok", "arm", url=GOOD_URL, tags=["production"])
+    elif case == "elsewhere":
+        hf.seed("rok", "arm", url="https://0a1b2c3d4e5f.endpoints.huggingface.cloud")
+    elif case == "no address now":
+        hf.seed("rok", "arm", url="", state="paused")
+    elif case == "refused":
+        hf.seed("rok", "arm", url=GOOD_URL)
+        hf.token = "hf_" + "SomebodyElse" * 3
+    with pytest.raises(ValueError) as refused:
+        E.reach("hf:arm", registry_dir=tmp_path)
+    said = str(refused.value)
+    assert needle in said, said
+    assert ACCOUNT_TOKEN not in said and record.token not in said
+    (read,) = hf.requests
+    assert read.path == "/v2/endpoint/rok/arm" and read.method == "GET"
 
 
 @pytest.mark.parametrize("case", ["no record", "no address", "no account token", "unreadable"])
 def test_hf_name_with_nothing_to_reach_it_by_is_refused_before_anything_connects(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+    hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
     store = E.EndpointStore(tmp_path)
     monkeypatch.setenv("HF_TOKEN", ACCOUNT_TOKEN)
@@ -662,6 +705,7 @@ def test_hf_name_with_nothing_to_reach_it_by_is_refused_before_anything_connects
         assert E.reach(GOOD_URL, registry_dir=tmp_path) is None, "an address is reached as any"
     with pytest.raises(ValueError, match=needle):
         E.reach("hf:arm", registry_dir=tmp_path)
+    assert not hf.requests, "Hugging Face was asked about a record that reaches nothing"
 
 
 # ── the suite's guard ───────────────────────────────────────────────────────────────────

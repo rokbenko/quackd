@@ -164,7 +164,8 @@ before.
   whether the proxy passes `Authorization` on to the container, which the server's own log says
   once if it does; whether an endpoint pulls uv's image from ghcr.io, or needs the same image
   from Docker Hub; whether the proxy answers 503 or 502 while a replica starts, and what it
-  answers once the endpoint is paused; and whether torch finds the GPU. Then
+  answers once the endpoint is paused; whether the endpoint keeps its address through that pause
+  and the resume after it, which `up` and a run hold it to; and whether torch finds the GPU. Then
   `quackd policy check --policy-url hf:NAME --bench`, from the laptop, for the first round trip
   through an endpoint anybody has timed, and the cold start a wake from zero takes.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend

@@ -51,11 +51,15 @@ been created and nothing paid for.
    its tokens. The server says once in its log when a request arrives carrying `Authorization`,
    which makes the first real endpoint the measurement.
 
-5. **The account's token goes where it belongs and nowhere else.** To huggingface.co and the
-   API, for the account's business, never to PyPI or the price list, and as the bearer only to
-   the one address this machine's `up` recorded, whose whole authority has to be an endpoint's,
-   over https on port 443. A suffix is no lock, since anyone can start an endpoint under that
-   domain. No variable moves an address. A gated checkpoint is fetched with a Hub token
+5. **The account's token goes where it belongs and nowhere else.** To huggingface.co and the API,
+   for the account's business, never to PyPI or the price list, and as the bearer only to the one
+   address this machine's `up` recorded, whose whole authority has to be an endpoint's, over
+   https on port 443. A suffix is no lock, since anyone can start an endpoint under that domain,
+   and no variable moves an address. Nor is the record a lock: it is a file in a directory a
+   project's `.env` can name, and it outlives an endpoint deleted on huggingface.co. So a run
+   reads the endpoint from the API with the account's token first, and sends the bearer only when
+   the endpoint by that name carries quackd's tag at the recorded address, and `up`, `pause` and
+   `delete` leave alone one that does not. A gated checkpoint is fetched with a Hub token
    `--hub-token-from` names, which may not be the account's own.
 
 6. **`up` refuses before anything bills, and asks before it does.** It checks the flags as the

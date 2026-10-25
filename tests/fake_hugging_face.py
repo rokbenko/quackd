@@ -382,6 +382,9 @@ class FakeEndpoint:
     container: FakeContainer | None = None
     created: str = ""
     log: list[str] = field(default_factory=list)
+    url: str | None = None
+    """The address the API gives it, its proxy's unless told: one no stand-in serves, or `""`
+    for none, for an endpoint a test puts there with `FakeAPI.seed`."""
 
 
 @dataclass
@@ -432,7 +435,7 @@ class FakeAPI:
     def proxies(self) -> list[str]:
         """The address of every endpoint's proxy, which a test tells the client's rule is an
         endpoint's."""
-        return [e.proxy.url for e in self.endpoints.values()]
+        return [e.proxy.url for e in self.endpoints.values() if e.proxy._server is not None]
 
     def sent(self, path: str) -> list[Recorded]:
         """Every request whose path starts with `path`."""
@@ -454,7 +457,11 @@ class FakeAPI:
             "tags": ep.payload.get("tags", []),
             "status": {
                 "state": ep.state,
-                "url": ep.proxy.url if ep.state != "pending" else "",
+                "url": ""
+                if ep.state == "pending"
+                else ep.url
+                if ep.url is not None
+                else ep.proxy.url,
                 "message": f"Endpoint is {ep.state}",
                 "createdAt": ep.created,
                 "updatedAt": ep.created,
@@ -492,6 +499,27 @@ class FakeAPI:
         with self._lock:
             if ep.state == "scaledToZero":
                 ep.state, ep.ahead = "initializing", ["running"]
+
+    def seed(
+        self,
+        namespace: str,
+        name: str,
+        *,
+        url: str,
+        tags: Sequence[str] | None = None,
+        state: str = "running",
+    ) -> FakeEndpoint:
+        """An endpoint the API has that no `up` against it created, for a test of what a run
+        finds: at `url`, an address no stand-in serves, or `""` for none, with quackd's tag
+        unless `tags` says otherwise, in `state`. Its proxy is never started: nothing should
+        reach it."""
+        from quackd_lerobot.policy import endpoint
+
+        payload = {"name": name, "type": "authenticated", "tags": list(tags or [endpoint.TAG])}
+        ep = FakeEndpoint(namespace, name, payload, FakeProxy(self.token), state=state, url=url)
+        with self._lock:
+            self.endpoints[(namespace, name)] = ep
+        return ep
 
     def _ahead(self) -> list[str]:
         if self.stuck:

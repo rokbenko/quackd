@@ -376,6 +376,19 @@ QUOTA_LISTING = UpstreamRef(
     "has quota on. quackd refuses before it creates an endpoint on a type the listing names "
     "with no room left, and leaves a type it does not name to Hugging Face's own refusal",
 )
+NAMESPACE_READS = UpstreamRef(
+    "NAMESPACE_READS",
+    "UNVERIFIED",
+    API_DOC,
+    "that the API answers a read of an account's endpoints only to a token of that account, or "
+    "of a member of the organisation it is. The document gives `GET .../{namespace}/{name}` a "
+    "bearer and one answer, a 200, and calls the namespace a user or an organisation, and says "
+    "no more. A run reads the recorded endpoint with the account's token before that token goes "
+    "to the recorded address as the bearer, and goes on only when the answer carries quackd's "
+    "tag and that address (`endpoint.reach`), so a record planted by a project's `.env` that "
+    "names another account's endpoint is refused as long as this holds, and an organisation "
+    "the account belongs to is trusted as the account is",
+)
 ADDRESS_KEPT = UpstreamRef(
     "ADDRESS_KEPT",
     "UNVERIFIED",

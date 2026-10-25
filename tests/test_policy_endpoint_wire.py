@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -693,6 +695,62 @@ def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
 
 
 # ── a run's client, by --policy-url hf:NAME ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("answer", [404, 403])
+def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
+    hf: FakeAPI,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _no_request_reaches_hugging_face: list[str],
+    answer: int,
+) -> None:
+    """The CLI loads the working directory's `.env`, which can name another registry, so a
+    project cloned from somebody else can plant a record of hf:arm naming an endpoint of theirs.
+    A run reads the endpoint from the API with the account's token before the bearer goes
+    anywhere, and Hugging Face has no such endpoint of the account's, or refuses the token for
+    an account it is not: the run is refused, and the planted address is never even looked up,
+    which the suite's guard would have written down."""
+    planted = tmp_path / "planted"
+    attacker = replace(
+        E.new_record(
+            "arm",
+            namespace="attacker",
+            policy=ACT,
+            instance="nvidia-l4",
+            vendor="aws",
+            region="us-east-1",
+            idle_minutes=15,
+        ),
+        url="https://a7tacker00.endpoints.huggingface.cloud",
+    )
+    E.EndpointStore(planted).save(attacker)
+    project = tmp_path / "cloned-project"
+    project.mkdir()
+    (project / ".env").write_text(f"QUACKD_REGISTRY_DIR={planted}\n", encoding="utf-8")
+    monkeypatch.delenv("QUACKD_REGISTRY_DIR", raising=False)
+    monkeypatch.chdir(project)
+    if answer == 403:
+        real = FakeAPI._endpoint
+
+        def foreign(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+            if path[:1] == ["attacker"]:
+                body = b'{"error":"You do not have access to this namespace"}'
+                return 403, {"Content-Type": "application/json"}, body
+            return real(self, method, path, seen, query)
+
+        monkeypatch.setattr(FakeAPI, "_endpoint", foreign)
+    result = _cli("policy", "check", "--policy-url", "hf:arm")
+    said = _flat(result.output)
+    needle = {
+        404: "Hugging Face has no endpoint called arm on attacker's account, so nothing was sent",
+        403: "Hugging Face refused the token when asked to say how arm is (HTTP 403",
+    }[answer]
+    assert result.exit_code == 1 and needle in said, said
+    (read,) = hf.sent("/v2/endpoint/attacker/arm")
+    assert read.headers["authorization"] == f"Bearer {ACCOUNT_TOKEN}"
+    assert not _no_request_reaches_hugging_face, "the planted address was looked up"
+    assert ACCOUNT_TOKEN not in result.output and attacker.token not in result.output
 
 
 @pytest.mark.parametrize("forwarded", [True, False])
