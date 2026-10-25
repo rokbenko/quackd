@@ -1501,12 +1501,15 @@ async def test_a_slow_answer_with_nothing_in_it_is_starved_out_as_any_other() ->
     assert f"gave no action for {STARVE_S:g} s, waiting for a chunk" in ended.reason, ended
 
 
-async def test_a_first_chunk_slower_than_a_stall_is_not_taken_for_one() -> None:
+@pytest.mark.parametrize("chunk", [LONG, 1], ids=["a chunk", "one action"])
+async def test_a_first_chunk_slower_than_a_stall_is_not_taken_for_one(chunk: int) -> None:
     """A first chunk asked for with nothing to play is waited for in the tick that asked. One
     slower than `STALL_S` had its first goal sent on the reading taken before the wait, and the
     stall's clock started there, so a policy that held the arm still was taken for stalled on
     its second goal. The tick a wait outlasts sends nothing now, and the one due when it ends
-    reads, judges and plays, so a stall is still a second of goals."""
+    reads, judges and plays, so a stall is still a second of goals. A runner that answers one
+    action at a time still has its goal sent in the tick that asked, the only one there is, and
+    the stall's clock starts when it goes out."""
     arm = _segment_arm()
     here = arm.positions["shoulder_pan"]
     clock = AnsweredClock()
@@ -1515,7 +1518,7 @@ async def test_a_first_chunk_slower_than_a_stall_is_not_taken_for_one() -> None:
     def hold(observation: Observation, _sent: Mapping[str, float]) -> list[dict[str, float]]:
         if runner.requests == 1:
             clock.t += k * PERIOD  # what the tick waits on the wall's clock, moved on here
-        return [{"shoulder_pan": here}] * LONG
+        return [{"shoulder_pan": here}] * chunk
 
     runner = ScriptedRunner(hold, rate_hz=RATE)
     _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm)

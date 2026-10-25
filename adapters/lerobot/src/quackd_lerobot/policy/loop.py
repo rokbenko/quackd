@@ -73,7 +73,8 @@ anything more is sent, as a first chunk slower than a tick would otherwise have 
 a reading taken before it. The tick is counted as one the pacer skipped. A wait that leaves
 nothing to play is starved as any other tick with nothing to send, and a runner that answers
 one action at a time has its late answer sent in the tick it was asked for, since it is the
-only goal there is for it.
+only goal there is for it, judged on the reading taken before the wait and with the stall's
+clock started when it goes out.
 
 **Tick mode** (`Features.per_tick`): a runner that carries state from tick to tick is asked
 every tick, and a tick it never saw, skipped by the pacer or not answered by the next, ends the
@@ -689,7 +690,11 @@ class PolicyLoop:
                     return ended
             else:
                 run.starved_since = None
-                ended = await self._play(arm, run, segment, action, now)
+                # a goal sent after a wait in its tick goes out when the wait ended, and its
+                # stall's clock starts there, which for a runner of one action at a time can be
+                # ticks after the reading it was judged on
+                sent_at = arm.now() if run.awaited else now
+                ended = await self._play(arm, run, segment, action, sent_at)
                 if ended is not None:
                     return ended
             arm._tick_timing.add(time.perf_counter() - ticked)

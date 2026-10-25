@@ -74,11 +74,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   was seen only after that goal had gone out. A tick a wait for a chunk outlasts now sends
   nothing, and the tick due when it ends reads the arm, judges it and plays, so a stall is a
   second of goals, as the arm's page says. A policy that answers one action at a time still has
-  its late answer sent in the tick that asked, since that is the only goal there is, and a tick
-  that waits for nothing in it, or whose wait brings nothing to play, runs as it did. The bench
-  paces by the same rule, and tests hold a first answer slower than a stall to a second of
-  goals, a refill whose own tick ran long to sending its goal late, and slow answers with
-  nothing in them to being starved out.
+  its late answer sent in the tick that asked, since that is the only goal there is, on the
+  reading taken before the wait, so a hot joint or torque that went off during it is seen on the
+  tick after, and its stall's clock now starts when that goal goes out. A tick that waits for
+  nothing in it, or whose wait brings nothing to play, runs as it did. The bench paces by the
+  same rule, and tests hold a first answer slower than a stall, a chunk or one action, to a
+  second of goals, a refill whose own tick ran long to sending its goal late, and slow answers
+  with nothing in them to being starved out.
 - **A bench of a policy asked every tick played none of its answers once it declared a
   latency.** A policy in tick mode, as an ACT trained with temporal ensembling is served, is
   asked every tick, and a segment plays each answer on the tick it takes it in, the tick after
