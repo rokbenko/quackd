@@ -80,7 +80,7 @@ before.
   2026-09-23 when its rest pose was recorded; and that checklist's *What to report*, six things
   still chosen against Feetech's documentation rather than measured
   ([ADR-0036](docs/adr/0036-what-the-arm-does-not-say.md)).
-- ⬜ **The SO-101 again, for everything in 0.14.0 to 0.16.1, 0.19.0 and 0.24.0.** The arm last
+- ⬜ **The SO-101 again, for 0.14.0 to 0.16.1, 0.19.0, 0.24.0 and 0.25.0.** The arm last
   ran a build of the code that became quackd 0.13.0, still numbered 0.12.0. The rest pose clipped
   into the travel, `quackd robot release`, the Enter offer at the end of a run whose rest move
   missed, the `--by-hand` refusal over a joint past its travel, the paced `move_joints` and the
@@ -107,7 +107,9 @@ before.
   ([ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)), a real arm
   with no rest pose is kept powered at its close, and `doctor` counts the hands away before its
   fold; none of it has run on the arm, and its nine bench steps are under 0.24.0's
-  *Known limitations*.
+  *Known limitations*. In 0.25.0 a segment asks a policy server for its next chunk while the arm
+  still plays the last, whatever latency the server declares, and `--no-async-chunks` plays each
+  chunk out first; neither has driven the arm, which the learned-policy item below would settle.
 - ⬜ **The SO-101 against its simulator.** `lerobot:mujoco` runs the arm's real backend over the
   maker's model, and what it assumes about the arm only the arm can settle
   ([ADR-0047](docs/adr/0047-the-arms-simulator-runs-the-real-backend.md)). Each of these is a
@@ -149,7 +151,9 @@ before.
   one CPU. It is the `hz`, `late_ticks`, `starved_ticks` and `round_trip_ms` of the `policy`
   block in that run's `summary.json`, with `extras.timing` beside it, and until somebody sends
   it back the rate a policy is served at is a claim about its training data and not about this
-  arm.
+  arm. Since 0.25.0 that block's `async_chunks` says which way the run played its chunks, and
+  the checkpoint served with no `--latency-s`, run once as it is and once with
+  `--no-async-chunks`, says what 0.25.0's change is worth on the arm.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
   with neither a lookout task nor a checklist. A coordinator flock across two machines needs a
   distributed clock first; a pilot flock needs none and has simply never been tried across two.
