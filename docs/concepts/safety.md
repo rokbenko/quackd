@@ -663,9 +663,10 @@ write says nothing about what that write did.
   policy fits this arm's motors, cameras and calibrated travel, and that the latency its server
   declares is one its chunks can carry ([guides/policies.md](../guides/policies.md),
   [SECURITY.md](../../SECURITY.md)). A server that stops answering ends the segment with the arm
-  held, starved on the arm once what was queued has played out, and on the client's own deadline
-  on the simulator, or on the arm where a queue outlasts that deadline. What no bench has
-  measured yet is how fast its loop runs on the real bus while the same laptop infers.
+  held, starved on the arm once what was queued has played out, after 1 s, or 5 s with
+  `--no-async-chunks`, and on the client's own deadline on the simulator, or on the arm where a
+  queue outlasts that deadline. What no bench has measured yet is how fast its loop runs on the
+  real bus while the same laptop infers.
 - **`--accept-other-frame` changes what drives the arm, never where it may go.** Given beside
   `--policy-url`, it lets a policy connect whose learned readings lie outside this arm's
   calibrated travel, one trained on an arm calibrated another way, which the connect otherwise

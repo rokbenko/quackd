@@ -1362,6 +1362,96 @@ async def test_no_latency_declared_plays_one_trajectory_in_lockstep_and_on_the_w
     assert played[seam] == (0, seam) and played[seam + 1] == (seam, 1), played
 
 
+async def test_no_async_chunks_plays_chunks_out_in_lockstep_as_on_the_wall() -> None:
+    """With `--no-async-chunks` a chunk is played out before the next is asked for, the arm
+    holds still while that one is on its way, and it is played from its first action at the
+    tick it lands. On the wall's kind of clock it lands `k` ticks after it was asked, and the
+    lockstep clock holds it back as long, so either way the arm is sent the same goals at the
+    same times, and every tick of each wait is starved, with none waited for in a tick."""
+    k, chunk = 3, 16
+    ticks = 3 * (chunk + k)
+    runs: list[tuple[list[tuple[float, float, dict[str, float]]], SegmentEnd]] = []
+    for lockstep in (True, False):
+        arm = _segment_arm()
+        if lockstep:
+            runner: ScriptedRunner = ScriptedRunner(_tagged(chunk), rate_hz=RATE, latency_ticks=k)
+            clock: SteppedClock = LockstepClock()
+        else:
+            runner = Gated(_tagged(chunk), rate_hz=RATE, latency_ticks=k)
+            clock = GateClock(runner, k)
+        _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm, async_chunks=False)
+        if isinstance(clock, GateClock):
+            clock.loop = transport._policy_loop
+            clock.sleeps = 0
+        sends = _recorded(arm, clock)
+        start = clock.t
+        try:
+            ended = await _segment_end(transport, max_s=ticks * PERIOD)
+        finally:
+            if isinstance(runner, Gated):
+                runner.open.set()
+        assert ended.how == "time", ended.reason
+        runs.append(([(at - start, cap, action) for at, cap, action in sends], ended))
+        await adapter.close()
+    (lockstep_sends, lockstep_end), (wall_sends, wall_end) = runs
+    assert lockstep_sends == wall_sends
+    assert lockstep_end.stats == wall_end.stats
+    stats = lockstep_end.stats
+    assert stats.chunks == 3 and stats.skipped == 0 and stats.starved == 3 * k, stats
+    assert _gaps(lockstep_sends, 0.0) == [k, k], lockstep_sends
+    played = [_untag(p) for p in _pans(lockstep_sends)]
+    assert [played[n * chunk][1] for n in range(3)] == [0, 0, 0], "a chunk began past its first"
+    assert lockstep_sends[0][0] == pytest.approx(k * PERIOD), "the first chunk was not held back"
+
+
+async def test_no_async_chunks_leaves_a_runner_of_one_action_a_tick_as_it_was() -> None:
+    """A runner that answers one action at a time has no chunks to play one at a time. After
+    its first answer, left to land as a chunk's is, it is asked every tick and awaited in it,
+    so the arm is sent a goal on every tick from then on, as without the flag."""
+    ticks = 20
+    arm = _segment_arm()
+    clock = AnsweredClock()
+    runner = ScriptedRunner(_swing(arm), rate_hz=RATE)
+    _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm, async_chunks=False)
+    clock.loop = transport._policy_loop
+    sends = _recorded(arm, clock)
+    start = clock.t
+    ended = await _segment_end(transport, max_s=ticks * PERIOD)
+    await adapter.close()
+    assert ended.how == "time", ended.reason
+    assert ended.stats.starved == 1 and ended.stats.skipped == 0, ended.stats
+    assert len(sends) == ticks - 1, sends
+    assert _gaps([(at - start, cap, action) for at, cap, action in sends], 0.0) == []
+
+
+async def test_a_first_chunk_slower_than_a_stall_is_not_taken_for_one() -> None:
+    """A first chunk asked for with nothing to play is waited for in the tick that asked. One
+    slower than `STALL_S` had its first goal sent on the reading taken before the wait, and the
+    stall's clock started there, so a policy that held the arm still was taken for stalled on
+    its second goal. The tick a wait outlasts sends nothing now, and the one due when it ends
+    reads, judges and plays, so a stall is still a second of goals."""
+    arm = _segment_arm()
+    here = arm.positions["shoulder_pan"]
+    clock = AnsweredClock()
+    k = math.ceil(STALL_S * RATE) + 2  # the ticks the first answer takes, past a stall's second
+
+    def hold(observation: Observation, _sent: Mapping[str, float]) -> list[dict[str, float]]:
+        if runner.requests == 1:
+            clock.t += k * PERIOD  # what the tick waits on the wall's clock, moved on here
+        return [{"shoulder_pan": here}] * LONG
+
+    runner = ScriptedRunner(hold, rate_hz=RATE)
+    _, transport, adapter, _ = await _backend(runner, clock=clock, arm=arm)
+    clock.loop = transport._policy_loop  # the refills after the first land a tick on
+    sends = _recorded(arm, clock)
+    ended = await _segment_end(transport, max_s=1e6)
+    await adapter.close()
+    assert ended.how == "stall", ended.reason
+    goals = [action for _, _, action in sends if not _whole_hold(action)]
+    assert len(goals) >= STALL_S * RATE, f"taken for stalled after {len(goals)} goals"
+    assert ended.stats.skipped >= k - 1, ended.stats
+
+
 @pytest.mark.parametrize("how", ["stamped", "raises"])
 async def test_an_answer_thrown_away_or_raised_lands_its_latency_on_in_lockstep_as_on_the_wall(
     how: str,

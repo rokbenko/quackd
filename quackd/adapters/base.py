@@ -317,10 +317,19 @@ class PolicyChoice:
     `accept_other_frame` is `--accept-other-frame`: the arm connects over a policy that learned
     from an arm calibrated another way, whose state percentiles lie outside this arm's travel,
     which the connect otherwise refuses. Its goals are clipped to this arm's travel either way,
-    so it changes what drives the arm and never where the arm may go, and the record says so."""
+    so it changes what drives the arm and never where the arm may go, and the record says so.
+
+    `async_chunks` is `--async-chunks`, on unless `--no-async-chunks` turns it off: whether the
+    arm asks for each chunk while it still plays the last, or plays each chunk out and holds
+    still while the next is on its way. The record says which."""
 
     def __init__(
-        self, url: str, token: str | None = None, *, accept_other_frame: bool = False
+        self,
+        url: str,
+        token: str | None = None,
+        *,
+        accept_other_frame: bool = False,
+        async_chunks: bool = True,
     ) -> None:
         given = url.strip()
         if not given:
@@ -337,6 +346,7 @@ class PolicyChoice:
         self._token = token.strip() if token is not None and token.strip() else None
         self.url = redacted_url(given)
         self.accept_other_frame = accept_other_frame
+        self.async_chunks = async_chunks
 
     def reach(self) -> tuple[str, str | None]:
         """The address as it was typed and the token, or None where none was typed, for the one
@@ -348,11 +358,15 @@ class PolicyChoice:
 
 
 def policy_choice(
-    url: str | None, token: str | None = None, *, accept_other_frame: bool = False
+    url: str | None,
+    token: str | None = None,
+    *,
+    accept_other_frame: bool = False,
+    async_chunks: bool = True,
 ) -> PolicyChoice | None:
-    """`--policy-url`, `--policy-token` and `--accept-other-frame` as a command takes them, or
-    None when none was given. A token or an override with no address is refused rather than
-    dropped: neither has a server to go to."""
+    """`--policy-url`, `--policy-token`, `--accept-other-frame` and `--async-chunks` as a
+    command takes them, or None when none was given. A token or an override with no address is
+    refused rather than dropped: neither has a server to go to."""
     if url is None:
         if token is not None and token.strip():
             raise ValueError(
@@ -365,8 +379,16 @@ def policy_choice(
                 "serves drive an arm calibrated another way, so give the server's address as "
                 "well, or drop the flag"
             )
+        if not async_chunks:
+            raise ValueError(
+                "--no-async-chunks goes with --policy-url: it has the arm wait for every chunk "
+                "that server's policy answers with, so give the server's address as well, or "
+                "drop the flag"
+            )
         return None
-    return PolicyChoice(url, token, accept_other_frame=accept_other_frame)
+    return PolicyChoice(
+        url, token, accept_other_frame=accept_other_frame, async_chunks=async_chunks
+    )
 
 
 def policy_hint(verbs: Sequence[str], specs: Sequence[str], command: str) -> str | None:

@@ -880,7 +880,9 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     does with one, and `.env.example` names the one variable there is. That is the token's: the
     address has none on purpose, so the file must never grow a line for it. `--accept-other-frame`
     goes with them on all three, and every page that names it, the safety page among them, says
-    the goals of the policy it lets in are still clipped to the arm's travel."""
+    the goals of the policy it lets in are still clipped to the arm's travel. So does
+    `--no-async-chunks`, which has the arm wait for every chunk, and the policy guide says what
+    it is for."""
     from quackd.cli import app
 
     callbacks = {
@@ -891,23 +893,25 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     for name in ("run", "preflight", "serve-mcp"):
         params = callbacks[name].__code__.co_varnames
         assert "policy_url" in params and "policy_token" in params, name
-        assert "accept_other_frame" in params, name
+        assert "accept_other_frame" in params and "async_chunks" in params, name
     rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
     for name in ("run", "preflight", "serve-mcp"):
         row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
         assert "--policy-url" in row, f"the README's {name} row does not name --policy-url"
         assert "--accept-other-frame" in row, f"the README's {name} row does not name it"
-    frame = "--accept-other-frame"
+        assert "--no-async-chunks" in row, f"the README's {name} row does not name it"
+    frame, chunks = "--accept-other-frame", "--no-async-chunks"
     for path, needles in (
-        ("README.md", ("| Policy |", "--policy-token", "QUACKD_POLICY_TOKEN", frame)),
+        ("README.md", ("| Policy |", "--policy-token", "QUACKD_POLICY_TOKEN", frame, chunks)),
         (
             "docs/guides/mcp.md",
-            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", "--yes", frame),
+            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", "--yes", frame, chunks),
         ),
         (
             "docs/adapters/lerobot/README.md",
-            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", frame),
+            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", frame, chunks),
         ),
+        ("docs/guides/policies.md", (chunks, "async_chunks")),
         ("docs/concepts/safety.md", (frame, "clipped")),
         ("docs/adr/0048-policies-are-the-arms-executor.md", (frame,)),
         (".env.example", ("QUACKD_POLICY_TOKEN=",)),
@@ -1025,13 +1029,14 @@ def test_every_question_the_record_keeps_is_named_where_the_record_is_explained(
 
 
 def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explained() -> None:
-    """`run_start`'s `policy` block is what `RemoteRunner.record()` says about the server, and
-    the summary's block starts with it, so the architecture page's `run_start` row names each
-    of its keys. `accept_other_frame` went missing from that row when `--accept-other-frame`
-    added it, and a reader of a run taken under the override would have met a key no page
-    explained."""
+    """`run_start`'s `policy` block is what `RemoteRunner.record()` says about the server, with
+    how the arm plays its chunks (`PolicyLoop.served`), and the summary's block starts with it,
+    so the architecture page's `run_start` row names each of its keys. `accept_other_frame` went
+    missing from that row when `--accept-other-frame` added it, and a reader of a run taken
+    under the override would have met a key no page explained."""
     from quackd_lerobot.policy import server
     from quackd_lerobot.policy.client import RemoteRunner
+    from quackd_lerobot.policy.loop import PolicyLoop
     from quackd_lerobot.verbs import JOINTS
 
     _, info = server.served_policy(server.ServeOptions(policy="scripted:hold"))
@@ -1045,7 +1050,7 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
         if line.startswith("| `run_start` |")
     )
     said = row.split("A run with `--policy-url` adds `policy`:", 1)[1]
-    for key in sorted(runner.record()):
+    for key in sorted(PolicyLoop(runner).served()):
         assert f"`{key}`" in said, (
             f"docs/concepts/architecture.md's run_start row leaves out {key!r}"
         )

@@ -802,6 +802,7 @@ class LeRobotReal:
         rest_pose: dict[str, float] | None = None,
         clock: Clock | None = None,
         registered_name: str | None = None,
+        async_chunks: bool = True,
     ) -> None:
         self.port = address or ""
         self.clock: Clock = clock if clock is not None else WallClock()
@@ -851,10 +852,14 @@ class LeRobotReal:
             runner = ScriptedRunner.wrapping(
                 cast(PolicyLike, policy), rate_hz=POLICY_HZ, rate_source=POLICY_RATE_SOURCE
             )
-        self._policy_loop: PolicyLoop | None = PolicyLoop(runner) if runner is not None else None
+        self._policy_loop: PolicyLoop | None = (
+            PolicyLoop(runner, async_chunks=async_chunks) if runner is not None else None
+        )
         """The loop every segment of this backend's policy runs in, with its own worker for the
         runner (`policy/loop.py`), or None without a policy. A `PolicyLike` is wrapped in a
-        `ScriptedRunner` and runs one `act` a tick at `POLICY_HZ`, as `pick` always ran it."""
+        `ScriptedRunner` and runs one `act` a tick at `POLICY_HZ`, as `pick` always ran it.
+        `async_chunks` is `--async-chunks`, whether a chunk is asked for while the arm plays the
+        last (`PolicyLoop.async_chunks`)."""
         self._segment_verb = "pick"
         """The verb the last segment was started for, which a refused verb names."""
         self.segment_s = MANIPULATE_S

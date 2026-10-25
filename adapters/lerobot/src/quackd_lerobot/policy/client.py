@@ -92,12 +92,13 @@ CALL_TIMEOUT_S = 3.0
 what the server holds, and a reset only clears a policy's queue."""
 STEP_TIMEOUT_S = 2 * FIRST_CHUNK_S
 """How long a step may take to answer. Longer than the loop's own patience (`FIRST_CHUNK_S`
-for a first chunk and less after it), so on the arm a server that stops answering starves the
-segment and the loop says so, holding the arm, before this call gives up and frees the loop's
-worker, as long as what was still queued when it stopped plays out within this less that
-patience. A queue longer than that ends on this call's `PolicyServerError` instead, which the
-verb stops the arm on. On the simulator, whose clock stands still while the loop waits, this
-is what ends the wait, as a `PolicyServerError` the segment ends on."""
+for a first chunk and for every chunk played one at a time, `--no-async-chunks`, and less after
+it otherwise), so on the arm a server that stops answering starves the segment and the loop
+says so, holding the arm, before this call gives up and frees the loop's worker, as long as
+what was still queued when it stopped plays out within this less that patience. A queue
+longer than that ends on this call's `PolicyServerError` instead, which the verb stops the arm
+on. On the simulator, whose clock stands still while the loop waits, this is what ends the
+wait, as a `PolicyServerError` the segment ends on."""
 READ_CHUNK_BYTES = 64 << 10
 RETRIED = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)
 """What a kept-alive socket the server has since closed fails with. `RemoteDisconnected` is one

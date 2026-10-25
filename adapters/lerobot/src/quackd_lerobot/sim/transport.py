@@ -195,7 +195,7 @@ class LeRobotSim(LeRobotReal):
     `quackd preflight` reads them from a task's sidecar (`model.parse_scene`), and None for the
     default ones. `policy` is what `pick` and `manipulate` run, as for the real backend, a policy
     object or a runner such as the client of a policy server (`--policy-url`), and None leaves
-    the arm without either."""
+    the arm without either. `async_chunks` is the real backend's, rehearsed here."""
 
     KEEPS_TORQUE_WITHOUT_A_POSE = False
     """The simulated arm drops on nothing, and a run of it needs no rest pose (it is not among
@@ -221,6 +221,7 @@ class LeRobotSim(LeRobotReal):
         scene: Sequence[Mapping[str, Any]] | None = None,
         timeout_s: float = 1.0,
         policy: PolicyLike | PolicyRunner | None = None,
+        async_chunks: bool = True,
     ) -> None:
         if address and names_a_port(address):
             # for every other lerobot robot --address is the port, so this is an easy slip
@@ -241,6 +242,7 @@ class LeRobotSim(LeRobotReal):
         super().__init__(
             None,
             policy=policy,
+            async_chunks=async_chunks,
             robot_id=robot_id,
             timeout_s=timeout_s,
             max_step_deg=max_step_deg,

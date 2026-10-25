@@ -275,7 +275,8 @@ does a policy the arm's connect finds does not fit it, before any torque, and `s
 says the connect's sentence and exits 1, as `quackd run` does, rather than printing a traceback
 that leaves the client only a closed connection. `--accept-other-frame` lets a policy learned on
 an arm calibrated another way connect, with every goal it answers still clipped to this arm's
-travel, as on `quackd run` ([the arm's page](../adapters/lerobot/README.md#whether-the-policy-fits-the-arm)). Both
+travel, as on `quackd run` ([the arm's page](../adapters/lerobot/README.md#whether-the-policy-fits-the-arm)), and
+`--no-async-chunks` has the arm wait for every chunk the policy answers with, as there. Both
 verbs are confirm gated, so a client can call them only on a server started with `--yes`, and
 both are refused with `--robots` or `--flock`, since one policy server drives one arm. A task
 file loaded with `robot_load_duckfile` holds `manipulate` to its own `policy` section: its listed

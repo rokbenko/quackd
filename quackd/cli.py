@@ -1458,6 +1458,7 @@ def _run_impl(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    async_chunks: bool = True,
     controller: str | None = None,
     play: bool | None = None,
     talk: bool = False,
@@ -1548,7 +1549,12 @@ def _run_impl(
     try:
         # the policy server the arm hands its segments to, from the flags alone: no variable
         # names one, so a policy drives the arm only on a run that says so
-        policy = policy_choice(policy_url, policy_token, accept_other_frame=accept_other_frame)
+        policy = policy_choice(
+            policy_url,
+            policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
+        )
     except ValueError as e:
         _fail(str(e))
         return
@@ -3431,6 +3437,15 @@ _ACCEPT_OTHER_FRAME = typer.Option(
     "two arms' frames match, and the run's record says it was given.",
     rich_help_panel="Robot",
 )
+_ASYNC_CHUNKS = typer.Option(
+    True,
+    "--async-chunks/--no-async-chunks",
+    help="Ask the --policy-url policy for its next chunk while the arm still plays the "
+    "last, the default. With --no-async-chunks the arm plays each chunk out, holds still while "
+    "the next is on its way and plays that from its first action, as LeRobot's own loop plays "
+    "chunks: slower by a round trip a chunk, and the run's record says it was given.",
+    rich_help_panel="Robot",
+)
 _FOV = typer.Option(
     None,
     "--fov-deg",
@@ -3500,6 +3515,7 @@ def run(
     policy_url: str | None = _POLICY_URL,
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
+    async_chunks: bool = _ASYNC_CHUNKS,
     gif: bool = typer.Option(
         True,
         "--gif/--no-gif",
@@ -3575,6 +3591,7 @@ def run(
             policy_url=policy_url,
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
             controller=controller,
             play=play,
             talk=talk,
@@ -3724,6 +3741,7 @@ def preflight(
     policy_url: str | None = _POLICY_URL,
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
+    async_chunks: bool = _ASYNC_CHUNKS,
     runs_dir: str = _RUNS,
     registry_dir: str | None = _REGISTRY_DIR,
     as_json: bool = _JSON,
@@ -3745,6 +3763,7 @@ def preflight(
         policy_url=policy_url,
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
+        async_chunks=async_chunks,
         play=play,
     )
 
@@ -3766,6 +3785,7 @@ def _preflight_impl(
     policy_url: str | None = None,
     policy_token: str | None = None,
     accept_other_frame: bool = False,
+    async_chunks: bool = True,
     play: bool | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError, policy_choice
@@ -3778,7 +3798,12 @@ def _preflight_impl(
     from quackd.transport.base import TransportError
 
     try:
-        policy = policy_choice(policy_url, policy_token, accept_other_frame=accept_other_frame)
+        policy = policy_choice(
+            policy_url,
+            policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
+        )
     except ValueError as e:
         _fail(str(e))
         return
@@ -4362,6 +4387,7 @@ def serve_mcp(
     policy_url: str | None = _POLICY_URL,
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
+    async_chunks: bool = _ASYNC_CHUNKS,
     dry_run: bool = _DRY,
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Allow confirm-gated verbs (there is no terminal to ask)."
@@ -4421,6 +4447,7 @@ def serve_mcp(
             policy_url=policy_url,
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
             talk=talk,
             talk_port=talk_port,
             # the robots are connected in there, so a retiring backend is said from there,
@@ -4625,6 +4652,13 @@ def policy_check(
     seconds: float | None = typer.Option(
         None, "--seconds", help="How long --bench streams for (default 10)."
     ),
+    async_chunks: bool = typer.Option(
+        True,
+        "--async-chunks/--no-async-chunks",
+        help="Bench the policy as a segment plays it by default, asking for its next chunk "
+        "while the last still plays. With --no-async-chunks the bench plays each chunk out "
+        "before it asks for the next, as a run given --no-async-chunks does.",
+    ),
     fps: float | None = _POLICY_FPS,
     cameras: str | None = _POLICY_CAMERAS,
     latency_s: float | None = _POLICY_LATENCY,
@@ -4659,6 +4693,12 @@ def policy_check(
         return
     if seconds is not None and not (seconds > 0 and seconds < float("inf")):
         _fail(f"--seconds {seconds!r} is not a number of seconds to bench for")
+        return
+    if not async_chunks and not bench:
+        _fail(
+            "--no-async-chunks goes with --bench: it paces the bench's chunks, and a check "
+            "without --bench asks for none"
+        )
         return
     server = _policy_server()
     from quackd_lerobot.policy.client import (
@@ -4699,7 +4739,11 @@ def policy_check(
         ui.console.print(Text(f"  {where}", style=ui.STYLES["muted"]), soft_wrap=True)
         ui.console.print(ui.kv_grid(server.describe(info)), soft_wrap=True)
         if bench:
-            result = server.bench(runner, seconds=server.BENCH_S if seconds is None else seconds)
+            result = server.bench(
+                runner,
+                seconds=server.BENCH_S if seconds is None else seconds,
+                async_chunks=async_chunks,
+            )
             ui.console.print(ui.kv_grid(server.describe_bench(result)), soft_wrap=True)
     except (server.ServeRefused, PolicyServerError, ValueError) as e:
         _fail(str(e))

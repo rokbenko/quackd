@@ -1444,6 +1444,35 @@ def test_a_bench_of_a_policy_that_declares_no_latency_waits_out_its_first_chunk_
     assert built.requests >= 2 + 3, "the stream asked for too few chunks to tell"
 
 
+def test_a_bench_with_no_async_chunks_plays_each_chunk_out_and_holds_between() -> None:
+    """`--no-async-chunks` on the bench paces it as a segment given the flag plays: each chunk
+    played out before the next is asked for, and the ticks while that one is on its way
+    holding still, which are starved rather than skipped, since none is waited for in a tick.
+    Its starved row says the flag is why."""
+    trip = 0.2
+    built, _ = S.served_policy(S.ServeOptions(policy="scripted:sweep"))
+    script = built.script
+
+    def slow(observation: Observation, sent: Mapping[str, float]) -> Any:
+        time.sleep(trip)
+        return script(observation, sent)
+
+    built.script = slow
+    serving = _serving(S.ServeOptions(policy="scripted:sweep"), runner=built)
+    try:
+        result = S.bench(serving.client(), seconds=4.0, async_chunks=False)
+    finally:
+        serving.http.shutdown()
+        serving.http.server_close()
+        serving.app.close()
+    asked = built.requests - 2  # the warm step and the one timed on its own came first
+    assert asked >= 3 and result.waits_each and not result.waited_ticks, result
+    assert result.chunk is not None and result.played >= (asked - 1) * result.chunk, result
+    assert result.starved >= asked, result  # a tick at least of every wait held still
+    said = dict(S.describe_bench(result))["starved"]
+    assert "--no-async-chunks" in said, said
+
+
 def test_the_suggested_latency_covers_most_steps_timed_and_rests_on_no_one_of_them() -> None:
     """One step timed on its own is one draw, and two benches of one checkpoint on one laptop
     suggested latencies too far apart to serve with either. The suggestion is read at

@@ -138,6 +138,13 @@ down, take to play, is given no `--latency-s` at all, since `serve` would refuse
 covered them: the bench says it answers too slowly to drive an arm from that machine, and to
 serve it on a GPU.
 
+**Waiting for every chunk.** A run asks for each chunk while the arm still plays the last.
+Given `--no-async-chunks` beside `--policy-url`, it plays each chunk out instead, holds the arm
+still while the next is on its way and plays that from its first action, as LeRobot's own loop
+plays chunks. That is slower by a round trip a chunk, and is there to compare against or to
+fall back on. `quackd policy check --bench --no-async-chunks` paces a bench the same way, and
+the run's record says which it was (`async_chunks`).
+
 Before it loads anything, the server reads the checkpoint's own files and refuses what it has
 not been told. Here is `lerobot/smolvla_base` at a commit, checked in LeRobot 0.6.1's
 environment. It names a backbone inside itself, which would load at whatever revision the Hub
