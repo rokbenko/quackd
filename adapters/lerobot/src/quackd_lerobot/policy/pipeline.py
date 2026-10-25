@@ -41,10 +41,10 @@ order, then the pre-processor, then `predict_action_chunk` cut to `n_action_step
 post-processor over the whole chunk at once, and `make_robot_action` makes each row a goal per
 motor. One lock holds the three together, so a reset never lands between them, and a reset
 resets the policy and both processors. A policy asked every tick (an ACT with temporal
-ensembling) goes through `select_action` instead, one action a step. A pi05 that learned
-relative actions stays on chunks: its whole chunk is made absolute against the state it was
-predicted from, which is how its training made it relative, and not re-anchored each tick as
-LeRobot's own loop does (`upstream_api.RELATIVE_ACTIONS`, `VLA_PIPELINE`).
+ensembling) goes through `select_action` instead, one action a step. A pi05 or a pi0 that
+learned relative actions stays on chunks: its whole chunk is made absolute against the state it
+was predicted from, which is how its training made it relative, and not re-anchored each tick
+as LeRobot's own loop does (`upstream_api.RELATIVE_ACTIONS`, `VLA_PIPELINE`).
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
     "act": frozenset(up.DEFAULT_STEP_NAMES),
     "smolvla": frozenset(up.DEFAULT_STEP_NAMES + up.SMOLVLA_STEP_NAMES),
     "pi05": frozenset(up.DEFAULT_STEP_NAMES + up.PI05_STEP_NAMES),
+    "pi0": frozenset(up.DEFAULT_STEP_NAMES + up.PI0_STEP_NAMES),
 }
 """The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
 registers it under: the steps every policy is built from, which are all of ACT's, and those
@@ -93,6 +94,15 @@ REFUSED_STEPS: Mapping[str, str] = {
 }
 """Steps no type may name, each with why in the words its refusal goes on with, refused before
 the sentence that lists what a type allows, since that one would not say what is wrong."""
+REFUSED_TYPES: Mapping[str, str] = {
+    "pi0_fast": (
+        "which turns its answer into actions with the FAST tokenizer's own Python code from the "
+        "Hub, loaded with trust_remote_code=True inside the policy, and quackd runs no code a "
+        "repository brings with it: serve a pi0 or pi05 instead (upstream_api.PI0_FAST_REMOTE_CODE)"
+    ),
+}
+"""Types quackd has read and will not serve, each with why in the words its refusal goes on
+with, refused before anything else of a checkpoint is read."""
 NESTED_STEP_KEYS = ("tokenizer_name",)
 """The keys of a step's config that name a model to load from the Hub, a tokenizer each
 (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`), so `TOKENIZER_FILES` are what is fetched of it."""
@@ -115,16 +125,16 @@ nothing loads."""
 CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
-LENIENT_LOADERS = frozenset({"pi05"})
+LENIENT_LOADERS = frozenset({"pi05", "pi0"})
 """The policy types whose own `from_pretrained` returns the model without its weights when they
-do not load, having printed why (`upstream_api.PI05_FROM_PRETRAINED`)."""
+do not load, having printed why (`upstream_api.PI05_FROM_PRETRAINED`, `PI0_FROM_PRETRAINED`)."""
 MODEL_PREFIX = "model."
-"""What pi05's loader puts in front of each weight's name that lacks it."""
+"""What pi05's and pi0's loaders put in front of each weight's name that lacks it."""
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 """A commit, as the Hub's cache names the directory a revision's files land in."""
 STATE_FILE = re.compile(r"^[\w.\-]+\.safetensors$", re.ASCII)
 """A processor step's `state_file`: a plain file name beside the JSON, never a path."""
-PADDED_TYPES = frozenset({"smolvla", "pi05"})
+PADDED_TYPES = frozenset({"smolvla", "pi05", "pi0"})
 """The policy types that run with some of their images missing
 (`upstream_api.MISSING_IMAGES_PADDED`)."""
 
@@ -199,14 +209,17 @@ def _feature(features: Any, key: str) -> tuple[str, tuple[int, ...]] | None:
 def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
     """A checkpoint's `config.json`, checked, or a refusal that says what is wrong with it.
 
-    The policy is a type the server has read the processors of (`upstream_api.POLICY_TYPES`);
-    its inputs are one state and some images, and its output one action
+    The policy is a type the server has read the processors of (`upstream_api.POLICY_TYPES`),
+    and a type it read and will not serve is refused first, saying why (`REFUSED_TYPES`); its
+    inputs are one state and some images, and its output one action
     (`upstream_api.FEATURE_TYPES`, `FEATURE_KEYS`); its chunking fits the protocol; and a policy
     asked every tick is refused without a GPU, since it has to answer inside one
     (`upstream_api.TICK_MODE`)."""
     if not isinstance(config, Mapping):
         raise PipelineRefused(f"{spec}'s {up.CONFIG_FILE} is not a JSON object")
     policy_type = config.get("type")
+    if isinstance(policy_type, str) and policy_type in REFUSED_TYPES:
+        raise PipelineRefused(f"{spec} is a {policy_type!r} policy, {REFUSED_TYPES[policy_type]}")
     if policy_type not in up.SERVED_TYPES:
         raise PipelineRefused(
             f"{spec} is a {policy_type!r} policy, and quackd serves "
@@ -987,10 +1000,10 @@ def build_policy(policy_class: Any, where: Path, config: Any) -> Any:
     into it and none left as it was built, or the error that says why not.
 
     LeRobot's own loader only logs a weight the file lacks or one it has that the model does
-    not (`upstream_api.POLICY_FROM_PRETRAINED`), so it is asked to be strict. pi05's goes
-    further and hands back the model with none of its weights when they do not load
-    (`upstream_api.PI05_FROM_PRETRAINED`), so a pi05's weights are loaded here as that loader
-    loads them, its own key fixes and all, with nothing caught."""
+    not (`upstream_api.POLICY_FROM_PRETRAINED`), so it is asked to be strict. pi05's and pi0's
+    go further and hand back the model with none of its weights when they do not load
+    (`upstream_api.PI05_FROM_PRETRAINED`, `PI0_FROM_PRETRAINED`), so their weights are loaded
+    here as those loaders load them, their own key fixes and all, with nothing caught."""
     if config.type not in LENIENT_LOADERS:
         return policy_class.from_pretrained(str(where), config=config, strict=True)
     from safetensors.torch import load_file

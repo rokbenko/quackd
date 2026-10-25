@@ -563,6 +563,7 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
 _FAMILY_STEPS = (
     (lerobot_policy_api.SMOLVLA_PROCESSOR_STEPS, lerobot_policy_api.SMOLVLA_STEP_NAMES),
     (lerobot_policy_api.PI05_PROCESSOR_STEPS, lerobot_policy_api.PI05_STEP_NAMES),
+    (lerobot_policy_api.PI0_PROCESSOR_STEPS, lerobot_policy_api.PI0_STEP_NAMES),
 )
 
 
@@ -581,6 +582,12 @@ def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> 
         assert set(api.DEFAULT_STEP_NAMES) <= allowed, policy_type
         assert allowed - set(api.DEFAULT_STEP_NAMES) <= own, policy_type
         assert not allowed & set(pipeline.REFUSED_STEPS), policy_type
+    # a type read and refused is no type served, and the core says why it is not
+    from quackd.adapters import policies
+
+    assert not set(pipeline.REFUSED_TYPES) & set(api.SERVED_TYPES)
+    not_served = {row.type for row in policies.NOT_SERVED}
+    assert set(pipeline.REFUSED_TYPES) <= not_served, set(pipeline.REFUSED_TYPES) - not_served
 
 
 def test_the_policy_families_are_the_types_the_server_serves() -> None:

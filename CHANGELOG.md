@@ -9,6 +9,24 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
+  is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
+  with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
+  where pi05's write the state into the prompt, and that step, its tokenizer and the relative and
+  absolute steps pi05 has too are all it allows beyond the default ones. It needs the same
+  `--pin` for `google/paligemma-3b-pt-224` and the same Hub token granted it, it runs with a
+  camera it is not given padded, and one that learned relative actions is served a whole chunk at
+  a time, made absolute against the state it was predicted from. Its own loader hands back a
+  random network when its weights do not load, as pi05's does, so the server loads them itself,
+  strictly. A pi0-FAST is refused on its `config.json`, before anything else is fetched, because
+  its policy loads the FAST tokenizer with `trust_remote_code=True`, hard-wired, and so would run
+  the Python that tokenizer's repository brings with it. Tests hold a stand-in shaped like the
+  SO-101 fine-tunes on the Hub to every check, a pi0-FAST to being refused with nothing but its
+  config fetched, and a lenient pi0 loader to raising on a weight it lacks
+  ([docs/guides/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)).
+
 ### Changed
 
 - **A processor step is allowed by the type that names it.** `quackd policy serve` and
@@ -26,6 +44,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **The policy server's extra brings LeRobot's `[pi]`.** `quackd[lerobot-vla]` was LeRobot's
+  `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
+  guide said. It is `lerobot[smolvla,pi]` now, which adds SciPy, and a pi05 or a pi0 needs
+  nothing more than the extra and a Hub token granted its gated tokenizer.
+
 - **A pi05 no longer fetches PaliGemma's weights to load its tokenizer.** A model a checkpoint
   names inside itself was fetched with its configs, its tokenizer files and its safetensors,
   whichever key named it, so serving a pi05, whose tokenizer step names
@@ -35,6 +58,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
   pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
   against the Hub, which takes the gated tokenizer's grant.
+
+### Known limitations
+
+- **No pi0 has run.** quackd has not loaded, benched or served one, on a laptop or on a GPU, and
+  its checks rest on stand-ins of the SO-101 fine-tunes read on the Hub on 2026-10-25. Each of
+  those fine-tunes is 8.89 GB of weights, and the server fetches PaliGemma's tokenizer files,
+  21.9 MB, beside it.
 
 ## [0.25.0] — 2026-10-25
 

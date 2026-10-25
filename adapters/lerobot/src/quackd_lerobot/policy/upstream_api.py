@@ -18,8 +18,8 @@ server (`server.py`), because the server is where a checkpoint is loaded (`pipel
 the arm's process never imports torch or LeRobot's policies at all: `client.py` reaches the
 server over HTTP. POLICY_PIPELINE is the one row a job exercises: CI's torch job runs a tiny
 random ACT through the real server (`tests/test_policy_pipeline.py`). No trained checkpoint has
-been loaded, and SmolVLA, pi05 and tick mode have not run at all: VLA_PIPELINE and TICK_MODE
-say what quackd does about that.
+been loaded, and SmolVLA, pi05, pi0 and tick mode have not run at all: VLA_PIPELINE and
+TICK_MODE say what quackd does about that.
 """
 
 from __future__ import annotations
@@ -56,6 +56,8 @@ _DEVICE_UTILS = "src/lerobot/utils/device_utils.py"
 _PI05_CFG = "src/lerobot/policies/pi05/configuration_pi05.py"
 _SMOLVLA = "src/lerobot/policies/smolvla"
 _PI05 = "src/lerobot/policies/pi05"
+_PI0 = "src/lerobot/policies/pi0"
+_PI0_FAST = "src/lerobot/policies/pi0_fast"
 _ACT_MODEL = "src/lerobot/policies/act/modeling_act.py"
 _RELATIVE = "src/lerobot/processor/relative_action_processor.py"
 _SMOLVLM = "src/lerobot/policies/smolvla/smolvlm_with_expert.py"
@@ -150,7 +152,8 @@ CHUNK_SIZE = UpstreamRef(
     "`chunk_size` is how many actions one inference predicts and `n_action_steps` how many of "
     "them are played before the next (line 86), both counted in environment steps, and "
     "`n_action_steps` may not exceed `chunk_size` (line 143). SmolVLA's defaults are 50 and 50 "
-    f"({src(_SMOLVLA_CFG, 29)}). The policy server reports both",
+    f"({src(_SMOLVLA_CFG, 29)}), and so are pi0's ({src(f'{_PI0}/configuration_pi0.py', 36)}). "
+    "The policy server reports both",
 )
 TEMPORAL_ENSEMBLE = UpstreamRef(
     "ACTConfig.temporal_ensemble_coeff",
@@ -178,7 +181,8 @@ TOKENIZER_TRUSTS_REMOTE_CODE = UpstreamRef(
     src(_TOKENIZER, 348),
     "the action tokenizer step (`action_tokenizer_processor`, line 327) loads its tokenizer "
     "trusting the repository's own code unless told not to. The observation tokenizer "
-    "SmolVLA and pi05 use (`tokenizer_processor`, line 55) loads one by `tokenizer_name` at no "
+    "SmolVLA, pi05 and pi0 use (`tokenizer_processor`, line 55) loads one by `tokenizer_name` "
+    "at no "
     "revision (line 111), and SmolVLA names its backbone by an unpinned Hub name "
     f"(`vlm_model_name`, {src(_SMOLVLA_CFG, 84)}). The policy server allows no action "
     "tokenizer, forces trust_remote_code False on any step that has it, and pins every such "
@@ -245,15 +249,16 @@ FEATURE_TYPES = UpstreamRef(
     "other, since an arm has nothing to give an ENV or a LANGUAGE feature from",
 )
 POLICY_TYPES = UpstreamRef(
-    '"act", "smolvla", "pi05"',
+    '"act", "smolvla", "pi05", "pi0"',
     "VERIFIED",
     src(_ACT_CFG, 22),
     "the `type` config.json names its policy by, as ACTConfig, SmolVLAConfig "
-    f"({src(_SMOLVLA_CFG, 24)}) and PI05Config ({src(_PI05_CFG, 28)}) register it. These are "
-    "the three whose processors the policy server's allowlist was read from, and any other "
-    "type is refused before a byte of its weights is fetched",
+    f"({src(_SMOLVLA_CFG, 24)}), PI05Config ({src(_PI05_CFG, 28)}) and PI0Config "
+    f"({src(f'{_PI0}/configuration_pi0.py', 28)}) register it. These are the types whose "
+    "processors the policy server's allowlist was read from, each its own, and any other type "
+    "is refused before a byte of its weights is fetched",
 )
-SERVED_TYPES = ("act", "smolvla", "pi05")
+SERVED_TYPES = ("act", "smolvla", "pi05", "pi0")
 DEFAULT_PROCESSOR_STEPS = UpstreamRef(
     "rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, "
     "unnormalizer_processor",
@@ -297,6 +302,26 @@ PI05_STEP_NAMES = (
     "tokenizer_processor",
     "absolute_actions_processor",
 )
+PI0_PROCESSOR_STEPS = UpstreamRef(
+    "pi0_new_line_processor, tokenizer_processor, relative_actions_processor, "
+    "absolute_actions_processor",
+    "VERIFIED",
+    src(f"{_PI0}/processor_pi0.py", 127),
+    "the steps pi0's processors add to the default ones (to line 154): pi05's, without its "
+    "state tokenizer and with a step that ends the task with a newline for PaliGemma's "
+    f"tokenizer, under the names they register ({src(f'{_PI0}/processor_pi0.py', 38)}, "
+    f"{src(_TOKENIZER, 55)}, {src(_RELATIVE, 84)} and {src(_RELATIVE, 162)}). Its tokenizer is "
+    "`google/paligemma-3b-pt-224` (line 141), and its actions are absolute, or relative to the "
+    "state and made absolute again when `use_relative_actions` says so "
+    f"({src(f'{_PI0}/configuration_pi0.py', 53)}, to line 57). With the default ones, the only "
+    "steps a pi0 may name",
+)
+PI0_STEP_NAMES = (
+    "pi0_new_line_processor",
+    "tokenizer_processor",
+    "relative_actions_processor",
+    "absolute_actions_processor",
+)
 DEVICE_OVERRIDE = UpstreamRef(
     'overrides={"device_processor": {"device": device}}',
     "VERIFIED",
@@ -337,19 +362,22 @@ ACTION_FEATURE_NAMES = UpstreamRef(
     "VERIFIED",
     src(_PI05_CFG, 57),
     "the names of the action's dimensions, filled from the dataset by make_policy "
-    f"({src(_FACTORY, 309)}) on the policies that have the field. The server reports them "
-    "where a checkpoint has them, and the arm's side checks them against its bus's motors",
+    f"({src(_FACTORY, 309)}) on the policies that have the field, pi0's among them "
+    f"({src(f'{_PI0}/configuration_pi0.py', 57)}). The server reports them where a checkpoint "
+    "has them, and the arm's side checks them against its bus's motors",
 )
 MISSING_IMAGES_PADDED = UpstreamRef(
-    "SmolVLA and pi05 run with some of their images missing",
+    "SmolVLA, pi05 and pi0 run with some of their images missing",
     "VERIFIED",
     src(f"{_SMOLVLA}/modeling_smolvla.py", 340),
     "an image key with nothing under it is left out (SmolVLA pads up to `empty_cameras` of "
-    "them, line 373), and only all of them missing raises (line 343, and pi05's "
-    f"{src(f'{_PI05}/modeling_pi05.py', 965)}). ACT takes every image it names "
+    "them, line 373), and only all of them missing raises (line 343, pi05's "
+    f"{src(f'{_PI05}/modeling_pi05.py', 965)}, and pi0's "
+    f"{src(f'{_PI0}/modeling_pi0.py', 995)}, which pads each missing one with -1 and a mask of "
+    "zero, to line 1044). ACT takes every image it names "
     f"(`predict_action_chunk` stacks each, {src(_ACT_MODEL, 131)}), so the arm's side "
-    "refuses an ACT with an image no camera is "
-    "mapped to, and says which of a SmolVLA's or a pi05's go padded",
+    "refuses an ACT with an image no camera is mapped to, and says which of the others' go "
+    "padded",
 )
 ACT_BACKBONE_WEIGHTS = UpstreamRef(
     'ACTConfig.pretrained_backbone_weights = "ResNet18_Weights.IMAGENET1K_V1"',
@@ -371,7 +399,7 @@ RELATIVE_ACTIONS = UpstreamRef(
     "is made absolute against the state of the tick it is played at, not the one it was "
     "predicted from. The policy server runs the post-processor over a whole chunk at once, "
     "against the state the chunk was predicted from, as OpenPI's AbsoluteActions does, and a "
-    "pi05 that learned relative actions is served in chunks, not asked every tick",
+    "pi05 or a pi0 that learned relative actions is served in chunks, not asked every tick",
 )
 PI05_FROM_PRETRAINED = UpstreamRef(
     "PI05Policy.from_pretrained returns the model without its weights when they do not load",
@@ -383,6 +411,30 @@ PI05_FROM_PRETRAINED = UpstreamRef(
     "printed line to say so. The policy server loads a pi05's weights as that loader does, "
     "`_fix_pytorch_state_dict_keys` (line 864) and a `model.` prefix, strictly and with nothing "
     "caught",
+)
+PI0_FROM_PRETRAINED = UpstreamRef(
+    "PI0Policy.from_pretrained returns the model without its weights when they do not load",
+    "VERIFIED",
+    src(f"{_PI0}/modeling_pi0.py", 782),
+    "pi0's loader is pi05's: a model.safetensors it cannot read returns the model as it was "
+    "built (lines 845 to 848), and a load_state_dict that raises is caught and printed (lines "
+    "894 and 895), so a pi0 whose weights did not load comes back as a random network. The "
+    "policy server loads a pi0's weights the way it loads a pi05's, with pi0's own "
+    "`_fix_pytorch_state_dict_keys` (line 899) and a `model.` prefix, strictly and with nothing "
+    "caught",
+)
+PI0_FAST_REMOTE_CODE = UpstreamRef(
+    "PI0FastPolicy loads the FAST tokenizer with trust_remote_code=True",
+    "VERIFIED",
+    src(f"{_PI0_FAST}/modeling_pi0_fast.py", 764),
+    "`PI0FastPolicy.__init__` loads `AutoProcessor.from_pretrained(config.action_tokenizer_name, "
+    "trust_remote_code=True)` (to line 766), hard-wired in the policy rather than in a "
+    "processor step an override could reach, so the FAST tokenizer's repository runs its own "
+    "Python wherever a pi0_fast is built. `action_tokenizer_name` is "
+    "`lerobot/fast-action-tokenizer` unless a config says otherwise "
+    f"({src(f'{_PI0_FAST}/configuration_pi0_fast.py', 63)}), and the type registers as "
+    "`pi0_fast` at line 28. The server refuses the type before it reads anything past "
+    "config.json",
 )
 
 # ── LeRobot's own policy server, and why quackd has one of its own ──────────────────────
@@ -443,17 +495,19 @@ VLA_PIPELINE = UpstreamRef(
     "VLA_PIPELINE",
     "UNVERIFIED",
     src(f"{_SMOLVLA}/processor_smolvla.py", 68),
-    "that SmolVLA and pi05 run through the same pipeline as ACT: their tokenizer step, the "
+    "that SmolVLA, pi05 and pi0 run through the same pipeline as ACT: their tokenizer step, the "
     "nested repositories pinned with --pin and fetched without any code in them, the images "
     "a camera does not give left padded, their weights loaded strictly (SmolVLA's by LeRobot's "
-    "own loader, pi05's by quackd's copy of its loader, PI05_FROM_PRETRAINED), so a checkpoint "
-    "saved with weights its model does not have would be refused, and pi05's relative actions "
-    "made absolute over a whole chunk at once, against the state it was predicted from. That "
-    "last one is not what LeRobot's own loop does (RELATIVE_ACTIONS), and it is how training "
-    "made the chunk relative, so a trained pi05 is taken to want it. No job runs them, since "
-    "the lab's venv and CI install no transformers. quackd loads them through the same "
-    "allowlist, pins and refusals as ACT, says in /v1/policy which images go padded, and a "
-    "first run should be on the simulator with `quackd policy check --bench` first",
+    "own loader, pi05's and pi0's by quackd's copy of theirs, PI05_FROM_PRETRAINED and "
+    "PI0_FROM_PRETRAINED), so a checkpoint saved with weights its model does not have would be "
+    "refused, and pi05's and pi0's relative actions made absolute over a whole chunk at once, "
+    "against the state it was predicted from. That last one is not what LeRobot's own loop "
+    "does (RELATIVE_ACTIONS), and it is how training made the chunk relative, so a trained "
+    "pi05 or pi0 is taken to want it. No job runs them, since the lab's venv and CI install no "
+    "transformers, and pi05 and pi0 have not run anywhere. quackd loads them through the "
+    "allowlist each type has and the pins and refusals ACT's go through, says in /v1/policy "
+    "which images go padded, and a first run should be on the simulator with "
+    "`quackd policy check --bench` first",
 )
 TICK_MODE = UpstreamRef(
     "TICK_MODE",

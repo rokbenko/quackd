@@ -18,9 +18,9 @@ is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 > twin of the lab's arm on the simulator through `quackd policy serve` and `quackd serve-mcp`,
 > and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `quackd run --goal`.
 > SmolVLA loaded on the same laptop and never answered a step in time on its CPU
-> ([below](#smolvla-and-act)), pi05 has not run, and FLUX 3 Action is not served at all.
-> Rehearse on the simulator first, keep a hand on the arm's power switch the first time a policy
-> drives it, and send back what happened
+> ([below](#smolvla-and-act)), pi05 and pi0 have not run, and FLUX 3 Action is not served at
+> all. Rehearse on the simulator first, keep a hand on the arm's power switch the first time a
+> policy drives it, and send back what happened
 > ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#14-what-to-report)).
 
 ## Two processes, two terminals
@@ -257,7 +257,7 @@ ones with nothing to send, the ticks a second and the round trip.
 
 ## On a rented GPU
 
-Pi0.5 and SmolVLA want a GPU. The server runs there, bound to that
+Pi0.5, Pi0 and SmolVLA want a GPU. The server runs there, bound to that
 machine's own loopback, and the laptop reaches it through an ssh tunnel. The arm's process stays
 on the laptop, with the arm.
 
@@ -303,9 +303,10 @@ daemon's 9874, and [SECURITY.md](../../SECURITY.md) lists it with the rest.
 
 ## The policies
 
-quackd's server serves three LeRobot policy types, ACT, SmolVLA and pi05, the three whose
-processors it has read at LeRobot 0.6.1. Any other type is refused before a byte of its weights
-is fetched.
+quackd's server serves four LeRobot policy types, ACT, SmolVLA, pi05 and pi0, each allowed
+the processor steps read for it at LeRobot 0.6.1 and no other type's. Any other type is refused
+before a byte of its weights is fetched, and pi0-FAST in a sentence of its own
+([below](#pi0-and-why-not-pi0-fast)).
 
 ### SmolVLA and ACT
 
@@ -337,13 +338,54 @@ nothing in quackd is set from them.
 
 ### Pi0.5
 
-`pi05` needs LeRobot's `[pi]` extra besides the server's, and a Hugging Face token that has been
-granted `google/paligemma-3b-pt-224`, the gated tokenizer it uses: accept its licence on the Hub,
-then `hf auth login` on the machine that serves it. It is a GPU policy. A pi05 that learned
-relative actions is served a whole chunk at a time, made absolute against the state it was
-predicted from, where LeRobot's own loop makes each action absolute against the state of the
-tick it is played at (`VLA_PIPELINE` in [the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+`pi05` needs a Hugging Face token that has been granted `google/paligemma-3b-pt-224`, the gated
+tokenizer it uses: accept its licence on the Hub, then `hf auth login` on the machine that serves
+it. The server's extra brings LeRobot's `[pi]` with it, and the server fetches the tokenizer's
+files alone, 21.9 MB, and none of PaliGemma's 11.69 GB of weights, both read off the Hub on
+2026-10-25. It is a GPU policy. A pi05 that learned relative actions is served a whole chunk at
+a time, made absolute against the state it was predicted from, where LeRobot's own loop makes
+each action absolute against the state of the tick it is played at (`VLA_PIPELINE` in
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
 Its licence is unclear: see [the table](#licences).
+
+### Pi0, and why not Pi0-FAST
+
+`pi0` is Physical Intelligence's flow-matching VLA from before pi05, in LeRobot's port. To the
+server it is a pi05 with one step changed: its processors end the task with a newline for
+PaliGemma's tokenizer where pi05's write the arm's state into the prompt. So it needs the same
+Hugging Face token granted `google/paligemma-3b-pt-224`, the same `--pin` for it, and the same
+GPU. Its chunks are 50 actions, all of them played, by LeRobot's defaults. A pi0 that learned
+relative actions is served a whole chunk at a time, made absolute against the state it was
+predicted from, as a pi05's are, and it runs with any camera it is not given padded. Its own
+loader hands back a random network when its weights do not load, as pi05's does, so the server
+loads them itself, strictly (`PI0_FROM_PRETRAINED` in
+[the policies' table](../adapters/lerobot/README.md#the-policies-upstream-lerobot-061)).
+
+**Pi0 has not run anywhere.** quackd has not loaded, benched or served one, on this project's
+laptop or on a GPU. Its checks were written against the SO-101 fine-tunes on the Hub on
+2026-10-25: `Harrysunshine/so101-pi0-real-9task` at commit
+`e2bfbfaec63723db4ede582e07ff27e2cf1eb436` and `haydendoo/so101_pickup_pi0_medium_new_v1` at
+`d03778fefc1a0605b94233770b11d19671090aaa` each name six motors in the bus's order, a top and a
+wrist camera, chunks of 50 and PaliGemma's tokenizer. Each names the dataset it learned from at
+no revision, so each takes `--fps`. Each one's `model.safetensors` was 8.89 GB that day, and the
+tokenizer files the server fetches beside it 21.9 MB.
+
+**Pi0-FAST is refused.** `pi0_fast` turns its answer into actions with the FAST tokenizer, and
+its policy loads that tokenizer with `trust_remote_code=True`, hard-wired where no override
+reaches (`PI0_FAST_REMOTE_CODE`), so serving one would run the Python its tokenizer's repository
+brings with it. The server refuses the type on its `config.json`, before anything else of the
+checkpoint is fetched. An SO-101 fine-tune on the Hub, checked in LeRobot 0.6.1's environment on
+2026-10-25, with its 2,120-byte `config.json` the one file fetched:
+
+```
+✗ error: kominetti/pi0fast-so101-pickup-place-v2@2d74f0b0cb9cc7b2cc96330293c4b6c4daa7d349 is a
+'pi0_fast' policy, which turns its answer into actions with the FAST tokenizer's own Python code
+from the Hub, loaded with trust_remote_code=True inside the policy, and quackd runs no code a
+repository brings with it: serve a pi0 or pi05 instead (upstream_api.PI0_FAST_REMOTE_CODE)
+```
+
+What would change that is LeRobot loading the FAST tokenizer without its repository's code,
+which [PLAN.md](../../PLAN.md) carries.
 
 ### FLUX 3 Action
 
@@ -380,13 +422,14 @@ application must enforce those limits and keep a hardware stop within reach."
 
 A policy's weights are your download, under their own licence, and quackd ships none of them.
 LeRobot, which the server runs them in, is Apache-2.0. This table is what each one's own page
-said on 2026-09-28, and it is not legal advice:
+said on 2026-09-28, and the Pi0 row's on 2026-10-25, and it is not legal advice:
 
 | Policy | Weights | What to know |
 |---|---|---|
 | ACT | yours: you trained it on your own data | nothing beyond your data's terms |
 | SmolVLA ([`lerobot/smolvla_base`](https://huggingface.co/lerobot/smolvla_base)) | Apache-2.0, on its card | its backbone, [`HuggingFaceTB/SmolVLM2-500M-Video-Instruct`](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct), is Apache-2.0 on its card too |
 | Pi0.5 ([`lerobot/pi05_base`](https://huggingface.co/lerobot/pi05_base)) | the Hub card says `gemma`, and no licence file is shipped | [LeRobot's pi05 page](https://huggingface.co/docs/lerobot/pi05#license) says the model follows the Apache 2.0 licence of OpenPI, so the two disagree. Its tokenizer, [`google/paligemma-3b-pt-224`](https://huggingface.co/google/paligemma-3b-pt-224), is gated behind a licence you accept on the Hub |
+| Pi0 ([`lerobot/pi0_base`](https://huggingface.co/lerobot/pi0_base)) | the Hub card says `gemma`, and no licence file is shipped | [LeRobot's pi0 page](https://huggingface.co/docs/lerobot/pi0#license) says the model follows the Apache 2.0 licence of OpenPI, so the two disagree, as pi05's do. Its tokenizer is pi05's, gated the same way |
 | FLUX 3 Action ([`black-forest-labs/flux-3-action-so101`](https://huggingface.co/black-forest-labs/flux-3-action-so101)) | the [FLUX Kommunity License v1.0](https://huggingface.co/black-forest-labs/flux-3-action-so101/blob/main/LICENSE.md): non-commercial use, non-commercial Robotics Uses included | It calls any physical AI application a Robotics Use, control signals for any physical device included, and grants Robotics Uses for non-commercial purposes (Section 2.a). A Qualifying User, whose gross annualised revenue with its affiliates is under US$5,000,000, may also use the model's Outputs commercially, on the conditions of Section 2.e: content filtering or a review of Output, and saying Output was made with AI where the law requires it. The licence does not say that this reaches a Robotics Use, and anything it does not expressly authorise needs a licence from Black Forest Labs ([bfl.ai/licensing](https://bfl.ai/licensing)), so ask them before any commercial use on an arm. No output may be used to improve another model that does what a FLUX model does |
 
 ## Recording episodes, and training

@@ -141,8 +141,8 @@ before.
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md)). Nobody has handed the arm to a
   policy through quackd. Besides the tiny random ACT CI builds, one trained ACT from the Hub has
   been served, on the laptop's CPU on 2026-09-28, and drove the arm's twin on the simulator.
-  SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05 has not run
-  ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
+  SmolVLA took minutes a chunk on that CPU and wants the rented GPU, and pi05 and pi0 have not
+  run ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)). Step 18 of
   [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md) is the order: a run
   with `scripted:hold`, then `scripted:sweep`, then a checkpoint checked with
   `quackd policy check --bench`, each rehearsed on the arm's twin first, with a hand on the
@@ -227,6 +227,13 @@ before.
   check accepted. Whatever it shows, passed or not, gets written down, and only a pass gives it
   refs of its own and a place in the server's list of policy types. Until then its page says
   what running it takes and that nobody has ([docs/policies.md](docs/guides/policies.md#flux-3-action)).
+- ⏸ **Pi0-FAST is refused, and stays refused while LeRobot loads its tokenizer's own code.**
+  Its policy loads the FAST action tokenizer with `trust_remote_code=True`, hard-wired in its
+  constructor at LeRobot 0.6.1, so serving one would run the Python its tokenizer's repository
+  brings with it, and the server refuses the type on its `config.json`
+  ([docs/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)). What would change that
+  is a LeRobot release that loads the tokenizer with code transformers already has, read at its
+  pin like every other type before it is served.
 - ⬜ **The stepper only shadows `manipulate`.** A `duck: 3` task file's instructions make it a
   choice, and the stepper is offered it and never takes it, in `--decision-mode on` as in
   shadow, because under `--yes` nobody is asked at its confirm gate

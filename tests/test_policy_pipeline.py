@@ -453,6 +453,125 @@ def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path
     assert "pretrained_backbone_weights" not in checkpoint.config_overrides
 
 
+PALIGEMMA = "google/paligemma-3b-pt-224"
+"""The gated tokenizer pi0's and pi05's processors name, as LeRobot's own factories write it."""
+
+
+def _pi0(tmp_path: Path, *, relative: bool = False) -> FakeHub:
+    """A pi0 as the SO-101 fine-tunes on the Hub were saved on 2026-10-25: six motors named in
+    `action_feature_names`, a top and a wrist camera, chunks of 50, PaliGemma's tokenizer named
+    in its step, and the relative and absolute steps there, switched on only when it learned
+    relative actions."""
+    n = len(JOINTS)
+    rename, batch, device, normalizer, unnormalizer = up.DEFAULT_STEP_NAMES
+    newline, tokenizer, to_relative, to_absolute = up.PI0_STEP_NAMES
+    image = {"type": "VISUAL", "shape": [3, 480, 640]}
+    config = {
+        "type": "pi0",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}top": image,
+            f"{up.IMAGES_PREFIX}wrist": image,
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 50,
+        "n_action_steps": 50,
+        "use_relative_actions": relative,
+        "relative_exclude_joints": ["gripper"],
+        "action_feature_names": [f"{m}.pos" for m in JOINTS],
+        "tokenizer_max_length": 48,
+        "empty_cameras": 0,
+    }
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {"rename_map": {}}},
+            {"registry_name": batch, "config": {}},
+            {"registry_name": newline, "config": {}},
+            {
+                "registry_name": tokenizer,
+                "config": {"max_length": 48, "task_key": "task", "tokenizer_name": PALIGEMMA},
+            },
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+            {
+                "registry_name": to_relative,
+                "config": {
+                    "enabled": relative,
+                    "exclude_joints": ["gripper"],
+                    "action_names": None,
+                },
+            },
+            {
+                "registry_name": normalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_preprocessor_step_6_{normalizer}.safetensors",
+            },
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [
+            {
+                "registry_name": unnormalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_postprocessor_step_0_{unnormalizer}.safetensors",
+            },
+            {"registry_name": to_absolute, "config": {"enabled": relative}},
+            {"registry_name": device, "config": {"device": "cpu", "float_dtype": None}},
+        ],
+    }
+    return _hub(tmp_path, config=config, pre=pre, post=post)
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_a_pi0_is_served_in_chunks_with_its_tokenizer_pinned(
+    tmp_path: Path, relative: bool
+) -> None:
+    """A pi0 is a pi05 with a step that ends its task with a newline in place of pi05's state
+    tokenizer (`upstream_api.PI0_PROCESSOR_STEPS`). Its tokenizer is PaliGemma's, pinned and
+    fetched without PaliGemma's weights, it pads a camera it is not given, it names its
+    action's motors for the arm to check, and one that learned relative actions is served a
+    chunk at a time, as a pi05 is."""
+    hub = _pi0(tmp_path, relative=relative)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {PALIGEMMA}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    checkpoint = _fetch(hub, fps=float(FPS), pins=(f"{PALIGEMMA}@{PINNED}",))
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("pi0", 50, 50)
+    assert shape.pads_images and not shape.per_tick
+    assert shape.action_names == tuple(f"{m}.pos" for m in JOINTS)
+    ((repo, revision, patterns),) = hub.snapshots
+    assert (repo, revision, patterns) == (PALIGEMMA, PINNED, P.TOKENIZER_FILES)
+    where = str(hub.snapshot(repo, revision, patterns))
+    assert checkpoint.pre_overrides["tokenizer_processor"] == {"tokenizer_name": where}
+    assert f"tokenizer_name {PALIGEMMA}@{PINNED}" in checkpoint.loaded
+    assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+
+
+@pytest.mark.parametrize(
+    ("config", "needle"),
+    [
+        (
+            _act_config(type="pi0_fast", action_tokenizer_name="physical-intelligence/fast"),
+            "FAST tokenizer's own Python code",
+        ),
+    ],
+)
+def test_a_family_quackd_read_and_will_not_serve_is_refused_from_its_config_alone(
+    tmp_path: Path, config: dict[str, Any], needle: str
+) -> None:
+    """A type whose own code runs a repository's Python, whatever a checkpoint of it says, is
+    refused on its `config.json`, before its processors are so much as fetched, in a sentence
+    that says why and what to serve instead (`REFUSED_TYPES`)."""
+    hub = _hub(tmp_path, config=config)
+    with pytest.raises(P.PipelineRefused, match=needle) as refused:
+        _fetch(hub, fps=float(FPS))
+    assert "instead" in str(refused.value)
+    assert [filename for _, _, filename in hub.asked] == [up.CONFIG_FILE]
+
+
 class _Stat:
     """A statistic as a step's `state_dict` holds it, with what `_quantiles` asks a tensor."""
 
@@ -1114,10 +1233,14 @@ def test_a_checkpoint_whose_weights_are_not_its_models_is_refused(offline: TinyA
 
 
 @NEEDS_TORCH
-def test_a_pi05_is_loaded_strictly_where_its_own_loader_would_not_be(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lenient", ["pi05", "pi0"])
+def test_a_pi05_or_a_pi0_is_loaded_strictly_where_its_own_loader_would_not_be(
+    tmp_path: Path, lenient: str
+) -> None:
     """pi05's `from_pretrained` catches a load that fails and hands back the model as it was
-    built. A stand-in with a loader like it, and a key fix and a `model.` prefix like its own:
-    `build_policy` loads its weights itself, every one of them, or raises."""
+    built, and pi0's is the same loader (`upstream_api.PI0_FROM_PRETRAINED`). A stand-in with a
+    loader like theirs, and a key fix and a `model.` prefix like their own: `build_policy` loads
+    its weights itself, every one of them, or raises."""
     from types import SimpleNamespace
 
     import torch
@@ -1136,7 +1259,7 @@ def test_a_pi05_is_loaded_strictly_where_its_own_loader_would_not_be(tmp_path: P
         def _fix_pytorch_state_dict_keys(self, state: Any, config: Any) -> dict[str, Any]:
             return {k.removeprefix("old_"): v for k, v in state.items()}
 
-    (lenient,) = P.LENIENT_LOADERS
+    assert lenient in P.LENIENT_LOADERS
     config = SimpleNamespace(type=lenient, device="cpu")
     weight, bias = torch.full((2, 2), 3.0), torch.full((2,), 5.0)
     save_file({"old_weight": weight, "model.bias": bias}, str(tmp_path / up.WEIGHTS_FILE))

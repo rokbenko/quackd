@@ -97,6 +97,22 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         licence_read="2026-10-25",
         ran="has not run",
     ),
+    PolicyFamily(
+        type="pi0",
+        label="Pi0",
+        maker="Physical Intelligence",
+        takes_words=True,
+        extra=_EXTRA,
+        needs=(
+            "--pin google/paligemma-3b-pt-224@REVISION, its tokenizer",
+            "a Hub token granted google/paligemma-3b-pt-224, which is gated",
+        ),
+        gpu="wants one (not measured)",
+        licence="gemma on its card, Apache 2.0 on LeRobot's page",
+        licence_url="https://huggingface.co/lerobot/pi0_base",
+        licence_read="2026-10-25",
+        ran="has not run",
+    ),
 )
 """The types the server serves, in `upstream_api.SERVED_TYPES`' order."""
 
