@@ -251,9 +251,37 @@ def bind_refusal(bind: str, behind_tls: bool) -> str | None:
     )
 
 
-def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]:
-    """The runner `options` names and what the server will say it is serving, or a
-    `ServeRefused` for anything that would make a server not worth starting."""
+@dataclass(frozen=True)
+class Checked:
+    """What `check_options` read off a `ServeOptions`: the policy as it was named, whether that
+    is a checkpoint, the latency it is served with, the JPEG quality it asks for, and which of
+    the arm's cameras is which of its images."""
+
+    spec: str
+    checkpoint: bool
+    latency_s: float
+    jpeg_quality: int | None
+    cameras: dict[str, str]
+
+
+def check_options(options: ServeOptions) -> Checked:
+    """Everything about `options` that can be refused without building the policy, or a
+    `ServeRefused` saying what is wrong: the address and the port, where the token comes from
+    (the variable's name, never what it holds), the policy's name, the rate, the latency, the
+    threads, the JPEG quality, the cameras and the pins. It imports nothing a checkpoint needs
+    and loads nothing, so a caller can refuse a bad flag before anything starts, which is how
+    `quackd policy endpoint up` refuses one before an endpoint exists to be billed for. What
+    needs the policy built, its own rate and a latency against its chunk, is `served_policy`'s."""
+    if (why := bind_refusal(options.bind, options.behind_tls)) is not None:
+        raise ServeRefused(why)
+    if not 0 <= options.port <= 65535:
+        raise ServeRefused(f"--port {options.port} is not a port")
+    if options.token_file and options.token_env:
+        raise ServeRefused(
+            "--token-env and --token-file both say where the token is: give one of them"
+        )
+    if options.token_env and (why := _token_env_refusal(options.token_env)) is not None:
+        raise ServeRefused(why)
     spec = options.policy.strip()
     name = spec.removeprefix(SCRIPTED)
     checkpoint = bool(CHECKPOINT.match(spec))
@@ -304,6 +332,17 @@ def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]
             "--pin fixes the revision of a model a checkpoint names inside itself, and a "
             "scripted policy names none"
         )
+    return Checked(spec, checkpoint, float(latency), quality, cameras)
+
+
+def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]:
+    """The runner `options` names and what the server will say it is serving, or a
+    `ServeRefused` for anything that would make a server not worth starting: every flag first,
+    before anything is built (`check_options`), then what only the built policy can say."""
+    checked = check_options(options)
+    spec, latency, quality = checked.spec, checked.latency_s, checked.jpeg_quality
+    checkpoint, cameras = checked.checkpoint, checked.cameras
+    name = spec.removeprefix(SCRIPTED)
     runner: PolicyRunner
     loaded: pipeline.LeRobotRunner | None = None
     if checkpoint:
@@ -385,16 +424,24 @@ ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 """A variable's name, as `--token-env` takes one."""
 
 
+def _token_env_refusal(name: str) -> str | None:
+    """Why `name` cannot be what `--token-env` names, or None: it has to be a name a variable
+    could have. The sentence does not quote it, since what was typed there may be the token."""
+    if ENV_NAME.match(name):
+        return None
+    return (
+        "--token-env takes the name of the variable that holds the token, such as "
+        f"{wire.TOKEN_ENV}, and what it was given is not a variable's name. Refusing to serve "
+        "a policy with no token"
+    )
+
+
 def _read_token_env(name: str) -> str:
     """The token in the variable `--token-env` names, or a refusal that names the variable and
     never says what it holds. A name that is not one a variable could have is refused first, in
     a sentence that does not quote it: what was typed there may be the token itself."""
-    if not ENV_NAME.match(name):
-        raise ServeRefused(
-            "--token-env takes the name of the variable that holds the token, such as "
-            f"{wire.TOKEN_ENV}, and what it was given is not a variable's name. Refusing to "
-            "serve a policy with no token"
-        )
+    if (why := _token_env_refusal(name)) is not None:
+        raise ServeRefused(why)
     value = os.environ.get(name)
     if value is None or not value.strip():
         said = "is not set" if value is None else "is empty"
@@ -1238,13 +1285,8 @@ class Served:
 def open_server(options: ServeOptions, *, token: str | None = None) -> Served:
     """Check `options`, build the policy, settle the token and listen, or a `ServeRefused`
     that says why not. `token` is one held in memory rather than a file, which is what `policy
-    check` serves the policy it checks with."""
-    if (why := bind_refusal(options.bind, options.behind_tls)) is not None:
-        raise ServeRefused(why)
-    if not 0 <= options.port <= 65535:
-        raise ServeRefused(f"--port {options.port} is not a port")
-    if options.token_file and options.token_env:
-        server_token(options.token_file, options.token_env)  # refuses, before anything loads
+    check` serves the policy it checks with. Every flag is checked before anything is built
+    (`check_options`), the address and where the token comes from among them."""
     runner, info = served_policy(options)
     env: str | None = None
     if token is not None:
@@ -1756,6 +1798,7 @@ __all__ = [
     "REQUEST_DEADLINE_S",
     "REQUEST_TIMEOUT_S",
     "BenchResult",
+    "Checked",
     "PolicyServer",
     "Refused",
     "ServeOptions",
@@ -1763,6 +1806,7 @@ __all__ = [
     "Served",
     "bench",
     "bind_refusal",
+    "check_options",
     "chunk_outrun",
     "chunk_starved",
     "describe",

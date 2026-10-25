@@ -1396,21 +1396,142 @@ def test_a_checkpoint_goes_to_the_pipeline_and_anything_else_is_named_or_refused
         S.served_policy(S.ServeOptions(policy=f"scripted:{name}"))
 
 
-@pytest.mark.parametrize(
-    ("options", "needle"),
-    [
-        (S.ServeOptions(policy="scripted:hold", fps=math.nan), "Hz"),
-        (S.ServeOptions(policy="scripted:hold", fps=1000.0), "Hz"),
-        (S.ServeOptions(policy="scripted:hold", latency_s=-1.0), "--latency-s"),
-        (S.ServeOptions(policy="scripted:hold", latency_s=FIRST_CHUNK_S), "first chunk"),
-        (S.ServeOptions(policy="scripted:hold", jpeg_quality=10), "--jpeg-quality"),
-        (S.ServeOptions(policy="scripted:hold", cameras="front"), "--cameras"),
-        (S.ServeOptions(policy="scripted:hold", threads=0), "--threads"),
-    ],
-)
+NOT_WORTH_STARTING = [
+    (S.ServeOptions(policy="scripted:hold", fps=math.nan), "Hz"),
+    (S.ServeOptions(policy="scripted:hold", fps=1000.0), "Hz"),
+    (S.ServeOptions(policy="scripted:hold", latency_s=-1.0), "--latency-s"),
+    (S.ServeOptions(policy="scripted:hold", latency_s=FIRST_CHUNK_S), "first chunk"),
+    (S.ServeOptions(policy="scripted:hold", jpeg_quality=10), "--jpeg-quality"),
+    (S.ServeOptions(policy="scripted:hold", cameras="front"), "--cameras"),
+    (S.ServeOptions(policy="scripted:hold", threads=0), "--threads"),
+]
+
+
+@pytest.mark.parametrize(("options", "needle"), NOT_WORTH_STARTING)
 def test_a_server_not_worth_starting_says_why(options: S.ServeOptions, needle: str) -> None:
     with pytest.raises(S.ServeRefused, match=needle):
         S.served_policy(options)
+
+
+@pytest.mark.parametrize(
+    ("options", "needle"),
+    [
+        *NOT_WORTH_STARTING,
+        (S.ServeOptions(policy="scripted:hold", bind="10.0.0.5"), "--behind-tls"),
+        (S.ServeOptions(policy="scripted:hold", port=70000), "is not a port"),
+        (S.ServeOptions(policy="scripted:hold", token_file="a", token_env="B"), "one of them"),
+        (S.ServeOptions(policy="scripted:hold", token_env="0" + TOKEN), "a variable's name"),
+        (S.ServeOptions(policy="lerobot/smolvla_base"), "has no revision"),
+        (S.ServeOptions(policy="scripted:dance"), "no scripted policy called"),
+        (S.ServeOptions(policy="nonsense"), "REPO@REVISION or scripted:NAME"),
+        (S.ServeOptions(policy="scripted:hold", pins=("a/b@c",)), "--pin"),
+    ],
+)
+def test_every_flag_a_server_refuses_is_refused_before_anything_is_built(
+    monkeypatch: pytest.MonkeyPatch, options: S.ServeOptions, needle: str
+) -> None:
+    """`check_options` is every refusal of a flag that needs no policy built, so a caller can
+    refuse bad flags before it starts anything: `quackd policy endpoint up` refuses them before
+    an endpoint exists. Neither a scripted policy nor a checkpoint is built for any of them, and
+    a token typed where its variable's name belongs is not quoted back."""
+
+    def built(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a policy was built for flags that are refused")
+
+    monkeypatch.setattr(S, "named", built)
+    monkeypatch.setattr(S.pipeline, "load", built)
+    with pytest.raises(S.ServeRefused, match=needle) as refused:
+        S.check_options(options)
+    assert TOKEN not in str(refused.value)
+
+
+def test_good_flags_for_a_checkpoint_are_checked_with_nothing_fetched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The flags an endpoint's container is started with pass the check on the laptop, which
+    fetches and builds nothing: the server behind its TLS proxy, its token in a variable, and
+    the JPEG quality that being behind TLS asks for."""
+
+    def built(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the check fetched or built a checkpoint")
+
+    monkeypatch.setattr(S.pipeline, "load", built)
+    options = S.ServeOptions(
+        policy=" lerobot/smolvla_base@abc123 ",
+        cameras="front=observation.images.top",
+        latency_s=0.2,
+        bind="0.0.0.0",
+        behind_tls=True,
+        token_env=wire.TOKEN_ENV,
+        pins=("HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",),
+    )
+    assert S.check_options(options) == S.Checked(
+        spec="lerobot/smolvla_base@abc123",
+        checkpoint=True,
+        latency_s=0.2,
+        jpeg_quality=wire.DEFAULT_JPEG_QUALITY,
+        cameras={"front": "observation.images.top"},
+    )
+
+
+def test_the_serve_commands_arguments_build_the_options_it_serves_with(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`cli._serve_options` is where `quackd policy serve`'s flags become `ServeOptions`, and the
+    stand-in for an endpoint's container builds its own there, from the arguments it is given,
+    parsed by this command's own parser. So the options the command serves with and the ones
+    its parser and `_serve_options` make of the same arguments are one value."""
+    import typer.main
+
+    from quackd import cli
+
+    args = [
+        "--policy",
+        "lerobot/smolvla_base@abc123",
+        "--pin",
+        "HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",
+        "--fps",
+        "30",
+        "--cameras",
+        "front=observation.images.top",
+        "--latency-s",
+        "0.25",
+        "--threads",
+        "3",
+        "--jpeg-quality",
+        "80",
+        "--bind",
+        "0.0.0.0",
+        "--port",
+        "9875",
+        "--behind-tls",
+        "--token-env",
+        wire.TOKEN_ENV,
+    ]
+    serve = typer.main.get_command(app).commands["policy"].commands["serve"]  # type: ignore[attr-defined]
+    parsed = cli._serve_options(**serve.make_context("serve", list(args)).params)
+    assert parsed == S.ServeOptions(
+        policy="lerobot/smolvla_base@abc123",
+        fps=30.0,
+        cameras="front=observation.images.top",
+        latency_s=0.25,
+        bind="0.0.0.0",
+        port=wire.DEFAULT_PORT,
+        token_env=wire.TOKEN_ENV,
+        behind_tls=True,
+        threads=3,
+        jpeg_quality=80,
+        pins=("HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",),
+    )
+    opened: list[S.ServeOptions] = []
+
+    def open_server(options: S.ServeOptions, **kwargs: Any) -> Any:
+        opened.append(options)
+        raise S.ServeRefused("stopped before it served")
+
+    monkeypatch.setattr(S, "open_server", open_server)
+    result = CliRunner().invoke(app, ["policy", "serve", *args])
+    assert result.exit_code == 1 and opened == [parsed], result.output
 
 
 def test_a_latency_the_arm_could_never_play_a_chunk_under_is_refused() -> None:

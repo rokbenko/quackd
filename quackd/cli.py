@@ -4539,6 +4539,44 @@ def _policy_server() -> Any:
     return server
 
 
+def _serve_options(
+    *,
+    policy: str,
+    fps: float | None = None,
+    cameras: str | None = None,
+    latency_s: float | None = None,
+    bind: str = "127.0.0.1",
+    port: int | None = None,
+    token_file: str | None = None,
+    token_env: str | None = None,
+    behind_tls: bool = False,
+    threads: int | None = None,
+    jpeg_quality: int | None = None,
+    pins: Sequence[str] | None = None,
+) -> Any:
+    """`quackd policy serve`'s flags as the `ServeOptions` the server is started with, built in
+    one place. The command builds its own here, and so does anything that has to read a serve
+    command's arguments the way the command reads them: the test suite's stand-in for an
+    endpoint's container parses the arguments `quackd policy endpoint up` gives it with this
+    command's own parser and builds its options here, so what it serves is what the command
+    would. The keywords are the command's own parameters, by the same names."""
+    server = _policy_server()
+    return server.ServeOptions(
+        policy=policy,
+        fps=fps,
+        cameras=cameras,
+        latency_s=latency_s,
+        bind=bind,
+        port=server.wire.DEFAULT_PORT if port is None else port,
+        token_file=token_file,
+        token_env=token_env,
+        behind_tls=behind_tls,
+        threads=threads,
+        jpeg_quality=jpeg_quality,
+        pins=tuple(pins or ()),
+    )
+
+
 @policy_app.command("serve")
 def policy_serve(
     policy: str = typer.Option(..., "--policy", help=_POLICY_HELP),
@@ -4580,19 +4618,19 @@ def policy_serve(
 ) -> None:
     """Serve a policy for the arm, in this terminal, until Ctrl+C."""
     server = _policy_server()
-    options = server.ServeOptions(
+    options = _serve_options(
         policy=policy,
         fps=fps,
         cameras=cameras,
         latency_s=latency_s,
         bind=bind,
-        port=server.wire.DEFAULT_PORT if port is None else port,
+        port=port,
         token_file=token_file,
         token_env=token_env,
         behind_tls=behind_tls,
         threads=threads,
         jpeg_quality=jpeg_quality,
-        pins=tuple(pins or ()),
+        pins=pins,
     )
     try:
         served = server.open_server(options)
