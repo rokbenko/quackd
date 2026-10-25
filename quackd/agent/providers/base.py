@@ -14,7 +14,7 @@ import math
 import re
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, NamedTuple, Protocol, runtime_checkable
+from typing import Any, Literal, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -220,6 +220,11 @@ class Decision(BaseModel):
 class Exchange(BaseModel):
     observation: Observation
     decision: Decision | None = None
+    cache_points: tuple[Literal["observation", "decision"], ...] = ()
+    """Which halves of this exchange end a cached part of the request, for a provider that marks
+    them for a prompt cache (`AgentLoop._with_cache_point`): where the next call will still match
+    this one, and where the last call wrote its entry. Set only on the copy a request is built
+    from, never on the run's own history, and read by no provider but Anthropic's."""
 
 
 class ProviderTurn(BaseModel):

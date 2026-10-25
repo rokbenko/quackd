@@ -207,6 +207,11 @@ async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
     return True
 
 
+_FORESEEN = Decision(tool_call=ToolCall(id="foreseen", name="foreseen", arguments={}))
+"""The answer `_with_cache_point` assumes the pending exchange will get, to foresee the next call.
+Only that there is one counts: what it says is never sent and never kept."""
+
+
 class _Warming:
     """The pilot's `warm()`, in a daemon thread of its own while the robot connects.
 
@@ -608,6 +613,10 @@ class AgentLoop:
         """The seconds of each call that answered, in order, which the summary's percentiles
         are read off (`quackd.latency.spread`). A call that raised is in the total above and not
         here: its seconds are how long a failure took, not how long the model takes to answer."""
+        self._cache_point: tuple[int, Literal["observation", "decision"]] | None = None
+        """Where the last call marked the end of what the next would send unchanged, as an index
+        into `history` and the half of that exchange, for `_with_cache_point` to carry when the
+        mark jumps. History only grows, so the index still names the same exchange."""
         self.llm_retries = 0
         """How many times a turn the API could not answer was asked again (ADR-0059). Never
         charged to `max_llm_calls`, since each is the same turn again, and written into the
@@ -2113,12 +2122,16 @@ class AgentLoop:
             **({"billed": True} if costed.billed else {}),
         }
 
-    def _history_for_provider(self) -> list[Exchange]:
+    def _history_for_provider(self, history: list[Exchange] | None = None) -> list[Exchange]:
         """Older pictures are dropped to keep context small; the last N exchanges keep theirs.
 
         N counts exchanges rather than images, so a body with two cameras sends twice the
         pictures of a body with one, which is the cost of the second view and is what the
-        arm's page says it costs."""
+        arm's page says it costs.
+
+        `history` is the run's own unless another is handed in, which is how the call after this
+        one is foreseen by the very rule that will build it (`_with_cache_point`)."""
+        history = self.history if history is None else history
         n = self.cfg.keep_images_for_last_n
         # A model that binds each replayed thinking block to everything before it (Claude Opus
         # 5.5, Fable 5.1) is trimmed in steps rather than on every call, because a trim that
@@ -2130,15 +2143,13 @@ class AgentLoop:
         # to drop them instead (`drop_block`). Every other provider has a period of 1, which is
         # a trim every call and nothing left out.
         period = max(1, int(getattr(self.cfg.provider, "frame_trim_period", 1) or 1))
-        cut = max(0, len(self.history) - n)
+        cut = max(0, len(history) - n)
         cut -= cut % period
         forget = getattr(self.cfg.provider, "without_thinking", None) if period > 1 else None
-        stale = self._last_invalidated(cut, n, period) if forget is not None else -1
-        latest = max(
-            (i for i, ex in enumerate(self.history) if ex.decision is not None), default=-1
-        )
+        stale = self._last_invalidated(cut, n, period, history) if forget is not None else -1
+        latest = max((i for i, ex in enumerate(history) if ex.decision is not None), default=-1)
         out: list[Exchange] = []
-        for i, ex in enumerate(self.history):
+        for i, ex in enumerate(history):
             if forget is not None and i <= stale and i != latest and ex.decision is not None:
                 ex = ex.model_copy(update={"decision": forget(ex.decision)})
             if ex.observation.images and i < cut:
@@ -2148,7 +2159,9 @@ class AgentLoop:
             out.append(ex)
         return out
 
-    def _last_invalidated(self, cut: int, n: int, period: int) -> int:
+    def _last_invalidated(
+        self, cut: int, n: int, period: int, history: list[Exchange] | None = None
+    ) -> int:
         """The last exchange whose thinking block a trim at `cut` invalidated, or -1 for none.
 
         Exchange `j` was decided on the call that appended it, when the trim stood at `c`, so
@@ -2156,15 +2169,94 @@ class AgentLoop:
         invalid once one of those frames is no longer sent. A trim that took nothing away, as
         on a run with `--no-vision` or a body with no camera, invalidates nothing, and the
         whole run is replayed as it was produced."""
+        history = self.history if history is None else history
         last = -1
-        for j, ex in enumerate(self.history):
+        for j, ex in enumerate(history):
             if ex.decision is None:
                 continue  # a prose turn, its re-prompt or the one pending: no block of its own
             c = max(0, j + 1 - n)
             c -= c % period
-            if any(self.history[k].observation.images for k in range(c, min(cut, j + 1))):
+            if any(history[k].observation.images for k in range(c, min(cut, j + 1))):
                 last = j
         return last
+
+    def _with_cache_point(self, sent: list[Exchange]) -> list[Exchange]:
+        """`sent`, with the end of what the next call will send unchanged marked on it, for a
+        pilot that caches a request's prefix (`AnthropicProvider.caches`), and `sent` itself for
+        any other.
+
+        A prompt cache is read only as far as a request matches one it has seen, and quackd's own
+        trim edits older messages: on most models every call, as the oldest picture still sent
+        goes, and on a model that binds its thinking every eighth, when the pictures go and the
+        thinking that trim invalidates is left out. A marker at the end of every request would sit
+        past that edit on those calls, so the next would read nothing back and the write would be
+        paid for nothing. So the rule that builds every request is asked what the next one will
+        send, this one's pending exchange answered and one more after it, and the marker goes on
+        the last block before the first exchange that changes between the two: on the next call,
+        everything up to the marker is sent as this call sends it, which is what a read needs.
+        Anthropic's check of a replayed thinking block ignores where the markers are, so moving
+        one from call to call invalidates no block.
+
+        A cache read looks back only twenty blocks from a marker for the entry an earlier request
+        wrote. The marker moves one exchange a call, three blocks, except around a trim: forward
+        from before the trim to the end of the request on the call after it, which on a model
+        trimmed every eighth exchange is more than twenty blocks, and back to before the next trim
+        on the call ahead of it, where looking back finds nothing at all. So the previous call's
+        marker goes out again beside this one, on the block it was on, which this call sends as
+        that one did: the read lands there however this call's own marker moved, and the new one
+        writes what is new for the next. Two in the messages and one on the system prompt, under
+        Anthropic's four.
+
+        A guess about the next answer only. A model that answers this turn in prose is asked
+        again rather than answered, and the guess can then be a block off, which costs one cache
+        write and never a wrong request. A retry resends the same marked copy (ADR-0059)."""
+        if getattr(self.cfg.provider, "caches", False) is not True or not sent:
+            return sent
+        pending = self.history[-1]
+        if pending.decision is not None:
+            return sent
+        was, self._cache_point = self._cache_point, None
+        then = self._history_for_provider(
+            [
+                *self.history[:-1],
+                pending.model_copy(update={"decision": _FORESEEN}),
+                Exchange(observation=Observation(text="")),
+            ]
+        )
+        point: tuple[int, Literal["observation", "decision"]] | None = (
+            len(sent) - 1,
+            "observation",
+        )
+        for i, (now, later) in enumerate(zip(sent, then, strict=False)):
+            if now.observation != later.observation:
+                # this exchange's own message changes, so the block before it is the last kept
+                before = sent[i - 1] if i else None
+                if before is None:
+                    point = None
+                elif before.decision is not None:
+                    point = (i - 1, "decision")
+                else:
+                    point = (i - 1, "observation")
+                break
+            if i < len(sent) - 1 and now.decision != later.decision:
+                # its answer loses its thinking on the next call, so its message is the last kept
+                point = (i, "observation")
+                break
+        # None where the next call will edit even the first message, so nothing written now
+        # would ever be read; the last call's entry is still worth reading on this one
+        self._cache_point = point
+        halves: dict[int, set[Literal["observation", "decision"]]] = {}
+        if point is not None:
+            halves[point[0]] = {point[1]}
+        if was is not None and was != point:
+            # the last call's marker, carried so the read finds the entry it wrote
+            halves.setdefault(was[0], set()).add(was[1])
+        if not halves:
+            return sent
+        marked = list(sent)
+        for at, sides in halves.items():
+            marked[at] = sent[at].model_copy(update={"cache_points": tuple(sorted(sides))})
+        return marked
 
     # ── the loop ────────────────────────────────────────────────────────────────────
 
@@ -2597,7 +2689,7 @@ class AgentLoop:
                         )
                     self.history.append(Exchange(observation=obs))
                     self.budget.note_llm_call()  # may raise BudgetExceeded: then no request is made
-                    history = self._history_for_provider()
+                    history = self._with_cache_point(self._history_for_provider())
                     # once per turn, however many tries it takes: the same history every time
                     turn, latency_s, attempt = await self._ask_the_model(
                         system, history, tools, reprompt=retry_prompted

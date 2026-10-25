@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import itertools
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -2231,6 +2232,13 @@ async def test_the_one_lens_left_on_a_two_camera_body_still_says_which_one_it_is
     )
 
 
+def unmarked(block: Any) -> Any:
+    """A content block as Anthropic compares it for a prefix: with no `cache_control` marker."""
+    if isinstance(block, dict):
+        return {k: v for k, v in block.items() if k != "cache_control"}
+    return block
+
+
 class SeeingProvider:
     """A pilot that can see, and writes down which camera every picture in the request came
     from, exchange by exchange.
@@ -2558,10 +2566,13 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
     assert bool(prose_at) is (body == "lit-prose-turn"), "the prose turn never came"
 
     def unthought(messages: list[dict[str, Any]]) -> list[Any]:
+        """What a block is bound to, compared as the API compares it: without the thinking
+        blocks themselves and without `cache_control` markers, which it ignores, so the cache
+        breakpoint that moves from call to call (`AgentLoop._with_cache_point`) edits nothing."""
         return [
-            [b for b in m["content"] if b.get("type") != "thinking"]
+            [unmarked(b) for b in m["content"] if b.get("type") != "thinking"]
             if m["role"] == "assistant"
-            else m["content"]
+            else [unmarked(b) for b in m["content"]]
             for m in messages
         ]
 
@@ -2600,6 +2611,148 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
     else:
         assert left_out, "the run was too short to see a trim leave anything out"
         assert kept_valid_late, "no block produced after a trim was ever replayed"
+
+
+LOOKBACK = 20
+"""How many positions a cache breakpoint looks back for an entry an earlier request wrote, a run
+of `tool_use` blocks and a run of `tool_result` blocks each counting as one (Anthropic's prompt
+caching reference)."""
+
+
+def _flat(messages: list[dict[str, Any]]) -> list[tuple[int, str, Any]]:
+    """Every block of a request in order, as (message, role, the block without its marker)."""
+    return [(i, m["role"], unmarked(b)) for i, m in enumerate(messages) for b in m["content"]]
+
+
+def _marked_at(messages: list[dict[str, Any]]) -> list[int]:
+    """Where in `_flat` order a request's messages carry a cache breakpoint."""
+    blocks = [b for m in messages for b in m["content"]]
+    return [k for k, b in enumerate(blocks) if isinstance(b, dict) and "cache_control" in b]
+
+
+def _positions(flat: list[tuple[int, str, Any]], start: int, end: int) -> int:
+    """The positions a breakpoint at `end` looks back across to reach `start`, counted as
+    Anthropic counts them."""
+    count, previous = 0, None
+    for _i, _role, block in flat[start + 1 : end + 1]:
+        kind = block.get("type") if isinstance(block, dict) else None
+        if not (kind in ("tool_use", "tool_result") and kind == previous):
+            count += 1
+        previous = kind
+    return count
+
+
+@pytest.mark.parametrize("period", [1, 2, 4, 8])
+@pytest.mark.parametrize("keep", [1, 2, 3])
+@pytest.mark.parametrize("body", ["two-cameras", "no-vision", "goes-dark", "lit-prose-turn"])
+async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_it(
+    body: str, keep: int, period: int, hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A prompt cache is read only as far as a request matches one it has seen, and quackd's own
+    trim edits older messages, so a marker at the end of every request would sit past that edit
+    on the calls that trim and the next would read nothing back. Through the real loop and the
+    real Claude provider, over the trim's every period, keep and kind of body: the system prompt
+    is marked the same on every call, a request carries at most Anthropic's four breakpoints,
+    each call marks the last block it shares with the next, so that call's entry covers all the
+    next can read, and the next call has a marker that reaches back to it within the cache's
+    lookback, so it is read rather than paid for again. A call answered in prose is asked again
+    rather than answered, which the guess does not foresee, so the pair after one is excused:
+    what it costs is one cache write, never a wrong request. The comparisons drop the markers, as
+    the API does, and binding validity under them is `test_a_binding_model_is_never_sent_...`'s."""
+    from quackd.agent.providers.anthropic import AnthropicProvider
+
+    calls = keep + 2 * period + 4
+    sent: list[dict[str, Any]] = []
+    prose_at: list[int] = []
+
+    def block(**fields: Any) -> Any:
+        return NS(model_dump=lambda: dict(fields), **fields)
+
+    def pictured(content: Any) -> bool:
+        if isinstance(content, dict):
+            return content.get("type") == "image" or pictured(content.get("content"))
+        return isinstance(content, list) and any(pictured(b) for b in content)
+
+    async def create(**kwargs: Any) -> Any:
+        sent.append(copy.deepcopy({"system": kwargs["system"], "messages": kwargs["messages"]}))
+        k = len(sent)
+        thought = block(type="thinking", thinking=f"turn {k}", signature=f"sig{k}")
+        lit = pictured(kwargs["messages"][-1]["content"])
+        if body == "lit-prose-turn" and not prose_at and lit:
+            prose_at.append(k)
+            answer = [thought, block(type="text", text="I see the bench.")]
+            return NS(
+                content=answer,
+                stop_reason="end_turn",
+                usage=NS(input_tokens=10, output_tokens=5),
+                stop_details=None,
+                model="claude-opus-5-5",
+            )
+        name, args = ("declare_success", {"reason": "done"}) if k == calls else ("quack", {})
+        return NS(
+            content=[thought, block(type="tool_use", id=f"t{k}", name=name, input=args)],
+            stop_reason="tool_use",
+            usage=NS(input_tokens=10, output_tokens=5),
+            stop_details=None,
+            model="claude-opus-5-5",
+        )
+
+    client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
+    model = "claude-opus-5-5" if period > 1 else "claude-sonnet-5"
+    provider = AnthropicProvider(model=model, client=client, vision=body != "no-vision")
+    provider.frame_trim_period = period
+    assert provider.caches, "QUACKD_ANTHROPIC_CACHE switched it off in this environment"
+    transport = {
+        "goes-dark": lambda: DarkeningDuck(),
+        "lit-prose-turn": lambda: DarkeningDuck(lit=frozenset({2})),
+    }.get(body, TwoCameraDuck)()
+    hello_duck.frontmatter.budgets = Budgets()
+    result = await AgentLoop(
+        RunConfig(
+            duck=hello_duck,
+            provider=provider,
+            transport=transport,
+            runs_dir=tmp_path,
+            keep_images_for_last_n=keep,
+        )
+    ).run()
+    assert result.outcome == "success", result.reason
+    assert len(sent) == calls
+
+    systems = {json.dumps(request["system"], sort_keys=True) for request in sent}
+    assert len(systems) == 1, "the system prompt changed between calls, so it could not be read"
+    (system,) = [request["system"] for request in sent[:1]]
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
+
+    for k, request in enumerate(sent, start=1):
+        marks = _marked_at(request["messages"])
+        assert 1 + len(marks) <= 4, f"call {k}: more breakpoints than Anthropic takes"
+    edited = False
+    for k, (now, later) in enumerate(itertools.pairwise(sent), start=1):
+        flat_now, flat_later = _flat(now["messages"]), _flat(later["messages"])
+        shared = 0
+        while (
+            shared < min(len(flat_now), len(flat_later)) and flat_now[shared] == flat_later[shared]
+        ):
+            shared += 1
+        edited |= shared < len(flat_now)
+        if k in prose_at or not shared:
+            # nothing in the messages is shared, so nothing could be read, or the call was
+            # answered in prose, which the guess about the next call does not foresee
+            continue
+        # the call wrote an entry on the last block the two share, and the next has a marker
+        # that walks back to it within the lookback: everything shared is read, not paid again
+        assert shared - 1 in _marked_at(now["messages"]), (
+            f"call {k}: nothing marked the end of the {shared} blocks the next call shares"
+        )
+        assert any(
+            q >= shared - 1 and _positions(flat_later, shared - 1, q) <= LOOKBACK
+            for q in _marked_at(later["messages"])
+        ), f"call {k + 1}: no marker reaches back to the entry call {k} wrote"
+    if body == "no-vision":
+        assert not edited, "nothing is trimmed without pictures, so nothing sent may change"
+    else:
+        assert edited, "the run was too short to see a trim edit what an earlier call sent"
 
 
 # ── the pictures that came with the task ────────────────────────────────────────────────

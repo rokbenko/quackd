@@ -69,8 +69,24 @@ def _image_block(png: bytes) -> dict[str, Any]:
     }
 
 
+CACHE_POINT = {"type": "ephemeral"}
+"""The marker on a block that ends a cached prefix: the five minute lifetime, the one every
+catalogue row's cache-write rate is."""
+
+
+def _marked(blocks: list[Any]) -> list[Any]:
+    """`blocks` with a cache breakpoint on the last one that can carry one, which is every kind
+    but a thinking block. A copy: the blocks a decision replays are never written to."""
+    for k in range(len(blocks) - 1, -1, -1):
+        block = blocks[k]
+        if isinstance(block, dict) and block.get("type") not in ("thinking", "redacted_thinking"):
+            return [*blocks[:k], {**block, "cache_control": dict(CACHE_POINT)}, *blocks[k + 1 :]]
+    return blocks
+
+
 def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
-    """quackd's vendor-neutral history → Messages API `messages`."""
+    """quackd's vendor-neutral history → Messages API `messages`, with the cache breakpoint the
+    loop chose (`Exchange.cache_points`) on the last block of each half they name."""
     messages: list[dict[str, Any]] = []
     for ex in history:
         obs = ex.observation
@@ -82,6 +98,8 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
             ]
         else:
             content = [*pictures, {"type": "text", "text": obs.text}]
+        if "observation" in ex.cache_points:
+            content = _marked(content)
         messages.append({"role": "user", "content": content})
         if ex.decision is not None:
             if isinstance(ex.decision.raw, list) and ex.decision.raw:
@@ -94,6 +112,8 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
                 blocks.append(
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
                 )
+            if "decision" in ex.cache_points:
+                blocks = _marked(blocks)
             messages.append({"role": "assistant", "content": blocks})
     return messages
 
@@ -364,7 +384,7 @@ class AnthropicProvider:
         string as it always was."""
         if not self.caches or not system:
             return system
-        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        return [{"type": "text", "text": system, "cache_control": dict(CACHE_POINT)}]
 
     @property
     def asked_effort(self) -> dict[str, str] | None:
