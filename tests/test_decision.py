@@ -861,6 +861,182 @@ async def test_shadow_mode_leaves_the_tool_call_stream_byte_identical(
     assert all(r["source"] == "agent" for r in _records(shadow, "verb_start"))
 
 
+class _Counting:
+    """The scripted pilot, counting the calls it is asked, so a decision LLM can tell whether
+    the model was asked while its own request was out."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.asked = 0
+
+    name = property(lambda self: self.inner.name)
+    model = property(lambda self: self.inner.model)
+    supports_vision = property(lambda self: self.inner.supports_vision)
+
+    async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
+        self.asked += 1
+        return await self.inner.step(system, history, tools)
+
+
+class _Overlaps(_OffTheWire):
+    """A decision LLM that answers once the model has been asked during its request, or, failing
+    that, at a bound well inside the stepper's own second, and says which it was each turn."""
+
+    def __init__(self, payload: dict[str, Any], pilot: _Counting) -> None:
+        super().__init__(payload)
+        self.pilot = pilot
+        self.overlapped: list[bool] = []
+
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        before = self.pilot.asked
+        for _ in range(50):
+            if self.pilot.asked > before:
+                break
+            await asyncio.sleep(0.01)
+        self.overlapped.append(self.pilot.asked > before)
+        return await super().decide(state, questions)
+
+
+async def test_shadow_asks_the_stepper_beside_the_models_call_not_before_it(
+    tmp_path: Any,
+) -> None:
+    """Shadow's answer changes nothing about a turn, so a run being measured waited up to the
+    stepper's second every turn for the measuring. The stepper is asked beside the model's own
+    call now: on every turn the model is asked while the stepper's request is out, every answer
+    still lands on the record, and the comparison is made as before."""
+    from quackd.agent.loop import RunConfig, run_duck
+    from quackd.agent.providers.fake import FakeProvider
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import LeRobotMock
+
+    duck = _lookout()
+    pilot = _Counting(FakeProvider.for_duck(duck.name))
+    llm = _Overlaps({"answers": _answered()}, pilot)
+    result = await run_duck(
+        RunConfig(
+            duck=duck,
+            provider=pilot,  # type: ignore[arg-type]
+            transport=LeRobotAdapter(LeRobotMock()),
+            runs_dir=tmp_path,
+            decision="shadow",
+            decision_llm=llm,
+            decision_price=resolve_decision_price(JEV),
+        )
+    )
+    assert result.outcome == "success", result.reason
+    assert llm.overlapped and all(llm.overlapped), llm.overlapped
+    decisions = _records(result, "decision")
+    assert len(decisions) == len(llm.overlapped)
+    assert all("error" not in r for r in decisions), decisions
+    assert len(_records(result, "decision_shadow")) == len(decisions)
+
+
+class _Failing:
+    """A pilot whose first call fails outright, with no retry to wait out."""
+
+    name = "failing"
+    model = "test"
+    supports_vision = False
+
+    async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
+        from quackd.agent.providers.base import ProviderError
+
+        raise ProviderError("the model's API turned the request down")
+
+
+class _Hangs(_OffTheWire):
+    async def decide(self, state: Any, questions: Any) -> dict[str, Any]:
+        await asyncio.Event().wait()
+        raise AssertionError("never answers")
+
+
+async def test_a_shadow_request_the_turn_ends_without_is_cut_off_and_on_the_record(
+    tmp_path: Any,
+) -> None:
+    """A model call that fails ends the turn while the shadow stepper's request is still out.
+    The request is cancelled rather than left to run out its second, and the record says it was
+    cut off, on the gate a cut off request always gets, so the summary and the transcript agree
+    about a request that left the machine."""
+    from quackd.agent.loop import RunConfig, run_duck
+    from quackd.agent.providers.base import ProviderError
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import LeRobotMock
+
+    runs = tmp_path / "runs"
+    with pytest.raises(ProviderError):
+        await run_duck(
+            RunConfig(
+                duck=_lookout(),
+                provider=_Failing(),  # type: ignore[arg-type]
+                transport=LeRobotAdapter(LeRobotMock()),
+                runs_dir=runs,
+                decision="shadow",
+                decision_llm=_Hangs({"answers": _answered()}),
+                decision_price=resolve_decision_price(JEV),
+            )
+        )
+    from quackd.agent.transcript import Transcript
+
+    (transcript,) = list(runs.rglob("transcript.jsonl"))
+    decisions = [r for r in Transcript.read(transcript) if r["kind"] == "decision"]
+    assert [r["gate"] for r in decisions] == ["interrupted"], decisions
+
+
+class _AnswersAsTheStopLands(_Counting):
+    """The scripted pilot, whose first answer comes back in the tick the run is stopped in: the
+    abort is set straight after it, so the run sees the stop while the stepper asked beside the
+    call is still out."""
+
+    abort: asyncio.Event | None = None
+
+    async def step(self, system: str, history: list[Any], tools: list[Any]) -> Any:
+        answer = await super().step(system, history, tools)
+        assert self.abort is not None
+        asyncio.get_running_loop().call_soon(self.abort.set)
+        return answer
+
+
+async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_model_gave(
+    tmp_path: Any,
+) -> None:
+    """The model has answered and the run is stopped while the stepper asked beside it is still
+    out. The model's answer, which its vendor billed, is on the record before the stepper is
+    waited for, so the stop that ends that wait cannot lose it: the `llm` line with the call the
+    model chose, and then the stepper's request, cut off."""
+    from quackd.agent.loop import AgentLoop, RunConfig
+    from quackd.agent.providers.fake import FakeProvider
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import LeRobotMock
+
+    duck = _lookout()
+    pilot = _AnswersAsTheStopLands(FakeProvider.for_duck(duck.name))
+    loop = AgentLoop(
+        RunConfig(
+            duck=duck,
+            provider=pilot,  # type: ignore[arg-type]
+            transport=LeRobotAdapter(LeRobotMock()),
+            runs_dir=tmp_path,
+            decision="shadow",
+            decision_llm=_Hangs({"answers": _answered()}),
+            decision_price=resolve_decision_price(JEV),
+        )
+    )
+    pilot.abort = loop.executor.abort
+    result = await loop.run()
+    assert result.outcome == "aborted", result.reason
+    from quackd.agent.transcript import Transcript
+
+    turn = [
+        r
+        for r in Transcript.read(result.run_dir / "transcript.jsonl")
+        if r["kind"] in ("llm", "decision")
+    ]
+    assert [r["kind"] for r in turn] == ["llm", "decision"], turn
+    answered, decided = turn
+    assert "error" not in answered and answered["tool_calls"], answered
+    assert decided["gate"] == "interrupted", decided
+
+
 class _Recorder:
     """A provider that remembers every history it was handed, and defers to the real one."""
 

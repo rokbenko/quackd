@@ -207,6 +207,19 @@ async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
     return True
 
 
+async def _guarded(call: Awaitable[T]) -> tuple[T | None, BaseException | None]:
+    """`call`'s answer, or the `KeyboardInterrupt` or `SystemExit` it raised in its place.
+
+    For a call run in a task of its own. asyncio hands such a task's interrupt to the event loop
+    rather than to whoever awaits the task, which would skip the teardown that stops and folds
+    the robot, so it is caught in the task and handed back, to be raised again in the run's own
+    (`AgentLoop._unless_stopped`, `AgentLoop._settle_beside`)."""
+    try:
+        return await call, None
+    except (KeyboardInterrupt, SystemExit) as e:
+        return None, e
+
+
 _FORESEEN = Decision(tool_call=ToolCall(id="foreseen", name="foreseen", arguments={}))
 """The answer `_with_cache_point` assumes the pending exchange will get, to foresee the next call.
 Only that there is one counts: what it says is never sent and never kept."""
@@ -869,15 +882,8 @@ class AgentLoop:
         The call runs in a task of its own, and asyncio hands a task's `KeyboardInterrupt` to
         the event loop rather than to whoever awaits the task, which would skip the teardown
         that stops and folds the robot. So an interrupt the call raises is caught in its task
-        and raised again here, in the run's own task, where it always was raised."""
-
-        async def guarded() -> tuple[T | None, BaseException | None]:
-            try:
-                return await call, None
-            except (KeyboardInterrupt, SystemExit) as e:
-                return None, e
-
-        calling = asyncio.ensure_future(guarded())
+        (`_guarded`) and raised again here, in the run's own task, where it always was raised."""
+        calling = asyncio.ensure_future(_guarded(call))
         stopping = asyncio.ensure_future(self.executor.abort.wait())
         timing = asyncio.ensure_future(self._minutes_spent()) if minutes else None
         racing: set[asyncio.Future[Any]] = {calling, stopping}
@@ -915,6 +921,46 @@ class AgentLoop:
             except BudgetExceeded as e:
                 return str(e)
             await asyncio.sleep(period)
+
+    async def _settle_beside(
+        self,
+        beside: asyncio.Task[tuple[Advice | None, BaseException | None]],
+        stepper: Stepper,
+        *,
+        cancel: bool = False,
+    ) -> Advice | None:
+        """A shadow stepper's answer, asked beside the model's call, settled and on the record.
+
+        Once the model's answer is on the record the stepper's is awaited, raced against the stop
+        as it was when it was asked first, and it has nearly always come by then, being bounded
+        by its own second. Not before: a stop that ended that wait would end the run with a call
+        the model answered, and its vendor billed, missing from the transcript and the cost.
+        Where the turn ended some other way, a stop, the task's minutes or a failed call, it is
+        cancelled instead, and an answer that had already come is kept all the same. Either way
+        the `decision` line is the one the stepper's own `finally` writes when it is asked first:
+        the answer, or the record of the request a cancel cut off (`Stepper.cut_off`). It follows
+        the turn's `llm_request` and `llm` lines, which the step number ties together.
+
+        A Ctrl-C that landed in the stepper's own task is raised here, in the run's, once that
+        line is written (`_guarded`). Until then the run was waiting on the model's call, which
+        under `quackd run` the first Ctrl-C has cut short already: the kill switch hears that
+        one and sets the abort (`_unless_stopped`)."""
+        advice: Advice | None = None
+        interrupted: BaseException | None = None
+        try:
+            if cancel:
+                await cancel_and_wait(beside)
+                if not beside.cancelled() and beside.exception() is None:
+                    advice, interrupted = beside.result()
+            else:
+                advice, interrupted = await self._unless_stopped(beside)
+        finally:
+            decided = advice if advice is not None else stepper.cut_off
+            if decided is not None:
+                self._emit("decision", step=self.budget.steps, **decided.event())
+        if interrupted is not None:
+            raise interrupted
+        return advice
 
     def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
         """What follows try `attempt` of the full schedule failing for a reason worth asking
@@ -2639,26 +2685,30 @@ class AgentLoop:
                 # verdict gate or the allowlist.
                 advice: Advice | None = None
                 stepper_call: ToolCall | None = None
+                ask: Callable[[], Awaitable[Advice]] | None = None
                 if stepper is not None:
+                    # Bound now, on this reading, and asked below: at once, or in shadow beside
+                    # the model's own call.
+                    ask = functools.partial(
+                        stepper.advise,
+                        obs,
+                        cleared=self.executor.cleared,
+                        budget=self.budget.status(),
+                        stepped=self.stepped,
+                        notes=memory_text,
+                        snapshot=snapshot,
+                        # Written and flushed before the request that carries the frame is
+                        # handed over, because the `decision` event below is written only
+                        # once the turn ends, which a process killed mid-request never does.
+                        on_frame=lambda block: self._emit(
+                            "decision_frame", step=self.budget.steps, frame=dict(block)
+                        ),
+                    )
+                if ask is not None and stepper is not None and cfg.decision != "shadow":
                     try:
                         # raced against the stop as the model's own call is, so a first Ctrl-C
                         # does not wait on a decision LLM's answer either (`_unless_stopped`)
-                        advice = await self._unless_stopped(
-                            stepper.advise(
-                                obs,
-                                cleared=self.executor.cleared,
-                                budget=self.budget.status(),
-                                stepped=self.stepped,
-                                notes=memory_text,
-                                snapshot=snapshot,
-                                # Written and flushed before the request that carries the frame is
-                                # handed over, because the `decision` event below is written only
-                                # once the turn ends, which a process killed mid-request never does.
-                                on_frame=lambda block: self._emit(
-                                    "decision_frame", step=self.budget.steps, frame=dict(block)
-                                ),
-                            )
-                        )
+                        advice = await self._unless_stopped(ask())
                     finally:
                         # From a `finally`, so the turn is on the record however `advise` ends.
                         # The second Ctrl-C and a flock's cancel land here too while the
@@ -2688,12 +2738,29 @@ class AgentLoop:
                             update={"tool_call_id": self.history[-1].decision.tool_call.id}
                         )
                     self.history.append(Exchange(observation=obs))
-                    self.budget.note_llm_call()  # may raise BudgetExceeded: then no request is made
-                    history = self._with_cache_point(self._history_for_provider())
-                    # once per turn, however many tries it takes: the same history every time
-                    turn, latency_s, attempt = await self._ask_the_model(
-                        system, history, tools, reprompt=retry_prompted
-                    )
+                    beside: asyncio.Task[tuple[Advice | None, BaseException | None]] | None = None
+                    try:
+                        # may raise BudgetExceeded: then no request is made, and in shadow the
+                        # stepper is not asked either, with no answer of the model's to be
+                        # compared with
+                        self.budget.note_llm_call()
+                        if ask is not None and cfg.decision == "shadow":
+                            # In shadow the stepper's answer changes nothing about the turn: the
+                            # model is asked whatever it says, and the two are compared
+                            # afterwards. So it is asked beside the model's own call rather than
+                            # before it, and a run being measured does not wait up to the
+                            # stepper's second on every turn for the measuring. Settled once the
+                            # model's answer is on the record (`_settle_beside`).
+                            beside = asyncio.ensure_future(_guarded(ask()))
+                        history = self._with_cache_point(self._history_for_provider())
+                        # once per turn, however many tries it takes: the same history every time
+                        turn, latency_s, attempt = await self._ask_the_model(
+                            system, history, tools, reprompt=retry_prompted
+                        )
+                    except BaseException:
+                        if beside is not None and stepper is not None:
+                            await self._settle_beside(beside, stepper, cancel=True)
+                        raise
                     self.llm_latency_s += latency_s
                     self.llm_answered_s.append(latency_s)
                     self.usage = self.usage + turn.usage
@@ -2736,6 +2803,8 @@ class AgentLoop:
                         # and the try that answered, only where it was not the first
                         **({"attempt": attempt} if attempt > 1 else {}),
                     )
+                    if beside is not None and stepper is not None:
+                        advice = await self._settle_beside(beside, stepper)
                     self.budget.check_time()
 
                     if not turn.tool_calls:

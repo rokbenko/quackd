@@ -711,11 +711,12 @@ def render_events(
         if isinstance(d.get("frame"), Mapping):
             took += ", 1 frame"
         if d.get("gate") == "interrupted":
-            # The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
-            # cancel, which the record names where an error would be named. Read before the
-            # error line, because nobody takes this turn and nothing failed: it is the request
-            # the run was waiting on when it stopped, with what it had cost by then. Yellow with
-            # a warning's mark rather than an error's red, as a declined question is.
+            # The run ended in the middle of this turn's request, by a second Ctrl-C, a flock's
+            # cancel or, in shadow, the end of the model's call beside it, which the record names
+            # where an error would be named. Read before the error line, because nobody takes
+            # this turn and nothing failed: it is the request that was out when the run stopped,
+            # with what it had cost by then. Yellow with a warning's mark rather than an error's
+            # red, as a declined question is.
             return [
                 LogLine(
                     "decide",

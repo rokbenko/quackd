@@ -2623,9 +2623,10 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     """Windows refuses a connection to a port on the same machine that nothing listens on only
     after longer than the stepper's second, so a decision server nobody started is a turn the
     stepper's own bound ends. Its record then says what the record says of a server too slow to
-    answer, and the turn waits out its second before the model is asked, in shadow mode as in
-    `on`, because the stepper is asked first either way. The hub said only that such a server
-    costs a turn and never the run.
+    answer. In `on` the turn waits out its second before the model is asked, because the stepper
+    is asked first, and in shadow the second runs beside the model's call, which goes out at once
+    (`AgentLoop._settle_beside`). The hub said only that such a server costs a turn and never the
+    run, and then that it costs the second in either mode, which shadow no longer does.
 
     So its section on what a decision LLM may never do says it for Windows, and quotes the record
     in the stepper's own words for a turn its bound ended, which are read off `stepper._failure`
@@ -2640,7 +2641,10 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     windows = [" ".join(p.split()) for p in section.split("\n\n") if "On Windows" in p]
     assert windows, "the hub no longer says what a server nobody started costs on Windows"
     assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
-    assert "not listening" in windows[0] and "either mode" in windows[0], windows[0]
+    assert "not listening" in windows[0], windows[0]
+    assert "In `on` the stepper is asked before the model" in windows[0], windows[0]
+    assert "In `shadow` it is asked beside the model's call" in windows[0], windows[0]
+    assert "either mode" not in windows[0], windows[0]
     opening = windows[0].split(". ", 1)[0]
     assert "on your own machine" in opening, f"the hub says more than was timed: {opening}"
 

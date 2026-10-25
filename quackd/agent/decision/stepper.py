@@ -1188,15 +1188,17 @@ class Stepper:
             )
         except BaseException as e:
             # A second Ctrl-C, or a flock cancelling its members, arrives here while the request is
-            # out, and is not an `Exception`, so the handler above never saw it. It still ends the
-            # run, and nothing here may stop it, but the request it cut off was as real as any
-            # other: counted, timed and billed like a turn that failed, on a gate of its own,
-            # `interrupted`, since nothing failed and nobody takes the turn. Not among `errors`
-            # either, which count what went wrong with the decision LLM, and a person ending a
-            # run is not that. The record is left on `cut_off` for the loop to write down, as the
-            # loop does for the model's own call (`loop.py`). Building it may not replace the
-            # interrupt with a traceback of its own, so a failure there costs the record and
-            # nothing else, and the interrupt goes on as it came.
+            # out, and is not an `Exception`, so the handler above never saw it. So does the cancel
+            # of a shadow request asked beside the model's call when that call ends the run first
+            # (`AgentLoop._settle_beside`). It still ends the run, and nothing here may stop it,
+            # but the request it cut off was as real as any other: counted, timed and billed like
+            # a turn that failed, on a gate of its own, `interrupted`, since nothing failed and
+            # nobody takes the turn. Not among `errors` either, which count what went wrong with
+            # the decision LLM, and a person ending a run is not that. The record is left on
+            # `cut_off` for the loop to write down, as the loop does for the model's own call
+            # (`loop.py`). Building it may not replace the interrupt with a traceback of its own,
+            # so a failure there costs the record and nothing else, and the interrupt goes on as
+            # it came.
             with contextlib.suppress(Exception):
                 self.cut_off = Advice(
                     None, self._unanswered(record, e, "interrupted", started, idle, sent)

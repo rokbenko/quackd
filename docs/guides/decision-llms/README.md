@@ -717,14 +717,18 @@ Every `Exception` `decide` raises is caught, recorded as a turn with `gate: erro
 the model. A server that is not listening, a plugin that throws on import, a timeout at one
 second: all of them cost that turn and none of them costs the run. An interrupt is not a failure,
 and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
-on the record as `interrupted`.
+on the record as `interrupted`. In `shadow` the stepper is asked beside the model's own call, and
+a request still out when that call ends the run, on a stop, on the task's minutes or on a failed
+call, is cut off and recorded the same way.
 
 On Windows a server on your own machine that is not listening costs its turn the whole second,
 and its record is a slow server's. Windows takes longer than the second to refuse a connection to
 a port there that nothing listens on, so the stepper's own bound ends the turn first, and the
 record says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is
-there and too slow to answer. The stepper is asked before the model in either mode, so every such
-turn waits out its second before the model is asked.
+there and too slow to answer. In `on` the stepper is asked before the model, so every such turn
+waits out its second before the model is asked. In `shadow` it is asked beside the model's call,
+so the second runs while the model thinks, and the turn waits only for what is left of it once the
+model has answered.
 
 ## What the record says
 
