@@ -530,7 +530,7 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     api = lerobot_policy_api
     assert api.POLICY_PIPELINE.status == "VERIFIED"
     assert "tests/test_policy_pipeline.py" in api.POLICY_PIPELINE.note
-    assert "ACT and nothing else" in api.POLICY_PIPELINE.note
+    assert "a tiny ACT and a tiny X-VLA and nothing else" in api.POLICY_PIPELINE.note
     for name in ("SmolVLA", "pi05"):
         assert name in api.VLA_PIPELINE.note, name
     assert api.CHECKPOINT_FILES.name.split(", ") == [
@@ -542,17 +542,100 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     ]
     assert api.DATASET_INFO_FILE in api.TRAIN_DATASET.name
     assert api.DEFAULT_PROCESSOR_STEPS.name.split(", ") == list(api.DEFAULT_STEP_NAMES)
-    assert api.VLA_PROCESSOR_STEPS.name.split(", ") == list(api.VLA_STEP_NAMES)
+    for ref, names in _FAMILY_STEPS:
+        assert ref.name.split(", ") == list(names), ref.name
+        assert ref.status == "VERIFIED", ref
     assert api.DEVICE_STEP in api.DEFAULT_STEP_NAMES and api.DEVICE_STEP in api.DEVICE_OVERRIDE.name
     assert api.POLICY_TYPES.name == ", ".join(f'"{t}"' for t in api.SERVED_TYPES)
-    assert set(api.SERVED_TYPES) <= set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
+    # LeRobot's own async server lists no X-VLA, and quackd never runs that server
+    # (ASYNC_PICKLE), so its list says only which served types it would also take
+    served_there = set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
+    assert set(api.SERVED_TYPES) - served_there == {"xvla"}
+    # the X-VLA facts the pipeline reads as data, beside the refs that read them
+    assert api.XVLA_SERVED_MODE in api.XVLA_ACTION_MODES.name.split(": ", 1)[1].split(", ")
+    assert api.XVLA_DEFAULT_MODE in api.XVLA_ACTION_MODES.name
+    assert api.XVLA_DOMAIN_STEP in api.XVLA_STEP_NAMES
+    assert f"`num_domains` is {api.XVLA_DEFAULT_DOMAINS} unless" in api.XVLA_PROCESSOR_STEPS.note
+    assert f"`domain_id`, {api.XVLA_DEFAULT_DOMAIN} unless" in api.XVLA_PROCESSOR_STEPS.note
+    # and GR00T's
+    assert f"`{api.GROOT_BACKBONE}`" in api.GROOT_BASE_MODEL.note
+    for name in api.GROOT_N1_5_STEP_NAMES:
+        assert f"`{name}`" in api.GROOT_N1_5_REMOVED.note, name
+    steps = (api.GROOT_PACK_STEP, api.GROOT_VLM_STEP, api.GROOT_DECODE_STEP)
+    assert set(steps) | {api.GROOT_DATASET_DECODE_STEP} <= set(api.GROOT_STEP_NAMES)
+    assert api.GROOT_DECODE_STEP in api.GROOT_DECODE.name
+    assert api.GROOT_DATASET_DECODE_STEP in api.GROOT_DECODE.note
+    for word in ("RELATIVE NON_EEF", "EEF", "still normalised", "LIBERO"):
+        assert word in api.GROOT_DECODE.note, word
+    assert f"`{api.GROOT_LIBERO_EMBODIMENT}`" in api.GROOT_DECODE.note
     keys = api.FEATURE_KEYS.name
     assert api.STATE_KEY in keys and api.IMAGES_PREFIX in keys and api.ACTION_KEY in keys
     for stat in api.QUANTILE_STATS:
         assert stat in api.NORMALIZER_STATS.note, stat
     # the action tokenizer, which trusts remote code by default, is not a step the server allows
     assert "action_tokenizer_processor" in api.TOKENIZER_TRUSTS_REMOTE_CODE.note
-    assert "action_tokenizer_processor" not in api.DEFAULT_STEP_NAMES + api.VLA_STEP_NAMES
+    for _, names in _FAMILY_STEPS:
+        assert "action_tokenizer_processor" not in api.DEFAULT_STEP_NAMES + names
+
+
+#: Each served type's own processor steps, as the ref that read them names them and as the tuple
+#: the pipeline allows them from.
+_FAMILY_STEPS = (
+    (lerobot_policy_api.SMOLVLA_PROCESSOR_STEPS, lerobot_policy_api.SMOLVLA_STEP_NAMES),
+    (lerobot_policy_api.PI05_PROCESSOR_STEPS, lerobot_policy_api.PI05_STEP_NAMES),
+    (lerobot_policy_api.PI0_PROCESSOR_STEPS, lerobot_policy_api.PI0_STEP_NAMES),
+    (lerobot_policy_api.XVLA_PROCESSOR_STEPS, lerobot_policy_api.XVLA_STEP_NAMES),
+    (lerobot_policy_api.GROOT_PROCESSOR_STEPS, lerobot_policy_api.GROOT_STEP_NAMES),
+)
+
+
+def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> None:
+    """The pipeline's allowlist is by type: the steps every policy is built from and the ones
+    that type's own processors add, read at the pin. A type served with no allowlist could not
+    load, and an allowlist for a type nobody serves would be steps read for nothing. Every step
+    a type allows past the defaults is one its own ref names."""
+    from quackd_lerobot.policy import pipeline
+
+    api = lerobot_policy_api
+    assert set(pipeline.STEPS_BY_TYPE) == set(api.SERVED_TYPES)
+    assert pipeline.STEPS_BY_TYPE["act"] == frozenset(api.DEFAULT_STEP_NAMES)
+    own = {name for _, names in _FAMILY_STEPS for name in names}
+    for policy_type, allowed in pipeline.STEPS_BY_TYPE.items():
+        assert set(api.DEFAULT_STEP_NAMES) <= allowed, policy_type
+        assert allowed - set(api.DEFAULT_STEP_NAMES) <= own, policy_type
+        assert not allowed & set(pipeline.REFUSED_STEPS), policy_type
+    # a type read and refused is no type served, and the core says why it is not
+    from quackd.adapters import policies
+
+    assert not set(pipeline.REFUSED_TYPES) & set(api.SERVED_TYPES)
+    not_served = {row.type for row in policies.NOT_SERVED}
+    assert set(pipeline.REFUSED_TYPES) <= not_served, set(pipeline.REFUSED_TYPES) - not_served
+
+
+def test_the_policy_families_are_the_types_the_server_serves() -> None:
+    """`quackd.adapters.policies` says, in the core and as data, which learned policies quackd
+    serves and which it does not and why, for the pages and the commands that print them on a
+    machine with no LeRobot. Its rows are the served types in the server's order, none of the
+    ones it does not serve is a type it does, and importing it costs nothing."""
+    import subprocess
+    import sys
+
+    from quackd.adapters import policies
+
+    assert tuple(f.type for f in policies.FAMILIES) == lerobot_policy_api.SERVED_TYPES
+    assert len({f.label for f in policies.FAMILIES}) == len(policies.FAMILIES)
+    refused = [row.type for row in policies.NOT_SERVED if row.type is not None]
+    assert not set(refused) & set(lerobot_policy_api.SERVED_TYPES), refused
+    for row in policies.NOT_SERVED:
+        assert row.why and row.would_change, row.name
+    heavy = ("torch", "lerobot", "transformers", "huggingface_hub", "quackd_lerobot", "pydantic")
+    probe = (
+        f"import sys, quackd.adapters.policies\nprint([m for m in {heavy!r} if m in sys.modules])"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60, check=True
+    )
+    assert done.stdout.strip() == "[]", done.stdout + done.stderr
 
 
 def test_the_arm_models_zero_and_sign_cite_lerobot_at_its_pin_and_leave_out_the_gripper() -> None:

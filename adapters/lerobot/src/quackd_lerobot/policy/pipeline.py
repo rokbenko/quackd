@@ -11,23 +11,26 @@ server imports it with none of them installed, and serves a scripted policy that
    of the repository yet (`upstream_api.CHECKPOINT_FILES`).
 2. They are checked. The policy is one of the types whose processors were read at the pin
    (`upstream_api.POLICY_TYPES`), and its features are a state, images and an action. Every
-   processor step is named by a registry name read at the pin (`ALLOWED_STEPS`), and a step
-   named by a `class` key is refused, so nothing is imported from a path a checkpoint chose.
-   A step that could trust a repository's own code is told not to, and a model a checkpoint
-   names inside itself, SmolVLA's backbone or a tokenizer, is refused unless `--pin
-   REPO@REVISION` says which revision to fetch it at (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`).
-   A SmolVLA config that names no backbone is refused too, since LeRobot would fill in its own.
-   A pin is a commit or a tag, and never a branch, which moves (`check_fixed`).
+   processor step is named by a registry name read at the pin for that type (`STEPS_BY_TYPE`),
+   and a step named by a `class` key is refused, so nothing is imported from a path a
+   checkpoint chose. A step that could trust a repository's own code is told not to, and a
+   model a checkpoint names inside itself, SmolVLA's backbone or a tokenizer, is refused unless
+   `--pin REPO@REVISION` says which revision to fetch it at
+   (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). A SmolVLA config that names no backbone is
+   refused too, since LeRobot would fill in its own. A pin is a commit or a tag, and never a
+   branch, which moves (`check_fixed`). What a type's own code reads besides is read as it
+   reads it (`check_family`).
 3. The rate is `--fps`, or else the fps of the dataset `train_config.json` names, read at the
    revision it names, a commit or a tag, or else the server refuses to start
    (`upstream_api.TRAIN_DATASET`).
 4. Only then are the weights, the processors' state files and the pinned models fetched, the
-   pinned models with no code and no pickle in what is fetched, and refused if their directory
-   holds any all the same or maps a class to code (`check_pinned`). The policy is built on the
-   device `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the
-   file holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never
-   fetched (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put
-   where the policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
+   pinned models with no code and no pickle in what is fetched, and a tokenizer with no weights
+   either (`nested_patterns`), and refused if their directory holds any all the same, maps a
+   class to code or holds a PEFT adapter (`check_pinned`). The policy is built on the device
+   `auto_select_torch_device` picks (`upstream_api.AUTO_DEVICE`), with every weight the file
+   holds loaded into it or none (`build_policy`). An ACT's ImageNet backbone is never fetched
+   (`upstream_api.ACT_BACKBONE_WEIGHTS`), and both processors' device steps are put where the
+   policy runs and where its answers go (`upstream_api.DEVICE_OVERRIDE`).
 
 Every repository fetched is recorded with its revision (`Checkpoint.loaded`), and the server
 says them in `/v1/policy`.
@@ -38,10 +41,10 @@ order, then the pre-processor, then `predict_action_chunk` cut to `n_action_step
 post-processor over the whole chunk at once, and `make_robot_action` makes each row a goal per
 motor. One lock holds the three together, so a reset never lands between them, and a reset
 resets the policy and both processors. A policy asked every tick (an ACT with temporal
-ensembling) goes through `select_action` instead, one action a step. A pi05 that learned
-relative actions stays on chunks: its whole chunk is made absolute against the state it was
-predicted from, which is how its training made it relative, and not re-anchored each tick as
-LeRobot's own loop does (`upstream_api.RELATIVE_ACTIONS`, `VLA_PIPELINE`).
+ensembling) goes through `select_action` instead, one action a step. A pi05 or a pi0 that
+learned relative actions stays on chunks: its whole chunk is made absolute against the state it
+was predicted from, which is how its training made it relative, and not re-anchored each tick
+as LeRobot's own loop does (`upstream_api.RELATIVE_ACTIONS`, `VLA_PIPELINE`).
 """
 
 from __future__ import annotations
@@ -71,39 +74,88 @@ REPO_ID = re.compile(r"^[A-Za-z0-9][\w.\-]*/[\w.\-]+$", re.ASCII)
 MAX_SPEC_CHARS = 150
 """The longest `REPO@REVISION` taken: a Hub id is at most 96 characters, and a revision a
 commit's 40 or a short tag, with room left for what `/v1/policy` says it is."""
-ALLOWED_STEPS = frozenset(up.DEFAULT_STEP_NAMES + up.VLA_STEP_NAMES)
-"""The processor steps a checkpoint may name, each by the registry name LeRobot registers it
-under: ACT's, which are the steps every policy is built from, and those SmolVLA and pi05 add.
-Each is one of LeRobot's own classes, found in its registry, never imported by a path. The
-action tokenizer is not among them: it trusts a repository's code by default, and it tokenises
-actions for training, which a server never does."""
-NESTED_STEP_KEYS = ("tokenizer_name",)
-"""The keys of a step's config that name a model to load from the Hub
-(`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
-NESTED_CONFIG_KEYS = {"smolvla": ("vlm_model_name",)}
-"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone. A
+STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
+    "act": frozenset(up.DEFAULT_STEP_NAMES),
+    "smolvla": frozenset(up.DEFAULT_STEP_NAMES + up.SMOLVLA_STEP_NAMES),
+    "pi05": frozenset(up.DEFAULT_STEP_NAMES + up.PI05_STEP_NAMES),
+    "pi0": frozenset(up.DEFAULT_STEP_NAMES + up.PI0_STEP_NAMES),
+    "xvla": frozenset(up.DEFAULT_STEP_NAMES + up.XVLA_STEP_NAMES),
+    "groot": frozenset(up.DEFAULT_STEP_NAMES + up.GROOT_STEP_NAMES),
+}
+"""The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
+registers it under: the steps every policy is built from, which are all of ACT's, and those
+the type's own processors add. Each is one of LeRobot's own classes, found in its registry,
+never imported by a path, and a type may name no other type's: an ACT that names a VLA's step
+is code nobody read for an ACT."""
+REFUSED_STEPS: Mapping[str, str] = {
+    "action_tokenizer_processor": (
+        "which loads its tokenizer trusting the repository's own code unless told not to, and "
+        "turns actions into tokens for training, which a server never does: serve a checkpoint "
+        "whose processors tokenise no actions (upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE)"
+    ),
+    "xvla_rotation_6d_to_axis_angle": (
+        "which turns an end-effector rotation into axis-angle and the gripper into -1 or 1, and an "
+        "SO-101 takes joint positions: serve an X-VLA fine-tuned in 'auto' mode, whose "
+        "post-processor has no such step (upstream_api.XVLA_LIBERO_ROTATION)"
+    ),
+    **{
+        name: (
+            "which only GR00T N1.5's processors name, and LeRobot 0.6.1 serves GR00T N1.7 alone: "
+            "serve a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+        )
+        for name in up.GROOT_N1_5_STEP_NAMES
+    },
+}
+"""Steps no type may name, each with why in the words its refusal goes on with, refused before
+the sentence that lists what a type allows, since that one would not say what is wrong."""
+REFUSED_TYPES: Mapping[str, str] = {
+    "pi0_fast": (
+        "which turns its answer into actions with the FAST tokenizer's own Python code from the "
+        "Hub, loaded with trust_remote_code=True inside the policy, and quackd runs no code a "
+        "repository brings with it: serve a pi0 or pi05 instead (upstream_api.PI0_FAST_REMOTE_CODE)"
+    ),
+}
+"""Types quackd has read and will not serve, each with why in the words its refusal goes on
+with, refused before anything else of a checkpoint is read."""
+NESTED_STEP_KEYS = ("tokenizer_name", "model_name")
+"""The keys of a step's config that name a model to load from the Hub, a tokenizer each, or
+GR00T's backbone's tokenizer and processors (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`,
+`GROOT_VLM_PROCESSOR`), so `TOKENIZER_FILES` are what is fetched of it."""
+NESTED_CONFIG_KEYS = {"smolvla": ("vlm_model_name",), "groot": ("base_model_path",)}
+"""The keys of `config.json` that name one, by the type that has them: SmolVLA's backbone and
+GR00T's base, which the policy is built from, so `NESTED_FILES` are what is fetched of it. A
 config that leaves one out is refused, because LeRobot fills it with its own default, a Hub
-name it would then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+name it would then load at no revision (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`,
+`GROOT_BASE_MODEL`)."""
 TRUST_KEY = "trust_remote_code"
-NESTED_FILES = ("*.json", "*.txt", "*.model", "*.jinja", "*.safetensors")
-"""What is fetched of a pinned model: configs, tokenizer files and safetensors weights, and
-never a `.py` that remote code would run from, nor a pickle a load would run."""
+TOKENIZER_FILES = ("*.json", "*.txt", "*.model", "*.jinja")
+"""What is fetched of a pinned model a step names: its configs and tokenizer files, which are
+all a tokenizer loads, and never its weights, a `.py` that remote code would run from, nor a
+pickle a load would run."""
+NESTED_FILES = (*TOKENIZER_FILES, "*.safetensors")
+"""What is fetched of a pinned model `config.json` names, one the policy is built from: the
+same, and its safetensors weights."""
 NESTED_DOCS = ("*.md", ".gitattributes")
 """What else a pinned model's directory may hold: a repository's own words about itself, which
 nothing loads."""
 CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
-LENIENT_LOADERS = frozenset({"pi05"})
+ADAPTER_CONFIG = "adapter_config.json"
+"""The file that makes a directory a PEFT adapter. With peft installed, which LeRobot's
+`[groot]` extra brings, transformers building a model from a directory that holds one loads the
+adapter onto it, or, with no `config.json` beside it, loads the base model the adapter names,
+which no pin fixes."""
+LENIENT_LOADERS = frozenset({"pi05", "pi0"})
 """The policy types whose own `from_pretrained` returns the model without its weights when they
-do not load, having printed why (`upstream_api.PI05_FROM_PRETRAINED`)."""
+do not load, having printed why (`upstream_api.PI05_FROM_PRETRAINED`, `PI0_FROM_PRETRAINED`)."""
 MODEL_PREFIX = "model."
-"""What pi05's loader puts in front of each weight's name that lacks it."""
+"""What pi05's and pi0's loaders put in front of each weight's name that lacks it."""
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 """A commit, as the Hub's cache names the directory a revision's files land in."""
 STATE_FILE = re.compile(r"^[\w.\-]+\.safetensors$", re.ASCII)
 """A processor step's `state_file`: a plain file name beside the JSON, never a path."""
-PADDED_TYPES = frozenset({"smolvla", "pi05"})
+PADDED_TYPES = frozenset({"smolvla", "pi05", "pi0", "xvla"})
 """The policy types that run with some of their images missing
 (`upstream_api.MISSING_IMAGES_PADDED`)."""
 
@@ -178,14 +230,17 @@ def _feature(features: Any, key: str) -> tuple[str, tuple[int, ...]] | None:
 def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
     """A checkpoint's `config.json`, checked, or a refusal that says what is wrong with it.
 
-    The policy is a type the server has read the processors of (`upstream_api.POLICY_TYPES`);
-    its inputs are one state and some images, and its output one action
+    The policy is a type the server has read the processors of (`upstream_api.POLICY_TYPES`),
+    and a type it read and will not serve is refused first, saying why (`REFUSED_TYPES`); its
+    inputs are one state and some images, and its output one action
     (`upstream_api.FEATURE_TYPES`, `FEATURE_KEYS`); its chunking fits the protocol; and a policy
     asked every tick is refused without a GPU, since it has to answer inside one
     (`upstream_api.TICK_MODE`)."""
     if not isinstance(config, Mapping):
         raise PipelineRefused(f"{spec}'s {up.CONFIG_FILE} is not a JSON object")
     policy_type = config.get("type")
+    if isinstance(policy_type, str) and policy_type in REFUSED_TYPES:
+        raise PipelineRefused(f"{spec} is a {policy_type!r} policy, {REFUSED_TYPES[policy_type]}")
     if policy_type not in up.SERVED_TYPES:
         raise PipelineRefused(
             f"{spec} is a {policy_type!r} policy, and quackd serves "
@@ -260,16 +315,18 @@ def check_config(config: Any, spec: str, *, gpu: bool) -> Shape:
     )
 
 
-def check_processor(doc: Any, filename: str, spec: str) -> list[dict[str, Any]]:
+def check_processor(doc: Any, filename: str, spec: str, policy_type: str) -> list[dict[str, Any]]:
     """A processor JSON's steps, each checked, or a refusal naming the step that is not allowed.
 
-    A step is named by a registry name in `ALLOWED_STEPS` or it is refused, and a step with a
-    `class` key is refused whatever else it says, because loading one imports that path
+    A step is named by a registry name its type allows (`STEPS_BY_TYPE`) or it is refused, one
+    no type may name with a sentence of its own (`REFUSED_STEPS`), and a step with a `class`
+    key is refused whatever else it says, because loading one imports that path
     (`upstream_api.PROCESSOR_CLASS_IMPORT`). A state file is a plain `.safetensors` name
     beside the JSON."""
     steps = doc.get("steps") if isinstance(doc, Mapping) else None
     if not isinstance(steps, list):
         raise PipelineRefused(f"{spec}'s {filename} is not a processor: it has no list of steps")
+    allowed = STEPS_BY_TYPE[policy_type]
     checked: list[dict[str, Any]] = []
     for n, step in enumerate(steps):
         if not isinstance(step, Mapping):
@@ -282,10 +339,15 @@ def check_processor(doc: Any, filename: str, spec: str) -> list[dict[str, Any]]:
                 "name it has read, and nothing else"
             )
         name = step.get("registry_name")
-        if not isinstance(name, str) or name not in ALLOWED_STEPS:
+        if isinstance(name, str) and name in REFUSED_STEPS:
+            raise PipelineRefused(
+                f"step {n} of {spec}'s {filename} is {name!r}, {REFUSED_STEPS[name]}"
+            )
+        if not isinstance(name, str) or name not in allowed:
             raise PipelineRefused(
                 f"step {n} of {spec}'s {filename} is {str(name)[:80]!r}, which is not one of the "
-                f"processor steps quackd has read and allows: {', '.join(sorted(ALLOWED_STEPS))}"
+                f"processor steps quackd has read and allows for a {policy_type!r} policy: "
+                f"{', '.join(sorted(allowed))}"
             )
         config = step.get("config", {})
         if not isinstance(config, Mapping):
@@ -317,9 +379,7 @@ def nested_models(
                 f"a copy of the checkpoint whose {up.CONFIG_FILE} names it, and pin that with "
                 "--pin REPO@REVISION"
             )
-    named = [(key, config.get(key)) for keys in NESTED_CONFIG_KEYS.values() for key in keys]
-    named += [(key, s["config"].get(key)) for s in steps for key in NESTED_STEP_KEYS]
-    for key, value in named:
+    for key, value, _ in _named(config, steps):
         if value is None:
             continue
         if not isinstance(value, str) or not REPO_ID.match(value):
@@ -329,6 +389,36 @@ def nested_models(
             )
         found.setdefault(value, key)
     return found
+
+
+def _named(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> list[tuple[str, Any, tuple[str, ...]]]:
+    """Every (key, value, what is fetched of it) a checkpoint could name a model by: each key
+    `NESTED_CONFIG_KEYS` has for any type, whatever this config's type, and each of
+    `NESTED_STEP_KEYS` on every step."""
+    named: list[tuple[str, Any, tuple[str, ...]]] = [
+        (key, config.get(key), NESTED_FILES) for keys in NESTED_CONFIG_KEYS.values() for key in keys
+    ]
+    named += [
+        (key, s["config"].get(key), TOKENIZER_FILES) for s in steps for key in NESTED_STEP_KEYS
+    ]
+    return named
+
+
+def nested_patterns(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]]
+) -> dict[str, tuple[str, ...]]:
+    """What is fetched of each model a checkpoint names (`nested_models`), by the keys that name
+    it. One a step names is a tokenizer, so `TOKENIZER_FILES` and no weight, which a tokenizer
+    never loads. One `config.json` names is a model the policy is built from, so `NESTED_FILES`,
+    its weights among them, and a repository named both ways, as SmolVLA's backbone is by its
+    config and by its tokenizer step, gets those."""
+    patterns: dict[str, tuple[str, ...]] = {}
+    for _, value, fetched in _named(config, steps):
+        if isinstance(value, str) and patterns.get(value) != NESTED_FILES:
+            patterns[value] = fetched  # TOKENIZER_FILES is NESTED_FILES without the weights
+    return patterns
 
 
 def pinned_models(nested: Mapping[str, str], pins: Mapping[str, str], spec: str) -> None:
@@ -346,6 +436,221 @@ def pinned_models(nested: Mapping[str, str], pins: Mapping[str, str], spec: str)
                 f"--pin names {repo}, and {spec} names no such model: pin only the models it "
                 f"names{', which are ' + ', '.join(nested) if nested else ', and it names none'}"
             )
+
+
+@dataclass(frozen=True)
+class Family:
+    """What a type's own reading of a checkpoint found, beyond what every type's finds: the 1st
+    and 99th percentiles of the state and the action it learned from, for a type that keeps
+    them where the normaliser's statistics are not (`LeRobotRunner`), or None."""
+
+    state_quantiles: wire.Quantiles | None = None
+    action_quantiles: wire.Quantiles | None = None
+
+
+def check_family(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
+) -> Family:
+    """A checkpoint's config and its processors' steps read the way its own type's code reads
+    them, before any pin is checked or any weight fetched, or a refusal that says what in them
+    could not drive an arm's joints. ACT, SmolVLA, pi05 and pi0 have nothing past what every type
+    is checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
+    if config.get("type") == "xvla":
+        _check_xvla(config, steps, spec)
+    if config.get("type") == "groot":
+        return _check_groot(config, steps, spec)
+    return Family()
+
+
+def _check_xvla(config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str) -> None:
+    """An X-VLA decodes its answer in the space `action_mode` names, lowered, `ee6d` when it
+    names none, and only `auto` is an arm's own joints. Its domain step hands the model a
+    domain, which picks a row of every domain-aware layer, so it is a whole number below
+    `num_domains` (`upstream_api.XVLA_ACTION_MODES`, `XVLA_PROCESSOR_STEPS`)."""
+    mode = config.get("action_mode", up.XVLA_DEFAULT_MODE)
+    if not isinstance(mode, str) or mode.lower() != up.XVLA_SERVED_MODE:
+        raise PipelineRefused(
+            f"{spec} is an X-VLA whose action_mode is {mode!r}, which is not this arm's joints, "
+            f"and quackd serves an X-VLA in {up.XVLA_SERVED_MODE!r} mode "
+            "(upstream_api.XVLA_ACTION_MODES)"
+        )
+    domains = _count(config.get("num_domains", up.XVLA_DEFAULT_DOMAINS))
+    if domains is None:
+        raise PipelineRefused(
+            f"{spec}'s num_domains is {config.get('num_domains')!r}, which is not a count of "
+            "domains (upstream_api.XVLA_PROCESSOR_STEPS)"
+        )
+    for step in steps:
+        if step["registry_name"] != up.XVLA_DOMAIN_STEP:
+            continue
+        domain = step["config"].get("domain_id", up.XVLA_DEFAULT_DOMAIN)
+        if isinstance(domain, bool) or not isinstance(domain, int) or not 0 <= domain < domains:
+            raise PipelineRefused(
+                f"{spec}'s {up.XVLA_DOMAIN_STEP} step hands the model domain {domain!r}, and it "
+                f"has {domains} domains, numbered from 0: serve a checkpoint whose step names one "
+                "of them (upstream_api.XVLA_PROCESSOR_STEPS)"
+            )
+
+
+def _check_groot(
+    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
+) -> Family:
+    """A GR00T N1.7, read as its processors decode it (`upstream_api.GROOT_DECODE`): no N1.5,
+    no LIBERO gripper, a pack step that looks for the cameras its config names, and a decode
+    that answers every action group as joints, unnormalised by statistics it has. A checkpoint
+    that decodes by grouped statistics keeps its frame in its pack step's `raw_stats`, where the
+    normaliser's reading would never find it, so those percentiles are what comes back
+    (`upstream_api.GROOT_PERCENTILE_STATS`)."""
+    base = config.get("base_model_path")
+    n1_5 = isinstance(base, str) and any(mark in base.lower() for mark in up.GROOT_N1_5_BASES)
+    if n1_5 or config.get("tokenizer_assets_repo") is not None:
+        raise PipelineRefused(
+            f"{spec} is a GR00T N1.5 checkpoint, and LeRobot 0.6.1 serves GR00T N1.7 alone: serve "
+            "a GR00T fine-tuned on N1.7 (upstream_api.GROOT_N1_5_REMOVED)"
+        )
+    transform = config.get("action_decode_transform", up.GROOT_AUTO_TRANSFORM)
+    named = transform.lower() if isinstance(transform, str) else transform
+    if named not in (None, "none", "", up.GROOT_AUTO_TRANSFORM, up.GROOT_LIBERO):
+        raise PipelineRefused(
+            f"{spec}'s action_decode_transform is {str(transform)[:80]!r}, which is none LeRobot "
+            "0.6.1 knows (upstream_api.GROOT_DECODE)"
+        )
+    if named == up.GROOT_LIBERO or (
+        named == up.GROOT_AUTO_TRANSFORM
+        and config.get("embodiment_tag") == up.GROOT_LIBERO_EMBODIMENT
+    ):
+        raise PipelineRefused(
+            f"{spec} decodes its gripper with LIBERO's transform, to -1 or 1, and an SO-101's "
+            "gripper takes 0..100: serve a GR00T fine-tuned on this arm's own data "
+            "(upstream_api.GROOT_DECODE)"
+        )
+    pack: Mapping[str, Any] = next(
+        (s["config"] for s in steps if s["registry_name"] == up.GROOT_PACK_STEP), {}
+    )
+    cameras = pack.get("video_modality_keys")
+    images = [k for k in config.get("input_features", {}) if k.startswith(up.IMAGES_PREFIX)]
+    if isinstance(cameras, list):
+        unknown = [str(k) for k in cameras if f"{up.IMAGES_PREFIX}{k}" not in images]
+        if unknown:
+            raise PipelineRefused(
+                f"{spec}'s pack step looks for the cameras {', '.join(unknown)[:120]}, which its "
+                f"{up.CONFIG_FILE} names no image for, so the model would see other views than it "
+                "learned on: serve a checkpoint whose config names every camera its pack step "
+                "does (upstream_api.GROOT_IMAGE_FALLBACK)"
+            )
+    decoders = [
+        s
+        for s in steps
+        if s["registry_name"] in (up.GROOT_DECODE_STEP, up.GROOT_DATASET_DECODE_STEP)
+    ]
+    still = (
+        "so it would hand back its actions still normalised to -1..1, which the arm would take as "
+        "degrees: serve a checkpoint saved with its statistics (upstream_api.GROOT_DECODE)"
+    )
+    if not decoders:
+        raise PipelineRefused(
+            f"{spec}'s post-processor has no step that decodes GR00T's actions, {still}"
+        )
+    for step in decoders:
+        decode = step["config"]
+        if step["registry_name"] == up.GROOT_DATASET_DECODE_STEP:
+            if step["state_file"] is None or decode.get("normalize_min_max", True) is not True:
+                raise PipelineRefused(
+                    f"{spec}'s {up.GROOT_DATASET_DECODE_STEP} step keeps no statistics to "
+                    f"unnormalise with, {still}"
+                )
+            continue
+        raw, modalities = decode.get("raw_stats"), decode.get("modality_config")
+        if not isinstance(raw, Mapping) or not isinstance(modalities, Mapping):
+            raise PipelineRefused(
+                f"{spec}'s {up.GROOT_DECODE_STEP} step names no raw_stats or modality_config, "
+                f"{still}"
+            )
+        action = modalities.get("action")
+        action = action if isinstance(action, Mapping) else {}
+        groups, kinds = action.get("modality_keys"), action.get("action_configs")
+        if not isinstance(groups, list) or not isinstance(kinds, list) or not groups:
+            raise PipelineRefused(
+                f"{spec}'s {up.GROOT_DECODE_STEP} step names no action groups to decode, {still}"
+            )
+        joints = "and quackd serves a GR00T whose every action group is joints (NON_EEF)"
+        for n, group in enumerate(groups):
+            kind = kinds[n] if n < len(kinds) and isinstance(kinds[n], Mapping) else {}
+            said = str(kind.get("type")).lower()
+            if said == up.GROOT_EEF:
+                raise PipelineRefused(
+                    f"{spec} decodes {str(group)[:80]} as an end-effector pose (EEF), {joints} "
+                    "(upstream_api.GROOT_DECODE)"
+                )
+            if said != up.GROOT_NON_EEF:
+                raise PipelineRefused(
+                    f"{spec} gives its action group {str(group)[:80]} the type "
+                    f"{str(kind.get('type'))[:40]!r}, which is not joints, {joints} "
+                    "(upstream_api.GROOT_DECODE)"
+                )
+    raw, modalities = pack.get("raw_stats"), pack.get("modality_config")
+    if not isinstance(raw, Mapping) or not isinstance(modalities, Mapping):
+        return Family()
+    return Family(
+        state_quantiles=_grouped_quantiles(raw, modalities, "state"),
+        action_quantiles=_grouped_quantiles(raw, modalities, "action"),
+    )
+
+
+def _grouped_quantiles(
+    raw: Mapping[str, Any], modalities: Mapping[str, Any], modality: str
+) -> wire.Quantiles | None:
+    """The 1st and 99th percentiles of `modality`, its groups' joined in `modality_config`'s
+    order as the pack step slices them (`upstream_api.GROOT_PERCENTILE_STATS`), or None where a
+    group lacks either or they are not finite numbers."""
+    section = modalities.get(modality)
+    keys = section.get("modality_keys") if isinstance(section, Mapping) else None
+    stats = raw.get(modality)
+    if not isinstance(keys, list) or not keys or not isinstance(stats, Mapping):
+        return None
+    q01: list[float] = []
+    q99: list[float] = []
+    for key in keys:
+        entry = stats.get(key)
+        low, high = (
+            entry.get(q) if isinstance(entry, Mapping) else None for q in up.QUANTILE_STATS
+        )
+        if not isinstance(low, list) or not isinstance(high, list) or len(low) != len(high):
+            return None
+        for value in (*low, *high):
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                return None
+        q01 += [float(v) for v in low]
+        q99 += [float(v) for v in high]
+    if len(q01) > wire.MAX_MOTORS or not all(math.isfinite(v) for v in q01 + q99):
+        return None
+    return wire.Quantiles(q01=q01, q99=q99)
+
+
+def check_groot_base(
+    hub: Hub, config: Mapping[str, Any], pins: Mapping[str, str], spec: str
+) -> None:
+    """A GR00T's pinned base, its `config.json` read before any weight: LeRobot builds the
+    backbone from a config of its own only while the base names that backbone, and fetches any
+    other as an AutoConfig trusting its repository's code, at no revision
+    (`upstream_api.GROOT_BASE_MODEL`)."""
+    base = str(config.get("base_model_path"))
+    revision = pins[base]
+    path = hub.file(base, revision, up.CONFIG_FILE)
+    if path is None:
+        raise PipelineRefused(
+            f"{base}@{revision}, {spec}'s base_model_path, has no {up.CONFIG_FILE}, so it is not a "
+            "GR00T N1.7 quackd can build from: pin nvidia/GR00T-N1.7-3B at a commit you have read"
+        )
+    said = _json(path, f"{base}@{revision}'s {up.CONFIG_FILE}")
+    backbone = said.get("model_name", up.GROOT_BACKBONE) if isinstance(said, Mapping) else None
+    if backbone != up.GROOT_BACKBONE:
+        raise PipelineRefused(
+            f"{base}@{revision}'s {up.CONFIG_FILE} names {str(backbone)[:80]!r} as its backbone, "
+            "which LeRobot would fetch at no revision and load trusting its repository's code: "
+            f"serve a GR00T whose base is built on {up.GROOT_BACKBONE}, whose config LeRobot "
+            "carries (upstream_api.GROOT_BASE_MODEL)"
+        )
 
 
 # ── fetching ────────────────────────────────────────────────────────────────────────────
@@ -378,7 +683,8 @@ def _one_line(error: BaseException) -> str:
 
 class HubFetch:
     """The Hub, through huggingface_hub's own cache, at a revision always. With `HF_HUB_OFFLINE`
-    set it answers from that cache alone, which is how CI's torch job runs."""
+    set it answers from that cache alone, a pinned model's snapshot included, which is how CI's
+    torch job runs."""
 
     def file(
         self, repo: str, revision: str, filename: str, *, dataset: bool = False
@@ -408,10 +714,19 @@ class HubFetch:
             ) from None
 
     def snapshot(self, repo: str, revision: str, patterns: Sequence[str]) -> Path:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import constants, snapshot_download
 
         try:
-            return Path(snapshot_download(repo, revision=revision, allow_patterns=list(patterns)))
+            # offline, the cache's own files: left to itself, snapshot_download asks the Hub for
+            # a commit's file list it has not cached, offline or not
+            return Path(
+                snapshot_download(
+                    repo,
+                    revision=revision,
+                    allow_patterns=list(patterns),
+                    local_files_only=constants.HF_HUB_OFFLINE,
+                )
+            )
         except Exception as e:
             raise PipelineRefused(
                 f"{repo}@{revision} could not be fetched: {_one_line(e)}"
@@ -481,12 +796,15 @@ def _json(path: Path, what: str) -> Any:
 def check_pinned(directory: Path, spec: str) -> None:
     """A pinned model's directory as it is handed to the build, checked, or a refusal.
 
-    What was fetched of it is `NESTED_FILES` alone, but the Hub's cache keeps one directory per
-    commit, and it holds whatever was fetched at that commit before, a `.py` or a pickle
+    What was fetched of it is `NESTED_FILES` at most, but the Hub's cache keeps one directory
+    per commit, and it holds whatever was fetched at that commit before, a `.py` or a pickle
     included. So every file in it is one `NESTED_FILES` or `NESTED_DOCS` names, and no JSON in
     it maps a class to code (`CODE_MAP_KEY`), which is what would have transformers ask to run
     a repository's own code: SmolVLA's build asks for its backbone without saying
-    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
+    `trust_remote_code` either way (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`). Nor does it
+    hold a PEFT adapter (`ADAPTER_CONFIG`), whose files are JSON and safetensors as a model's
+    are, and which the build would load onto the model, or swap the model for a base no pin
+    names."""
     fresh = (
         "point HF_HUB_CACHE at a cache that has not fetched this revision before, or delete "
         f"{directory} and serve again"
@@ -498,6 +816,13 @@ def check_pinned(directory: Path, spec: str) -> None:
                 f"{spec} in this machine's Hub cache holds {name[:80]!r}, which is not a "
                 "config, a tokenizer file or safetensors, and could be code or a pickle a "
                 f"load would run: {fresh}"
+            )
+        if name == ADAPTER_CONFIG:
+            raise PipelineRefused(
+                f"{spec} holds a PEFT adapter ({name}), which transformers loads onto a model it "
+                "builds from that directory, or, with no config.json beside it, loads the base "
+                "model the adapter names in its place, which no pin fixes: pin a model with the "
+                "adapter merged into its weights"
             )
         said = _json(path, f"{spec}'s {name}") if name.endswith(".json") else None
         if isinstance(said, Mapping) and CODE_MAP_KEY in said:
@@ -603,6 +928,10 @@ class Checkpoint:
     post_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     config_overrides: dict[str, Any] = field(default_factory=dict)
     loaded: tuple[str, ...] = ()
+    state_quantiles: wire.Quantiles | None = None
+    action_quantiles: wire.Quantiles | None = None
+    """The percentiles the checkpoint's type keeps where the normaliser's are not (`Family`),
+    which `LeRobotRunner` reports in their place, or None for the normaliser's."""
 
 
 def _overrides(
@@ -652,8 +981,10 @@ def fetch_checkpoint(
     steps: dict[str, list[dict[str, Any]]] = {}
     for filename in (up.PREPROCESSOR_FILE, up.POSTPROCESSOR_FILE):
         path = _required(hub, repo, revision, filename, beside=directory)
-        steps[filename] = check_processor(_json(path, f"{spec}'s {filename}"), filename, spec)
+        doc = _json(path, f"{spec}'s {filename}")
+        steps[filename] = check_processor(doc, filename, spec, shape.policy_type)
     every = steps[up.PREPROCESSOR_FILE] + steps[up.POSTPROCESSOR_FILE]
+    family = check_family(config, every, spec)
     nested = nested_models(config, every, spec)
     pinned_models(nested, pinned, spec)
     for m in nested:
@@ -664,13 +995,16 @@ def fetch_checkpoint(
             "--pin names",
             "pin a whole commit you have read, or a tag with the Hub in reach",
         )
+    if shape.policy_type == "groot":
+        check_groot_base(hub, config, pinned, spec)
     rate, source, rate_loaded = resolve_rate(fps, repo, revision, hub)
     # the code-free part is checked: now the weights, the processors' state and the models
     _required(hub, repo, revision, up.WEIGHTS_FILE, beside=directory)
     for step in every:
         if step["state_file"] is not None:
             _required(hub, repo, revision, step["state_file"], beside=directory)
-    fetched = {m: hub.snapshot(m, pinned[m], NESTED_FILES) for m in nested}
+    patterns = nested_patterns(config, every)
+    fetched = {m: hub.snapshot(m, pinned[m], patterns[m]) for m in nested}
     for m, where in fetched.items():
         check_pinned(where, f"{m}@{pinned[m]}")
     config_overrides: dict[str, Any] = {"device": device}
@@ -700,6 +1034,8 @@ def fetch_checkpoint(
             *rate_loaded,
             *(f"{nested[m]} {_landed(f'{m}@{pinned[m]}', fetched[m], pinned[m])}" for m in nested),
         ),
+        state_quantiles=family.state_quantiles,
+        action_quantiles=family.action_quantiles,
     )
 
 
@@ -775,9 +1111,16 @@ class LeRobotRunner:
         self.threads = threads
         self.gpu = checkpoint.device != "cpu"
         self.loaded = checkpoint.loaded
-        self.state_quantiles = _quantiles(preprocessor.steps, up.STATE_KEY)
-        self.action_quantiles = _quantiles(
-            [*preprocessor.steps, *postprocessor.steps], up.ACTION_KEY
+        # a type that keeps its percentiles elsewhere says so in the checkpoint (`Family`)
+        self.state_quantiles = (
+            checkpoint.state_quantiles
+            if checkpoint.state_quantiles is not None
+            else _quantiles(preprocessor.steps, up.STATE_KEY)
+        )
+        self.action_quantiles = (
+            checkpoint.action_quantiles
+            if checkpoint.action_quantiles is not None
+            else _quantiles([*preprocessor.steps, *postprocessor.steps], up.ACTION_KEY)
         )
         self._policy = policy
         self._pre = preprocessor
@@ -895,10 +1238,10 @@ def build_policy(policy_class: Any, where: Path, config: Any) -> Any:
     into it and none left as it was built, or the error that says why not.
 
     LeRobot's own loader only logs a weight the file lacks or one it has that the model does
-    not (`upstream_api.POLICY_FROM_PRETRAINED`), so it is asked to be strict. pi05's goes
-    further and hands back the model with none of its weights when they do not load
-    (`upstream_api.PI05_FROM_PRETRAINED`), so a pi05's weights are loaded here as that loader
-    loads them, its own key fixes and all, with nothing caught."""
+    not (`upstream_api.POLICY_FROM_PRETRAINED`), so it is asked to be strict. pi05's and pi0's
+    go further and hand back the model with none of its weights when they do not load
+    (`upstream_api.PI05_FROM_PRETRAINED`, `PI0_FROM_PRETRAINED`), so their weights are loaded
+    here as those loaders load them, their own key fixes and all, with nothing caught."""
     if config.type not in LENIENT_LOADERS:
         return policy_class.from_pretrained(str(where), config=config, strict=True)
     from safetensors.torch import load_file
@@ -973,8 +1316,9 @@ def load(
 
 
 __all__ = [
-    "ALLOWED_STEPS",
+    "STEPS_BY_TYPE",
     "Checkpoint",
+    "Family",
     "Hub",
     "HubFetch",
     "LeRobotRunner",
@@ -983,12 +1327,15 @@ __all__ = [
     "build_policy",
     "camera_map",
     "check_config",
+    "check_family",
     "check_fixed",
+    "check_groot_base",
     "check_pinned",
     "check_processor",
     "fetch_checkpoint",
     "load",
     "nested_models",
+    "nested_patterns",
     "parse_pins",
     "parse_repo",
     "pinned_models",

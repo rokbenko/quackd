@@ -144,20 +144,23 @@ jobs:
         # nightly `lerobot-sim-assets` job runs them the same way.
         run: uv run pytest tests/test_sim3d.py tests/test_acceptance_mujoco.py tests/test_lerobot_sim.py tests/test_lerobot_sim_parity.py tests/test_preflight.py -m "not real_duck and not so101_model"
 
-  # The one place CI loads a LeRobot checkpoint: a tiny random ACT, built by the test from
+  # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which
   # the server has to build without, and both processors saved, put in a Hub cache of its own
   # at a commit and a tag, and served with the Hub and torchvision offline by the real policy
-  # server to the real client and an arm behind it (tests/test_policy_pipeline.py). It is what
-  # POLICY_PIPELINE's VERIFIED rests on, for ACT on the CPU and nothing more.
+  # server to the real client and an arm behind it, and a tiny random X-VLA beside it, its
+  # Florence-2 described in its config and a tokenizer of a few words pinned at a commit in a
+  # cache of its own (tests/test_policy_pipeline.py). They are what POLICY_PIPELINE's VERIFIED
+  # rests on, for those two types on the CPU and nothing more.
   #
   # torch comes from its CPU wheel index first, because this runner has no GPU and the default
   # wheels carry CUDA's gigabytes, and LeRobot after it, at the version policy/upstream_api.py
-  # was read at, which keeps the torch already there. `--no-sync` from then on, or `uv run`
+  # was read at, with its X-VLA extra for transformers, which keeps the torch already there.
+  # `--no-sync` from then on, or `uv run`
   # would sync them both away again. Not a matrix: nothing here differs by platform that the
   # default suite does not already run six times.
   policy:
-    name: policy · torch cpu + lerobot, a tiny ACT offline
+    name: policy · torch cpu + lerobot, a tiny ACT and a tiny X-VLA offline
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -177,9 +180,9 @@ jobs:
       - name: torch from its CPU wheel index, then LeRobot 0.6.1
         run: |
           uv pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.7,<2.12" "torchvision>=0.22,<0.27"
-          uv pip install "lerobot==0.6.1"
+          uv pip install "lerobot[xvla]==0.6.1"
       - name: Prove the imports before blaming the pipeline
         run: |
-          uv run --no-sync python -c "import torch, lerobot; from lerobot.policies.act.modeling_act import ACTPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'cuda', torch.cuda.is_available())"
-      - name: A tiny ACT through the real server, and the protocol with torch installed
+          uv run --no-sync python -c "import torch, lerobot, transformers; from lerobot.policies.act.modeling_act import ACTPolicy; from lerobot.policies.xvla.modeling_xvla import XVLAPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
+      - name: A tiny ACT and a tiny X-VLA through the real server, and the protocol with torch installed
         run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py
