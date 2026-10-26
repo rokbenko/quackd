@@ -8,10 +8,10 @@ Rok asked on 2026-10-25 for a command line that answers as close to real time as
 research on a demo in which a decision model picked one of a duck's trained moves in a fraction
 of a second. quackd had no path from a person's command to a verb. `quackd run` is one serial
 loop, observe, a model call, a verb, observe again, and on the README's arm run the body first
-moved on the third model call, after 23.2 seconds of them. A person who says "forward" has already chosen
-the call, and a model asked to choose it again adds seconds and a bill and nothing else. Most
-commands a person gives a body name one of its verbs, a value or two, or a walk. The rest are
-goals with several steps in them, which is what the pilot is for.
+moved on the third model call, after 23.2 seconds of them. A person who says "forward" has
+already chosen the call, and a model asked to choose it again adds seconds and a bill and
+nothing else. Most commands a person gives a body name one of its verbs, a value or two, or a
+walk. The rest are goals with several steps in them, which is what the pilot is for.
 
 ## Decision
 
