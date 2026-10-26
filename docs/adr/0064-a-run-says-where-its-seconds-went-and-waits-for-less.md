@@ -44,11 +44,11 @@ the robot asks first, how long it took to do anything at all, was in no field.
    and `run_start.pilot_warm` says what became of it.
 6. **A pilot call is raced against the task's minutes.** `max_minutes` was read only once an
    answer came back, so a call that hung held the robot past the task's whole budget for as long
-   as the vendor's own clock allowed, ten minutes on both SDKs. A third waiter beside the call
+   as its SDK allowed, ten minutes on Anthropic's and OpenAI's. A third waiter beside the call
    and the stop reads the budget's own clock every heartbeat period, and once the minutes are
    spent the call is cancelled, its `llm` record says so, it is not asked again, and the run ends
-   on its budget. On a simulator that clock stands still while a model thinks, so a simulated
-   run is never cut off there.
+   on its budget. On a simulator or a mock that clock stands still while a model thinks, so a
+   run on either is never cut off there.
 7. **Shadow asks the stepper beside the model's call.** In shadow the stepper's answer changes
    nothing about a turn, so its request goes out with the model's, from the moment the model's
    call is made, and is settled once the model's answer is on the record: awaited, raced against
