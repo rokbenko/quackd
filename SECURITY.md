@@ -350,10 +350,14 @@ Also in scope:
   any other address, the rest of 127/8 included, unless `--behind-tls` says a TLS proxy stands
   in front of it. A token is always required: with no `--token-file` it writes one to
   `~/.quackd/policy.token`, readable by its owner alone where the OS allows, and a named file
-  that is missing, unreadable or empty refuses to start. The token is read from the
-  `X-Quackd-Token` header only and compared with `hmac.compare_digest`, a request without it is
-  refused on its headers alone, and what a client can make it hold is bounded as the Jetson host
-  daemon bounds it, plus a cap on a request's body. Both ends refuse a token shorter than 16
+  that is missing, unreadable or empty refuses to start, as does a `--token-env` variable that
+  holds none. The token is read from the `X-Quackd-Token` header only and compared with
+  `hmac.compare_digest`, a request without it is refused on its headers alone, and what a client
+  can make it hold is bounded as the Jetson host daemon bounds it, plus a cap on a request's
+  body. The one route answered without it is `GET /v1/health`, which says whether the server
+  serves and nothing more, for a platform's readiness probe, and reads no body and touches no
+  session. A request that carries an `Authorization` header is logged once, as a warning, and the
+  header's value never. Both ends refuse a token shorter than 16
   characters or with whitespace inside it, without quoting it. Every number in a message is
   checked to be finite on both sides, what a server says about itself in words is printable
   ASCII or refused, a reset from a second client is refused while another client's session is in
@@ -386,6 +390,42 @@ Also in scope:
   still would, with none of the checks above and no check at connect, as the `LOAD_POLICY` row in
   [docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-061)
   says. Whether to remove it is an open item in PLAN.md.
+- **The policy server on a Hugging Face Endpoint** (`quackd policy endpoint`,
+  `adapters/lerobot/src/quackd_lerobot/policy/endpoint.py`,
+  [docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint)), which rents a
+  GPU that bills by the hour and runs that same server on it. quackd has never created one: it
+  has run against the test suite's stand-ins alone. It asks before it creates, resumes or wakes
+  one, and with no terminal and no `--yes` it refuses before anything exists. The endpoint is
+  `authenticated`, which Hugging Face's own page says any Hugging Face account can reach, so the
+  lock is the server's own token, made by quackd and sent only as the endpoint's secret
+  `QUACKD_POLICY_TOKEN` and kept in `~/.quackd/endpoints.json`, readable by its owner alone where
+  the OS allows. The account's Hugging Face token goes to huggingface.co and
+  api.endpoints.huggingface.cloud, to manage the account's endpoints, and as the bearer to the one
+  endpoint address that machine's `up` recorded, whose whole authority has to be an endpoint's,
+  over https on port 443, and only once the API, asked with that token, has said the endpoint by
+  that name on the recorded account carries the tags `up` gave it, quackd's and one made from the
+  record's token that no other endpoint carries, at that address. The record is a file in the
+  registry's directory, which a project's `.env` can name with `QUACKD_REGISTRY_DIR`, and it
+  outlives an endpoint deleted on huggingface.co, so whatever record is read, the token goes to no
+  address the API has not confirmed, and `up`, `pause` and `delete` make the same read and leave
+  alone an endpoint it does not confirm. That read trusts Hugging Face to answer for an account's
+  endpoints only to that account and the members of its organisations, which nothing it publishes
+  says (the `NAMESPACE_READS` row of
+  [the endpoint's table](docs/adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints)),
+  so an organisation the account belongs to is trusted as the account is. A project's `.env` that
+  sets `HF_TOKEN` as well, where the shell sets none, makes its own account the one asked and its
+  endpoint the one a run reaches: the user's own token is still sent nowhere, but the arm is
+  driven by that endpoint's policy and its frames go there, so a cloned project's `.env` is
+  trusted as the shell is. The token goes to nothing else: not into the endpoint, not to PyPI and
+  not to the price list, which is asked with no token. No variable moves where it is sent. A Hub
+  token for a gated checkpoint, named by `--hub-token-from`, goes only into the endpoint's secrets
+  and to huggingface.co, and is refused when it is the account's own. A record whose address is
+  not an endpoint's is refused, and every log line or refusal quoted has every token taken out.
+  What would be a security issue: the account's token reaching any other host, an address the API
+  has not confirmed, the endpoint, a record or the terminal, the server's token reaching a URL, a
+  run's record or the terminal, an endpoint created, resumed or woken by `up` without a yes, or
+  resumed, paused or deleted when quackd did not start it, created `public` or with more than one
+  replica, or one that never scales to zero.
 - **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
   `hmac.compare_digest`, but a token is only required if one is configured, and binding it

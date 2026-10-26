@@ -3091,6 +3091,71 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
 | `LOAD_POLICY` | `load_policy()` in the arm's backend builds a policy in the arm's own process, the one no checkpoint is to load in, and hands the pre-processor a raw observation `build_inference_frame` would have shaped first. Nothing calls it and nothing has run it. What reaches the arm from any policy is quackd's rule: the verbs' step cap, and a goal outside the travel clipped and counted, unlike a verb's goal, which is refused |
 
+## The endpoint's upstream: Hugging Face Inference Endpoints
+
+`quackd policy endpoint` starts [the policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve)
+on a Hugging Face Inference Endpoint, a GPU rented by the hour behind Hugging Face's proxy, and a
+run reaches it with `--policy-url hf:NAME`
+([guides/policies.md](../../guides/policies.md#on-a-hugging-face-endpoint)). The names it relies
+on were read on 2026-10-25 from the API's own
+[OpenAPI document](https://api.endpoints.huggingface.cloud/openapi.json), version 2.0.0 that day,
+from Hugging Face's pages about the service, from uv's and PyPI's documentation for what a
+container installs, and from huggingface_hub 1.29.0, the version `uv.lock` holds, at the commit
+its tag names,
+[`4237d95`](https://github.com/huggingface/huggingface_hub/tree/4237d95c603db491cb1070898c74c97e4d7c2582)
+(`v1.29.0`). Every file of huggingface_hub's these rows cite was compared with the installed
+wheel's that day and was the same. Every name lives in
+[`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
+
+**quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
+`--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and the
+container on 127.0.0.1 alone, with a scripted policy behind them
+([tests/fake_hugging_face.py](../../../tests/fake_hugging_face.py)), and nothing was paid for.
+The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
+worst: quackd's own token on the server is the lock, whatever the proxy in front does.
+
+### VERIFIED (read on the day from the API, Hugging Face's pages and huggingface_hub 1.29.0)
+
+| Name | Why quackd relies on it |
+|---|---|
+| `GET /v2/provider` | the one route that wants no token. It lists every compute with its price an hour, its accelerator and its status, so quackd reads it with none, for the price the confirmation quotes and to refuse an instance that is not a GPU |
+| `POST and GET /v2/endpoint/{namespace}; GET and DELETE /v2/endpoint/{namespace}/{name}; POST /v2/endpoint/{namespace}/{name}/pause, /resume and /scale-to-zero; GET /v2/endpoint/{namespace}/{name}/logs` | create, list, read, delete, pause and resume an endpoint, and the last lines of its log, each with the account's token. The list is filtered by quackd's own tag, `quackd-policy` |
+| `GET /v2/provider/quotas/{namespace}` | an instance type the account has no room left on is refused before anything is created |
+| `lower-case letters, digits and '-', 32 characters at most` | an endpoint's name, the NAME of `hf:NAME`, and any other is refused before Hugging Face is asked anything |
+| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else, and huggingface_hub's `protected` is the deprecated name for it |
+| `Authenticated: anyone with a Hugging Face account` | the configuration page's words for who reaches an `authenticated` endpoint, so the proxy keeps out only somebody with no account, and the lock on the server is quackd's own token |
+| `"pending", "initializing", "updating", "updateFailed", "running", "paused", "failed", "scaledToZero"` | an endpoint's states. `up` waits through the first two, pauses one that fails, wakes one at zero with a request and resumes one that is paused |
+| `Endpoint: name, type, provider {vendor, region}, compute {accelerator, instanceType, instanceSize, scaling {minReplica, maxReplica, scaleToZeroTimeout}}, model {repository, revision, framework, image {custom {url, port, healthRoute}}, env, secrets, command, args}, tags` | the body an endpoint is created from: one replica at most, scaled to zero when idle, uv's image running `uvx` to install this quackd's release and `quackd policy serve` behind the proxy's TLS |
+| `model.secrets: secret environment variables, encrypted at rest` | where the server's token goes, as `QUACKD_POLICY_TOKEN`, and a Hub token for a gated checkpoint, as `HF_TOKEN`. The account's own token never goes into an endpoint |
+| `compute.scaling.scaleToZeroTimeout: minutes of inactivity before scaling to zero, with minReplica 0` | `--idle-minutes`, 15 unless told, from 15 to 720, as the autoscaling page offers. The API and the page disagree on the default, so quackd always sends one, and never none |
+| `billed while initializing and running, by the minute` | what the confirmation says an endpoint costs, and that it bills nothing paused or scaled to zero |
+| `status.url: https://<id>.endpoints.huggingface.cloud` | the address an endpoint is reached at, the shape the client holds a bearer to, and the one address the account's token goes to once `up` has recorded it |
+| `a readiness probe asks the container's health route every second` | why the server's `GET /v1/health` needs no token: nothing says the probe holds one |
+| `POST .../resume on a running endpoint answers 400 'already running'` | taken as no error, as huggingface_hub takes it |
+| `InferenceEndpoint.wait(timeout=None, refresh_every=5)` | `up` reads the endpoint every 5 s until it is running with an address, as huggingface_hub does, then asks the server's own health route there |
+| `HF_TOKEN, then HUGGING_FACE_HUB_TOKEN, then the file HF_TOKEN_PATH names, $HF_HOME/token by default` | where the account's token is found, as huggingface_hub finds it, and nothing more: no OIDC exchange, no Colab vault, and never `HF_ENDPOINT`, since no variable moves where quackd sends it |
+| `GET https://huggingface.co/api/whoami-v2` | the account a token belongs to, which is the namespace an endpoint is created in unless one is named. It is rate limited on purpose, so `up` asks it once |
+| `GET https://huggingface.co/api/models/{repo}/revision/{revision}` | whether a checkpoint or a `--pin` is gated or private, which `up` refuses without a `--hub-token-from` before anything is created |
+| `GET https://huggingface.co/{repo}/raw/{revision}/config.json` | the checkpoint's config, read and checked as the server would check it on a GPU, before an endpoint exists to fail on it |
+| `GET https://pypi.org/pypi/{project}/{version}/json: urls[].upload_time_iso_8601` | a quackd that is not a release on PyPI is refused, and the container's `--exclude-newer` is set an hour after the release's last file |
+| `uvx --exclude-newer: an RFC 3339 timestamp, compared with each file's upload time` | every start of an endpoint, the first and one a month later from zero, resolves the same torch and transformers |
+| `ghcr.io/astral-sh/uv:{major}.{minor}.{patch}-python3.12-trixie-slim` | the image the container runs, uv 0.13.5's by its digest. Debian's tags have been trixie since uv 0.10.0, and no bookworm tag has been published since 0.9.30 |
+
+### UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)
+
+| Name | What quackd does |
+|---|---|
+| `AUTHORIZATION_FORWARDED` | whether the proxy passes a client's `Authorization` header, the account's token, on to the container. The server never reads that header, warns once in its log when one arrives, and wants its own token on every route but its health route either way |
+| `GHCR_PULLS` | that an endpoint pulls a public image from ghcr.io, by its tag and digest, with no credentials. huggingface_hub's own example of a custom image is on ghcr.io, and Hugging Face's custom container page names Docker Hub, ECR, ACR and GCR and not ghcr.io. quackd keeps the same image by the same digest on Docker Hub for the day ghcr.io will not do |
+| `PROXY_WHILE_STARTING` | what the proxy answers while a replica starts: 503 on the autoscaling guide, 502 on an older page. The client says 500, 502, 503 and 504 that are not its server's own as an endpoint not serving, and sends no `X-Scale-Up-Timeout` |
+| `PRIVATE_TYPE` | what a `private` endpoint admits: the account and its organisation alone, as the configuration page has it, or a cloud's private link alone, as an older page has it. quackd creates `authenticated` until a real endpoint tries `private` |
+| `PAUSED_ANSWERS` | what the proxy answers for a paused or a deleted endpoint. The client says any 5xx as not serving and a 404 as gone, and `list` reads the state from the API |
+| `LOGS_BODY` | what the log route answers, which the API's document leaves out. quackd takes a JSON list of entries when it is one and text when not, bounded, scrubbed of both tokens and cut to a few lines |
+| `QUOTA_LISTING` | whether the quota listing names every instance type or only those with quota. A type it names with no room is refused, and one it does not name is left to Hugging Face to refuse |
+| `NAMESPACE_READS` | that the API answers a read of an account's endpoints only to that account's token, or an organisation member's, which its document does not say. A run reads the recorded endpoint first and sends the bearer only to an address the answer confirms, carrying the tags `up` gave it, so a planted record naming another account's endpoint is refused while this holds and the account's own token is the one asking. A `.env` that sets `HF_TOKEN` as well makes its account the one asking, and its endpoint the one a run reaches, with its token and never this one's. An organisation the account belongs to is trusted as the account is |
+| `ADDRESS_KEPT` | that an endpoint keeps its `status.url` for its life, through a pause, a resume and a scale to zero, which the API's document does not say. quackd records the first address it is given and sends the account's token to no other: a run refuses an endpoint the API gives another address, and `up` pauses one whose address changes while it waits. Which endpoint is the record's is told by a tag `up` gives it, not by its address |
+| `GPU_IN_CONTAINER` | that torch from PyPI finds the endpoint's GPU in the container, which a CUDA build newer than the host's driver would not. `up` asks the server whether it has one and pauses an endpoint that has none, quoting its log |
+
 ## Status
 
 `lerobot:mock` runs every arm verb through the executor in the test suite, including the

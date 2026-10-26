@@ -155,6 +155,22 @@ before.
   arm. Since 0.25.0 that block's `async_chunks` says which way the run played its chunks, and
   the checkpoint served with no `--latency-s`, run once as it is and once with
   `--no-async-chunks`, says what 0.25.0's change is worth on the arm.
+- ⬜ **A first real Hugging Face Endpoint.** `quackd policy endpoint` and `--policy-url hf:NAME`
+  have run against the test suite's stand-ins on 127.0.0.1 alone, and no endpoint has been
+  created or paid for ([ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
+  The first one should be an ACT, which needs neither a gated tokenizer nor much of a GPU, on an
+  `nvidia-t4` at $0.50 an hour, with `--idle-minutes 15`, and paused as soon as it has answered,
+  which costs a few cents. It settles what Hugging Face's pages leave out, the UNVERIFIED rows
+  of [the endpoint's table](docs/adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints):
+  whether the proxy passes `Authorization` on to the container, which the server's own log says
+  once if it does; whether an endpoint pulls uv's image from ghcr.io, or needs the same image
+  from Docker Hub; whether the proxy answers 503 or 502 while a replica starts, and what it
+  answers once the endpoint is paused; whether the endpoint keeps its address through that pause
+  and the resume after it, which `up` and a run hold it to; and whether torch finds the GPU. Then
+  `quackd policy check --policy-url hf:NAME --bench`, from the laptop, for the first round trip
+  through an endpoint anybody has timed, and the cold start a wake from zero takes. A second
+  account of yours then settles whether the API keeps one account's endpoints from another's
+  token, which the refusal of a record a project's `.env` planted rests on.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
   with neither a lookout task nor a checklist. A coordinator flock across two machines needs a
   distributed clock first; a pilot flock needs none and has simply never been tried across two.

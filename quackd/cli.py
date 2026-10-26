@@ -262,7 +262,8 @@ _JSON = typer.Option(
 _REGISTRY_DIR = typer.Option(
     None,
     "--registry-dir",
-    help="Where robots.json and flocks.json live (default: $QUACKD_REGISTRY_DIR or ~/.quackd).",
+    help="Where robots.json, flocks.json and endpoints.json live (default: $QUACKD_REGISTRY_DIR "
+    "or ~/.quackd).",
     rich_help_panel="Robot",
 )
 
@@ -1554,6 +1555,7 @@ def _run_impl(
             policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            registry_dir=registry_dir,
         )
     except ValueError as e:
         _fail(str(e))
@@ -3414,7 +3416,8 @@ _POLICY_URL = typer.Option(
     None,
     "--policy-url",
     help="The policy server the arm hands pick and manipulate to, as http://127.0.0.1:PORT, or "
-    "https:// for one behind TLS: the address quackd policy serve printed. A LeRobot arm only, "
+    "https:// for one behind TLS: the address quackd policy serve printed, or hf:NAME for one "
+    "quackd policy endpoint up started on a Hugging Face GPU. A LeRobot arm only, "
     "lerobot:real or lerobot:mujoco, and one robot only. It is asked what it serves before the "
     "arm connects, and the connect checks that the policy fits the arm before any torque. No "
     "variable sets it, so a policy drives the arm only when a command names one.",
@@ -3803,6 +3806,7 @@ def _preflight_impl(
             policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            registry_dir=registry_dir,
         )
     except ValueError as e:
         _fail(str(e))
@@ -4475,7 +4479,8 @@ def serve_mcp(
 policy_app = typer.Typer(
     name="policy",
     help="A learned policy for the arm, in a process of its own: quackd policy serve starts "
-    "one, and quackd policy check asks one what it serves.",
+    "one, quackd policy check asks one what it serves, and quackd policy endpoint starts one "
+    "on a GPU rented from Hugging Face.",
     no_args_is_help=True,
 )
 app.add_typer(policy_app, name="policy", rich_help_panel="Serve")
@@ -4539,6 +4544,44 @@ def _policy_server() -> Any:
     return server
 
 
+def _serve_options(
+    *,
+    policy: str,
+    fps: float | None = None,
+    cameras: str | None = None,
+    latency_s: float | None = None,
+    bind: str = "127.0.0.1",
+    port: int | None = None,
+    token_file: str | None = None,
+    token_env: str | None = None,
+    behind_tls: bool = False,
+    threads: int | None = None,
+    jpeg_quality: int | None = None,
+    pins: Sequence[str] | None = None,
+) -> Any:
+    """`quackd policy serve`'s flags as the `ServeOptions` the server is started with, built in
+    one place. The command builds its own here, and so does anything that has to read a serve
+    command's arguments the way the command reads them: the test suite's stand-in for an
+    endpoint's container parses the arguments `quackd policy endpoint up` gives it with this
+    command's own parser and builds its options here, so what it serves is what the command
+    would. The keywords are the command's own parameters, by the same names."""
+    server = _policy_server()
+    return server.ServeOptions(
+        policy=policy,
+        fps=fps,
+        cameras=cameras,
+        latency_s=latency_s,
+        bind=bind,
+        port=server.wire.DEFAULT_PORT if port is None else port,
+        token_file=token_file,
+        token_env=token_env,
+        behind_tls=behind_tls,
+        threads=threads,
+        jpeg_quality=jpeg_quality,
+        pins=tuple(pins or ()),
+    )
+
+
 @policy_app.command("serve")
 def policy_serve(
     policy: str = typer.Option(..., "--policy", help=_POLICY_HELP),
@@ -4561,6 +4604,13 @@ def policy_serve(
         help="A file holding the token clients must send. Without it, the token in "
         "~/.quackd/policy.token, written there the first time.",
     ),
+    token_env: str | None = typer.Option(
+        None,
+        "--token-env",
+        help="The name of a variable holding the token clients must send, instead of a file: "
+        "how a platform that keeps a container's secrets hands one over. Only the name is "
+        "printed, never what it holds.",
+    ),
     behind_tls: bool = typer.Option(
         False,
         "--behind-tls",
@@ -4573,18 +4623,19 @@ def policy_serve(
 ) -> None:
     """Serve a policy for the arm, in this terminal, until Ctrl+C."""
     server = _policy_server()
-    options = server.ServeOptions(
+    options = _serve_options(
         policy=policy,
         fps=fps,
         cameras=cameras,
         latency_s=latency_s,
         bind=bind,
-        port=server.wire.DEFAULT_PORT if port is None else port,
+        port=port,
         token_file=token_file,
+        token_env=token_env,
         behind_tls=behind_tls,
         threads=threads,
         jpeg_quality=jpeg_quality,
-        pins=tuple(pins or ()),
+        pins=pins,
     )
     try:
         served = server.open_server(options)
@@ -4595,7 +4646,12 @@ def policy_serve(
     info = served.app.info
     rows = [
         ("serving", f"{info.policy} at {served.url}"),
-        ("token", f"{served.token_path} ({how})"),
+        (
+            # the variable's name, and never what it holds
+            ("token", f"from ${served.token_env}")
+            if served.token_env
+            else ("token", f"{served.token_path} ({how})")
+        ),
         ("rate", f"{info.rate_hz:g} Hz, from {info.rate_source}"),
     ]
     if info.loaded:
@@ -4632,8 +4688,8 @@ def policy_check(
     policy_url: str | None = typer.Option(
         None,
         "--policy-url",
-        help="A policy server that is running, as http://127.0.0.1:PORT, or https:// for one "
-        "behind TLS. Instead of --policy.",
+        help="A policy server that is running, as http://127.0.0.1:PORT, https:// for one "
+        "behind TLS, or hf:NAME for one quackd policy endpoint up started. Instead of --policy.",
     ),
     policy_token: str | None = typer.Option(
         None,
@@ -4665,6 +4721,7 @@ def policy_check(
     threads: int | None = _POLICY_THREADS,
     jpeg_quality: int | None = _POLICY_JPEG,
     pins: list[str] | None = _POLICY_PINS,
+    registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Ask a policy what it serves, and with --bench how well it keeps up."""
     if (policy is None) == (policy_url is None):
@@ -4707,6 +4764,7 @@ def policy_check(
         client_token,
         policy_address,
     )
+    from quackd_lerobot.policy.endpoint import reach
     from quackd_lerobot.verbs import JOINTS
 
     served: Any = None
@@ -4729,13 +4787,28 @@ def policy_check(
                 token=secrets.token_hex(32),
             )
             url, token = served.url, served.token
+            runner = RemoteRunner(url, token=token, motors=JOINTS)
+        elif reached := reach(
+            str(policy_url), policy_token=policy_token, registry_dir=registry_dir
+        ):
+            # an endpoint this machine started: its record's address and token, and the
+            # account's token as the bearer for Hugging Face's proxy
+            url = reached.url
+            runner = RemoteRunner(
+                url,
+                token=reached.token,
+                motors=JOINTS,
+                bearer=reached.bearer,
+                endpoint=reached.endpoint,
+            )
         else:
             url = str(policy_url)
             policy_address(url)  # a URL that will be refused is said before a missing token
-            token = client_token(policy_token)
-        runner = RemoteRunner(url, token=token, motors=JOINTS)
+            runner = RemoteRunner(url, token=client_token(policy_token), motors=JOINTS)
         info = runner.policy()
         where = f"served here for the check, at {url}" if served is not None else runner.url
+        if runner.endpoint is not None:
+            where = f"{runner.endpoint} at {runner.url}"
         ui.console.print(Text(f"  {where}", style=ui.STYLES["muted"]), soft_wrap=True)
         ui.console.print(ui.kv_grid(server.describe(info)), soft_wrap=True)
         if bench:
@@ -4752,6 +4825,659 @@ def policy_check(
             runner.close()
         if served is not None:
             served.close()
+
+
+# ── policy endpoint (the policy server on a GPU rented from Hugging Face) ───────────────
+
+endpoint_app = typer.Typer(
+    name="endpoint",
+    help="The policy server on a Hugging Face Inference Endpoint, a GPU rented by the hour, "
+    "which quackd starts for you: up starts or wakes one and waits until it serves, list says "
+    "what this machine started, pause stops its bill, and delete removes it. A run reaches one "
+    "with --policy-url hf:NAME. Your Hugging Face token is HF_TOKEN, or hf auth login's.",
+    no_args_is_help=True,
+)
+policy_app.add_typer(endpoint_app, name="endpoint")
+
+_ENDPOINT_DEFAULTS = {"instance": "nvidia-l4", "vendor": "aws", "region": "us-east-1"}
+"""Where `up` rents its GPU unless told: an L4 with 24 GB in AWS's us-east-1, Rok's choice of
+2026-10-25, at the price `/v2/provider` gives it on the day."""
+_IDLE_MINUTES = 15
+_WAIT_MINUTES = 30.0
+_ENDPOINT_NAME = typer.Argument(
+    ...,
+    metavar="NAME",
+    help="The endpoint's name, as Hugging Face names one: lower-case letters, digits and "
+    "hyphens, 32 at most. A run reaches it as --policy-url hf:NAME.",
+)
+_ROW_KEY = 7
+"""How wide `up`'s row keys are padded, the longest of them, so rows printed one at a time as
+they happen line up as one grid would."""
+
+
+def _endpoints() -> Any:
+    """`quackd_lerobot.policy.endpoint`, imported only when an endpoint command runs, or a
+    failure that names the extra that installs it."""
+    try:
+        from quackd_lerobot.policy import endpoint
+    except ImportError:
+        from quackd.adapters.base import AdapterNotInstalled
+
+        _fail(str(AdapterNotInstalled("lerobot", "quackd[lerobot]")))
+    return endpoint
+
+
+def _endpoint_row(key: str, value: str) -> None:
+    ui.console.print(ui.kv_grid([(key.ljust(_ROW_KEY), value)]), soft_wrap=True)
+
+
+def _endpoint_note(text: str) -> None:
+    ui.console.print(Text(f"  {text}", style=ui.STYLES["muted"]), soft_wrap=True)
+
+
+def _home_relative(path: Path) -> str:
+    """`path` as `~/...` when it is under the home directory, which is how the pages name the
+    files quackd keeps there, and whole otherwise."""
+    try:
+        return "~/" + path.resolve().relative_to(Path.home().resolve()).as_posix()
+    except (ValueError, OSError, RuntimeError):
+        return str(path)
+
+
+def _since(seconds: float) -> str:
+    whole = max(0, round(seconds))
+    if whole < 60:
+        return f"{whole} s"
+    return f"{whole // 60} min {whole % 60} s"
+
+
+def _endpoint_client(ep: Any) -> Any:
+    """The account's endpoint client, or a failure saying where to put the token."""
+    try:
+        found = ep.hf_token()
+    except ValueError as e:
+        _fail(str(e))
+    if found is None:
+        _fail(str(ep.no_token()))
+    return ep.HFEndpoints(found[0])
+
+
+def _ask_or_refuse(question: str, yes: bool) -> None:
+    """`question` put to the person at the terminal, unless `--yes` answered it, and a refusal
+    before anything is started where there is nobody to ask: an endpoint bills by the hour."""
+    if yes:
+        return
+    if not _can_prompt():
+        _fail(
+            "quackd policy endpoint up starts a GPU that bills by the hour, and there is no "
+            "terminal to ask before it does: run it at one, or pass --yes",
+        )
+    with ui.pause_status():
+        if not typer.confirm(question, default=False):
+            raise typer.Exit(code=1)
+
+
+def _changed_flags(given: dict[str, tuple[Any, Any]]) -> list[str]:
+    """The flags given to `up` for an endpoint that exists which say other than what it was
+    created with, as (given, recorded) by flag, None where a flag was not given. There is no
+    update: an endpoint serves what it was started with."""
+    return [flag for flag, (now, then) in given.items() if now is not None and now != then]
+
+
+def _paused_and_quoted(ep: Any, api: Any, record: Any, why: str) -> None:
+    """Pause an endpoint that cannot serve, quote the last of its log, and fail saying why and
+    how its bill stands (`endpoint.pause_and_quote`)."""
+    lines, bill = ep.pause_and_quote(api, record)
+    if lines:
+        _endpoint_note("its log ended:")
+        for line in lines:
+            _endpoint_note(f"  {line}")
+    above = " Its log is above." if lines else ""
+    _fail(
+        f"{why.rstrip('.')}, {bill}.{above} quackd policy endpoint up {record.name} tries "
+        f"again, and delete {record.name} removes it"
+    )
+
+
+def _wait_and_say(ep: Any, api: Any, store: Any, record: Any, minutes: float) -> None:
+    """Wait for `record`'s endpoint to serve, saying each state it passes as it does, then ask
+    its server what it serves and say where it is and how a run reaches it. An endpoint that
+    fails, that does not serve in time, whose server has no GPU, or that the wait stops on for
+    any other reason, Hugging Face's answer, the record's write or the server's refusal, is
+    paused, which stops its bill, and its log quoted (`endpoint.pause_and_quote`): one left
+    starting would bill until it idled to zero. Ctrl-C leaves it, and says how to pause it, and
+    an endpoint by that name that turns out not to be the one recorded (`endpoint.Unconfirmed`)
+    is left as it is, since it is not quackd's to pause."""
+    from quackd_lerobot.policy.client import PolicyServerError, RemoteRunner
+    from quackd_lerobot.verbs import JOINTS
+
+    def said(state: str, seconds: float) -> None:
+        _endpoint_row("state", f"{state} at {_since(seconds)}")
+
+    try:
+        record = ep.wait_until_serving(api, record, minutes=minutes, store=store, said=said)
+    except KeyboardInterrupt:
+        _fail(
+            f"stopped waiting, and {record.endpoint} goes on starting: it scales to zero after "
+            f"{record.idle_minutes} minutes with no request, and quackd policy endpoint pause "
+            f"{record.name} stops its bill now",
+            code=130,
+        )
+    except ep.Unconfirmed as e:  # another endpoint by that name: nothing is sent or changed
+        _fail(str(e))
+    except ep.EndpointError as e:  # failed, timed out, or anything else on the way
+        _paused_and_quoted(ep, api, record, str(e))
+    _endpoint_row("url", str(record.url))
+    _endpoint_row("token", f"kept in {_home_relative(store.path)}, for {record.endpoint}")
+    runner: Any = None
+    try:
+        runner = RemoteRunner(
+            record.url,
+            token=record.token,
+            bearer=api.token,
+            endpoint=record.endpoint,
+            motors=JOINTS,
+        )
+        info = runner.policy()
+    except (PolicyServerError, ValueError) as e:
+        _paused_and_quoted(ep, api, record, str(e))
+    finally:
+        if runner is not None:
+            runner.close()
+    gpu = "gpu yes" if info.gpu else "gpu no"
+    _endpoint_row(
+        "serving",
+        f"{info.policy} ({info.protocol} {info.protocol_version}, quackd {info.server_version}), "
+        f"{gpu}",
+    )
+    if not info.gpu:
+        _paused_and_quoted(
+            ep,
+            api,
+            record,
+            f"{record.endpoint} serves with no GPU: its torch found none it could use, which a "
+            "CUDA build newer than the machine's driver would do",
+        )
+    _endpoint_note(
+        f"Run with --policy-url {record.endpoint}. quackd policy endpoint pause {record.name} "
+        "stops the bill."
+    )
+
+
+@endpoint_app.command("up")
+def endpoint_up(
+    name: str = _ENDPOINT_NAME,
+    policy: str | None = typer.Option(
+        None,
+        "--policy",
+        help="REPO@REVISION of the LeRobot checkpoint to serve, needed the first time and "
+        "refused after if it differs, since an endpoint serves what it was started with. A "
+        "scripted policy needs no GPU: serve that on the laptop.",
+    ),
+    pins: list[str] | None = _POLICY_PINS,
+    fps: float | None = _POLICY_FPS,
+    cameras: str | None = _POLICY_CAMERAS,
+    latency_s: float | None = _POLICY_LATENCY,
+    threads: int | None = _POLICY_THREADS,
+    jpeg_quality: int | None = _POLICY_JPEG,
+    instance: str | None = typer.Option(
+        None,
+        "--instance",
+        help="The GPU, by Hugging Face's instance type, one of it: nvidia-l4 unless told, and "
+        "nvidia-t4 is the cheapest.",
+    ),
+    vendor: str | None = typer.Option(None, "--vendor", help="The cloud: aws unless told."),
+    region: str | None = typer.Option(
+        None,
+        "--region",
+        help="Its region: us-east-1 unless told. In Europe, eu-west-1 with --instance nvidia-a10g.",
+    ),
+    namespace: str | None = typer.Option(
+        None,
+        "--namespace",
+        help="The account or organisation the endpoint goes on, and bills. Without it, the "
+        "account your token is.",
+    ),
+    idle_minutes: int | None = typer.Option(
+        None,
+        "--idle-minutes",
+        help="How long it waits with no request before it scales to zero and bills nothing, 15 "
+        "to 720 (15 unless told). Never none: a GPU that bills until somebody remembers it is "
+        "not one quackd starts.",
+    ),
+    hub_token_from: str | None = typer.Option(
+        None,
+        "--hub-token-from",
+        help="The name of a variable holding a Hub read token for a gated or private checkpoint "
+        "or --pin, which the endpoint fetches it with. Never your account's own token.",
+    ),
+    wait_minutes: float = typer.Option(
+        _WAIT_MINUTES,
+        "--wait-minutes",
+        help="How long to wait for it to serve before it is paused (30 unless told).",
+    ),
+    no_wait: bool = typer.Option(
+        False, "--no-wait", help="Start or wake it and return, without waiting for it to serve."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", help="Start or resume it without asking. With no terminal, it is needed."
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Start a policy server on a Hugging Face Endpoint, or wake one, and wait until it serves."""
+    ep = _endpoints()
+    server = _policy_server()
+    if not ep.NAME.match(name):
+        _fail(
+            f"{name[:40]!r} is not an endpoint's name: lower-case letters, digits and hyphens, "
+            "32 at most"
+        )
+    idle = _IDLE_MINUTES if idle_minutes is None else idle_minutes
+    least, most = ep.up.IDLE_MINUTES
+    if not least <= idle <= most:
+        _fail(
+            f"--idle-minutes {idle} is outside {least} to {most}: an endpoint scales to zero, "
+            "and bills nothing, after that long with no request, and quackd starts none that "
+            "never does"
+        )
+    if not (wait_minutes > 0 and wait_minutes < float("inf")):
+        _fail(f"--wait-minutes {wait_minutes!r} is not a number of minutes to wait")
+    api = _endpoint_client(ep)
+    store = ep.EndpointStore(registry_dir)
+    try:
+        record = store.get(name)
+        flags = ep.serve_flags(
+            fps=fps,
+            cameras=cameras,
+            latency_s=latency_s,
+            threads=threads,
+            jpeg_quality=jpeg_quality,
+        )
+        if record is None:
+            record = _endpoint_create(
+                ep,
+                server,
+                api,
+                store,
+                name=name,
+                policy=policy,
+                pins=tuple(pins or ()),
+                flags=flags,
+                options={
+                    "fps": fps,
+                    "cameras": cameras,
+                    "latency_s": latency_s,
+                    "threads": threads,
+                    "jpeg_quality": jpeg_quality,
+                },
+                where={
+                    "instance": instance or _ENDPOINT_DEFAULTS["instance"],
+                    "vendor": vendor or _ENDPOINT_DEFAULTS["vendor"],
+                    "region": region or _ENDPOINT_DEFAULTS["region"],
+                },
+                namespace=namespace,
+                idle=idle,
+                hub_token_from=hub_token_from,
+                yes=yes,
+            )
+        else:
+            served = dict(zip(record.flags[::2], record.flags[1::2], strict=True))
+            typed = dict(zip(flags[::2], flags[1::2], strict=True))
+            given: dict[str, tuple[Any, Any]] = {
+                "--policy": (policy.strip() if policy else None, record.policy),
+                "--pin": (tuple(pins) if pins else None, record.pins),
+                **{flag: (value, served.get(flag)) for flag, value in typed.items()},
+                "--instance": (instance, record.instance),
+                "--vendor": (vendor, record.vendor),
+                "--region": (region, record.region),
+                "--namespace": (namespace, record.namespace),
+                "--idle-minutes": (idle_minutes, record.idle_minutes),
+                "--hub-token-from": (hub_token_from, record.hub_token_from),
+            }
+            if changed := _changed_flags(given):
+                _fail(
+                    f"{record.endpoint} was started serving {record.policy} on "
+                    f"{record.instance} in {record.vendor} {record.region}, and an endpoint "
+                    f"serves what it was started with: {', '.join(changed)} would change that. "
+                    f"Give up {name} none of them, or delete {name} and start it afresh"
+                )
+            record = _endpoint_resume(ep, api, store, record, yes=yes)
+        if no_wait:
+            _endpoint_note(
+                f"Not waiting: quackd policy endpoint up {name} waits until it serves, and a run "
+                "that reaches it before then is told it is not serving yet."
+            )
+            return
+        _wait_and_say(ep, api, store, record, wait_minutes)
+    except ValueError as e:  # an EndpointError, or a token no header could carry
+        _fail(str(e))
+
+
+def _endpoint_create(
+    ep: Any,
+    server: Any,
+    api: Any,
+    store: Any,
+    *,
+    name: str,
+    policy: str | None,
+    pins: tuple[str, ...],
+    flags: tuple[str, ...],
+    options: dict[str, Any],
+    where: dict[str, str],
+    namespace: str | None,
+    idle: int,
+    hub_token_from: str | None,
+    yes: bool,
+) -> Any:
+    """Check everything that can be checked before an endpoint exists to bill, ask, and create
+    it. The record is kept before the endpoint is created, so one that exists is never one this
+    machine has no token for, forgotten again if the create is refused, and kept when the
+    answer is lost and the endpoint is there all the same (`endpoint.create_endpoint`)."""
+    if policy is None:
+        _fail(
+            f"--policy REPO@REVISION is needed the first time {name} is started: the LeRobot "
+            "checkpoint it serves, at a commit or a tag"
+        )
+        return None
+    if policy.strip().startswith("scripted:"):
+        _fail(
+            f"{policy.strip()} needs no GPU: serve it on the laptop with quackd policy serve "
+            f"--policy {policy.strip()}"
+        )
+    try:
+        checked = server.check_options(
+            _serve_options(
+                policy=policy,
+                bind="0.0.0.0",
+                token_env=ep.TOKEN_SECRET,
+                behind_tls=True,
+                pins=pins,
+                **options,
+            )
+        )
+    except server.ServeRefused as e:
+        _fail(str(e))
+    hub = None if hub_token_from is None else ep.hub_token_from(hub_token_from, api.token)
+    api.also_scrub(hub)
+    with ui.spinner("asking Hugging Face"):
+        check = ep.preflight(
+            api,
+            policy=checked.spec,
+            pins=pins,
+            namespace=namespace,
+            hub_token=hub,
+            **where,
+        )
+        taken = api.get(check.namespace, name) is not None
+    if taken:
+        _fail(
+            f"{check.namespace} already has an endpoint called {name}, which this machine did "
+            "not start: give yours another name"
+        )
+    record = ep.new_record(
+        name,
+        namespace=check.namespace,
+        policy=checked.spec,
+        idle_minutes=idle,
+        pins=pins,
+        flags=flags,
+        hub_token_from=hub_token_from,
+        **where,
+    )
+    _ask_or_refuse(ep.confirmation(record, check), yes)
+    payload = ep.create_payload(
+        record,
+        accelerator=check.compute.accelerator,
+        exclude_newer=check.exclude_newer,
+        hub_token=hub,
+    )
+    lost = ep.create_endpoint(api, store, record, payload)
+    if lost is not None:
+        _endpoint_note(f"Hugging Face's answer was lost ({lost}), and it has {name} all the same.")
+    _endpoint_row(
+        "created",
+        f"{name} on {check.namespace}'s account, {record.instance} x1 in {record.vendor} "
+        f"{record.region}, ${check.compute.price_per_hour:.2f} an hour while it runs",
+    )
+    return record
+
+
+def _endpoint_resume(ep: Any, api: Any, store: Any, record: Any, *, yes: bool) -> Any:
+    """Wake an endpoint this machine started: resume one that is paused, or wake one that
+    scaled to zero with a request to its health route at its address, recorded first when the
+    record holds none (`endpoint.hold_address`), each after asking, since it bills again, and
+    leave one that is starting or running to the wait. One that failed is said with its log and
+    its message, every token taken out, and not waited for. A resume whose answer is lost, with
+    no answer or a 5xx, may have taken all the same, so the endpoint is paused again rather than
+    left starting. It is read first and held to the record (`endpoint.confirm`), so one by that
+    name that this machine's `up` did not start is left as it is. The record comes back, with
+    any address it gained."""
+    # the Hub token a gated checkpoint is fetched with sits in the endpoint's secrets too,
+    # and a failed container's log may show it: scrubbed when this shell still holds it
+    hub = os.environ.get(record.hub_token_from) if record.hub_token_from else None
+    api.also_scrub(record.token, hub.strip() if hub else None)
+    found = ep.confirm(api, record)
+    if found is None:
+        _fail(
+            f"Hugging Face has no endpoint called {record.name} on {record.namespace} any "
+            f"more: quackd policy endpoint delete {record.name} forgets it here, and up then "
+            "starts it afresh"
+        )
+    state, url, message = ep.state_of(found)
+    if state in ep.FAILED:
+        for line in api.logs(record.namespace, record.name):
+            _endpoint_note(f"  {line}")
+        why = api.printable(message)
+        _fail(
+            f"{record.endpoint} is {state}{': ' + why if why else ''}. quackd policy endpoint "
+            f"delete {record.name}, then up, starts it afresh"
+        )
+    if state in (ep.PAUSED, ep.ASLEEP):
+        compute = ep.find_compute(api.provider(), record.vendor, record.region, record.instance)
+        doing = "resume" if state == ep.PAUSED else "wake"
+        _ask_or_refuse(ep.confirmation(record, compute, doing=doing), yes)
+        if state == ep.PAUSED:
+            try:
+                api.resume(record.namespace, record.name)
+            except ep.EndpointError as e:
+                if e.status is not None and 400 <= e.status < 500:
+                    raise  # refused, so nothing was resumed
+                # no answer, or a 5xx, may come after Hugging Face resumed it all the same
+                why = f"{str(e).rstrip('.')}, and it may have resumed all the same"
+                _paused_and_quoted(ep, api, record, why)
+        elif url is not None:
+            record = ep.hold_address(store, record, url)
+            api.health(url)  # a request wakes it, and --no-wait sends no other
+        else:
+            _endpoint_note(f"Hugging Face gives {record.name} no address yet, so nothing woke it.")
+            return record
+        _endpoint_row(
+            "resumed" if state == ep.PAUSED else "waking",
+            f"{record.name}, ${compute.price_per_hour:.2f} an hour while it runs",
+        )
+    return record
+
+
+@endpoint_app.command("list")
+def endpoint_list(as_json: bool = _JSON, registry_dir: str | None = _REGISTRY_DIR) -> None:
+    """The endpoints this machine started, and how each is now."""
+    ep = _endpoints()
+    store = ep.EndpointStore(registry_dir)
+    try:
+        records = store.read()
+        found = ep.hf_token()
+    except ValueError as e:
+        _fail(str(e))
+    live: dict[tuple[str, str], dict[str, Any]] = {}
+    asked = False
+    if found is not None:
+        api = ep.HFEndpoints(found[0])
+        try:
+            spaces = {r.namespace for r in records.values()}
+            spaces.add(str(api.whoami().get("name")))
+            for space in sorted(spaces):
+                for item in api.list_endpoints(space):
+                    live[(space, str(item.get("name")))] = item
+            asked = True
+        except ep.EndpointError as e:
+            _fail(str(e))
+    rows: list[dict[str, Any]] = []
+    for record in records.values():
+        item = live.pop((record.namespace, record.name), None)
+        state = ep.state_of(item)[0] if item is not None else "gone" if asked else "not asked"
+        rows.append({**record.public(), "state": state, "here": True})
+    for (space, item_name), item in sorted(live.items()):
+        state, url, _ = ep.state_of(item)
+        rows.append(
+            {"name": item_name, "namespace": space, "state": state, "url": url, "here": False}
+        )
+    if as_json:
+        for row in rows:
+            print(json.dumps(row))
+        return
+    if not rows:
+        ui.console.print(
+            Text(
+                "no endpoints: quackd policy endpoint up NAME --policy REPO@REVISION starts one",
+                style=ui.STYLES["muted"],
+            ),
+            soft_wrap=True,
+        )
+        return
+    table = ui.table("endpoints (--policy-url hf:NAME)")
+    table.add_column("name", style=ui.STYLES["key"], no_wrap=True)
+    table.add_column("state", no_wrap=True)
+    table.add_column("where")
+    table.add_column("serving", overflow="fold")
+    for row in rows:
+        where = (
+            f"{row['instance']} in {row['vendor']} {row['region']}, {row['namespace']}"
+            if row["here"]
+            else f"{row['namespace']}, not started from this machine"
+        )
+        table.add_row(
+            Text(str(row["name"])),
+            Text(str(row["state"])),
+            Text(where),
+            Text(str(row.get("policy") or "")),
+        )
+    ui.console.print(table)
+    if found is None:
+        _endpoint_note(f"{ep.no_token()}, to say how each is now.")
+
+
+def _endpoint_record(ep: Any, store: Any, name: str) -> Any:
+    try:
+        record = store.get(name)
+    except ep.EndpointError as e:
+        _fail(str(e))
+    if record is None:
+        _fail(
+            f"no endpoint called {name} is recorded on this machine: quackd policy endpoint "
+            "list says what there is"
+        )
+    return record
+
+
+@endpoint_app.command("pause")
+def endpoint_pause(name: str = _ENDPOINT_NAME, registry_dir: str | None = _REGISTRY_DIR) -> None:
+    """Pause an endpoint this machine started, which stops its bill until up resumes it."""
+    ep = _endpoints()
+    store = ep.EndpointStore(registry_dir)
+    record = _endpoint_record(ep, store, name)
+    api = _endpoint_client(ep)
+    api.also_scrub(record.token)
+    gone = (
+        f"Hugging Face has no endpoint called {name} on {record.namespace} any more: quackd "
+        f"policy endpoint delete {name} forgets it here"
+    )
+    paused: dict[str, Any] | None = None
+    try:
+        # read first, so an endpoint by that name that quackd did not start is left as it is
+        if ep.confirm(api, record) is not None:
+            paused = api.pause(record.namespace, name)
+    except ep.EndpointError as e:
+        _fail(gone if e.status == 404 else str(e))
+    if paused is None:
+        _fail(gone)
+        return
+    state = ep.state_of(paused)[0]
+    said = (
+        "which bills nothing now" if state == ep.PAUSED else f"which Hugging Face says is {state}"
+    )
+    _endpoint_row("paused", f"{name}, {said}")
+    _endpoint_note(f"quackd policy endpoint up {name} resumes it.")
+
+
+@endpoint_app.command("delete")
+def endpoint_delete(
+    name: str = _ENDPOINT_NAME,
+    yes: bool = typer.Option(False, "--yes", help="Delete it without asking."),
+    forget: bool = typer.Option(
+        False,
+        "--forget",
+        help="Only forget this machine's record of it, and leave Hugging Face as it is: for a "
+        "record whose endpoint was deleted on huggingface.co, or that quackd did not start.",
+    ),
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Delete an endpoint this machine started, and forget it here."""
+    ep = _endpoints()
+    store = ep.EndpointStore(registry_dir)
+    try:
+        recorded, (namespace, marked) = store.recorded(name), store.located(name)
+    except ep.EndpointError as e:
+        _fail(str(e))
+        return
+    if not recorded:
+        _fail(
+            f"no endpoint called {name} is recorded on this machine: quackd policy endpoint "
+            "list says what there is"
+        )
+    doing = "forgetting" if forget else "deleting"
+    if not yes and not _can_prompt():
+        _fail(
+            f"{doing} hf:{name} cannot be undone, and there is no terminal to ask before it is: "
+            "run it at one, or pass --yes"
+        )
+    where = f"from {namespace}'s account" if namespace else "from this machine's record"
+    api: Any = None
+    if namespace is not None and not forget:
+        # read first, so an endpoint by that name that quackd did not start is left as it is
+        api = _endpoint_client(ep)
+        try:
+            found = api.get(namespace, name)
+            if found is not None:
+                ep.confirmed(found, namespace=namespace, name=name, mark=marked)
+            else:
+                api = None  # gone already: nothing to delete
+        except ValueError as e:
+            _fail(str(e))
+    question = (
+        f"forget hf:{name} here, and leave whatever Hugging Face has by that name as it is?"
+        if forget
+        else f"delete hf:{name} {where}, and forget it here?"
+    )
+    if not yes:
+        with ui.pause_status():
+            if not typer.confirm(question, default=False):
+                raise typer.Exit(code=1)
+    existed = False
+    if api is not None:
+        try:
+            existed = api.delete(namespace, name)
+        except ValueError as e:
+            _fail(str(e))
+    try:
+        store.forget(name)
+    except ep.EndpointError as e:
+        _fail(str(e))
+    if existed:
+        ui.console.print(_ok_line(f"deleted {name} {where}"))
+    elif namespace is not None and not forget:
+        ui.console.print(_ok_line(f"Hugging Face had no {name} on {namespace} any more"))
+    _endpoint_note(f"forgot {name} in {_home_relative(store.path)}.")
 
 
 # ── robot (the registry) ────────────────────────────────────────────────────────────────

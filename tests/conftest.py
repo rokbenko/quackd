@@ -8,6 +8,7 @@ import importlib
 import importlib.util
 import re
 import shutil
+import socket
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -98,6 +99,85 @@ def _lerobot_calibration_in_tmp(
     monkeypatch.setenv("HF_LEROBOT_CALIBRATION", str(home / "lerobot" / "calibration"))
     monkeypatch.setenv("HF_LEROBOT_HOME", str(home / "lerobot"))
     monkeypatch.setenv("HF_HOME", str(home))
+
+
+@pytest.fixture(autouse=True)
+def _no_hugging_face_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Hugging Face account's token pays for Inference Endpoints, and `quackd policy endpoint`
+    finds it where huggingface_hub does: `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, then the file
+    `HF_TOKEN_PATH` names, `$HF_HOME/token` by default. A developer who has logged in has all
+    three within reach, and the CLI loads a `.env`, so a test that asked for an endpoint would
+    ask with their token. Both variables are empty, which reads as unset to quackd and to
+    huggingface_hub alike and survives `load_dotenv`, `HF_TOKEN_PATH` goes, and the default file
+    is under the throwaway `HF_HOME` above. The tests that need a token set a stand-in's."""
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "")
+    monkeypatch.delenv("HF_TOKEN_PATH", raising=False)
+
+
+HUGGING_FACE_DOMAINS = ("huggingface.co", "huggingface.cloud", "pypi.org")
+"""Whose hosts the guard below stops: Hugging Face's Hub, its Inference Endpoints and their API,
+and PyPI, which `quackd policy endpoint up` asks about a release. Each at the domain or any host
+under it."""
+
+
+class ReachedHuggingFace(OSError):
+    """What the guard below raises in place of a lookup of one of those hosts. An OSError, as a
+    machine offline would give, so the code that asked says what it says then, and it is the
+    list the guard keeps that fails the test."""
+
+
+def hugging_face_host(host: object) -> str | None:
+    """`host`, in lower case and without a trailing dot, when it is one of
+    `HUGGING_FACE_DOMAINS` or a host under one, and None otherwise. A rule of the guard's own,
+    rather than the client's `is_endpoint_host`, which a test replaces to have a stand-in on
+    127.0.0.1 taken for an endpoint: a guard that replacement could talk round would guard
+    nothing."""
+    if isinstance(host, bytes):
+        host = host.decode("ascii", "replace")
+    if not isinstance(host, str):
+        return None
+    name = host.lower().rstrip(".")
+    if any(name == domain or name.endswith(f".{domain}") for domain in HUGGING_FACE_DOMAINS):
+        return name
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _no_request_reaches_hugging_face(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[list[str]]:
+    """No test may reach Hugging Face or PyPI, and a test that tries fails.
+
+    `quackd policy endpoint` would create an endpoint that bills by the hour, and every one of
+    its tests runs against the stand-ins on 127.0.0.1 in `tests/fake_hugging_face.py`, with the
+    module's addresses pointed there. A test that left one of them pointed at Hugging Face would
+    otherwise reach it, with whatever token it found. So every lookup of a host of theirs goes
+    through `socket.getaddrinfo`, which every connection this suite makes looks a host up with,
+    `http.client`'s and the SDKs' alike, and is stopped there and written down. The list fails
+    the test at teardown, since the code that met the stop may have said it was offline and gone
+    on. Except the `real_duck` and `so101_model` tests, whose whole purpose is a developer's real
+    cache and which a nightly job runs: they never fetch, and a guard in their way would decide
+    what that job proves. The fixture's value is the list, for the test that proves the guard."""
+    reached: list[str] = []
+    if any(request.node.get_closest_marker(m) for m in ("real_duck", "so101_model")):
+        yield reached
+        return
+    real = socket.getaddrinfo
+
+    def guarded(host: Any, *args: Any, **kwargs: Any) -> Any:
+        if (name := hugging_face_host(host)) is not None:
+            reached.append(name)
+            raise ReachedHuggingFace(f"the test suite stopped a lookup of {name}")
+        return real(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded)
+    yield reached
+    assert not reached, (
+        f"this test looked up {', '.join(sorted(set(reached)))}, which belongs to Hugging Face "
+        "or PyPI, and the guard stopped it. Point quackd_lerobot.policy.endpoint's API, HUB and "
+        "PYPI at the stand-ins in tests/fake_hugging_face.py"
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -10,6 +10,7 @@ supplies the verbs only this robot has. `heartbeat()` stays the watchdog contrac
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -294,6 +295,12 @@ def one_camera_url(value: str | Sequence[str] | None, *, spec: str) -> str | Non
 
 # ── a policy server ─────────────────────────────────────────────────────────────────────
 
+POLICY_ENDPOINT = re.compile(r"^hf:([a-z0-9-]{1,32})$")
+"""`--policy-url hf:NAME`: a policy server `quackd policy endpoint up NAME` started on a Hugging
+Face Inference Endpoint, by the name Hugging Face gives an endpoint, lower-case letters, digits
+and hyphens up to 32 of them. The name is all the flag carries: where the endpoint is and its
+token are in the record this machine's `up` wrote, and nothing else says either."""
+
 POLICY_SPECS = ("lerobot:real", "lerobot:mujoco")
 """The bodies that hand a segment to a policy served by `quackd policy serve`. Named here for
 the refusal every other body gives `--policy-url` (`quackd.adapters.factory`), as
@@ -314,6 +321,12 @@ class PolicyChoice:
     without being quoted, since it would otherwise be held as typed. The address as typed and
     the token go only to the adapter that builds the client (`reach`).
 
+    `hf:NAME` (`POLICY_ENDPOINT`) is a server `quackd policy endpoint up NAME` started on a
+    Hugging Face Endpoint, still named on the flag and nowhere else: the arm's adapter finds
+    its address and its token in the record that `up` wrote, under `registry_dir`, and the
+    token there is that endpoint's alone, never `QUACKD_POLICY_TOKEN` or the server's file,
+    which are other servers'. `endpoint` is the `hf:NAME`, or None for an address.
+
     `accept_other_frame` is `--accept-other-frame`: the arm connects over a policy that learned
     from an arm calibrated another way, whose state percentiles lie outside this arm's travel,
     which the connect otherwise refuses. Its goals are clipped to this arm's travel either way,
@@ -330,13 +343,21 @@ class PolicyChoice:
         *,
         accept_other_frame: bool = False,
         async_chunks: bool = True,
+        registry_dir: str | None = None,
     ) -> None:
         given = url.strip()
         if not given:
             raise ValueError(
                 "--policy-url is empty: give the policy server as http://127.0.0.1:PORT"
             )
-        if not readable_url(given):
+        named = POLICY_ENDPOINT.fullmatch(given) is not None
+        if not named and given.lower().startswith("hf:"):
+            raise ValueError(
+                f"--policy-url {given[:40]!r} is not an endpoint's hf:NAME: the name is "
+                "lower-case letters, digits and hyphens, 32 at most, as quackd policy endpoint "
+                "up names one"
+            )
+        if not named and not readable_url(given):
             # unquoted: redaction reads only a URL with a scheme and a host, and this one may
             # hold a password typed before a host it could not find
             raise ValueError(
@@ -344,7 +365,9 @@ class PolicyChoice:
             )
         self._given = given
         self._token = token.strip() if token is not None and token.strip() else None
-        self.url = redacted_url(given)
+        self.url = given if named else redacted_url(given)
+        self.endpoint = given if named else None
+        self.registry_dir = registry_dir
         self.accept_other_frame = accept_other_frame
         self.async_chunks = async_chunks
 
@@ -363,10 +386,12 @@ def policy_choice(
     *,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    registry_dir: str | None = None,
 ) -> PolicyChoice | None:
     """`--policy-url`, `--policy-token`, `--accept-other-frame` and `--async-chunks` as a
-    command takes them, or None when none was given. A token or an override with no address is
-    refused rather than dropped: neither has a server to go to."""
+    command takes them, or None when none was given, with the `--registry-dir` an `hf:NAME`'s
+    record is read from. A token or an override with no address is refused rather than
+    dropped: neither has a server to go to."""
     if url is None:
         if token is not None and token.strip():
             raise ValueError(
@@ -387,7 +412,11 @@ def policy_choice(
             )
         return None
     return PolicyChoice(
-        url, token, accept_other_frame=accept_other_frame, async_chunks=async_chunks
+        url,
+        token,
+        accept_other_frame=accept_other_frame,
+        async_chunks=async_chunks,
+        registry_dir=registry_dir,
     )
 
 

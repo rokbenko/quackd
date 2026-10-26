@@ -17,7 +17,13 @@ a daemon:
 
 - **a token, always.** Read from one header and compared with `hmac.compare_digest`. With no
   `--token-file` the server writes one to `~/.quackd/policy.token`, readable by its owner alone
-  where the OS allows, and the client on the same machine reads it from there.
+  where the OS allows, and the client on the same machine reads it from there. `--token-env
+  NAME` reads it from a variable instead, which is how a platform that keeps secrets for a
+  container hands one over. The one route answered without it is `GET /v1/health`, which says
+  whether the server serves and nothing else, for a platform's readiness probe, which holds no
+  token (`protocol.HEALTH_PATH`). A request that carries an `Authorization` header is said
+  once, as a warning, since it means the proxy in front passes a client's credentials on, and
+  the header itself is never read.
 - **loopback, unless told otherwise.** A bind to anything but `127.0.0.1` or `::1` is refused
   unless `--behind-tls` says a TLS proxy stands in front of the server: plain HTTP across a
   network would let anyone on it read a frame of the room and change a goal on its way to the
@@ -186,6 +192,9 @@ class ServeOptions:
     bind: str = "127.0.0.1"
     port: int = wire.DEFAULT_PORT
     token_file: str | None = None
+    token_env: str | None = None
+    """`--token-env NAME`: the variable the token is read from, in place of a file. Its name is
+    all this holds and all anything prints, never what it holds."""
     behind_tls: bool = False
     threads: int | None = None
     jpeg_quality: int | None = None
@@ -242,9 +251,37 @@ def bind_refusal(bind: str, behind_tls: bool) -> str | None:
     )
 
 
-def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]:
-    """The runner `options` names and what the server will say it is serving, or a
-    `ServeRefused` for anything that would make a server not worth starting."""
+@dataclass(frozen=True)
+class Checked:
+    """What `check_options` read off a `ServeOptions`: the policy as it was named, whether that
+    is a checkpoint, the latency it is served with, the JPEG quality it asks for, and which of
+    the arm's cameras is which of its images."""
+
+    spec: str
+    checkpoint: bool
+    latency_s: float
+    jpeg_quality: int | None
+    cameras: dict[str, str]
+
+
+def check_options(options: ServeOptions) -> Checked:
+    """Everything about `options` that can be refused without building the policy, or a
+    `ServeRefused` saying what is wrong: the address and the port, where the token comes from
+    (the variable's name, never what it holds), the policy's name, the rate, the latency, the
+    threads, the JPEG quality, the cameras and the pins. It imports nothing a checkpoint needs
+    and loads nothing, so a caller can refuse a bad flag before anything starts, which is how
+    `quackd policy endpoint up` refuses one before an endpoint exists to be billed for. What
+    needs the policy built, its own rate and a latency against its chunk, is `served_policy`'s."""
+    if (why := bind_refusal(options.bind, options.behind_tls)) is not None:
+        raise ServeRefused(why)
+    if not 0 <= options.port <= 65535:
+        raise ServeRefused(f"--port {options.port} is not a port")
+    if options.token_file and options.token_env:
+        raise ServeRefused(
+            "--token-env and --token-file both say where the token is: give one of them"
+        )
+    if options.token_env and (why := _token_env_refusal(options.token_env)) is not None:
+        raise ServeRefused(why)
     spec = options.policy.strip()
     name = spec.removeprefix(SCRIPTED)
     checkpoint = bool(CHECKPOINT.match(spec))
@@ -295,6 +332,17 @@ def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]
             "--pin fixes the revision of a model a checkpoint names inside itself, and a "
             "scripted policy names none"
         )
+    return Checked(spec, checkpoint, float(latency), quality, cameras)
+
+
+def served_policy(options: ServeOptions) -> tuple[PolicyRunner, wire.PolicyInfo]:
+    """The runner `options` names and what the server will say it is serving, or a
+    `ServeRefused` for anything that would make a server not worth starting: every flag first,
+    before anything is built (`check_options`), then what only the built policy can say."""
+    checked = check_options(options)
+    spec, latency, quality = checked.spec, checked.latency_s, checked.jpeg_quality
+    checkpoint, cameras = checked.checkpoint, checked.cameras
+    name = spec.removeprefix(SCRIPTED)
     runner: PolicyRunner
     loaded: pipeline.LeRobotRunner | None = None
     if checkpoint:
@@ -372,13 +420,60 @@ def _read_token(path: Path, named_by: str) -> str:
         raise ServeRefused(f"{e}. Refusing to serve a policy with that token") from None
 
 
-def server_token(token_file: str | None) -> tuple[str, Path, bool]:
-    """The token the server wants, where it lives, and whether it was written just now.
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+"""A variable's name, as `--token-env` takes one."""
 
-    A named `--token-file` must hold one: a missing, unreadable or empty file refuses to start
-    rather than serve with no token. With none named, the default file is read when it is
+
+def _token_env_refusal(name: str) -> str | None:
+    """Why `name` cannot be what `--token-env` names, or None: it has to be a name a variable
+    could have. The sentence does not quote it, since what was typed there may be the token."""
+    if ENV_NAME.match(name):
+        return None
+    return (
+        "--token-env takes the name of the variable that holds the token, such as "
+        f"{wire.TOKEN_ENV}, and what it was given is not a variable's name. Refusing to serve "
+        "a policy with no token"
+    )
+
+
+def _read_token_env(name: str) -> str:
+    """The token in the variable `--token-env` names, or a refusal that quotes neither what the
+    variable holds nor its name: what was typed there may be the token itself, which a name that
+    is not one a variable could have shows at once, and one that is, a token beginning with a
+    letter, does not. So no refusal here says the name, as none says the value."""
+    if (why := _token_env_refusal(name)) is not None:
+        raise ServeRefused(why)
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        said = "is not set" if value is None else "is empty"
+        raise ServeRefused(
+            f"the variable --token-env names {said}: put the token clients must send in it. "
+            "Refusing to serve a policy with no token"
+        )
+    try:
+        return wire.clean_token(value, "the variable --token-env names")
+    except ValueError as e:
+        raise ServeRefused(f"{e}. Refusing to serve a policy with that token") from None
+
+
+def server_token(
+    token_file: str | None, token_env: str | None = None
+) -> tuple[str, Path | None, bool]:
+    """The token the server wants, the file it lives in, or None for one a variable holds, and
+    whether it was written just now.
+
+    `--token-env` reads it from the variable it names, which must hold one, and is refused
+    beside `--token-file`, since two places for one token is one too many to know which was
+    meant. A named `--token-file` must hold one: a missing, unreadable or empty file refuses to
+    start rather than serve with no token. With neither, the default file is read when it is
     there and written when it is not, readable by its owner alone where the OS allows (on
     Windows the file takes the permissions of the profile it sits in, which is the owner's)."""
+    if token_file and token_env:
+        raise ServeRefused(
+            "--token-env and --token-file both say where the token is: give one of them"
+        )
+    if token_env:
+        return _read_token_env(token_env), None, False
     if token_file:
         path = Path(os.path.expanduser(token_file))
         return _read_token(path, "--token-file"), path, False
@@ -458,6 +553,8 @@ class PolicyServer:
         """The session the runner was last reset for, read and written under `_runner_lock`."""
         self._closed = False
         """Set under `_lock` by `close`, after which every reset and step is refused."""
+        self._told_authorization = False
+        """Set under `_lock` once a request carrying an `Authorization` header has been said."""
         self.steps = 0
         self.resets = 0
 
@@ -465,6 +562,35 @@ class PolicyServer:
         if not given:
             return False
         return hmac.compare_digest(given.encode("utf-8"), self.token.encode("utf-8"))
+
+    def ready(self) -> bool:
+        """Whether the server serves, which is what `GET /v1/health` says: from the moment it
+        listens, since the policy is built before the port opens (`open_server`), until
+        `close`. It touches no session and no policy."""
+        with self._lock:
+            return not self._closed
+
+    def saw_authorization(self) -> None:
+        """Say once, as a warning, that a request came carrying an `Authorization` header.
+
+        No client of quackd's sends one to this server: the arm's sends its token in
+        `X-Quackd-Token`, and the bearer a Hugging Face Endpoint wants is for the proxy in front
+        (`client.RemoteRunner`). So one arriving here means that proxy passes a client's own
+        credentials on to the container, and whatever else runs in it could read them. Whether
+        it does is not written down anywhere quackd could read
+        (`endpoint_upstream_api.AUTHORIZATION_FORWARDED`), so the first endpoint to serve says,
+        in its own log. The header's value is never read, kept or printed, only that it was
+        there."""
+        with self._lock:
+            if self._told_authorization:
+                return
+            self._told_authorization = True
+        log.warning(
+            "a request arrived carrying an Authorization header, so the proxy in front of this "
+            "server passes a client's own credentials on to it, where whatever else runs beside "
+            "this server could read them. quackd policy serve never reads that header, and says "
+            "this once"
+        )
 
     def close(self) -> None:
         """Refuse every request from now on, and close the policy once a step still inferring
@@ -880,6 +1006,12 @@ def make_handler(app: PolicyServer) -> type[BaseHTTPRequestHandler]:
         def _route(self, method: str) -> None:
             self._consumed = False
             path = self.path.partition("?")[0]
+            if self.headers.get("Authorization") is not None:
+                app.saw_authorization()
+            if path == wire.HEALTH_PATH:
+                # before the token, because a platform's readiness probe holds none (`_health`)
+                self._health(method)
+                return
             if not app.authorised(self.headers.get(wire.TOKEN_HEADER)):
                 # answered on the head alone and closed: a client without the token is never
                 # waited on for its body, and nothing it sends is kept (see _linger)
@@ -914,6 +1046,23 @@ def make_handler(app: PolicyServer) -> type[BaseHTTPRequestHandler]:
                 self._json(500, _refusal(reason), close=True)
                 return
             self._json(200, payload)
+
+        def _health(self, method: str) -> None:
+            """`GET /v1/health`: 200 and `{"ready": true}` while the server serves, 503 and
+            `{"ready": false}` once it is stopping, and nothing more. It needs no token because
+            it says nothing a probe could not learn from the port answering at all: no policy,
+            no session, no version. It is answered on the request's head alone, and a request
+            that brought a body is closed with the body unread, as a request without the token
+            is (`_linger`)."""
+            bodiless = self.headers.get("Transfer-Encoding") is None and self.headers.get(
+                "Content-Length"
+            ) in (None, "0")
+            if method != "GET":
+                reason = f"{wire.HEALTH_PATH} answers GET, not {method}"
+                self._json(405, _refusal(reason), allow="GET", close=True)
+                return
+            ready = app.ready()
+            self._json(200 if ready else 503, {"ready": ready}, close=not bodiless)
 
         def _body(self, model: type[M]) -> M:
             declared = self.headers.get("Content-Length")
@@ -1078,13 +1227,16 @@ def serve(app: PolicyServer, host: str, port: int) -> ThreadingHTTPServer:
 
 @dataclass
 class Served:
-    """A policy server that is up: what it serves, where, and the token a client needs."""
+    """A policy server that is up: what it serves, where, and the token a client needs, with
+    where that token came from: a file (`token_path`), the variable `--token-env` names
+    (`token_env`), or neither for one held in memory."""
 
     app: PolicyServer
     http: ThreadingHTTPServer
     host: str
     token_path: Path | None
     token_written: bool
+    token_env: str | None = None
 
     @property
     def port(self) -> int:
@@ -1135,17 +1287,20 @@ class Served:
 def open_server(options: ServeOptions, *, token: str | None = None) -> Served:
     """Check `options`, build the policy, settle the token and listen, or a `ServeRefused`
     that says why not. `token` is one held in memory rather than a file, which is what `policy
-    check` serves the policy it checks with."""
-    if (why := bind_refusal(options.bind, options.behind_tls)) is not None:
-        raise ServeRefused(why)
-    if not 0 <= options.port <= 65535:
-        raise ServeRefused(f"--port {options.port} is not a port")
+    check` serves the policy it checks with. Every flag is checked before anything is built
+    (`check_options`), the address and where the token comes from among them."""
     runner, info = served_policy(options)
+    env: str | None = None
     if token is not None:
         path: Path | None = None
         written = False
     else:
-        token, path, written = server_token(options.token_file)
+        try:
+            token, path, written = server_token(options.token_file, options.token_env)
+        except ServeRefused:
+            runner.close()
+            raise
+        env = options.token_env or None
     app = PolicyServer(runner, info, token)
     try:
         http = serve(app, options.bind, options.port)
@@ -1155,7 +1310,7 @@ def open_server(options: ServeOptions, *, token: str | None = None) -> Served:
             f"cannot listen on {options.bind}:{options.port}: {e}. Is another server on that "
             "port? Pick another with --port"
         ) from None
-    return Served(app, http, options.bind, path, written)
+    return Served(app, http, options.bind, path, written, env)
 
 
 def describe(info: wire.PolicyInfo) -> list[tuple[str, str]]:
@@ -1645,6 +1800,7 @@ __all__ = [
     "REQUEST_DEADLINE_S",
     "REQUEST_TIMEOUT_S",
     "BenchResult",
+    "Checked",
     "PolicyServer",
     "Refused",
     "ServeOptions",
@@ -1652,6 +1808,7 @@ __all__ = [
     "Served",
     "bench",
     "bind_refusal",
+    "check_options",
     "chunk_outrun",
     "chunk_starved",
     "describe",

@@ -62,6 +62,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   peft among them. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
   check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
   refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
+- **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
+  from Hugging Face.** `up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
+  that runs the same `quackd policy serve`, behind Hugging Face's TLS, and waits until it serves,
+  saying each state as it passes. It rents AWS's `nvidia-l4` in `us-east-1` unless `--instance`,
+  `--vendor` and `--region` say otherwise (`--region eu-west-1 --instance nvidia-a10g` in
+  Europe), takes the serve flags a checkpoint needs and passes them on unchanged, and scales the
+  endpoint to zero after `--idle-minutes`, 15 to 720 and never none. Before anything bills it
+  checks that this quackd is a release on PyPI, the instance, its price on the day, the quota,
+  that the checkpoint and its pins are neither gated nor private without `--hub-token-from`, and
+  the checkpoint's `config.json`, then asks with the price, as it does before it resumes or wakes
+  one, and refuses with no terminal and no `--yes`. An endpoint that fails, does not serve in
+  time, has no GPU or meets any other error while `up` waits is paused, its log quoted with every
+  token taken out. The container installs this release from PyPI with `uvx` in uv's own image,
+  pinned by digest, with nothing uploaded after an hour past the release, and the endpoint is
+  `authenticated`, on one replica, with a token of quackd's own as its one secret. The account's
+  token goes to huggingface.co and the API, and as the bearer to the one endpoint address `up`
+  recorded, and nowhere else. `list` merges this machine's records with what the API says, `pause`
+  stops the bill and `delete` removes one. `up`, `pause` and `delete` read the endpoint first, and
+  leave alone one by that name that does not carry the tag `up` gave it from this machine's
+  record, as one made on huggingface.co or by another machine's `up` does not, and
+  `delete --forget` forgets such a record and asks Hugging Face nothing
+  ([docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint),
+  [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
+- **`--policy-url hf:NAME`** on `quackd run`, `quackd preflight`, `quackd serve-mcp` and
+  `quackd policy check` reaches an endpoint this machine started, as the record `up` kept says:
+  its address, its own token unless `--policy-token` is typed, and the account's token as the
+  bearer. It reads the endpoint from Hugging Face's API first, one request with the account's
+  token, and goes on only when it carries the tags `up` gave it at the recorded address, so
+  neither a record left behind by an endpoint deleted on huggingface.co nor one a project's `.env`
+  planted by naming another registry can send the account's token to an address the API does not
+  confirm. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never read for one. The run's
+  `policy` block keeps the address as `server` and adds `endpoint`.
+- **`GET /v1/health` on the policy server**, answered with no token, says whether it serves,
+  `{"ready": true}`, or is stopping, a 503, and nothing else, for a platform's readiness probe. It
+  reads no body and touches no session. The protocol stays version 1. The server also logs once,
+  as a warning, the first request that arrives carrying an `Authorization` header, and never
+  the header's value.
+- **`quackd policy serve --token-env NAME`** reads the token from the variable `NAME`, instead of
+  a file, and the serving rows name the variable and never what it holds. It is refused beside
+  `--token-file`, and with a variable that is unset, empty, short or holds a space.
 
 ### Changed
 
@@ -133,6 +173,30 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   which the server refuses in every model it loads, and serving it would take the first exemption
   from that rule, which was deferred rather than written
   ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+- **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
+  `--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and
+  the container on 127.0.0.1, the container serving `scripted:sweep`, and nothing was paid for.
+  What Hugging Face's pages leave out is designed for at its worst and recorded as UNVERIFIED:
+  whether the proxy passes `Authorization` on to the container, whether an endpoint pulls the
+  image from ghcr.io, whether the proxy answers 503 or 502 while a replica starts, what a paused
+  endpoint answers, what a `private` endpoint admits, what the log route answers, which instance
+  types the quota listing names, whether the API answers a read of an account's endpoints to that
+  account and its organisations' members alone, whether an endpoint keeps its address for its
+  life, and whether torch finds the GPU. No bench through an endpoint has been timed.
+- **A cold start takes minutes**, since the container installs torch from PyPI and fetches the
+  checkpoint each time it starts, and a run that reaches an endpoint at zero is told it is not
+  serving rather than held. Start it with `up` before a run.
+- **A laptop closed while `up` waits leaves the endpoint starting**, and billing until it idles
+  to zero, `--idle-minutes` later. Ctrl-C says so, and `quackd policy endpoint pause` stops the
+  bill at once.
+- **A CUDA build of torch newer than the endpoint's driver would run on the CPU.** `up` asks the
+  server whether it has a GPU once it serves, and pauses one that says it has none.
+- **A project's `.env` is trusted as the shell is.** One that names another registry with
+  `QUACKD_REGISTRY_DIR` and sets `HF_TOKEN`, where the shell sets none, makes
+  `--policy-url hf:NAME` reach an endpoint of that token's account, with that token: the user's
+  own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
+  frames go there.
+
 
 ## [0.25.0] — 2026-10-25
 

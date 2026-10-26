@@ -16,6 +16,7 @@ import pytest
 from quackd_alohamini import upstream_api as alohamini_api
 from quackd_huebot import upstream_api as huebot_api
 from quackd_lerobot import upstream_api as lerobot_api
+from quackd_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
 from quackd_lerobot.policy import upstream_api as lerobot_policy_api
 from quackd_lerobot.sim import upstream_api as so_arm100_api
 from quackd_microduck import upstream_api
@@ -64,6 +65,25 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             "adapters/lerobot/real.py",
         },
         ("https://github.com/huggingface/lerobot",),
+    ),
+    (
+        lerobot_endpoint_api,
+        {
+            "adapters/lerobot/policy/endpoint_upstream_api.py",
+            # the endpoint's own module, which says what it does about each, the client, which
+            # says what the proxy in front answers as these rows read it, and the server, which
+            # says once in its log when a client's credentials reach it
+            "adapters/lerobot/policy/endpoint.py",
+            "adapters/lerobot/policy/client.py",
+            "adapters/lerobot/policy/server.py",
+        },
+        (
+            "https://api.endpoints.huggingface.cloud",
+            "https://huggingface.co",
+            "https://github.com/huggingface/huggingface_hub",
+            "https://docs.pypi.org",
+            "https://docs.astral.sh/uv",
+        ),
     ),
     (
         rosbridge_api,
@@ -175,6 +195,7 @@ IDS = [
     "microduck",
     "lerobot",
     "lerobot_policy",
+    "lerobot_endpoint",
     "rosbridge",
     "open_duck",
     "xlerobot",
@@ -636,6 +657,67 @@ def test_the_policy_families_are_the_types_the_server_serves() -> None:
         [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60, check=True
     )
     assert done.stdout.strip() == "[]", done.stdout + done.stderr
+
+
+def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_its_tag() -> None:
+    """Hugging Face's Inference Endpoints are read from the API's own document, its pages and
+    huggingface_hub at the commit its tag names, the version `uv.lock` holds, so a lock that
+    moves huggingface_hub is a re-read somebody has to make on purpose. The names the endpoint's
+    code takes as data sit beside the refs that read them and say what those refs say, the image
+    is pinned by its digest on both registries, and the UNVERIFIED rows are the ones a first real
+    endpoint settles."""
+    from quackd_lerobot.policy import client
+
+    api = lerobot_endpoint_api
+    assert len(api.PIN) == 40 and api.PIN.isalnum()
+    for ref in api.all_refs():
+        if ref.source.startswith(api.HUB_REPO):
+            assert api.PIN in ref.source, ref
+    lock = (PKG.parent / "uv.lock").read_text(encoding="utf-8")
+    locked = re.search(r'name = "huggingface-hub"\nversion = "([^"]+)"', lock)
+    assert locked and locked.group(1) == api.HUB_VERSION, "uv.lock moved huggingface_hub: re-read"
+    assert api.ENDPOINT_STATES.name == ", ".join(f'"{s}"' for s in api.STATES)
+    assert api.ENDPOINT_TYPES.name == ", ".join(f'"{t}"' for t in api.TYPES)
+    assert api.CREATED_TYPE == "authenticated" and api.CREATED_TYPE in api.TYPES
+    assert api.NAME_PATTERN == r"^[a-z0-9-]{1,32}$" and "32 characters" in api.ENDPOINT_NAME.name
+    assert api.IDLE_MINUTES == (15, 12 * 60) and "15 minutes to 12 hours" in api.SCALE_TO_ZERO.note
+    assert api.POLL_S == 5 and "refresh_every=5" in api.WAIT_POLL.name
+    for path, ref in (
+        (api.PROVIDER_PATH, api.PROVIDER_LISTING),
+        (api.ENDPOINT_PATH, api.ENDPOINT_ROUTES),
+        (api.QUOTAS_PATH, api.QUOTAS),
+        (api.WHOAMI_PATH, api.WHOAMI),
+    ):
+        assert path in ref.name, path
+    for name in (*api.TOKEN_VARIABLES, api.TOKEN_PATH_VARIABLE, api.HOME_VARIABLE):
+        assert name in api.TOKEN_LOOKUP.name, name
+    tag, digest = api.IMAGE.split("@", 1)
+    assert tag == f"ghcr.io/astral-sh/uv:{api.UV_VERSION}-python3.12-trixie-slim"
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+    assert (
+        f"docker.io/astral/uv:{api.UV_VERSION}-python3.12-trixie-slim@{digest}"
+        == api.IMAGE_FALLBACK
+    )
+    assert api.UV_IMAGE.name.endswith("-python3.12-trixie-slim")
+    # the host a bearer may go to is the shape the API documents an endpoint's address in
+    example = re.search(r"https://([0-9a-z]+\.endpoints\.huggingface\.cloud)", api.STATUS_URL.note)
+    assert example and client.ENDPOINT_AUTHORITY.fullmatch(example.group(1))
+    assert {502, 503} <= client.PROXY_UNSERVED
+    assert "503" in api.PROXY_WHILE_STARTING.note and "502" in api.PROXY_WHILE_STARTING.note
+    unverified = {r.name for r in api.refs_by_status("UNVERIFIED")}
+    assert unverified == {
+        "AUTHORIZATION_FORWARDED",
+        "GHCR_PULLS",
+        "PROXY_WHILE_STARTING",
+        "PRIVATE_TYPE",
+        "PAUSED_ANSWERS",
+        "LOGS_BODY",
+        "QUOTA_LISTING",
+        "NAMESPACE_READS",
+        "ADDRESS_KEPT",
+        "GPU_IN_CONTAINER",
+    }
+    assert "never created an Inference Endpoint" in (api.__doc__ or "")
 
 
 def test_the_arm_models_zero_and_sign_cite_lerobot_at_its_pin_and_leave_out_the_gripper() -> None:

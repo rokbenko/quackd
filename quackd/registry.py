@@ -78,6 +78,35 @@ def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def write_json(path: Path, payload: Mapping[str, Any], *, private: bool) -> None:
+    """`payload` as `path`'s whole content, written to a temporary file beside it and renamed
+    over it, so a reader never sees half a file. The registry's own files go through here, and
+    so does the record `quackd policy endpoint` keeps of the endpoints it started, which holds
+    each one's token.
+
+    A file that holds a secret is `private`, and then the mode goes on the TEMPORARY file, before
+    the secret is written into it: the rename carries that mode onto the file. Setting it after
+    the rename left the tokens world-readable for the length of every write, in a file nothing
+    cleans up if the write fails. A no-op on Windows, where the file takes the permissions of
+    the profile it sits in, which is why SECURITY.md calls this a file in a home directory rather
+    than a secret store."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    if private:
+        with contextlib.suppress(OSError):
+            tmp.touch(mode=0o600)
+            tmp.chmod(0o600)  # a tmp left by a failed write keeps its old mode
+    tmp.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    try:
+        tmp.replace(path)
+    except PermissionError as e:  # Windows: another program is holding the file open
+        tmp.unlink(missing_ok=True)
+        raise RegistryError(f"could not replace {path}: another program has it open") from e
+
+
 def _reserved_slugs() -> set[str]:
     """Every memory file name an ad-hoc `adapter:backend` run would open.
 
@@ -678,28 +707,9 @@ class Registry:
         return section
 
     def _write(self, path: Path, key: str, section: Mapping[str, dict[str, Any]]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"version": VERSION, key: {k: section[k] for k in sorted(section)}}
-        tmp = path.with_suffix(".json.tmp")
-        if key == "robots":
-            # robots.json holds robot tokens, so the mode goes on the TEMPORARY file,
-            # before a token is written into it: the rename then carries that mode onto
-            # robots.json. Setting it after the rename left the tokens world-readable for
-            # the length of every write, in a file nothing cleans up if the write fails.
-            # A no-op on Windows, which is why SECURITY.md calls this a file in a home
-            # directory rather than a secret store.
-            with contextlib.suppress(OSError):
-                tmp.touch(mode=0o600)
-                tmp.chmod(0o600)  # a tmp left by a failed write keeps its old mode
-        tmp.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        try:
-            tmp.replace(path)
-        except PermissionError as e:  # Windows: another program is holding the file open
-            tmp.unlink(missing_ok=True)
-            raise RegistryError(f"could not replace {path}: another program has it open") from e
+        # robots.json holds robot tokens, and flocks.json holds none
+        write_json(path, payload, private=key == "robots")
 
     @staticmethod
     def _one_line(path: Path, name: str, e: ValidationError) -> RegistryError:
@@ -1143,4 +1153,5 @@ __all__ = [
     "probe_entry",
     "registry_dir",
     "resolve_robot_ref",
+    "write_json",
 ]
