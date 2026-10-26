@@ -40,9 +40,14 @@ class Preset:
 
     @property
     def call(self) -> dict[str, float]:
-        """The arguments as `move` is handed them, its zeroes left out, for the record and the
-        line drive prints before the walk starts."""
-        return {k: v for k, v in self.params.model_dump().items() if v != 0}
+        """The arguments as `move` is handed them, for the record and the line drive prints
+        before the walk starts: every value but a zero `move` would fill in itself.
+
+        A zero `move` would not fill in stays: its own default speed is 0.15, so a turn handed
+        without its `vx=0` turned and walked forward at once, the zero having been left out as
+        nothing worth saying."""
+        defaults = MoveParams().model_dump()
+        return {k: v for k, v in self.params.model_dump().items() if v != 0 or v != defaults[k]}
 
     def says(self) -> str:
         args = ", ".join(f"{k}={v:g}" for k, v in sorted(self.call.items()))

@@ -48,7 +48,17 @@ def test_on_the_microduck_forward_is_move_with_its_own_defaults() -> None:
     presets = presets_for(manifest, {v.name for v in manifest.verbs})
     assert presets["forward"].params == MoveParams()
     assert presets["forward"].says() == "forward: move(duration_s=1, vx=0.15)"
-    assert presets["turn left"].says() == "turn left: move(duration_s=1.571, wz=0.5)"
+    assert presets["turn left"].says() == "turn left: move(duration_s=1.571, vx=0, wz=0.5)"
+
+
+@pytest.mark.parametrize("spec", BODIES, ids=lambda s: f"{s.adapter}:{s.backend}")
+def test_what_a_preset_hands_move_is_the_walk_it_means(spec: RobotSpec) -> None:
+    """The call is what `move` is handed, and `move` fills in what is left out with its own
+    defaults, a speed of 0.15 among them. A turn handed without its zero speed turned and walked
+    forward at once, which a captured session caught as `walked vx=0.15 ... wz=0.50`."""
+    manifest = describe(spec)
+    for preset in presets_for(manifest, {v.name for v in manifest.verbs}).values():
+        assert MoveParams(**preset.call) == preset.params, preset.name
 
 
 def test_a_preset_move_would_refuse_is_left_out() -> None:
