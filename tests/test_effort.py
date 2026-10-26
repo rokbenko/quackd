@@ -100,6 +100,12 @@ def test_the_flag_reaches_openai_and_a_server_of_your_own(monkeypatch: pytest.Mo
         pytest.param(
             "anthropic", "claude-haiku-4-5", "low", "takes no effort setting", id="haiku-4-5"
         ),
+        pytest.param("openai", "gpt-4o", "low", "takes no effort setting", id="gpt-4o"),
+        pytest.param("openai", "gpt-4.1", "medium", "takes no effort setting", id="gpt-4.1"),
+        pytest.param("openai", "chat-latest", "high", "takes no effort setting", id="chat-latest"),
+        pytest.param(
+            "openai", "gpt-5.5-pro", "low", "takes --effort medium or high and not low", id="pro"
+        ),
     ],
 )
 def test_the_flag_is_refused_where_it_cannot_reach(
@@ -118,6 +124,15 @@ def test_every_level_the_flag_takes_is_one_both_vendors_have() -> None:
     for level in EFFORTS:
         assert effort_refusal("anthropic", "claude-opus-5-5", level) is None
         assert effort_refusal("openai", "gpt-6-sol", level) is None
+
+
+def test_a_model_that_takes_fewer_levels_takes_the_ones_its_page_lists() -> None:
+    """OpenAI's pro models take medium, high and xhigh, so of the three `--effort` has, the two
+    they take go through and only low is refused."""
+    for model in ("gpt-5.5-pro", "gpt-5.4-pro", "gpt-5.2-pro"):
+        assert effort_refusal("openai", model, "medium") is None, model
+        assert effort_refusal("openai", model, "high") is None, model
+        assert effort_refusal("openai", model, "low") is not None, model
 
 
 class _Asking:

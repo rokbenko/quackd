@@ -33,8 +33,9 @@ the robot asks first, how long it took to do anything at all, was in no field.
    `output_config.effort`, OpenAI's reasoning effort and a model server of your own, and beats
    `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand without it. Three
    levels, because both vendors have those three. It is refused before anything connects where
-   it cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort
-   page does not list, and a vendor that documents no such field. `run_start.effort` says what
+   it cannot reach: the scripted pilot, `--controller vla`, a model that takes no effort or not
+   at that level, by its catalogue row (`ModelSpec.effort` and `effort_levels`, read off each
+   vendor's own page), and a vendor that documents no such field. `run_start.effort` says what
    every request asked for and whose word it was, `{value, from}`.
 5. **The pilot's client is warmed while the robot connects, and nothing waits for it.** A client
    of either SDK starts its first request by asking which platform it is on, on Windows a WMI

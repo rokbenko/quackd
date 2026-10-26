@@ -165,13 +165,22 @@ class ModelSpec:
     to `auto`."""
 
     effort: bool = True
-    """Anthropic only: does the model take `output_config.effort`?
+    """Anthropic and OpenAI only: does the model take the vendor's effort, Anthropic's
+    `output_config.effort` or OpenAI's reasoning effort?
 
     Claude Haiku 4.5 and Claude Sonnet 4.5 are missing from the list of supported models on
     Anthropic's effort page, so a row marked `False` is sent no effort at all. There is no 400
     reader behind this one, because that page does not print what the API answers, and a
     reader written against a guessed sentence is exactly how the thinking retry in
-    `anthropic.py` came to miss the sentence the 4.5 models really send."""
+    `anthropic.py` came to miss the sentence the 4.5 models really send. On OpenAI it is read
+    only by `--effort`, which refuses such a model before anything connects (`effort_refusal`):
+    GPT-4.1 and GPT-4o and their minis are its models "without a reasoning step", and ChatGPT
+    Instant's page lists no reasoning effort either."""
+
+    effort_levels: tuple[str, ...] | None = None
+    """The `--effort` levels a model takes where it takes fewer than all three, or None for all
+    of them. OpenAI's three pro models take medium, high and xhigh and not low, so `--effort low`
+    is refused for them before anything connects."""
 
     binds_thinking: bool = False
     """Anthropic only: does the model refuse a replayed thinking block once anything before it
@@ -342,18 +351,37 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
         ModelSpec("gpt-5.4-nano", "GPT-5.4 nano", "legacy", price=Price(0.2, 1.25, 0.02)),
         ModelSpec("gpt-5.2", "GPT-5.2", "legacy", price=Price(1.75, 14.0, 0.175)),
         ModelSpec("gpt-5.1", "GPT-5.1", "legacy", price=Price(1.25, 10.0, 0.125)),
-        ModelSpec("gpt-4.1", "GPT-4.1", "legacy", price=Price(2.0, 8.0, 0.5)),
-        ModelSpec("gpt-4.1-mini", "GPT-4.1 mini", "legacy", price=Price(0.4, 1.6, 0.1)),
-        ModelSpec("gpt-4o", "GPT-4o", "legacy", price=Price(2.5, 10.0, 1.25)),
-        ModelSpec("gpt-4o-mini", "GPT-4o mini", "legacy", price=Price(0.15, 0.6, 0.075)),
+        ModelSpec("gpt-4.1", "GPT-4.1", "legacy", effort=False, price=Price(2.0, 8.0, 0.5)),
         ModelSpec(
-            "gpt-5.5-pro", "GPT-5.5 Pro", "specialised", api="responses", price=Price(30.0, 180.0)
+            "gpt-4.1-mini", "GPT-4.1 mini", "legacy", effort=False, price=Price(0.4, 1.6, 0.1)
+        ),
+        ModelSpec("gpt-4o", "GPT-4o", "legacy", effort=False, price=Price(2.5, 10.0, 1.25)),
+        ModelSpec(
+            "gpt-4o-mini", "GPT-4o mini", "legacy", effort=False, price=Price(0.15, 0.6, 0.075)
         ),
         ModelSpec(
-            "gpt-5.4-pro", "GPT-5.4 Pro", "specialised", api="responses", price=Price(30.0, 180.0)
+            "gpt-5.5-pro",
+            "GPT-5.5 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(30.0, 180.0),
         ),
         ModelSpec(
-            "gpt-5.2-pro", "GPT-5.2 Pro", "specialised", api="responses", price=Price(21.0, 168.0)
+            "gpt-5.4-pro",
+            "GPT-5.4 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(30.0, 180.0),
+        ),
+        ModelSpec(
+            "gpt-5.2-pro",
+            "GPT-5.2 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(21.0, 168.0),
         ),
         ModelSpec(
             "gpt-5.3-codex",
@@ -366,6 +394,7 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
             "chat-latest",
             "ChatGPT Instant (moves with ChatGPT)",
             "specialised",
+            effort=False,
             price=Price(5.0, 30.0, 0.5),
         ),
     ),

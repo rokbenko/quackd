@@ -371,11 +371,19 @@ def effort_refusal(name: str, model: str | None, effort: str) -> str | None:
             f"--effort is sent to {', '.join(EFFORT_TAKERS[:2])} and a model server of your own, "
             f"and {name} documents no such field quackd sends{how}"
         )
-    spec = find_model(name, model or "") if name == "anthropic" else None
+    # the two cloud vendors whose rows say which models take it, at which levels (`ModelSpec`);
+    # a model server of your own says nothing quackd can read beforehand
+    spec = find_model(name, model or "") if name in ("anthropic", "openai") else None
     if spec is not None and not spec.effort:
+        if name == "anthropic":
+            why = "Anthropic's effort page does not list it, so quackd sends it none"
+            return f"{model} takes no effort setting: {why} and --effort would change nothing"
+        why = "OpenAI's page for it lists no reasoning effort, it being a model without one"
+        return f"{model} takes no effort setting: {why}, so there is nothing for --effort to set"
+    if spec is not None and spec.effort_levels is not None and effort not in spec.effort_levels:
         return (
-            f"{model} takes no effort setting: Anthropic's effort page does not list it, so "
-            "quackd sends it none and --effort would change nothing"
+            f"{model} takes --effort {' or '.join(spec.effort_levels)} and not {effort}: its own "
+            "page lists no other of the three"
         )
     return None
 
