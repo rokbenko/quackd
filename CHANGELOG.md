@@ -9,6 +9,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`quackd run` and `quackd drive` can be driven by a program over JSON lines.** Both take a
+  hidden `--front jsonl`, which is how the page `quackd ui` will drive them, each from a child
+  process: JSON lines on stdout, `hello` first and `end` last with the outcome and the exit code,
+  and the page's `stop`, `answer`, `line` and `quit` on stdin. Everything a terminal would show
+  still goes to stderr. A stop is a message, so it reaches a run on Windows too, where no signal a
+  parent can send stops a child before it folds, and a page that goes away is a stop nobody
+  pressed. A page's answer is recorded as a person's, with `channel: web` beside it in the
+  `prompt` row, and a question taken back is recorded as unanswered, never as a no. `run_start`
+  gains `front: jsonl` on such a run, and the command it names leaves `--front` out. `--by-hand`,
+  `--flock`, `--robots` and a task file with a `flock:` block are refused under it
+  ([ADR-0069](docs/adr/0069-a-page-drives-quackds-own-commands-over-json-lines.md)).
+- **`python -m quackd` runs the same command as `quackd`.**
+
+### Fixed
+
+- **A no to "Are you watching the robot right now?" ends the run in its own sentence.** The run
+  ended before its first step, as it should, but with a traceback rather than the sentence,
+  because nothing caught the abort it raised. A question there that nobody answered, a prompt
+  that raised on Ctrl-C or the end of its input, ends the run the same way, where it used to
+  escape as whatever the prompt raised.
+
+### Documentation
+
+- `docs/concepts/architecture.md` describes `quackd/front.py`, and its `prompt` and `run_start`
+  rows say what the page adds to them: `channel` and `front`.
+
 ## [0.27.0] — 2026-10-26
 
 0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`
