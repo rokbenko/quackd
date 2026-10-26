@@ -25,7 +25,7 @@ from quackd.adapters.base import (
     RobotAdapter,
     camera_urls,
 )
-from quackd.adapters.catalogue import BY_NAME, ENTRY_POINT_GROUP, OFFICIAL, AdapterInfo
+from quackd.adapters.catalogue import BY_NAME, ENTRY_POINT_GROUP, OFFICIAL, AdapterInfo, Connect
 from quackd.adapters.manifest import RobotManifest
 from quackd.verbs.registry import VerbRegistry, core_registry, registry_from_manifest
 
@@ -94,7 +94,24 @@ def info(name: str) -> AdapterInfo:
         summary=str(getattr(module, "SUMMARY", "a robot quackd does not publish")),
         extra=getattr(module, "EXTRA", None),
         sdk=getattr(module, "SDK", None),
+        connect=_connect_of(module),
     )
+
+
+def _connect_of(module: Any) -> dict[str, Connect]:
+    """A third party's `CONNECT`, by backend: `Connect` records, or dicts of their fields. One
+    that is neither is left out rather than refusing the adapter: it is help, not a contract."""
+    found: dict[str, Connect] = {}
+    declared = getattr(module, "CONNECT", None)
+    if not isinstance(declared, Mapping):  # nothing, or something that is not a mapping
+        return found
+    for backend, block in declared.items():
+        if isinstance(block, Connect):
+            found[str(backend)] = block
+        elif isinstance(block, dict):
+            with contextlib.suppress(TypeError):
+                found[str(backend)] = Connect(**block)
+    return found
 
 
 def is_installed(name: str) -> bool:
