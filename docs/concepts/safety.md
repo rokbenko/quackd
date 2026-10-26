@@ -305,9 +305,9 @@ whole budget for as long as the vendor's own clock allowed, ten minutes on both 
 is raced against the task's minutes now, as it is against the stop: once they are spent it is
 cancelled, its `llm` record says it failed on the budget, it is not asked again, and the run ends
 on its budget, with the robot put down as at any end. A stop pressed in the same moment wins.
-It is the budget's clock again, so on a simulator, whose clock stands still while a model
-thinks, a call is never cut off this way. No single call has a ceiling of its own, which would
-cut long thinking short and bill the retry twice.
+It is the budget's clock again, so on a simulator or a mock, whose clock stands still while a
+model thinks, a call is never cut off this way. No single call has a ceiling of its own, which
+would cut long thinking short and bill the retry twice.
 
 ## When the pilot is unsure
 

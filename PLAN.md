@@ -38,8 +38,11 @@ before.
   is held to are starting values to measure on the duck. 0.21.0's `stand_up` waits up to ten
   seconds for the duck to stand, and how long the policy takes to get a real duck up is the number
   to measure against it. Re-read `robotd` at the release the duck arrives on before its first walk.
-  Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026 and later orders
-  four to six months out.
+  0.27.0's `quackd drive` has driven only the mock and `microduck:sim2d`: on the duck, the
+  milliseconds from a typed line to `robotd` taking its twist, an empty Enter stopping a walk,
+  and how far the preset walks and the 45 degree turn really carry it are the numbers to bring
+  back. Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026 and later
+  orders four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
   through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really
@@ -215,7 +218,12 @@ before.
   [the decision-LLM hub](docs/guides/decision-llms/README.md#how-much-faster-and-how-much-cheaper)
   are arithmetic rather than a result. Nor has a frame gone to OpenAI: 0.20.0's `--decision-frames`
   and `watch` have run against stand-ins alone, so what a frame costs on `gpt-6-luna` and how much
-  slower it makes a turn are unmeasured too.
+  slower it makes a turn are unmeasured too. 0.27.0's `quackd drive` asks the same decision LLM
+  which call a typed line means, held to the stepper's floors, and only stand-ins have answered
+  it: a session's `fast` records, with each person's yes or no to a `did you mean` in the
+  `routed` row after, are what those floors are measured by once somebody drives with one. A
+  pipe's lines, which nobody is asked about, are written declined too, and only their `command`
+  row tells them apart.
 
 - ⬜ **Nobody has run the host daemon on a Jetson.** quackd no longer runs on the board. It
   reaches one from the laptop with `--host`, through `bridge/jetson/quackd_jetson_hostd.py`
@@ -277,11 +285,13 @@ before.
   says so in its notes
   ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md#consequences)).
 - ⬜ **No `cost_usd` quackd reports has been checked against an invoice.** Every rate in
-  `quackd/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, most
-  recently on 2026-09-23, and a rate read by hand is wrong from the day the vendor edits the
-  page until somebody reads it again. What would close this is one run on a metered account,
-  reconciled against that account's own billing page, on any vendor. Until then `--price` is the
-  answer to a disagreement and the catalogue is a table rather than a bill. On OpenRouter a
+  `quackd/agent/providers/catalogue.py` was read off a vendor's pricing page by hand, most on
+  2026-09-23, OpenRouter's six on 2026-10-06 and `gpt-6.1-sol`'s on 2026-10-26, and a rate read
+  by hand is wrong from the day the vendor edits the page until somebody reads it again. What
+  would close this is one run on a metered account, reconciled against that account's own billing
+  page, on any vendor. Until then `--price` is the answer to a disagreement and the catalogue is
+  a table rather than a bill. Since 0.27.0 a Claude run's requests are marked for Anthropic's
+  cache, so its `cost_usd` rests on the cache's read and write rates as well. On OpenRouter a
   turn is costed at the `usage.cost` it reports instead, which nobody has yet set beside what
   OpenRouter's activity page charged for the same run.
 

@@ -70,9 +70,10 @@ nothing back, and the write it paid for was a quarter more than the input it rep
 
 - From a run's second Claude call on, the part of its request that matches the last call is
   meant to be billed at the model's cache read rate, a tenth of its input rate on most Claude
-  models and a twentieth on Opus 5.5, and written once at a quarter more. How much of a run's bill that saves is not measured. The check is one paid run
-  per vendor with the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`,
-  `cost_usd` and `latency_s` per call.
+  models, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, and written once at a quarter
+  more. How much of a run's bill that saves is not measured. The check is one paid run per vendor
+  with the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd`
+  and `latency_s` per call.
 - A run of one call pays the write and never reads it.
 - The test is a request-level oracle through the real loop and the real Claude provider, over
   four bodies, keeps 1 to 3 and trim periods 1, 2, 4 and 8: the system prompt marked the same on

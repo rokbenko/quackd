@@ -34,7 +34,7 @@ from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
 from quackd_huebot.verbs import HUEBOT_VERBS, SKILLS_OF, huebot_conditions
 
-__version__ = "0.26.0"
+__version__ = "0.27.0"
 """Kept in step with quackd's own version by scripts/set_version.py. It lives here
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""

@@ -9,13 +9,44 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-10-26
+
+0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`
+wait for less. A command that names one of the body's calls needs no model to choose it, and in
+the README's run on the arm, 62.1 of its 78.8 seconds went to waiting on the model.
+
+`quackd drive` reads a line at a time from the keyboard or a pipe. A line that names a call runs
+with no model asked, and on the mock Microduck it reaches the executor in under a millisecond. An
+empty Enter brakes at once, and a newer command that moves the body ends the one moving it. With
+`--decision-llm`, a line no verb names is put to that decision LLM as one closed question first.
+What is left is a goal, which the pilot flies inside the session's contract. A person's own
+command is the verdict for its own call, and a line from a pipe is never recorded as a person's.
+
+`quackd run` marks Claude's requests for Anthropic's prompt cache, warms a pilot's Anthropic or
+OpenAI client while the robot connects, takes `--effort low|medium|high`, ends a pilot's call on
+a real robot once the task's minutes are spent, and asks the stepper in shadow mode beside the
+model's call rather than before it. Its summary says how the model's calls spread and when the
+body first moved.
+
+Drive's review found three faults older than drive. A stop asked for over MCP while `watch` or a
+MOSS verb was still reading the body's state was missed, and the verb ran on. An abort that came
+during that read, such as the kill switch in `quackd run` or a failed heartbeat, let the verb
+send its first twist after it. And a battery below a `.duck`'s rule refused `stop` as it refused
+every other verb. A `stop` asked for over MCP beside a `move`, a `go_to`, the core's
+`search_scan` or an `approach_and` ends it before its next twist now, where a walk ran its whole
+length, and a MOSS verb a stop ended no longer counts toward `abort_when`'s failures in a row.
+
+Nothing in this release has driven a real robot or made a paid call, so the seconds and dollars
+it saves are estimates until somebody measures them. What that leaves owed is under Known
+limitations.
+
 ### Added
 
 - **`--effort low|medium|high` says how hard the pilot's model reasons, on `run` and
   `preflight`.** It reaches Anthropic's `output_config.effort`, OpenAI's reasoning effort on
   either API and a model server of your own, which speaks OpenAI's API, and it beats
   `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
-  Three levels, the ones both vendors have. It is refused before anything connects where it
+  Three levels, the ones both vendors have. It is refused before the robot connects where it
   cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort page
   does not list, OpenAI's GPT-4.1, GPT-4o, their minis and ChatGPT Instant, which take no
   reasoning effort, its three pro models at `low`, which they do not take, and a vendor that
@@ -45,20 +76,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   in under a millisecond. An empty Enter, `stop`, `halt`, `brake` or `q` brakes at once and waits
   on nothing, and a newer command that moves the body ends whatever is moving it and waits for
   its stop before it sends anything. With `--decision-llm`, a line no verb names is put to that
-  decision LLM as one closed question, held to the stepper's floors, the `.duck`'s confirm gates
-  and its second, which asks `did you mean kick(leg=left)? [y/N]` below a floor. Anything else
-  is a goal, which the pilot (`--llm`, or a registered robot's own) flies as a whole run of its
-  own on the body the session holds, inside the session's contract, its `--dry-run` and what is
-  left of its budgets. A person's own command is the verdict for its own call, lines piped in are
-  recorded as a pipe's, never a person's, and a call the fast lane took unasked as the decision
-  LLM's reading. A body that cannot see a fall is driven only once somebody says they are
-  watching it. Without a `--duckfile`, a session allows every verb that is not dangerous, keeps
-  the battery rule a goal is held to, and runs on the schema's own ceilings for its budgets. The
-  keyboard goes through prompt_toolkit, and a pipe is read a line at a time, each waited for. The
-  session's record is a run directory `quackd log` replays, with each goal's own run under
-  `goals/`, and its summary gives the waits from a line to its call starting and to the body's
-  first motion for it, by lane, and from a brake to its stop
-  ([docs/guides/drive.md](docs/guides/drive.md),
+  decision LLM as one closed question, held to the stepper's floors and its one second and to the
+  `.duck`'s confirm gates, and below a floor drive asks `did you mean kick(leg=left)? [y/N]`. A
+  line it hands on, or any line no verb names without one, is a goal, which the pilot (`--llm`,
+  or a registered robot's own) flies as a whole run of its own on the body the session holds,
+  inside the session's contract, its `--dry-run` and what is left of its budgets. A person's own
+  command is the verdict for its own call, lines piped in are recorded as a pipe's, never a
+  person's, and a call the fast lane took unasked as the decision LLM's reading. A body that
+  cannot see a fall is driven only once somebody says they are watching it. Without a
+  `--duckfile`, a session allows every verb that is not dangerous, keeps the battery rule a goal
+  is held to, and runs on the schema's own ceilings for its budgets. The keyboard goes through
+  prompt_toolkit, and a pipe is read a line at a time, each waited for. The session's record is a
+  run directory `quackd log` replays, with each goal's own run under `goals/`, and its summary
+  gives the waits from a line to its call starting and to the body's first motion for it, by
+  lane, and from a brake to its stop ([docs/guides/drive.md](docs/guides/drive.md),
   [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
   [ADR-0066](docs/adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)).
 
@@ -73,8 +104,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   three markers at most, under Anthropic's four, never on a thinking block, and a retry resends
   the same marked request. From the second call on, the part of a request the last call already
   sent is meant to be read back at the model's cache rate, a tenth of its input rate on most
-  Claude models and a twentieth on Opus 5.5, after one write at a quarter more. A model that
-  answers in prose costs a write or two that nothing reads, and never a wrong request.
+  Claude models, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, after one write at a
+  quarter more. A model that answers in prose costs a write or two that nothing reads, and
+  never a wrong request.
   `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
   loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
   with no marker in the history, and 32 of them with one at the end of each request
@@ -98,9 +130,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   the log said "choosing a verb", which was over by then. It names the call the model chose now,
   says that it answered without one or that the call failed, and a wait on the model carries the
   last answer's seconds.
-- **A turn's picture is encoded once.** Every frame was encoded to PNG twice, once for `frames/`
-  and once more for the request. The save hands back the bytes it wrote and the model is sent
-  those, so the file a reader opens is the picture the pilot was shown.
+- **A turn's picture is encoded to PNG once.** Every frame was encoded to PNG twice, once for
+  `frames/` and once more for the request. The save hands back the bytes it wrote and the model
+  is sent those, so the file a reader opens is the picture the pilot was shown.
 - **prompt_toolkit is a core dependency.** `quackd drive`'s keyboard reads a line while a verb
   runs, which `input()` cannot, through prompt_toolkit 3.0.42 or later. Only that front end
   imports it, so no other command pays for it, and the lock gains prompt-toolkit and wcwidth.
@@ -109,12 +141,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - **A pilot call that hangs ends the run when the task's minutes are spent.** `max_minutes` was
   read only once an answer came back, so a call that hung held the robot past the task's whole
-  budget for as long as the vendor's own clock allowed, ten minutes on both SDKs, and only a
-  Ctrl-C ended it sooner. The call is raced against the task's minutes as it is against the stop,
-  and once they are spent it is cancelled, its `llm` record says so, and the run ends on its
-  budget. On a simulator the budget's clock is the simulator's and stands still while a model
-  thinks, so a simulated run is never cut off this way
-  ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
+  budget for as long as its SDK allowed, ten minutes on Anthropic's and OpenAI's, and only the
+  kill switch, a failed heartbeat or a flock's stop ended it sooner. The call is raced against
+  the task's minutes as it is against the stop, and once they are spent it is cancelled, its
+  `llm` record says so, and the run ends on its budget. On a simulator or a mock the budget's
+  clock is the body's own and stands still while a model thinks, so a run on either is never cut
+  off this way ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
 - **A `stop` over MCP ends the verb beside it.** A `stop` called while a `move`, a `go_to` or a
   `search_scan` ran sent its stop, and the verb's next twist, a tenth of a second later, walked
   the body on. `move`, `go_to`, `search_scan` and `approach_and` read a stop asked for beside them
@@ -123,17 +155,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   of failures in a row passes over. `approach_and` no longer runs its `then` verb after one, and
   `search_scan` no longer centres the head after one. A stop asked for while a verb is still
   reading the body's state ends it too, where the walk used to run its whole length after the
-  stop had come back ok
+  stop had come back ok, and `watch` and MOSS's `drive_to`, `explore` and arm cycles, which read
+  a stop already, missed one asked for during that read and ran on
   ([ADR-0067](docs/adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - **A verb admitted before an abort never starts after it.** A kill switch or a failed heartbeat
   that came while a verb was past its gates and reading the body's state found it in nothing
   it could cancel, and the verb sent its first twist after the abort. The abort is read again
   after the state, as a granted pause already was.
-- **A braked MOSS verb is no failure.** MOSS's `drive_to`, `explore` and arm cycles end on a
-  `stop` asked for beside them, and came back failed with no mark of the brake, so over MCP
-  three stops beside a `drive_to` ended the session on the rule that the same verb failing three
-  times in a row aborts. Each is marked `ended_by: stop` now, as the core verbs are, and only
-  for a stop: a budget that ran out is still a failure.
+- **A braked MOSS verb no longer counts toward `abort_when`.** MOSS's `drive_to`, `explore` and
+  arm cycles end on a `stop` asked for beside them, and came back failed with no mark of the
+  brake, so over MCP, under a `.duck` whose rule is that the same verb failing three times in a
+  row aborts, three stops beside a `drive_to` ended the session. Each is marked `ended_by: stop`
+  now, as the core verbs are, so `abort_when` passes over it, and only a stop marks one: a run
+  whose budget ran out still counts.
 - **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
   refused every other verb, so the brake reached for once the battery read low was a stop never
   sent. It still ends every other call after it.
@@ -161,16 +195,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   out the thinking a trim invalidates and has the API drop the one block it may not leave out.
   That markers can move around it freely comes from Anthropic's guidance, and no paid request has
   proved it.
-- **`quackd drive` has driven no real robot.** It has run against the mock Microduck and the
-  scripted pilot, and its keyboard against prompt_toolkit's own pipe input. Its prompt is
-  untried in PowerShell under conhost, in Windows Terminal and in VS Code's terminal, and how long
-  a real robot takes from a line to its first motion is unmeasured. The fast lane's floors are the
-  stepper's, unmeasured on its question. `quackd log` does not yet draw drive's own lines. A
-  goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
-  keeps no memory. A verb that needs a yes, run inside a call a person named, is answered by
-  `--yes` alone. Over MCP, a verb an adapter brings may not read a stop asked for beside it, the
-  ToddlerBot's own `search_scan` and the arm's joint moves among them. Drive's brake and a newer
-  command end any of them.
+- **`quackd drive` has driven no real robot.** It has run with the scripted pilot against the
+  mock Microduck, and once through a pipe on `microduck:sim2d`, and its keyboard against
+  prompt_toolkit's own pipe input. Its prompt is untried in PowerShell under conhost, in Windows
+  Terminal and in VS Code's terminal, and how long a real robot takes from a line to its first
+  motion is unmeasured. The fast lane's floors are the stepper's, unmeasured on its question.
+  `quackd log` does not yet draw drive's own lines. A goal's pilot takes `--llm` alone, without
+  the vendor flags `quackd run` takes, and a session keeps no memory. A verb that needs a yes,
+  run inside a call a person named, is answered by `--yes` alone. Over MCP, a verb an adapter
+  brings may not read a stop asked for beside it, the ToddlerBot's own `search_scan` and the
+  arm's joint moves among them. Drive's brake and a newer command end any of them.
 
 ## [0.26.0] — 2026-10-26
 
@@ -8409,7 +8443,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/rokbenko/quackd/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/rokbenko/quackd/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/rokbenko/quackd/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/rokbenko/quackd/compare/v0.23.0...v0.24.0
