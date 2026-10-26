@@ -8,20 +8,23 @@ rate comes from, and what the build is told. These run in the default suite, ove
 The second is CI's torch job (`.github/workflows/ci.yml`, `policy`): a tiny random ACT, built
 here with no pretrained backbone and saved naming LeRobot's default one, both processors saved,
 put in a Hub cache of its own at a commit and a tag, and served with the Hub and torchvision
-offline by the real server to the real client and an arm behind it. It is skipped where torch
-or LeRobot is missing, unless `QUACKD_REQUIRE_TORCH` is set, as it is in that job, where a
-missing one fails the run rather than leaving it green having loaded nothing. It is what moves
-POLICY_PIPELINE to VERIFIED (`policy/upstream_api.py`), for ACT on the CPU and nothing else,
-and a random policy says nothing about what a trained one does to an arm.
+offline by the real server to the real client and an arm behind it, and a tiny random X-VLA
+served the same way, with a tokenizer of a few words pinned at a commit. It is skipped where
+torch, LeRobot or transformers is missing, unless `QUACKD_REQUIRE_TORCH` is set, as it is in
+that job, where a missing one fails the run rather than leaving it green having loaded nothing.
+It is what moves POLICY_PIPELINE to VERIFIED (`policy/upstream_api.py`), for those two on the
+CPU and nothing else, and a random policy says nothing about what a trained one does to an arm.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import importlib.util
 import json
 import math
 import os
+import re
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -239,7 +242,10 @@ def test_a_checkpoint_is_read_before_anything_that_could_run_is_fetched(tmp_path
             {"registry_name": up.DEFAULT_STEP_NAMES[0], "class": "evil.Step", "config": {}},
             "named by its class",
         ),
-        ({"registry_name": "action_tokenizer_processor", "config": {}}, "not one of"),
+        (
+            {"registry_name": "action_tokenizer_processor", "config": {}},
+            "turns actions into tokens",
+        ),
         ({"registry_name": "some_step_of_its_own", "config": {}}, "not one of"),
         ({"registry_name": [up.DEVICE_STEP], "config": {}}, "not one of"),
         ({"registry_name": {"name": up.DEVICE_STEP}, "config": {}}, "not one of"),
@@ -264,17 +270,83 @@ def test_a_step_that_is_code_the_checkpoint_chose_is_refused_before_its_weights(
 
 
 def test_a_step_that_could_trust_remote_code_is_told_not_to(tmp_path: Path) -> None:
-    tokenizer = up.VLA_STEP_NAMES[1]
+    tokenizer = "tokenizer_processor"
+    assert tokenizer in up.PI05_STEP_NAMES
     pre, post = _processors(extra_pre=[{"registry_name": tokenizer, "config": {P.TRUST_KEY: True}}])
-    checkpoint = _fetch(_hub(tmp_path, pre=pre, post=post), fps=float(FPS))
+    hub = _hub(tmp_path, config=_act_config(type="pi05"), pre=pre, post=post)
+    checkpoint = _fetch(hub, fps=float(FPS))
     assert checkpoint.pre_overrides[tokenizer] == {P.TRUST_KEY: False}
+
+
+@pytest.mark.parametrize(
+    ("policy_type", "step"),
+    [
+        ("act", "tokenizer_processor"),
+        ("act", "relative_actions_processor"),
+        ("smolvla", "pi05_prepare_state_tokenizer_processor_step"),
+        ("pi05", "smolvla_new_line_processor"),
+        ("act", "groot_n1_7_pack_inputs_v1"),
+        ("xvla", "groot_n1_7_vlm_encode_v1"),
+    ],
+)
+def test_a_step_is_allowed_by_the_type_that_names_it_and_no_other(
+    tmp_path: Path, policy_type: str, step: str
+) -> None:
+    """Every step another type's processors use is one LeRobot registers, and one quackd read for
+    that type alone: an ACT naming a tokenizer is code nobody read for an ACT. The refusal says
+    what the type does allow, before any weight is fetched."""
+    assert any(step in allowed for allowed in P.STEPS_BY_TYPE.values()), step
+    assert step not in P.STEPS_BY_TYPE[policy_type]
+    pre, post = _processors(extra_pre=[{"registry_name": step, "config": {}}])
+    hub = _hub(tmp_path, config=_act_config(type=policy_type), pre=pre, post=post)
+    with pytest.raises(P.PipelineRefused, match=f"allows for a {policy_type!r} policy") as refused:
+        _fetch(hub, fps=float(FPS))
+    assert str(refused.value).endswith(", ".join(sorted(P.STEPS_BY_TYPE[policy_type])))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+
+
+def test_a_tokenizer_a_step_names_is_fetched_without_its_weights(tmp_path: Path) -> None:
+    """A model a processor step names is a tokenizer, and a tokenizer loads its configs and its
+    vocabulary and never a weight, so its weights are not fetched: a pi05 used to fetch every
+    safetensors file of the gated model whose tokenizer it uses. A model `config.json` names is
+    one the policy is built from, SmolVLA's backbone, and its weights come with it, so a
+    repository named both ways is fetched whole, and one named only by the step is not."""
+    tokenizer = "SomeOrg/Some-Tokenizer"
+    pre, post = _processors(
+        extra_pre=[
+            {"registry_name": "tokenizer_processor", "config": {"tokenizer_name": tokenizer}}
+        ]
+    )
+    hub = _hub(tmp_path / "pi05", config=_act_config(type="pi05"), pre=pre, post=post)
+    _fetch(hub, fps=float(FPS), pins=(f"{tokenizer}@{PINNED}",))
+    ((repo, _, patterns),) = hub.snapshots
+    assert repo == tokenizer and patterns == P.TOKENIZER_FILES
+    assert not any(p.endswith(".safetensors") for p in patterns), patterns
+    hub = _smolvla(tmp_path / "smolvla")
+    _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
+    ((_, _, patterns),) = hub.snapshots
+    assert patterns == P.NESTED_FILES and "*.safetensors" in patterns
+    newline = up.SMOLVLA_STEP_NAMES[0]
+    pre, post = _processors(
+        extra_pre=[
+            {"registry_name": newline, "config": {}},
+            {"registry_name": "tokenizer_processor", "config": {"tokenizer_name": tokenizer}},
+        ]
+    )
+    config = _act_config(type="smolvla", vlm_model_name="SomeOrg/Some-VLM")
+    hub = _hub(tmp_path / "apart", config=config, pre=pre, post=post)
+    _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}", f"{tokenizer}@{PINNED}"))
+    assert {repo: patterns for repo, _, patterns in hub.snapshots} == {
+        "SomeOrg/Some-VLM": P.NESTED_FILES,
+        tokenizer: P.TOKENIZER_FILES,
+    }
 
 
 def _smolvla(tmp_path: Path) -> FakeHub:
     """A SmolVLA-shaped checkpoint that names its backbone in its config and its tokenizer in a
     step, the same repository both times, as SmolVLA's processor factory writes it."""
     backbone = "SomeOrg/Some-VLM"
-    newline, tokenizer = up.VLA_STEP_NAMES[:2]
+    newline, tokenizer = up.SMOLVLA_STEP_NAMES
     pre, post = _processors(
         extra_pre=[
             {"registry_name": newline, "config": {}},
@@ -297,7 +369,7 @@ def test_a_model_the_checkpoint_names_inside_itself_is_pinned_or_refused(tmp_pat
     assert "*.py" not in patterns and not any(p.endswith((".bin", ".pt", ".pkl")) for p in patterns)
     where = str(hub.snapshot(repo, revision, patterns))
     assert pinned.config_overrides["vlm_model_name"] == where
-    assert pinned.pre_overrides[up.VLA_STEP_NAMES[1]] == {"tokenizer_name": where}
+    assert pinned.pre_overrides[up.SMOLVLA_STEP_NAMES[1]] == {"tokenizer_name": where}
     assert f"vlm_model_name SomeOrg/Some-VLM@{PINNED}" in pinned.loaded
     assert pinned.shape.pads_images
     for pins, needle in (
@@ -343,6 +415,11 @@ def test_a_smolvla_that_names_no_backbone_is_refused_before_its_weights(tmp_path
             json.dumps({"auto_map": {"AutoTokenizer": ["code.Tokenizer", None]}}),
             "maps its classes to code",
         ),
+        (
+            "adapter_config.json",
+            json.dumps({"peft_type": "LORA", "base_model_name_or_path": "Other/Base"}),
+            "holds a PEFT adapter",
+        ),
     ],
 )
 def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
@@ -350,8 +427,9 @@ def test_a_pinned_model_whose_cached_directory_holds_code_is_refused(
 ) -> None:
     """What is fetched of a pinned model is configs, tokenizer files and safetensors, but the
     Hub's cache keeps one directory per commit, and it may hold what an earlier fetch left
-    there. A file of any other kind in it, or a config mapping a class to code, refuses the
-    load before anything is built from it."""
+    there. A file of any other kind in it, a config mapping a class to code, or a PEFT
+    adapter's config, which transformers would load onto the model, refuses the load before
+    anything is built from it."""
     hub = _smolvla(tmp_path)
     where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
     for fine, said in (
@@ -375,13 +453,610 @@ def test_a_pi05_that_learned_relative_actions_is_served_in_chunks(tmp_path: Path
     """A pi05's relative actions are made absolute over the whole chunk, against the state it
     was predicted from, as its training made them relative: it is not a policy asked every
     tick, whatever LeRobot's own loop does with one (`upstream_api.VLA_PIPELINE`)."""
-    relative, absolute = up.VLA_STEP_NAMES[3:5]
+    relative, absolute = "relative_actions_processor", "absolute_actions_processor"
+    assert {relative, absolute} <= set(up.PI05_STEP_NAMES)
     pre, post = _processors(extra_pre=[{"registry_name": relative, "config": {"enabled": True}}])
     post["steps"].insert(1, {"registry_name": absolute, "config": {"enabled": True}})
     checkpoint = _fetch(_hub(tmp_path, config=_act_config(type="pi05"), pre=pre, post=post))
     assert not checkpoint.shape.per_tick and checkpoint.shape.pads_images
     assert checkpoint.shape.n_action_steps == N_ACTION_STEPS
     assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+
+
+PALIGEMMA = "google/paligemma-3b-pt-224"
+"""The gated tokenizer pi0's and pi05's processors name, as LeRobot's own factories write it."""
+
+
+def _pi0(tmp_path: Path, *, relative: bool = False) -> FakeHub:
+    """A pi0 as the SO-101 fine-tunes on the Hub were saved on 2026-10-25: six motors named in
+    `action_feature_names`, a top and a wrist camera, chunks of 50, PaliGemma's tokenizer named
+    in its step, and the relative and absolute steps there, switched on only when it learned
+    relative actions."""
+    n = len(JOINTS)
+    rename, batch, device, normalizer, unnormalizer = up.DEFAULT_STEP_NAMES
+    newline, tokenizer, to_relative, to_absolute = up.PI0_STEP_NAMES
+    image = {"type": "VISUAL", "shape": [3, 480, 640]}
+    config = {
+        "type": "pi0",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}top": image,
+            f"{up.IMAGES_PREFIX}wrist": image,
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 50,
+        "n_action_steps": 50,
+        "use_relative_actions": relative,
+        "relative_exclude_joints": ["gripper"],
+        "action_feature_names": [f"{m}.pos" for m in JOINTS],
+        "tokenizer_max_length": 48,
+        "empty_cameras": 0,
+    }
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {"rename_map": {}}},
+            {"registry_name": batch, "config": {}},
+            {"registry_name": newline, "config": {}},
+            {
+                "registry_name": tokenizer,
+                "config": {"max_length": 48, "task_key": "task", "tokenizer_name": PALIGEMMA},
+            },
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+            {
+                "registry_name": to_relative,
+                "config": {
+                    "enabled": relative,
+                    "exclude_joints": ["gripper"],
+                    "action_names": None,
+                },
+            },
+            {
+                "registry_name": normalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_preprocessor_step_6_{normalizer}.safetensors",
+            },
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [
+            {
+                "registry_name": unnormalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_postprocessor_step_0_{unnormalizer}.safetensors",
+            },
+            {"registry_name": to_absolute, "config": {"enabled": relative}},
+            {"registry_name": device, "config": {"device": "cpu", "float_dtype": None}},
+        ],
+    }
+    return _hub(tmp_path, config=config, pre=pre, post=post)
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_a_pi0_is_served_in_chunks_with_its_tokenizer_pinned(
+    tmp_path: Path, relative: bool
+) -> None:
+    """A pi0 is a pi05 with a step that ends its task with a newline in place of pi05's state
+    tokenizer (`upstream_api.PI0_PROCESSOR_STEPS`). Its tokenizer is PaliGemma's, pinned and
+    fetched without PaliGemma's weights, it pads a camera it is not given, it names its
+    action's motors for the arm to check, and one that learned relative actions is served a
+    chunk at a time, as a pi05 is."""
+    hub = _pi0(tmp_path, relative=relative)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {PALIGEMMA}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    checkpoint = _fetch(hub, fps=float(FPS), pins=(f"{PALIGEMMA}@{PINNED}",))
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("pi0", 50, 50)
+    assert shape.pads_images and not shape.per_tick
+    assert shape.action_names == tuple(f"{m}.pos" for m in JOINTS)
+    ((repo, revision, patterns),) = hub.snapshots
+    assert (repo, revision, patterns) == (PALIGEMMA, PINNED, P.TOKENIZER_FILES)
+    where = str(hub.snapshot(repo, revision, patterns))
+    assert checkpoint.pre_overrides["tokenizer_processor"] == {"tokenizer_name": where}
+    assert f"tokenizer_name {PALIGEMMA}@{PINNED}" in checkpoint.loaded
+    assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+
+
+@pytest.mark.parametrize(
+    ("config", "needle"),
+    [
+        (
+            _act_config(type="pi0_fast", action_tokenizer_name="physical-intelligence/fast"),
+            "FAST tokenizer's own Python code",
+        ),
+    ],
+)
+def test_a_family_quackd_read_and_will_not_serve_is_refused_from_its_config_alone(
+    tmp_path: Path, config: dict[str, Any], needle: str
+) -> None:
+    """A type whose own code runs a repository's Python, whatever a checkpoint of it says, is
+    refused on its `config.json`, before its processors are so much as fetched, in a sentence
+    that says why and what to serve instead (`REFUSED_TYPES`)."""
+    hub = _hub(tmp_path, config=config)
+    with pytest.raises(P.PipelineRefused, match=needle) as refused:
+        _fetch(hub, fps=float(FPS))
+    assert "instead" in str(refused.value)
+    assert [filename for _, _, filename in hub.asked] == [up.CONFIG_FILE]
+
+
+BART = "facebook/bart-large"
+"""The tokenizer an X-VLA's processor names unless its config says otherwise."""
+
+
+def _xvla(
+    tmp_path: Path,
+    *,
+    drop: Sequence[str] = (),
+    domain_id: Any = 0,
+    post_step: Mapping[str, Any] | None = None,
+    **over: Any,
+) -> FakeHub:
+    """An X-VLA as `mertkirgil/xvla-so101-renkli-kalem` was saved, read on 2026-10-25: `auto`
+    mode, six motors, a front camera, chunks of 30, 30 domains with its step handing over the
+    first, BART's tokenizer named in its step, Florence-2 described in its config and never
+    named as a model, and its actions normalised by their mean and deviation. `drop` leaves
+    keys out of its config, and `post_step` adds a step to its post-processor."""
+    n = len(JOINTS)
+    rename, batch, device, normalizer, unnormalizer = up.DEFAULT_STEP_NAMES
+    tokenizer, to_float, imagenet, domain, _ = up.XVLA_STEP_NAMES
+    config = {
+        "type": "xvla",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}front": {"type": "VISUAL", "shape": [3, 480, 640]},
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 30,
+        "n_action_steps": 30,
+        "action_mode": "auto",
+        "num_domains": 30,
+        "domain_feature_key": None,
+        "tokenizer_name": BART,
+        "max_action_dim": 20,
+        "max_state_dim": 20,
+        "num_image_views": 3,
+        "use_proprio": True,
+        "florence_config": {"vision_config": {"model_type": "davit"}, "text_config": {}},
+        "normalization_mapping": {"STATE": "IDENTITY", "ACTION": "MEAN_STD", "VISUAL": "IDENTITY"},
+        **over,
+    }
+    for key in drop:
+        del config[key]
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {"rename_map": {}}},
+            {"registry_name": batch, "config": {}},
+            {"registry_name": tokenizer, "config": {"max_length": 50, "tokenizer_name": BART}},
+            {"registry_name": domain, "config": {"domain_id": domain_id}},
+            {"registry_name": to_float, "config": {"image_keys": None, "validate_range": True}},
+            {"registry_name": imagenet, "config": {"image_keys": None}},
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+            {
+                "registry_name": normalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_preprocessor_step_7_{normalizer}.safetensors",
+            },
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [
+            {
+                "registry_name": unnormalizer,
+                "config": {"eps": 1e-8},
+                "state_file": f"policy_postprocessor_step_0_{unnormalizer}.safetensors",
+            },
+            *([post_step] if post_step is not None else []),
+            {"registry_name": device, "config": {"device": "cpu", "float_dtype": None}},
+        ],
+    }
+    return _hub(tmp_path, config=config, pre=pre, post=post)
+
+
+def test_an_xvla_in_auto_mode_is_served_with_its_tokenizer_pinned(tmp_path: Path) -> None:
+    """An X-VLA in `auto` mode answers in the dataset's own action, an SO-101's joints. Its
+    Florence-2 is built from its config, so BART's tokenizer is the one model it names, pinned
+    and fetched without weights, and it runs with a camera it is not given padded. LeRobot lowers
+    the mode before it reads it, so the server does too (`upstream_api.XVLA_ACTION_MODES`)."""
+    hub = _xvla(tmp_path)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {BART}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    checkpoint = _fetch(hub, fps=float(FPS), pins=(f"{BART}@{PINNED}",))
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("xvla", 30, 30)
+    assert shape.pads_images and not shape.per_tick
+    ((repo, revision, patterns),) = hub.snapshots
+    assert (repo, revision, patterns) == (BART, PINNED, P.TOKENIZER_FILES)
+    where = str(hub.snapshot(repo, revision, patterns))
+    assert checkpoint.pre_overrides["tokenizer_processor"] == {"tokenizer_name": where}
+    assert "pretrained_backbone_weights" not in checkpoint.config_overrides
+    upper = _xvla(tmp_path / "upper", action_mode="AUTO")
+    assert _fetch(upper, fps=float(FPS), pins=(f"{BART}@{PINNED}",)).shape.policy_type == "xvla"
+
+
+_ROTATION = {
+    "registry_name": "xvla_rotation_6d_to_axis_angle",
+    "config": {"expected_action_dim": 10},
+}
+
+
+@pytest.mark.parametrize(
+    ("kw", "needle"),
+    [
+        ({"action_mode": "ee6d"}, "action_mode is 'ee6d', which is not this arm's joints"),
+        ({"action_mode": "joint"}, "action_mode is 'joint'"),
+        ({"action_mode": "so101_bimanual"}, "action_mode is 'so101_bimanual'"),
+        ({"action_mode": "franka_joint7"}, "action_mode is 'franka_joint7'"),
+        ({"drop": ["action_mode"]}, "action_mode is 'ee6d'"),
+        ({"action_mode": 7}, "action_mode is 7"),
+        ({"domain_id": 30}, "domain 30, and it has 30 domains"),
+        ({"domain_id": -1}, "hands the model domain -1"),
+        ({"domain_id": True}, "hands the model domain True"),
+        ({"domain_id": "0"}, "hands the model domain '0'"),
+        ({"num_domains": 0}, "not a count of domains"),
+        ({"post_step": _ROTATION}, "axis-angle and the gripper into -1 or 1"),
+    ],
+)
+def test_an_xvla_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
+    tmp_path: Path, kw: dict[str, Any], needle: str
+) -> None:
+    """Every mode but `auto` decodes the answer as an end effector's pose or another robot's
+    joints, and LIBERO's rotation step turns it into an axis and an angle and a gripper of -1 or
+    1, none of which an SO-101 takes. A domain past the model's is a row it does not have. Each
+    is refused in a sentence of its own, before the tokenizer's pin or a weight is fetched."""
+    hub = _xvla(tmp_path, **kw)
+    with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
+        _fetch(hub, fps=float(FPS), pins=(f"{BART}@{PINNED}",))
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    assert not hub.snapshots
+
+
+GROOT_BASE = "nvidia/GR00T-N1.7-3B"
+COSMOS = up.GROOT_BACKBONE
+"""The base and the backbone's tokenizer a GR00T N1.7 checkpoint names, as LeRobot's own
+training writes them."""
+_GROUPS = (("single_arm", 5, "RELATIVE"), ("gripper", 1, "ABSOLUTE"))
+"""The action groups the SO-101 GR00T fine-tunes on the Hub decode by, read on 2026-10-25: the
+five arm joints relative to the state, the gripper absolute, both joints."""
+
+
+def _group_stats(n: int, offset: int) -> dict[str, list[float]]:
+    """One group's statistics as the pack step keeps them, each a list per joint, its 1st and
+    99th percentiles inside its min and max, as a dataset's are, so that a reading of the one
+    is never the other."""
+    q01 = [-40.0 - offset - i for i in range(n)]
+    q99 = [40.0 + offset + i for i in range(n)]
+    return {
+        "min": [v - 1.0 for v in q01],
+        "max": [v + 1.0 for v in q99],
+        "mean": [0.0] * n,
+        "std": [10.0] * n,
+        "count": [100],
+        "q01": q01,
+        "q99": q99,
+    }
+
+
+def _groot(
+    tmp_path: Path,
+    *,
+    grouped: bool = True,
+    groups: Sequence[tuple[str, int, str]] = _GROUPS,
+    types: Mapping[str, str] | None = None,
+    cameras: Sequence[str] = ("front",),
+    backbone: Any = COSMOS,
+    drop: Sequence[str] = (),
+    decode: Mapping[str, Any] | None = None,
+    **over: Any,
+) -> FakeHub:
+    """A GR00T N1.7 as the SO-101 fine-tunes on the Hub were saved, read on 2026-10-25. With
+    `grouped`, as `jammyyang/groot17_so101_pick_place` is: relative actions with the gripper
+    left absolute, decoded group by group by the statistics its pack step keeps in `raw_stats`.
+    Without, as `haydendoo/so101_pickup_groot_medium_new_v1` is: absolute actions decoded by its
+    dataset's statistics in a state file. Six motors, a front camera, chunks of 16, the base and
+    the backbone's tokenizer named, and the base's own `config.json` in the Hub naming
+    `backbone`. `types` gives a group another type, `drop` leaves keys out of its config and
+    `decode` merges into its decode step's config."""
+    n = len(JOINTS)
+    rename, batch, device = up.DEFAULT_STEP_NAMES[:3]
+    config: dict[str, Any] = {
+        "type": "groot",
+        "input_features": {
+            up.STATE_KEY: {"type": "STATE", "shape": [n]},
+            f"{up.IMAGES_PREFIX}front": {"type": "VISUAL", "shape": [3, 480, 640]},
+        },
+        "output_features": {up.ACTION_KEY: {"type": "ACTION", "shape": [n]}},
+        "device": "cuda",
+        "chunk_size": 16,
+        "n_action_steps": 16,
+        "base_model_path": GROOT_BASE,
+        "embodiment_tag": "new_embodiment",
+        "use_relative_actions": grouped,
+        "relative_exclude_joints": ["gripper"] if grouped else [],
+        "action_decode_transform": None,
+        "tokenizer_assets_repo": None,
+        "max_state_dim": 132,
+        "max_action_dim": 132,
+        "normalization_mapping": {"VISUAL": "IDENTITY", "STATE": "IDENTITY", "ACTION": "IDENTITY"},
+        **over,
+    }
+    for key in drop:
+        del config[key]
+    keys = [name for name, _, _ in groups]
+    raw = {
+        "state": {name: _group_stats(size, i) for i, (name, size, _) in enumerate(groups)},
+        "action": {name: _group_stats(size, i + 5) for i, (name, size, _) in enumerate(groups)},
+    }
+    modalities = {
+        "state": {"modality_keys": keys},
+        "action": {
+            "modality_keys": keys,
+            "action_configs": [
+                {"rep": rep, "type": (types or {}).get(name, "NON_EEF"), "format": "DEFAULT"}
+                for name, _, rep in groups
+            ],
+            "delta_indices": list(range(40)),
+        },
+        "video": {"modality_keys": list(cameras), "delta_indices": [0]},
+    }
+    pack: dict[str, Any] = {
+        "action_horizon": 40 if grouped else 16,
+        "valid_action_horizon": 16,
+        "embodiment_tag": "new_embodiment",
+        "normalize_min_max": True,
+        "use_percentiles": grouped,
+        "video_modality_keys": list(cameras) if grouped else None,
+        "raw_stats": raw if grouped else None,
+        "modality_config": modalities if grouped else None,
+    }
+    vlm = {"model_name": COSMOS, "image_target_size": [256, 256], "device": "cuda"}
+    if grouped:
+        decoder: dict[str, Any] = {
+            "registry_name": up.GROOT_DECODE_STEP,
+            "config": {
+                "env_action_dim": n,
+                "raw_stats": raw,
+                "modality_config": modalities,
+                "use_percentiles": True,
+                "use_relative_action": True,
+                "action_decode_transform": None,
+                **(decode or {}),
+            },
+        }
+    else:
+        decoder = {
+            "registry_name": up.GROOT_DATASET_DECODE_STEP,
+            "config": {
+                "env_action_dim": n,
+                "normalize_min_max": True,
+                "clip_normalized_action": True,
+                "libero_gripper_action": False,
+                **(decode or {}),
+            },
+            "state_file": f"policy_postprocessor_step_0_{up.GROOT_DATASET_DECODE_STEP}.safetensors",
+        }
+    pre = {
+        "name": "policy_preprocessor",
+        "steps": [
+            {"registry_name": rename, "config": {}},
+            {"registry_name": batch, "config": {}},
+            {
+                "registry_name": up.GROOT_PACK_STEP,
+                "config": pack,
+                "state_file": f"policy_preprocessor_step_2_{up.GROOT_PACK_STEP}.safetensors",
+            },
+            {"registry_name": up.GROOT_VLM_STEP, "config": vlm},
+            {"registry_name": device, "config": {"device": "cuda", "float_dtype": None}},
+        ],
+    }
+    post = {
+        "name": "policy_postprocessor",
+        "steps": [decoder, {"registry_name": device, "config": {"device": "cpu"}}],
+    }
+    hub = _hub(tmp_path, config=config, pre=pre, post=post)
+    base = {"model_type": "Gr00tN1d7", "action_horizon": 40}
+    if backbone is not None:
+        base["model_name"] = backbone
+    hub.files[(GROOT_BASE, PINNED)] = {up.CONFIG_FILE: base}
+    return hub
+
+
+GROOT_PINS = (f"{GROOT_BASE}@{PINNED}", f"{COSMOS}@{PINNED}")
+
+
+def test_a_groot_n1_7_is_served_with_its_base_and_its_backbones_tokenizer_pinned(
+    tmp_path: Path,
+) -> None:
+    """A GR00T N1.7 names the base it is built from in its config and its backbone's tokenizer
+    in a step, so both are pinned: the base fetched with its weights, the tokenizer without,
+    and the base's own `config.json` read before any weight. It pads no camera it is not given.
+    Its frame is the 1st and 99th percentiles its pack step keeps in `raw_stats`, its groups'
+    joined in their order, which is what `/v1/policy` reports for the arm to check: its state
+    file holds a min and a max in their place (`upstream_api.GROOT_PERCENTILE_STATS`)."""
+    hub = _groot(tmp_path)
+    with pytest.raises(P.PipelineRefused, match=f"--pin {GROOT_BASE}@REVISION"):
+        _fetch(hub, fps=float(FPS))
+    checkpoint = _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    shape = checkpoint.shape
+    assert (shape.policy_type, shape.chunk_size, shape.n_action_steps) == ("groot", 16, 16)
+    assert not shape.pads_images and not shape.per_tick
+    assert {repo: patterns for repo, _, patterns in hub.snapshots} == {
+        GROOT_BASE: P.NESTED_FILES,
+        COSMOS: P.TOKENIZER_FILES,
+    }
+    asked = [(repo, filename) for repo, _, filename in hub.asked]
+    assert asked.index((GROOT_BASE, up.CONFIG_FILE)) < asked.index((REPO, up.WEIGHTS_FILE))
+    base = str(hub.snapshot(GROOT_BASE, PINNED, P.NESTED_FILES))
+    assert checkpoint.config_overrides["base_model_path"] == base
+    cosmos = str(hub.snapshot(COSMOS, PINNED, P.TOKENIZER_FILES))
+    assert checkpoint.pre_overrides[up.GROOT_VLM_STEP] == {"device": "cpu", "model_name": cosmos}
+    assert f"base_model_path {GROOT_BASE}@{PINNED}" in checkpoint.loaded
+    assert f"model_name {COSMOS}@{PINNED}" in checkpoint.loaded
+    raw = _groot_stats()
+    for got, modality in (
+        (checkpoint.state_quantiles, "state"),
+        (checkpoint.action_quantiles, "action"),
+    ):
+        assert got is not None, modality
+        assert got.q01 == [v for name, _, _ in _GROUPS for v in raw[modality][name]["q01"]]
+        assert got.q99 == [v for name, _, _ in _GROUPS for v in raw[modality][name]["q99"]]
+        assert got.q01 != [v for name, _, _ in _GROUPS for v in raw[modality][name]["min"]]
+
+
+def _groot_stats() -> dict[str, dict[str, dict[str, list[float]]]]:
+    """The `raw_stats` `_groot` gives its pack step, built the way it builds them."""
+    return {
+        "state": {name: _group_stats(size, i) for i, (name, size, _) in enumerate(_GROUPS)},
+        "action": {name: _group_stats(size, i + 5) for i, (name, size, _) in enumerate(_GROUPS)},
+    }
+
+
+def test_a_groot_decoded_by_its_datasets_statistics_is_left_to_the_normalisers_frame(
+    tmp_path: Path,
+) -> None:
+    """A GR00T fine-tuned with no relative actions decodes by its dataset's statistics, which
+    its state files hold, the percentiles among them where the dataset had them, so its frame is
+    read as every other type's is, and the checkpoint carries none of its own."""
+    checkpoint = _fetch(_groot(tmp_path, grouped=False), fps=float(FPS), pins=GROOT_PINS)
+    assert checkpoint.shape.policy_type == "groot"
+    assert checkpoint.state_quantiles is None and checkpoint.action_quantiles is None
+
+
+_N1_5_PACK = {"registry_name": up.GROOT_N1_5_STEP_NAMES[0], "config": {}}
+
+
+@pytest.mark.parametrize(
+    ("kw", "needle"),
+    [
+        ({"base_model_path": "nvidia/GR00T-N1.5-3B"}, "is a GR00T N1.5 checkpoint"),
+        (
+            {"tokenizer_assets_repo": "lerobot/eagle2hg-processor-groot-n1p5"},
+            "is a GR00T N1.5 checkpoint",
+        ),
+        ({"action_decode_transform": "libero"}, "LIBERO's transform, to -1 or 1"),
+        (
+            {"action_decode_transform": "auto", "embodiment_tag": "libero_sim"},
+            "LIBERO's transform, to -1 or 1",
+        ),
+        (
+            {"drop": ["action_decode_transform"], "embodiment_tag": "libero_sim"},
+            "LIBERO's transform, to -1 or 1",
+        ),
+        ({"action_decode_transform": "fancy"}, "none LeRobot 0.6.1 knows"),
+        ({"types": {"single_arm": "EEF"}}, "single_arm as an end-effector pose (EEF)"),
+        ({"types": {"gripper": "BODY"}}, "gripper the type 'BODY', which is not joints"),
+        (
+            {"decode": {"raw_stats": None}},
+            "still normalised to -1..1, which the arm would take as degrees",
+        ),
+        (
+            {"grouped": False, "decode": {"normalize_min_max": False}},
+            "still normalised to -1..1",
+        ),
+        ({"cameras": ("front", "wrist")}, "looks for the cameras wrist"),
+        ({"drop": ["base_model_path"]}, "names no base_model_path"),
+        ({"backbone": "SomeOrg/Other-VLM"}, "'SomeOrg/Other-VLM' as its backbone"),
+    ],
+)
+def test_a_groot_that_would_not_answer_in_this_arms_joints_is_refused_before_its_weights(
+    tmp_path: Path, kw: dict[str, Any], needle: str
+) -> None:
+    """Each in a sentence of its own, before a weight is fetched: an N1.5, which LeRobot 0.6.1
+    no longer serves; LIBERO's gripper of -1 or 1; a group decoded as an end effector's pose; a
+    decode with no statistics, whose actions would reach the arm still normalised; a pack step
+    looking for a camera its config has no image for; a config naming no base, which LeRobot
+    would fill with its own at no revision; and a base whose backbone LeRobot would fetch
+    trusting its repository's code."""
+    hub = _groot(tmp_path, **kw)
+    with pytest.raises(P.PipelineRefused, match=re.escape(needle)):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    assert not hub.snapshots
+
+
+def test_a_groot_whose_steps_are_n1_5s_or_whose_decode_is_missing_is_refused(
+    tmp_path: Path,
+) -> None:
+    """N1.5's step names are LeRobot's stubs for its removal, refused by name before anything
+    else of the checkpoint is read past its processors, and a post-processor with no step to
+    decode GR00T's answer would hand it back still normalised."""
+    hub = _groot(tmp_path / "n1_5")
+    pre = hub.files[(REPO, _commit(REPO))][up.PREPROCESSOR_FILE]
+    pre["steps"][2] = {**_N1_5_PACK, "state_file": None}
+    with pytest.raises(P.PipelineRefused, match=re.escape("only GR00T N1.5's processors name")):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    hub = _groot(tmp_path / "undecoded")
+    post = hub.files[(REPO, _commit(REPO))][up.POSTPROCESSOR_FILE]
+    post["steps"] = post["steps"][1:]
+    with pytest.raises(P.PipelineRefused, match="no step that decodes GR00T's actions"):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+    hub = _groot(tmp_path / "baseless")
+    hub.files[(GROOT_BASE, PINNED)] = {}
+    with pytest.raises(P.PipelineRefused, match=f"has no {up.CONFIG_FILE}, so it is not a GR00T"):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
+    assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+
+
+class _Stat:
+    """A statistic as a step's `state_dict` holds it, with what `_quantiles` asks a tensor."""
+
+    def __init__(self, values: Sequence[float]) -> None:
+        self.values = list(values)
+
+    def detach(self) -> _Stat:
+        return self
+
+    def cpu(self) -> _Stat:
+        return self
+
+    def reshape(self, *shape: int) -> _Stat:
+        return self
+
+    def tolist(self) -> list[float]:
+        return list(self.values)
+
+
+class _Normaliser:
+    """A pre-processor whose one step keeps the state's percentiles, as the normaliser does."""
+
+    def __init__(self, q01: Sequence[float], q99: Sequence[float]) -> None:
+        stats = {f"{up.STATE_KEY}.q01": _Stat(q01), f"{up.STATE_KEY}.q99": _Stat(q99)}
+        step = type("Step", (), {"state_dict": lambda self: stats})()
+        self.steps = [step]
+
+
+def test_percentiles_a_type_keeps_elsewhere_come_before_the_normalisers(tmp_path: Path) -> None:
+    """A type whose own steps keep the state's percentiles somewhere the normaliser's are not
+    says them in the checkpoint (`Family`), and those are what the runner reports, which the
+    arm holds against its travel. Without them the normaliser's are reported, as before."""
+    n = len(JOINTS)
+    normalised = _Normaliser([-1.0] * n, [1.0] * n)
+    empty = _Normaliser([], [])
+    empty.steps = []
+    checkpoint = _fetch(_hub(tmp_path), fps=float(FPS))
+
+    def runner(checkpoint: P.Checkpoint) -> P.LeRobotRunner:
+        return P.LeRobotRunner(
+            checkpoint,
+            policy=object(),
+            preprocessor=normalised,
+            postprocessor=empty,
+            cameras={},
+            threads=1,
+            latency_s=0.0,
+        )
+
+    assert runner(checkpoint).state_quantiles == wire.Quantiles(q01=[-1.0] * n, q99=[1.0] * n)
+    own = wire.Quantiles(q01=[-2.0] * n, q99=[2.0] * n)
+    acted = wire.Quantiles(q01=[-3.0] * n, q99=[3.0] * n)
+    kept = dataclasses.replace(checkpoint, state_quantiles=own, action_quantiles=acted)
+    assert (runner(kept).state_quantiles, runner(kept).action_quantiles) == (own, acted)
 
 
 def test_a_reset_resets_the_policy_and_both_processors(tmp_path: Path) -> None:
@@ -626,13 +1301,19 @@ def test_a_repository_is_named_in_ascii_at_a_revision(spec: str) -> None:
 # ── a tiny random ACT, served for real (CI's torch job) ─────────────────────────────────
 
 TORCHLESS = importlib.util.find_spec("torch") is None or importlib.util.find_spec("lerobot") is None
-if TORCHLESS and os.environ.get("QUACKD_REQUIRE_TORCH"):
+TRANSFORMERLESS = importlib.util.find_spec("transformers") is None
+if (TORCHLESS or TRANSFORMERLESS) and os.environ.get("QUACKD_REQUIRE_TORCH"):
     raise RuntimeError(
-        "QUACKD_REQUIRE_TORCH is set and torch or LeRobot is not installed here, so the tiny "
-        "ACT would be skipped and prove nothing: install both, as CI's policy job does"
+        "QUACKD_REQUIRE_TORCH is set and torch, LeRobot or transformers is not installed here, so "
+        "the tiny ACT or the tiny X-VLA would be skipped and prove nothing: install them, as CI's "
+        "policy job does"
     )
 NEEDS_TORCH = pytest.mark.skipif(
     TORCHLESS, reason="torch and LeRobot are CI's torch job's, not the default suite's"
+)
+NEEDS_TRANSFORMERS = pytest.mark.skipif(
+    TORCHLESS or TRANSFORMERLESS,
+    reason="an X-VLA's Florence-2 and its tokenizer are transformers', which CI's torch job has",
 )
 
 
@@ -672,7 +1353,6 @@ def tiny_act(tmp_path_factory: pytest.TempPathFactory) -> TinyAct:
     never fetches one (`upstream_api.ACT_BACKBONE_WEIGHTS`, and `offline`)."""
     torch = pytest.importorskip("torch")
     pytest.importorskip("lerobot")
-    import dataclasses
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.policies.act.configuration_act import ACTConfig
@@ -990,10 +1670,14 @@ def test_a_checkpoint_whose_weights_are_not_its_models_is_refused(offline: TinyA
 
 
 @NEEDS_TORCH
-def test_a_pi05_is_loaded_strictly_where_its_own_loader_would_not_be(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lenient", ["pi05", "pi0"])
+def test_a_pi05_or_a_pi0_is_loaded_strictly_where_its_own_loader_would_not_be(
+    tmp_path: Path, lenient: str
+) -> None:
     """pi05's `from_pretrained` catches a load that fails and hands back the model as it was
-    built. A stand-in with a loader like it, and a key fix and a `model.` prefix like its own:
-    `build_policy` loads its weights itself, every one of them, or raises."""
+    built, and pi0's is the same loader (`upstream_api.PI0_FROM_PRETRAINED`). A stand-in with a
+    loader like theirs, and a key fix and a `model.` prefix like their own: `build_policy` loads
+    its weights itself, every one of them, or raises."""
     from types import SimpleNamespace
 
     import torch
@@ -1012,7 +1696,7 @@ def test_a_pi05_is_loaded_strictly_where_its_own_loader_would_not_be(tmp_path: P
         def _fix_pytorch_state_dict_keys(self, state: Any, config: Any) -> dict[str, Any]:
             return {k.removeprefix("old_"): v for k, v in state.items()}
 
-    (lenient,) = P.LENIENT_LOADERS
+    assert lenient in P.LENIENT_LOADERS
     config = SimpleNamespace(type=lenient, device="cpu")
     weight, bias = torch.full((2, 2), 3.0), torch.full((2,), 5.0)
     save_file({"old_weight": weight, "model.bias": bias}, str(tmp_path / up.WEIGHTS_FILE))
@@ -1041,3 +1725,200 @@ def test_torch_gets_as_many_threads_however_often_a_checkpoint_loads(offline: Ti
         assert counts[0] == counts[1] == max(1, P.torch_threads() - 1), counts
     finally:
         torch.set_num_threads(before)
+
+
+# ── a tiny random X-VLA, served for real (CI's torch job, with transformers) ────────────
+
+TINY_TOKENIZER = "quackd-test/tiny-tokenizer"
+TINY_XVLA = "quackd-test/tiny-xvla"
+
+
+@dataclass(frozen=True)
+class TinyXvla:
+    """A tiny random X-VLA and the tokenizer it names, in a Hub cache of their own, each at a
+    commit, and the percentiles its state was normalised with, in `JOINTS`' order."""
+
+    cache: Path
+    q01: tuple[float, ...]
+    q99: tuple[float, ...]
+
+    @property
+    def spec(self) -> str:
+        return f"{TINY_XVLA}@{_commit(TINY_XVLA)}"
+
+    @property
+    def pin(self) -> str:
+        return f"{TINY_TOKENIZER}@{_commit(TINY_TOKENIZER)}"
+
+
+@pytest.fixture(scope="module")
+def tiny_xvla(tmp_path_factory: pytest.TempPathFactory) -> TinyXvla:
+    """Built once per run, fetching nothing: an X-VLA in `auto` mode whose Florence-2 is a layer
+    or two deep, described in its config as a checkpoint's is, with chunks of `CHUNK_SIZE` of
+    which `N_ACTION_STEPS` are played, a state and an action the size of the arm's bus, a front
+    camera the size of the suite's frames, and its actions normalised by their mean and
+    deviation as the SO-101 fine-tunes' are. Its tokenizer is a word-level one of a few words,
+    saved where a pinned repository lands in the Hub's cache, and its processor names it by that
+    repository, as a pushed checkpoint names BART's."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
+    from lerobot.policies.factory import make_pre_post_processors
+    from lerobot.policies.xvla.configuration_xvla import XVLAConfig
+    from lerobot.policies.xvla.modeling_xvla import XVLAPolicy
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    cache = tmp_path_factory.mktemp("xvla-hub")
+    words = ["[PAD]", "[UNK]", "reach", "the", "cube", "place", "it"]
+    vocabulary = Tokenizer(models.WordLevel({w: i for i, w in enumerate(words)}, unk_token="[UNK]"))
+    vocabulary.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer = _cached(cache, TINY_TOKENIZER, "models", TINY_TOKENIZER)
+    PreTrainedTokenizerFast(
+        tokenizer_object=vocabulary, unk_token="[UNK]", pad_token="[PAD]"
+    ).save_pretrained(tokenizer)
+    n = len(JOINTS)
+    florence = {
+        "vision_config": {
+            "model_type": "davit",
+            "depths": [1, 1],
+            "dim_embed": [16, 32],
+            "num_heads": [1, 2],
+            "num_groups": [1, 2],
+            "patch_size": [7, 3],
+            "patch_stride": [4, 2],
+            "patch_padding": [3, 1],
+            "patch_prenorm": [False, True],
+            "window_size": 4,
+            "projection_dim": 32,
+            "image_pos_embed": {"type": "learned_abs_2d", "max_pos_embeddings": 50},
+            "visual_temporal_embedding": {"type": "COSINE", "max_temporal_embeddings": 4},
+            "image_feature_source": ["spatial_avg_pool", "temporal_avg_pool"],
+        },
+        "text_config": {
+            "vocab_size": 64,
+            "d_model": 32,
+            "encoder_layers": 1,
+            "decoder_layers": 1,
+            "encoder_attention_heads": 2,
+            "decoder_attention_heads": 2,
+            "encoder_ffn_dim": 64,
+            "decoder_ffn_dim": 64,
+            "max_position_embeddings": 128,
+        },
+        "projection_dim": 32,
+        "vocab_size": 64,
+    }
+    config = XVLAConfig(
+        input_features={
+            up.STATE_KEY: PolicyFeature(type=FeatureType.STATE, shape=(n,)),
+            f"{up.IMAGES_PREFIX}front": PolicyFeature(
+                type=FeatureType.VISUAL, shape=(3, FRAME_H, FRAME_W)
+            ),
+        },
+        output_features={up.ACTION_KEY: PolicyFeature(type=FeatureType.ACTION, shape=(n,))},
+        normalization_mapping={
+            "VISUAL": NormalizationMode.IDENTITY,
+            "STATE": NormalizationMode.IDENTITY,
+            "ACTION": NormalizationMode.MEAN_STD,
+        },
+        florence_config=florence,
+        action_mode=up.XVLA_SERVED_MODE,
+        chunk_size=CHUNK_SIZE,
+        n_action_steps=N_ACTION_STEPS,
+        hidden_size=32,
+        depth=1,
+        num_heads=2,
+        num_domains=2,
+        len_soft_prompts=2,
+        max_len_seq=128,
+        max_action_dim=8,
+        max_state_dim=8,
+        num_denoising_steps=2,
+        tokenizer_name=str(tokenizer),
+        tokenizer_max_length=8,
+        device="cpu",
+    )
+    torch.manual_seed(0)
+    policy = XVLAPolicy(config)
+    q01, q99 = tuple(-30.0 - i for i in range(n)), tuple(30.0 + i for i in range(n))
+    lo, hi = torch.tensor(q01), torch.tensor(q99)
+    stats = {
+        "mean": (lo + hi) / 2,
+        "std": (hi - lo) / 2,
+        "min": lo,
+        "max": hi,
+        "q01": lo,
+        "q99": hi,
+    }
+    pre, post = make_pre_post_processors(
+        config, dataset_stats={up.STATE_KEY: stats, up.ACTION_KEY: dict(stats)}
+    )
+    snapshot = _cached(cache, TINY_XVLA, "models", TINY_XVLA)
+    policy.save_pretrained(snapshot)
+    pre.save_pretrained(snapshot)
+    post.save_pretrained(snapshot)
+    # a pushed checkpoint names its tokenizer by its Hub id, and the pin says at which commit
+    for name in (up.CONFIG_FILE, up.PREPROCESSOR_FILE):
+        saved = json.loads((snapshot / name).read_text(encoding="utf-8"))
+        if "tokenizer_name" in saved:
+            saved["tokenizer_name"] = TINY_TOKENIZER
+        for step in saved.get("steps", []):
+            if "tokenizer_name" in step.get("config", {}):
+                step["config"]["tokenizer_name"] = TINY_TOKENIZER
+        (snapshot / name).write_text(json.dumps(saved), encoding="utf-8")
+    return TinyXvla(cache, q01, q99)
+
+
+@pytest.fixture
+def offline_xvla(tiny_xvla: TinyXvla, monkeypatch: pytest.MonkeyPatch) -> TinyXvla:
+    """The Hub is the tiny X-VLA's cache and nothing else, offline, as CI's job runs it."""
+    from huggingface_hub import constants
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setattr(constants, "HF_HUB_OFFLINE", True)
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tiny_xvla.cache))
+    return tiny_xvla
+
+
+@NEEDS_TRANSFORMERS
+def test_a_tiny_xvla_is_served_offline_with_its_tokenizer_pinned(offline_xvla: TinyXvla) -> None:
+    """The second family CI's job serves through the real server and client: its config,
+    processors and pin read and checked as every checkpoint's are, its tokenizer fetched from
+    the cache alone and with no weight, its Florence-2 built from its config, its weights loaded
+    by X-VLA's own strict loader, and a chunk back with a finite goal for every motor. A random
+    policy says nothing about what a trained one does to an arm."""
+    runner, info = S.served_policy(
+        S.ServeOptions(policy=offline_xvla.spec, fps=float(FPS), pins=(offline_xvla.pin,))
+    )
+    app_ = S.PolicyServer(runner, info, TOKEN)
+    http = S.serve(app_, "127.0.0.1", 0)
+    camera = wire.CameraInfo(name="front", height=FRAME_H, width=FRAME_W)
+    client = RemoteRunner(
+        f"http://127.0.0.1:{int(http.server_address[1])}",
+        token=TOKEN,
+        motors=JOINTS,
+        cameras=[camera],
+    )
+    try:
+        said = client.policy()
+        loaded = [f"checkpoint {offline_xvla.spec}", f"tokenizer_name {offline_xvla.pin}"]
+        assert said.loaded == loaded
+        assert said.features.pads_images and said.cameras == {"front": f"{up.IMAGES_PREFIX}front"}
+        assert (said.chunk_size, said.n_action_steps) == (CHUNK_SIZE, N_ACTION_STEPS)
+        assert said.state_quantiles is not None
+        assert said.state_quantiles.q01 == pytest.approx(offline_xvla.q01)
+        assert said.state_quantiles.q99 == pytest.approx(offline_xvla.q99)
+        reading: dict[str, Any] = {f"{m}.pos": 0.0 for m in JOINTS}
+        reading["front"] = _front()
+        client.reset("reach the cube")
+        chunk = client.next_chunk(Observation(0, reading), {})
+    finally:
+        client.close()
+        http.shutdown()
+        http.server_close()
+        app_.close()
+    assert len(chunk.actions) == N_ACTION_STEPS
+    for action in chunk.actions:
+        assert set(action) == set(JOINTS)
+        assert all(math.isfinite(v) for v in action.values())

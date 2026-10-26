@@ -11,6 +11,57 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Added
 
+- **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
+  is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
+  with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
+  where pi05's write the state into the prompt, and that step, its tokenizer and the relative and
+  absolute steps pi05 has too are all it allows beyond the default ones. It needs the same
+  `--pin` for `google/paligemma-3b-pt-224` and the same Hub token granted it, it runs with a
+  camera it is not given padded, and one that learned relative actions is served a whole chunk at
+  a time, made absolute against the state it was predicted from. Its own loader hands back a
+  random network when its weights do not load, as pi05's does, so the server loads them itself,
+  strictly. A pi0-FAST is refused on its `config.json`, before anything else is fetched, because
+  its policy loads the FAST tokenizer with `trust_remote_code=True`, hard-wired, and so would run
+  the Python that tokenizer's repository brings with it. Tests hold a stand-in shaped like the
+  SO-101 fine-tunes on the Hub to every check, a pi0-FAST to being refused with nothing but its
+  config fetched, and a lenient pi0 loader to raising on a weight it lacks
+  ([docs/guides/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)).
+- **`quackd policy serve` serves an X-VLA in its `auto` action mode.** X-VLA's answer means
+  what `action_mode` in its config says, and `auto` is the dataset's own action, which for an
+  SO-101's data is the arm's own joints. Every other mode, an end effector's pose (`ee6d`, the
+  default, and `agibot_ee6d`) or another robot's joints (`joint`, `franka_joint7`,
+  `so101_bimanual`), is refused before a pin or a weight, in a sentence that names the mode, and
+  so is LIBERO's post-processor step, which turns an end-effector rotation into axis-angle and
+  the gripper into -1 or 1. Its domain step's domain has to be one of the model's own. Its
+  Florence-2 is built from its config, so BART's tokenizer is the one model it names, pinned and
+  fetched without weights, it runs with a camera it is not given padded, and its own loader is
+  strict. The extra brings LeRobot's `[xvla]` now, which adds nothing to the lock. Tests
+  hold a stand-in shaped like an SO-101 fine-tune on the Hub to every check and each refusal to
+  fetching no weight, and CI's `policy` job installs LeRobot's `[xvla]` extra and serves a tiny
+  random X-VLA beside the tiny ACT, offline, through the real server and client, its tokenizer a
+  few words pinned at a commit in a Hub cache of its own
+  ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
+- **`quackd policy serve` serves a GR00T N1.7 whose every action group is joints.** A GR00T names
+  two models inside itself, the base it was fine-tuned from, `nvidia/GR00T-N1.7-3B`, and its
+  backbone's tokenizer, `nvidia/Cosmos-Reason2-2B`, which is gated, and both are pinned with
+  `--pin`, the base fetched with its weights and the tokenizer without. A config that names no
+  base is refused, since LeRobot would fill in its own at no revision, and the pinned base's
+  `config.json` is read before any weight, since LeRobot builds the backbone from a config of its
+  own only while the base names Cosmos-Reason2-2B and fetches any other trusting its
+  repository's code. It decodes its answer group by group, and a group decoded as an end
+  effector's pose, LIBERO's gripper of -1 or 1, a decode with no statistics, whose actions would
+  reach the arm still normalised to -1..1, and any N1.5 checkpoint are each refused in a sentence
+  of their own, before a weight. A fine-tune that learned relative joints decodes by statistics
+  its processors keep grouped, a whole chunk at a time against the state it was predicted from,
+  and keeps the percentiles of the state it learned from there too, where LeRobot's normaliser
+  keeps none, so the server reads them from there and the arm's frame check is made on them. One
+  that learned absolute joints decodes by its dataset's statistics and is read as every other
+  type is. It pads no missing camera, so the arm needs one for every image, and a checkpoint
+  whose processors look for a camera its config has no image for is refused. The extra brings
+  LeRobot's `[groot]` now, which adds GR00T's dependencies to the lock, decord on x86 alone and
+  peft among them. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
+  check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
+  refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
 - **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
   from Hugging Face.** `up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
   that runs the same `quackd policy serve`, behind Hugging Face's TLS, and waits until it serves,
@@ -52,8 +103,76 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a file, and the serving rows name the variable and never what it holds. It is refused beside
   `--token-file`, and with a variable that is unset, empty, short or holds a space.
 
+### Changed
+
+- **A processor step is allowed by the type that names it.** `quackd policy serve` and
+  `quackd policy check` allowed a checkpoint any step that ACT's, SmolVLA's or pi05's processors
+  used, whatever its own type, so an ACT could name pi05's tokenizer, which nobody had read for
+  an ACT. Each type now allows the steps every policy is built from and the ones its own
+  processors add, read at LeRobot 0.6.1, and a step another type uses is refused before any
+  weight is fetched, in a sentence that lists what that type does allow. The action tokenizer,
+  which no type may name, is refused in a sentence of its own, saying that it trusts its
+  repository's code unless told not to and turns actions into tokens for training, which a
+  server never does. No checkpoint LeRobot's own processor factories write names another type's
+  step. `quackd.adapters.policies` says which policy types the server serves and which it does
+  not, and why, as data the core prints with no LeRobot installed, and a test ties its rows to
+  the server's types ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+- **A pinned model that holds a PEFT adapter is refused.** GR00T's extra brings peft, and with
+  peft installed transformers loads a PEFT adapter it finds in a model's directory onto that
+  model, or, when the directory has no `config.json`, loads the base model the adapter names,
+  which no pin fixes. A pinned model whose directory holds an `adapter_config.json` was loaded
+  without its adapter before, and is refused now, in a sentence saying to pin a model with the
+  adapter merged into its weights. None of the five models the served families' checkpoints
+  name, read on the Hub on 2026-10-25, holds one. A test holds a pinned directory with one to
+  being refused.
+
+### Fixed
+
+- **The policy server's extra brings LeRobot's `[pi]`.** `quackd[lerobot-vla]` was LeRobot's
+  `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
+  guide said. It brings `[pi]` as well now, which adds SciPy, and a pi05 or a pi0 needs nothing
+  more than the extra and a Hub token granted its gated tokenizer.
+- **A pinned model is fetched from the Hub's cache alone with `HF_HUB_OFFLINE` set.** The
+  server says it answers from the cache alone offline, and a model a checkpoint names inside
+  itself was fetched with `snapshot_download`, which at a commit asks the Hub for the commit's
+  file list whenever it has not cached one, offline or not, so a SmolVLA's backbone or a pi05's
+  tokenizer in a cache filled some other way than by fetching it online was refused as
+  unreachable. huggingface_hub 1.29.0, the locked version, and 1.33.0 both do it. It is asked
+  for the cache's own files now, and the tiny X-VLA CI serves offline fails without it.
+- **A pi05 no longer fetches PaliGemma's weights to load its tokenizer.** A model a checkpoint
+  names inside itself was fetched with its configs, its tokenizer files and its safetensors,
+  whichever key named it, so serving a pi05, whose tokenizer step names
+  `google/paligemma-3b-pt-224`, fetched 11.69 GB of weights that nothing loads, for 21.9 MB of
+  tokenizer files, both sizes read off the Hub on 2026-10-25. A model a processor step names is
+  now fetched as its configs and tokenizer files alone, and one `config.json` names, a backbone
+  the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
+  pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
+  against the Hub, which takes the gated tokenizer's grant.
+
 ### Known limitations
 
+- **No pi0 has run.** quackd has not loaded, benched or served one, on a laptop or on a GPU, and
+  its checks rest on stand-ins of the SO-101 fine-tunes read on the Hub on 2026-10-25. Each of
+  those fine-tunes is 8.89 GB of weights, and the server fetches PaliGemma's tokenizer files,
+  21.9 MB, beside it.
+- **No trained X-VLA has run.** quackd has not loaded, benched or served one, and its checks
+  rest on a stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25,
+  whose weights are 1.76 GB, and on the tiny random one CI serves. Several SO-101 X-VLAs there
+  keep the eight-number state of the base they were fine-tuned from, and the server serves one,
+  which the arm's connect then refuses on its count.
+- **No GR00T has run, and serving one fetches about 16 to 20 GB.** quackd has not loaded,
+  benched or served a GR00T N1.7, and its checks rest on stand-ins of
+  `jammyyang/groot17_so101_pick_place` and `haydendoo/so101_pickup_groot_medium_new_v1`, read on
+  the Hub on 2026-10-25. Their weights were 9.34 GB and 12.58 GB, and the base's 6.91 GB more.
+  Its backbone's processors are built the first time it is asked for a chunk, so a session's
+  first chunk takes longer than the rest, and nobody has timed whether the 5 s a segment gives a
+  first chunk covers it. LeRobot ties the backbone's unused output head to its input
+  embeddings before the checkpoint's weights load strictly over the base's, and that strict load
+  has not been run either.
+- **MolmoAct2 is not served.** Its base model maps its classes to code of its own (`auto_map`),
+  which the server refuses in every model it loads, and serving it would take the first exemption
+  from that rule, which was deferred rather than written
+  ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
 - **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
   `--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and
   the container on 127.0.0.1, the container serving `scripted:sweep`, and nothing was paid for.
@@ -77,6 +196,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `--policy-url hf:NAME` reach an endpoint of that token's account, with that token: the user's
   own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
   frames go there.
+
 
 ## [0.25.0] — 2026-10-25
 

@@ -199,9 +199,10 @@ on a rented GPU, and never needed by the process that drives the arm:
 uv pip install "quackd[lerobot-vla]"   # LeRobot, torch and transformers, on Python 3.12
 ```
 
-It is `quackd-lerobot[vla]`, which is `lerobot[smolvla]` with no `[feetech]`, since the server
-never opens a serial port. `doctor` gives it the row `lerobot-vla (transformers)`, read from the
-installer's metadata so that asking costs no import of transformers.
+It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,groot,xvla]` with no `[feetech]`,
+since the server never opens a serial port. `doctor` gives it the row
+`lerobot-vla (transformers)`, read from the installer's metadata so that asking costs no import
+of transformers.
 
 ## The name you give the arm is its calibration id
 
@@ -963,37 +964,49 @@ uv pip install "quackd[lerobot-vla]"
 quackd policy serve --policy OWNER/NAME@REVISION --fps 30
 ```
 
-It serves ACT, SmolVLA and pi05 checkpoints, the three whose processors quackd has read at
-LeRobot 0.6.1. CI's `policy` job builds a tiny random ACT, puts it in a Hub cache of its own and
-serves it offline through the real server to the real client and an arm behind it
-(`POLICY_PIPELINE` in [the policies' table](#the-policies-upstream-lerobot-061)). On 2026-09-28 a
-trained ACT from the Hub, `natsuki0000/act-so101-bluecap` at commit
-`82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was served on a laptop's CPU and drove a twin of the
-lab's arm on the simulator, and `lerobot/smolvla_base` loaded there and took minutes a chunk, so
-it never answered a step through the client
-([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05 has not run (`VLA_PIPELINE`).
-Pi0.5 also wants LeRobot's `[pi]` extra and a Hub token that has been granted its gated tokenizer.
+It serves ACT, SmolVLA, pi05, pi0, X-VLA and GR00T N1.7 checkpoints, the types whose
+processors quackd has read at LeRobot 0.6.1, an X-VLA in its `auto` action mode alone
+([guides/policies.md](../../guides/policies.md#x-vla)) and a GR00T whose every action group is
+joints ([guides/policies.md](../../guides/policies.md#gr00t-n17)), and refuses pi0-FAST, whose
+policy runs its tokenizer's own code
+([guides/policies.md](../../guides/policies.md#pi0-and-why-not-pi0-fast)). CI's `policy` job
+builds a tiny random ACT, puts it in a Hub cache of its own and serves it
+offline through the real server to the real client and an arm behind it, and serves a tiny random
+X-VLA the same way, its tokenizer pinned at a commit (`POLICY_PIPELINE` in
+[the policies' table](#the-policies-upstream-lerobot-061)). On 2026-09-28 a trained ACT from the
+Hub, `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was
+served on a laptop's CPU and drove a twin of the lab's arm on the simulator, and
+`lerobot/smolvla_base` loaded there and took minutes a chunk, so it never answered a step
+through the client ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05, pi0,
+GR00T N1.7 and a trained X-VLA have not run (`VLA_PIPELINE`), and a pi05, a pi0 or a GR00T wants
+a Hub token that has been granted its gated tokenizer.
 
 Loading one reads before it builds, and refuses rather than guesses:
 
 - **The JSON first.** `config.json` and both processor JSONs are fetched at the revision named,
-  and nothing else of the repository. A policy type other than those three is refused, so is a
+  and nothing else of the repository. A policy type other than those six is refused, so is a
   feature that is neither the state, an image nor the action, and so is a processor step named
-  by a `class` key or by any registry name outside the ones those three policies' processors
-  use. A step named by class is imported from wherever it says, which is code the checkpoint
-  chose, so the weights are never fetched for one.
+  by a `class` key or by any registry name outside the ones the checkpoint's own type uses: the
+  steps every policy is built from, and the ones that type's processors add. An ACT that names a
+  pi05's tokenizer is refused, in a sentence that lists what an ACT allows. A step named by
+  class is imported from wherever it says, which is code the checkpoint chose, so the weights
+  are never fetched for one.
 - **No repository's own code.** A step that could trust a repository's code is told not to. A
-  model a checkpoint names inside itself, SmolVLA's backbone or a tokenizer, would load at
-  whatever revision the Hub has that day, so it is refused unless `--pin REPO@REVISION` names
-  the revision, once per model. That is a whole commit, or a tag the Hub says is one, and never
-  a branch or a pull request, which name whatever was last pushed to them. A SmolVLA whose
-  `config.json` names no backbone is refused as well, since LeRobot would fill in a default of
-  its own at no revision. The pinned model is fetched with its configs, tokenizer files and
-  safetensors and no `.py` and no pickle, and handed over as that directory. The Hub's cache
-  keeps one directory per commit, holding whatever was fetched at that commit before, so a
-  pinned model whose directory holds any other kind of file, or whose configs map a class to
-  code of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE`
-  at a fresh cache.
+  model a checkpoint names inside itself, SmolVLA's backbone, GR00T's base or a tokenizer, would
+  load at whatever revision the Hub has that day, so it is refused unless `--pin REPO@REVISION`
+  names the revision, once per model. That is a whole commit, or a tag the Hub says is one, and
+  never a branch or a pull request, which name whatever was last pushed to them. A SmolVLA whose
+  `config.json` names no backbone is refused as well, and so is a GR00T that names no base, since
+  LeRobot would fill in a default of its own at no revision. A pinned model a processor step
+  names is a tokenizer, and is fetched as its configs and tokenizer files alone, and one
+  `config.json` names, a backbone or a base the policy is built from, with its safetensors as
+  well, and neither with a `.py` or a pickle. Either is handed over as that directory. The Hub's
+  cache keeps one directory per commit, holding whatever was fetched at that commit before, so a
+  pinned model whose directory holds any other kind of file, or whose configs map a class to code
+  of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE` at a
+  fresh cache. So is one that holds a PEFT adapter (`adapter_config.json`): with peft installed,
+  as GR00T's extra installs it, transformers would load the adapter onto the model, or, with no
+  `config.json` beside it, load the base model the adapter names, which no pin fixes.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
   That revision is the checkpoint's choice, so it is taken only when it is a whole commit, or a
@@ -1003,15 +1016,15 @@ Loading one reads before it builds, and refuses rather than guesses:
 - **Then the weights,** the processors' state and the pinned models, and the build on the
   device LeRobot picks, a GPU where there is one. Every weight in `model.safetensors` is loaded
   into the model and none is left as it was built, or the server refuses to start: LeRobot's
-  loader only logs a weight it did not find, and pi05's hands back a random network when its
-  weights do not load, so quackd asks the one to be strict and loads the other's itself. An
-  ACT's ImageNet backbone is never fetched, since the checkpoint's own weights replace it, and
-  torch gets one thread fewer than it would take, unless `--threads` says how many. An ACT
-  that ensembles its chunks over time is asked every tick and is refused without a GPU
-  (`TICK_MODE`). A pi05 that learned relative actions is not: its whole chunk is made absolute
-  against the state it was predicted from, which is how its training made it relative, where
-  LeRobot's own loop makes each action absolute against the state of the tick it is played
-  at (`VLA_PIPELINE`).
+  loader only logs a weight it did not find, and pi05's and pi0's hand back a random network
+  when their weights do not load, so quackd asks the one to be strict and loads the others'
+  itself. An ACT's ImageNet backbone is never fetched, since the checkpoint's own weights
+  replace it, and torch gets one thread fewer than it would take, unless `--threads` says how
+  many. An ACT that ensembles its chunks over time is asked every tick and is refused without a
+  GPU (`TICK_MODE`). A pi05 or a pi0 that learned relative actions is not: its whole chunk is
+  made absolute against the state it was predicted from, which is how its training made it
+  relative, where LeRobot's own loop makes each action absolute against the state of the tick it
+  is played at (`VLA_PIPELINE`).
 
 Each camera the arm has is the image of its own name, `observation.images.front` from the camera
 called `front`, unless `--cameras NAME=KEY` maps it, and a key that is not one of the
@@ -1070,11 +1083,12 @@ never touched. Every limit is read and none is typed: the motors are the bus's, 
 each camera's size is a frame it just gave, and the travel is the calibration file's.
 
 - **The state and the action** are as long as the bus has motors. Where a checkpoint names its
-  action's dimensions, as a pi05 does, they are the bus's motors in the bus's order. Where it
-  does not, the order is trusted and not checked: the policy is taken to have learned from a
-  bus that lists its motors as this one does, which is how LeRobot records one.
-- **The cameras.** An ACT needs a camera for every image it looks at. A SmolVLA or a pi05 runs
-  with some of its images missing, and the ones that are go into the record as padded.
+  action's dimensions, as a pi05 or a pi0 does, they are the bus's motors in the bus's order.
+  Where it does not, the order is trusted and not checked: the policy is taken to have learned
+  from a bus that lists its motors as this one does, which is how LeRobot records one.
+- **The cameras.** An ACT or a GR00T needs a camera for every image it looks at. A SmolVLA, a
+  pi05, a pi0 or an X-VLA runs with some of its images missing, and the ones that are go into the
+  record as padded.
 - **A frame of another size** than the checkpoint's image is refused, with the size to give the
   camera with `--camera-url`'s `width=` and `height=`, which the real arm's cameras and the
   simulator's both take.
@@ -3005,11 +3019,11 @@ compared file by file that day, and every file these rows cite was the same. Eve
 [`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
 
 **No trained checkpoint has been loaded by quackd in CI or on a GPU.** CI's `policy` job loads a
-tiny random ACT through the real server, on the CPU and offline, which is what `POLICY_PIPELINE`
-below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
+tiny random ACT and a tiny random X-VLA through the real server, on the CPU and offline, which is
+what `POLICY_PIPELINE` below rests on. Trained checkpoints have been loaded only on one laptop's CPU, where an ACT from
 the Hub drove a twin of the lab's arm on the simulator and `lerobot/smolvla_base` never answered
-a step in time ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05 and tick mode
-have not run at all.
+a step in time ([guides/policies.md](../../guides/policies.md#smolvla-and-act)). pi05, pi0,
+GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 
 ### VERIFIED (read from source at the v0.6.1 tag)
 
@@ -3035,29 +3049,45 @@ have not run at all.
 | `train_config.json's dataset.repo_id and dataset.revision; meta/info.json's fps` | where a checkpoint's rate is read when the server is given no `--fps`, and only at a commit or a tag, since the checkpoint chose that revision and a branch would give a rate that could change between two serves |
 | `observation.state, observation.images.<name>, action` | the keys a policy's state, images and action go by. An image's frame is handed over under its key with `observation.images.` cut off, which is why each camera is the image of its own name |
 | `FeatureType: "STATE", "VISUAL", "ENV", "ACTION", "REWARD", "LANGUAGE"` | a checkpoint whose inputs are anything but one state and some images, or whose output is anything but one action, is refused, since an arm has nothing to give the rest from |
-| `"act", "smolvla", "pi05"` | the types whose processors the allowlist was read from, and any other is refused before its weights are fetched |
+| `"act", "smolvla", "pi05", "pi0", "xvla", "groot"` | the types whose processors the allowlist was read from, each its own, and any other is refused before its weights are fetched |
 | `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | the steps every policy's processors are built from, and all of ACT's |
-| `smolvla_new_line_processor, tokenizer_processor, pi05_prepare_state_tokenizer_processor_step, relative_actions_processor, absolute_actions_processor` | the steps SmolVLA's and pi05's pre-processors add. With the row above, the only steps a checkpoint may name |
+| `smolvla_new_line_processor, tokenizer_processor` | the steps SmolVLA's pre-processor adds. With the row above, the only steps a SmolVLA may name, and the server allows each type its own steps and no other type's |
+| `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name |
+| `pi0_new_line_processor, tokenizer_processor, relative_actions_processor, absolute_actions_processor` | the steps pi0's processors add: pi05's, with a step that ends the task with a newline for PaliGemma's tokenizer in place of pi05's state tokenizer. With the row above, the only steps a pi0 may name |
+| `tokenizer_processor, xvla_image_to_float, xvla_imagenet_normalize, xvla_add_domain_id, xvla_image_scale` | the steps X-VLA's processors add, each but the tokenizer a fixed transform of the data, the domain step handing the model the domain its data came from, which has to be one of the model's own. With the row above, the only steps an X-VLA may name |
+| `X-VLA's action_mode: ee6d, joint, agibot_ee6d, franka_joint7, auto, so101_bimanual` | what an X-VLA's answer means, set in its config, `ee6d` unless it says otherwise. `auto` is the dataset's own action, an SO-101's joints, and the server serves it alone, refusing every other mode before a pin or a weight |
+| `xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the gripper into -1 or 1` | LIBERO's post-processor step, for an end effector and LIBERO's gripper, refused in a sentence of its own |
+| `XVLAPolicy.from_pretrained loads its weights strictly` | so the server's own strict load asks nothing more of it. Its Florence-2 is built from its config, never fetched, so its tokenizer is the one model it names |
+| `groot_n1_7_pack_inputs_v1, groot_n1_7_vlm_encode_v1, groot_n1_7_action_decode_v1, groot_action_unpack_unnormalize_v2, relative_actions_processor, absolute_actions_processor` | the steps GR00T N1.7's processors are built from besides the default ones: the pack step, the backbone's encoder, one of two decode steps, and the relative and absolute steps one that learned relative actions without grouped statistics adds. With the row above, the only steps a GR00T may name |
+| `GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise` | the base a GR00T is built from before its own weights replace it, filled with LeRobot's own when a config names none, so that is refused, and pinned otherwise. Its backbone is built from a config LeRobot carries only while the base names `nvidia/Cosmos-Reason2-2B`, so the pinned base's `config.json` is read before any weight and another backbone refused |
+| `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust |
+| `groot_n1_7_action_decode_v1 unnormalises each action group and makes a relative one absolute against the state the pack step cached` | the decode of a checkpoint whose statistics come grouped, beside the one for a checkpoint that took its dataset's. An EEF group, LIBERO's gripper and a decode with no statistics are each refused, since the arm would take its actions as joints it never meant |
+| `a relative GR00T's chunk is decoded whole, against the state it was predicted from` | LeRobot refuses to decode one an action at a time, and the server decodes every chunk whole |
+| `a relative GR00T keeps its state's percentiles in the pack step's raw_stats` | where LeRobot's normaliser keeps none, so the server reads the state's and the action's q01 and q99 from there, group by group, and reports them for the arm's frame check |
+| `LeRobot 0.6.1 serves GR00T N1.7 alone, and refuses N1.5's step names` | so an N1.5 checkpoint, by its steps, its `tokenizer_assets_repo` or its base, is refused in a sentence of its own |
+| `GR00T's pack step feeds every camera in alphabetical order when none is one its video modality keys name` | it pads no missing view, so the arm needs a camera for every image a GR00T looks at, and a checkpoint whose modality keys name an image its config does not is refused |
 | `overrides={"device_processor": {"device": device}}` | how upstream's own loops put a loaded pre-processor on their device. The server does the same and puts the post-processor's on the CPU, where the answers are read |
 | `lerobot.utils.device_utils.auto_select_torch_device()` | the device a checkpoint is loaded on, and whether the server says it has a GPU |
 | `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does |
 | `NormalizerProcessorStep.state_dict() -> {'<feature>.<stat>': Tensor}` | where the state's and the action's 1st and 99th percentiles are read, which the arm holds against its travel |
 | `PI05Config.action_feature_names, a list of names or None` | the action's dimensions by name, where a checkpoint has them, which the arm checks against its bus |
-| `SmolVLA and pi05 run with some of their images missing` | an ACT takes every image it names, so the arm refuses one with an image no camera is mapped to, and says which of a SmolVLA's or a pi05's go padded |
+| `SmolVLA, pi05, pi0 and X-VLA run with some of their images missing` | an ACT takes every image it names, and so does a GR00T, so the arm refuses either with an image no camera is mapped to, and says which of the others' go padded. pi0 pads a missing one with -1 and a mask of zero, and X-VLA pads out to its own number of views with zeros |
 | `ACTConfig.pretrained_backbone_weights = "ResNet18_Weights.IMAGENET1K_V1"` | torchvision would fetch these as ACT is built, before the checkpoint's own weights replace them, so the server sets it to None |
 | `RelativeActionsProcessorStep caches the state each time the pre-processor runs` | training makes a chunk relative to one state, and the absolute step adds back the state cached last. LeRobot's own loop runs the pre-processor every tick, so each action it plays from its queue is made absolute against the state of the tick it is played at. The server makes a whole chunk absolute against the state it was predicted from, as OpenPI does, and serves such a pi05 in chunks |
 | `PI05Policy.from_pretrained returns the model without its weights when they do not load` | pi05's own loader catches a load that fails, prints a line and hands back the model as it was built, a random network. The server loads a pi05's weights the way that loader does, its key fixes and a `model.` prefix, strictly and with nothing caught |
+| `PI0Policy.from_pretrained returns the model without its weights when they do not load` | pi0's loader is pi05's, so the server loads a pi0's weights the same way, with pi0's own key fixes |
+| `PI0FastPolicy loads the FAST tokenizer with trust_remote_code=True` | hard-wired in the policy rather than in a processor step an override could reach, so serving a pi0-FAST would run its tokenizer's repository's own Python. The server refuses the type on its `config.json` |
 | `async inference unpickles what it is sent` | LeRobot's own policy server and robot client `pickle.loads` what they receive, over an insecure port, which is why quackd has a protocol of its own |
 | `the async robot client imports torch` | and the arm's process is the one quackd keeps free of torch |
 | `observations_similar(obs1, obs2, lerobot_features, atol=1)` | the async server skips an observation near the last one it ran, and quackd's runs every step it is asked |
 | `SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"]` | the policies the async server will load, and anything else is refused there |
-| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). ACT on the CPU and nothing else, and a random one, so nothing about what a trained policy does to an arm follows from it |
+| `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). Beside it a tiny random X-VLA, its Florence-2 built from its config and a tokenizer of a few words pinned at a commit, fetched from the cache alone and served through the same server and client. ACT and X-VLA on the CPU and nothing else, and random ones, so nothing about what a trained policy does to an arm follows from it |
 
 ### UNVERIFIED (our assumptions about policies, and what quackd does about each)
 
 | Name | What quackd does |
 |---|---|
-| `VLA_PIPELINE` | that SmolVLA and pi05 run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's by LeRobot's own loader, a pi05's by quackd's copy of its loader), so a checkpoint saved with weights its model does not have would be refused, and pi05's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is not what LeRobot's own loop does (`RelativeActionsProcessorStep caches the state each time the pre-processor runs`), and it is how training made the chunk relative, so a trained pi05 is taken to want it. No job runs them, since neither the lab's environment nor CI installs transformers. They load through the same allowlist, pins and refusals as ACT, and a first run belongs on the simulator after `quackd policy check --bench` |
+| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is not what LeRobot's own loop does (`RelativeActionsProcessorStep caches the state each time the pre-processor runs`), and it is how training made the chunk relative, so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
 | `LOAD_POLICY` | `load_policy()` in the arm's backend builds a policy in the arm's own process, the one no checkpoint is to load in, and hands the pre-processor a raw observation `build_inference_frame` would have shaped first. Nothing calls it and nothing has run it. What reaches the arm from any policy is quackd's rule: the verbs' step cap, and a goal outside the travel clipped and counted, unlike a verb's goal, which is refused |
 

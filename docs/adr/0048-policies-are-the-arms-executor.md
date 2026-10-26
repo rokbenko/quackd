@@ -2,6 +2,12 @@
 
 **Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-model.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
 
+**Amended 2026-10-25:** [ADR-0060](0060-hugging-face-serves-many-vlas.md) extends what the server
+serves past the three types named below, ACT, SmolVLA and pi05, one family at a time and each
+read before it is served. A step is now allowed by the type that names it rather than by a list
+of every served type's steps, and a model a processor step names is fetched as a tokenizer,
+without its weights.
+
 **Amended 2026-10-25 by [ADR-0061](0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md):**
 quackd may now start the policy server for you, on a GPU rented from Hugging Face as an
 Inference Endpoint (`quackd policy endpoint up`), still in a process of its own and never the
