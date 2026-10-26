@@ -344,6 +344,11 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
   `--extra-body` or `QUACKD_EXTRA_BODY`, for a field a server wants and quackd never sends.
   This page has no such door, so a model that has to be told something in the body, Qwen3 and
   its thinking being the one that came up, cannot be told it here.
+- **No prompt cache and no effort setting.** The CLI marks every Claude request for Anthropic's
+  prompt cache, its system prompt and its history up to where the next call will still match
+  it, and `--effort` says how hard a model reasons. The page sends each request unmarked and
+  asks no effort, so a model reasons at its own default and a Claude call pays the full input
+  rate for all of its prompt. OpenAI caches a repeated prefix without being asked, here as there.
 - **There is no scripted pilot.** Python's `--llm fake` walks the whole task with no
   model. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
