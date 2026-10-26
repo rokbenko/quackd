@@ -94,18 +94,21 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   preset walk, `forward`, `back`, `turn left` or `right` and `step left` or `right`, each derived
   from the body's own clamps with no number of its own. On the mock Microduck such a line is read
   in under a millisecond. An empty Enter, `stop`, `halt`, `brake` or `q` brakes at once and waits
-  on nothing, and a newer command ends whatever is moving the body and waits for its stop before
-  it sends anything. With `--decision-llm`, a line no verb names is put to that decision LLM as
-  one closed question, held to the stepper's floors and its second, which asks `did you mean
-  kick(leg=left)? [y/N]` below a floor. Anything else is a goal, which the pilot (`--llm`, or a
-  registered robot's own) flies as a whole run of its own on the body the session holds. A
-  person's own command is the verdict for its own call, and lines piped in are recorded as a
-  pipe's, never a person's. Without a `--duckfile`, a session allows every verb that is not
-  dangerous, keeps the battery rule a goal is held to, and runs on the schema's own ceilings for
-  its budgets. The keyboard goes through prompt_toolkit, and a pipe is read a line at a time, each
-  waited for. The session's record is a run directory `quackd log` replays, with each goal's own
-  run under `goals/`, and its summary gives the waits from a line to its call starting, to the
-  body's first motion for it, and from a brake to its stop, by lane
+  on nothing, and a newer command that moves the body ends whatever is moving it and waits for
+  its stop before it sends anything. With `--decision-llm`, a line no verb names is put to that
+  decision LLM as one closed question, held to the stepper's floors, the `.duck`'s confirm gates
+  and its second, which asks `did you mean kick(leg=left)? [y/N]` below a floor. Anything else
+  is a goal, which the pilot (`--llm`, or a registered robot's own) flies as a whole run of its
+  own on the body the session holds, inside the session's contract, its `--dry-run` and what is
+  left of its budgets. A person's own command is the verdict for its own call, lines piped in are
+  recorded as a pipe's, never a person's, and a call the fast lane took unasked as the decision
+  LLM's reading. A body that cannot see a fall is driven only once somebody says they are
+  watching it. Without a `--duckfile`, a session allows every verb that is not dangerous, keeps
+  the battery rule a goal is held to, and runs on the schema's own ceilings for its budgets. The
+  keyboard goes through prompt_toolkit, and a pipe is read a line at a time, each waited for. The
+  session's record is a run directory `quackd log` replays, with each goal's own run under
+  `goals/`, and its summary gives the waits from a line to its call starting and to the body's
+  first motion for it, by lane, and from a brake to its stop
   ([docs/guides/drive.md](docs/guides/drive.md),
   [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
   [ADR-0066](docs/adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)).
@@ -207,9 +210,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `search_scan` ran sent its stop, and the verb's next twist, a tenth of a second later, walked
   the body on. `move`, `go_to`, `search_scan` and `approach_and` read a stop asked for beside them
   before each twist they send now, as `watch` did, and end with the body stopped once more and a
-  failed result saying how far each got, which `abort_when`'s count of failures in a row passes
-  over. `approach_and` no longer runs its `then` verb after one
+  failed result saying why, and for a walk or a scan how far it got, which `abort_when`'s count
+  of failures in a row passes over. `approach_and` no longer runs its `then` verb after one, and
+  `search_scan` no longer centres the head after one. A stop asked for while a verb is still
+  reading the body's state ends it too, where the walk used to run its whole length after the
+  stop had come back ok
   ([ADR-0067](docs/adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
+- **A verb admitted before an abort never starts after it.** A kill switch or a failed heartbeat
+  that came while a verb was past its gates and reading the body's state found it in nothing
+  it could cancel, and the verb sent its first twist after the abort. The abort is read again
+  after the state, as a granted pause already was.
+- **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
+  refused every other verb, so the brake reached for once the battery read low was a stop never
+  sent. It still ends every other call after it.
 
 ### Documentation
 
@@ -262,8 +275,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   a real robot takes from a line to its first motion is unmeasured. The fast lane's floors are the
   stepper's, unmeasured on its question. `quackd log` does not yet draw drive's own lines. A
   goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
-  keeps no memory. A verb an adapter brings, the arm's joint moves among them, does not read a
-  stop asked for beside it, though drive's brake and a newer command end it.
+  keeps no memory. A verb that needs a yes, run inside a call a person named, is answered by
+  `--yes` alone. Over MCP, a verb an adapter brings may not read a stop asked for beside it, the
+  ToddlerBot's own `search_scan` and the arm's joint moves among them, and MOSS's verbs, which
+  do, come back unmarked, so `abort_when` still counts a braked one as a failure. Drive's brake
+  and a newer command end any of them.
 
 ## [0.25.0] — 2026-10-25
 
