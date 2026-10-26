@@ -21,6 +21,7 @@ How to do one thing with quackd.
 
 | Page | What it covers |
 |---|---|
+| [Driving a robot](guides/drive.md) | `quackd drive`: one robot driven a command at a time from the keyboard or a pipe, with an empty Enter as the brake |
 | [Pilot your robots from Claude](guides/mcp.md) | `quackd serve-mcp`: a robot, or a flock of them, as MCP tools that Claude Code or Claude Desktop pilots |
 | [Local and open-source LLMs](guides/local-llms.md) | Ollama, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible server as the pilot |
 | [OpenRouter](guides/openrouter.md) | one key for other vendors' models as the pilot: which ids quackd takes and refuses, where a prompt goes, and what a turn is billed |

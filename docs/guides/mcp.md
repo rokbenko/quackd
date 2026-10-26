@@ -347,6 +347,14 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   `session_aborted` gate. `stop` is the exception and is never refused, because an aborted
   session is exactly when a pilot reaches for the brake. The other robots in the flock
   carry on.
+- A `stop` called while another call is still running a verb ends that verb before its next
+  twist, and so does one called while the verb is still reading the body's state. `move`,
+  `go_to`, `search_scan` and `approach_and` read it as quackd ships them. Each comes back failed,
+  saying why, and for a walk or a scan how far it got, and `abort_when` does not count it as a
+  failure. MOSS's own verbs read it too, and are marked the same way. A verb another adapter
+  brings may not read it yet, the ToddlerBot's own `search_scan` and the arm's joint moves among
+  them: the stop is still sent, and the verb is not ended by it
+  ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - Every robot connects at startup, in the order given; if one cannot, the server stops
   and disconnects the ones that did, rather than fronting a flock with a hole in it.
 - A robot with a recorded rest pose, which today means a LeRobot arm, is driven to that pose as

@@ -9,6 +9,169 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **`--effort low|medium|high` says how hard the pilot's model reasons, on `run` and
+  `preflight`.** It reaches Anthropic's `output_config.effort`, OpenAI's reasoning effort on
+  either API and a model server of your own, which speaks OpenAI's API, and it beats
+  `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
+  Three levels, the ones both vendors have. It is refused before anything connects where it
+  cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort page
+  does not list, OpenAI's GPT-4.1, GPT-4o, their minis and ChatGPT Instant, which take no
+  reasoning effort, its three pro models at `low`, which they do not take, and a vendor that
+  documents no such field, OpenRouter told that its own `reasoning` field goes through
+  `--extra-body`. `run_start.effort` records the level every request was sent at and whose word
+  it was, and the run header gains an `effort` row only when the flag asked
+  ([README.md](README.md#configuration)).
+- **The summary says how the model's calls spread and when the body first moved.**
+  `summary.json` gains `llm_latency_p50_s`, `llm_latency_p90_s` and `llm_latency_max_s`, by
+  nearest rank over the calls that answered and only where one did, and the stepper's block the
+  same three. `first_motion_s` is when the first verb that may move the body went to the
+  transport, on the record's own clock with the connect in it, and `first_motion_llm_calls` how
+  many model calls came first. Both are null where nothing moved, and a refused verb, a dry run
+  and a read never count. The counters under the verdict print them, as `model calls p50 0.0 s,
+  p90 0.0 s, max 0.0 s · first motion at 0.1 s, after 3 model calls` on a scripted run, and only
+  where the keys are, so a record from before replays with the counters it always had
+  ([docs/concepts/architecture.md](docs/concepts/architecture.md#time-and-money)).
+- **`gpt-6.1-sol` is an OpenAI row.** $2 in, $10 out, $0.10 cached and $2.50 for a cache write,
+  read off OpenAI's pages on 2026-10-26 and dated so on its row, and on the Responses API as the
+  other GPT-6 rows are. `--llm openai` still means `gpt-6-sol`, which OpenAI still serves with no
+  shutdown date.
+- **`quackd drive` drives one robot, one command at a time.** A line that names a call runs it
+  with no model asked: a verb of the body's own (`kick left`, `say good morning`, or
+  `move(vx=0.2, duration_s=2)`, whose values are read as literals and never evaluated), or a
+  preset walk, `forward`, `back`, `turn left` or `right` and `step left` or `right`, each derived
+  from the body's own clamps with no number of its own. On the mock Microduck such a line is read
+  in under a millisecond. An empty Enter, `stop`, `halt`, `brake` or `q` brakes at once and waits
+  on nothing, and a newer command that moves the body ends whatever is moving it and waits for
+  its stop before it sends anything. With `--decision-llm`, a line no verb names is put to that
+  decision LLM as one closed question, held to the stepper's floors, the `.duck`'s confirm gates
+  and its second, which asks `did you mean kick(leg=left)? [y/N]` below a floor. Anything else
+  is a goal, which the pilot (`--llm`, or a registered robot's own) flies as a whole run of its
+  own on the body the session holds, inside the session's contract, its `--dry-run` and what is
+  left of its budgets. A person's own command is the verdict for its own call, lines piped in are
+  recorded as a pipe's, never a person's, and a call the fast lane took unasked as the decision
+  LLM's reading. A body that cannot see a fall is driven only once somebody says they are
+  watching it. Without a `--duckfile`, a session allows every verb that is not dangerous, keeps
+  the battery rule a goal is held to, and runs on the schema's own ceilings for its budgets. The
+  keyboard goes through prompt_toolkit, and a pipe is read a line at a time, each waited for. The
+  session's record is a run directory `quackd log` replays, with each goal's own run under
+  `goals/`, and its summary gives the waits from a line to its call starting and to the body's
+  first motion for it, by lane, and from a brake to its stop
+  ([docs/guides/drive.md](docs/guides/drive.md),
+  [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
+  [ADR-0066](docs/adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)).
+
+### Changed
+
+- **Claude's requests are marked for Anthropic's prompt cache.** Every request sent its whole
+  prompt again at the full input rate, and nothing asked Anthropic to cache any of it. The system
+  prompt goes as one marked text block now, which caches the tools with it, and the loop marks
+  the last block of the history the next call will still send unchanged, which it can foresee
+  because it owns the trim that changes the history. Where the two differ, the previous call's
+  marker goes out again beside it, since a read looks back twenty positions at most. That is
+  three markers at most, under Anthropic's four, never on a thinking block, and a retry resends
+  the same marked request. From the second call on, the part of a request the last call already
+  sent is meant to be read back at the model's cache rate, a tenth of its input rate on most
+  Claude models and a twentieth on Opus 5.5, after one write at a quarter more. A model that
+  answers in prose costs a write or two that nothing reads, and never a wrong request.
+  `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
+  loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
+  with no marker in the history, and 32 of them with one at the end of each request
+  ([ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
+- **The pilot's client is warmed while the robot connects.** A client of Anthropic's or OpenAI's
+  SDK starts its first request by asking which platform it runs on, on Windows a WMI query or a
+  subprocess, and by importing anyio's asyncio backend, and the pilot paid both in its first
+  call, in the seconds a person waits for the robot to move. Every provider built on those SDKs
+  asks both in a daemon thread started before the connect's clock, so `connect_s` stays the
+  connect. Nothing waits for it, it sends nothing and it never raises, and `run_start.pilot_warm`
+  says what became of it. The decision LLM's client has done the same since 0.19.0.
+- **In shadow mode the stepper is asked beside the model's call, not before it.** Its answer
+  changes nothing about a turn there, and a run being measured waited up to the stepper's second
+  on every turn for the measuring. Its request goes out with the model's now and is settled once
+  the model's answer is on the record: raced against the stop as before, or cut off on the gate
+  `interrupted` when the model's call ends the run. The turn that finds the LLM calls spent asks
+  neither, where it used to ask the stepper and then refuse the model. A shadow turn's
+  `decision` line follows its `llm` line now. `on` is unchanged: the stepper still answers first,
+  since its answer can take the turn ([ADR-0064](docs/adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)).
+- **The status line names the call the model chose.** After the model answered, the line under
+  the log said "choosing a verb", which was over by then. It names the call the model chose now,
+  says that it answered without one or that the call failed, and a wait on the model carries the
+  last answer's seconds.
+- **A turn's picture is encoded once.** Every frame was encoded to PNG twice, once for `frames/`
+  and once more for the request. The save hands back the bytes it wrote and the model is sent
+  those, so the file a reader opens is the picture the pilot was shown.
+- **prompt_toolkit is a core dependency.** `quackd drive`'s keyboard reads a line while a verb
+  runs, which `input()` cannot, through prompt_toolkit 3.0.42 or later. Only that front end
+  imports it, so no other command pays for it, and the lock gains prompt-toolkit and wcwidth.
+
+### Fixed
+
+- **A pilot call that hangs ends the run when the task's minutes are spent.** `max_minutes` was
+  read only once an answer came back, so a call that hung held the robot past the task's whole
+  budget for as long as the vendor's own clock allowed, ten minutes on both SDKs, and only a
+  Ctrl-C ended it sooner. The call is raced against the task's minutes as it is against the stop,
+  and once they are spent it is cancelled, its `llm` record says so, and the run ends on its
+  budget. On a simulator the budget's clock is the simulator's and stands still while a model
+  thinks, so a simulated run is never cut off this way
+  ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
+- **A `stop` over MCP ends the verb beside it.** A `stop` called while a `move`, a `go_to` or a
+  `search_scan` ran sent its stop, and the verb's next twist, a tenth of a second later, walked
+  the body on. `move`, `go_to`, `search_scan` and `approach_and` read a stop asked for beside them
+  before each twist they send now, as `watch` did, and end with the body stopped once more and a
+  failed result saying why, and for a walk or a scan how far it got, which `abort_when`'s count
+  of failures in a row passes over. `approach_and` no longer runs its `then` verb after one, and
+  `search_scan` no longer centres the head after one. A stop asked for while a verb is still
+  reading the body's state ends it too, where the walk used to run its whole length after the
+  stop had come back ok
+  ([ADR-0067](docs/adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
+- **A verb admitted before an abort never starts after it.** A kill switch or a failed heartbeat
+  that came while a verb was past its gates and reading the body's state found it in nothing
+  it could cancel, and the verb sent its first twist after the abort. The abort is read again
+  after the state, as a granted pause already was.
+- **A braked MOSS verb is no failure.** MOSS's `drive_to`, `explore` and arm cycles end on a
+  `stop` asked for beside them, and came back failed with no mark of the brake, so over MCP
+  three stops beside a `drive_to` ended the session on the rule that the same verb failing three
+  times in a row aborts. Each is marked `ended_by: stop` now, as the core verbs are, and only
+  for a stop: a budget that ran out is still a failure.
+- **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
+  refused every other verb, so the brake reached for once the battery read low was a stop never
+  sent. It still ends every other call after it.
+
+### Documentation
+
+- **The README says where a run's seconds go and what shortens them.** Its Performance section
+  quotes the new counters from a real scripted run and names the four changes above that shorten
+  a turn, and its configuration table gains `--effort` and `QUACKD_ANTHROPIC_CACHE`, as
+  `.env.example` does. architecture.md describes the new record fields, safety.md the minutes
+  bound, and the decision guide what shadow costs a turn now. The FAQ's two refusals of an
+  unknown model, and the counters lines the FAQ and safety.md quote, were captured again.
+  [ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)
+  records the cache and [ADR-0064](docs/adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)
+  the rest, and they amend ADR-0010, ADR-0040, ADR-0041 and ADR-0059.
+
+### Known limitations
+
+- **None of the seconds or dollars this release saves has been measured on a real model.** The
+  cache's reads, the warm-up's seconds, what `--effort low` takes off a turn and what shadow no
+  longer costs one were checked against stand-ins alone. The check is one paid run per vendor with
+  the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd` and
+  `latency_s` per call, and timed requests to each keyed decision LLM.
+- **The cache markers and `drop_block` have not met.** On Opus 5.5 and Fable 5.1 the loop leaves
+  out the thinking a trim invalidates and has the API drop the one block it may not leave out.
+  That markers can move around it freely comes from Anthropic's guidance, and no paid request has
+  proved it.
+- **`quackd drive` has driven no real robot.** It has run against the mock Microduck and the
+  scripted pilot, and its keyboard against prompt_toolkit's own pipe input. Its prompt is
+  untried in PowerShell under conhost, in Windows Terminal and in VS Code's terminal, and how long
+  a real robot takes from a line to its first motion is unmeasured. The fast lane's floors are the
+  stepper's, unmeasured on its question. `quackd log` does not yet draw drive's own lines. A
+  goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
+  keeps no memory. A verb that needs a yes, run inside a call a person named, is answered by
+  `--yes` alone. Over MCP, a verb an adapter brings may not read a stop asked for beside it, the
+  ToddlerBot's own `search_scan` and the arm's joint moves among them. Drive's brake and a newer
+  command end any of them.
+
 ## [0.26.0] — 2026-10-26
 
 0.26.0 lets the arm's policy server serve three more VLA families from the Hugging Face Hub, and

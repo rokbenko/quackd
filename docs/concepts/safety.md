@@ -7,9 +7,9 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 | Layer | Owner | What it guarantees |
 |---|---|---|
 | Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives a clamp that holds every joint target inside its actuator's travel, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is quackd's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `quackd doctor` prints what the robot itself reported (see "On other bodies"). |
-| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the model has said, against the robot's datasheet, whether the task fits the body at all. It is the model's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). |
+| Judgement | the pilot, held to it by quackd `Executor` | Nothing that moves the body runs until the model has said, against the robot's datasheet, whether the task fits the body at all. It is the model's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** flock's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of flock has instead. A **pilot** flock's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/flock.md](../guides/flock.md)). In `quackd drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
 | Conversation | quackd `Executor` | The LLM and MCP clients can only do what the `.duck` allows, as often as the budget allows, with a human in the loop where the contract says so. |
-| Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a flock one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. |
+| Session | quackd `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a flock one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. In `quackd drive` an empty Enter or Ctrl-C is the brake, and ends every verb moving the body. |
 
 > [!NOTE]
 > **The optional discrete stepper changes none of this.** With `--decision-mode on`
@@ -33,18 +33,19 @@ the log and the transcript print, so a refusal tells you which row you are on.
 
 | Gate | What it checks | What you change |
 |---|---|---|
-| `abort` | the run has been aborted. `stop` is exempt, so the brake still works | nothing: the run is over |
+| `abort` | the run has been aborted. `stop` is exempt, so the brake still works. Read again after the body's state, so a verb admitted before a kill switch or a failed heartbeat never starts after it | nothing: the run is over |
 | `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.duck`'s `verbs.allow` |
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
-| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect` and `watch` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it | nothing: the model calls `assess_task` |
+| `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect` and `watch` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the model calls `assess_task` |
 | `params` | the arguments fit the verb's schema | the call. This is feedback to the model, not a crash |
 | `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
-| `abort_when` | the battery threshold, and consecutive failures once the result is in | the `.duck`'s `abort_when`, or the robot |
+| `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.duck`'s `abort_when`, or the robot |
 | `precondition` | what the manifest says this verb needs: not fallen, not sitting, torque on | the robot's state |
 | `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
+| `preempted` | a newer command in `quackd drive`, or its brake, ended this verb while it moved the body, and a `stop` went out after it. A verb admitted before that and still reading the body's state is refused before it sends anything | nothing: the newer command runs |
 | `peer` | a verb a robot met over Robot Passport started, through the courtesy handler. A courtesy runs `stop`, which a granted pause begins with, and `say`, which an identify is, and a peer reaches nothing else, whatever its tier | nothing: a robot met asks, and fixed code decides ([passport/talk.md](../passport/talk.md#what-quackd-does-with-an-ask)) |
 | `paused` | a pause this robot granted a robot it met still holds, so only `stop` and the verbs that move nothing (`observe`, `report_state`, `say`, `quack`, `introspect`) run, whoever asks, the pilot included. `gaze`, `look`, `watch` and `express`, which a pilot may use before its verdict, wait as well, since they turn a head or move antennas. A verb already moving the body when the pause is granted is ended there and then, as an abort ends one, and a stop is sent after it, and one let through a moment before the pause is held once its state read returns. A verb a pause ended is not counted among `abort_when`'s failures in a row | wait it out: a granted pause is 10 s at most, and one a minute |
 
@@ -200,6 +201,40 @@ daemon are the other way round and settle on both, which is what a daemon has to
 started by a unit this repository ships, and the other is started by hand and stopped by
 somebody typing `kill`.
 
+## A person driving: `quackd drive`
+
+`quackd drive` ([guides/drive.md](../guides/drive.md)) puts a person in front of the executor,
+and every call still passes `Executor.run_verb` with every gate in the table above. Five things
+are its own.
+
+- **The brake waits on nothing.** An empty Enter, a line with no letter or digit in it, a line
+  whose first word is `stop`, `halt`, `brake` or `q`, and Ctrl-C each drop every line that has
+  not started, end every verb moving the body, stop a goal, and send the stop to the body
+  directly, before the `stop` verb runs for the record. A brake is never taken for the answer
+  to a question. Drive installs no kill switch, whose `q` would end a session at "quack". A
+  second Ctrl-C soon after the first ends the session, which ends what is still moving the body
+  before it folds and lets go of it.
+- **A newer command ends the verb it finds moving** (`preempted`), and waits for it to stop, and
+  for a brake still on its way, before it sends anything. A stop asked for from beside a verb
+  ends it before its next twist: `move`, `go_to`, `search_scan` and `approach_and` read it as
+  quackd ships them, and so does an MCP session's `stop`
+  ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
+- **A person's own command is the verdict for its own call**, recorded as a person's from the
+  keyboard, as a pipe's from a pipe or a file, and as a decision LLM's reading where the fast
+  lane took it unasked. Nothing is kept for any other call, and a goal's pilot judges its own
+  task. A confirm still asks: a person at the keyboard is asked, `--yes` answers by its standing
+  rule, and a pipe without `--yes` is answered no. The answer is the asked call's alone, so a
+  verb that call runs inside itself is answered by `--yes` alone, and a `dangerous` verb never
+  runs in drive, nested or not.
+- **A body that cannot see a fall is driven only with somebody watching it.** Before the first
+  thing that moves such a body, drive asks whether the person is watching, as `quackd run`
+  asks. `--yes` says they are, and a pipe without it is refused.
+- **A session is held to a contract**, a `--duckfile`'s or one of its own: every verb that is
+  not dangerous, the battery rule, and the schema's ceilings for its budgets. A goal runs inside
+  it: the body's safe verbs behind the session's confirm gates, no more budget than the session
+  has left and its steps charged to it, the session's abort rules, the session's `--dry-run`,
+  and an end when the session's heartbeat fails.
+
 ## When the model's API fails
 
 A turn the model's API could not answer for now is asked again, with the robot holding still in
@@ -241,17 +276,18 @@ quackd --no-color run hello-world --llm openrouter --base-url http://127.0.0.1:8
 
 ```
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol
-⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.1 s, asking again in 4.5 s
+⚠  llm<    ERROR ProviderError: openrouter: InternalServerError: Error code: 529 - {'error': {'code': 529, 'message': 'the stand-in is busy, by request'}} after 0.6 s, asking again in 4.6 s
 ·  note    the model's API could not answer this turn (overloaded (529)), so quackd waits and asks it the same turn again, up to 4 times. Nothing moves the robot while it waits, the heartbeat goes on watching it, and Ctrl-C or q ends the run instead
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
    think   turn 1: calling assess_task
 ```
 
 The counters under the verdict say how many times a turn was asked again and how long the waits
-took, apart from the model's own seconds:
+took, apart from the model's own seconds, and the call that failed is in the model's seconds
+and in none of the spread beside them:
 
 ```
-steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.0 s (model 0.2 s, waits 4.5 s) · cost $0.0097
+steps 3 · llm calls 5 (+1 asked again) · tokens 5015+100 · time 5.7 s (model 0.7 s, waits 4.6 s) · model calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 5.6 s, after 3 model calls · cost $0.0097
 ```
 
 A fifth failure after the fourth wait ends the run `error`, saying in how many tries, with the
@@ -262,6 +298,16 @@ bounds the waits. The note is said once a run, and each try after it is the log'
 decision LLM is left as it was, since a turn it could not decide already goes to the pilot. None
 of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
 against the real openai SDK talking to the stand-in server above.
+
+A call that never answers is bounded by the same minutes. A model's answer used to be checked
+against `max_minutes` only once it came, so a call that hung held the robot past the task's
+whole budget for as long as the vendor's own clock allowed, ten minutes on both SDKs. The call
+is raced against the task's minutes now, as it is against the stop: once they are spent it is
+cancelled, its `llm` record says it failed on the budget, it is not asked again, and the run ends
+on its budget, with the robot put down as at any end. A stop pressed in the same moment wins.
+It is the budget's clock again, so on a simulator, whose clock stands still while a model
+thinks, a call is never cut off this way. No single call has a ceiling of its own, which would
+cut long thinking short and bill the retry twice.
 
 ## When the pilot is unsure
 

@@ -54,6 +54,10 @@ BINDING_BETA = "thinking-binding-controls-2026-08-01"
 #: window of two, against two for every other model.
 BINDING_TRIM_PERIOD = 8
 
+CACHE_ENV = "QUACKD_ANTHROPIC_CACHE"
+"""Set to 0, false or no to send every request unmarked, its system prompt and its messages
+alike, so nothing is cached (`_system`, `render_messages`)."""
+
 
 def _image_block(png: bytes) -> dict[str, Any]:
     return {
@@ -66,8 +70,27 @@ def _image_block(png: bytes) -> dict[str, Any]:
     }
 
 
-def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
-    """quackd's vendor-neutral history → Messages API `messages`."""
+CACHE_POINT = {"type": "ephemeral"}
+"""The marker on a block that ends a cached prefix: the five minute lifetime, the one every
+catalogue row's cache-write rate is."""
+
+
+def _marked(blocks: list[Any]) -> list[Any]:
+    """`blocks` with a cache breakpoint on the last one that can carry one, which is every kind
+    but a thinking block. A copy: the blocks a decision replays are never written to."""
+    for k in range(len(blocks) - 1, -1, -1):
+        block = blocks[k]
+        if isinstance(block, dict) and block.get("type") not in ("thinking", "redacted_thinking"):
+            return [*blocks[:k], {**block, "cache_control": dict(CACHE_POINT)}, *blocks[k + 1 :]]
+    return blocks
+
+
+def render_messages(history: list[Exchange], *, marks: bool = True) -> list[dict[str, Any]]:
+    """quackd's vendor-neutral history → Messages API `messages`, with the cache breakpoint the
+    loop chose (`Exchange.cache_points`) on the last block of each half they name. The loop
+    marks a history only for a provider whose `caches` is True (`_with_cache_point`), and this
+    holds to the same switch as well, so with `marks` False (`QUACKD_ANTHROPIC_CACHE=0`) no block
+    carries one, whoever marked the history it was given."""
     messages: list[dict[str, Any]] = []
     for ex in history:
         obs = ex.observation
@@ -79,6 +102,8 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
             ]
         else:
             content = [*pictures, {"type": "text", "text": obs.text}]
+        if marks and "observation" in ex.cache_points:
+            content = _marked(content)
         messages.append({"role": "user", "content": content})
         if ex.decision is not None:
             if isinstance(ex.decision.raw, list) and ex.decision.raw:
@@ -91,6 +116,8 @@ def render_messages(history: list[Exchange]) -> list[dict[str, Any]]:
                 blocks.append(
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
                 )
+            if marks and "decision" in ex.cache_points:
+                blocks = _marked(blocks)
             messages.append({"role": "assistant", "content": blocks})
     return messages
 
@@ -169,9 +196,9 @@ def parse_response(response: Any) -> ProviderTurn:
     # Anthropic is the one vendor that reports its three input buckets DISJOINT: `input_tokens`
     # is what was neither read from a cache nor written to one. quackd's `input_tokens` is the
     # whole prompt (`providers.base.Usage`), so the three are added back up here and the two
-    # cache numbers ride along beside it for the rates they are actually billed at. Nothing in
-    # quackd sets `cache_control` today, so both are 0 on every run so far, and this is the
-    # arithmetic that stops being a no-op on the day one is set.
+    # cache numbers ride along beside it for the rates they are actually billed at. quackd marks
+    # the system prompt for the cache on every request (`_system`), so from a run's second call
+    # the read bucket carries it, and the first call's write is billed at the write rate.
     cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
     # `cache_creation_input_tokens`, not the `cache_creation` object beside it: that object is
     # a breakdown of this same number by cache lifetime (5 minute and 1 hour), and adding both
@@ -287,7 +314,19 @@ class AnthropicProvider:
             self.supports_vision = vision
         self.max_tokens = max_tokens or int(os.environ.get("QUACKD_MAX_TOKENS", "16000"))
         self.effort = effort or os.environ.get("QUACKD_EFFORT", "medium")
+        #: Where `effort` came from, for the record (`asked_effort`): whoever built this provider,
+        #: which the factory renames `--effort`, then `QUACKD_EFFORT`, then quackd's own medium.
+        self.effort_from = "the caller"
+        if not effort:
+            self.effort_from = "QUACKD_EFFORT" if os.environ.get("QUACKD_EFFORT") else "default"
         env_fb = os.environ.get("QUACKD_ANTHROPIC_FALLBACKS", "1") not in ("0", "false", "no")
+        #: Whether requests mark the prompt, and the points the loop chose in the history, for
+        #: Anthropic's cache (`_system`, `render_messages`). On unless `QUACKD_ANTHROPIC_CACHE`
+        #: says 0, false or no, beside the fallbacks switch above: a marked prompt is read at the
+        #: model's cache rate from the second call on, a tenth of its input rate on most rows and
+        #: a twentieth on Opus 5.5, and prefilled sooner, and the one write it costs is a quarter
+        #: more than an unmarked call.
+        self.caches = os.environ.get(CACHE_ENV, "1").strip().lower() not in ("0", "false", "no")
         self.fallbacks = env_fb if fallbacks is None else fallbacks
         # `summarized` is what makes the thinking blocks carry text. `omitted` keeps the
         # request but hides the text; an empty value sends no `thinking` parameter at all.
@@ -316,8 +355,8 @@ class AnthropicProvider:
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "system": system,
-            "messages": render_messages(history),
+            "system": self._system(system),
+            "messages": render_messages(history, marks=self.caches),
             "tools": render_tools(tools),
             "tool_choice": _tool_choice(forced=self.forced_tools),
         }
@@ -334,6 +373,40 @@ class AnthropicProvider:
                 thinking["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
             params["thinking"] = thinking
         return params
+
+    def _system(self, system: str) -> str | list[dict[str, Any]]:
+        """The system prompt as it is sent: one text block marked for the cache, or the string.
+
+        The prompt is built once per run and the tools are the same list every call, and
+        Anthropic orders a request tools, then system, then messages, so one breakpoint on the
+        system block caches both, which is the bulk of every request quackd makes: the rules,
+        the verbs, the datasheet and the task. Five minutes is the cache's own lifetime, longer
+        than any pause between two turns of a run, and the write rate in every catalogue row is
+        that lifetime's (`catalogue.py`). A prompt below the model's smallest cacheable size is
+        sent marked and simply not cached, which Anthropic answers with no error and a write of
+        0. A marker sits outside what a model that binds its thinking binds a block to, and one
+        text block is the same system prompt as the string it holds, so the trim's arithmetic
+        (`loop._history_for_provider`) is untouched. With `QUACKD_ANTHROPIC_CACHE=0` it is the
+        string as it always was."""
+        if not self.caches or not system:
+            return system
+        return [{"type": "text", "text": system, "cache_control": dict(CACHE_POINT)}]
+
+    @property
+    def asked_effort(self) -> dict[str, str] | None:
+        """What every request of this run asks the model to reason at, and where that came from,
+        as `run_start.effort` records it, or None for a model that is sent no effort at all
+        (`ModelSpec.effort`, or `QUACKD_EFFORT` set blank)."""
+        if not (self.effort and self.sends_effort):
+            return None
+        return {"value": self.effort, "from": self.effort_from}
+
+    def warm(self) -> None:
+        """What the SDK's client asks before its first request, asked now, while the robot
+        connects (`sdk_warm.warm_client`). Sends nothing and never raises."""
+        from quackd.agent.providers.sdk_warm import warm_client
+
+        warm_client(self.client, "anthropic")
 
     def without_thinking(self, decision: Decision) -> Decision:
         """The same turn with its thinking and redacted thinking blocks left out.

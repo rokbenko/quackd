@@ -96,6 +96,12 @@ finite, and nothing caps the speed of the twist its policy is handed. The caps, 
 holds every twist a verb sends to (`speed_limits` in `quackd/verbs/core.py`), as the decision
 says of every body. The note says so now, and the numbers are as they were.
 
+**Amended 2026-10-26 by [ADR-0066](0066-a-persons-command-is-the-verdict-for-its-own-call.md):**
+a call a person named in `quackd drive` clears the gate before motion by itself, for that call
+and the verbs it runs, and the record says whose word it was, a person's at the keyboard or a
+pipe's. No verdict is written, so every other call, a goal's pilot's among them, is gated as the
+decision below says.
+
 ## Context
 
 A pilot was told one line about the body it was driving, `manifest.blurb`, and a list of

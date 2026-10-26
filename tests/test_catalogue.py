@@ -232,15 +232,24 @@ def test_an_openrouter_row_says_the_day_its_rate_was_read() -> None:
 
 
 def test_only_anthropic_marks_a_model_by_how_it_takes_effort_or_thinking() -> None:
-    """`effort` and `binds_thinking` are Anthropic's alone, like `forced_tools`: every other
-    vendor's request is shaped by its provider class, and a row elsewhere setting either would
-    be read by nothing."""
+    """`binds_thinking` is Anthropic's alone, like `forced_tools`: every other vendor's request
+    is shaped by its provider class, and a row elsewhere setting it would be read by nothing.
+    `effort` and `effort_levels` are read for Anthropic's rows and OpenAI's, by `--effort`
+    (`effort_refusal`), and by nothing for any other vendor's. A row that names levels names
+    some of the flag's and not all of them, since all of them is what no levels means."""
+    from quackd.agent.providers.factory import EFFORTS
+
     for name in CLOUD_NAMES:
-        if name == "anthropic":
-            continue
         for m in models_for(name):
-            assert m.effort is True, f"{m.id} sets effort and {name} never reads it"
+            if m.effort_levels is not None:
+                assert m.effort, f"{m.id} names effort levels and takes no effort"
+                assert set(m.effort_levels) < set(EFFORTS), m.id
+            if name == "anthropic":
+                continue
             assert m.binds_thinking is False, f"{m.id} sets binds_thinking and {name} ignores it"
+            if name != "openai":
+                assert m.effort is True, f"{m.id} sets effort and {name} never reads it"
+                assert m.effort_levels is None, f"{m.id} sets effort levels and {name} ignores them"
 
 
 def test_no_retired_id_has_crept_back() -> None:
@@ -754,12 +763,13 @@ def test_every_vendor_file_is_reachable_from_the_factory() -> None:
     """A provider module nobody dispatches to is a vendor that silently does not exist.
 
     `vla` is plumbing rather than a vendor: `--controller vla` builds it, never `--llm`. So is
-    `openai_headers`, the rule every client built on OpenAI's SDK is handed its headers by."""
+    `openai_headers`, the rule every client built on OpenAI's SDK is handed its headers by, and
+    `sdk_warm`, what a client of either SDK asks before its first request, asked early."""
     directory = REPO / "quackd" / "agent" / "providers"
     modules = {p.stem for p in directory.glob("*.py")}
     plumbing = {
         *("__init__", "base", "catalogue", "factory", "fake", "local", "openai", "pricing"),
-        *("openai_headers", "vla"),
+        *("openai_headers", "sdk_warm", "vla"),
     }
     assert modules - plumbing - {"anthropic", "gemini"} == set(OPENAI_COMPATIBLE)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import itertools
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -237,6 +238,63 @@ async def test_provider_response_before_time_budget_is_processed(
     assert transport.now() == 5
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert "declare" in [event["kind"] for event in events]
+
+
+class HangsPastTheMinutes:
+    """A pilot that spends the task's minutes on the robot's own clock and then never answers,
+    the way a call to a vendor that hung does."""
+
+    name = "hangs"
+    model = "test"
+    supports_vision = False
+
+    def __init__(self, transport: MockTransport, seconds: float) -> None:
+        self.transport = transport
+        self.seconds = seconds
+        self.cancelled = False
+
+    async def step(
+        self, system: str, history: list[Exchange], tools: list[dict[str, Any]]
+    ) -> ProviderTurn:
+        await self.transport.sleep(self.seconds)
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        raise AssertionError("a hung call never answers")
+
+
+async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budget(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """`max_minutes` was read only once an answer came back, so a call that hung held the robot
+    past the task's whole budget for as long as the vendor's own clock allowed. The call is raced
+    against the minutes as it is raced against the stop: cut off once they are spent, recorded
+    as the call that failed, never asked again, and the run ends on its budget in the budget's
+    own words, as it would have for an answer that came back late. Bounded by `wait_for` only so
+    that the code before this, which waits for ever, fails rather than hangs."""
+    hello_duck.frontmatter.budgets = Budgets(max_minutes=0.1)
+    transport = MockTransport()
+    provider = HangsPastTheMinutes(transport, 0.1 * 60 + 1)
+    result = await asyncio.wait_for(
+        run_duck(
+            RunConfig(
+                duck=hello_duck,
+                provider=provider,
+                transport=transport,
+                runs_dir=tmp_path,
+                heartbeat_period_s=0.05,
+            )
+        ),
+        timeout=30,
+    )
+    assert result.outcome == "budget", result.reason
+    assert "max_minutes (0.1) exceeded" in result.reason
+    assert provider.cancelled, "the call was left running behind the teardown"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    (call,) = [e for e in events if e["kind"] == "llm"]
+    assert "BudgetExceeded" in call["error"] and "retry_in_s" not in call, call
 
 
 async def test_budget_ends_the_run(hello_duck: DuckFile, tmp_path: Path) -> None:
@@ -2174,6 +2232,13 @@ async def test_the_one_lens_left_on_a_two_camera_body_still_says_which_one_it_is
     )
 
 
+def unmarked(block: Any) -> Any:
+    """A content block as Anthropic compares it for a prefix: with no `cache_control` marker."""
+    if isinstance(block, dict):
+        return {k: v for k, v in block.items() if k != "cache_control"}
+    return block
+
+
 class SeeingProvider:
     """A pilot that can see, and writes down which camera every picture in the request came
     from, exchange by exchange.
@@ -2258,9 +2323,9 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
 ) -> None:
     """Encoding a frame to PNG holds whichever thread does it, and a body's heartbeat waits on
     the event loop's for an answer: a second of encoding there was a heartbeat reported as not
-    answering. Every turn's frames are written, and the model's copies encoded, in a worker
-    thread, and the record reads as it did: each turn's frames, numbered in turn, before the
-    observation they were taken for."""
+    answering. Every turn's frames are encoded and written in a worker thread, the model is sent
+    the bytes that wrote them, and the record reads as it did: each turn's frames, numbered in
+    turn, before the observation they were taken for."""
     import threading
 
     loop_thread = threading.get_ident()
@@ -2292,6 +2357,41 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
     assert seen and all(
         names == [f"{n:04d}-top.png", f"{n:04d}-side.png"] for n, names in enumerate(seen)
     ), turns
+
+
+async def test_each_picture_is_encoded_once_and_the_model_is_sent_the_file(
+    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn's picture used to be encoded twice, once for `frames/` and once more for the
+    request: the same pixels through the same encoder, a second time, on a worker thread a
+    body's heartbeat shares the machine with. It is encoded once now. Every PNG encoded in the
+    run is a file in `frames/`, and what the model is sent of a picture is that file's bytes,
+    so the picture a reader opens afterwards is the one the pilot was shown."""
+    encodes: list[str] = []
+    save = Image.Image.save
+
+    def counting(image: Image.Image, fp: Any, format: Any = None, **params: Any) -> None:
+        if str(format or "").upper() == "PNG":
+            encodes.append(str(fp))
+        save(image, fp, format, **params)
+
+    monkeypatch.setattr(Image.Image, "save", counting)
+    provider = SeeingProvider(
+        ToolCall(name="quack", arguments={"text": "hi"}),
+        ToolCall(name="declare_success", arguments={"reason": "seen"}),
+    )
+    result = await run_duck(
+        RunConfig(duck=hello_duck, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+    )
+    assert result.outcome == "success", result.reason
+    frames = result.run_dir / "frames"
+    files = sorted(frames.glob("*.png"))
+    assert files and len(encodes) == len(files), (len(encodes), [f.name for f in files])
+
+    first = provider.observations[0]
+    assert [image.name for image in first.images] == ["top", "side"]
+    assert first.images[0].png == (frames / "0000-top.png").read_bytes()
+    assert first.images[1].png == (frames / "0000-side.png").read_bytes()
 
 
 async def test_only_the_last_n_exchanges_keep_their_images(
@@ -2466,10 +2566,13 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
     assert bool(prose_at) is (body == "lit-prose-turn"), "the prose turn never came"
 
     def unthought(messages: list[dict[str, Any]]) -> list[Any]:
+        """What a block is bound to, compared as the API compares it: without the thinking
+        blocks themselves and without `cache_control` markers, which it ignores, so the cache
+        breakpoint that moves from call to call (`AgentLoop._with_cache_point`) edits nothing."""
         return [
-            [b for b in m["content"] if b.get("type") != "thinking"]
+            [unmarked(b) for b in m["content"] if b.get("type") != "thinking"]
             if m["role"] == "assistant"
-            else m["content"]
+            else [unmarked(b) for b in m["content"]]
             for m in messages
         ]
 
@@ -2508,6 +2611,151 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
     else:
         assert left_out, "the run was too short to see a trim leave anything out"
         assert kept_valid_late, "no block produced after a trim was ever replayed"
+
+
+LOOKBACK = 20
+"""How many positions a cache breakpoint checks for an entry an earlier request wrote, its own
+block the first of them, a run of `tool_use` blocks and a run of `tool_result` blocks each
+counting as one (Anthropic's prompt caching reference). So an entry it can read lies fewer than
+this many positions behind it."""
+
+
+def _flat(messages: list[dict[str, Any]]) -> list[tuple[int, str, Any]]:
+    """Every block of a request in order, as (message, role, the block without its marker)."""
+    return [(i, m["role"], unmarked(b)) for i, m in enumerate(messages) for b in m["content"]]
+
+
+def _marked_at(messages: list[dict[str, Any]]) -> list[int]:
+    """Where in `_flat` order a request's messages carry a cache breakpoint."""
+    blocks = [b for m in messages for b in m["content"]]
+    return [k for k, b in enumerate(blocks) if isinstance(b, dict) and "cache_control" in b]
+
+
+def _positions(flat: list[tuple[int, str, Any]], start: int, end: int) -> int:
+    """The positions a breakpoint at `end` looks back across to reach `start`, counted as
+    Anthropic counts them."""
+    count, previous = 0, None
+    for _i, _role, block in flat[start + 1 : end + 1]:
+        kind = block.get("type") if isinstance(block, dict) else None
+        if not (kind in ("tool_use", "tool_result") and kind == previous):
+            count += 1
+        previous = kind
+    return count
+
+
+@pytest.mark.parametrize("period", [1, 2, 4, 8])
+@pytest.mark.parametrize("keep", [1, 2, 3])
+@pytest.mark.parametrize("body", ["two-cameras", "no-vision", "goes-dark", "lit-prose-turn"])
+async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_it(
+    body: str, keep: int, period: int, hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A prompt cache is read only as far as a request matches one it has seen, and quackd's own
+    trim edits older messages, so a marker at the end of every request would sit past that edit
+    on the calls that trim and the next would read nothing back. Through the real loop and the
+    real Claude provider, over the trim's every period, keep and kind of body: the system prompt
+    is marked the same on every call, a request carries at most Anthropic's four breakpoints,
+    each call marks the last block it shares with the next, so that call's entry covers all the
+    next can read, and the next call has a marker that reaches back to it within the cache's
+    lookback, so it is read rather than paid for again. A call answered in prose is asked again
+    rather than answered, which the guess does not foresee, so the pair after one is excused:
+    what it costs is a cache write or two, never a wrong request, since the re-prompt adds two
+    exchanges where the guess counted one and the trim's cut can move by both. The comparisons
+    drop the markers, as the API does, and binding validity under them is
+    `test_a_binding_model_is_never_sent_...`'s."""
+    from quackd.agent.providers.anthropic import AnthropicProvider
+
+    calls = keep + 2 * period + 4
+    sent: list[dict[str, Any]] = []
+    prose_at: list[int] = []
+
+    def block(**fields: Any) -> Any:
+        return NS(model_dump=lambda: dict(fields), **fields)
+
+    def pictured(content: Any) -> bool:
+        if isinstance(content, dict):
+            return content.get("type") == "image" or pictured(content.get("content"))
+        return isinstance(content, list) and any(pictured(b) for b in content)
+
+    async def create(**kwargs: Any) -> Any:
+        sent.append(copy.deepcopy({"system": kwargs["system"], "messages": kwargs["messages"]}))
+        k = len(sent)
+        thought = block(type="thinking", thinking=f"turn {k}", signature=f"sig{k}")
+        lit = pictured(kwargs["messages"][-1]["content"])
+        if body == "lit-prose-turn" and not prose_at and lit:
+            prose_at.append(k)
+            answer = [thought, block(type="text", text="I see the bench.")]
+            return NS(
+                content=answer,
+                stop_reason="end_turn",
+                usage=NS(input_tokens=10, output_tokens=5),
+                stop_details=None,
+                model="claude-opus-5-5",
+            )
+        name, args = ("declare_success", {"reason": "done"}) if k == calls else ("quack", {})
+        return NS(
+            content=[thought, block(type="tool_use", id=f"t{k}", name=name, input=args)],
+            stop_reason="tool_use",
+            usage=NS(input_tokens=10, output_tokens=5),
+            stop_details=None,
+            model="claude-opus-5-5",
+        )
+
+    client = NS(messages=NS(create=create), beta=NS(messages=NS(create=create)))
+    model = "claude-opus-5-5" if period > 1 else "claude-sonnet-5"
+    provider = AnthropicProvider(model=model, client=client, vision=body != "no-vision")
+    provider.frame_trim_period = period
+    assert provider.caches, "QUACKD_ANTHROPIC_CACHE switched it off in this environment"
+    transport = {
+        "goes-dark": lambda: DarkeningDuck(),
+        "lit-prose-turn": lambda: DarkeningDuck(lit=frozenset({2})),
+    }.get(body, TwoCameraDuck)()
+    hello_duck.frontmatter.budgets = Budgets()
+    result = await AgentLoop(
+        RunConfig(
+            duck=hello_duck,
+            provider=provider,
+            transport=transport,
+            runs_dir=tmp_path,
+            keep_images_for_last_n=keep,
+        )
+    ).run()
+    assert result.outcome == "success", result.reason
+    assert len(sent) == calls
+
+    systems = {json.dumps(request["system"], sort_keys=True) for request in sent}
+    assert len(systems) == 1, "the system prompt changed between calls, so it could not be read"
+    (system,) = [request["system"] for request in sent[:1]]
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
+
+    for k, request in enumerate(sent, start=1):
+        marks = _marked_at(request["messages"])
+        assert 1 + len(marks) <= 4, f"call {k}: more breakpoints than Anthropic takes"
+    edited = False
+    for k, (now, later) in enumerate(itertools.pairwise(sent), start=1):
+        flat_now, flat_later = _flat(now["messages"]), _flat(later["messages"])
+        shared = 0
+        while (
+            shared < min(len(flat_now), len(flat_later)) and flat_now[shared] == flat_later[shared]
+        ):
+            shared += 1
+        edited |= shared < len(flat_now)
+        if k in prose_at or not shared:
+            # nothing in the messages is shared, so nothing could be read, or the call was
+            # answered in prose, which the guess about the next call does not foresee
+            continue
+        # the call wrote an entry on the last block the two share, and the next has a marker
+        # that walks back to it within the lookback: everything shared is read, not paid again
+        assert shared - 1 in _marked_at(now["messages"]), (
+            f"call {k}: nothing marked the end of the {shared} blocks the next call shares"
+        )
+        assert any(
+            q >= shared - 1 and _positions(flat_later, shared - 1, q) < LOOKBACK
+            for q in _marked_at(later["messages"])
+        ), f"call {k + 1}: no marker reaches back to the entry call {k} wrote"
+    if body == "no-vision":
+        assert not edited, "nothing is trimmed without pictures, so nothing sent may change"
+    else:
+        assert edited, "the run was too short to see a trim edit what an earlier call sent"
 
 
 # ── the pictures that came with the task ────────────────────────────────────────────────
@@ -4780,6 +5028,61 @@ async def test_the_seconds_spent_waiting_on_the_model_count_the_call_that_raised
     assert loop.llm_latency_s == pytest.approx(sum(c["latency_s"] for c in calls), abs=1e-9)
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["llm_latency_s"] == pytest.approx(loop.llm_latency_s, abs=0.0005)
+    # the one call that answered is the whole spread, and the failure is in none of it
+    answered = calls[0]["latency_s"]
+    assert (
+        summary["llm_latency_p50_s"],
+        summary["llm_latency_p90_s"],
+        summary["llm_latency_max_s"],
+    ) == (answered, answered, answered)
+
+
+async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_moved(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A total says where a run's time went and nothing about the calls that spent it, and the
+    question a person standing by the robot asks first is how long it took to do anything. So
+    the summary carries the model's median, ninetieth percentile and longest call, by nearest
+    rank over the calls that answered, and when the first verb that moves the body was handed
+    over, on the record's own clock and after how many model calls. Read off the run's own
+    records rather than off a clock the test keeps, so no figure here is a timing guess. A dry
+    run hands nothing over, so nothing in it moved."""
+    from quackd.latency import nearest_rank
+
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck(hello_duck.name),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+        )
+    )
+    assert result.outcome == "success", result.reason
+    summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    llm = [e for e in events if e["kind"] == "llm"]
+    seconds = [e["latency_s"] for e in llm]
+    assert len(seconds) == len(GOLDEN_HELLO)
+    assert summary["llm_latency_p50_s"] == nearest_rank(seconds, 0.5)
+    assert summary["llm_latency_p90_s"] == nearest_rank(seconds, 0.9)
+    assert summary["llm_latency_max_s"] == max(seconds)
+
+    walked = GOLDEN_HELLO.index("walk")
+    assert summary["first_motion_llm_calls"] == walked + 1, "the call that chose it included"
+    ended = next(e for e in events if e["kind"] == "verb_end" and e.get("name") == "walk")
+    assert llm[walked]["t"] <= summary["first_motion_s"] <= ended["t"] <= summary["wall_s"]
+
+    dry = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck(hello_duck.name),
+            transport=MockTransport(),
+            runs_dir=tmp_path / "dry",
+            dry_run=True,
+        )
+    )
+    unmoved = json.loads((dry.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert unmoved["first_motion_s"] is None and unmoved["first_motion_llm_calls"] is None
 
 
 async def test_every_call_is_costed_at_the_rate_the_environment_named(

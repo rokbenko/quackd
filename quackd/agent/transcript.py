@@ -16,7 +16,7 @@ import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from PIL import Image
 
@@ -95,6 +95,21 @@ def png_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+class SavedFrame(NamedTuple):
+    """One camera's picture for a step as it went into `frames/`: the file, and the PNG bytes
+    written to it.
+
+    The bytes are kept because they are also what the model is shown of that picture
+    (`AgentLoop._observe`). A frame used to be encoded twice a turn, once for the file and once
+    more for the request, and the second encoding was the same work on the same pixels with
+    the same encoder, so it bought nothing but time on a worker thread a body's heartbeat
+    shares the machine with. The request now carries the file's own bytes, which also makes
+    the picture a reader opens afterwards the picture the pilot was sent, byte for byte."""
+
+    path: Path
+    png: bytes
+
+
 class Transcript:
     def __init__(self, run_dir: Path) -> None:
         self.run_dir = run_dir
@@ -146,6 +161,12 @@ class Transcript:
         a `--by-hand` handover and runs on the simulator's time on a simulator. This one is
         the whole run, wall seconds, start to finish."""
         return time.monotonic() - self._t0
+
+    def at(self, monotonic: float) -> float:
+        """A `time.monotonic()` reading as seconds on this record's clock, the one every `t` is
+        on, rounded as a `t` is: where in the run something stamped elsewhere happened
+        (`Executor.first_motion_at`)."""
+        return round(monotonic - self._t0, 3)
 
     def ended_at_iso(self, wall_s: float) -> str:
         """`started_at` plus the run's own span, rather than a second reading of the clock.
@@ -207,7 +228,7 @@ class Transcript:
 
     async def save_frames_off_loop(
         self, frames: Sequence[CameraFrame], caption: str = "", *, several: bool = False
-    ) -> list[Path]:
+    ) -> list[SavedFrame]:
         """`save_frames`, with the PNGs encoded and written in a worker thread.
 
         Encoding a frame holds the event loop's thread for as long as it takes, and a body's
@@ -215,7 +236,12 @@ class Transcript:
         and their names are `save_frames`'s, the step's number is taken before the wait so no
         other save can take it, and the records are written here, on the loop's thread, after
         their files, in the order `save_frames` writes them. The worker writes files and never
-        a record, because the record is written from the loop's thread alone."""
+        a record, because the record is written from the loop's thread alone.
+
+        Each picture is encoded once, into bytes, and those bytes are both what the file holds
+        and what is handed back, in `frames` order, for the caller to send the model
+        (`SavedFrame`). `png_bytes` is `Image.save` with the same format to a buffer rather than
+        to a path, so the files are the bytes they always were."""
         one = len(frames) == 1 and not several
         number = self.frame_count
         self.frame_count += 1
@@ -225,18 +251,22 @@ class Transcript:
             for frame in frames
         ]
 
-        def save() -> None:
+        def save() -> list[SavedFrame]:
+            saved: list[SavedFrame] = []
             for frame, path in named:
-                frame.image.save(path, format="PNG")
+                png = png_bytes(frame.image)
+                path.write_bytes(png)
+                saved.append(SavedFrame(path=path, png=png))
+            return saved
 
-        await asyncio.to_thread(save)
+        saved = await asyncio.to_thread(save)
         for frame, path in named:
             where = str(path.relative_to(self.run_dir))
             if one:
                 self.write("frame", path=where, caption=caption)
             else:
                 self.write("frame", path=where, caption=caption, camera=frame.name)
-        return [path for _, path in named]
+        return saved
 
     def save_task_images(self, images: Sequence[NamedPng]) -> list[Path]:
         """The pictures that came with the task, written once at the top of the run.

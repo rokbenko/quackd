@@ -34,7 +34,7 @@ carry is checked against OpenRouter's own model list when the run starts
 | `--llm` | Who | Extra | Key | Address | Default | Ids |
 |---|---|---|---|---|---|---|
 | `anthropic` | Anthropic | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | the SDK's own | `claude-opus-5-5` | [12](#anthropic) |
-| `openai` | OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6-sol` | [21](#openai) |
+| `openai` | OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `https://api.openai.com/v1`, or `OPENAI_BASE_URL` | `gpt-6-sol` | [22](#openai) |
 | `gemini` | Google | `quackd[gemini]` | `GEMINI_API_KEY`, or `GOOGLE_API_KEY` | the SDK's own | `gemini-3.8-flash` | [9](#gemini) |
 | `grok` | xAI | `quackd[grok]` | `XAI_API_KEY` | `https://api.x.ai/v1` | `grok-4.7` | [7](#grok) |
 | `mistral` | Mistral AI | `quackd[mistral]` | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | `mistral-medium-3-5` | [10](#mistral) |
@@ -115,7 +115,7 @@ Gemini Robotics model that does is offered to selected partners only
 
 <!-- generated: pilot-ids, by scripts/models_docs.py from quackd/agent/providers/catalogue.py. Change a row there and run the script, not this table. -->
 
-123 model ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-09-23, and OpenRouter's list on 2026-10-06. None is a rate the vendor does not publish, and unpriced a model with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
+124 model ids from twelve cloud vendors. Rates are USD per million tokens, input / output / cache read / cache write, as each vendor's own page gave them on 2026-09-23, `openai:gpt-6.1-sol`'s on 2026-10-26, and OpenRouter's list on 2026-10-06. None is a rate the vendor does not publish, and unpriced a model with no public per-token rate at all, which a run records as an unknown cost rather than a free one.
 
 ### `anthropic`
 
@@ -139,6 +139,7 @@ Gemini Robotics model that does is offered to selected partners only
 | `--llm` | Label | Status | Frames | Notes | USD per Mtok |
 |---|---|---|---|---|---|
 | `openai:gpt-6-sol` | GPT-6 Sol | current | yes | default, Responses API | 2 / 10 / 0.2 / 2.5 |
+| `openai:gpt-6.1-sol` | GPT-6.1 Sol | current | yes | Responses API | 2 / 10 / 0.1 / 2.5 |
 | `openai:gpt-6-astra` | GPT-6 Astra | current | yes | Responses API | 10 / 50 / 1 / 12.5 |
 | `openai:gpt-6-luna` | GPT-6 Luna | current | yes | Responses API | 0.1 / 0.5 / 0.01 / 0.125 |
 | `openai:gpt-5.6-sol` | GPT-5.6 Sol | current | yes |  | 4 / 20 / 0.4 / 5 |

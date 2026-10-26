@@ -68,6 +68,20 @@ class LayaLLM:
             return laya.Router(preload=True, default=self.model)
         return laya.Router(preload=True, max_loaded=2)
 
+    async def warm(self) -> None:
+        """Load the weights now, off the loop, rather than on the first turn that asks.
+
+        `quackd drive` calls this before its prompt opens, so the first line a person types is
+        not the one that pays the load. Never raises: a load that fails is remembered as one in
+        `decide` is, and `decide` raises it, so the session goes on and its first question
+        reaches the pilot the way any failed question does."""
+        if self._router is not None or self._broken is not None:
+            return
+        try:
+            self._router = await asyncio.to_thread(self._load)
+        except Exception as e:
+            self._broken = e
+
     async def decide(
         self, state: Mapping[str, str], questions: Mapping[str, Mapping[str, Any]]
     ) -> Any:

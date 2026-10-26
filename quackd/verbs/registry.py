@@ -28,6 +28,10 @@ SafetyClass = Literal["safe", "confirm", "dangerous"]
 STOPPED = "a stop was sent while it ran"
 """What `VerbContext.interrupted` says once a `stop` has run since the verb began, from any
 caller, so a verb can tell the brake from a budget that ran out (`watch` ends on both)."""
+STOP_ENDED = "stop"
+"""`ended_by` in the result of a verb a `stop` from beside it ended (`STOPPED`), which
+`abort_when`'s count of failures in a row passes over, as it passes over a pause a robot met was
+granted: the brake working is neither the verb's failure nor the pilot's."""
 VerbKind = Literal["builtin", "composite", "learned", "meta"]
 
 
@@ -78,8 +82,10 @@ class VerbContext:
     interrupted: Callable[[], str | None] = lambda: None
     """Why a verb that runs for a while should end now, or None while nothing says so: the run's
     time budget spent, in the budget's own words, or a `stop` run since the verb began, as
-    `STOPPED`. The executor builds it for each call. Only `watch` reads it so far: the budget is
-    checked between verbs, and `watch` is the first verb whose point is to run for a while."""
+    `STOPPED`. The executor builds it for each call. `watch` reads it, and so do the core verbs
+    that move the body for a while, `move`, `go_to`, `search_scan` and `approach_and`, before
+    each twist and between steps: a `stop` asked for beside one of them used to send its stop and
+    then watch the verb's next twist undo it, over MCP and anywhere else two calls overlap."""
 
 
 Precondition = Callable[[DuckState], str | None]

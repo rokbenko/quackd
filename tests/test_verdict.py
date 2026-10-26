@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,6 +34,8 @@ from quackd.verdict import (
     solo_hint,
 )
 from quackd_microduck import microduck_manifest
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def _body(**over: object) -> RobotManifest:
@@ -780,3 +784,68 @@ def test_bodies_that_could_reads_only_the_static_descriptions() -> None:
     for backend in BACKENDS["alohamini"]:
         sheet = describe(RobotSpec("alohamini", backend)).datasheet
         assert sheet is not None and sheet.manipulator == "gripper"
+
+
+@pytest.mark.parametrize(("source", "said"), [("person", "a person"), ("cli", "a pipe")])
+async def test_a_persons_own_command_clears_the_verdict_gate_for_that_call_alone(
+    source: str, said: str
+) -> None:
+    """Somebody at `quackd drive` who names one call of this body's has made the judgement the
+    gate waits for, for that call: it runs with no verdict recorded, the record says whose word it
+    was, as an answer to a confirm says it, and the verdict is never written, so a pilot's, an
+    MCP client's or the stepper's next call is refused as before."""
+    executor, transport, events = _executor(require_verdict=True)
+    walk = {"vx": 0.1, "duration_s": 0.1}
+    assert (await executor.run_verb("walk", walk, source=source)).ok  # type: ignore[arg-type]
+    assert transport.intents_of("move")
+    gate = next(e for e in events if e["kind"] == "gate" and e["gate"] == "verdict")
+    assert gate["outcome"] == "allowed"
+    assert str(gate["reason"]).startswith(f"{said} named this call"), gate
+    assert executor.verdict is None and not executor.cleared
+    for other in ("agent", "mcp", "decision"):
+        with pytest.raises(VerdictRequired):
+            await executor.run_verb("walk", walk, source=other)  # type: ignore[arg-type]
+
+
+async def test_a_persons_composite_runs_the_calls_it_is_made_of() -> None:
+    """A composite's calls inherit its source, so a person's runs the walk it is made of with no
+    verdict, where a pilot's is refused at the composite itself."""
+    from quackd.verbs.registry import NoParams, VerbContext, VerbResult
+
+    async def two_steps(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        return await ctx.run_verb("walk", {"vx": 0.1, "duration_s": 0.1})
+
+    registry = default_registry()
+    registry.register(Verb("two_steps", "walks a little", two_steps, NoParams))
+    executor, transport, _events = _executor(require_verdict=True, registry=registry)
+    assert (await executor.run_verb("two_steps", source="person")).ok
+    assert transport.intents_of("move")
+    with pytest.raises(VerdictRequired):
+        await executor.run_verb("two_steps", source="agent")
+
+
+def test_only_quackd_drive_says_a_call_is_a_persons() -> None:
+    """`person` and `cli` clear the verdict gate by themselves (`PERSONS`), so any other caller
+    that claimed one would be a pilot, an MCP client or a peer walking past the gate. Every
+    `source=` written as a literal in quackd and its adapters is held to drive's own code."""
+    import ast
+
+    from quackd.safety import PERSONS
+
+    drive = REPO / "quackd" / "drive"
+    roots = [REPO / "quackd", *sorted((REPO / "adapters").glob("*/src"))]
+    claims: list[str] = []
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if drive in path.parents:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (
+                    isinstance(node, ast.keyword)
+                    and node.arg == "source"
+                    and isinstance(node.value, ast.Constant)
+                    and node.value.value in PERSONS
+                ):
+                    claims.append(f"{path.relative_to(REPO)}:{node.value.lineno}")
+    assert claims == [], f"only quackd/drive may say a call is a person's: {claims}"

@@ -8,7 +8,7 @@ that plan, the ones that decide, the ones that move the arm, and how to name eac
 
 | Role | Named with | Required | What quackd names | Page |
 |---|---|---|---|---|
-| **Pilot LLM** | `--llm VENDOR[:MODEL]` | yes, and `fake`, the scripted pilot, flies when nothing names one | 123 ids from twelve cloud vendors, more through OpenRouter's own list, and five local presets | [pilot-llms.md](pilot-llms.md) |
+| **Pilot LLM** | `--llm VENDOR[:MODEL]` | yes, and `fake`, the scripted pilot, flies when nothing names one | 124 ids from twelve cloud vendors, more through OpenRouter's own list, and five local presets | [pilot-llms.md](pilot-llms.md) |
 | **Decision LLM** | `--decision-llm NAME[:MODEL]` | no, and off unless a run names one | eight decision LLMs, hosted or your own | [decision-llms.md](decision-llms.md) |
 | **Learned policy** | `--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME` | no, and the SO-101 arm alone takes one | six LeRobot policy types, five of them VLAs, served from the Hub | [vlas.md](vlas.md) |
 

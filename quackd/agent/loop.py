@@ -12,6 +12,7 @@ import contextlib
 import functools
 import random
 import re
+import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -67,10 +68,11 @@ from quackd.agent.providers.base import (
 )
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import resolve_price, turn_cost
-from quackd.agent.transcript import Transcript, new_run_dir, png_bytes, run_label
+from quackd.agent.transcript import Transcript, new_run_dir, run_label
 from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
+from quackd.latency import spread
 from quackd.log import A_PERSON, EventLog, Sink, a_person_was_asked, fmt_params, who_answered
 from quackd.memory import RobotMemory
 from quackd.perception import detector_for, lens_of
@@ -203,6 +205,83 @@ async def _wait_or_abort(abort: asyncio.Event, seconds: float) -> bool:
     except TimeoutError:
         return False
     return True
+
+
+async def _guarded(call: Awaitable[T]) -> tuple[T | None, BaseException | None]:
+    """`call`'s answer, or the `KeyboardInterrupt` or `SystemExit` it raised in its place.
+
+    For a call run in a task of its own. asyncio hands such a task's interrupt to the event loop
+    rather than to whoever awaits the task, which would skip the teardown that stops and folds
+    the robot, so it is caught in the task and handed back, to be raised again in the run's own
+    (`AgentLoop._unless_stopped`, `AgentLoop._settle_beside`)."""
+    try:
+        return await call, None
+    except (KeyboardInterrupt, SystemExit) as e:
+        return None, e
+
+
+async def _guarded_ask(ask: Callable[[], Awaitable[T]]) -> tuple[T | None, BaseException | None]:
+    """`_guarded`, with the call made inside the task rather than before it. A task cancelled
+    before its first step runs not a line of it, so a call made outside would be a coroutine
+    nobody ever awaited: the shadow stepper's, on a turn that ended before the model's request
+    went out."""
+    return await _guarded(ask())
+
+
+_FORESEEN = Decision(tool_call=ToolCall(id="foreseen", name="foreseen", arguments={}))
+"""The answer `_with_cache_point` assumes the pending exchange will get, to foresee the next call.
+Only that there is one counts: what it says is never sent and never kept."""
+
+
+class _Warming:
+    """The pilot's `warm()`, in a daemon thread of its own while the robot connects.
+
+    A provider built on Anthropic's or OpenAI's SDK starts its first request by asking which
+    platform it runs on, and on Windows that is a WMI query or a subprocess, paid in the seconds a
+    person waits for the robot to move (`providers.sdk_warm`). Asked while the robot connects,
+    which on the README's arm took ten seconds of opening a serial port, it is paid inside that
+    wait instead.
+
+    Not awaited. Waiting for it after the connect would only move the same seconds from the first
+    call to before it: the gain is the overlap and nothing else, so a warm-up still going when
+    the run starts is left to finish beside the first request, which then finds the answer or
+    asks for it as it always did. A daemon thread rather than `asyncio.to_thread`, because
+    `asyncio.run` waits for its executor's threads at exit, and a probe that hung would hang the
+    end of the run with it. `record` says what became of it by `run_start`."""
+
+    def __init__(self, warm: Callable[[], None]) -> None:
+        self._outcome: dict[str, Any] = {}
+        self._thread = threading.Thread(
+            target=self._run, args=(warm,), name="quackd-pilot-warm", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self, warm: Callable[[], None]) -> None:
+        started = time.perf_counter()
+        try:
+            warm()
+        except Exception as e:
+            # a warm-up only ever saves the first request some time, so a failed one is a
+            # line in the record and nothing else
+            outcome: dict[str, Any] = {"failed": type(e).__name__}
+        else:
+            outcome = {"ok": True}
+        outcome["s"] = round(time.perf_counter() - started, 3)
+        self._outcome = outcome
+
+    def record(self) -> dict[str, Any]:
+        """`run_start.pilot_warm`: `{"ok": true, "s": ...}`, `{"failed": "<type>", "s": ...}`,
+        or `{"finished": false}` for one still going when the run started."""
+        if self._thread.is_alive() or not self._outcome:
+            return {"finished": False}
+        return dict(self._outcome)
+
+
+def _start_warming(provider: Any) -> _Warming | None:
+    """A `_Warming` for a pilot that offers `warm()`, or None for one that does not: the scripted
+    pilot, the VLA one, Gemini, and anything a test builds."""
+    warm = getattr(provider, "warm", None)
+    return _Warming(warm) if callable(warm) else None
 
 
 @runtime_checkable
@@ -453,6 +532,33 @@ class RunResult:
         return self.outcome == "success"
 
 
+LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
+"""Verbs that can put the robot on the floor. A fall-blind robot only needs a human watching if
+the task can actually make it walk."""
+
+
+def fall_blind_warning(registry: VerbRegistry, allow: list[str], state: DuckState) -> str | None:
+    """Why the human has to watch this one, or None if they do not: asked once by a run, and once
+    by a drive session, before anything moves.
+
+    Deliberately a one-time gate and not a precondition. On the Open Duck's bridge backend
+    `fall_detection` is a constant False — the IMU has one owner and it is upstream's loop — so
+    refusing per verb would refuse every locomotion verb forever and decommission the robot. The
+    Microduck is a different case: it goes blind and comes back, and it has `stand_up`, so it
+    keeps its per-call refusal and is not gated here."""
+    if not any(registry.canonical(n) in LOCOMOTION for n in allow):
+        return None
+    if "stand_up" in registry:  # it can recover; being briefly blind is survivable
+        return None
+    if state.extras.get("fall_detection") is not False:
+        return None
+    return (
+        "nothing on this robot detects a fall, and it has no way to get up. quackd will "
+        "not know it is down, no verb will refuse because it is, and this task can make "
+        "it walk. Keep it on a stand with a hand near the power switch, and watch it."
+    )
+
+
 class AgentLoop:
     def __init__(self, cfg: RunConfig) -> None:
         self.cfg = cfg
@@ -518,6 +624,11 @@ class AgentLoop:
             on_frames=self._on_frames,
             event_log=self.event_log,
         )
+        self.stop_reason: str | None = None
+        """Why the run is being stopped from outside, in the words it ends with, by whoever sets
+        `executor.abort` for a reason that is neither a person's key nor the body's link: a drive
+        session that moves on from a goal to a newer command (`_abort_reason`). None leaves the
+        abort's words to the heartbeat, a flock's link or the kill switch, as before."""
         self.heartbeat = Heartbeat(
             cfg.transport,
             self.executor.abort,
@@ -551,6 +662,14 @@ class AgentLoop:
         """Seconds this run spent waiting on the model, every call including the ones that
         raised. The single largest number in a quackd run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
+        self.llm_answered_s: list[float] = []
+        """The seconds of each call that answered, in order, which the summary's percentiles
+        are read off (`quackd.latency.spread`). A call that raised is in the total above and not
+        here: its seconds are how long a failure took, not how long the model takes to answer."""
+        self._cache_point: tuple[int, Literal["observation", "decision"]] | None = None
+        """Where the last call marked the end of what the next would send unchanged, as an index
+        into `history` and the half of that exchange, for `_with_cache_point` to carry when the
+        mark jumps. History only grows, so the index still names the same exchange."""
         self.llm_retries = 0
         """How many times a turn the API could not answer was asked again (ADR-0059). Never
         charged to `max_llm_calls`, since each is the same turn again, and written into the
@@ -630,14 +749,14 @@ class AgentLoop:
     def _abort_reason(self) -> str:
         """Why the abort flag is set, in the words the run should end with.
 
-        A flock stops its members when one of them breaks, and a heartbeat stops a run when
-        the body stops answering; the record has to say which rather than blaming a kill
-        switch nobody pressed."""
-        return (
-            str(self.heartbeat.failure)
-            if self.heartbeat.failure
-            else (self.cfg.link.abort_reason if self.cfg.link is not None else None) or KILL_SWITCH
-        )
+        A flock stops its members when one of them breaks, a heartbeat stops a run when the body
+        stops answering, and a drive session stops a goal for a newer command (`stop_reason`);
+        the record has to say which rather than blaming a kill switch nobody pressed."""
+        if self.heartbeat.failure:
+            return str(self.heartbeat.failure)
+        if self.stop_reason:
+            return self.stop_reason
+        return (self.cfg.link.abort_reason if self.cfg.link is not None else None) or KILL_SWITCH
 
     def _ask_recorded(self, what: str, question: str, answer: bool, asker: Any) -> None:
         """Record a question a PERSON was put, and what they said.
@@ -701,7 +820,9 @@ class AgentLoop:
             )
             started = time.perf_counter()
             try:
-                turn = await self._unless_stopped(cfg.provider.step(system, history, tools))
+                turn = await self._unless_stopped(
+                    cfg.provider.step(system, history, tools), minutes=True
+                )
             except BaseException as e:
                 # BaseException, not Exception. The second Ctrl-C raises a bare
                 # KeyboardInterrupt and a flock cancels its members, and both land here: with
@@ -780,7 +901,54 @@ class AgentLoop:
             self.llm_retries += 1
             attempt += 1
 
-    async def _unless_stopped(self, call: Awaitable[T]) -> T:
+    def _note_answer(self, turn: ProviderTurn, latency_s: float, attempt: int) -> dict[str, Any]:
+        """A call the model answered, added to the run's totals and written down as its `llm`
+        record, and returned as the turn's `last_llm`: what it took and cost, for the shadow
+        record beside it.
+
+        A method of its own so the turn can call it inside the `try` that settles a shadow
+        stepper asked beside the call (`_settle_beside`): a disk that refused the `llm` line
+        used to end the run with that request still running behind the teardown, unrecorded."""
+        cfg = self.cfg
+        self.llm_latency_s += latency_s
+        self.llm_answered_s.append(latency_s)
+        self.usage = self.usage + turn.usage
+        turn_usage = turn.usage.model_dump()
+        costed = turn_cost(turn_usage, self.price, turn.billed_usd)
+        # One call nobody could price makes the whole run unpriced from then on: a total that
+        # skipped it would be believed as the bill. Before any vendor billed per call that could
+        # not happen mid-run, because a run either had a rate for every turn or for none.
+        if costed.usd is None:
+            self.cost_usd = None
+        elif self.cost_usd is not None:
+            self.cost_usd = round(self.cost_usd + costed.usd, 6)
+        self.billed_calls += costed.billed
+        self._emit(
+            "llm",
+            step=self.budget.steps,
+            provider=cfg.provider.name,
+            model=cfg.provider.model,
+            text=turn.text,
+            tool_calls=[tc.model_dump() for tc in turn.tool_calls],
+            usage=turn_usage,
+            stop_reason=turn.stop_reason,
+            thinking=turn.thinking,
+            latency_s=latency_s,
+            usage_total=self.usage.model_dump(),
+            llm_calls=self.budget.llm_calls,
+            cost_usd=costed.usd,
+            cost_usd_total=self.cost_usd,
+            # only when a server-side fallback answered, so every turn the model asked for took,
+            # and every transcript from before this, reads as it did
+            **({"served_by": turn.served_by} if turn.served_by else {}),
+            # and by the same rule, only when the cost is what the vendor billed
+            **({"billed": True} if costed.billed else {}),
+            # and the try that answered, only where it was not the first
+            **({"attempt": attempt} if attempt > 1 else {}),
+        )
+        return {"latency_s": latency_s, "usage": turn_usage, "cost_usd": costed.usd}
+
+    async def _unless_stopped(self, call: Awaitable[T], *, minutes: bool = False) -> T:
         """`call`, unless the run's abort is set first: then `Aborted`, the call cancelled.
 
         A model's answer can take a minute, and the first Ctrl-C used to wait for it: the abort
@@ -791,32 +959,95 @@ class AgentLoop:
         has to stop. A call that answered as the abort was set has answered, and its turn is
         returned: the run ends at its next check, as it did before.
 
+        With `minutes`, the pilot's own call is raced against the task's minutes as well
+        (`_minutes_spent`): `max_minutes` was read only once an answer came back, so a call that
+        hung held the robot past the task's whole budget for as long as the vendor's own clock
+        allowed, ten minutes on both SDKs. Cut off there instead, it ends the run as a late answer
+        always did, on `BudgetExceeded` in the budget's own words, and is not asked again. The
+        decision LLM's call has its own one second and is not raced against the minutes.
+
         The call runs in a task of its own, and asyncio hands a task's `KeyboardInterrupt` to
         the event loop rather than to whoever awaits the task, which would skip the teardown
         that stops and folds the robot. So an interrupt the call raises is caught in its task
-        and raised again here, in the run's own task, where it always was raised."""
-
-        async def guarded() -> tuple[T | None, BaseException | None]:
-            try:
-                return await call, None
-            except (KeyboardInterrupt, SystemExit) as e:
-                return None, e
-
-        calling = asyncio.ensure_future(guarded())
+        (`_guarded`) and raised again here, in the run's own task, where it always was raised."""
+        calling = asyncio.ensure_future(_guarded(call))
         stopping = asyncio.ensure_future(self.executor.abort.wait())
+        timing = asyncio.ensure_future(self._minutes_spent()) if minutes else None
+        racing: set[asyncio.Future[Any]] = {calling, stopping}
+        if timing is not None:
+            racing.add(timing)
         try:
-            await asyncio.wait({calling, stopping}, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait(racing, return_when=asyncio.FIRST_COMPLETED)
         except BaseException:
-            await cancel_and_wait(calling, stopping)
+            await cancel_and_wait(*racing)
             raise
         if calling.done():
-            await cancel_and_wait(stopping)
+            await cancel_and_wait(*(racing - {calling}))
             answered, interrupted = calling.result()
             if interrupted is not None:
                 raise interrupted
             return cast(T, answered)
-        await cancel_and_wait(calling)
+        if timing is not None and timing.done() and not stopping.done():
+            await cancel_and_wait(calling, stopping)
+            raise BudgetExceeded(timing.result())
+        await cancel_and_wait(*(racing - {stopping}))
         raise Aborted(self._abort_reason())
+
+    async def _minutes_spent(self) -> str:
+        """Wait until the task's minutes are spent, and return the budget's own sentence for it.
+
+        Read off the budget's clock, which `check_time` is the one reading of, every heartbeat
+        period: a model call is not a place to be sharper than the heartbeat that watches the
+        robot through it. On a simulator that clock is the simulator's and stands still while a
+        model thinks, so a simulated run is never cut off here, only past its minutes in a verb,
+        as it always was."""
+        period = max(self.cfg.heartbeat_period_s, 0.01)
+        while True:
+            try:
+                self.budget.check_time()
+            except BudgetExceeded as e:
+                return str(e)
+            await asyncio.sleep(period)
+
+    async def _settle_beside(
+        self,
+        beside: asyncio.Task[tuple[Advice | None, BaseException | None]],
+        stepper: Stepper,
+        *,
+        cancel: bool = False,
+    ) -> Advice | None:
+        """A shadow stepper's answer, asked beside the model's call, settled and on the record.
+
+        Once the model's answer is on the record the stepper's is awaited, raced against the stop
+        as it was when it was asked first, and it has nearly always come by then, being bounded
+        by its own second. Not before: a stop that ended that wait would end the run with a call
+        the model answered, and its vendor billed, missing from the transcript and the cost.
+        Where the turn ended some other way, a stop, the task's minutes or a failed call, it is
+        cancelled instead, and an answer that had already come is kept all the same. Either way
+        the `decision` line is the one the stepper's own `finally` writes when it is asked first:
+        the answer, or the record of the request a cancel cut off (`Stepper.cut_off`). It follows
+        the turn's `llm_request` and `llm` lines, which the step number ties together.
+
+        A Ctrl-C that landed in the stepper's own task is raised here, in the run's, once that
+        line is written (`_guarded`). Until then the run was waiting on the model's call, which
+        under `quackd run` the first Ctrl-C has cut short already: the kill switch hears that
+        one and sets the abort (`_unless_stopped`)."""
+        advice: Advice | None = None
+        interrupted: BaseException | None = None
+        try:
+            if cancel:
+                await cancel_and_wait(beside)
+                if not beside.cancelled() and beside.exception() is None:
+                    advice, interrupted = beside.result()
+            else:
+                advice, interrupted = await self._unless_stopped(beside)
+        finally:
+            decided = advice if advice is not None else stepper.cut_off
+            if decided is not None:
+                self._emit("decision", step=self.budget.steps, **decided.event())
+        if interrupted is not None:
+            raise interrupted
+        return advice
 
     def _ask_again_after(self, transient: Transient, attempt: int) -> float | str | None:
         """What follows try `attempt` of the full schedule failing for a reason worth asking
@@ -873,7 +1104,9 @@ class AgentLoop:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
 
-    async def _on_frames_off_loop(self, frames: Sequence[CameraFrame], caption: str) -> int | None:
+    async def _on_frames_off_loop(
+        self, frames: Sequence[CameraFrame], caption: str
+    ) -> tuple[int | None, list[bytes]]:
         """`_on_frames` for the turn's own observation, with the PNGs written in a worker thread
         (`Transcript.save_frames_off_loop`). A verb's frames still go through `_on_frames`,
         which the executor calls from inside the verb.
@@ -881,17 +1114,20 @@ class AgentLoop:
         Returns the number this step's pictures are filed under in `frames/`, or None where there
         were none. It is the transcript's count as the save is called, which the save takes as
         its own before it waits on anything (`Transcript.save_frames_off_loop`), so the JPEG a
-        decision LLM is shown of this step is filed under the same number as the step's PNG."""
+        decision LLM is shown of this step is filed under the same number as the step's PNG.
+
+        And the PNG bytes each file was written with, in `frames` order, which are the bytes the
+        model is sent of them (`SavedFrame`): empty where there were no frames."""
         if not frames:
-            return None
+            return None, []
         number = self.transcript.frame_count
-        await self.transcript.save_frames_off_loop(
+        saved = await self.transcript.save_frames_off_loop(
             list(frames), caption, several=len(camera_names_of(self.cfg.transport)) > 1
         )
         if self.cfg.on_frame is not None:
             primary = primary_of(frames)
             self.cfg.on_frame(primary if primary is not None else frames[0].image, caption)
-        return number
+        return number, [one.png for one in saved]
 
     async def _park_before_the_run_began(self) -> None:
         """Put the body down and let go, for a failure between the connect and the first step.
@@ -1494,13 +1730,15 @@ class AgentLoop:
             error = getattr(self.cfg.detector, "error", None)
             self._detector_said(error if isinstance(error, str) and error else None)
         number: int | None = None
+        pngs: list[bytes] = []
         if frames:
             # saved even when the primary gave nothing, because the other views are still what
-            # the model is about to be shown. Off the loop's thread, like the encoding for the
-            # model below: a body's heartbeat waits on that thread. The detector above and the
-            # provider's own SDK stay where they are, the first because only a board's detector
-            # waits on anything, the second because it is somebody else's code.
-            number = await self._on_frames_off_loop(
+            # the model is about to be shown. Off the loop's thread: a body's heartbeat waits on
+            # that thread. The detector above and the provider's own SDK stay where they are,
+            # the first because only a board's detector waits on anything, the second because
+            # it is somebody else's code. Each picture is encoded once, in that save, and the
+            # bytes it wrote are the ones the model is sent below.
+            number, pngs = await self._on_frames_off_loop(
                 frames, f"step {self.budget.steps}: {last_verb or 'start'}"
             )
         snapshot: Snapshot | None = None
@@ -1550,10 +1788,10 @@ class AgentLoop:
             flock=link.describe() if link is not None else None,
             nearby=near,
         )
+        # The file's own bytes, not a second encoding of the same pixels (`SavedFrame`), in the
+        # order the save was handed the frames, which is the order they were read.
         images = (
-            await asyncio.to_thread(
-                lambda: [NamedPng(name=f.name, png=png_bytes(f.image)) for f in frames]
-            )
+            [NamedPng(name=f.name, png=png) for f, png in zip(frames, pngs, strict=True)]
             if self.cfg.provider.supports_vision and frames
             else []
         )
@@ -2017,12 +2255,16 @@ class AgentLoop:
             **({"billed": True} if costed.billed else {}),
         }
 
-    def _history_for_provider(self) -> list[Exchange]:
+    def _history_for_provider(self, history: list[Exchange] | None = None) -> list[Exchange]:
         """Older pictures are dropped to keep context small; the last N exchanges keep theirs.
 
         N counts exchanges rather than images, so a body with two cameras sends twice the
         pictures of a body with one, which is the cost of the second view and is what the
-        arm's page says it costs."""
+        arm's page says it costs.
+
+        `history` is the run's own unless another is handed in, which is how the call after this
+        one is foreseen by the very rule that will build it (`_with_cache_point`)."""
+        history = self.history if history is None else history
         n = self.cfg.keep_images_for_last_n
         # A model that binds each replayed thinking block to everything before it (Claude Opus
         # 5.5, Fable 5.1) is trimmed in steps rather than on every call, because a trim that
@@ -2034,15 +2276,13 @@ class AgentLoop:
         # to drop them instead (`drop_block`). Every other provider has a period of 1, which is
         # a trim every call and nothing left out.
         period = max(1, int(getattr(self.cfg.provider, "frame_trim_period", 1) or 1))
-        cut = max(0, len(self.history) - n)
+        cut = max(0, len(history) - n)
         cut -= cut % period
         forget = getattr(self.cfg.provider, "without_thinking", None) if period > 1 else None
-        stale = self._last_invalidated(cut, n, period) if forget is not None else -1
-        latest = max(
-            (i for i, ex in enumerate(self.history) if ex.decision is not None), default=-1
-        )
+        stale = self._last_invalidated(cut, n, period, history) if forget is not None else -1
+        latest = max((i for i, ex in enumerate(history) if ex.decision is not None), default=-1)
         out: list[Exchange] = []
-        for i, ex in enumerate(self.history):
+        for i, ex in enumerate(history):
             if forget is not None and i <= stale and i != latest and ex.decision is not None:
                 ex = ex.model_copy(update={"decision": forget(ex.decision)})
             if ex.observation.images and i < cut:
@@ -2052,7 +2292,9 @@ class AgentLoop:
             out.append(ex)
         return out
 
-    def _last_invalidated(self, cut: int, n: int, period: int) -> int:
+    def _last_invalidated(
+        self, cut: int, n: int, period: int, history: list[Exchange] | None = None
+    ) -> int:
         """The last exchange whose thinking block a trim at `cut` invalidated, or -1 for none.
 
         Exchange `j` was decided on the call that appended it, when the trim stood at `c`, so
@@ -2060,47 +2302,112 @@ class AgentLoop:
         invalid once one of those frames is no longer sent. A trim that took nothing away, as
         on a run with `--no-vision` or a body with no camera, invalidates nothing, and the
         whole run is replayed as it was produced."""
+        history = self.history if history is None else history
         last = -1
-        for j, ex in enumerate(self.history):
+        for j, ex in enumerate(history):
             if ex.decision is None:
                 continue  # a prose turn, its re-prompt or the one pending: no block of its own
             c = max(0, j + 1 - n)
             c -= c % period
-            if any(self.history[k].observation.images for k in range(c, min(cut, j + 1))):
+            if any(history[k].observation.images for k in range(c, min(cut, j + 1))):
                 last = j
         return last
 
+    def _with_cache_point(self, sent: list[Exchange]) -> list[Exchange]:
+        """`sent`, with the end of what the next call will send unchanged marked on it, for a
+        pilot that caches a request's prefix (`AnthropicProvider.caches`), and `sent` itself for
+        any other.
+
+        A prompt cache is read only as far as a request matches one it has seen, and quackd's own
+        trim edits older messages: on most models every call, as the oldest picture still sent
+        goes, and on a model that binds its thinking every eighth, when the pictures go and the
+        thinking that trim invalidates is left out. A marker at the end of every request would sit
+        past that edit on those calls, so the next would read nothing back and the write would be
+        paid for nothing. So the rule that builds every request is asked what the next one will
+        send, this one's pending exchange answered and one more after it, and the marker goes on
+        the last block before the first exchange that changes between the two: on the next call,
+        everything up to the marker is sent as this call sends it, which is what a read needs.
+        Anthropic's check of a replayed thinking block ignores where the markers are, so moving
+        one from call to call invalidates no block.
+
+        A cache read looks back only twenty blocks from a marker for the entry an earlier request
+        wrote. The marker moves one exchange a call, three blocks, except around a trim: forward
+        from before the trim to the end of the request on the call after it, which on a model
+        trimmed every eighth exchange is more than twenty blocks, and back to before the next trim
+        on the call ahead of it, where looking back finds nothing at all. So the previous call's
+        marker goes out again beside this one, on the block it was on, which this call sends as
+        that one did: the read lands there however this call's own marker moved, and the new one
+        writes what is new for the next. Two in the messages and one on the system prompt, under
+        Anthropic's four.
+
+        A guess about the next answer only. A model that answers this turn in prose is asked
+        again rather than answered, which adds two exchanges where the guess counted one, so the
+        trim's cut can move by both and this call's write and the next one's can go unread: a
+        cache write or two, and never a wrong request. A retry resends the same marked copy
+        (ADR-0059)."""
+        if getattr(self.cfg.provider, "caches", False) is not True or not sent:
+            return sent
+        pending = self.history[-1]
+        if pending.decision is not None:
+            return sent
+        was, self._cache_point = self._cache_point, None
+        then = self._history_for_provider(
+            [
+                *self.history[:-1],
+                pending.model_copy(update={"decision": _FORESEEN}),
+                Exchange(observation=Observation(text="")),
+            ]
+        )
+        point: tuple[int, Literal["observation", "decision"]] | None = (
+            len(sent) - 1,
+            "observation",
+        )
+        for i, (now, later) in enumerate(zip(sent, then, strict=False)):
+            if now.observation != later.observation:
+                # this exchange's own message changes, so the block before it is the last kept
+                before = sent[i - 1] if i else None
+                if before is None:
+                    point = None
+                elif before.decision is not None:
+                    point = (i - 1, "decision")
+                else:
+                    point = (i - 1, "observation")
+                break
+            if i < len(sent) - 1 and now.decision != later.decision:
+                # its answer loses its thinking on the next call, so its message is the last kept
+                point = (i, "observation")
+                break
+        # None where the next call will edit even the first message, so nothing written now
+        # would ever be read; the last call's entry is still worth reading on this one
+        self._cache_point = point
+        halves: dict[int, set[Literal["observation", "decision"]]] = {}
+        if point is not None:
+            halves[point[0]] = {point[1]}
+        if was is not None and was != point:
+            # the last call's marker, carried so the read finds the entry it wrote
+            halves.setdefault(was[0], set()).add(was[1])
+        if not halves:
+            return sent
+        marked = list(sent)
+        for at, sides in halves.items():
+            marked[at] = sent[at].model_copy(update={"cache_points": tuple(sorted(sides))})
+        return marked
+
     # ── the loop ────────────────────────────────────────────────────────────────────
 
-    #: Verbs that can put the robot on the floor. A fall-blind robot only needs a human
-    #: watching if the task can actually make it walk.
-    _LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
+    _LOCOMOTION = LOCOMOTION
 
     def _fall_blind_warning(
         self, registry: VerbRegistry, allow: list[str], state: DuckState
     ) -> str | None:
-        """Why the human has to watch this one, or None if they do not.
-
-        Deliberately a one-time gate and not a precondition. On the Open Duck's bridge
-        backend `fall_detection` is a constant False — the IMU has one owner and it is
-        upstream's loop — so refusing per verb would refuse every locomotion verb forever
-        and decommission the robot. The Microduck is a different case: it goes blind and
-        comes back, and it has `stand_up`, so it keeps its per-call refusal and is not
-        gated here."""
-        if not any(registry.canonical(n) in self._LOCOMOTION for n in allow):
-            return None
-        if "stand_up" in registry:  # it can recover; being briefly blind is survivable
-            return None
-        if state.extras.get("fall_detection") is not False:
-            return None
-        return (
-            "nothing on this robot detects a fall, and it has no way to get up. quackd will "
-            "not know it is down, no verb will refuse because it is, and this task can make "
-            "it walk. Keep it on a stand with a hand near the power switch, and watch it."
-        )
+        return fall_blind_warning(registry, allow, state)
 
     async def run(self) -> RunResult:
         cfg = self.cfg
+        # The pilot's client asks what it asks before its first request while the robot
+        # connects, in a thread of its own, so the connect's seconds cover it (`_Warming`).
+        # Started before the connect's clock, so `connect_s` stays the connect and nothing else.
+        warming = _start_warming(cfg.provider)
         # connect FIRST: an adapter answers with its manifest, and the vocabulary (tools,
         # prompt, allowlist universe) is built from that, not hardcoded (ADR-0017)
         connect_started = time.perf_counter()
@@ -2317,6 +2624,9 @@ class AgentLoop:
                 # `authorization` header is the canonical such field; it also arrives
                 # from `QUACKD_EXTRA_BODY`, which no amount of argv redaction can reach.
                 extra_body=redacted_body(getattr(cfg.provider, "extra_body", None)),
+                # what every request asks the model to reason at, and whose word that was:
+                # `--effort`, a variable, or quackd's own default, and null where nothing is sent
+                effort=getattr(cfg.provider, "asked_effort", None),
                 transport=backend_name(cfg.transport),
                 adapter=adapter_name(cfg.transport),
                 robot=manifest.model_dump(mode="json") if manifest is not None else None,
@@ -2332,6 +2642,9 @@ class AgentLoop:
                 images=[p.name for p in cfg.task_images],
                 flock=cfg.link.describe() if cfg.link is not None else None,
                 connect_s=connect_s,
+                # what became of the pilot's warm-up by now, only for a pilot that offers one, so
+                # every record from a run with the scripted pilot reads as it did (`_Warming`)
+                **({"pilot_warm": warming.record()} if warming is not None else {}),
                 # Which detector read the frames, or null for a body with nothing to look at,
                 # and the board when `--host` named one. The same detector for the whole run,
                 # so this is the answer for every detection in the transcript.
@@ -2441,26 +2754,30 @@ class AgentLoop:
                 # verdict gate or the allowlist.
                 advice: Advice | None = None
                 stepper_call: ToolCall | None = None
+                ask: Callable[[], Awaitable[Advice]] | None = None
                 if stepper is not None:
+                    # Bound now, on this reading, and asked below: at once, or in shadow beside
+                    # the model's own call.
+                    ask = functools.partial(
+                        stepper.advise,
+                        obs,
+                        cleared=self.executor.cleared,
+                        budget=self.budget.status(),
+                        stepped=self.stepped,
+                        notes=memory_text,
+                        snapshot=snapshot,
+                        # Written and flushed before the request that carries the frame is
+                        # handed over, because the `decision` event below is written only
+                        # once the turn ends, which a process killed mid-request never does.
+                        on_frame=lambda block: self._emit(
+                            "decision_frame", step=self.budget.steps, frame=dict(block)
+                        ),
+                    )
+                if ask is not None and stepper is not None and cfg.decision != "shadow":
                     try:
                         # raced against the stop as the model's own call is, so a first Ctrl-C
                         # does not wait on a decision LLM's answer either (`_unless_stopped`)
-                        advice = await self._unless_stopped(
-                            stepper.advise(
-                                obs,
-                                cleared=self.executor.cleared,
-                                budget=self.budget.status(),
-                                stepped=self.stepped,
-                                notes=memory_text,
-                                snapshot=snapshot,
-                                # Written and flushed before the request that carries the frame is
-                                # handed over, because the `decision` event below is written only
-                                # once the turn ends, which a process killed mid-request never does.
-                                on_frame=lambda block: self._emit(
-                                    "decision_frame", step=self.budget.steps, frame=dict(block)
-                                ),
-                            )
-                        )
+                        advice = await self._unless_stopped(ask())
                     finally:
                         # From a `finally`, so the turn is on the record however `advise` ends.
                         # The second Ctrl-C and a flock's cancel land here too while the
@@ -2490,53 +2807,34 @@ class AgentLoop:
                             update={"tool_call_id": self.history[-1].decision.tool_call.id}
                         )
                     self.history.append(Exchange(observation=obs))
-                    self.budget.note_llm_call()  # may raise BudgetExceeded: then no request is made
-                    history = self._history_for_provider()
-                    # once per turn, however many tries it takes: the same history every time
-                    turn, latency_s, attempt = await self._ask_the_model(
-                        system, history, tools, reprompt=retry_prompted
-                    )
-                    self.llm_latency_s += latency_s
-                    self.usage = self.usage + turn.usage
-                    turn_usage = turn.usage.model_dump()
-                    costed = turn_cost(turn_usage, self.price, turn.billed_usd)
-                    # One call nobody could price makes the whole run unpriced from then on:
-                    # a total that skipped it would be believed as the bill. Before any vendor
-                    # billed per call that could not happen mid-run, because a run either had a
-                    # rate for every turn or for none.
-                    if costed.usd is None:
-                        self.cost_usd = None
-                    elif self.cost_usd is not None:
-                        self.cost_usd = round(self.cost_usd + costed.usd, 6)
-                    self.billed_calls += costed.billed
-                    last_llm = {
-                        "latency_s": latency_s,
-                        "usage": turn_usage,
-                        "cost_usd": costed.usd,
-                    }
-                    self._emit(
-                        "llm",
-                        step=self.budget.steps,
-                        provider=cfg.provider.name,
-                        model=cfg.provider.model,
-                        text=turn.text,
-                        tool_calls=[tc.model_dump() for tc in turn.tool_calls],
-                        usage=turn_usage,
-                        stop_reason=turn.stop_reason,
-                        thinking=turn.thinking,
-                        latency_s=latency_s,
-                        usage_total=self.usage.model_dump(),
-                        llm_calls=self.budget.llm_calls,
-                        cost_usd=costed.usd,
-                        cost_usd_total=self.cost_usd,
-                        # only when a server-side fallback answered, so every turn the model
-                        # asked for took, and every transcript from before this, reads as it did
-                        **({"served_by": turn.served_by} if turn.served_by else {}),
-                        # and by the same rule, only when the cost is what the vendor billed
-                        **({"billed": True} if costed.billed else {}),
-                        # and the try that answered, only where it was not the first
-                        **({"attempt": attempt} if attempt > 1 else {}),
-                    )
+                    beside: asyncio.Task[tuple[Advice | None, BaseException | None]] | None = None
+                    try:
+                        # may raise BudgetExceeded: then no request is made, and in shadow the
+                        # stepper is not asked either, with no answer of the model's to be
+                        # compared with
+                        self.budget.note_llm_call()
+                        if ask is not None and cfg.decision == "shadow":
+                            # In shadow the stepper's answer changes nothing about the turn: the
+                            # model is asked whatever it says, and the two are compared
+                            # afterwards. So it is asked beside the model's own call rather than
+                            # before it, and a run being measured does not wait up to the
+                            # stepper's second on every turn for the measuring. Settled once the
+                            # model's answer is on the record (`_settle_beside`).
+                            beside = asyncio.ensure_future(_guarded_ask(ask))
+                        history = self._with_cache_point(self._history_for_provider())
+                        # once per turn, however many tries it takes: the same history every time
+                        turn, latency_s, attempt = await self._ask_the_model(
+                            system, history, tools, reprompt=retry_prompted
+                        )
+                        # inside the try, so the stepper beside the call is settled whatever
+                        # writing it down raises, a disk that refuses the line among them
+                        last_llm = self._note_answer(turn, latency_s, attempt)
+                    except BaseException:
+                        if beside is not None and stepper is not None:
+                            await self._settle_beside(beside, stepper, cancel=True)
+                        raise
+                    if beside is not None and stepper is not None:
+                        advice = await self._settle_beside(beside, stepper)
                     self.budget.check_time()
 
                     if not turn.tool_calls:
@@ -2736,6 +3034,11 @@ class AgentLoop:
                 raise
         except Aborted as e:
             outcome, reason = "aborted", str(e)
+            if self.stop_reason and self.stop_reason not in reason:
+                # a verb the stop ended says how it ended, "aborted mid-verb", and nothing of
+                # why: a goal a drive session stopped read the same for the brake, a newer
+                # command and a link that had failed
+                reason = f"{self.stop_reason}; {reason}"
         except SafetyStop as e:
             outcome, reason = "aborted", str(e)
         except Exception as e:
@@ -2818,6 +3121,22 @@ class AgentLoop:
                 "wall_s": wall_s,
                 "connect_s": connect_s,
                 "llm_latency_s": round(self.llm_latency_s, 3),
+                # The typical call and the bad one beside the total, by nearest rank over the
+                # calls that answered, only where one did, so a run that never asked the model
+                # anything says nothing it did not measure (`quackd.latency`).
+                **{
+                    f"llm_latency_{figure}_s": seconds
+                    for figure, seconds in (spread(self.llm_answered_s) or {}).items()
+                },
+                # How long the robot took to do anything at all, on this record's clock with the
+                # connect in it, and after how many model calls: null where nothing moved, a dry
+                # run among them, since it hands nothing over (`Executor.first_motion_at`).
+                "first_motion_s": (
+                    self.transcript.at(moved)
+                    if (moved := self.executor.first_motion_at) is not None
+                    else None
+                ),
+                "first_motion_llm_calls": self.executor.first_motion_llm_calls,
                 # the tries asked again after the API could not answer a turn, and the seconds
                 # waited before asking, only where the run waited at all (ADR-0059): a wait a
                 # stop ended has seconds and no try

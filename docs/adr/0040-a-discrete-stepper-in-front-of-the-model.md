@@ -48,6 +48,12 @@ beside the transcript before its request goes and named in that turn's `decision
 and the summary's `decision` block `frames` and `frames_sent`. Every other run is sent text and
 nothing else. No gate and no floor changes.
 
+**Amended 2026-10-26 by [ADR-0064](0064-a-run-says-where-its-seconds-went-and-waits-for-less.md):** in `--decision-mode shadow` the stepper is
+asked beside the model's call rather than in front of it, since its answer changes
+nothing there, and its `decision` record follows the turn's `llm` record. A request still
+out when the model's call ends the run is cut off on the gate `interrupted`. In `on` it is
+still asked first.
+
 ## Context
 
 quackd's loop asks one question a turn — which single tool call now — and pays a frontier

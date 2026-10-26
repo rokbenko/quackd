@@ -1199,7 +1199,7 @@ def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     place it may appear. Under a runner or a pipe nothing of it reaches the output."""
     out = _log_run(tmp_path, monkeypatch, "--no-log")
     assert "SUCCESS" in out
-    for chatter in ("waiting on", "observing", "choosing a verb", "finishing"):
+    for chatter in ("waiting on", "observing", "the model chose", "finishing"):
         assert chatter not in out, chatter
 
 

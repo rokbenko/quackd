@@ -20,6 +20,7 @@ from quackd.safety import (
     ConfirmDenied,
     Executor,
     Heartbeat,
+    Preempted,
     SafetyStop,
     VerbNotAllowed,
     allow_all,
@@ -28,6 +29,8 @@ from quackd.safety import (
 from quackd.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
     NoParams,
     Verb,
     VerbContext,
@@ -119,6 +122,30 @@ async def test_dry_run_sends_nothing(registry: VerbRegistry, mock_transport: Moc
     assert mock_transport.intents == []
     frame = await ex.run_verb("get_frame")  # read-only verbs still run
     assert frame.ok and "frame captured" in frame.summary
+
+
+async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`first_motion_at` is the robot moving. A third party's `read_only` sensor runs for real on
+    a dry run, since it sends nothing, and the pause gate's caution, which holds such a verb
+    still because the flag is no promise, had the record take it for the robot moving."""
+
+    async def locate(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        return VerbResult.success("the ball is 1 m ahead")
+
+    registry.register(Verb("locate", "reads where things are", locate, read_only=True))
+    contract = duck("locate, walk").frontmatter
+    dry = Executor(registry, mock_transport, contract=contract, dry_run=True)
+    assert (await dry.run_verb("locate")).ok
+    assert (await dry.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
+    assert dry.first_motion_at is None and dry.first_motion_llm_calls is None
+
+    live = Executor(registry, MockTransport(), contract=contract)
+    assert (await live.run_verb("locate")).ok
+    assert live.first_motion_at is None, "a read is not the robot moving"
+    assert (await live.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
+    assert live.first_motion_at is not None
 
 
 @pytest.mark.parametrize("adapter", ADAPTER_NAMES)
@@ -1146,3 +1173,175 @@ async def test_a_single_camera_observe_says_exactly_what_it_said_before_there_we
     assert result.summary == "frame captured; nothing detected"
     assert "cameras" not in result.data
     assert saved == [[DEFAULT_CAMERA_NAME]]
+
+
+async def _walk_braked(ex: Executor, transport: MockTransport, twists: int) -> VerbResult:
+    """A walk with `stop` asked for beside it, through the same executor, once it has sent
+    `twists` twists, as an MCP client or a person driving the robot would ask for it. Every
+    intent sent after that stop has returned is checked to be no twist."""
+    sent = len(transport.intents_of("move"))
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    for _ in range(1000):
+        if len(transport.intents_of("move")) >= sent + twists:
+            break
+        await asyncio.sleep(0)
+    braked = await ex.run_verb("stop")
+    assert braked.ok, braked.summary
+    after = len(transport.intents)
+    result = await walking
+    assert not [i for i in transport.intents[after:] if i.kind == "move"], "a twist after the stop"
+    return result
+
+
+async def test_a_stop_from_beside_a_walk_ends_it_before_its_next_resend(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`move` resends its twist every tenth of a second, and a stop asked for beside it was
+    undone by the next resend, the walk going on for the rest of its duration. It ends at its
+    next slice now without sending it, and says how far it got."""
+    ex = Executor(registry, mock_transport, contract=duck("walk").frontmatter)
+    result = await _walk_braked(ex, mock_transport, twists=3)
+    assert not result.ok
+    assert result.summary.startswith(f"move: {STOPPED}, so it stopped after ")
+    assert result.data["ended_by"] == STOP_ENDED and result.data["interrupted"] == STOPPED
+    assert result.data["duration_s"] < 1.0
+
+
+async def test_a_walk_a_stop_ended_is_no_failure_for_abort_when_to_count(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A person braking a walk three times is the brake working three times, and `abort_when`
+    passes over it as it passes over a pause, where it would have ended the run on the same verb
+    failing twice in a row."""
+    contract = duck("walk", abort="the same verb fails 2 times in a row").frontmatter
+    ex = Executor(registry, mock_transport, contract=contract)
+    for _ in range(3):
+        result = await _walk_braked(ex, mock_transport, twists=2)
+        assert result.data["ended_by"] == STOP_ENDED, result.summary
+    assert ex.consecutive_failures.get("move", 0) == 0
+
+
+class _SlowState(MockTransport):
+    """A body whose first state read waits until the test lets it answer, so a verb can be held
+    admitted, past every gate, and not yet moving."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reading = asyncio.Event()
+        self.answer = asyncio.Event()
+        self._held = False
+
+    async def get_state(self) -> DuckState:
+        if not self._held:
+            self._held = True
+            self.reading.set()
+            await self.answer.wait()
+        return await super().get_state()
+
+
+async def test_a_newer_command_ends_the_walk_it_finds_moving(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`preempt` is a granted pause with no hold after it: the walk moving the body is ended
+    before its next twist, a stop is sent after it, and the walk's caller is told it was a newer
+    command, which `abort_when` never counts."""
+    ex, seen = logged(
+        registry, mock_transport, allow="walk", abort="the same verb fails 1 time in a row"
+    )
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    for _ in range(1000):
+        if len(mock_transport.intents_of("move")) >= 2:
+            break
+        await asyncio.sleep(0)
+    assert ex.preempt("a newer command, turn left") == 1
+    after = len(mock_transport.intents)
+    with pytest.raises(Preempted, match="walk ended: a newer command, turn left"):
+        await walking
+    assert [i.kind for i in mock_transport.intents[after:]] == ["stop"], "it moved again"
+    (end,) = ends(seen)
+    assert end["outcome"] == "preempted"
+    assert ex.consecutive_failures.get("move", 0) == 0
+
+
+async def test_a_newer_command_leaves_a_read_running_beside_it(registry: VerbRegistry) -> None:
+    """A read moves nothing, so it is not the newer command's to end, as it is not a pause's."""
+    reading, answer = asyncio.Event(), asyncio.Event()
+
+    async def slow_state(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        reading.set()
+        await answer.wait()
+        return VerbResult.success("standing, battery 88%")
+
+    registry.register(Verb("report_state", "reads the body", slow_state), replace=True)
+    ex = Executor(registry, MockTransport(), contract=duck("report_state").frontmatter)
+    read = asyncio.create_task(ex.run_verb("report_state"))
+    await asyncio.wait_for(reading.wait(), 5)
+    assert ex.preempt("a newer command") == 0
+    answer.set()
+    assert (await read).summary == "standing, battery 88%"
+
+
+async def test_a_walk_admitted_before_a_newer_command_does_not_start_after_it(
+    registry: VerbRegistry,
+) -> None:
+    """A walk past every gate and still reading the body's state is in nothing `preempt` can end,
+    and would start after the command that replaced it had. It is refused once the read returns,
+    before it sends anything."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    assert ex.preempt("a newer command, sit") == 0
+    body.answer.set()
+    with pytest.raises(Preempted, match="walk did not start: a newer command, sit"):
+        await walking
+    assert body.intents_of("move") == [], "it started after the newer command"
+
+
+async def test_a_stop_asked_for_while_a_walk_reads_the_bodys_state_ends_the_walk(
+    registry: VerbRegistry,
+) -> None:
+    """Over MCP a stop that came while a walk was past its gates and still reading the body's
+    state landed in the count the walk started from, so the walk ran its whole second after
+    the stop had come back ok."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    assert (await ex.run_verb("stop")).ok
+    after = len(body.intents)
+    body.answer.set()
+    await walking
+    twists = [i for i in body.intents[after:] if i.kind == "move" and any(i.params.values())]
+    assert twists == [], "the walk went on after the stop"
+
+
+async def test_an_abort_set_while_a_walk_reads_the_bodys_state_refuses_the_walk(
+    registry: VerbRegistry,
+) -> None:
+    """A kill switch, a failed heartbeat, or a drive session's brake on a goal, set while a walk
+    read the body's state, found nothing it could cancel, and the walk sent its first twist
+    after the abort."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    ex.abort.set()
+    body.answer.set()
+    with pytest.raises(Aborted):
+        await walking
+    assert body.intents_of("move") == []
+
+
+async def test_a_battery_the_rule_reads_as_too_low_still_lets_the_stop_through(
+    registry: VerbRegistry,
+) -> None:
+    """The rule is there to stop the body: the `stop` it refused was a stop never sent, and
+    every call after it is refused as before."""
+    body = MockTransport(states=[DuckState(policy="mock", posture="standing", battery_percent=5)])
+    ex = Executor(registry, body, contract=duck("walk", abort="Battery below 15%").frontmatter)
+    assert (await ex.run_verb("stop")).ok
+    assert body.stops == 1, "the stop was refused before it was sent"
+    assert ex.abort.is_set()
+    with pytest.raises(Aborted):
+        await ex.run_verb("walk", {"vx": 0.1})

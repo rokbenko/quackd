@@ -13,6 +13,7 @@ from types import ModuleType
 import pytest
 
 from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
+from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, PRICES_CHECKED
 from quackd.agent.providers.factory import (
     CLOUD_NAMES,
     EXTRA_FOR,
@@ -733,7 +734,7 @@ def _emitted_kinds(*modules: str) -> set[str]:
                 continue
             fn = node.func
             called = fn.attr if isinstance(fn, ast.Attribute) else None
-            if called in ("emit", "write", "_emit", "_event") and isinstance(
+            if called in ("emit", "write", "_emit", "_event", "record") and isinstance(
                 node.args[0], ast.Constant
             ):
                 value = node.args[0].value
@@ -745,12 +746,21 @@ def _emitted_kinds(*modules: str) -> set[str]:
 def test_the_docs_describe_every_log_event_the_code_emits() -> None:
     """architecture.md is the one place that enumerates the transcript, so it is the one
     place this can go stale."""
-    # the modules that write a *run* transcript: the loop, the executor and the log, and the
-    # eyes `watch` looks through, which write its two kinds. The flock keeps its own
-    # `flock.jsonl` (docs/guides/flock.md) and the MCP server's two envelope kinds are
-    # documented in docs/guides/mcp.md.
-    emitted = _emitted_kinds("agent/loop.py", "safety.py", "log.py", "agent/decision/eyes.py")
+    # the modules that write a *run* transcript: the loop, the executor and the log, the eyes
+    # `watch` looks through, which write its two kinds, and a drive session, whose record is a
+    # run's with kinds of its own (`record`). The flock keeps its own `flock.jsonl`
+    # (docs/guides/flock.md) and the MCP server's two envelope kinds are documented in
+    # docs/guides/mcp.md.
+    emitted = _emitted_kinds(
+        "agent/loop.py",
+        "safety.py",
+        "log.py",
+        "agent/decision/eyes.py",
+        "drive/session.py",
+        "drive/run.py",
+    )
     assert {"watch_frame", "watch_tick"} <= emitted, "the reader stopped seeing what eyes emit"
+    assert {"command", "routed", "goal_start"} <= emitted, "the reader stopped seeing drive's"
     doc = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
     missing = [kind for kind in sorted(emitted) if f"`{kind}`" not in doc]
     assert not missing, f"docs/concepts/architecture.md does not describe: {missing}"
@@ -836,6 +846,35 @@ def test_the_log_is_documented_where_it_is_configured() -> None:
         ("docs/concepts/safety.md", ("--dry-run", "dry_run")),
         (".env.example", ("QUACKD_LOG", "QUACKD_LOG_THINKING", "QUACKD_LOG_PROMPT")),
         ("docs/guides/flock.md", ("log", "--no-log")),
+    ):
+        text = (REPO / path).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle in text, f"{path} does not mention {needle!r}"
+
+
+def test_how_long_a_run_waits_is_documented_where_it_is_configured() -> None:
+    """The effort a pilot reasons at, Claude's prompt cache and the seconds a run reports are what
+    somebody goes looking for after a slow run, so each is held to the pages that say how it
+    works, by the rule the log and the price are held to: the settings where they are set, the
+    fields where the record is described, and the bound on a call where the bounds are."""
+    for path, needles in (
+        (
+            "README.md",
+            ("--effort", "QUACKD_ANTHROPIC_CACHE", "model calls p50", "first motion at"),
+        ),
+        (".env.example", ("--effort", "QUACKD_ANTHROPIC_CACHE=")),
+        (
+            "docs/concepts/architecture.md",
+            (
+                "llm_latency_p50_s",
+                "first_motion_s",
+                "first_motion_llm_calls",
+                "`effort`",
+                "`pilot_warm`",
+            ),
+        ),
+        ("docs/concepts/safety.md", ("bounded by the same minutes", "max_minutes")),
+        ("docs/guides/decision-llms/README.md", ("asked beside the model's call",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -2824,9 +2863,10 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     """Windows refuses a connection to a port on the same machine that nothing listens on only
     after longer than the stepper's second, so a decision server nobody started is a turn the
     stepper's own bound ends. Its record then says what the record says of a server too slow to
-    answer, and the turn waits out its second before the model is asked, in shadow mode as in
-    `on`, because the stepper is asked first either way. The hub said only that such a server
-    costs a turn and never the run.
+    answer. In `on` the turn waits out its second before the model is asked, because the stepper
+    is asked first, and in shadow the second runs beside the model's call, which goes out at once
+    (`AgentLoop._settle_beside`). The hub said only that such a server costs a turn and never the
+    run, and then that it costs the second in either mode, which shadow no longer does.
 
     So its section on what a decision LLM may never do says it for Windows, and quotes the record
     in the stepper's own words for a turn its bound ended, which are read off `stepper._failure`
@@ -2841,7 +2881,10 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     windows = [" ".join(p.split()) for p in section.split("\n\n") if "On Windows" in p]
     assert windows, "the hub no longer says what a server nobody started costs on Windows"
     assert f"`{said}`" in windows[0], f"the hub does not quote the record's own words, {said!r}"
-    assert "not listening" in windows[0] and "either mode" in windows[0], windows[0]
+    assert "not listening" in windows[0], windows[0]
+    assert "In `on` the stepper is asked before the model" in windows[0], windows[0]
+    assert "In `shadow` it is asked beside the model's call" in windows[0], windows[0]
+    assert "either mode" not in windows[0], windows[0]
     opening = windows[0].split(". ", 1)[0]
     assert "on your own machine" in opening, f"the hub says more than was timed: {opening}"
 
@@ -4161,6 +4204,17 @@ def test_the_models_pages_name_every_row_in_the_code() -> None:
         assert f"(../guides/decision-llms/{name}.md)" in decisions, (
             f"decision-llms.md does not link {name}'s own page"
         )
+
+
+def test_a_rate_read_on_a_day_of_its_own_is_dated_so_on_the_page() -> None:
+    """The page dated every rate but OpenRouter's to the catalogue's own read, so a row added
+    after it, `gpt-6.1-sol` among them, was dated to a day nobody had read its rate."""
+    pilots = " ".join((MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8").split())
+    for name in CLOUD_NAMES:
+        for m in models_for(name):
+            day = m.price.checked if m.price is not None else None
+            if day not in (None, PRICES_CHECKED, OPENROUTER_PRICES_CHECKED):
+                assert f"`{name}:{m.id}`'s on {day}" in pilots, f"{name}:{m.id}, read on {day}"
 
 
 def test_the_models_pages_say_what_has_never_run() -> None:

@@ -247,10 +247,19 @@ def _notes(i: int, m: ModelSpec) -> str:
 
 def pilot_ids() -> str:
     total = sum(len(models_for(name)) for name in CLOUD_NAMES)
+    # a rate read on a day of its own is dated so, as its row is: one added after the catalogue's
+    # own read would otherwise be dated to a day nobody had read it
+    later = "".join(
+        f", `{name}:{m.id}`'s on {m.price.checked}"
+        for name in CLOUD_NAMES
+        for m in models_for(name)
+        if m.price is not None
+        and m.price.checked not in (None, PRICES_CHECKED, OPENROUTER_PRICES_CHECKED)
+    )
     out = [
         f"{total} model ids from {number_word(len(CLOUD_NAMES))} cloud vendors. Rates are USD "
         f"per million tokens, input / output / cache read / cache write, as each vendor's own "
-        f"page gave them on {PRICES_CHECKED}, and OpenRouter's list on "
+        f"page gave them on {PRICES_CHECKED}{later}, and OpenRouter's list on "
         f"{OPENROUTER_PRICES_CHECKED}. None is a rate the vendor does not publish, and unpriced "
         "a model with no public per-token rate at all, which a run records as an unknown cost "
         "rather than a free one."

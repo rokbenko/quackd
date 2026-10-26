@@ -241,15 +241,43 @@ def test_the_status_line_names_the_step_and_counts_a_long_wait() -> None:
 
 def test_a_turn_asked_again_says_it_is_waiting_rather_than_choosing() -> None:
     """A failure quackd asks the same turn again after is followed by up to a minute in which
-    nothing happens, and "choosing a verb" over that minute says the model is thinking when it
-    is not even being asked. An answer that came still reads as before."""
+    nothing happens, and a line about the model's answer over that minute says the model has
+    answered when it is not even being asked. An answer that came still says what it was."""
     console, _ = wide()
     status = ui.RunStatus(console)
     failed = {"provider": "anthropic", "error": "ProviderError: 529", "retry_in_s": 15.0}
     status.sink(LogEvent("llm", 0.0, failed))
     assert "waiting 15 s to ask anthropic again" in status.__rich__().plain
     status.sink(LogEvent("llm", 0.0, {"provider": "anthropic", "tool_calls": []}))
-    assert "choosing a verb" in status.__rich__().plain
+    assert "the model answered without a call" in status.__rich__().plain
+
+
+def test_the_line_names_the_call_the_model_chose_and_how_long_the_last_answer_took() -> None:
+    """The line after an answer used to say "choosing a verb", which was over by then: the
+    `llm` record is written once the call is back. It names what the model chose, which is what
+    the run is about to do, and the next wait says how long the last answer took, because a
+    count of seconds alone says how long a wait has been and nothing about how long it will
+    be. A failed call is not the model's answer, and its seconds are not a guide to the next."""
+    console, _ = wide()
+    status = ui.RunStatus(console, clock=ticks())
+    request = {"provider": "anthropic", "model": "claude-opus-5-5"}
+    status.sink(LogEvent("llm_request", 0.0, request))
+    assert "(last call" not in status.__rich__().plain, "nothing has answered yet"
+    chose = {"name": "kick", "arguments": {"leg": "left"}}
+    answer = {"provider": "anthropic", "tool_calls": [chose], "latency_s": 6.25}
+    status.sink(LogEvent("llm", 0.0, answer))
+    assert "the model chose kick(leg='left')" in status.__rich__().plain
+    status.sink(LogEvent("llm_request", 0.0, request))
+    assert "waiting on anthropic claude-opus-5-5 (last call 6.2 s)" in status.__rich__().plain
+
+    two = {"provider": "anthropic", "tool_calls": [chose, {"name": "quack"}], "latency_s": 1.0}
+    status.sink(LogEvent("llm", 0.0, two))
+    assert "the model chose kick(leg='left'), the first of 2" in status.__rich__().plain
+    failed = {"provider": "anthropic", "error": "ProviderError: 400", "latency_s": 30.0}
+    status.sink(LogEvent("llm", 0.0, failed))
+    assert "the call to anthropic failed" in status.__rich__().plain
+    status.sink(LogEvent("llm_request", 0.0, request))
+    assert "(last call 1.0 s)" in status.__rich__().plain, "a failure's seconds are not kept"
 
 
 def test_a_provider_that_names_no_model_still_reads_as_a_sentence() -> None:

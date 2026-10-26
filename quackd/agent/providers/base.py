@@ -14,7 +14,7 @@ import math
 import re
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, NamedTuple, Protocol, runtime_checkable
+from typing import Any, Literal, NamedTuple, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -76,9 +76,10 @@ class Usage(BaseModel):
     run recorded before there was a field for it."""
     cache_write_tokens: int = 0
     """The part of `input_tokens` written INTO a prompt cache, billed at the write rate where
-    the vendor has one. Anthropic charges for it when a request marks a cache, which quackd
-    never does, and OpenAI on GPT-5.6 and later and Kimi on K3 charge for the cache they write by
-    themselves. Elsewhere a cache costs nothing to create and this stays 0."""
+    the vendor has one. Anthropic charges for it when a request marks a cache, which quackd's
+    does on every call (`AnthropicProvider._system`), and OpenAI on GPT-5.6 and later and Kimi on
+    K3 charge for the cache they write by themselves. Elsewhere a cache costs nothing to create
+    and this stays 0."""
 
     def __add__(self, other: Usage) -> Usage:
         return Usage(
@@ -219,6 +220,11 @@ class Decision(BaseModel):
 class Exchange(BaseModel):
     observation: Observation
     decision: Decision | None = None
+    cache_points: tuple[Literal["observation", "decision"], ...] = ()
+    """Which halves of this exchange end a cached part of the request, for a provider that marks
+    them for a prompt cache (`AgentLoop._with_cache_point`): where the next call will still match
+    this one, and where the last call wrote its entry. Set only on the copy a request is built
+    from, never on the run's own history, and read by no provider but Anthropic's."""
 
 
 class ProviderTurn(BaseModel):

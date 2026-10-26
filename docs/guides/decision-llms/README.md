@@ -717,14 +717,44 @@ Every `Exception` `decide` raises is caught, recorded as a turn with `gate: erro
 the model. A server that is not listening, a plugin that throws on import, a timeout at one
 second: all of them cost that turn and none of them costs the run. An interrupt is not a failure,
 and a second Ctrl-C or a flock's cancel while a request is out still ends the run, with that turn
-on the record as `interrupted`.
+on the record as `interrupted`. In `shadow` the stepper is asked beside the model's own call, and
+a request still out when that call ends the run, on a stop, on the task's minutes or on a failed
+call, is cut off and recorded the same way.
 
 On Windows a server on your own machine that is not listening costs its turn the whole second,
 and its record is a slow server's. Windows takes longer than the second to refuse a connection to
 a port there that nothing listens on, so the stepper's own bound ends the turn first, and the
 record says `TimeoutError: no answer within 1.0 s`, which is what it says of a server that is
-there and too slow to answer. The stepper is asked before the model in either mode, so every such
-turn waits out its second before the model is asked.
+there and too slow to answer. In `on` the stepper is asked before the model, so every such turn
+waits out its second before the model is asked. In `shadow` it is asked beside the model's call,
+so the second runs while the model thinks, and the turn waits only for what is left of it once the
+model has answered.
+
+## In `quackd drive`: which call a person meant
+
+`quackd drive --decision-llm NAME` ([guides/drive.md](../drive.md)), or `QUACKD_DECISION_LLM`,
+puts the same decision LLM a question of another kind. A line the exact lane cannot read, "have
+a seat", becomes one closed question, `command`: which of the body's calls, labelled as the
+stepper labels them, or which of its presets does the person mean? It may also be a line for
+the `pilot`, or `unclear`. The state it is asked over is the line as it was typed (`said`), what
+the robot is doing now (`doing`), which quotes the line of a command still running, and the
+body's one-line description (`body`). So the lines you type go wherever that decision LLM runs,
+a vendor's host for a hosted one ([SECURITY.md](../../../SECURITY.md)). The answer is read as a
+turn's is, against the stepper's floor for the class of the call it names, with the `.duck`'s
+own confirm gates counted as a run's stepper counts them and a preset answering to the motion
+floor, and within the stepper's one second:
+
+- at or above the floor, the call runs;
+- below it, drive asks `did you mean kick(leg=left)? [y/N]`, and a pipe answers no;
+- `pilot` at or above the read floor hands the line to the pilot, and below it asks first;
+- `unclear` asks the person to say it another way;
+- a question declined, unreadable, failed or out of its second hands the line to the pilot.
+
+A dangerous verb is never offered, and nothing moves on a guess. A call taken without asking is
+recorded at the verdict gate as that decision LLM's reading of what the person typed. Each
+question is written to the session's record as a `fast` row, with its confidence, its floor and
+its gate, and the `routed` row after it says whether the person said yes. Those rows are what
+the floors have never been measured against for this question.
 
 ## What the record says
 

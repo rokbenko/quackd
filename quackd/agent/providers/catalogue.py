@@ -165,13 +165,22 @@ class ModelSpec:
     to `auto`."""
 
     effort: bool = True
-    """Anthropic only: does the model take `output_config.effort`?
+    """Anthropic and OpenAI only: does the model take the vendor's effort, Anthropic's
+    `output_config.effort` or OpenAI's reasoning effort?
 
     Claude Haiku 4.5 and Claude Sonnet 4.5 are missing from the list of supported models on
     Anthropic's effort page, so a row marked `False` is sent no effort at all. There is no 400
     reader behind this one, because that page does not print what the API answers, and a
     reader written against a guessed sentence is exactly how the thinking retry in
-    `anthropic.py` came to miss the sentence the 4.5 models really send."""
+    `anthropic.py` came to miss the sentence the 4.5 models really send. On OpenAI it is read
+    only by `--effort`, which refuses such a model before anything connects (`effort_refusal`):
+    GPT-4.1 and GPT-4o and their minis are its models "without a reasoning step", and ChatGPT
+    Instant's page lists no reasoning effort either."""
+
+    effort_levels: tuple[str, ...] | None = None
+    """The `--effort` levels a model takes where it takes fewer than all three, or None for all
+    of them. OpenAI's three pro models take medium, high and xhigh and not low, so `--effort low`
+    is refused for them before anything connects."""
 
     binds_thinking: bool = False
     """Anthropic only: does the model refuse a replayed thinking block once anything before it
@@ -217,11 +226,12 @@ class ModelSpec:
 #   while Gemini and OpenAI double the input and cache rates and charge 1.5x the output. A
 #   long-prompt run is therefore under-costed here, and the vendor comments name the thresholds
 #   so a reader knows when to distrust the figure.
-# - **The five minute cache-write TTL**, where a vendor sells two. quackd sets no cache itself,
-#   and on Anthropic, which caches only what a request marks, that is the whole story. On most
-#   of the others it is not. By their own pages OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and
-#   Meta cache a repeated prompt without being asked, and so does Alibaba for the models its
-#   implicit cache covers, so a run on one of them pays the cached-input rate on ordinary turns.
+# - **The five minute cache-write TTL**, where a vendor sells two. On Anthropic, which caches
+#   only what a request marks, quackd marks the system prompt with the five minute lifetime these
+#   write rates are (`AnthropicProvider._system`). The other vendors are marked nothing, and by
+#   their own pages OpenAI, Gemini, xAI, DeepSeek, Kimi, Z.ai and Meta cache a repeated prompt
+#   without being asked, and so does Alibaba for the models its implicit cache covers, so a run
+#   on one of them pays the cached-input rate on ordinary turns.
 #   Two of them write a cache unasked and bill the write as well: OpenAI on GPT-5.6 and later,
 #   at 1.25x input once a prompt passes 1,024 tokens, and Kimi on K3, at its 5 minute rate. A
 #   vendor that sells no cache write at all, billing the tokens that fill a cache at the input
@@ -303,22 +313,31 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
     # shutdown dates in 2026, so none of it is here. The one exception is `gpt-5-search-api`,
     # still priced with no shutdown, whose own model page no longer loads, so nothing here can
     # say it takes function tools. The Daybreak, Cyber and Rosalind models need their own
-    # approval. `gpt-oss-*` are weights, not an endpoint. The three GPT-6 models open on the
+    # approval. `gpt-oss-*` are weights, not an endpoint. The four GPT-6 models open on the
     # Responses API: Sol and Luna take function tools on Chat Completions only at
-    # `reasoning_effort` none and default to medium, and OpenAI's Astra release note says its
-    # tool calling requires the Responses API.
+    # `reasoning_effort` none and default to medium, OpenAI's Astra release note says its tool
+    # calling requires the Responses API, and 6.1 Sol's own page says Chat Completions is
+    # "supported without tool calling" and lists no `reasoning_effort` none at all. 6.1 Sol was
+    # read on 2026-10-26, which its rate says (`checked`); 6 Sol is still served, with no
+    # shutdown date, so it stays the default.
     #
     # Prices: the short-context band. A prompt over 272k tokens is billed at 2x input and cache
     # rates and 1.5x output for the WHOLE request, and nothing here sees that coming. That band
-    # is not only the flagships: the page carries long-context columns for ten of these ids, the
-    # six 5.6-and-later models plus gpt-5.5, gpt-5.4, gpt-5.5-pro and gpt-5.4-pro, while
-    # gpt-5.2-pro has none. Cache writes are 1.25x input on GPT-5.6 and later. Before it there is
-    # no write rate at all (a dash on the page, and "No additional cache-write charge" in the
-    # caching guide), so those rows carry None and a written token is charged at the input rate,
-    # which is what OpenAI bills. gpt-5.6-sol's rate is promotional, and OpenAI promise it only
-    # "at least through November 21, 2026".
+    # is not only the flagships: the page carried long-context columns for ten of these ids on
+    # `PRICES_CHECKED`, the six 5.6-and-later models plus gpt-5.5, gpt-5.4, gpt-5.5-pro and
+    # gpt-5.4-pro, while gpt-5.2-pro had none, and 6.1 Sol has them too. Cache writes are 1.25x
+    # input on GPT-5.6 and later. Before it there is no write rate at all (a dash on the page,
+    # and "No additional cache-write charge" in the caching guide), so those rows carry None and
+    # a written token is charged at the input rate, which is what OpenAI bills. gpt-5.6-sol's
+    # rate is promotional, and OpenAI promise it only "at least through November 21, 2026".
     "openai": (
         ModelSpec("gpt-6-sol", "GPT-6 Sol", api="responses", price=Price(2.0, 10.0, 0.2, 2.5)),
+        ModelSpec(
+            "gpt-6.1-sol",
+            "GPT-6.1 Sol",
+            api="responses",
+            price=Price(2.0, 10.0, 0.1, 2.5, checked="2026-10-26"),
+        ),
         ModelSpec(
             "gpt-6-astra", "GPT-6 Astra", api="responses", price=Price(10.0, 50.0, 1.0, 12.5)
         ),
@@ -332,18 +351,37 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
         ModelSpec("gpt-5.4-nano", "GPT-5.4 nano", "legacy", price=Price(0.2, 1.25, 0.02)),
         ModelSpec("gpt-5.2", "GPT-5.2", "legacy", price=Price(1.75, 14.0, 0.175)),
         ModelSpec("gpt-5.1", "GPT-5.1", "legacy", price=Price(1.25, 10.0, 0.125)),
-        ModelSpec("gpt-4.1", "GPT-4.1", "legacy", price=Price(2.0, 8.0, 0.5)),
-        ModelSpec("gpt-4.1-mini", "GPT-4.1 mini", "legacy", price=Price(0.4, 1.6, 0.1)),
-        ModelSpec("gpt-4o", "GPT-4o", "legacy", price=Price(2.5, 10.0, 1.25)),
-        ModelSpec("gpt-4o-mini", "GPT-4o mini", "legacy", price=Price(0.15, 0.6, 0.075)),
+        ModelSpec("gpt-4.1", "GPT-4.1", "legacy", effort=False, price=Price(2.0, 8.0, 0.5)),
         ModelSpec(
-            "gpt-5.5-pro", "GPT-5.5 Pro", "specialised", api="responses", price=Price(30.0, 180.0)
+            "gpt-4.1-mini", "GPT-4.1 mini", "legacy", effort=False, price=Price(0.4, 1.6, 0.1)
+        ),
+        ModelSpec("gpt-4o", "GPT-4o", "legacy", effort=False, price=Price(2.5, 10.0, 1.25)),
+        ModelSpec(
+            "gpt-4o-mini", "GPT-4o mini", "legacy", effort=False, price=Price(0.15, 0.6, 0.075)
         ),
         ModelSpec(
-            "gpt-5.4-pro", "GPT-5.4 Pro", "specialised", api="responses", price=Price(30.0, 180.0)
+            "gpt-5.5-pro",
+            "GPT-5.5 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(30.0, 180.0),
         ),
         ModelSpec(
-            "gpt-5.2-pro", "GPT-5.2 Pro", "specialised", api="responses", price=Price(21.0, 168.0)
+            "gpt-5.4-pro",
+            "GPT-5.4 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(30.0, 180.0),
+        ),
+        ModelSpec(
+            "gpt-5.2-pro",
+            "GPT-5.2 Pro",
+            "specialised",
+            api="responses",
+            effort_levels=("medium", "high"),
+            price=Price(21.0, 168.0),
         ),
         ModelSpec(
             "gpt-5.3-codex",
@@ -356,6 +394,7 @@ CATALOGUE: dict[str, tuple[ModelSpec, ...]] = {
             "chat-latest",
             "ChatGPT Instant (moves with ChatGPT)",
             "specialised",
+            effort=False,
             price=Price(5.0, 30.0, 0.5),
         ),
     ),

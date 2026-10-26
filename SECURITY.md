@@ -185,6 +185,16 @@ Also in scope:
   naming it, image bytes in the state or in the record, a credential reaching any of them but its
   own vendor at its own address, a credential surviving that recorded url, a hosted key being sent
   to a server you run, or a stepper-authored call bypassing the executor.
+- **What `quackd drive` sends with a line you type** (`--decision-llm` or `QUACKD_DECISION_LLM`,
+  off unless you name one, [docs/guides/drive.md](docs/guides/drive.md)). A line the exact lane
+  cannot read is sent as you typed it to the decision LLM the session names, as one question,
+  which a System One client may send twice within its second, and never with a camera frame.
+  Beside it go what the robot is doing, which quotes the line of a command still running,
+  whatever lane took that line, and the body's one-line description. It goes where that row's
+  state goes on a run, above. A brake, the session's own words and a line the exact lane reads
+  are sent nowhere of their own. A goal goes to the pilot the session flies goals with, as
+  `quackd run --goal`'s goal does. The session's `transcript.jsonl` keeps every line typed as a
+  command as it was typed, and each answer to a question in the row of the call it answered.
 - **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
   sentences a model wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never

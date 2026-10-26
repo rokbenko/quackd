@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0003](0003-three-loops.md) (a composite verb never calls the *pilot*, and the steering tier gains a loop that asks a decision LLM), [ADR-0008](0008-perception-features-not-frames.md) (a decision LLM may be shown the primary frame inside `watch`, on a run that says so) and [ADR-0012](0012-safety-executor.md) (a `stop` from any caller ends a verb that asks) · Implemented in `quackd/verbs/watch.py` and `quackd/agent/decision/eyes.py`, with changes in the executor, the registry, the loop, the CLI, `quackd log` and the Microduck adapter · Documented in [docs/adapters/microduck/README.md](../adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view)
 
+**Amended 2026-10-26 by [ADR-0067](0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md):**
+`move`, `go_to`, `search_scan` and `approach_and` ask too, so the line below that only `watch`
+asks, and `go_to` does not yet, was true until then. A braked verb's result is marked `ended_by:
+stop`, which `abort_when`'s count passes over.
+
 ## Context
 
 OpenAI's launch video for its Decisions API has a robot segment, "Guiding Lavender the robot", and

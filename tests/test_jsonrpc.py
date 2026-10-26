@@ -43,7 +43,7 @@ from quackd.transport.base import (
 )
 from quackd.transport.mock import MockTransport
 from quackd.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
-from quackd.verbs.registry import VerbRegistry
+from quackd.verbs.registry import STOP_ENDED, VerbRegistry
 from quackd_microduck import MicroduckAdapter
 from quackd_microduck import upstream_api as up
 from quackd_microduck.transports import jsonrpc_unix
@@ -1705,7 +1705,11 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
 
     `go_to` waits here on a frame that does not come, past its last re-send, so the pick-up is
     seen in the state rather than through a twist it sends: a verb that sends nothing while the
-    duck is in somebody's hands is held back all the same."""
+    duck is in somebody's hands is held back all the same.
+
+    The pilot's `stop` from another call now ends the `go_to` beside it at its next twist
+    (ADR-0067), so it never walks again rather than having that twist refused by the hold. The
+    stop a second walk sends on its way out is no `stop` verb, and the hold still refuses."""
     t = _seeing(robotd)
     await t.connect()
     seeing = asyncio.Event()
@@ -1764,7 +1768,13 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
         result = await _ended(going, "go_to ending at the twist held back")
     finally:
         await _cancelled(going, walking)
-    said = "go_to: a twist was refused, so the body stopped: the duck stopped standing (somebody"
+    if other == "stop":
+        said = "go_to: a stop was sent while it ran, so the body stopped"
+        assert result.data.get("ended_by") == STOP_ENDED, result.data
+    else:
+        said = (
+            "go_to: a twist was refused, so the body stopped: the duck stopped standing (somebody"
+        )
     assert not result.ok and result.summary.startswith(said), result.summary
     await _landed(t)
     assert _moves(robotd) == held_at, "a robot.move went out after the duck was picked up"
