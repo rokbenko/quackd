@@ -19,7 +19,7 @@ from PIL import Image
 import quackd.agent.loop as loop_module
 from quackd.adapters.base import AdapterError, RestResult
 from quackd.agent.images import load_task_images
-from quackd.agent.loop import AgentLoop, RunConfig, run_duck
+from quackd.agent.loop import STOP_BUTTON, AgentLoop, RunConfig, run_duck
 from quackd.agent.prompts import NOTHING_DETECTED_BEFORE_VERDICT
 from quackd.agent.providers import pricing
 from quackd.agent.providers.base import (
@@ -35,6 +35,7 @@ from quackd.agent.providers.fake import FakeProvider
 from quackd.agent.providers.openai import render_messages
 from quackd.agent.transcript import Transcript
 from quackd.duckfile.schema import Budgets, DuckFile
+from quackd.front import PAGE_GONE
 from quackd.perception.base import Detection
 from quackd.release import (
     CLEAR_THE_WAY,
@@ -6103,3 +6104,62 @@ async def test_a_flock_stopping_its_members_does_not_stop_a_members_fold(
     assert FOLD_STOPPED not in notes, notes
     assert mock.sequence[-2:] == ["rest", "close"], mock.sequence
     assert mock.torque is False and mock.close_note is None, "let go of at its pose"
+
+
+async def test_a_fall_warning_nobody_answers_ends_the_run_as_a_no_and_records_no_answer(
+    tmp_path: Path,
+) -> None:
+    """A question taken back, the page gone or a stop while it waited, has not said anybody
+    is watching, and nobody said they were not: the run ends as a no ends it, and no `prompt`
+    row names an answer nobody gave."""
+    from quackd.front import QuestionWithdrawn
+
+    def withdrawn(_why: str) -> bool:
+        raise QuestionWithdrawn("the page went away")
+
+    withdrawn.asks_a_person = True  # type: ignore[attr-defined]
+    run_dir = tmp_path / "gone"
+    run_dir.mkdir()
+    with pytest.raises(Aborted, match=r"the question went unanswered \(QuestionWithdrawn\)"):
+        await run_duck(_fall_blind(tmp_path / "gone", withdrawn, run_dir=run_dir))
+    assert _prompts(Transcript.read(run_dir / "transcript.jsonl")) == [], "nobody said no"
+
+
+@pytest.mark.parametrize(
+    ("reason", "stops_the_fold"),
+    [(STOP_BUTTON, True), (PAGE_GONE, False)],
+    ids=["the page's Stop", "the page went away"],
+)
+async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_does_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: str, stops_the_fold: bool
+) -> None:
+    """The page's Stop is a person's press, as the kill switch's is, so it stops the fold a run
+    that ended by itself makes. A page that went away is nobody pressing anything, and like a
+    flock stopping its members it leaves the fold to go on to the pose."""
+    began, _folds = _slow_teardown_fold(monkeypatch, 30.0 if stops_the_fold else 0.2)
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    loop = AgentLoop(
+        RunConfig(
+            duck=_arm_duck(),
+            provider=FakeProvider.for_duck("lerobot-lookout"),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+
+    async def stop() -> None:
+        await began.wait()
+        loop.stop_reason = reason  # as `quackd.front` names its stop, then sets the flag
+        loop.executor.abort.set()
+
+    stopping = asyncio.ensure_future(stop())
+    result = await loop.run()
+    await stopping
+    assert result.outcome == "success", result.reason
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    if stops_the_fold:
+        assert FOLD_STOPPED in notes, notes
+        assert mock.sequence[-2:] == ["stop", "close"], mock.sequence
+    else:
+        assert FOLD_STOPPED not in notes, notes
+        assert mock.sequence[-2:] == ["rest", "close"], mock.sequence

@@ -797,6 +797,13 @@ class RunStatus:
         """Whether anything is actually being drawn."""
         return self._status is not None
 
+    @property
+    def words(self) -> tuple[str, str]:
+        """What the line says, without its seconds: the step, and the words after it. For a
+        reader that is not a terminal, the page `quackd.front` serves."""
+        with self._lock:
+            return self._step, self._text
+
     def __rich__(self) -> Text:
         """Rebuilt on every frame, which is how the seconds tick without a second timer."""
         with self._lock:

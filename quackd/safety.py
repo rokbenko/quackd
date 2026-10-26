@@ -38,6 +38,7 @@ from quackd.log import (
     EventLog,
     LoggedTransport,
     a_person_was_asked,
+    asked_on,
     counting,
     fmt_params,
 )
@@ -774,6 +775,7 @@ class Executor:
                     what="confirm",
                     question=f"run {name}({fmt_params(parsed.model_dump())})?",
                     answer=answer,
+                    **asked_on(self.confirm),
                 )
             # The same care in the gate's own reason, which said `a human said yes` however the
             # answer arrived. Under `--yes`, a flock's standing answer or a pipe on stdin the
