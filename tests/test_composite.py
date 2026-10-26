@@ -779,3 +779,41 @@ async def test_a_twist_refused_while_go_to_waits_for_a_frame_ends_it(
     assert not result.ok
     assert result.summary == f"go_to: a twist was refused, so the body stopped: {REFUSED}"
     assert body.refused == 1 and body.intents[-1].kind == "stop"
+
+
+class _GlancingBraked(MockTransport):
+    """A head that glances, so the scan centres it again after each turn, and a stop asked for
+    from beside the scan while the first turn's own stop is on the wire."""
+
+    head_fade_s = 0.2
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.executor: Executor | None = None
+        self.brake: asyncio.Task[object] | None = None
+        self.after: list[str] = []
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if self.executor is not None and self.executor.stops:
+            self.after.append(intent.kind)
+        return await super().send_intent(intent)
+
+    async def stop(self) -> None:
+        await super().stop()
+        if self.brake is None and self.executor is not None and self.intents_of("move"):
+            self.brake = asyncio.get_running_loop().create_task(self.executor.run_verb("stop", {}))
+            for _ in range(5):  # a round trip, which the stop beside the scan lands in
+                await asyncio.sleep(0)
+
+
+async def test_search_scan_sends_no_look_after_a_stop_beside_it(registry: VerbRegistry) -> None:
+    """The look that centres the head after each turn went out unchecked, after the stop asked
+    for while that turn ended had been counted."""
+    body = _GlancingBraked()
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())  # type: ignore[arg-type]
+    body.executor = ex
+    result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
+    assert body.brake is not None
+    await body.brake
+    assert not result.ok and result.data.get("ended_by") == STOP_ENDED, result.summary
+    assert "look" not in body.after, f"sent after the stop was counted: {body.after}"

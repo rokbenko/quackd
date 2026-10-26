@@ -668,6 +668,11 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             so, turned = _scan_stopped(ctx, starts, steps, step)
             return await _ended_by(ctx, "search_scan", told.why, so, steps=turned)
         starts.append(begun)
+        if (why := ctx.interrupted()) is not None:
+            # a stop that came while the turn ended, before the look that centres the head again:
+            # the head was turned to that look after the stop had been counted
+            so, turned = _scan_stopped(ctx, starts, steps, step)
+            return await _ended_by(ctx, "search_scan", why, so, steps=turned)
         if glances:
             # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
             # that centred the head started, so the head is nobody's again, and robotd glances

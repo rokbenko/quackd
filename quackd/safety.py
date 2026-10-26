@@ -495,9 +495,11 @@ class Executor:
                 ended += 1
         return ended
 
-    def context(self, source: Source = "agent") -> VerbContext:
+    def context(self, source: Source = "agent", *, stops: int | None = None) -> VerbContext:
         """`source` is the outer call's, so a composite's nested verbs are narrated as coming
-        from the same pilot (an MCP session's `approach_and` runs an MCP `go_to`)."""
+        from the same pilot (an MCP session's `approach_and` runs an MCP `go_to`). `stops` is
+        the count of stops the verb answers to, the one taken when it was asked for, so a stop
+        that came while it was still being admitted ends it; now, by default."""
         return VerbContext(
             transport=self.logged_transport(),
             detector=self.detector,
@@ -511,7 +513,7 @@ class Executor:
             # an adapter carries its manifest after connect; a bare transport has none
             manifest=self.manifest or getattr(self.transport, "manifest", None),
             eyes=self.eyes,
-            interrupted=self._interruption(self.stops),
+            interrupted=self._interruption(self.stops if stops is None else stops),
         )
 
     def _interruption(self, stops_then: int) -> Callable[[], str | None]:
@@ -541,13 +543,18 @@ class Executor:
         *,
         source: Source = "agent",
         nested: bool = False,
+        picked_by: str | None = None,
     ) -> VerbResult:
         """Every verb call, from the agent loop, an MCP client or a composite.
 
         The narration wraps the gates: exactly one `verb_start` and, whatever happens after
         it, exactly one `verb_end` with an `outcome`, so a reader of the log never sees a
         verb that started and vanished. `ok`/`fail` are the verb's own verdict; `refused`,
-        `denied`, `budget` and `aborted` are the executor's, and `error` is a bug."""
+        `denied`, `budget` and `aborted` are the executor's, and `error` is a bug.
+
+        `picked_by` names the decision LLM that read a person's own words as this call, where
+        one did (`quackd drive`'s fast lane): the call is still theirs for the verdict gate,
+        and the record says who chose it."""
         params = params or {}
         canonical = self.registry.canonical(name)
         started = time.perf_counter()
@@ -564,8 +571,11 @@ class Executor:
                     params=params,
                     source=source,
                     nested=nested,
+                    **({"picked_by": picked_by} if picked_by else {}),
                 )
-                result = await self._run_verb(name, canonical, params, source=source, nested=nested)
+                result = await self._run_verb(
+                    name, canonical, params, source=source, nested=nested, picked_by=picked_by
+                )
             except VerbNotAllowed as e:
                 outcome, summary = "refused", str(e)
                 raise
@@ -630,6 +640,7 @@ class Executor:
         *,
         source: Source,
         nested: bool,
+        picked_by: str | None = None,
     ) -> VerbResult:
         # before any gate, so a newer command that comes while this one is still being admitted
         # stops it starting after that command has (`_run_admitted`)
@@ -638,6 +649,10 @@ class Executor:
             # counted before any gate, since a brake asked for is a brake pulled, whoever asked:
             # a verb running beside this call ends on it (`_interruption`)
             self.stops += 1
+        # and the stops this verb has to answer to are counted from here, not from when it
+        # starts: one asked for while it was still reading the body's state used to land in
+        # the count it started from, so it walked the whole walk the stop was meant to end
+        stops = self.stops
         # `stop` is the one verb an aborted session must still be able to run. The abort is
         # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
         # which is the moment the pilot reaches for the brake, and refusing it here closed
@@ -684,15 +699,24 @@ class Executor:
         self._hold_still_for(name, canonical, verb)
         if self.require_verdict and not looks and not self.cleared and source in PERSONS:
             # the person's own command is the verdict for its own call, and the record says
-            # whose word it was, the way an answer to a confirm says it (`who_answered`)
-            said = A_PERSON if source == "person" else A_PIPE
-            self._emit(
-                "gate",
-                name=name,
-                gate="verdict",
-                outcome="allowed",
-                reason=f"{said} named this call, which stands for the verdict for it alone",
-            )
+            # whose word it was, the way an answer to a confirm says it (`who_answered`), and
+            # who read their words as this call where somebody did. A verb that call runs is
+            # covered by its row, as a pilot's nested verbs are by its verdict, and has none of
+            # its own: each used to say a person had named it, which nobody had.
+            if not nested:
+                said = A_PERSON if source == "person" else A_PIPE
+                whose = (
+                    f"{picked_by} read what {said} typed as this call"
+                    if picked_by
+                    else f"{said} named this call"
+                )
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="verdict",
+                    outcome="allowed",
+                    reason=f"{whose}, which stands for the verdict for it alone",
+                )
         elif self.require_verdict and not looks and not self.cleared:
             why = (
                 self.verdict.blocking_reason()
@@ -803,13 +827,21 @@ class Executor:
                 raise
         if not timed:
             return await self._run_admitted(
-                name, canonical, params, verb, parsed, source=source, preempts=preempts
+                name, canonical, params, verb, parsed, source=source, preempts=preempts, stops=stops
             )
         # held from the check above, with nothing awaited since it, to the segment's charge
         self.segment = name
         try:
             return await self._run_admitted(
-                name, canonical, params, verb, parsed, source=source, timed=True, preempts=preempts
+                name,
+                canonical,
+                params,
+                verb,
+                parsed,
+                source=source,
+                timed=True,
+                preempts=preempts,
+                stops=stops,
             )
         finally:
             self.segment = None
@@ -825,12 +857,14 @@ class Executor:
         source: Source,
         timed: bool = False,
         preempts: int | None = None,
+        stops: int | None = None,
     ) -> VerbResult:
         """A verb every gate has let through: its state, its abort conditions and its
         preconditions, then the verb itself, or the dry run's word for it. `timed` is a policy
         segment's, whose seconds are charged on every way out. `preempts` is the executor's count
         of newer commands from before the gates, which a verb that may move the body is refused
-        on once it has changed (`preempt`)."""
+        on once it has changed (`preempt`), and `stops` its count of stops from then, which the
+        verb ends on once that has changed (`_interruption`)."""
         try:
             state = await self.transport.get_state()
         except Exception:
@@ -850,6 +884,12 @@ class Executor:
             reason = f"{name} did not start: {self.preempted_by}"
             self._emit("gate", name=name, gate="preempted", outcome="refused", reason=reason)
             raise Preempted(reason)
+        # and the abort, for the same reason: a kill switch, a failed heartbeat or a drive
+        # session's brake set while this verb read the body's state found it in nothing it could
+        # cancel, and the verb sent its first twist after the abort that was meant to end it
+        if self.abort.is_set() and canonical != "stop":
+            self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
+            raise Aborted("run aborted")
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
@@ -861,7 +901,11 @@ class Executor:
                 reason=str(e),
                 state=state.summary(),
             )
-            raise
+            # The brake is the one verb a rule that fired must still let through: the rule is
+            # there to stop the body, and a `stop` it refused was a stop never sent, on a body
+            # whose battery had just been read as too low to trust with anything else.
+            if canonical != "stop":
+                raise
         for pre in verb.preconditions:
             refusal = pre(state)
             if refusal:
@@ -900,7 +944,12 @@ class Executor:
         result: VerbResult | None = None
         try:
             result = await self._execute(
-                verb, parsed, interruptible=canonical != "stop", source=source, name=name
+                verb,
+                parsed,
+                interruptible=canonical != "stop",
+                source=source,
+                name=name,
+                stops=stops,
             )
         except TimeoutError:
             unstopped = await self._stop_after()
@@ -931,6 +980,7 @@ class Executor:
         interruptible: bool,
         source: Source = "agent",
         name: str | None = None,
+        stops: int | None = None,
     ) -> VerbResult:
         """Run one verb, racing it against the abort event as well as the clock.
 
@@ -950,7 +1000,7 @@ class Executor:
         `stop` is never interruptible: it is what the abort is trying to achieve."""
         called = name or verb.name
         verb_task: asyncio.Task[VerbResult] = asyncio.ensure_future(
-            verb.execute(self.context(source), parsed)
+            verb.execute(self.context(source, stops=stops), parsed)
         )
         abort_task: asyncio.Task[bool] | None = None
         waiting: set[asyncio.Future[Any]] = {verb_task}

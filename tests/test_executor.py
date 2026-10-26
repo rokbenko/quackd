@@ -1296,3 +1296,52 @@ async def test_a_walk_admitted_before_a_newer_command_does_not_start_after_it(
     with pytest.raises(Preempted, match="walk did not start: a newer command, sit"):
         await walking
     assert body.intents_of("move") == [], "it started after the newer command"
+
+
+async def test_a_stop_asked_for_while_a_walk_reads_the_bodys_state_ends_the_walk(
+    registry: VerbRegistry,
+) -> None:
+    """Over MCP a stop that came while a walk was past its gates and still reading the body's
+    state landed in the count the walk started from, so the walk ran its whole second after
+    the stop had come back ok."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    assert (await ex.run_verb("stop")).ok
+    after = len(body.intents)
+    body.answer.set()
+    await walking
+    twists = [i for i in body.intents[after:] if i.kind == "move" and any(i.params.values())]
+    assert twists == [], "the walk went on after the stop"
+
+
+async def test_an_abort_set_while_a_walk_reads_the_bodys_state_refuses_the_walk(
+    registry: VerbRegistry,
+) -> None:
+    """A kill switch, a failed heartbeat, or a drive session's brake on a goal, set while a walk
+    read the body's state, found nothing it could cancel, and the walk sent its first twist
+    after the abort."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    ex.abort.set()
+    body.answer.set()
+    with pytest.raises(Aborted):
+        await walking
+    assert body.intents_of("move") == []
+
+
+async def test_a_battery_the_rule_reads_as_too_low_still_lets_the_stop_through(
+    registry: VerbRegistry,
+) -> None:
+    """The rule is there to stop the body: the `stop` it refused was a stop never sent, and
+    every call after it is refused as before."""
+    body = MockTransport(states=[DuckState(policy="mock", posture="standing", battery_percent=5)])
+    ex = Executor(registry, body, contract=duck("walk", abort="Battery below 15%").frontmatter)
+    assert (await ex.run_verb("stop")).ok
+    assert body.stops == 1, "the stop was refused before it was sent"
+    assert ex.abort.is_set()
+    with pytest.raises(Aborted):
+        await ex.run_verb("walk", {"vx": 0.1})
