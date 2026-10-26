@@ -2309,8 +2309,10 @@ class AgentLoop:
         Anthropic's four.
 
         A guess about the next answer only. A model that answers this turn in prose is asked
-        again rather than answered, and the guess can then be a block off, which costs one cache
-        write and never a wrong request. A retry resends the same marked copy (ADR-0059)."""
+        again rather than answered, which adds two exchanges where the guess counted one, so the
+        trim's cut can move by both and this call's write and the next one's can go unread: a
+        cache write or two, and never a wrong request. A retry resends the same marked copy
+        (ADR-0059)."""
         if getattr(self.cfg.provider, "caches", False) is not True or not sent:
             return sent
         pending = self.history[-1]

@@ -45,18 +45,20 @@ nothing back, and the write it paid for was a quarter more than the input it rep
 5. **Anthropic's binding check ignores the markers.** Its check of a replayed thinking block
    ignores cache_control markers, added, moved and removed alike, so the binding oracle compares
    requests with them stripped, as the API does, and still passes on every body.
-6. **A wrong guess costs a write and never a wrong request.** A model that answers in prose is
-   asked again rather than answered, which the foresight does not see coming, so that call's
-   write is wasted. A retry resends the same marked copy, so the request ADR-0059 asks again is
-   the request that failed.
+6. **A wrong guess costs a write or two and never a wrong request.** A model that answers in
+   prose is asked again rather than answered, which the foresight does not see coming: the
+   re-prompt adds two exchanges where it counted one, so the trim's cut can move by both, and
+   the entries that call and the next one write can go unread. A retry resends the same marked
+   copy, so the request ADR-0059 asks again is the request that failed.
 7. **`QUACKD_ANTHROPIC_CACHE=0` marks nothing.** Neither the system prompt nor the history, the
    request exactly as it was before.
 
 ## Why not
 
 - **A marker at the end of every request, or Anthropic's automatic caching, which puts one
-  there.** The next trim changes the history before it on most calls. Of the oracle's 48 cases,
-  every body with pictures, 32 of them, fails with that marker.
+  there.** The next trim changes the history before it on most calls. 32 of the oracle's 48
+  cases fail with that marker, every case of the two bodies with pictures and no prose turn among
+  them.
 - **The one-hour cache.** Its write is twice the input rate against a quarter more, and the
   turns of a run are seconds apart.
 - **OpenAI's `prompt_cache_key`.** OpenAI caches a repeated prefix without being asked, and one
@@ -67,8 +69,8 @@ nothing back, and the write it paid for was a quarter more than the input it rep
 ## Consequences
 
 - From a run's second Claude call on, the part of its request that matches the last call is
-  meant to be billed at the cache read rate, a tenth of the input rate, and written once at a
-  quarter more. How much of a run's bill that saves is not measured. The check is one paid run
+  meant to be billed at the model's cache read rate, a tenth of its input rate on most Claude
+  models and a twentieth on Opus 5.5, and written once at a quarter more. How much of a run's bill that saves is not measured. The check is one paid run
   per vendor with the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`,
   `cost_usd` and `latency_s` per call.
 - A run of one call pays the write and never reads it.
@@ -76,6 +78,6 @@ nothing back, and the write it paid for was a quarter more than the input it rep
   four bodies, keeps 1 to 3 and trim periods 1, 2, 4 and 8: the system prompt marked the same on
   every call, never more than four breakpoints, every call marking the last block it shares with
   the next, and the next carrying a marker that reaches back to it within the lookback. All 48
-  fail with no marker in the messages, and the 32 with pictures fail with one at the end.
+  fail with no marker in the messages, and 32 of them with one at the end of each request.
 - The interaction with `drop_block` on Opus 5.5 and Fable 5.1 comes from Anthropic's guidance,
   and no paid request has proved it yet.

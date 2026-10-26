@@ -2614,9 +2614,10 @@ async def test_a_binding_model_is_never_sent_a_thinking_block_a_trim_invalidated
 
 
 LOOKBACK = 20
-"""How many positions a cache breakpoint looks back for an entry an earlier request wrote, a run
-of `tool_use` blocks and a run of `tool_result` blocks each counting as one (Anthropic's prompt
-caching reference)."""
+"""How many positions a cache breakpoint checks for an entry an earlier request wrote, its own
+block the first of them, a run of `tool_use` blocks and a run of `tool_result` blocks each
+counting as one (Anthropic's prompt caching reference). So an entry it can read lies fewer than
+this many positions behind it."""
 
 
 def _flat(messages: list[dict[str, Any]]) -> list[tuple[int, str, Any]]:
@@ -2657,8 +2658,10 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
     next can read, and the next call has a marker that reaches back to it within the cache's
     lookback, so it is read rather than paid for again. A call answered in prose is asked again
     rather than answered, which the guess does not foresee, so the pair after one is excused:
-    what it costs is one cache write, never a wrong request. The comparisons drop the markers, as
-    the API does, and binding validity under them is `test_a_binding_model_is_never_sent_...`'s."""
+    what it costs is a cache write or two, never a wrong request, since the re-prompt adds two
+    exchanges where the guess counted one and the trim's cut can move by both. The comparisons
+    drop the markers, as the API does, and binding validity under them is
+    `test_a_binding_model_is_never_sent_...`'s."""
     from quackd.agent.providers.anthropic import AnthropicProvider
 
     calls = keep + 2 * period + 4
@@ -2746,7 +2749,7 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
             f"call {k}: nothing marked the end of the {shared} blocks the next call shares"
         )
         assert any(
-            q >= shared - 1 and _positions(flat_later, shared - 1, q) <= LOOKBACK
+            q >= shared - 1 and _positions(flat_later, shared - 1, q) < LOOKBACK
             for q in _marked_at(later["messages"])
         ), f"call {k + 1}: no marker reaches back to the entry call {k} wrote"
     if body == "no-vision":

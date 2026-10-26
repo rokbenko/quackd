@@ -88,8 +88,9 @@ def _marked(blocks: list[Any]) -> list[Any]:
 def render_messages(history: list[Exchange], *, marks: bool = True) -> list[dict[str, Any]]:
     """quackd's vendor-neutral history → Messages API `messages`, with the cache breakpoint the
     loop chose (`Exchange.cache_points`) on the last block of each half they name. The loop
-    marks every run's history alike, and whether a run caches at all is the provider's to say:
-    with `marks` False (`QUACKD_ANTHROPIC_CACHE=0`) no block carries one."""
+    marks a history only for a provider whose `caches` is True (`_with_cache_point`), and this
+    holds to the same switch as well, so with `marks` False (`QUACKD_ANTHROPIC_CACHE=0`) no block
+    carries one, whoever marked the history it was given."""
     messages: list[dict[str, Any]] = []
     for ex in history:
         obs = ex.observation
@@ -321,9 +322,10 @@ class AnthropicProvider:
         env_fb = os.environ.get("QUACKD_ANTHROPIC_FALLBACKS", "1") not in ("0", "false", "no")
         #: Whether requests mark the prompt, and the points the loop chose in the history, for
         #: Anthropic's cache (`_system`, `render_messages`). On unless `QUACKD_ANTHROPIC_CACHE`
-        #: says 0, false or no, beside the fallbacks switch above: a marked prompt is read at a
-        #: tenth of the input rate from the second call on and prefilled sooner, and the one
-        #: write it costs is a quarter more than an unmarked call.
+        #: says 0, false or no, beside the fallbacks switch above: a marked prompt is read at the
+        #: model's cache rate from the second call on, a tenth of its input rate on most rows and
+        #: a twentieth on Opus 5.5, and prefilled sooner, and the one write it costs is a quarter
+        #: more than an unmarked call.
         self.caches = os.environ.get(CACHE_ENV, "1").strip().lower() not in ("0", "false", "no")
         self.fallbacks = env_fb if fallbacks is None else fallbacks
         # `summarized` is what makes the thinking blocks carry text. `omitted` keeps the

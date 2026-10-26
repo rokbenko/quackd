@@ -68,8 +68,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
   Three levels, the ones both vendors have. It is refused before anything connects where it
   cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort page
-  does not list, and a vendor that documents no such field, OpenRouter told that its own
-  `reasoning` field goes through `--extra-body`. `run_start.effort` records the level every
+  does not list, OpenAI's GPT-4.1, GPT-4o, their minis and ChatGPT Instant, which take no
+  reasoning effort, its three pro models at `low`, which they do not take, and a vendor that
+  documents no such field, OpenRouter told that its own `reasoning` field goes through
+  `--extra-body`. `run_start.effort` records the level every
   request was sent at and whose word it was, and the run header gains an `effort` row only when
   the flag asked ([README.md](README.md#configuration)).
 - **The summary says how the model's calls spread and when the body first moved.**
@@ -114,14 +116,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   prompt goes as one marked text block now, which caches the tools with it, and the loop marks
   the last block of the history the next call will still send unchanged, which it can foresee
   because it owns the trim that changes the history. Where the two differ, the previous call's
-  marker goes out again beside it, since a read looks back twenty blocks at most. That is three
-  markers at most, under Anthropic's four, never on a thinking block, and a retry resends the
-  same marked request. From the second call on, the part of a request the last call already sent
-  is meant to be read back at a tenth of the input rate, after one write at a quarter more.
+  marker goes out again beside it, since a read looks back twenty positions at most. That is
+  three markers at most, under Anthropic's four, never on a thinking block, and a retry resends
+  the same marked request. From the second call on, the part of a request the last call already
+  sent is meant to be read back at the model's cache rate, a tenth of its input rate on most
+  Claude models and a twentieth on Opus 5.5, after one write at a quarter more. A model that
+  answers in prose costs a write or two that nothing reads, and never a wrong request.
   `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
   loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
-  with no marker in the history, and the 32 with pictures fail with one at the end of each
-  request ([ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
+  with no marker in the history, and 32 of them with one at the end of each request
+  ([ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
 - **The pilot's client is warmed while the robot connects.** A client of Anthropic's or OpenAI's
   SDK starts its first request by asking which platform it runs on, on Windows a WMI query or a
   subprocess, and by importing anyio's asyncio backend, and the pilot paid both in its first

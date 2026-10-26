@@ -259,10 +259,10 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
 async def test_anthropic_opted_out_of_its_cache_marks_none_of_the_points_the_loop_chose(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The loop marks every run's history where the next call will still match it
-    (`Exchange.cache_points`), on any vendor, and whether a run caches at all is Anthropic's
-    provider's to say. With `QUACKD_ANTHROPIC_CACHE=0` nothing in the request carries a marker,
-    the system prompt's nor one the loop chose, and with it on each half the loop named carries
+    """The loop marks the history only for a provider whose `caches` is True, and the provider
+    holds to the same switch itself, so a history marked anyway, by a caller other than the loop,
+    goes out unmarked as well. With `QUACKD_ANTHROPIC_CACHE=0` nothing in the request carries a
+    marker, the system prompt's nor one in the history, and with it on each half named carries
     one."""
     first, second = history()
     marked = [first.model_copy(update={"cache_points": ("observation", "decision")}), second]
