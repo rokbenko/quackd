@@ -1037,6 +1037,73 @@ async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_model
     assert decided["gate"] == "interrupted", decided
 
 
+def _shadow_loop(tmp_path: Any, refused: str) -> Any:
+    """`lerobot-lookout` in shadow on the mock arm, its stepper's request out until it is cut
+    off, and a disk that refuses the record line of kind `refused`."""
+    from quackd.agent.loop import AgentLoop, RunConfig
+    from quackd.agent.providers.fake import FakeProvider
+    from quackd_lerobot import LeRobotAdapter
+    from quackd_lerobot.mock import LeRobotMock
+
+    duck = _lookout()
+    loop = AgentLoop(
+        RunConfig(
+            duck=duck,
+            provider=FakeProvider.for_duck(duck.name),
+            transport=LeRobotAdapter(LeRobotMock()),
+            runs_dir=tmp_path,
+            decision="shadow",
+            decision_llm=_Hangs({"answers": _answered()}),
+            decision_price=resolve_decision_price(JEV),
+        )
+    )
+    good = loop.transcript.sink
+
+    def record(event: Any) -> None:
+        if event.kind == refused:
+            raise OSError(28, "No space left on device")
+        good(event)
+
+    loop.event_log.record = record
+    return loop
+
+
+async def test_a_disk_that_refuses_the_llm_line_still_settles_the_shadow_request(
+    tmp_path: Any,
+) -> None:
+    """The model answered and its `llm` line could not be written. The run ends on the disk's
+    error as it always did, and the stepper's request asked beside the call is settled on the way
+    out, cut off and on the record, rather than left running behind the teardown with nothing
+    saying it ever left."""
+    from quackd.agent.transcript import Transcript
+
+    with pytest.raises(OSError, match="No space left"):
+        await _shadow_loop(tmp_path, "llm").run()
+    left = [t for t in asyncio.all_tasks() if "_guarded" in repr(t.get_coro())]
+    assert left == [], left
+    (written,) = tmp_path.rglob("transcript.jsonl")
+    decisions = [r for r in Transcript.read(written) if r["kind"] == "decision"]
+    assert [r["gate"] for r in decisions] == ["interrupted"], decisions
+
+
+async def test_a_turn_that_ends_before_the_models_request_leaves_no_stepper_unasked(
+    tmp_path: Any,
+) -> None:
+    """The `llm_request` line is written before the first await of the turn, so a disk that
+    refuses it ends the turn before the stepper's task has run a line. Its request is made
+    inside that task, so none was made, and no coroutine is left that nobody awaited."""
+    import gc
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(OSError, match="No space left"):
+            await _shadow_loop(tmp_path, "llm_request").run()
+        gc.collect()
+    unawaited = [str(w.message) for w in caught if "never awaited" in str(w.message)]
+    assert unawaited == [], unawaited
+
+
 class _Recorder:
     """A provider that remembers every history it was handed, and defers to the real one."""
 

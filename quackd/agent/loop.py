@@ -220,6 +220,14 @@ async def _guarded(call: Awaitable[T]) -> tuple[T | None, BaseException | None]:
         return None, e
 
 
+async def _guarded_ask(ask: Callable[[], Awaitable[T]]) -> tuple[T | None, BaseException | None]:
+    """`_guarded`, with the call made inside the task rather than before it. A task cancelled
+    before its first step runs not a line of it, so a call made outside would be a coroutine
+    nobody ever awaited: the shadow stepper's, on a turn that ended before the model's request
+    went out."""
+    return await _guarded(ask())
+
+
 _FORESEEN = Decision(tool_call=ToolCall(id="foreseen", name="foreseen", arguments={}))
 """The answer `_with_cache_point` assumes the pending exchange will get, to foresee the next call.
 Only that there is one counts: what it says is never sent and never kept."""
@@ -860,6 +868,53 @@ class AgentLoop:
             # counted once the try is going out, so a wait a stop ended asks nothing again
             self.llm_retries += 1
             attempt += 1
+
+    def _note_answer(self, turn: ProviderTurn, latency_s: float, attempt: int) -> dict[str, Any]:
+        """A call the model answered, added to the run's totals and written down as its `llm`
+        record, and returned as the turn's `last_llm`: what it took and cost, for the shadow
+        record beside it.
+
+        A method of its own so the turn can call it inside the `try` that settles a shadow
+        stepper asked beside the call (`_settle_beside`): a disk that refused the `llm` line
+        used to end the run with that request still running behind the teardown, unrecorded."""
+        cfg = self.cfg
+        self.llm_latency_s += latency_s
+        self.llm_answered_s.append(latency_s)
+        self.usage = self.usage + turn.usage
+        turn_usage = turn.usage.model_dump()
+        costed = turn_cost(turn_usage, self.price, turn.billed_usd)
+        # One call nobody could price makes the whole run unpriced from then on: a total that
+        # skipped it would be believed as the bill. Before any vendor billed per call that could
+        # not happen mid-run, because a run either had a rate for every turn or for none.
+        if costed.usd is None:
+            self.cost_usd = None
+        elif self.cost_usd is not None:
+            self.cost_usd = round(self.cost_usd + costed.usd, 6)
+        self.billed_calls += costed.billed
+        self._emit(
+            "llm",
+            step=self.budget.steps,
+            provider=cfg.provider.name,
+            model=cfg.provider.model,
+            text=turn.text,
+            tool_calls=[tc.model_dump() for tc in turn.tool_calls],
+            usage=turn_usage,
+            stop_reason=turn.stop_reason,
+            thinking=turn.thinking,
+            latency_s=latency_s,
+            usage_total=self.usage.model_dump(),
+            llm_calls=self.budget.llm_calls,
+            cost_usd=costed.usd,
+            cost_usd_total=self.cost_usd,
+            # only when a server-side fallback answered, so every turn the model asked for took,
+            # and every transcript from before this, reads as it did
+            **({"served_by": turn.served_by} if turn.served_by else {}),
+            # and by the same rule, only when the cost is what the vendor billed
+            **({"billed": True} if costed.billed else {}),
+            # and the try that answered, only where it was not the first
+            **({"attempt": attempt} if attempt > 1 else {}),
+        )
+        return {"latency_s": latency_s, "usage": turn_usage, "cost_usd": costed.usd}
 
     async def _unless_stopped(self, call: Awaitable[T], *, minutes: bool = False) -> T:
         """`call`, unless the run's abort is set first: then `Aborted`, the call cancelled.
@@ -2751,58 +2806,19 @@ class AgentLoop:
                             # before it, and a run being measured does not wait up to the
                             # stepper's second on every turn for the measuring. Settled once the
                             # model's answer is on the record (`_settle_beside`).
-                            beside = asyncio.ensure_future(_guarded(ask()))
+                            beside = asyncio.ensure_future(_guarded_ask(ask))
                         history = self._with_cache_point(self._history_for_provider())
                         # once per turn, however many tries it takes: the same history every time
                         turn, latency_s, attempt = await self._ask_the_model(
                             system, history, tools, reprompt=retry_prompted
                         )
+                        # inside the try, so the stepper beside the call is settled whatever
+                        # writing it down raises, a disk that refuses the line among them
+                        last_llm = self._note_answer(turn, latency_s, attempt)
                     except BaseException:
                         if beside is not None and stepper is not None:
                             await self._settle_beside(beside, stepper, cancel=True)
                         raise
-                    self.llm_latency_s += latency_s
-                    self.llm_answered_s.append(latency_s)
-                    self.usage = self.usage + turn.usage
-                    turn_usage = turn.usage.model_dump()
-                    costed = turn_cost(turn_usage, self.price, turn.billed_usd)
-                    # One call nobody could price makes the whole run unpriced from then on:
-                    # a total that skipped it would be believed as the bill. Before any vendor
-                    # billed per call that could not happen mid-run, because a run either had a
-                    # rate for every turn or for none.
-                    if costed.usd is None:
-                        self.cost_usd = None
-                    elif self.cost_usd is not None:
-                        self.cost_usd = round(self.cost_usd + costed.usd, 6)
-                    self.billed_calls += costed.billed
-                    last_llm = {
-                        "latency_s": latency_s,
-                        "usage": turn_usage,
-                        "cost_usd": costed.usd,
-                    }
-                    self._emit(
-                        "llm",
-                        step=self.budget.steps,
-                        provider=cfg.provider.name,
-                        model=cfg.provider.model,
-                        text=turn.text,
-                        tool_calls=[tc.model_dump() for tc in turn.tool_calls],
-                        usage=turn_usage,
-                        stop_reason=turn.stop_reason,
-                        thinking=turn.thinking,
-                        latency_s=latency_s,
-                        usage_total=self.usage.model_dump(),
-                        llm_calls=self.budget.llm_calls,
-                        cost_usd=costed.usd,
-                        cost_usd_total=self.cost_usd,
-                        # only when a server-side fallback answered, so every turn the model
-                        # asked for took, and every transcript from before this, reads as it did
-                        **({"served_by": turn.served_by} if turn.served_by else {}),
-                        # and by the same rule, only when the cost is what the vendor billed
-                        **({"billed": True} if costed.billed else {}),
-                        # and the try that answered, only where it was not the first
-                        **({"attempt": attempt} if attempt > 1 else {}),
-                    )
                     if beside is not None and stepper is not None:
                         advice = await self._settle_beside(beside, stepper)
                     self.budget.check_time()
