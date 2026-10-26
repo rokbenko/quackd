@@ -26,7 +26,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import send_or_fail
-from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
+    NoParams,
+    Precondition,
+    Verb,
+    VerbContext,
+    VerbResult,
+)
 from quackd_moss import upstream_api as up
 
 # ── the vocabulary between the verbs and the transports ─────────────────────────────────
@@ -423,9 +431,20 @@ def world_goal(state: DuckState, p: DriveToParams) -> tuple[float, float]:
     return x + c * p.x_m - s * p.y_m, y + s * p.x_m + c * p.y_m
 
 
+def _braked(why: str | None) -> dict[str, Any]:
+    """The mark on the result of a verb a `stop` asked for beside it ended (`STOP_ENDED`), which
+    `abort_when`'s count of failures in a row passes over, as it does for the core verbs that
+    read the same stop. Unmarked, three stops beside a `drive_to` over MCP ended the session as
+    one verb failing three times in a row. A budget that ran out is no stop, and stays a
+    failure."""
+    return {"ended_by": STOP_ENDED} if why == STOPPED else {}
+
+
 def _no_goal(why: str) -> VerbResult:
     """drive_to ended before its goal went out: no goal was sent, so nothing of it drives."""
-    return VerbResult.fail(f"drive_to stopped before its goal went out: {why}. No goal was sent.")
+    return VerbResult.fail(
+        f"drive_to stopped before its goal went out: {why}. No goal was sent.", **_braked(why)
+    )
 
 
 async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
@@ -512,6 +531,7 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
         f"drive_to did not reach ({gx:.2f}, {gy:.2f}): {ended}. The rover is stopped.",
         goal=[round(gx, 3), round(gy, 3)],
         echoed=echoed,
+        **_braked(ended),
     )
 
 
@@ -551,7 +571,8 @@ async def explore(ctx: VerbContext, p: MinutesParams) -> VerbResult:
     seconds = round(ctx.transport.now() - t0, 1)
     ok = finished or ended == "the minutes ran out"
     summary = f"explored for {seconds:g} s, then stopped: {ended}"
-    return VerbResult(ok=ok, summary=summary, data={"seconds": seconds, "explore_done": finished})
+    data = {"seconds": seconds, "explore_done": finished, **_braked(ended)}
+    return VerbResult(ok=ok, summary=summary, data=data)
 
 
 def _mission(state: DuckState) -> dict[str, Any]:
@@ -704,7 +725,7 @@ async def _arm_cycle(
         await ctx.transport.stop()
         arm = _arm(await ctx.transport.get_state())
         said = _hold_sentence((arm.get("job") or {}).get("held"), arm.get("guard"))
-        return VerbResult.fail(f"{what} was stopped: {ended}.{said}", job=job)
+        return VerbResult.fail(f"{what} was stopped: {ended}.{said}", job=job, **_braked(ended))
     ending = str(job.get("state"))
     reason = str(job.get("reason") or "")
     if ending == "done":

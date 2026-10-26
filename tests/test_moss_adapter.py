@@ -9,6 +9,7 @@ real client against a fake cockpit is `tests/test_moss_cockpit.py`, the bridge o
 from __future__ import annotations
 
 import ast
+import asyncio
 import math
 import re
 from pathlib import Path
@@ -30,7 +31,7 @@ from quackd.verbs.core import CORE
 from quackd.verbs.core import MAX_VX as SCHEMA_VX
 from quackd.verbs.core import MAX_VY as SCHEMA_VY
 from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
-from quackd.verbs.registry import STOPPED, registry_from_manifest
+from quackd.verbs.registry import STOP_ENDED, STOPPED, registry_from_manifest
 from quackd_moss import (
     DATASHEET,
     MossAdapter,
@@ -638,6 +639,7 @@ async def test_explore_hears_a_brake_pulled_beside_it_within_a_second() -> None:
     ctx = VerbContext(transport=adapter, interrupted=interrupted)
     result = await explore(ctx, MinutesParams(minutes=8))
     assert not result.ok and STOPPED in result.summary
+    assert result.data["ended_by"] == STOP_ENDED, "a brake counted as explore failing"
     assert result.data["seconds"] <= 4.0
     assert not mock.exploring and mock.stop_log[-1] == "cockpit.stop"
 
@@ -769,6 +771,7 @@ async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds_once_the_watch_has_
         VerbContext(transport=adapter, interrupted=interrupted), PickAndDropParams()
     )
     assert not result.ok and "the bridge watches it" in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED, "a brake counted as the cycle failing"
     assert "holds where it stopped" not in result.summary
     assert mock.job is not None and (mock.job.state, mock.job.held) == ("cancelled", None)
     assert "arm.cancel" in mock.stop_log
@@ -802,6 +805,7 @@ async def test_a_stop_while_drive_to_waits_on_the_explorer_sends_no_goal() -> No
         VerbContext(transport=adapter, interrupted=interrupted), DriveToParams(x_m=0.5, y_m=0.0)
     )
     assert not result.ok and "No goal was sent" in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED, "a brake counted as drive_to failing"
     assert mock.intents_of("pose") == [], "no goal went out after the stop"
     waited = float(up.GOAL_AFTER_STOP_S.name)
     assert mock.now() - began < waited, "the wait ended at the stop, not after it"
@@ -821,6 +825,7 @@ async def test_a_stop_asked_for_before_drive_to_sends_its_goal_sends_no_goal() -
         DriveToParams(x_m=0.5, y_m=0.0),
     )
     assert not result.ok and "No goal was sent" in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED
     assert mock.intents_of("pose") == []
 
 
@@ -1232,3 +1237,87 @@ def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:
     named = {c for gates in m.preconditions.values() for c in gates}
     assert named <= set(conditions())
     assert set(implementations()) == OWN
+
+
+async def test_a_stop_once_drive_tos_goal_is_out_ends_it_marked_as_the_brake() -> None:
+    """The stop is heard while drive_to waits on the planner, after its goal went out, and the
+    result says it was the brake, as a core verb's does."""
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import drive_to
+
+    mock = MossMock()
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    asked = {"n": 0}
+
+    def interrupted() -> str | None:
+        asked["n"] += 1  # the first is the check just before the goal goes out
+        return STOPPED if asked["n"] > 1 else None
+
+    result = await drive_to(
+        VerbContext(transport=adapter, interrupted=interrupted), DriveToParams(x_m=0.5, y_m=0.0)
+    )
+    assert mock.intents_of("pose"), "the goal never went out"
+    assert not result.ok and STOPPED in result.summary, result.summary
+    assert result.data["ended_by"] == STOP_ENDED
+
+
+async def test_a_budget_that_ran_out_beside_a_moss_verb_is_no_brake() -> None:
+    """Only the stop is marked: the run's minutes spent end the verb in the budget's own words,
+    and that is a failure `abort_when` counts."""
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import MinutesParams, explore
+
+    mock = MossMock()
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    spent = "max_minutes (5) exceeded"
+    result = await explore(
+        VerbContext(transport=adapter, interrupted=lambda: spent), MinutesParams(minutes=8)
+    )
+    assert not result.ok and spent in result.summary
+    assert "ended_by" not in result.data
+
+
+async def test_three_stops_beside_drive_to_are_three_brakes_and_no_abort() -> None:
+    """Over MCP each `stop` asked for beside a `drive_to` ended it, and the result went
+    unmarked, so `abort_when` took three brakes for the same verb failing three times in a row
+    and ended the session."""
+    mock = MossMock()
+    adapter = MossAdapter(mock)
+    manifest = await adapter.connect()
+    contract = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [drive_to, stop]\n"
+        "  confirm: []\nsuccess: [x]\nabort_when: [Same verb fails 3 times in a row]\n---\n"
+        "# Task\nx\n"
+    ).frontmatter
+    assert contract.repeat_failure_abort == 3
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=contract,
+        detector=ColorBlobDetector(),
+        confirm=allow_all,
+        manifest=manifest,
+    )
+    sleep = adapter.sleep
+    for _ in range(3):
+        released = asyncio.Event()
+
+        async def held(seconds: float, released: asyncio.Event = released) -> None:
+            await released.wait()
+            await sleep(seconds)
+
+        adapter.sleep = held  # type: ignore[method-assign]
+        sent = len(mock.intents_of("pose"))
+        driving = asyncio.ensure_future(ex.run_verb("drive_to", {"x_m": 0.5, "y_m": 0.0}))
+        for _ in range(1000):  # until its goal is out and it waits on the planner
+            if len(mock.intents_of("pose")) > sent:
+                break
+            await asyncio.sleep(0)
+        assert (await ex.run_verb("stop")).ok
+        released.set()
+        result = await asyncio.wait_for(driving, 10)
+        adapter.sleep = sleep  # type: ignore[method-assign]
+        assert not result.ok and result.data.get("ended_by") == STOP_ENDED, result.summary
+    assert not ex.abort.is_set(), "three brakes ended the session as three failures"
