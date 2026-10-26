@@ -507,7 +507,9 @@ class Executor:
         A composite's nested calls answer to that same count. Each used to take a count of its
         own when it was admitted, so a stop sent between two of a composite's calls was already
         in the count the second one started from: it walked, or kicked, as if nobody had braked,
-        unless the composite happened to check between its calls."""
+        unless the composite happened to check between its calls. A `stop` the composite sends
+        through `run_verb` itself counts as well, as it always did for `interrupted`: a call that
+        would move the body after it is not started (`_overtaken`)."""
         stops_then = self.stops if stops is None else stops
         return VerbContext(
             transport=self.logged_transport(),
@@ -532,8 +534,11 @@ class Executor:
         """`VerbContext.abort_when` for a verb beginning now: the rules an admission reads
         (`_check_abort_conditions`), read against a state the verb took mid-way. One that fires
         is recorded as the admission's `abort_when` gate is, the body is stopped, and only then is
-        the run aborted, so the verb's `Aborted` is what leaves `_execute` rather than the abort
-        racing it and cancelling the stop half sent."""
+        the run aborted, so the verb that read the rule leaves with its own `Aborted` rather than
+        the abort racing it and cancelling the stop half sent. The abort is set however the stop
+        ends, a timeout, a pause or a newer command landing in it included: the rule fired, and
+        the run is over whatever else ends the verb. A composite whose nested call read the rule
+        is ended by that abort in its turn, with a stop of its own after it."""
 
         async def abort_when(state: DuckState) -> None:
             reason = self._abort_rule_fired(state)
@@ -547,8 +552,10 @@ class Executor:
                 reason=reason,
                 state=state.summary(),
             )
-            unstopped = await self._stop_after()
-            self.abort.set()
+            try:
+                unstopped = await self._stop_after()
+            finally:
+                self.abort.set()
             if unstopped is not None:
                 raise Aborted(f"{reason}; the stop sent mid-verb failed: {unstopped}")
             raise Aborted(f"{reason}; the verb stopped where it stood")
@@ -788,6 +795,11 @@ class Executor:
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
 
+        # before a person is asked anything: a composite's call a stop has overtaken is not going
+        # to start, and a question about it would be answered for nothing
+        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+            return overtaken
+
         if self.needs_confirm(verb):
             # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
             # flock's standing answer, the MCP server and a pipe on stdin all answer without
@@ -950,19 +962,10 @@ class Executor:
         if self.abort.is_set() and canonical != "stop":
             self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
             raise Aborted("run aborted")
-        # A composite's call that a stop has overtaken never starts. It answers to the stops its
-        # composite does (`context`), and a stop sent between two of the composite's calls, or
-        # while this one read the body's state, is the brake pulled on the whole of it: a verb that
-        # polls for it would end at its first check, but a kick or a scoop sends its one intent
-        # without looking, so the place to end it is here, before it sends anything.
-        if nested and stops is not None and self.stops != stops and canonical != "stop":
-            reason = f"{name} did not start: {STOPPED}"
-            self._emit("gate", name=name, gate="stopped", outcome="refused", reason=reason)
-            return self._record(
-                name,
-                params,
-                VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED),
-            )
+        # and a composite's call that a stop sent while it read the body's state has overtaken,
+        # for the reason the gate before the confirm gives (`_overtaken`)
+        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+            return overtaken
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
@@ -1218,6 +1221,29 @@ class Executor:
                 )
                 raise Aborted(f"abort_when: {name} failed {n} times in a row")
         return result
+
+    def _overtaken(
+        self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
+    ) -> VerbResult | None:
+        """The result of a composite's call that would move the body and that a stop has
+        overtaken, or None. It answers to the stops its composite answers to (`context`), so a
+        stop sent between two of the composite's calls, or while this one waited on its gates or
+        read the body's state, is the brake pulled on the whole of it. A verb that polls for it
+        would end at its first check, but a kick or a scoop sends its one intent without looking,
+        so it is ended here, before it sends anything. A call that only looks or speaks runs, as
+        it runs beside a pause or a newer command."""
+        if (
+            stops is None
+            or self.stops == stops
+            or canonical == "stop"
+            or not self._may_move(canonical, verb)
+        ):
+            return None
+        reason = f"{name} did not start: {STOPPED}"
+        self._emit("gate", name=name, gate="stopped", outcome="refused", reason=reason)
+        return self._record(
+            name, params, VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED)
+        )
 
     def _check_abort_conditions(self, state: DuckState) -> None:
         if (reason := self._abort_rule_fired(state)) is not None:

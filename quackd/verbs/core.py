@@ -872,10 +872,15 @@ async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
         short = f"it stopped before {p.then}: {first.summary}"
         return await _ended_by(ctx, "approach_and", why, short, go_to=first.data)
     second = await ctx.run_verb(p.then, {})
+    data: dict[str, Any] = {"go_to": first.data, p.then: second.data}
+    if "ended_by" in second.data:
+        # a `then` a stop ended, or kept from starting, is the brake working in approach_and as
+        # it is in the verb itself, and `abort_when`'s failures in a row pass over it in both
+        data["ended_by"] = second.data["ended_by"]
     return VerbResult(
         ok=second.ok,
         summary=f"{first.summary}; then {p.then}: {second.summary}",
-        data={"go_to": first.data, p.then: second.data},
+        data=data,
     )
 
 

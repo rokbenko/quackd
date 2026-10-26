@@ -13,6 +13,7 @@ from quackd.adapters.factory import ADAPTER_NAMES, make_adapter
 from quackd.duckfile.parser import parse_duck_text
 from quackd.duckfile.schema import Budgets, DuckFile
 from quackd.log import EventLog
+from quackd.perception.base import Detection
 from quackd.safety import (
     Aborted,
     Budget,
@@ -1383,31 +1384,208 @@ async def test_a_stop_between_two_of_a_composites_calls_ends_the_second_before_i
     assert not result.ok
 
 
+def _battery_falls() -> list[DuckState]:
+    """The admission's read, then the one a verb takes mid-way, below a 15% line."""
+    return [
+        DuckState(policy="mock", posture="standing", battery_percent=40),
+        DuckState(policy="mock", posture="standing", battery_percent=10),
+    ]
+
+
+async def _long_walk(ctx: VerbContext, _: NoParams) -> VerbResult:
+    """A twist, the rules read against the state at a stop, and a twist the rules should forbid."""
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    await ctx.abort_when(await ctx.transport.get_state())
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    return VerbResult.success("walked on past the rule")
+
+
+class _RoundTripStop(MockTransport):
+    """A stop that takes a round trip, as every real link's does, and `delay_s` on top."""
+
+    def __init__(self, delay_s: float = 0.0, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.delay_s = delay_s
+
+    async def stop(self) -> None:
+        for _ in range(3):
+            await asyncio.sleep(0)
+        if self.delay_s:
+            await asyncio.sleep(self.delay_s)
+        await super().stop()
+
+
 async def test_a_rule_a_verb_reads_mid_way_stops_the_body_and_then_aborts_the_run(
     registry: VerbRegistry,
 ) -> None:
     """The executor read `abort_when` when it admitted a verb and not again until the next, so a
     verb that walked for minutes never heard the battery fall below the task's line. One that
     reads it at a stop (`VerbContext.abort_when`) is stopped where it stands, and then the run is
-    aborted, in the words the admission's gate uses."""
-    body = MockTransport(
-        states=[
-            DuckState(policy="mock", posture="standing", battery_percent=40),
-            DuckState(policy="mock", posture="standing", battery_percent=10),
-        ]
-    )
-
-    async def long_walk(ctx: VerbContext, _: NoParams) -> VerbResult:
-        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
-        await ctx.abort_when(await ctx.transport.get_state())
-        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
-        return VerbResult.success("walked on past the rule")
-
-    registry.register(Verb("long_walk", "walks for a while", long_walk, timeout_s=10))
+    aborted, in the words the admission's gate uses. The stop takes a round trip here, as a real
+    one does: an abort set before it went out would race the verb and cancel it half sent."""
+    body = _RoundTripStop(states=_battery_falls())
+    registry.register(Verb("long_walk", "walks for a while", _long_walk, timeout_s=10))
     ex, seen = logged(registry, body, allow="long_walk", abort="Battery below 15%")
-    with pytest.raises(Aborted, match="battery 10% below 15%"):
+    with pytest.raises(Aborted, match="battery 10% below 15%; the verb stopped where it stood"):
         await ex.run_verb("long_walk")
     assert ex.abort.is_set()
     assert [i.kind for i in body.intents] == ["move", "stop"], "a twist after it, or no stop"
     fired = [e.data for e in seen if e.kind == "gate" and e.data["gate"] == "abort_when"]
     assert fired and fired[0]["name"] == "long_walk" and fired[0]["outcome"] == "fired"
+
+
+async def test_a_rule_that_fired_aborts_the_run_however_its_stop_ends(
+    registry: VerbRegistry,
+) -> None:
+    """The verb's own clock ran out while the stop the rule asked for was still on its way. The
+    gate said the rule had fired, and the run was not aborted: the next verb would have walked."""
+    body = _RoundTripStop(delay_s=0.5, states=_battery_falls())
+    registry.register(Verb("long_walk", "walks for a while", _long_walk, timeout_s=0.2))
+    ex, _ = logged(registry, body, allow="long_walk", abort="Battery below 15%")
+    result = await ex.run_verb("long_walk")
+    assert not result.ok
+    assert ex.abort.is_set(), "the rule fired and the run went on"
+
+
+async def test_a_composites_call_that_only_looks_still_runs_after_a_stop(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A stop is a brake. It ends what would move the body, and a call that reads the body's
+    state or speaks runs on beside it, as it runs beside a pause."""
+
+    async def walk_then_look(ctx: VerbContext, _: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        await ctx.run_verb("stop", {})
+        return await ctx.run_verb("report_state", {})
+
+    registry.register(Verb("walk_then_look", "d", walk_then_look, timeout_s=10, kind="composite"))
+    ex, seen = logged(registry, mock_transport, allow="walk_then_look, report_state")
+    result = await ex.run_verb("walk_then_look")
+    assert result.ok, result.summary
+    assert ("stopped", "refused") not in gates(seen)
+
+
+async def test_nobody_is_asked_about_a_composites_call_a_stop_overtook(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """The confirm gate came before the stop was looked at, so a person was asked whether to
+    kick, said yes, and the kick was then refused anyway: a question answered for nothing."""
+    asked: list[str] = []
+    first_done, go_on = asyncio.Event(), asyncio.Event()
+
+    async def walk_then_kick(ctx: VerbContext, _: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        await ctx.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        first_done.set()
+        await go_on.wait()
+        return await ctx.run_verb("kick", {})
+
+    def confirm(name: str, _params: dict[str, Any]) -> bool:
+        asked.append(name)
+        return True
+
+    registry.register(Verb("walk_then_kick", "d", walk_then_kick, timeout_s=10, kind="composite"))
+    ex = Executor(
+        registry,
+        mock_transport,
+        contract=duck("walk_then_kick, walk, kick", confirm="kick").frontmatter,
+        confirm=confirm,
+    )
+    running = asyncio.create_task(ex.run_verb("walk_then_kick"))
+    await asyncio.wait_for(first_done.wait(), 5)
+    assert (await ex.run_verb("stop")).ok
+    go_on.set()
+    result = await asyncio.wait_for(running, 5)
+    assert asked == [], "a person was asked about a kick that was never going to start"
+    assert result.summary == f"kick did not start: {STOPPED}"
+    assert not mock_transport.intents_of("do")
+
+
+class _BrakedRead(MockTransport):
+    """A body whose `nth` state read sends a stop from beside the run before it answers, as an
+    MCP client braking while a verb is admitted would."""
+
+    def __init__(self, nth: int) -> None:
+        super().__init__()
+        self.nth = nth
+        self.reads = 0
+        self.executor: Executor | None = None
+
+    async def get_state(self) -> DuckState:
+        self.reads += 1
+        if self.reads == self.nth and self.executor is not None:
+            assert (await self.executor.run_verb("stop")).ok
+        return await super().get_state()
+
+
+async def test_a_stop_while_a_composites_kick_reads_the_body_keeps_the_kick_from_starting(
+    registry: VerbRegistry,
+) -> None:
+    """The kick sends its one intent without looking for a stop, so a stop that came while it
+    read the body's state, after every gate, has to end it before it starts."""
+    body = _BrakedRead(nth=2)  # the composite's admission reads first, the kick's second
+
+    async def just_kick(ctx: VerbContext, _: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        return await ctx.run_verb("kick", {})
+
+    registry.register(Verb("just_kick", "d", just_kick, timeout_s=10, kind="composite"))
+    ex, seen = logged(registry, body, allow="just_kick, kick")
+    body.executor = ex
+    result = await ex.run_verb("just_kick")
+    assert not body.intents_of("do"), "kicked after the brake"
+    assert result.data["ended_by"] == STOP_ENDED
+    assert ("stopped", "refused") in gates(seen)
+
+
+class _BallAhead:
+    """A detector that sees the ball right in front, close enough to kick."""
+
+    name = "ball_ahead"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [
+            Detection(label="ball", cx=0.5, cy=0.5, area=0.2, bearing_deg=0.0, est_distance_m=0.05)
+        ]
+
+
+class _BrakeBeforeTheKick(MockTransport):
+    """Sends a stop from beside the run during the first state read after each `go_to` is in
+    the record: the kick's own admission inside `approach_and`, after approach_and's check."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.executor: Executor | None = None
+        self.braked_for = 0
+
+    async def get_state(self) -> DuckState:
+        if (ex := self.executor) is not None:
+            walks = sum(1 for name, _params, _result in ex.history if name == "go_to")
+            if walks > self.braked_for:
+                self.braked_for = walks
+                assert (await ex.run_verb("stop")).ok
+        return await super().get_state()
+
+
+async def test_an_approach_whose_kick_a_stop_kept_from_starting_is_no_failure_in_a_row(
+    registry: VerbRegistry,
+) -> None:
+    """approach_and wrapped its kick's result without the kick's `ended_by`, so a person who
+    braked it twice ended the run on approach_and failing twice in a row."""
+    body = _BrakeBeforeTheKick()
+    ex = Executor(
+        registry,
+        body,
+        contract=duck(
+            "walk_to, kick, approach_and", abort="Same verb fails 2 times in a row"
+        ).frontmatter,
+        detector=_BallAhead(),
+    )
+    body.executor = ex
+    params = {"target": "ball", "then": "kick"}
+    for _ in range(2):
+        result = await ex.run_verb("approach_and", params)
+        assert result.data["ended_by"] == STOP_ENDED, result.summary
+    assert not body.intents_of("do"), "kicked after the brake"
+    assert not ex.abort.is_set()
+    assert ex.consecutive_failures.get("approach_and", 0) == 0
