@@ -469,9 +469,20 @@ class HFEndpoints:
         return said if isinstance(said, dict) else {}
 
     def get(self, namespace: str, name: str) -> dict[str, Any] | None:
-        """The endpoint as Hugging Face has it now, or None when it has none by that name."""
+        """The endpoint as Hugging Face has it now, or None when it has none by that name. An
+        answer that is no endpoint at all, an empty body or one that is not an object, is an
+        `EndpointError`, as an answer that cannot be read is: it says nothing of whose the
+        endpoint is, so it is neither one that is gone nor one quackd did not start, and the
+        wait pauses quackd's own rather than leave it starting."""
         said = self._api("GET", self._path(namespace, name), f"say how {name} is", missing_ok=True)
-        return said if isinstance(said, dict) or said is None else {}
+        if said is None:
+            return None
+        if not isinstance(said, dict) or not said:
+            raise EndpointError(
+                f"Hugging Face answered a read of {name} with something that is not an endpoint, "
+                "so how it is cannot be said"
+            )
+        return said
 
     def list_endpoints(self, namespace: str) -> list[dict[str, Any]]:
         """Every endpoint of `namespace`'s that carries quackd's tag, a page at a time, and no

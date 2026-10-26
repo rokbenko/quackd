@@ -432,6 +432,43 @@ def test_up_with_a_token_where_the_hub_tokens_variable_belongs_does_not_say_it(
     assert hub not in result.output and not _posts(hf)
 
 
+@pytest.mark.parametrize("body", [b"", b"[]"], ids=["empty", "a list"])
+@pytest.mark.parametrize("when", ["while up waits", "after a lost create"])
+def test_a_read_that_is_no_endpoint_is_one_that_cannot_be_read(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, body: bytes, when: str
+) -> None:
+    """A 200 whose body is empty, or not an object, says nothing of whose the endpoint is, so it
+    is not taken for another's: the wait pauses the endpoint it just made rather than leave it
+    starting, and a create whose answer was lost keeps its record."""
+    real, made = FakeAPI._endpoint, FakeAPI._create
+    reads = {"n": 0}
+
+    def blank(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+        if method == "GET" and len(path) == 2:
+            reads["n"] += 1  # the first is up's look for a name already taken
+            if reads["n"] == (3 if when == "while up waits" else 2):
+                return 200, {"Content-Type": "application/json"}, body
+        return real(self, method, path, seen, query)
+
+    def lost(self: FakeAPI, namespace: str, payload: Any) -> Any:
+        made(self, namespace, payload)
+        return 504, {"Content-Type": "text/plain"}, b"Gateway Timeout"
+
+    monkeypatch.setattr(FakeAPI, "_endpoint", blank)
+    if when == "after a lost create":
+        monkeypatch.setattr(FakeAPI, "_create", lost)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1, said
+    if when == "while up waits":
+        assert "with something that is not an endpoint" in said
+        assert "so it was paused, and bills nothing now" in said
+        assert hf.endpoints[("rok", "arm")].state == "paused"
+    else:
+        assert "whether arm was created could not be read either" in said
+        assert _store().get("arm") is not None and ("rok", "arm") in hf.endpoints
+
+
 def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
     result = _cli(*UP, "--yes", "--no-wait")
     said = _flat(result.output)
