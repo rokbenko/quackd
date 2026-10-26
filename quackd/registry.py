@@ -259,6 +259,10 @@ class RobotEntry(BaseModel):
     host_token: str | None = None
     """The token that board's daemon was started with. Kept apart from `token`, which is the
     body's own bridge token: the two are different daemons, often on different machines."""
+    map_address: str | None = None
+    """Where the robot's own map answers, beside the body's `address` (`--map-address`): the
+    Microduck's mapd, as `tcp://127.0.0.1:9871` through a tunnel. `--map-address` on the line
+    beats this."""
     note: str | None = None
     added: str = Field(default_factory=_now)
     updated: str = Field(default_factory=_now)
@@ -472,6 +476,7 @@ class RobotEntry(BaseModel):
         address: str | None = None,
         camera_url: str | Sequence[str] | None = None,
         token: str | None = None,
+        map_address: str | None = None,
     ) -> dict[str, Any]:
         """The `make_adapter` keywords for this robot. A flag on the command line wins: you
         are reaching the same robot through a tunnel today, not renaming it.
@@ -483,6 +488,7 @@ class RobotEntry(BaseModel):
             "camera_url": camera_urls(camera_url) or self.camera_urls,
             "token": token or self.token,
             "rest_pose": dict(self.rest_pose) if self.rest_pose else None,
+            "map_address": map_address or self.map_address,
         }
 
     def host_kwargs(
@@ -502,6 +508,7 @@ class RobotEntry(BaseModel):
             "adapter": self.adapter,
             "backend": self.backend,
             "address": self.address,
+            "map_address": self.map_address,
             "camera_url": self.camera_url,
             "rest_pose": dict(self.rest_pose) if self.rest_pose else None,
             "token_set": self.token is not None,
@@ -643,9 +650,12 @@ class Resolved:
         address: str | None = None,
         camera_url: str | Sequence[str] | None = None,
         token: str | None = None,
+        map_address: str | None = None,
     ) -> dict[str, Any]:
         if self.entry is not None:
-            return self.entry.adapter_kwargs(address=address, camera_url=camera_url, token=token)
+            return self.entry.adapter_kwargs(
+                address=address, camera_url=camera_url, token=token, map_address=map_address
+            )
         # an unregistered robot has nothing recorded, so a rest pose is one more thing you
         # only get by naming the robot first
         return {
@@ -653,6 +663,7 @@ class Resolved:
             "camera_url": camera_urls(camera_url),
             "token": token,
             "rest_pose": None,
+            "map_address": map_address,
         }
 
     def host_kwargs(
@@ -665,13 +676,26 @@ class Resolved:
         return {"host": host, "host_token": host_token}
 
 
-#: Fields `--host` added, written to robots.json only while they hold something. quackd 0.12
-#: to 0.14 read the file with `extra="forbid"`, so a key they have never heard of refuses the
-#: whole file, even one that is null, and every write saves every robot. Leaving the empty ones
-#: out keeps a registry that never named a board readable by them, which matters because two
-#: installs on one machine share one ~/.quackd. A robot that does name a board is a file they
-#: cannot read, and nothing short of dropping the board could change that.
-_OMITTED_WHEN_EMPTY = ("host", "host_token")
+def _check_map_address(spec: str, map_address: str | None) -> None:
+    """Refuse a map address for a body that reads no map of the robot's own, rather than store
+    one that every build of the robot would then refuse."""
+    from quackd.adapters.base import MAP_SPECS
+
+    if map_address is not None and spec not in MAP_SPECS:  # stored canonically (`_spec`)
+        raise RegistryError(
+            f"{spec} reads no map the robot keeps, so a map address has nothing to reach: it is "
+            f"for {' and '.join(MAP_SPECS)}, and --clear map-address forgets one"
+        )
+
+
+#: Fields added since, written to robots.json only while they hold something: `--host`'s two
+#: and `--map-address`. quackd 0.12 to 0.14 read the file with `extra="forbid"`, and every
+#: release before a field was added reads it the same way, so a key they have never heard of
+#: refuses the whole file, even one that is null, and every write saves every robot. Leaving the
+#: empty ones out keeps a registry that never named one readable by them, which matters because
+#: two installs on one machine share one ~/.quackd. A robot that does name one is a file they
+#: cannot read, and nothing short of dropping it could change that.
+_OMITTED_WHEN_EMPTY = ("host", "host_token", "map_address")
 
 
 def _stored(entry: RobotEntry) -> dict[str, Any]:
@@ -762,6 +786,7 @@ class Registry:
         if entry.llm is not None:
             _check_llm(entry.llm)  # a pilot chosen now is a pilot that can be checked now
         _check_host(entry.host, entry.host_token)
+        _check_map_address(entry.spec, entry.map_address)
         if entry.host_token is not None and entry.host is None:
             # `resolve_host` sends a robot's token only when the robot stores a board, so a
             # token stored with none would never be sent anywhere, and saying so now beats a 401
@@ -807,6 +832,10 @@ class Registry:
             entry = RobotEntry.model_validate(data)
         except ValidationError as e:
             raise self._one_line(self.robots_path, name, e) from e
+        if "map_address" in changes or "spec" in changes:
+            # the address with the body it would be handed to, asked only of an edit that touches
+            # either, as the board's pair is
+            _check_map_address(entry.spec, entry.map_address)
         touched = "host" in changes or "host_token" in changes
         if touched and entry.host_token is not None and entry.host is None:
             # `add_robot`'s pairing rule, asked only of an edit that touches the pair, so a

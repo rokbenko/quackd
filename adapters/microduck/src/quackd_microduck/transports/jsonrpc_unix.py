@@ -94,7 +94,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from PIL import Image
 
@@ -114,6 +114,9 @@ from quackd_microduck.sim3d.gait import CMD_MAX_VX, CMD_MAX_VY
 from quackd_microduck.webrtc import WebRtcCamera, is_webrtc_url
 
 STATUS = "EXPERIMENTAL — verified method names, unverified against hardware"
+
+if TYPE_CHECKING:
+    from quackd_microduck.transports.mapd import MapdSource
 
 log = logging.getLogger("quackd.transport.jsonrpc")
 
@@ -688,8 +691,12 @@ class JsonRpcUnixTransport:
         camera_fps: float | None = None,
         camera_wait_s: float | None = None,
         gaze_hold_s: float = GAZE_HOLD_S,
+        map_address: str | None = None,
     ) -> None:
         self.address = address or default_address()
+        self.map_address = map_address
+        """Where mapd answers, as `--map-address` gave it, or None for its own socket beside a
+        robotd on one (`_start_map`)."""
         self.camera_url = camera_url
         self.api_version = api_version
         self.request_timeout_s = request_timeout_s
@@ -701,11 +708,20 @@ class JsonRpcUnixTransport:
         self.camera_wait_s = FIRST_FRAME_WAIT_S if camera_wait_s is None else camera_wait_s
         """How long `connect()` waits for an HTTP camera's first frame (`_await_first_frame`)."""
         self.gaze_hold_s = gaze_hold_s
-        self.spatial: OdometrySource | None = None
-        """Where the duck is, read off robot.state's `odom` (`up.STATE_ODOM`): a source set at
-        connect when robotd reports it, whose frame lasts this connection and begins again when
-        the duck leaves its feet (`quackd.space.odometry`). None before, and on a robotd that
-        reports no `odom`, and then the place verbs are not offered."""
+        self.spatial: OdometrySource | MapdSource | None = None
+        """Where the duck is: by mapd's map when mapd answers beside robotd (`_start_map`), and
+        otherwise read off robot.state's `odom` (`up.STATE_ODOM`), a source whose frame lasts
+        this connection and begins again when the duck leaves its feet (`quackd.space.odometry`).
+        Set at connect. None before, and on a robotd that reports no `odom` with no mapd, and
+        then the place verbs are not offered."""
+        self._map: MapdSource | None = None
+        self.mapd: dict[str, Any] = {"state": "not probed"}
+        """What became of mapd at connect, for doctor (`mapd_report`): answered, absent,
+        refused, silent, unavailable or not probed, where, whether `--map-address` gave it, and
+        why."""
+        self.map_warning: str | None = None
+        """Why a mapd this connection could have walked by is not walked by, or None: logged at
+        connect and printed by doctor."""
         self._odometry: OdometryTrack | None = None
         self._odom_moved = False
         """Whether any `odom` this connection has been anything but zeros."""
@@ -909,6 +925,7 @@ class JsonRpcUnixTransport:
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
         self._start_odometry()
+        await self._start_map()
         # `camera_working` is what the manifest narrows on, and it has to mean "a frame
         # arrived", not "a URL was typed": a typo'd host, a missing extra or a mediad that
         # never reached PLAYING would otherwise still advertise observe, go_to, search_scan
@@ -1009,6 +1026,9 @@ class JsonRpcUnixTransport:
         self._walk_asked.clear()
         self._held.clear()
         self._shown_at.clear()
+        if self._map is not None:
+            await self._map.close()
+            self._map = None
         if self._pump is not None:
             self._pump.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -1711,6 +1731,80 @@ class JsonRpcUnixTransport:
                     "state showed it taking, so it reports no odometry at all"
                 )
         track.update(x, y, yaw, _robot_clock(state), held=_off_its_feet(state))
+        if self._map is not None:
+            self._map.odometry(track)
+
+    async def _start_map(self) -> None:
+        """mapd, when it answers beside robotd: the reading the place verbs walk by from then on,
+        in a map recognised from one session to the next, carried on by the odometry above.
+
+        Its address is `--map-address`, or its own socket when robotd answered on one, since the
+        two sit side by side on the robot; nothing is tried otherwise. Nothing answering leaves
+        the odometry, with no word when nobody named an address and a warning when one was
+        named; anything that answers and is not a working mapd leaves it too, with a warning
+        saying what answered. Nothing here waits on mapd after the connect: the state frames and
+        `robot.move` go on on robotd's link alone (`MapdSource`)."""
+        from quackd_microduck.transports.mapd import (
+            MapdAbsent,
+            MapdSilent,
+            MapdSource,
+            MapdUnavailable,
+            default_map_address,
+        )
+
+        given = self.map_address
+        address = given
+        if address is None:
+            if parse_address(self.address)[0] != "unix" or sys.platform == "win32":
+                self.mapd = {
+                    "state": "not probed",
+                    "why": "no --map-address, and robotd is not on a socket mapd sits beside",
+                }
+                return
+            address = default_map_address()
+        source = MapdSource(address, track=self._odometry, request_timeout_s=self.request_timeout_s)
+        named = given is not None
+        try:
+            await source.start()
+        except MapdAbsent as e:
+            await source.close()
+            self.mapd = {"state": "absent", "address": address, "given": named, "why": str(e)}
+            if named:
+                self.map_warning = f"--map-address {given}: {e}; places are by odometry"
+                log.warning("%s", self.map_warning)
+            return
+        except Exception as e:
+            # anything else that answered, as mapd does not: the robot connects all the same
+            await source.close()
+            state = (
+                "silent"
+                if isinstance(e, MapdSilent)
+                else "unavailable"
+                if isinstance(e, MapdUnavailable)
+                else "refused"
+            )
+            why = (
+                str(e)
+                if isinstance(e, TransportError)
+                else f"{address} answered as mapd does not: {e!r}"
+            )
+            remote = (self.robotd or {}).get("api_version")
+            api = f", and robotd here speaks API v{remote}" if isinstance(remote, int) else ""
+            self.mapd = {"state": state, "address": address, "given": named, "why": why}
+            self.map_warning = f"{why}{api}; places are by odometry"
+            log.warning("%s", self.map_warning)
+            return
+        except BaseException:
+            await source.close()  # cancelled while mapd was asked: its links end with the connect
+            raise
+        self._map = self.spatial = source
+        self.mapd = {"state": "answered", "address": address, "given": named}
+
+    def mapd_report(self) -> dict[str, Any]:
+        """What became of mapd at connect, and how it stands now when it answered."""
+        if self._map is None:
+            return dict(self.mapd)
+        return {**self.mapd, **self._map.summary()}
 
     def _pose_staleness(self) -> str | None:
         """Why the newest odometry cannot be trusted now, or None: the link is gone, no state

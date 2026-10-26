@@ -83,6 +83,7 @@ class DriveArgs:
     decision_url: str | None = None
     duckfile: str | None = None
     room: str | None = None
+    map_address: str | None = None
     yes: bool = False
     dry_run: bool = False
     runs_dir: str = "runs"
@@ -130,6 +131,7 @@ async def run_drive(
         host_token=args.host_token,
         detector=args.detector,
         room=args.room,
+        map_address=args.map_address,
     )
     if len(plan.adapters) != 1:
         raise DriveError("drive drives one robot at a time: name it with --robot")

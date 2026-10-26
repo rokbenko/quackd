@@ -41,10 +41,10 @@ quackd robot remove NAME [--force]            # forget it
 quackd robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehearse on
 ```
 
-`add` takes `--address`, `--camera-url`, `--token`, `--host` and `--host-token` (the same five
-flags `run` takes), plus `--llm VENDOR[:MODEL]` for the pilot that drives this robot, and
-`--note` for a line only people read. `--camera-url` repeats, for the one body that reads more
-than one camera. `edit` takes the same flags, and `--clear` empties a field.
+`add` takes `--address`, `--map-address`, `--camera-url`, `--token`, `--host` and `--host-token`
+(the same six flags `run` takes), plus `--llm VENDOR[:MODEL]` for the pilot that drives this
+robot, and `--note` for a line only people read. `--camera-url` repeats, for the one body that
+reads more than one camera. `edit` takes the same flags, and `--clear` empties a field.
 
 ```
 $ quackd robot add duck-a microduck:mock --note "the cream one"
@@ -69,27 +69,28 @@ A column nobody has filled is left out, so the table stays readable on a narrow 
 
 ```
 $ quackd robot show arm
-name        arm
-robot       lerobot:mock
-body        lerobot-so101 (arm, mobility none) 8 verbs: observe, report_state, stop,
-            move_joints, gripper, place, pick, manipulate
-address     -
-camera      -
-rest pose   shoulder_pan 0.0
-            shoulder_lift -90.0
-            elbow_flex 90.0
-            wrist_flex 0.0
-            wrist_roll 0.0
-            gripper 100.0
-token       -
-host        -
-host token  -
-pilot       fake
-note        -
-flocks      -
-added       2026-09-25T10:13:26Z
-updated     2026-09-25T10:13:29Z
-memory      0 notes, 0 runs  ~/.quackd/memory/arm.jsonl
+name         arm
+robot        lerobot:mock
+body         lerobot-so101 (arm, mobility none) 8 verbs: observe, report_state, stop,
+             move_joints, gripper, place, pick, manipulate
+address      -
+map address  -
+camera       -
+rest pose    shoulder_pan 0.0
+             shoulder_lift -90.0
+             elbow_flex 90.0
+             wrist_flex 0.0
+             wrist_roll 0.0
+             gripper 100.0
+token        -
+host         -
+host token   -
+pilot        fake
+note         -
+flocks       -
+added        2026-09-25T10:13:26Z
+updated      2026-09-25T10:13:29Z
+memory       0 notes, 0 runs  ~/.quackd/memory/arm.jsonl
 ```
 
 `body` is the robot's static manifest, read without connecting to anything. `rest pose` is the
@@ -101,10 +102,10 @@ record for a script, with each token reduced to whether there is one:
 ```
 $ quackd robot show arm --json
 {"name": "arm", "spec": "lerobot:mock", "adapter": "lerobot", "backend": "mock", "address": null,
-"camera_url": null, "rest_pose": {"shoulder_pan": 0.0, "shoulder_lift": -90.0, "elbow_flex": 90.0,
-"wrist_flex": 0.0, "wrist_roll": 0.0, "gripper": 100.0}, "token_set": false, "host": null,
-"host_token_set": false, "llm": "fake", "note": null, "added": "2026-09-25T10:13:26Z",
-"updated": "2026-09-25T10:13:29Z", "flocks": []}
+"map_address": null, "camera_url": null, "rest_pose": {"shoulder_pan": 0.0, "shoulder_lift": -90.0,
+"elbow_flex": 90.0, "wrist_flex": 0.0, "wrist_roll": 0.0, "gripper": 100.0}, "token_set": false,
+"host": null, "host_token_set": false, "llm": "fake", "note": null, "spec_problem": null,
+"added": "2026-09-25T10:13:26Z", "updated": "2026-09-25T10:13:29Z", "flocks": []}
 ```
 
 That is one line of output, wrapped here to fit the page.
@@ -193,6 +194,20 @@ while they are empty, so a file that never named a board is still one quackd 0.1
 reads. A robot that does name a board makes the whole file one those releases refuse, since
 they read it with no room for a field they do not know, and two installs on one machine share
 `~/.quackd` unless `QUACKD_REGISTRY_DIR` moves one of them.
+
+A Microduck that runs `mapd`, its own map, beside its robotd keeps where that answers too, which
+no robotd release carries yet:
+
+```
+$ quackd robot add duck microduck:jsonrpc --address tcp://127.0.0.1:9870 --map-address tcp://127.0.0.1:9871
++ added duck: microduck:jsonrpc at tcp://127.0.0.1:9870
+  quackd run <duck> --robot duck
+```
+
+A run of `duck` then walks by the map with no flag, `--map-address` on the line beats the stored
+one, and `--clear map-address` forgets it. Like the board's two fields, it is left out of
+`robots.json` while it is empty. Only `microduck:jsonrpc` takes one: any other body refuses it
+by name ([adapters/microduck/README.md](../adapters/microduck/README.md)).
 
 ## The rest pose
 

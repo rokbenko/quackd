@@ -108,6 +108,10 @@ PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
 (`upstream_api.STATE_ODOM`) and the mock's scripted pose. A simulator says where the duck is only
 in a room it was given (`ROOM_BACKENDS`)."""
 
+MAP_BACKENDS = ("jsonrpc",)
+"""The backends that reach the duck's own `mapd` (`--map-address`): a real duck, beside its
+robotd. A simulator keeps its own map of the room it was given (`ROOM_BACKENDS`)."""
+
 ROOM_BACKENDS = ("sim2d", "mujoco")
 """The backends a room (`--room`) is laid out in. A simulator given one keeps a map of it the way
 the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
@@ -510,6 +514,21 @@ def _refuse_room(backend: str, room: str | None) -> None:
     raise AdapterError(f"microduck:{backend} lays out no room: --room is for {where}")
 
 
+def _refuse_map_address(backend: str, map_address: str | None) -> None:
+    """Refuse a map's address on a backend that reaches no mapd, rather than take it and drop
+    it."""
+    if map_address is None or backend in MAP_BACKENDS:
+        return
+    if backend in ROOM_BACKENDS:
+        raise AdapterError(
+            f"microduck:{backend} keeps its own map of the room --room lays out: --map-address "
+            "is where a real duck's mapd answers, for microduck:jsonrpc"
+        )
+    raise AdapterError(
+        f"microduck:{backend} reaches no mapd: --map-address is for microduck:jsonrpc"
+    )
+
+
 def implementations() -> dict[str, Verb]:
     return dict(MICRODUCK_VERBS)
 
@@ -529,9 +548,11 @@ def make(
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
     room: str | None = None,
+    map_address: str | None = None,
 ) -> MicroduckAdapter:
     refuse_rest_pose("microduck", rest_pose)
     _refuse_room(backend, room)
+    _refuse_map_address(backend, map_address)
     url = one_camera_url(camera_url, spec=f"microduck:{backend}")
     # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
     # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
@@ -542,7 +563,13 @@ def make(
 
     try:
         transport = make_transport(
-            backend, seed=seed, address=address, live=live, camera_url=url, room=room
+            backend,
+            seed=seed,
+            address=address,
+            live=live,
+            camera_url=url,
+            room=room,
+            map_address=map_address,
         )
     except RoomError as e:
         raise AdapterError(str(e)) from None

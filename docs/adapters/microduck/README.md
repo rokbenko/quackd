@@ -135,14 +135,38 @@ Sources: [duck-ipc-proto/src/lib.rs](https://github.com/pollen-robotics/microduc
 frames, keeping a keyframe each time the duck stands still, and says where the duck is in it or
 why it does not know. It is on the `maploc-v2` branch, read at `7e0be18` on 2026-10-26
 (`mapd_upstream_api.py`), and in no robotd release: daemon-v0.17.9, tagged that day, is API 44 and
-has no `map.*`. So every row is UNVERIFIED, and nothing in quackd speaks to `mapd` yet: each row
-says what quackd takes from it once it does ([concepts/places.md](../../concepts/places.md)). The
-simulators' stand-in for it, a map of a room given with `--room`, keeps to its numbers already:
-it looks only at stops, after the stillness below, and is lost until two stops agree.
+has no `map.*`. So every row is UNVERIFIED. quackd speaks to it where it answers beside robotd,
+at `--map-address` or at its own socket beside robotd's, and walks by its map from then on;
+where nothing answers, places are by contact odometry
+([concepts/places.md](../../concepts/places.md)). The simulators' stand-in for it, a map of a
+room given with `--room`, keeps to the same numbers: it looks only at stops, after the stillness
+below, and is lost until two stops agree.
+
+What quackd does with it, beside the rows:
+
+- **Two links of its own.** One carries the stream and one is asked on, so nothing but the place
+  verbs ever waits on `mapd`, and `robot.move` goes on robotd's link alone.
+- **A pose that moves at robot.state's rate.** The reading a walk steers by is `mapd`'s newest
+  pose carried on by the odometry robotd has sent since the robot state `mapd` computed it from.
+- **A map known again by its first stops.** Nothing on the wire names a map, so a later session
+  knows one by its first two stops after its origin that stand further apart than the correction
+  `mapd` believes, each matched within it: stops in one place, as a turn in place leaves, tell no
+  map from another. No frame is named before those stops are read. A map with fewer stops than
+  it had, one wiped through quackd, or one whose first stops moved is another map: its frame is
+  never known again, and its places say the map was wiped.
+- **Lost, never odometry.** A stream silent past 1.25 s, a state with no clock, a word for not
+  knowing, a clock ahead of robotd's or a link gone makes the duck lost, and a walk ends there;
+  the link is tried again in the background, and once the map's stops are read and agree, its
+  places are walked to again.
+- **Checked by doctor.** `quackd doctor --map-address` adds a `mapd` row, and fails when nothing
+  answers at an address you named.
+
+The real duck's body radius is published nowhere, so a walk by `mapd`'s map still goes straight,
+capped as a blind one, until somebody cites one.
 
 | Thing | What upstream says | What quackd takes from it |
 |---|---|---|
-| `/run/mapd/map.sock` | `mapd`'s own socket, beside robotd's and tofd's, for "every method in the map.* namespace" | the address a laptop reaches it at, through an `ssh -L` forward of its own |
+| `/run/mapd/map.sock` | `mapd`'s own socket, beside robotd's and tofd's, for "every method in the map.* namespace" | the address quackd tries beside a robotd on its own socket, and that a laptop reaches through an `ssh -L` forward of its own, given as `--map-address` |
 | `map.status` | `{state, unavailable?, loops, relocalizations, island_keyframes, path, saved_at?}`: "Where the robot is in its map, whether it knows, and how big the map is" | whether a `mapd` answers at all, and why it is not mapping when it says |
 | `map.stream` | the status, then `map.state` "at a few hertz until the connection closes", every 250 ms at the pin | the pose a walk reads |
 | `map.state` | `{t_ns, pose?: {x, y, yaw}, lost?, collecting, keyframes}`, the pose absent while the duck is lost. A map's frame is "wherever its first stop was, facing the way the robot faced then: a map has no north" | a reading of kind `map` on robotd's own clock |

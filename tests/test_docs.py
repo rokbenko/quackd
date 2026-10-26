@@ -1062,6 +1062,34 @@ def test_the_room_is_documented_where_it_is_configured() -> None:
     assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one quackd ships"
 
 
+def test_the_map_address_is_documented_where_it_is_configured() -> None:
+    """`--map-address` says where a real Microduck's own map answers, on `run`, `drive`,
+    `serve-mcp`, `doctor` and `robot add` and `edit`, and a flag nobody can find is a map nobody
+    walks by. The front page names it in each command's row, the registry guide among the flags
+    `add` takes, and the hardware checklist forwards the socket it names and asks doctor with it."""
+    from quackd.cli import app
+    from quackd_microduck import mapd_upstream_api as mapd
+
+    callbacks = {
+        (c.name or c.callback.__name__).replace("_", "-"): c.callback
+        for c in app.registered_commands
+        if c.callback is not None
+    }
+    for name in ("run", "drive", "serve-mcp", "doctor"):
+        assert "map_address" in callbacks[name].__code__.co_varnames, name
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for name in ("run", "drive", "serve-mcp", "doctor", "robot add"):
+        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        assert "--map-address" in row, f"the README's {name} row does not name --map-address"
+    registry = (REPO / "docs" / "guides" / "registry.md").read_text(encoding="utf-8")
+    assert "`--map-address`" in registry and "--clear map-address" in registry
+    checklist = (REPO / "docs" / "adapters" / "microduck" / "hardware-checklist.md").read_text(
+        encoding="utf-8"
+    )
+    assert f"-L 9871:{mapd.MAPD_SOCKET.name}" in checklist
+    assert "--map-address tcp://127.0.0.1:9871" in checklist
+
+
 def test_play_is_documented_where_it_is_configured() -> None:
     """`--play` and a task file's `play: true` change what a pilot is told, so somebody turning
     them on has to find what they add and what they leave alone: the front page's `run`,

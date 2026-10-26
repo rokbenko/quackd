@@ -94,6 +94,18 @@ Read three things: that the handshake passed, what `robot.health` said, and the 
 `robotd` row under health should name the release, the API version and the revision the robot
 answered with.
 
+A robot running `mapd` beside robotd, which no release does yet (the `maploc-v2` branch), has a
+socket of its own to forward, and doctor asks it when told where:
+
+```bash
+ssh -L 9870:/run/robotd.sock -L 9871:/run/mapd/map.sock microduck@<duck>
+quackd doctor --robot microduck:jsonrpc --address tcp://127.0.0.1:9870 --map-address tcp://127.0.0.1:9871
+```
+
+The `mapd` row says whether it answered, how many stops its map holds and whether it knows where
+the duck is. Given an address nothing answers at, doctor exits 1. Everything quackd reads of
+`mapd` is UNVERIFIED, and this is where it is first read off a robot.
+
 > **Abort if the handshake is refused.** quackd refuses a robotd older than API v23, the oldest
 > it has read end to end, and one whose `hello` names no version, and it prints why. A robot on
 > any other version is served, and when that version is not the one in

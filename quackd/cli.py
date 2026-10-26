@@ -1658,6 +1658,7 @@ def _run_impl(
     accept_other_frame: bool = False,
     async_chunks: bool = True,
     room: str | None = None,
+    map_address: str | None = None,
     controller: str | None = None,
     play: bool | None = None,
     talk: bool = False,
@@ -1809,10 +1810,11 @@ def _run_impl(
     if roster is not None and (robot or robots):
         _fail("--flock NAME brings its own robots: drop --robot and --robots")
         return
-    if roster is not None and (address or camera_url or token):
+    if roster is not None and (address or camera_url or token or map_address):
         # they would be silently dropped: both flock paths read each member's own
         _fail(
-            "--flock NAME takes every member's address, token and camera from the registry",
+            "--flock NAME takes every member's address, map address, token and camera from the "
+            "registry",
             hint="quackd robot edit NAME to change one",
         )
         return
@@ -1910,6 +1912,13 @@ def _run_impl(
         _fail(
             "--room lays out one simulator's room, and a fleet has several bodies",
             hint="drop --room, or run the task on one duck",
+        )
+        return
+    if fleet and map_address is not None:
+        _fail(
+            "--map-address is where one robot's map answers, and a fleet has several bodies",
+            hint="drop --map-address, or keep each robot's own: quackd robot edit NAME "
+            "--map-address ...",
         )
         return
     # The one place this run's board is settled, so everything that uses the board reads this
@@ -2357,7 +2366,9 @@ def _run_impl(
             # the board's camera joins the body here when it has one; the board has answered
             # its hello already, so building this asks it nothing
             host=board,
-            **here.adapter_kwargs(address=address, camera_url=camera_url, token=token),
+            **here.adapter_kwargs(
+                address=address, camera_url=camera_url, token=token, map_address=map_address
+            ),
             **body_kw,
         )
     except (ProviderError, TransportError, ImportError) as e:
@@ -3632,6 +3643,15 @@ _ADDR = typer.Option(
     "(unix:///run/robotd.sock, tcp://host:port).",
     rich_help_panel="Robot",
 )
+_MAP_ADDR = typer.Option(
+    None,
+    "--map-address",
+    help="Where the Microduck's own map, mapd, answers beside its robotd: "
+    "unix:///run/mapd/map.sock on the robot, or tcp://host:port through a tunnel. Without it, "
+    "mapd's own socket is tried when robotd is on one. microduck:jsonrpc, one robot. "
+    "UNVERIFIED: mapd was read from a branch, in no release.",
+    rich_help_panel="Robot",
+)
 _TOKEN = typer.Option(
     None,
     "--token",
@@ -3783,6 +3803,7 @@ def run(
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
     room: str | None = _ROOM,
+    map_address: str | None = _MAP_ADDR,
     gif: bool = typer.Option(
         True,
         "--gif/--no-gif",
@@ -3861,6 +3882,7 @@ def run(
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
             room=room,
+            map_address=map_address,
             controller=controller,
             play=play,
             talk=talk,
@@ -4390,6 +4412,7 @@ def drive_cmd(
         "body is not run.",
     ),
     room: str | None = _ROOM,
+    map_address: str | None = _MAP_ADDR,
     yes: bool = _YES,
     dry_run: bool = _DRY,
     runs_dir: str = _RUNS,
@@ -4420,6 +4443,7 @@ def drive_cmd(
         decision_url=decision_url,
         duckfile=duckfile,
         room=room,
+        map_address=map_address,
         yes=yes,
         dry_run=dry_run,
         runs_dir=runs_dir,
@@ -4566,6 +4590,7 @@ def doctor(
         "--address",
         help="With --robot, connect to a real robot and report what it says about itself.",
     ),
+    map_address: str | None = _MAP_ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     host: str | None = _HOST,
@@ -4605,15 +4630,26 @@ def doctor(
                 # that id, and every line it writes names it. The name used to be dropped here,
                 # so a probe of `arm-02` read the default id's calibration.
                 robot, name = entry.key, entry.name
-                where = entry.adapter_kwargs(address=address, camera_url=camera_url, token=token)
-                address, camera_url, token = (
+                where = entry.adapter_kwargs(
+                    address=address, camera_url=camera_url, token=token, map_address=map_address
+                )
+                address, camera_url, token, map_address = (
                     where["address"],
                     where["camera_url"],
                     where["token"],
+                    where["map_address"],
                 )
                 # only a robot you registered has one, because a rest pose is read off the arm
                 # and kept under its name rather than typed on a command line
                 rest_pose = where["rest_pose"]
+    if map_address and not address:
+        # only a robot doctor connects to has a map to ask, and a flag it would drop is a check
+        # somebody believes passed
+        _fail(
+            "--map-address needs a robot doctor connects to: give --robot and --address, or "
+            "register the robot with its address"
+        )
+        return
     # The board by the ladder `run` climbs, settled by the same function so the two cannot
     # disagree about which board a robot uses: the flag, then the host registered with the
     # robot --robot names, then QUACKD_HOST. A value that is no machine, a token no header
@@ -4676,6 +4712,7 @@ def doctor(
             report = collect(
                 robot,
                 address=address,
+                map_address=map_address,
                 camera_url=camera_url,
                 token=token,
                 rest_pose=rest_pose,
@@ -4700,6 +4737,7 @@ def doctor(
             report = collect(
                 robot,
                 address=address,
+                map_address=map_address,
                 camera_url=camera_url,
                 token=token,
                 rest_pose=rest_pose,
@@ -4753,6 +4791,7 @@ def serve_mcp(
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
     room: str | None = _ROOM,
+    map_address: str | None = _MAP_ADDR,
     dry_run: bool = _DRY,
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Allow confirm-gated verbs (there is no terminal to ask)."
@@ -4814,6 +4853,7 @@ def serve_mcp(
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
             room=room,
+            map_address=map_address,
             talk=talk,
             talk_port=talk_port,
             # the robots are connected in there, so a retiring backend is said from there,
@@ -5943,6 +5983,7 @@ def _entry_rows(entry: Any, *, flocks: list[str]) -> list[tuple[str, Any]]:
         ("robot", Text(entry.key, style=ui.STYLES["fail" if entry.spec_problem else "accent"])),
         ("body", body),
         ("address", Text(entry.address) if entry.address else dash),
+        ("map address", Text(entry.map_address) if entry.map_address else dash),
         # one per line, because two urls on one line is where a reader stops being able to
         # tell which camera is the primary
         ("camera", Text("\n".join(entry.camera_urls)) if entry.camera_urls else dash),
@@ -5980,6 +6021,7 @@ def robot_add(
         ..., help="<adapter>[:<backend>], e.g. microduck:sim2d. See `quackd list-adapters`."
     ),
     address: str | None = _ADDR,
+    map_address: str | None = _MAP_ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     host: str | None = _ROBOT_HOST,
@@ -6019,6 +6061,7 @@ def robot_add(
             name=name,
             spec=spec,
             address=address,
+            map_address=map_address,
             camera_url=list(camera_url) or None,
             token=token,
             host=host,
@@ -6421,7 +6464,17 @@ def robot_show(
     ui.console.print(ui.kv_grid(rows))
 
 
-_CLEARABLE = ("address", "token", "camera-url", "rest-pose", "host", "host-token", "llm", "note")
+_CLEARABLE = (
+    "address",
+    "map-address",
+    "token",
+    "camera-url",
+    "rest-pose",
+    "host",
+    "host-token",
+    "llm",
+    "note",
+)
 
 
 @robot_app.command("edit")
@@ -6429,6 +6482,7 @@ def robot_edit(
     name: str = _ROBOT_NAME,
     spec: str | None = typer.Option(None, "--spec", help="Move it to another <adapter>:<backend>."),
     address: str | None = _ADDR,
+    map_address: str | None = _MAP_ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
     host: str | None = _ROBOT_HOST,
@@ -6459,6 +6513,7 @@ def robot_edit(
     given: dict[str, Any] = {
         "spec": spec,
         "address": address,
+        "map_address": map_address,
         # every url given replaces the whole stored set: naming a camera today says where the
         # cameras are today, which is the rule --address and --token already follow
         "camera_url": list(camera_url) or None,

@@ -34,7 +34,11 @@ class SpatialSource(Protocol):
     - `stop_every_m`: how far to walk between stops, for a map that corrects itself only at stops;
     - `settle_timeout_s`: how long to stand at a stop for the map to take its view;
     - `keyframes_follow_head`: whether a view the head turns to is one the map takes;
-    - `view`: what one stop's look covers, the field across in radians and how far in metres.
+    - `view`: what one stop's look covers, the field across in radians and how far in metres;
+    - `fingerprint`: what a map is known again by from one session to the next, its first stops
+      after its origin, once it has them, for a source whose map nothing on the wire names;
+    - `retired_frames`: frames the source saw end this connection, a map replaced or wiped, never
+      to be known again, whose places are orphaned.
     """
 
     @property
@@ -60,6 +64,12 @@ class SpatialSource(Protocol):
 
     @property
     def can_wipe(self) -> bool: ...
+
+    @property
+    def fingerprint(self) -> tuple[tuple[float, float, float], ...]: ...
+
+    @property
+    def retired_frames(self) -> frozenset[str]: ...
 
     def fix(self) -> Fix: ...
 
@@ -108,6 +118,14 @@ class SpatialSourceBase:
     @property
     def can_wipe(self) -> bool:
         return False
+
+    @property
+    def fingerprint(self) -> tuple[tuple[float, float, float], ...]:
+        return ()
+
+    @property
+    def retired_frames(self) -> frozenset[str]:
+        return frozenset()
 
     def fix(self) -> Fix:
         raise NotImplementedError

@@ -54,6 +54,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   or its source's. Whatever ends it stops the body and says what it was, and an orphaned place, a
   robot that does not know where it is, no way there or a way longer than its time is refused
   before anything moves ([docs/concepts/places.md](docs/concepts/places.md#walking-to-a-place)).
+- **A real Microduck walks by its own map, where `mapd` answers beside its robotd
+  (UNVERIFIED).** `mapd`, the duck's onboard mapper, is on an upstream branch and in no robotd
+  release yet. quackd reaches it at `--map-address`, which `run`, `drive`, `serve-mcp`, `doctor`
+  and `robot add` and `edit` take, or at its own socket beside robotd's, and its places are then
+  in the map, known again in a later session by the map's first stops that stand apart, where
+  they were in one connection's odometry; a map replaced or wiped is never taken for the one it
+  replaced. The reading a walk steers by is `mapd`'s newest pose carried on by
+  robotd's odometry since, so it moves at robot.state's rate; a stream gone quiet, a word for not
+  knowing or the link gone makes the duck lost, never odometry, and the link is tried again in the
+  background. `mapd` is asked on links of its own and never said `hello` to, and nothing answering
+  leaves the odometry as before, with a warning when you named the address. `quackd doctor
+  --map-address` adds a `mapd` row, and fails when nothing answers at an address you named
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
 
 ### Fixed
 

@@ -1322,6 +1322,7 @@ def fleet_from_flags(
     accept_other_frame: bool = False,
     async_chunks: bool = True,
     room: str | None = None,
+    map_address: str | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1334,8 +1335,9 @@ def fleet_from_flags(
     The board is asked what it is before any body is built, and a board that does not answer
     refuses the server, as it refuses a run. `--detector` is for one robot too.
 
-    So is `--room`, the room a simulator lays out, and `--policy-url`, the policy server an arm
-    hands its `pick` and `manipulate` segments to, by the same rule and in `quackd run`'s words.
+    So is `--room`, the room a simulator lays out, `--map-address`, where one robot's own map
+    answers, and `--policy-url`, the policy server an arm hands its `pick` and `manipulate`
+    segments to, by the same rule and in `quackd run`'s words.
     The server is asked what it serves once the arm is built, and one that does not answer
     refuses the server, as the board does. Both verbs are confirm gated, so an MCP client
     reaches them only on a server started with `--yes`.
@@ -1375,10 +1377,10 @@ def fleet_from_flags(
     body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
     if room is not None:
         body_kw["room"] = room
-    if flock and (address or camera_url or token):
+    if flock and (address or camera_url or token or map_address):
         raise SystemExit(
-            "--flock takes every member's address, token and camera from the registry: "
-            "quackd robot edit NAME to change one"
+            "--flock takes every member's address, map address, token and camera from the "
+            "registry: quackd robot edit NAME to change one"
         )
     probe: DuckFile | None = None
     default = None
@@ -1451,6 +1453,12 @@ def fleet_from_flags(
         raise SystemExit(
             "--room lays out one simulator's room, and a fleet has several bodies: drop --room, "
             "or serve one duck"
+        )
+    if fleet and map_address is not None:
+        raise SystemExit(
+            "--map-address is where one robot's map answers, and a fleet has several bodies: "
+            "drop --map-address, or keep each robot's own with quackd robot edit NAME "
+            "--map-address ..."
         )
     # The one place this server's board is settled, carried on the plan so everything that
     # uses the board reads this value rather than deriving its own.
@@ -1533,13 +1541,16 @@ def fleet_from_flags(
             )
     adapters = {}
     for (name, spec), one in zip(zip(manifests, specs, strict=True), resolved, strict=True):
-        where = one.adapter_kwargs(address=address, camera_url=camera_url, token=token)
+        where = one.adapter_kwargs(
+            address=address, camera_url=camera_url, token=token, map_address=map_address
+        )
         adapters[name] = make_adapter(
             spec,
             seed=seed if seed is not None else 0,
             address=where["address"],
             camera_url=where["camera_url"],
             token=where["token"],
+            map_address=where["map_address"],
             # the recorded pose, without which `RobotSession.connect`'s rest gate and the
             # torque hold in `close` are both dead code: the transport's `rest_pose` would be
             # None, every guard reading it would be False, and an arm served over MCP would be
@@ -1599,6 +1610,7 @@ def serve(
     accept_other_frame: bool = False,
     async_chunks: bool = True,
     room: str | None = None,
+    map_address: str | None = None,
     talk: bool = False,
     talk_port: int = 8790,
 ) -> None:
@@ -1620,6 +1632,7 @@ def serve(
         accept_other_frame=accept_other_frame,
         async_chunks=async_chunks,
         room=room,
+        map_address=map_address,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"

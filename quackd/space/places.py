@@ -302,12 +302,26 @@ class PlaceBook:
 
     def frame(self) -> FrameRef | None:
         """The frame the robot is in now, as places are compared in, and remembered in the store
-        the first time it is seen, so a later session can say what became of its places."""
+        the first time it is seen, so a later session can say what became of its places, and
+        with the source's fingerprint of its map once there is one, so a later session can know
+        the map again."""
+        # a map the source saw replaced or wiped: its places are orphaned for that reason
+        for gone in self.source.retired_frames:
+            self.store.mark_wiped(gone)
         frame = self.source.resolve_frame(self.store.frames())
-        if frame is not None and self.store.frame_record(frame.id) is None:
+        if frame is None:
+            return None
+        known = self.store.frame_record(frame.id)
+        prints = tuple(self.source.fingerprint)
+        if known is None or (prints and not known.fingerprint):
             self.store.note_frame(
                 FrameRecord(
-                    id=frame.id, kind=frame.kind, persistent=frame.persistent, ts=time.time()
+                    id=frame.id,
+                    kind=frame.kind,
+                    persistent=frame.persistent,
+                    ts=known.ts if known is not None else time.time(),
+                    fingerprint=prints,
+                    wiped=known.wiped if known is not None else False,
                 )
             )
         return frame
@@ -315,9 +329,13 @@ class PlaceBook:
     def view(
         self, place: Place, fix: Fix | None = None, frame: FrameRef | None = None
     ) -> PlaceView:
-        fix = self.source.fix() if fix is None else fix
         frame = self.frame() if frame is None else frame
-        if frame is None or place.frame != frame.id:
+        fix = self.source.fix() if fix is None else fix
+        if frame is None:
+            return PlaceView(
+                place, "lost", "the robot's map is not known yet, so nothing is known of it"
+            )
+        if place.frame != frame.id:
             return PlaceView(place, "orphaned", self._why_orphaned(place, frame))
         if not fix.localized or fix.pose is None:
             return PlaceView(
@@ -334,8 +352,10 @@ class PlaceBook:
     def views(self) -> list[PlaceView]:
         """Every place: the usable ones nearest first, then those waiting for the robot to know
         where it is, then the orphaned, each group by name."""
-        fix = self.source.fix()
+        # the frame before the reading: a source that names its frame when first asked puts it
+        # on its readings from then
         frame = self.frame()
+        fix = self.source.fix()
         out = [self.view(p, fix, frame) for p in self.store.places()]
         rank = {"here": 0, "lost": 1, "orphaned": 2}
         return sorted(
@@ -352,8 +372,13 @@ class PlaceBook:
         """Mark where the robot stands now as `name`, from its own reading and never from
         coordinates anybody gives, and return the place with the one it replaced. Refused while
         the robot does not know where it is."""
-        fix = self.source.fix()
         frame = self.frame()
+        fix = self.source.fix()
+        if frame is None and fix.lost is None:
+            raise ValueError(
+                "the robot's map is not known yet, so a place could not be kept in it: ask "
+                "again in a moment"
+            )
         if not fix.localized or fix.pose is None or frame is None:
             raise ValueError(
                 "the robot does not know where it is "

@@ -18,6 +18,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from quackd.adapters.base import (
+    MAP_SPECS,
     POLICY_SPECS,
     ROOM_SPECS,
     AdapterError,
@@ -303,6 +304,17 @@ def _takes_policy(spec: RobotSpec, fn: Any) -> None:
         )
 
 
+def _takes_map_address(spec: RobotSpec, fn: Any) -> None:
+    """Refuse a map's address for a body whose adapter has no `map_address` parameter where it
+    is asked for one: a run told where the robot keeps its map would otherwise walk by odometry
+    and say nothing."""
+    if not _takes(fn, "map_address"):
+        raise AdapterError(
+            f"{spec.key} reads no map the robot keeps, so --map-address has nothing to reach: "
+            f"it is for the Microduck's mapd ({' and '.join(MAP_SPECS)})"
+        )
+
+
 def _takes_room(spec: RobotSpec, fn: Any) -> None:
     """Refuse a room for a body whose adapter has no `room` parameter where it is asked for one:
     a run told it walks a room would otherwise walk the adapter's own world and say nothing."""
@@ -427,6 +439,7 @@ def make_adapter(
     scene: Sequence[Mapping[str, Any]] | None = None,
     policy: PolicyChoice | None = None,
     room: str | None = None,
+    map_address: str | None = None,
 ) -> RobotAdapter:
     """Build a robot. `camera_url` may name several cameras; every `make()` is handed the
     tuple and decides whether this body reads more than one (`MULTI_CAMERA_SPECS`), and a
@@ -446,7 +459,8 @@ def make_adapter(
     a body whose `make()` has no `policy` parameter (`_takes_policy`): only the LeRobot arm
     hands a segment to one, and a third party's adapter built without the flag is called as it
     always was. `room`, the room a simulator lays out (`--room`), is passed by the same rule and
-    refused for a body whose `make()` has no `room` parameter (`_takes_room`)."""
+    refused for a body whose `make()` has no `room` parameter (`_takes_room`), and so is
+    `map_address`, where a robot keeps its own map (`--map-address`, `_takes_map_address`)."""
     if isinstance(spec, str):
         spec = parse_robot_spec(spec)
     module = _module(spec.adapter)
@@ -459,6 +473,9 @@ def make_adapter(
     if room is not None:
         _takes_room(spec, module.make)
         extra["room"] = room
+    if map_address is not None:
+        _takes_map_address(spec, module.make)
+        extra["map_address"] = map_address
     adapter: RobotAdapter = module.make(
         spec.backend,
         robot_id=spec.robot_id,
