@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from rich.text import Text
 
-from quackd import __version__, ui
+from quackd import __version__, dotenv_names, ui
 from quackd.agent.decision.frames import MAX_SIDE_PX as DECISION_FRAME_PX
 from quackd.agent.providers.catalogue import (
     CLOUD_NAMES,
@@ -244,9 +244,13 @@ def _main(
     # The one beside where you run, then the bare call, which walks up from quackd's own
     # installed directory and so finds the `.env` a `uv venv` user put in their venv root.
     # Neither overrides a variable already in the environment, and the first file to define
-    # a name wins, so the file next to the command you typed is the one that counts.
+    # a name wins, so the file next to the command you typed is the one that counts. What they
+    # added is kept apart from what the shell exported (`dotenv_names`), for the few settings
+    # a project's own `.env` may not decide, such as the registry `--policy-url hf:NAME` reads.
+    before = set(os.environ)
     load_dotenv(Path.cwd() / ".env")
     load_dotenv()
+    dotenv_names.remember(before)
     ui.configure(no_color=no_color)
     _warn_old_spellings()
 
@@ -5597,6 +5601,15 @@ def endpoint_delete(
         _fail(
             f"no endpoint called {name} is recorded on this machine: quackd policy endpoint "
             "list says what there is"
+        )
+    if namespace is not None and marked is None and not forget:
+        # quackd's own tag is all there is to go by then, and another machine's up gives that
+        # to its endpoints too
+        _fail(
+            f"this machine's record of hf:{name} holds no token quackd can read, so the endpoint "
+            f"by that name on {namespace}'s account cannot be told from another machine's, and "
+            "quackd does not delete it: delete it on huggingface.co if it is yours, and quackd "
+            f"policy endpoint delete {name} --forget forgets the record"
         )
     doing = "forgetting" if forget else "deleting"
     if not yes and not _can_prompt():

@@ -100,11 +100,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `quackd policy check` reaches an endpoint this machine started, as the record `up` kept says:
   its address, its own token unless `--policy-token` is typed, and the account's token as the
   bearer. It reads the endpoint from Hugging Face's API first, one request with the account's
-  token, and goes on only when it carries the tags `up` gave it at the recorded address, so
-  neither a record left behind by an endpoint deleted on huggingface.co nor one a project's `.env`
-  planted by naming another registry can send the account's token to an address the API does not
-  confirm. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never read for one. The run's
-  `policy` block keeps the address as `server` and adds `endpoint`.
+  token, and goes on only when it carries the tags `up` gave it at the recorded address, so a
+  record left behind by an endpoint deleted on huggingface.co sends the account's token to no
+  address the API does not confirm. A project's `.env` cannot name the registry it reads: a
+  `QUACKD_REGISTRY_DIR` that came from one is refused before anything is asked, and the shell's
+  own, or `--registry-dir`, is read. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never
+  read for one. The run's `policy` block keeps the address as `server` and adds `endpoint`.
 - **`GET /v1/health` on the policy server**, answered with no token, says whether it serves,
   `{"ready": true}`, or is stopping, a 503, and nothing else, for a platform's readiness probe. It
   reads no body and touches no session. The protocol stays version 1. The server also logs once,
@@ -235,11 +236,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   bill at once.
 - **A CUDA build of torch newer than the endpoint's driver would run on the CPU.** `up` asks the
   server whether it has a GPU once it serves, and pauses one that says it has none.
-- **A project's `.env` is trusted as the shell is.** One that names another registry with
-  `QUACKD_REGISTRY_DIR` and sets `HF_TOKEN`, where the shell sets none, makes
-  `--policy-url hf:NAME` reach an endpoint of that token's account, with that token: the user's
-  own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
-  frames go there.
 
 ## [0.25.0] — 2026-10-25
 

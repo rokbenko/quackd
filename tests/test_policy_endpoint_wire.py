@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -429,6 +430,43 @@ def test_up_with_a_token_where_the_hub_tokens_variable_belongs_does_not_say_it(
     result = _cli(*UP, "--yes", "--hub-token-from", hub)
     assert result.exit_code == 1 and "is not set" in _flat(result.output), result.output
     assert hub not in result.output and not _posts(hf)
+
+
+@pytest.mark.parametrize("body", [b"", b"[]"], ids=["empty", "a list"])
+@pytest.mark.parametrize("when", ["while up waits", "after a lost create"])
+def test_a_read_that_is_no_endpoint_is_one_that_cannot_be_read(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, body: bytes, when: str
+) -> None:
+    """A 200 whose body is empty, or not an object, says nothing of whose the endpoint is, so it
+    is not taken for another's: the wait pauses the endpoint it just made rather than leave it
+    starting, and a create whose answer was lost keeps its record."""
+    real, made = FakeAPI._endpoint, FakeAPI._create
+    reads = {"n": 0}
+
+    def blank(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+        if method == "GET" and len(path) == 2:
+            reads["n"] += 1  # the first is up's look for a name already taken
+            if reads["n"] == (3 if when == "while up waits" else 2):
+                return 200, {"Content-Type": "application/json"}, body
+        return real(self, method, path, seen, query)
+
+    def lost(self: FakeAPI, namespace: str, payload: Any) -> Any:
+        made(self, namespace, payload)
+        return 504, {"Content-Type": "text/plain"}, b"Gateway Timeout"
+
+    monkeypatch.setattr(FakeAPI, "_endpoint", blank)
+    if when == "after a lost create":
+        monkeypatch.setattr(FakeAPI, "_create", lost)
+    result = _cli(*UP, "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1, said
+    if when == "while up waits":
+        assert "with something that is not an endpoint" in said
+        assert "so it was paused, and bills nothing now" in said
+        assert hf.endpoints[("rok", "arm")].state == "paused"
+    else:
+        assert "whether arm was created could not be read either" in said
+        assert _store().get("arm") is not None and ("rok", "arm") in hf.endpoints
 
 
 def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
@@ -871,6 +909,32 @@ def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_anoth
     assert _store().get("arm") is not None
 
 
+@pytest.mark.parametrize("token", ["", "\udc80"], ids=["empty", "a lone surrogate"])
+def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_to(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    """A record whose token cannot be read gives no tag to hold the endpoint by that name to, and
+    quackd's own tag, which is all there is then, another machine's up gives its endpoints too:
+    the remote delete is refused before anything is asked, and --forget still forgets the
+    record."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    other = _made_elsewhere(hf, monkeypatch, tagged=True)
+    store = _store()
+    saved = json.loads(store.path.read_text(encoding="utf-8"))
+    saved["endpoints"]["arm"]["token"] = token
+    store.path.write_text(json.dumps(saved), encoding="utf-8")
+    before = len(hf.requests)
+    refused = _cli("policy", "endpoint", "delete", "arm", "--yes")
+    said = _flat(refused.output)
+    assert refused.exit_code == 1 and "holds no token quackd can read" in said, said
+    assert "delete it on huggingface.co if it is yours" in said
+    assert "quackd policy endpoint delete arm --forget forgets the record" in said
+    assert len(hf.requests) == before and hf.endpoints.get(("rok", "arm")) is other
+    forgot = _cli("policy", "endpoint", "delete", "arm", "--forget", "--yes")
+    assert forgot.exit_code == 0 and not _store().recorded("arm"), forgot.output
+    assert hf.endpoints.get(("rok", "arm")) is other
+
+
 def test_delete_forget_forgets_the_record_and_leaves_hugging_face_as_it_is(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -928,19 +992,19 @@ def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
 
 
 @pytest.mark.parametrize("answer", [404, 403])
-def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
+def test_a_planted_record_sends_the_account_token_nowhere(
     hf: FakeAPI,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     _no_request_reaches_hugging_face: list[str],
     answer: int,
 ) -> None:
-    """The CLI loads the working directory's `.env`, which can name another registry, so a
-    project cloned from somebody else can plant a record of hf:arm naming an endpoint of theirs.
-    A run reads the endpoint from the API with the account's token before the bearer goes
-    anywhere, and Hugging Face has no such endpoint of the account's, or refuses the token for
-    an account it is not: the run is refused, and the planted address is never even looked up,
-    which the suite's guard would have written down."""
+    """A record of hf:arm naming an endpoint of somebody else's, planted in the registry this
+    shell names, as anybody who could write a file in it could. A run reads the endpoint from
+    the API with the account's token before the bearer goes anywhere, and Hugging Face has no
+    such endpoint of the account's, or refuses the token for an account it is not: the run is
+    refused, and the planted address is never even looked up, which the suite's guard would
+    have written down."""
     planted = tmp_path / "planted"
     attacker = replace(
         E.new_record(
@@ -955,11 +1019,7 @@ def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
         url="https://a7tacker00.endpoints.huggingface.cloud",
     )
     E.EndpointStore(planted).save(attacker)
-    project = tmp_path / "cloned-project"
-    project.mkdir()
-    (project / ".env").write_text(f"QUACKD_REGISTRY_DIR={planted}\n", encoding="utf-8")
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR", raising=False)
-    monkeypatch.chdir(project)
+    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(planted))
     if answer == 403:
         real = FakeAPI._endpoint
 
@@ -981,6 +1041,62 @@ def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
     assert read.headers["authorization"] == f"Bearer {ACCOUNT_TOKEN}"
     assert not _no_request_reaches_hugging_face, "the planted address was looked up"
     assert ACCOUNT_TOKEN not in result.output and attacker.token not in result.output
+
+
+def _cloned_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dotenv: str) -> None:
+    """The working directory a project cloned from somebody else is, with its `.env`."""
+    project = tmp_path / "cloned-project"
+    project.mkdir()
+    (project / ".env").write_text(dotenv, encoding="utf-8")
+    monkeypatch.chdir(project)
+
+
+def test_a_registry_a_dotenv_names_is_not_one_hf_name_reads(
+    hf: FakeAPI,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _no_request_reaches_hugging_face: list[str],
+) -> None:
+    """A project's `.env` may set most things, and not the registry hf:NAME reads an endpoint's
+    record from: the same `.env` could set an account token of its own beside a record of its
+    own, and choose which policy drives the arm. One a `.env` named is refused before anything
+    is asked of anyone, even when it holds a record Hugging Face would confirm."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    shells = os.environ["QUACKD_REGISTRY_DIR"]  # the suite's, which this shell exported
+    _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={Path(shells).as_posix()}\n")
+    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+    before = len(hf.requests)
+    result = _cli("policy", "check", "--policy-url", "hf:arm")
+    said = _flat(result.output)
+    assert result.exit_code == 1, said
+    assert "QUACKD_REGISTRY_DIR comes from a .env file here" in said
+    assert "export it in the shell, or pass --registry-dir" in said
+    assert len(hf.requests) == before and not _no_request_reaches_hugging_face
+
+
+@pytest.mark.parametrize("named", ["by the shell", "by --registry-dir", "not by the .env"])
+def test_hf_name_reads_a_registry_the_shell_or_the_flag_names(
+    hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, named: str
+) -> None:
+    """The shell's own `QUACKD_REGISTRY_DIR`, which a `.env` never overrides, and
+    `--registry-dir` are both read, and a `.env` that sets anything but the registry changes
+    nothing."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    shells = os.environ["QUACKD_REGISTRY_DIR"]
+    elsewhere = (tmp_path / "elsewhere").as_posix()
+    check = ["policy", "check", "--policy-url", "hf:arm"]
+    if named == "by the shell":
+        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
+    elif named == "by --registry-dir":
+        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
+        monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+        check += ["--registry-dir", shells]
+    else:
+        monkeypatch.delenv("QUACKD_TEST_SOMETHING_ELSE", raising=False)
+        _cloned_project(tmp_path, monkeypatch, "QUACKD_TEST_SOMETHING_ELSE=1\n")
+    result = _cli(*check)
+    said = _flat(result.output)
+    assert result.exit_code == 0 and "policy scripted:sweep" in said, said
 
 
 @pytest.mark.parametrize("forwarded", [True, False])

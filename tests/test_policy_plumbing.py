@@ -927,6 +927,25 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
     assert len(hf_api.sent("/v2/endpoint/rok/arm")) == 2
 
 
+def test_a_run_reads_hf_name_from_no_registry_a_dotenv_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`quackd run --policy-url hf:arm` in a project whose `.env` names the registry, and so the
+    record, refuses the arm before anything connects: it says so, and asks nobody anything,
+    which the suite's guard on Hugging Face's hosts would otherwise have written down."""
+    planted = tmp_path / "planted"
+    _recorded(planted)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".env").write_text(f"QUACKD_REGISTRY_DIR={planted.as_posix()}\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+    monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
+    result = _run(tmp_path, "--robot", "lerobot:mujoco", "--policy-url", "hf:arm")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "QUACKD_REGISTRY_DIR comes from a .env file here" in said, said
+
+
 @pytest.mark.parametrize("case", ["no record", "no account token"])
 def test_hf_name_with_no_record_or_no_account_token_refuses_the_arm_before_it_connects(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str

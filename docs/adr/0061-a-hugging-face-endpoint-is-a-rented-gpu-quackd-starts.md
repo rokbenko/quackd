@@ -55,13 +55,14 @@ been created and nothing paid for.
    for the account's business, never to PyPI or the price list, and as the bearer only to the one
    address this machine's `up` recorded, whose whole authority has to be an endpoint's, over
    https on port 443. A suffix is no lock, since anyone can start an endpoint under that domain,
-   and no variable moves an address. Nor is the record a lock: it is a file in a directory a
-   project's `.env` can name, and it outlives an endpoint deleted on huggingface.co. So a run
-   reads the endpoint from the API with the account's token first, and sends the bearer only when
-   the endpoint by that name carries the tags `up` gave it, one of them made from the record's
-   own token, at the recorded address, and `up`, `pause` and `delete` leave alone one that does
-   not. A gated checkpoint is fetched with a Hub token `--hub-token-from` names, which may not be
-   the account's own.
+   and no variable moves an address. Nor is the record a lock: it outlives an endpoint deleted on
+   huggingface.co, and a project's `.env` could name a registry with one of its own in it. So a
+   run reads a record only from a registry the shell or `--registry-dir` names, never one a
+   `.env` named, reads the endpoint from the API with the account's token first, and sends the
+   bearer only when the endpoint by that name carries the tags `up` gave it, one of them made
+   from the record's own token, at the recorded address, and `up`, `pause` and `delete` leave
+   alone one that does not. A gated checkpoint is fetched with a Hub token `--hub-token-from`
+   names, which may not be the account's own.
 
 6. **`up` refuses before anything bills, and asks before it does.** It checks the flags as the
    server would, that this quackd is a release, that the instance is a GPU on offer and its price

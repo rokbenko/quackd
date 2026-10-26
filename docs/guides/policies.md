@@ -376,12 +376,11 @@ quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
 
 Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
 that token to the endpoint only when the API says the endpoint by that name carries the tags `up`
-gave it, at the address `up` recorded. The record is a file, and a project's `.env` can name
-another registry with `QUACKD_REGISTRY_DIR`, so a record you did not make, or one left behind by
-an endpoint deleted on huggingface.co, is refused unless the API confirms it, and your token goes
-nowhere else. A `.env` that also sets `HF_TOKEN`, where your shell sets none, is another account
-asking, and its endpoint is the one a run reaches: trust a project's `.env` as you trust your
-shell.
+gave it, at the address `up` recorded. A record left behind by an endpoint deleted on
+huggingface.co is refused unless the API confirms it, and your token goes nowhere else. The
+record is read only from a registry your shell or `--registry-dir` names, so a project's `.env`
+cannot choose which endpoint drives your arm: a `QUACKD_REGISTRY_DIR` that came from one is
+refused, saying so.
 
 **Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
 
