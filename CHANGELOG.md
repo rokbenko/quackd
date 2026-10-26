@@ -71,9 +71,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   does not list, OpenAI's GPT-4.1, GPT-4o, their minis and ChatGPT Instant, which take no
   reasoning effort, its three pro models at `low`, which they do not take, and a vendor that
   documents no such field, OpenRouter told that its own `reasoning` field goes through
-  `--extra-body`. `run_start.effort` records the level every
-  request was sent at and whose word it was, and the run header gains an `effort` row only when
-  the flag asked ([README.md](README.md#configuration)).
+  `--extra-body`. `run_start.effort` records the level every request was sent at and whose word
+  it was, and the run header gains an `effort` row only when the flag asked
+  ([README.md](README.md#configuration)).
 - **The summary says how the model's calls spread and when the body first moved.**
   `summary.json` gains `llm_latency_p50_s`, `llm_latency_p90_s` and `llm_latency_max_s`, by
   nearest rank over the calls that answered and only where one did, and the stepper's block the
