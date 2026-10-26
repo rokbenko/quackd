@@ -33,7 +33,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 
 | Gate | What it checks | What you change |
 |---|---|---|
-| `abort` | the run has been aborted. `stop` is exempt, so the brake still works | nothing: the run is over |
+| `abort` | the run has been aborted. `stop` is exempt, so the brake still works. Read again after the body's state, so a verb admitted before a kill switch or a failed heartbeat never starts after it | nothing: the run is over |
 | `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.duck`'s `verbs.allow` |
 | `unknown` | quackd has never heard of this verb | the spelling, or the robot (`quackd list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect` and `watch` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `quackd drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the model calls `assess_task` |
@@ -41,7 +41,7 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a flock's standing answer, the MCP server or a pipe on stdin, before its question is put | answer y, or pass `--yes`. For a `dangerous` verb, run it from a terminal without `--yes` and answer it yourself |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
 | `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `duck: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.duck`'s `budgets` and `policy` section, or `--max-steps` |
-| `abort_when` | the battery threshold, and consecutive failures once the result is in | the `.duck`'s `abort_when`, or the robot |
+| `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.duck`'s `abort_when`, or the robot |
 | `precondition` | what the manifest says this verb needs: not fallen, not sitting, torque on | the robot's state |
 | `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
@@ -204,28 +204,36 @@ somebody typing `kill`.
 ## A person driving: `quackd drive`
 
 `quackd drive` ([guides/drive.md](../guides/drive.md)) puts a person in front of the executor,
-and every call still passes `Executor.run_verb` with every gate in the table above. Four things
+and every call still passes `Executor.run_verb` with every gate in the table above. Five things
 are its own.
 
-- **The brake waits on nothing.** An empty Enter, a line whose first word is `stop`, `halt`,
-  `brake` or `q`, and Ctrl-C each drop every line that has not started, end every verb moving
-  the body, stop a goal, and send the stop to the body directly, before the `stop` verb runs for
-  the record. A brake is never taken for the answer to a question. Drive installs no kill
-  switch, whose `q` would end a session at "quack". A second Ctrl-C soon after the first ends
-  the session, which ends what is still moving the body before it folds and lets go of it.
-- **A newer command ends the verb it finds moving** (`preempted`), and waits for it to stop
-  before it sends anything. A stop asked for from beside a verb ends it before its next twist:
-  `move`, `go_to`, `search_scan`, `approach_and` and `watch` read it, and so does an MCP
-  session's `stop` ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
+- **The brake waits on nothing.** An empty Enter, a line with no letter or digit in it, a line
+  whose first word is `stop`, `halt`, `brake` or `q`, and Ctrl-C each drop every line that has
+  not started, end every verb moving the body, stop a goal, and send the stop to the body
+  directly, before the `stop` verb runs for the record. A brake is never taken for the answer
+  to a question. Drive installs no kill switch, whose `q` would end a session at "quack". A
+  second Ctrl-C soon after the first ends the session, which ends what is still moving the body
+  before it folds and lets go of it.
+- **A newer command ends the verb it finds moving** (`preempted`), and waits for it to stop, and
+  for a brake still on its way, before it sends anything. A stop asked for from beside a verb
+  ends it before its next twist: `move`, `go_to`, `search_scan` and `approach_and` read it as
+  quackd ships them, and so does an MCP session's `stop`
+  ([ADR-0067](../adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 - **A person's own command is the verdict for its own call**, recorded as a person's from the
-  keyboard and as a pipe's from a pipe or a file. Nothing is kept for any other call, and a
-  goal's pilot judges its own task. A confirm still asks: a person at the keyboard is asked,
-  `--yes` answers by its standing rule, and a pipe without `--yes` is answered no. A `dangerous`
-  verb never runs in drive.
+  keyboard, as a pipe's from a pipe or a file, and as a decision LLM's reading where the fast
+  lane took it unasked. Nothing is kept for any other call, and a goal's pilot judges its own
+  task. A confirm still asks: a person at the keyboard is asked, `--yes` answers by its standing
+  rule, and a pipe without `--yes` is answered no. The answer is the asked call's alone, so a
+  verb that call runs inside itself is answered by `--yes` alone, and a `dangerous` verb never
+  runs in drive, nested or not.
+- **A body that cannot see a fall is driven only with somebody watching it.** Before the first
+  thing that moves such a body, drive asks whether the person is watching, as `quackd run`
+  asks. `--yes` says they are, and a pipe without it is refused.
 - **A session is held to a contract**, a `--duckfile`'s or one of its own: every verb that is
-  not dangerous, the battery rule, and the schema's ceilings for its budgets. A goal gets the
-  body's safe verbs, behind any confirm the session's `.duck` asks for them, and ends when the
-  session's heartbeat fails.
+  not dangerous, the battery rule, and the schema's ceilings for its budgets. A goal runs inside
+  it: the body's safe verbs behind the session's confirm gates, no more budget than the session
+  has left and its steps charged to it, the session's abort rules, the session's `--dry-run`,
+  and an end when the session's heartbeat fails.
 
 ## When the model's API fails
 
