@@ -516,6 +516,25 @@ GROOT_IMAGE_FALLBACK = UpstreamRef(
     "for every image a GR00T looks at, and the server refuses a checkpoint whose modality keys "
     "name an image its config.json does not",
 )
+GROOT_INFERENCE_PACKAGES = UpstreamRef(
+    "a GR00T N1.7 answers with diffusers and dm-tree beside what every family needs, and "
+    "LeRobot's own [groot] extra adds the rest for training",
+    "VERIFIED",
+    src(_GROOT_N17, 466),
+    "the action head is built only with diffusers installed (`require_package`, and again in "
+    "`action_head/cross_attention_dit.py` lines 52 and 112), and every step's inputs go through "
+    f"dm-tree (line 853). LeRobot's `[groot]` extra ({src('pyproject.toml', 219)}) adds peft, "
+    "timm, decord and its `[dataset]` extra, which brings datasets, pyarrow, pandas, av and "
+    "torchcodec, for training: its own note (line 223) says the dataset is built for "
+    "relative-action training statistics, and processor_groot.py requires datasets only in "
+    f"`_make_relative_action_training_stats_from_dataset_meta` ({src(_GROOT_PROC, 857)}, line "
+    "867). So the server's extra brings diffusers and dm-tree, about 25 MB, rather than "
+    "LeRobot's `[groot]`, about 340 MB, and the server refuses a GR00T before a pin or a weight "
+    "when either is missing, since LeRobot would find out only once the model is built",
+)
+GROOT_INFERENCE_MODULES = ("diffusers", "tree")
+"""The import names GROOT_INFERENCE_PACKAGES says a GR00T answers with: diffusers, and dm-tree
+as `tree`."""
 XVLA_LIBERO_ROTATION = UpstreamRef(
     "xvla_rotation_6d_to_axis_angle turns an end-effector rotation into axis-angle and the "
     "gripper into -1 or 1",

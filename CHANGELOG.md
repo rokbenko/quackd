@@ -67,8 +67,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   that learned absolute joints decodes by its dataset's statistics and is read as every other
   type is. It pads no missing camera, so the arm needs one for every image, and a checkpoint
   whose processors look for a camera its config has no image for is refused. The extra brings
-  LeRobot's `[groot]` now, which adds GR00T's dependencies to the lock, decord on x86 alone and
-  peft among them. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
+  diffusers and dm-tree, which a GR00T answers with, about 25 MB, and not LeRobot's
+  own `[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord, peft and timm, about
+  340 MB, are for training, and a GR00T on a server without either is refused before a pin or
+  a weight, saying to install the extra again. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
   check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
   refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
 - **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
@@ -126,8 +128,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   step. `quackd.adapters.policies` says which policy types the server serves and which it does
   not, and why, as data the core prints with no LeRobot installed, and a test ties its rows to
   the server's types ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
-- **A pinned model that holds a PEFT adapter is refused.** GR00T's extra brings peft, and with
-  peft installed transformers loads a PEFT adapter it finds in a model's directory onto that
+- **A pinned model that holds a PEFT adapter is refused.** The server's extra does not bring
+  peft, and LeRobot's own `[peft]` and `[groot]` extras do, and with peft installed
+  transformers loads a PEFT adapter it finds in a model's directory onto that
   model, or, when the directory has no `config.json`, loads the base model the adapter names,
   which no pin fixes. A pinned model whose directory holds an `adapter_config.json` was loaded
   without its adapter before, and is refused now, in a sentence saying to pin a model with the
