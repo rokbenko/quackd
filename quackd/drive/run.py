@@ -111,9 +111,10 @@ async def run_drive(
     from quackd.duckfile.parser import load_duck
     from quackd.duckfile.schema import Budgets
     from quackd.log import EventLog, LogEvent
-    from quackd.mcp_server import RobotSession, fleet_from_flags
+    from quackd.mcp_server import RobotSession, fleet_from_flags, session_memory_key
     from quackd.registry import Registry, resolve_robot_ref
     from quackd.safety import Budget, Executor, Heartbeat
+    from quackd.space.places import PlaceStore
     from quackd.verbs.registry import default_registry
 
     plan = fleet_from_flags(
@@ -175,6 +176,12 @@ async def run_drive(
         dry_run=args.dry_run,
         confirm=Answered(yes=args.yes),
         event_log=event_log,
+        # the places a person marks, kept beside the robot's memory and keyed as it is, as a run
+        # and an MCP session keep them, for the next session and the next run to walk to; a dry
+        # session marks none and writes nothing
+        places=PlaceStore(
+            session_memory_key(name, adapter, plan.memory_keys), persist=not args.dry_run
+        ),
     )
     executor.require_verdict = True
     heartbeat = Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log)

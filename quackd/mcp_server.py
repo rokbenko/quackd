@@ -903,6 +903,17 @@ def _instructions(fleet: Fleet) -> str:
     )
 
 
+def session_memory_key(
+    name: str, transport: DuckTransport, memory_keys: Mapping[str, str] | None = None
+) -> str:
+    """The key a session keeps a robot's memory and places under: its registered name where
+    `memory_keys` gives one, so two registered robots of one kind keep their own, and
+    adapter:backend otherwise, so a simulated body never inherits a real one's."""
+    return (memory_keys or {}).get(name) or (
+        f"{adapter_name(transport) or name}:{backend_name(transport)}"
+    )
+
+
 def build_fleet_server(
     robots: Mapping[str, DuckTransport],
     *,
@@ -960,9 +971,7 @@ def build_fleet_server(
         # Its clock starts again at the connect, on the clock the robot keeps once connected.
         budget = Budget(Budgets(), now=transport.now)
         budget.start()
-        memory_key = (memory_keys or {}).get(name) or (
-            f"{adapter_name(transport) or name}:{backend_name(transport)}"
-        )
+        memory_key = session_memory_key(name, transport, memory_keys)
         executor = Executor(
             registry=reg,
             transport=transport,
@@ -975,8 +984,8 @@ def build_fleet_server(
             # same verb twice on stderr); those drop to DEBUG rather than vanish
             log=_prefixed(logger.debug if log else logger.info, name),
             event_log=event_log,
-            # beside the memory file and keyed as it is; with memory off, or on a dry run,
-            # places last as long as the session and nothing is written
+            # beside the memory file and keyed as it is; with memory off, places last as long
+            # as the session, and a dry run marks none and writes nothing
             places=PlaceStore(memory_key, memory_dir, persist=memory and not dry_run),
         )
         # the pilot is offered `robot_assess_task`, so the executor holds it to the answer

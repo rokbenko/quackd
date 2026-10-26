@@ -3232,8 +3232,9 @@ class AgentLoop:
 
 def _place_store(memory: RobotMemory | None, *, dry_run: bool) -> PlaceStore:
     """A run's places: beside the robot's memory file, keyed as it is, when memory is on, and
-    written to only by a run that sends things. A dry run reads the places a robot has and keeps
-    whatever it marks to itself, and a run with no memory keeps its places as long as it lasts."""
+    written to only by a run that sends things. A dry run reads the places a robot has and marks
+    none, since it runs no verb that is not read-only, and its store writes nothing besides. A run
+    with no memory keeps its places as long as it lasts."""
     if memory is None:
         return PlaceStore("session", persist=False)
     return PlaceStore(memory.robot_key, memory.path.parent, persist=not dry_run)

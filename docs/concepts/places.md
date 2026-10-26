@@ -76,8 +76,9 @@ In `<memory dir>/<robot slug>.places.jsonl`, beside the robot's memory file and 
 they were marked in. Like memory, every write goes to a temporary file renamed over the old one,
 and nothing is locked. A robot keeps at most 100 places, a name is 1 to 32 letters, digits, spaces,
 hyphens or apostrophes, names are the same in any case, and `start` is a name quackd keeps for
-itself. With `--no-memory`, and on a dry run, places last as long as the run or the session and
-nothing is written.
+itself. With `--no-memory`, places last as long as the run or the session and nothing is written.
+A dry run reads the places a robot has and changes none, as it runs no `mark_place` or
+`forget_place`. `quackd drive` keeps them as a run does.
 
 ## Memory that knows where
 

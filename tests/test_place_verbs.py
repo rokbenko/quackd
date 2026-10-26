@@ -3,11 +3,13 @@ they exist, what they say, what they leave in the store, and what reaches the pi
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import pytest
 
 from quackd.agent.prompts import build_observation_text, places_section
+from quackd.drive.run import DriveArgs, run_drive
 from quackd.memory import RobotMemory
 from quackd.safety import Executor
 from quackd.space.places import PlaceBook, PlaceStore, places_line
@@ -243,3 +245,24 @@ def test_an_old_memory_file_loads_and_a_where_round_trips(tmp_path: Path, persis
     memory.remember("new", where=where if persist else None)
     reread = RobotMemory("r", tmp_path).notes()[-1]
     assert reread.where == (where if persist else None)
+
+
+async def test_a_place_a_person_marks_while_driving_is_there_for_the_next_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drive session kept what it marked for as long as it lasted: the next session, and a run
+    sent to walk there, found no such place. Kept beside memory now, as a run's and an MCP
+    session's are, and a dry session, which runs no `mark_place`, leaves them as they were."""
+    home = tmp_path / "memory"
+    monkeypatch.setenv("QUACKD_MEMORY_DIR", str(home))
+
+    async def drive(lines: str, *, dry_run: bool = False) -> None:
+        args = DriveArgs(
+            robot="microduck:mock", llm="fake", dry_run=dry_run, runs_dir=str(tmp_path / "runs")
+        )
+        await run_drive(args, say=lambda _line: None, stream=io.StringIO(lines), keyboard=False)
+
+    await drive("mark_place sofa\nquit\n")
+    assert [p.name for p in PlaceStore("microduck:mock", home).places()] == ["sofa"]
+    await drive("mark_place hall\nquit\n", dry_run=True)
+    assert [p.name for p in PlaceStore("microduck:mock", home).places()] == ["sofa"]
