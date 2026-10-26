@@ -730,6 +730,29 @@ waits out its second before the model is asked. In `shadow` it is asked beside t
 so the second runs while the model thinks, and the turn waits only for what is left of it once the
 model has answered.
 
+## In `quackd drive`: which call a person meant
+
+`quackd drive --decision-llm NAME` ([guides/drive.md](../drive.md)) puts the same decision LLM a
+question of another kind. A line the exact lane cannot read, "have a seat", becomes one closed
+question, `command`: which of the body's calls, labelled as the stepper labels them, or which of
+its presets does the person mean? It may also be a line for the `pilot`, or `unclear`. The state
+it is asked over is the line as it was typed (`said`), what the robot is doing now (`doing`) and
+the body's one-line description (`body`), so the line you type goes wherever that decision LLM
+runs, a vendor's host for a hosted one ([SECURITY.md](../../../SECURITY.md)). The answer is read as a turn's is, against the stepper's
+floor for the class of the call it names, a preset's being the motion floor, and within the
+stepper's one second:
+
+- at or above the floor, the call runs;
+- below it, drive asks `did you mean kick(leg=left)? [y/N]`, and a pipe answers no;
+- `pilot` at or above the read floor hands the line to the pilot, and below it asks first;
+- `unclear` asks the person to say it another way;
+- a question declined, unreadable, failed or out of its second hands the line to the pilot.
+
+A dangerous verb is never offered, and nothing moves on a guess. Each question is written to the
+session's record as a `fast` row, with its confidence, its floor and its gate, and the `routed`
+row after it says whether the person said yes. Those rows are what the floors have never been
+measured against for this question.
+
 ## What the record says
 
 Two kinds in `transcript.jsonl`, both described in

@@ -168,6 +168,13 @@ Also in scope:
   to the transcript before the request that carries it is handed to the client, so a frame `watch`
   sends with no such line naming it is a security issue
   ([microduck](docs/adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view)).
+- **What `quackd drive` sends with a line you type** (`--decision-llm`, off unless you name one,
+  [docs/guides/drive.md](docs/guides/drive.md)). A line the exact lane cannot read is sent as you
+  typed it to the decision LLM the session names, with what the robot is doing and the body's
+  one-line description, once a line and never with a camera frame. It goes where that row's state
+  goes on a run, above. A brake, the session's own words and a line the exact lane reads go
+  nowhere. A goal goes to the pilot `--llm` names, as `quackd run --goal`'s goal does. The
+  session's `transcript.jsonl` keeps every line as it was typed.
   OpenAI's data controls say image inputs to that endpoint are scanned for child sexual abuse
   material when they are sent, and a flagged one kept for manual review even under zero data
   retention. How much was sent is on the record, as `state_chars` and `state_tokens_est` on each

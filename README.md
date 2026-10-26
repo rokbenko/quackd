@@ -77,6 +77,7 @@ The first of those has passed 10 of 10 on the physics simulator too, with the du
   * [Your robots, by name](#your-robots-by-name)
   * [The `.duck` file](#the-duck-file)
   * [Pilot it from Claude (MCP)](#pilot-it-from-claude-mcp)
+  * [Drive it yourself](#drive-it-yourself)
   * [What it remembers](#what-it-remembers)
 - [Connect any robot](#connect-any-robot)
 - [Flock mode](#flock-mode)
@@ -818,6 +819,14 @@ claude mcp add quackd -- uvx --from "quackd[microduck]" quackd serve-mcp --robot
 ```
 
 Then, in Claude Code or Claude Desktop: *"List the duck's verbs, then find the ball and kick it."* Before the first verb that moves the body, the model has to say whether this body can do the task at all, judged against the datasheet in its `robot_list` row, and `robot_run_verb` refuses anything that moves until it has. Without a `.duck` loaded the session runs on a default budget of 40 verb steps and five minutes. Load one with `robot_load_duckfile`, or start with `--duckfile`, and its allowlist and budgets apply instead. Pass `--robots duck=microduck:sim2d,arm=lerobot:mock` to front several robots at once, or `--flock NAME` to front a stored flock, with one executor, budget and heartbeat per robot. Simulated robots here each get their own world (a shared arena over MCP is future work), and this session is one model driving each of them in turn, so for robots that pilot themselves and divide the work use flock mode instead (`quackd run <duck> --flock NAME`). Config for both clients, the nine `robot_*` tools, and a two minute script: [docs/guides/mcp.md](docs/guides/mcp.md).
+
+### Drive it yourself
+
+```bash
+quackd drive --robot microduck:sim2d
+```
+
+A prompt, `drive> `, takes one command at a time, and a line that names a call runs without a model being asked: `kick left`, `say good morning`, `move(vx=0.2, duration_s=2)`, or a preset walk scaled to the body's own clamps, `forward` or `turn left`. An empty Enter brakes at once, and a newer command ends whatever is moving the body. Anything else is a goal for the pilot (`--llm`, or the robot's own if it is registered with one). With `--decision-llm`, a line no verb names is first put to that decision LLM as one closed question, which asks you before anything moves when it is unsure. Your command is the verdict for its own call, and lines piped in are recorded as a pipe's, never a person's. The guide, with a captured session: [docs/guides/drive.md](docs/guides/drive.md).
 
 ### What it remembers
 
