@@ -157,3 +157,22 @@ def test_neither_a_repr_nor_a_childs_environment_carries_the_nebius_key(
     env = pilot.child_env(launch.env)
     assert "NEBIUS_API_KEY" not in env
     assert env["LOCAL_API_KEY"] == "the-key", "quackd's local provider reads it here, and only here"
+
+
+def test_a_run_gets_its_own_pilots_key_and_neither_key_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The job holds both keys, since it plays both robots: each run is handed only the one its
+    pilot's server takes, so the duck's quackd cannot send the onboard key anywhere, nor the
+    postman's the Token Factory key."""
+    monkeypatch.setenv("NEBIUS_API_KEY", "token-factory-key")
+    monkeypatch.setenv("ONBOARD_API_KEY", "onboard-key")
+    monkeypatch.setenv("LOCAL_API_KEY", "a-key-left-in-the-shell")
+    own = nebius.Settings.onboard("http://127.0.0.1:8000/v1")
+    env = pilot.child_env(pilot.run_launch(own, _model(TEXT_MODEL), ["task.duck"]).env)
+    assert "NEBIUS_API_KEY" not in env and "ONBOARD_API_KEY" not in env
+    assert env["LOCAL_API_KEY"] == "onboard-key"
+    monkeypatch.delenv("ONBOARD_API_KEY")
+    keyless = nebius.Settings.onboard("http://127.0.0.1:8000/v1")
+    env = pilot.child_env(pilot.run_launch(keyless, _model(TEXT_MODEL), ["task.duck"]).env)
+    assert env["LOCAL_API_KEY"] == nebius.NO_KEY, "never a key some other variable left behind"

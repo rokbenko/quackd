@@ -62,6 +62,24 @@ MODELS: list[dict[str, Any]] = [
     row(VISION_MODEL, modality="text+image->text"),
     row(OTHER_MODEL),
 ]
+#: A robot's own model server, the stand-in started as one: the one model it serves, under the
+#: name it was given, and the key it was started with.
+ONBOARD_MODEL = "nvidia/stand-in-nemotron-onboard"
+ONBOARD_KEY = "onboard-key"
+
+
+def served(model_id: str) -> dict[str, Any]:
+    """One entry of a vLLM server's own list: the id it serves, with no modality, features or
+    price, which such a list never says."""
+    return {
+        "id": model_id,
+        "object": "model",
+        "created": 1_790_000_000,
+        "owned_by": "vllm",
+        "root": "/work/model",
+        "parent": None,
+        "max_model_len": 65536,
+    }
 
 
 def text_completion(n: int, content: str, model: str) -> dict[str, Any]:

@@ -1,10 +1,11 @@
-"""quackd with a Nemotron pilot on Token Factory: `quackd run`, unchanged, with its model
-provider pointed at Nebius.
+"""quackd with a Nemotron pilot: `quackd run`, unchanged, with its model provider pointed at
+Token Factory or at a robot's own model server.
 
 quackd's `local` provider speaks to any OpenAI-compatible server, accepts any model id, asks
 with `tool_choice` auto, and reads a tool call a model writes as JSON text. So the pilot is a
-command line, not code. This module checks the id against the key's live list, then hands quackd
-the address on its command line and the key in the environment, where no process list shows it.
+command line, not code. This module checks the id against the server's live list, then hands
+quackd the address on its command line and the key in the environment, where no process list
+shows it.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from .nebius import KEY_ENV, Model, NebiusError, Settings
+from .nebius import KEY_ENV, ONBOARD_KEY_ENV, Model, NebiusError, Settings
 
 #: quackd's console script, run by this interpreter, so the quackd it runs is the one installed
 #: beside this edition. quackd has no `python -m quackd`, and `-P` keeps the folder a command
@@ -26,6 +27,9 @@ QUACKD = (sys.executable, "-P", "-c", "from quackd.cli import main; main()")
 OWNED = ("--llm", "-l", "--base-url", "--api-key")
 #: Where quackd's local provider reads its key when `--api-key` is absent.
 KEY_VARIABLE = "LOCAL_API_KEY"
+#: The keys this edition reads, which no quackd it starts gets under their own names: each run
+#: is handed the one key its own pilot's server takes, as `KEY_VARIABLE`.
+HIDDEN = (KEY_ENV, ONBOARD_KEY_ENV)
 
 
 @dataclass(frozen=True)
@@ -45,9 +49,9 @@ def _quoted(arg: str) -> str:
 
 
 def child_env(extra: Mapping[str, str]) -> dict[str, str]:
-    """This process's environment for a quackd it starts, less the Nebius key, which quackd
-    never reads under that name, plus `extra`."""
-    env = {name: value for name, value in os.environ.items() if name != KEY_ENV}
+    """This process's environment for a quackd it starts, less the keys this edition reads,
+    which quackd never reads under those names, plus `extra`."""
+    env = {name: value for name, value in os.environ.items() if name not in HIDDEN}
     env.update(extra)
     return env
 
@@ -58,14 +62,14 @@ def owned_flags(args: Sequence[str]) -> list[str]:
 
 
 def quackd_launch(args: Sequence[str], settings: Settings) -> Launch:
-    """Any quackd command, with the Token Factory key where the local provider reads it."""
+    """Any quackd command, with its model server's key where the local provider reads it."""
     return Launch((*QUACKD, *args), {KEY_VARIABLE: settings.api_key})
 
 
 def run_launch(
     settings: Settings, model: Model, run_args: Sequence[str], *, vision: bool = False
 ) -> Launch:
-    """`quackd run <run_args>` piloted by `model` on Token Factory."""
+    """`quackd run <run_args>` piloted by `model` on the server `settings` names."""
     clash = owned_flags(run_args)
     if clash:
         raise NebiusError(f"{', '.join(clash)} is set by passport-nebius: leave it out")
