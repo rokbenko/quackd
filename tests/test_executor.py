@@ -28,6 +28,8 @@ from quackd.safety import (
 from quackd.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
     NoParams,
     Verb,
     VerbContext,
@@ -1170,3 +1172,49 @@ async def test_a_single_camera_observe_says_exactly_what_it_said_before_there_we
     assert result.summary == "frame captured; nothing detected"
     assert "cameras" not in result.data
     assert saved == [[DEFAULT_CAMERA_NAME]]
+
+
+async def _walk_braked(ex: Executor, transport: MockTransport, twists: int) -> VerbResult:
+    """A walk with `stop` asked for beside it, through the same executor, once it has sent
+    `twists` twists, as an MCP client or a person driving the robot would ask for it. Every
+    intent sent after that stop has returned is checked to be no twist."""
+    sent = len(transport.intents_of("move"))
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    for _ in range(1000):
+        if len(transport.intents_of("move")) >= sent + twists:
+            break
+        await asyncio.sleep(0)
+    braked = await ex.run_verb("stop")
+    assert braked.ok, braked.summary
+    after = len(transport.intents)
+    result = await walking
+    assert not [i for i in transport.intents[after:] if i.kind == "move"], "a twist after the stop"
+    return result
+
+
+async def test_a_stop_from_beside_a_walk_ends_it_before_its_next_resend(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`move` resends its twist every tenth of a second, and a stop asked for beside it was
+    undone by the next resend, the walk going on for the rest of its duration. It ends at its
+    next slice now without sending it, and says how far it got."""
+    ex = Executor(registry, mock_transport, contract=duck("walk").frontmatter)
+    result = await _walk_braked(ex, mock_transport, twists=3)
+    assert not result.ok
+    assert result.summary.startswith(f"move: {STOPPED}, so it stopped after ")
+    assert result.data["ended_by"] == STOP_ENDED and result.data["interrupted"] == STOPPED
+    assert result.data["duration_s"] < 1.0
+
+
+async def test_a_walk_a_stop_ended_is_no_failure_for_abort_when_to_count(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A person braking a walk three times is the brake working three times, and `abort_when`
+    passes over it as it passes over a pause, where it would have ended the run on the same verb
+    failing twice in a row."""
+    contract = duck("walk", abort="the same verb fails 2 times in a row").frontmatter
+    ex = Executor(registry, mock_transport, contract=contract)
+    for _ in range(3):
+        result = await _walk_braked(ex, mock_transport, twists=2)
+        assert result.data["ended_by"] == STOP_ENDED, result.summary
+    assert ex.consecutive_failures.get("move", 0) == 0

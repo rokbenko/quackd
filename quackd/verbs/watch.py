@@ -60,7 +60,7 @@ from quackd.transport.base import (
     frame_fetch_of,
     frame_taken_at_of,
 )
-from quackd.verbs.registry import STOPPED, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import STOP_ENDED, STOPPED, Verb, VerbContext, VerbResult
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -1195,6 +1195,8 @@ class _Watch:
             )
         elif ended == "stopped":
             said = f"{why}, so it stopped with the head where it was"
+            # the brake working, which `abort_when`'s count of failures passes over (`_ended_by`)
+            data["ended_by"] = STOP_ENDED
         elif ended == "budget":
             said = f"the run's time is up, so it stopped with the head where it was: {why}"
         elif ended in ENDS_ON_THE_BODY:

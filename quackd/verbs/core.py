@@ -31,7 +31,7 @@ from quackd.transport.base import (
     primary_of,
     twist_shown_since_of,
 )
-from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbResult
+from quackd.verbs.registry import STOP_ENDED, STOPPED, NoParams, Verb, VerbContext, VerbResult
 
 if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
@@ -138,6 +138,16 @@ class _Refused(Exception):
     in a steering loop, to the verb that stops on it (`_stopped_by`)."""
 
 
+class _Interrupted(Exception):
+    """A verb told to end from beside it (`VerbContext.interrupted`), carried with the reason
+    out of the helper that would have sent the next twist, deep in a steering loop, to the verb
+    that ends on it (`_ended_by`)."""
+
+    def __init__(self, why: str) -> None:
+        super().__init__(why)
+        self.why = why
+
+
 async def _twist(ctx: VerbContext, vx: float, vy: float, wz: float) -> None:
     """Send one twist, and raise `_Refused` with the body's own reason when it refuses it.
 
@@ -148,7 +158,14 @@ async def _twist(ctx: VerbContext, vx: float, vy: float, wz: float) -> None:
     pilot reads as the target not being in the room. A Microduck's transport refuses a twist
     once the duck has stopped standing or robotd has stopped showing the twists it was sent, and
     every body refuses one it cannot deliver, a dropped link above all, so each of those reached
-    the pilot as a timeout or a target not found."""
+    the pilot as a timeout or a target not found.
+
+    Nor is a twist sent once the verb has been told to end (`VerbContext.interrupted`): a `stop`
+    from beside it, or the run's minutes spent. `_Interrupted` says why instead. A stop asked for
+    over MCP while `go_to` steered used to send its stop, and the next tick's twist walked the
+    body on, so the brake held for a tenth of a second."""
+    if (why := ctx.interrupted()) is not None:
+        raise _Interrupted(why)
     ack = await ctx.transport.send_intent(Intent.move(vx, vy, wz))
     if not ack.accepted:
         raise _Refused(ack.reason or "no reason given")
@@ -163,6 +180,20 @@ async def _stopped_by(
     return VerbResult.fail(
         f"{verb}: a twist was refused, so {stopped}: {refused}", move_refused=str(refused), **data
     )
+
+
+async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data: Any) -> VerbResult:
+    """Stop the body for a verb told to end from beside it, and fail saying why and how far it
+    got, as `watch` does.
+
+    The `stop` that ended it has stopped the body already, and this stops it again, after the
+    last twist the verb sent rather than before it. A `stop` is marked `ended_by` (`STOP_ENDED`),
+    so `abort_when`'s count of failures in a row passes over it: a person braking a walk three
+    times would otherwise end the run on the same verb failing three times in a row."""
+    await ctx.transport.stop()
+    if why == STOPPED:
+        data["ended_by"] = STOP_ENDED
+    return VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data)
 
 
 def _head_fade_s(ctx: VerbContext) -> float:
@@ -430,7 +461,12 @@ async def move(ctx: VerbContext, p: MoveParams) -> VerbResult:
     vx, vy, wz = _clamped(ctx, p.vx, p.vy, p.wz)  # the manifest's limits, if any
     slices = max(1, round(p.duration_s / MOVE_RESEND_S))
     step = p.duration_s / slices
-    for _ in range(slices):
+    for k in range(slices):
+        # read before each resend, so a `stop` from beside the walk is the last word the body
+        # hears rather than the next slice's twist (`_twist`)
+        if (why := ctx.interrupted()) is not None:
+            walked = f"it stopped after {k * step:.1f} of {p.duration_s:.1f} s"
+            return await _ended_by(ctx, "move", why, walked, duration_s=round(k * step, 3))
         if (fail := await send_or_fail(ctx, Intent.move(vx, vy, wz))) is not None:
             await ctx.transport.stop()
             return fail
@@ -516,6 +552,9 @@ async def _gaze_sweep(
     centre = float(state.extras.get("head_yaw_deg") or 0.0)
     yaws = gaze_sweep_yaws(centre, step, steps, limit_deg)
     for i, yaw in enumerate(yaws):
+        if (why := ctx.interrupted()) is not None:
+            swept = f"the sweep stopped after {i} of {len(yaws)} looks"
+            return await _ended_by(ctx, "search_scan", why, swept, steps=i)
         rad = math.radians(yaw)
         await ctx.transport.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))
         await ctx.transport.sleep(TICK_S)  # let the head settle; the sim clock advances
@@ -591,6 +630,9 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
     glances = _head_fade_s(ctx) > 0
     starts: list[float] = []  # when each turn that ended began, on the body's clock
     for i in range(steps + 1):
+        if (why := ctx.interrupted()) is not None:
+            so, turned = _scan_stopped(ctx, starts, steps, step)
+            return await _ended_by(ctx, "search_scan", why, so, steps=turned)
         # each view is a frame taken after the turn before it had settled, at the heading the
         # result names, on a body that says when its frames were taken: one handed out from
         # memory after a tenth of a second of settling could show the view from before the
@@ -621,6 +663,10 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             # that never turned used to report the whole sweep, the target not in it
             stopped, taken = _scan_stopped(ctx, starts, steps, step)
             return await _stopped_by(ctx, "search_scan", stopped, refused, steps=taken)
+        except _Interrupted as told:
+            # the turn it was told in not counted either, since it was cut short
+            so, turned = _scan_stopped(ctx, starts, steps, step)
+            return await _ended_by(ctx, "search_scan", told.why, so, steps=turned)
         starts.append(begun)
         if glances:
             # The turn ends with a stop, and on a Microduck a stop ends the gaze hold the look
@@ -683,6 +729,8 @@ async def go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         return await _go_to(ctx, p)
     except _Refused as refused:
         return await _stopped_by(ctx, "go_to", "the body stopped", refused)
+    except _Interrupted as told:
+        return await _ended_by(ctx, "go_to", told.why, "the body stopped")
 
 
 def _measures_first(ctx: VerbContext) -> bool:
@@ -814,6 +862,10 @@ async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
     first = await ctx.run_verb("go_to", {"target": p.target, "stop_distance": p.stop_distance})
     if not first.ok:
         return first
+    # a stop between the walk and the `then` verb ends it there, rather than kicking anyway
+    if (why := ctx.interrupted()) is not None:
+        short = f"it stopped before {p.then}: {first.summary}"
+        return await _ended_by(ctx, "approach_and", why, short, go_to=first.data)
     second = await ctx.run_verb(p.then, {})
     return VerbResult(
         ok=second.ok,

@@ -25,7 +25,7 @@ from quackd.verbs.core import (
     SearchScanParams,
     scan_steps,
 )
-from quackd.verbs.registry import VerbRegistry
+from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
 
 DUCK = parse_duck_text(
     """---
@@ -517,6 +517,106 @@ async def test_search_scan_says_how_far_it_turned_when_a_turn_is_refused(
     assert result.summary == said + REFUSED
     assert result.data["steps"] == 1
     assert body.refused == 1 and body.intents[-1].kind == "stop"
+
+
+class _Braked(MockTransport):
+    """A body on which `stop` is asked for from beside the verb running on it, as an MCP client
+    or a person driving it would, once `when` says so, and which counts every twist it was sent
+    after the executor had counted that stop."""
+
+    def __init__(self, when: Callable[[_Braked], bool]) -> None:
+        super().__init__()
+        self.when = when
+        self.executor: Executor | None = None
+        self.brake: asyncio.Task[VerbResult] | None = None
+        self.twists = 0
+        self.twists_after = 0
+
+    def _brake_if_due(self) -> None:
+        if self.brake is None and self.executor is not None and self.when(self):
+            self.brake = asyncio.get_running_loop().create_task(self.executor.run_verb("stop", {}))
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind == "move":
+            self.twists += 1
+            if self.executor is not None and self.executor.stops:
+                self.twists_after += 1
+        ack = await super().send_intent(intent)
+        if intent.kind == "move":
+            self._brake_if_due()
+        return ack
+
+    async def stop(self) -> None:
+        await super().stop()
+        self._brake_if_due()
+
+
+class _BallHere:
+    """A detector that sees the ball right in front, so `go_to` arrives on its first look."""
+
+    name = "ball_here"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [
+            Detection(label="ball", cx=0.5, cy=0.5, area=0.2, bearing_deg=0.0, est_distance_m=0.05)
+        ]
+
+
+async def _braked(
+    registry: VerbRegistry, body: _Braked, detector: object, verb: str, params: dict[str, object]
+) -> tuple[VerbResult, Executor]:
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=detector)  # type: ignore[arg-type]
+    body.executor = ex
+    result = await ex.run_verb(verb, params)
+    assert body.brake is not None, "the stop was never asked for"
+    assert (await body.brake).ok
+    return result, ex
+
+
+async def test_a_stop_from_beside_go_to_ends_it_before_its_next_twist(
+    registry: VerbRegistry,
+) -> None:
+    """A stop asked for while `go_to` steered sent its stop, and the next tick's twist walked
+    the body on. No twist goes out once the stop is counted, and the verb says why it ended, in
+    the words `watch` uses for the same brake."""
+    body = _Braked(lambda b: b.twists >= 3)
+    params = {"target": "ball", "timeout_s": 60}
+    result, _ex = await _braked(registry, body, _BallAway(), "walk_to", params)
+    assert not result.ok
+    assert result.summary == f"go_to: {STOPPED}, so the body stopped"
+    assert result.data["ended_by"] == STOP_ENDED and result.data["interrupted"] == STOPPED
+    assert body.twists_after == 0, "a twist went out after the stop"
+    assert body.intents[-1].kind == "stop"
+
+
+async def test_a_stop_from_beside_search_scan_ends_it_where_it_had_turned_to(
+    registry: VerbRegistry,
+) -> None:
+    """Asked for as the first turn ends, the stop ends the scan before its next look, counting
+    the turn it made and no other."""
+    body = _Braked(lambda b: b.stops >= 1)
+    params = {"target": "ball", "step_deg": 90, "max_steps": 4}
+    result, _ex = await _braked(registry, body, _Empty(), "search_scan", params)
+    assert not result.ok
+    said = f"search_scan: {STOPPED}, so the scan stopped after 1 of 4 turns (90°)"
+    assert result.summary == said
+    assert result.data["steps"] == 1 and result.data["ended_by"] == STOP_ENDED
+    assert body.twists_after == 0, "a twist went out after the stop"
+
+
+async def test_a_stop_after_the_walk_of_approach_and_ends_it_before_its_then_verb(
+    registry: VerbRegistry,
+) -> None:
+    """The walk arrived and stopped, a stop was asked for in the tick after, and `approach_and`
+    used to kick anyway. It ends there now, saying where the walk got to."""
+    body = _Braked(lambda b: b.stops >= 1)
+    params = {"target": "ball", "then": "kick"}
+    result, ex = await _braked(registry, body, _BallHere(), "approach_and", params)
+    assert not result.ok
+    assert result.summary.startswith(f"approach_and: {STOPPED}, so it stopped before kick: ")
+    assert "reached the ball" in result.summary
+    assert result.data["ended_by"] == STOP_ENDED
+    assert "kick" not in [name for name, _params, _result in ex.history], "it kicked anyway"
 
 
 class _Confirming(_Refusing):

@@ -42,6 +42,7 @@ from quackd.log import (
 from quackd.perception.base import Detector, detect_times
 from quackd.transport.base import CameraFrame, DuckState, DuckTransport
 from quackd.verbs.registry import (
+    STOP_ENDED,
     STOPPED,
     Verb,
     VerbContext,
@@ -974,9 +975,10 @@ class Executor:
         key = self.registry.canonical(name)  # `walk` and `move` failures count together
         if result.ok:
             self.consecutive_failures[key] = 0
-        elif result.data.get("ended_by") == PAUSE_ENDED:
+        elif result.data.get("ended_by") in (PAUSE_ENDED, STOP_ENDED):
             # not the verb's failure, nor the pilot's: two pauses a robot met asked for used
-            # to make two in a row of `move`, and `abort_when` ended the run on them
+            # to make two in a row of `move`, and `abort_when` ended the run on them, and a stop
+            # from beside a verb that ends it is the brake working by the same rule
             pass
         else:
             n = self.consecutive_failures.get(key, 0) + 1
