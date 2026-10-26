@@ -71,6 +71,7 @@ from quackd.safety import (
 )
 from quackd.space.places import PlaceStore
 from quackd.space.pose import where_record
+from quackd.space.room import RoomError, load_room
 from quackd.transport.base import (
     CameraFrame,
     DuckTransport,
@@ -1319,6 +1320,7 @@ def fleet_from_flags(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    room: str | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1331,11 +1333,11 @@ def fleet_from_flags(
     The board is asked what it is before any body is built, and a board that does not answer
     refuses the server, as it refuses a run. `--detector` is for one robot too.
 
-    So is `--policy-url`, the policy server an arm hands its `pick` and `manipulate` segments
-    to, by the same rule and in `quackd run`'s words. The server is asked what it serves once
-    the arm is built, and one that does not answer refuses the server, as the board does. Both
-    verbs are confirm gated, so an MCP client reaches them only on a server started with
-    `--yes`.
+    So is `--room`, the room a simulator lays out, and `--policy-url`, the policy server an arm
+    hands its `pick` and `manipulate` segments to, by the same rule and in `quackd run`'s words.
+    The server is asked what it serves once the arm is built, and one that does not answer
+    refuses the server, as the board does. Both verbs are confirm gated, so an MCP client
+    reaches them only on a server started with `--yes`.
 
     Nothing here connects, so nothing here says whether a robot is on a backend its adapter is
     retiring: the plan carries each robot's spec, and `serve` says it just before the server's
@@ -1364,7 +1366,14 @@ def fleet_from_flags(
         )
     except ValueError as e:
         raise SystemExit(str(e)) from e
-    policy_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
+    if room is not None:
+        try:
+            load_room(room)
+        except RoomError as e:
+            raise SystemExit(str(e)) from e
+    body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
+    if room is not None:
+        body_kw["room"] = room
     if flock and (address or camera_url or token):
         raise SystemExit(
             "--flock takes every member's address, token and camera from the registry: "
@@ -1437,6 +1446,11 @@ def fleet_from_flags(
             "--policy-url is one arm's policy server, and a fleet has several bodies: drop "
             "--policy-url, or serve one arm"
         )
+    if fleet and room is not None:
+        raise SystemExit(
+            "--room lays out one simulator's room, and a fleet has several bodies: drop --room, "
+            "or serve one duck"
+        )
     # The one place this server's board is settled, carried on the plan so everything that
     # uses the board reads this value rather than deriving its own.
     host_choice = HostChoice()
@@ -1467,7 +1481,7 @@ def fleet_from_flags(
     if reached is not None:
         board, hello = reached
     manifests = {
-        spec.name or describe(spec, **policy_kw).id: describe(spec, **policy_kw) for spec in specs
+        spec.name or describe(spec, **body_kw).id: describe(spec, **body_kw) for spec in specs
     }
     chosen: Detector | None = None
     if not fleet:
@@ -1532,7 +1546,7 @@ def fleet_from_flags(
             rest_pose=where["rest_pose"],
             # the board's camera joins the one body here; it answered its hello above
             host=board,
-            **policy_kw,
+            **body_kw,
         )
         if policy is not None:
             # asked now, as the board was, so a server that is not there refuses this one in
@@ -1583,6 +1597,7 @@ def serve(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    room: str | None = None,
     talk: bool = False,
     talk_port: int = 8790,
 ) -> None:
@@ -1603,6 +1618,7 @@ def serve(
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
         async_chunks=async_chunks,
+        room=room,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"

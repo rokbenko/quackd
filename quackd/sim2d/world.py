@@ -19,6 +19,8 @@ from typing import Any, Literal
 
 import numpy as np
 
+from quackd.space.room import Room
+
 DT = 0.05  # 20 Hz
 ARENA_HALF = 1.0  # metres; the arena is [-1, 1]²
 DUCK_R = 0.08
@@ -40,6 +42,11 @@ HEAD_YAW_LIMIT = math.radians(60)
 MAX_DUCKS = 4
 DUCK_MIN_SPAWN_SEP = 0.35  # pairwise, metres
 
+ROOM_STREAM = 7_003
+"""The room's own random stream, beside the seed: where a room puts the duck, the ball and the
+other ducks is drawn from it and never from the world's, so a room changes nothing about a world
+without one, and the world's stream still drives every duck's motion noise."""
+
 COLORWAYS = ("cream", "sky", "lavender", "graphite")
 
 Posture = Literal["standing", "sitting", "fallen"]
@@ -59,6 +66,8 @@ class Duck:
     kicks: int = 0
     kicks_connected: int = 0
     colorway: str = "cream"
+    bumps: int = 0
+    """Ticks this duck walked into a room's wall or furniture and was held where it was."""
     rng: np.random.Generator = field(
         default_factory=lambda: np.random.default_rng(0), repr=False, compare=False
     )
@@ -103,11 +112,17 @@ class World:
     kicks_connected: int = 0
     quacks: list[tuple[float, int, str, str | None]] = field(default_factory=list)
     steps: int = 0
+    room: Room | None = None
+    """Walls and furniture inside bounds of their own (`quackd.space.room`), or None for the 2 m
+    arena, which is every world there was before rooms, unchanged."""
 
     def __post_init__(self) -> None:
         if not 1 <= self.n_ducks <= MAX_DUCKS:
             raise ValueError(f"n_ducks must be 1..{MAX_DUCKS}, got {self.n_ducks}")
         self.rng = np.random.default_rng(self.seed)
+        if self.room is not None:
+            self._spawn_in(self.room)
+            return
         # duck 0, ball and person spawn in EXACTLY the pre-flock RNG order (determinism)
         duck0 = Duck(
             x=float(self.rng.uniform(-0.3, 0.3)),
@@ -135,6 +150,49 @@ class World:
         for i in range(1, self.n_ducks):
             extra = self._spawn_extra_duck(i)
             self.ducks.append(extra)
+        for i, d in enumerate(self.ducks):
+            d.colorway = COLORWAYS[i % len(COLORWAYS)]
+
+    def _spawn_in(self, room: Room) -> None:
+        """Where a room puts everything: its own start, spot and person where it names them, and
+        free floor drawn from the room's stream where it does not."""
+        draw = np.random.default_rng([self.seed, ROOM_STREAM])
+
+        def free(
+            r: float,
+            region: tuple[float, float, float, float] | None,
+            avoid: list[tuple[float, float, float]],
+        ) -> tuple[float, float]:
+            xmin, ymin, xmax, ymax = region or room.bounds
+            for _ in range(10_000):
+                x = float(draw.uniform(xmin + r, xmax - r))
+                y = float(draw.uniform(ymin + r, ymax - r))
+                clear = all(math.hypot(x - ax, y - ay) >= sep for ax, ay, sep in avoid)
+                if clear and not room.blocked(x, y, r):
+                    return x, y
+            raise ValueError(f"room {room.name} has no free floor for something {2 * r:.2f} m wide")
+
+        if room.start is not None:
+            x, y, theta = room.start
+        else:
+            x, y = free(DUCK_R, None, [])
+            theta = float(draw.uniform(-math.pi, math.pi))
+        duck0 = Duck(x=x, y=y, theta=theta)
+        duck0.rng = self.rng  # the world's stream drives its motion noise, as without a room
+        if room.ball is not None:
+            bx, by = room.ball
+        else:
+            bx, by = free(BALL_R, room.ball_region, [(x, y, 0.5)])
+        self.ball = Ball(bx, by, start_x=bx, start_y=by)
+        self.people = [Person(*room.person)] if self.person and room.person is not None else []
+        self.ducks = [duck0]
+        for index in range(1, self.n_ducks):
+            own = np.random.default_rng([self.seed, index])
+            avoid = [(d.x, d.y, DUCK_MIN_SPAWN_SEP) for d in self.ducks] + [(bx, by, 0.5)]
+            ex, ey = free(DUCK_R, None, avoid)
+            duck = Duck(x=ex, y=ey, theta=float(own.uniform(-math.pi, math.pi)))
+            duck.rng = own
+            self.ducks.append(duck)
         for i, d in enumerate(self.ducks):
             d.colorway = COLORWAYS[i % len(COLORWAYS)]
 
@@ -296,11 +354,16 @@ class World:
             vy *= 1 + noise[1]
             wz *= 1 + noise[2]
             d.theta = math.atan2(math.sin(d.theta + wz * dt), math.cos(d.theta + wz * dt))
-            d.x += (vx * math.cos(d.theta) - vy * math.sin(d.theta)) * dt
-            d.y += (vx * math.sin(d.theta) + vy * math.cos(d.theta)) * dt
-            lim = ARENA_HALF - d.r
-            d.x = float(np.clip(d.x, -lim, lim))
-            d.y = float(np.clip(d.y, -lim, lim))
+            x = d.x + (vx * math.cos(d.theta) - vy * math.sin(d.theta)) * dt
+            y = d.y + (vx * math.sin(d.theta) + vy * math.cos(d.theta)) * dt
+            if self.room is None:
+                lim = ARENA_HALF - d.r
+                d.x = float(np.clip(x, -lim, lim))
+                d.y = float(np.clip(y, -lim, lim))
+            elif self.room.blocked(x, y, d.r):
+                d.bumps += 1  # a wall holds a walking duck where it is, turned as it turned
+            else:
+                d.x, d.y = float(x), float(y)
 
     def _resolve_duck_collisions(self) -> None:
         """Ducks are solid: overlapping pairs are pushed apart symmetrically."""
@@ -316,6 +379,13 @@ class World:
                     dx, dy, dist = 1.0, 0.0, 1.0
                 nx, ny = dx / dist, dy / dist
                 push = (min_dist - dist) / 2
+                if self.room is not None:
+                    # pushed only where there is floor to be pushed onto
+                    for duck, sign in ((a, -1.0), (b, 1.0)):
+                        px, py = duck.x + sign * nx * push, duck.y + sign * ny * push
+                        if not self.room.blocked(px, py, duck.r):
+                            duck.x, duck.y = px, py
+                    continue
                 lim = ARENA_HALF - DUCK_R
                 a.x = float(np.clip(a.x - nx * push, -lim, lim))
                 a.y = float(np.clip(a.y - ny * push, -lim, lim))
@@ -335,15 +405,22 @@ class World:
                 decel = min(speed, BALL_FRICTION * dt)
                 b.vx *= (speed - decel) / speed
                 b.vy *= (speed - decel) / speed
-                b.x += b.vx * dt
-                b.y += b.vy * dt
-                lim = ARENA_HALF - b.r
-                if abs(b.x) > lim:
-                    b.x = float(np.clip(b.x, -lim, lim))
-                    b.vx = -0.5 * b.vx
-                if abs(b.y) > lim:
-                    b.y = float(np.clip(b.y, -lim, lim))
-                    b.vy = -0.5 * b.vy
+                if self.room is not None:
+                    x, y = b.x + b.vx * dt, b.y + b.vy * dt
+                    if self.room.blocked(x, y, b.r):
+                        b.vx, b.vy = -0.5 * b.vx, -0.5 * b.vy  # off whatever it met
+                    else:
+                        b.x, b.y = float(x), float(y)
+                else:
+                    b.x += b.vx * dt
+                    b.y += b.vy * dt
+                    lim = ARENA_HALF - b.r
+                    if abs(b.x) > lim:
+                        b.x = float(np.clip(b.x, -lim, lim))
+                        b.vx = -0.5 * b.vx
+                    if abs(b.y) > lim:
+                        b.y = float(np.clip(b.y, -lim, lim))
+                        b.vy = -0.5 * b.vy
             # contact push: any duck's body shoves the ball (index order)
             for d in self.ducks:
                 dx, dy = b.x - d.x, b.y - d.y
@@ -353,6 +430,10 @@ class World:
                     if dist < 1e-6:
                         dx, dy, dist = math.cos(d.theta), math.sin(d.theta), 1.0
                     nx, ny = dx / dist, dy / dist
+                    if self.room is not None and self.room.blocked(
+                        d.x + nx * min_dist, d.y + ny * min_dist, b.r
+                    ):
+                        continue  # pinned against a wall, it stays where it is
                     b.x = d.x + nx * min_dist
                     b.y = d.y + ny * min_dist
                     b.vx, b.vy = 0.3 * nx, 0.3 * ny
@@ -383,6 +464,8 @@ class World:
         }
         if len(self.ducks) > 1:
             snap["ducks"] = self._ducks_snapshot()
+        if self.room is not None:
+            snap["room"] = self.room.name
         return snap
 
     def _ducks_snapshot(self) -> list[dict[str, Any]]:

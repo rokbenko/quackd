@@ -31,9 +31,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   keeps where the robot stood, which `robot_recall` and the next run's prompt read back as how far
   it was from the places and from here. Places live beside the memory file, keyed as it is, and
   nothing is written with `--no-memory` or on a dry run. A Microduck on `jsonrpc` or `mock` has
-  them today; the simulators, MOSS and rosbridge do not yet
+  them, and so does its simulator in a room (below); MOSS and rosbridge do not yet
   ([docs/concepts/places.md](docs/concepts/places.md),
   [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
+- **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
+  `--room` on `run`, `record`, `drive` and `serve-mcp` lays out walls and furniture in
+  `microduck:sim2d`: `two-rooms`, `hall`, `arena`, or a file of your own. A wall holds a walking
+  duck where it is and counts the bump, the ball rolls back off it, and the duck's camera sees the
+  walls and nothing behind them. The duck keeps a map of the room, a stand-in for `mapd`, its own
+  mapper, kept to the numbers quackd read of that: it looks only from a stop, after 0.4 s of
+  standing still, as far as the head's ToF sees, and is lost at the start and after a bump or a
+  fall until two stops agree. `map` draws it, the place verbs mark places in it, and a recorded
+  GIF shades the floor it has not seen. Without `--room` the simulator is what it was, to the bit
+  ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
 
 ### Fixed
 

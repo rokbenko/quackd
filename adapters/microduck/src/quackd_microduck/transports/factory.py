@@ -27,12 +27,26 @@ def make_transport(
     address: str | None = None,
     live: bool = False,
     camera_url: str | None = None,
+    room: str | None = None,
 ) -> DuckTransport:
+    """`room` is a room's name or file, for a simulator to lay out and keep a map of the way the
+    duck's own `mapd` would (`transports.mapd`); the adapter refuses it on any other backend."""
     name = name.lower()
     if name == "sim2d":
         from quackd.transport.sim2d import Sim2DTransport
 
-        return Sim2DTransport(seed=seed if seed is not None else 0, live=live)
+        if room is None:
+            return Sim2DTransport(seed=seed if seed is not None else 0, live=live)
+        from quackd.sim2d.world import DUCK_R
+        from quackd.space.room import load_room
+        from quackd_microduck.transports.mapd import sim_map_params
+
+        return Sim2DTransport(
+            seed=seed if seed is not None else 0,
+            live=live,
+            room=load_room(room),
+            map_params=sim_map_params(DUCK_R),
+        )
     if name == "mujoco":
         from quackd_microduck.transports.mujoco import BODY_ENV, DEFAULT_BODY, MujocoTransport
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from PIL import Image
 
-from quackd.adapters.base import RestResult, one_camera_url, refuse_rest_pose
+from quackd.adapters.base import AdapterError, RestResult, one_camera_url, refuse_rest_pose
 from quackd.adapters.manifest import (
     Datasheet,
     Figure,
@@ -25,6 +25,7 @@ from quackd.adapters.manifest import (
     verb_spec,
 )
 from quackd.perception import ASSUMED_LENS
+from quackd.space.room import RoomError
 from quackd.space.source import SpatialSource
 from quackd.transport.base import (
     Ack,
@@ -104,7 +105,13 @@ DATASHEET = Datasheet(
 
 PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
 """The backends that say where the duck is before anything connects: robotd's contact odometry
-(`upstream_api.STATE_ODOM`) and the mock's scripted pose. The simulators say nothing yet."""
+(`upstream_api.STATE_ODOM`) and the mock's scripted pose. A simulator says where the duck is only
+in a room it was given (`ROOM_BACKENDS`)."""
+
+ROOM_BACKENDS = ("sim2d",)
+"""The backends a room (`--room`) is laid out in. A simulator given one keeps a map of it the way
+the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
+real duck's room is the one it stands in, and the mock scripts its own."""
 
 
 def microduck_manifest(
@@ -474,8 +481,27 @@ class MicroduckAdapter:
 # ── what the factory calls (the same four names on every adapter package) ───────────────
 
 
-def describe(backend: str, robot_id: str | None = None) -> RobotManifest:
-    return microduck_manifest(backend, robot_id or "microduck")
+def describe(
+    backend: str, robot_id: str | None = None, *, room: str | None = None
+) -> RobotManifest:
+    _refuse_room(backend, room)
+    # a simulator given a room says where the duck is; any other backend as it promises
+    return microduck_manifest(
+        backend, robot_id or "microduck", places=True if room is not None else None
+    )
+
+
+def _refuse_room(backend: str, room: str | None) -> None:
+    """Refuse a room on a backend that lays none out, rather than take it and drop it."""
+    if room is None or backend in ROOM_BACKENDS:
+        return
+    where = " or ".join(f"microduck:{b}" for b in ROOM_BACKENDS)
+    if backend == "jsonrpc":
+        raise AdapterError(
+            "microduck:jsonrpc is a real duck, whose room is the one it stands in: --room lays "
+            f"a room out in {where}"
+        )
+    raise AdapterError(f"microduck:{backend} lays out no room: --room is for {where}")
 
 
 def implementations() -> dict[str, Verb]:
@@ -496,8 +522,10 @@ def make(
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
+    room: str | None = None,
 ) -> MicroduckAdapter:
     refuse_rest_pose("microduck", rest_pose)
+    _refuse_room(backend, room)
     url = one_camera_url(camera_url, spec=f"microduck:{backend}")
     # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
     # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
@@ -506,7 +534,12 @@ def make(
     # nobody". Reach both over ssh rather than trusting the network.
     from quackd_microduck.transports.factory import make_transport
 
-    transport = make_transport(backend, seed=seed, address=address, live=live, camera_url=url)
+    try:
+        transport = make_transport(
+            backend, seed=seed, address=address, live=live, camera_url=url, room=room
+        )
+    except RoomError as e:
+        raise AdapterError(str(e)) from None
     return MicroduckAdapter(transport, robot_id=robot_id or "microduck")
 
 

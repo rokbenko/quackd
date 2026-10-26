@@ -43,6 +43,7 @@ from quackd.agent.providers.catalogue import (
 )
 from quackd.command import command_text, redacted_url
 from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
+from quackd.space.room import BUILT_IN as BUILT_IN_ROOMS
 
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
     from quackd.adapters.base import RestResult
@@ -1656,6 +1657,7 @@ def _run_impl(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    room: str | None = None,
     controller: str | None = None,
     play: bool | None = None,
     talk: bool = False,
@@ -1711,6 +1713,7 @@ def _run_impl(
     from quackd.perception import DETECTOR_CHOICES, detector_for, explicit_detector
     from quackd.registry import RegistryError, Resolved, no_rest_pose_refusal
     from quackd.safety import KillSwitch, allow_all
+    from quackd.space.room import RoomError, load_room
     from quackd.transport.base import TransportError
 
     if (duckfile is None) == (goal is None):
@@ -1757,9 +1760,18 @@ def _run_impl(
     except ValueError as e:
         _fail(str(e))
         return
-    # passed to `describe` and `make_adapter` only when there is one, so every other body is
-    # asked exactly as it always was
-    policy_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
+    # A room is read before anything is built, so a name nobody ships costs one sentence.
+    if room is not None:
+        try:
+            load_room(room)
+        except RoomError as e:
+            _fail(str(e))
+            return
+    # the policy server and the room, each passed to `describe` and `make_adapter` only when
+    # there is one, so every other body is asked exactly as it always was
+    body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
+    if room is not None:
+        body_kw["room"] = room
     # any spelling of nothing is the default, as a blank --detector is
     flown_by = (controller or "").strip().lower() or CONTROLLERS[0]
     if flown_by not in CONTROLLERS:
@@ -1893,6 +1905,13 @@ def _run_impl(
             hint="drop --policy-url, or run the task on one arm at a time",
         )
         return
+    if fleet and room is not None:
+        # every flock path builds its own members in the arena, so it would be dropped too
+        _fail(
+            "--room lays out one simulator's room, and a fleet has several bodies",
+            hint="drop --room, or run the task on one duck",
+        )
+        return
     # The one place this run's board is settled, so everything that uses the board reads this
     # value rather than deriving its own. A fleet has none, whatever the environment says.
     stored = here.host_kwargs()
@@ -1932,7 +1951,7 @@ def _run_impl(
             # policy server what the arm's policy does.
             vocabularies = []
             for one in specs:
-                body = describe(one, **policy_kw)
+                body = describe(one, **body_kw)
                 vocabularies.append(
                     registry_for(one, with_host_camera(body, hello) if hello is not None else body)
                 )
@@ -1958,7 +1977,7 @@ def _run_impl(
         # Refuse before connecting, with the validator's words. `serve-mcp` has always done
         # this; `run` never did, and reached the loop's tool_schemas and died on a raw
         # VerbNotFound with the robot already connected and a run directory already made.
-        manifests = [describe(s, **policy_kw) for s in specs]
+        manifests = [describe(s, **body_kw) for s in specs]
         # the body as its adapter describes it, before the board's camera joins it: all a
         # detector built before connect may know about the lens (below)
         described = manifests[0]
@@ -2339,7 +2358,7 @@ def _run_impl(
             # its hello already, so building this asks it nothing
             host=board,
             **here.adapter_kwargs(address=address, camera_url=camera_url, token=token),
-            **policy_kw,
+            **body_kw,
         )
     except (ProviderError, TransportError, ImportError) as e:
         _fail(str(e))
@@ -3684,6 +3703,14 @@ _ASYNC_CHUNKS = typer.Option(
     "chunks: slower by a round trip a chunk, and the run's record says it was given.",
     rich_help_panel="Robot",
 )
+_ROOM = typer.Option(
+    None,
+    "--room",
+    help=f"A room for the duck's simulator to lay out: {', '.join(BUILT_IN_ROOMS)}, or a .yaml "
+    "file of your own. The duck keeps a map of it the way its own mapd would, revealed where it "
+    "stops and looks, and can mark places in it. microduck:sim2d only, and one robot only.",
+    rich_help_panel="Robot",
+)
 _FOV = typer.Option(
     None,
     "--fov-deg",
@@ -3754,6 +3781,7 @@ def run(
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
+    room: str | None = _ROOM,
     gif: bool = typer.Option(
         True,
         "--gif/--no-gif",
@@ -3831,6 +3859,7 @@ def run(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            room=room,
             controller=controller,
             play=play,
             talk=talk,
@@ -3863,6 +3892,7 @@ def record(
         "pins the simulator, so a stored flock belongs to `quackd run`.",
         rich_help_panel="Robot",
     ),
+    room: str | None = _ROOM,
     log: bool | None = _LOG,
     log_prompt: bool | None = _LOG_PROMPT,
 ) -> None:
@@ -3908,6 +3938,7 @@ def record(
             log_prompt=log_prompt,
             run_name=run_name,
             play=play,
+            room=room,
         )
 
 
@@ -4095,7 +4126,7 @@ def _preflight_impl(
         # built once and never connected, so a camera, a fault spec or a stored field the
         # simulator refuses is one sentence now rather than a failed connect on every file
         built = make_adapter(here.spec, seed=0, faults=faults, **kwargs)
-        manifest = describe(here.spec, **({} if policy is None else {"policy": policy}))
+        manifest = describe(here.spec, policy=policy)
     except (AdapterError, TransportError, ImportError, ValueError) as e:
         _fail(str(e))
         return
@@ -4357,6 +4388,7 @@ def drive_cmd(
         help="Adopt a .duck's contract for the session: its allowlist, gates and budgets. Its "
         "body is not run.",
     ),
+    room: str | None = _ROOM,
     yes: bool = _YES,
     dry_run: bool = _DRY,
     runs_dir: str = _RUNS,
@@ -4386,6 +4418,7 @@ def drive_cmd(
         decision_llm=decision_llm,
         decision_url=decision_url,
         duckfile=duckfile,
+        room=room,
         yes=yes,
         dry_run=dry_run,
         runs_dir=runs_dir,
@@ -4718,6 +4751,7 @@ def serve_mcp(
     policy_token: str | None = _POLICY_TOKEN,
     accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
     async_chunks: bool = _ASYNC_CHUNKS,
+    room: str | None = _ROOM,
     dry_run: bool = _DRY,
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Allow confirm-gated verbs (there is no terminal to ask)."
@@ -4778,6 +4812,7 @@ def serve_mcp(
             policy_token=policy_token,
             accept_other_frame=accept_other_frame,
             async_chunks=async_chunks,
+            room=room,
             talk=talk,
             talk_port=talk_port,
             # the robots are connected in there, so a retiring backend is said from there,

@@ -294,6 +294,17 @@ STATE_T_NS = UpstreamRef(
     "where 't is still the loop's own elapsed time' (lib.rs:3931-3935). quackd times odometry by "
     "it, and by t on a robotd that sends no t_ns.",
 )
+TOF_FOV = UpstreamRef(
+    "the head's ToF sees 45 degrees per axis",
+    "VERIFIED",
+    src("kinematics/src/tof.rs", 34),
+    "'The sensor's square field of view, degrees per axis' is 45 by 45, 'per ST's datasheet for "
+    "both generations' (kinematics/src/tof.rs:32-34), an 8 by 8 grid of zones across it "
+    "(tof.rs:28-29). "
+    "The simulators' stand-in for the duck's map reveals what this field sees from each stop.",
+)
+TOF_FOV_DEG = 45.0
+"""TOF_FOV, as a number."""
 #: The order robot.state.joints is indexed in, JOINT_NAMES (lib.rs:552-568): the left leg, the
 #: neck, head and mouth, then the right leg.
 JOINT_NAMES = (

@@ -1034,6 +1034,34 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     assert "QUACKD_POLICY_URL" not in env_example, "the policy server's address has no variable"
 
 
+def test_the_room_is_documented_where_it_is_configured() -> None:
+    """`--room` lays out a room for the duck's simulator on `run`, `record`, `drive` and
+    `serve-mcp`, and a flag nobody can find is a room nobody maps. The front page names it in all
+    four commands' rows, and the places page names every room quackd ships, says what a room file
+    holds, and quotes `two-rooms` as it ships, so the example is one a person can copy."""
+    from quackd.cli import app
+    from quackd.space.room import BUILT_IN
+
+    callbacks = {
+        (c.name or c.callback.__name__).replace("_", "-"): c.callback
+        for c in app.registered_commands
+        if c.callback is not None
+    }
+    commands = ("run", "record", "drive", "serve-mcp")
+    for name in commands:
+        assert "room" in callbacks[name].__code__.co_varnames, name
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for name in commands:
+        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        assert "--room" in row, f"the README's {name} row does not name --room"
+    places = (REPO / "docs" / "concepts" / "places.md").read_text(encoding="utf-8")
+    for room in BUILT_IN:
+        assert f"`{room}`" in places, f"docs/concepts/places.md does not name the room {room}"
+    shipped = (REPO / "quackd" / "space" / "rooms" / "two-rooms.yaml").read_text(encoding="utf-8")
+    body = "\n".join(line for line in shipped.splitlines() if not line.startswith("#"))
+    assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one quackd ships"
+
+
 def test_play_is_documented_where_it_is_configured() -> None:
     """`--play` and a task file's `play: true` change what a pilot is told, so somebody turning
     them on has to find what they add and what they leave alone: the front page's `run`,

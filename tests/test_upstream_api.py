@@ -311,6 +311,31 @@ def test_the_mapd_refs_are_assumptions_read_at_one_branch_commit() -> None:
         assert mapd_api.PIN in ref.source, ref
 
 
+@pytest.mark.parametrize(
+    ("ref", "quoted"),
+    [
+        (mapd_api.MAPD_SETTLE, f"settle_s {mapd_api.SETTLE_S:g}"),
+        (mapd_api.MAPD_SETTLE, f"{mapd_api.STILL_SPEED_MPS:g} m/s"),
+        (mapd_api.MAPD_SETTLE, f"{mapd_api.STILL_TURN_RPS:g} rad/s"),
+        (mapd_api.MAPD_STREAM, f"every {mapd_api.STREAM_PERIOD_S * 1000:g} ms"),
+        (mapd_api.MAPD_AGREE, {2: "two consecutive stops"}.get(mapd_api.AGREE_STOPS, "?")),
+        (mapd_api.MAPD_CORRECTION_GATE, f"track_max_correction_m {mapd_api.CORRECTION_M:.2f}"),
+        (mapd_api.MAPD_CORRECTION_GATE, f"{mapd_api.CORRECTION_DEG:g} degrees"),
+        (mapd_api.MAPD_GRID, f"res_m is {mapd_api.GRID_RES_M:g} when not given"),
+        (mapd_api.MAPD_TOF_RANGE, f"min_range_m {mapd_api.TOF_MIN_M:g}"),
+        (mapd_api.MAPD_TOF_RANGE, f"max_range_m {mapd_api.TOF_MAX_M:.1f}"),
+        (upstream_api.TOF_FOV, f"is {upstream_api.TOF_FOV_DEG:g} by {upstream_api.TOF_FOV_DEG:g}"),
+    ],
+)
+def test_each_number_the_simulated_map_keeps_to_is_the_one_its_ref_quotes(
+    ref: object, quoted: str
+) -> None:
+    """The numbers are typed once, beside the refs, for the code that keeps to them, and each has
+    to be the figure its ref quotes from upstream: a number changed on one side alone is a stand-in
+    that no longer stands in for what quackd read."""
+    assert quoted in str(getattr(ref, "note", "")), (ref, quoted)
+
+
 def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
     """The floor and the version read are numbers the handshake compares, and the frame route is
     a path the transport matches `--camera-url` against, so each has to agree with the ref beside

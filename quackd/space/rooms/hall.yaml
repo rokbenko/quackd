@@ -1,0 +1,10 @@
+# A long hall with furniture along it, longer than the ToF reaches from one end: a map of it is
+# taken a stop at a time.
+name: hall
+size: [4.0, 1.2]
+boxes:
+  - [-0.6, 0.45, 0.5, 0.3]
+  - [0.8, -0.45, 0.6, 0.3]
+start: [-1.6, 0.0, 0.0]
+ball: [1.7, 0.2]
+person: [1.7, -0.3]

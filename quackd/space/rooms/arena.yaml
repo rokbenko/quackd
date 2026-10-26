@@ -1,0 +1,4 @@
+# The cartoon's 2 m arena as a room, square and empty: the simulated map and the place verbs in
+# the arena's own size, where a wall holds the duck rather than letting it slide along.
+name: arena
+size: [2.0, 2.0]

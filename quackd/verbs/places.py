@@ -16,7 +16,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.space.places import PLACE_NAME_MAX, PlaceView, place_listing
-from quackd.space.pose import where_record, where_summary
+from quackd.space.pose import Fix, where_record, where_summary
+from quackd.space.source import SpatialSource
 from quackd.verbs.registry import Verb, VerbContext, VerbResult
 
 NO_POSE = "this robot does not say where it is, so it has no places"
@@ -66,11 +67,28 @@ def view_record(v: PlaceView) -> dict[str, Any]:
     return out
 
 
+async def settled_fix(ctx: VerbContext, source: SpatialSource) -> Fix:
+    """The source's reading once the stop the robot stands at has been looked from. A map that
+    takes its keyframes at stops says it is `collecting` one while the robot stands still, and is
+    given up to its own settle time to finish, a sleep at a time of its own period, so what is
+    read, drawn or marked is what that stop saw. A source that keeps no such time is read at once,
+    and a stop or a pause reads it as it is."""
+    fix = source.fix()
+    limit, step = source.settle_timeout_s, source.period_s
+    if not fix.collecting or limit is None or not step:
+        return fix
+    deadline = ctx.transport.now() + limit
+    while fix.collecting and ctx.transport.now() < deadline and ctx.interrupted() is None:
+        await ctx.transport.sleep(step)
+        fix = source.fix()
+    return fix
+
+
 async def map_verb(ctx: VerbContext, p: MapParams) -> VerbResult:
     book = ctx.places
     if book is None:
         return VerbResult.fail(f"map: {NO_POSE}")
-    fix = book.source.fix()
+    fix = await settled_fix(ctx, book.source)
     record = where_record(fix)
     views = book.views()
     lines = [f"where: {where_summary(record)}, by {book.source.describe()}"]
@@ -91,6 +109,7 @@ async def mark_place(ctx: VerbContext, p: MarkPlaceParams) -> VerbResult:
     book = ctx.places
     if book is None:
         return VerbResult.fail(f"mark_place: {NO_POSE}")
+    await settled_fix(ctx, book.source)  # so the place is where a map that looks at stops saw it
     try:
         place, old = book.mark(p.name, p.note)
     except ValueError as e:

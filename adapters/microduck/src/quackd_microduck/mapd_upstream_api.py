@@ -156,3 +156,26 @@ MAPD_TOF_RANGE = UpstreamRef(
     "min_range_m 0.08 and max_range_m 2.0, with ranges taken as axial (project.rs:33-40, 60-64): "
     "what the simulated map reveals a cell to at most",
 )
+
+# ── the numbers, for the code that keeps to them ────────────────────────────────────────
+#
+# Each is the figure its ref above quotes, held to it by tests/test_upstream_api.py, so the
+# simulated map (`transports/mapd.py:sim_map_params`) and the client never type one of their own.
+
+SETTLE_S = 0.4
+"""MAPD_SETTLE: how long the body stands still before a keyframe."""
+STILL_SPEED_MPS = 0.03
+STILL_TURN_RPS = 0.08
+"""MAPD_SETTLE: below these the body counts as still."""
+STREAM_PERIOD_S = 0.25
+"""MAPD_STREAM: how often map.state comes."""
+AGREE_STOPS = 2
+"""MAPD_AGREE: how many stops a lost body takes to know where it is again."""
+CORRECTION_M = 0.10
+CORRECTION_DEG = 3.0
+"""MAPD_CORRECTION_GATE: the largest correction believed at a stop."""
+GRID_RES_M = 0.05
+"""MAPD_GRID: a cell, unless asked for another."""
+TOF_MIN_M = 0.08
+TOF_MAX_M = 2.0
+"""MAPD_TOF_RANGE: the ranges a return is placed at."""

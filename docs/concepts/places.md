@@ -15,8 +15,10 @@ A body's transport carries a reading, its `spatial` source, for the life of one 
 |---|---|---|
 | Microduck over `robotd` (`jsonrpc`) | contact odometry, `robot.state.odom`, which every robotd quackd serves has sent since before the release quackd reads | one connection, begun again within it when the duck is picked up, falls or rides a fall down, when robotd's clock goes back, or on a step longer than its walking policy could make in the time between two frames |
 | Microduck `mock` | the mock's scripted pose | the mock's own, for as long as it runs |
+| Microduck `sim2d` in a room, with `--room` | quackd's stand-in for the duck's own map, `mapd`, kept to the numbers quackd read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
 
-Every other body says nothing of where it is yet, and the place verbs are not offered on it. A
+Every other body says nothing of where it is yet, and the place verbs are not offered on it. The
+simulator without a room is one of them. A
 robotd from before the estimator sends no `odom`, and one whose odometry stays at zero through a
 walk its own state showed it taking (`robotd --fake`, which has no servos to read) gives no
 reading either.
@@ -37,8 +39,8 @@ pilot is told how far the duck has walked in it.
 - **Every observation** lists the nearest places as `places: kitchen 1.2 m +38°, door 0.6 m -95°`,
   each with how far it is and which way, in degrees from where the robot faces, positive to its
   left, or `door here` for the one it stands on, then the names of the places it cannot reach now
-  and why. The line is absent on a body
-  with no places, so a run without them reads as it always did.
+  and why. The line is absent on a body with no places, so a run without them reads as it always
+  did.
 - **The system prompt** gains a `## Places` section when a place verb is allowed, which says how
   far to trust each kind of reading.
 
@@ -53,7 +55,9 @@ pilot is told how far the duck has walked in it.
 None of them moves the body, so all three run before the pilot's verdict and while a pause a
 robot met was granted holds. `mark_place` takes no coordinates: a place is where the robot stood,
 read off the robot, never a spot a pilot named. It is refused while the robot does not know where
-it is.
+it is. A map that looks only when the robot stops says when it has not looked from the stop the
+robot stands at yet, and `map` and `mark_place` wait for that look, up to the map's own settle
+time, so what they read is what the stop saw.
 
 ## A place belongs to the frame it was marked in
 
@@ -80,6 +84,39 @@ itself. With `--no-memory`, places last as long as the run or the session and no
 A dry run reads the places a robot has and changes none, as it runs no `mark_place` or
 `forget_place`. `quackd drive` keeps them as a run does.
 
+## A room for the simulator
+
+`--room` lays a room out in the Microduck's simulator, on `run`, `record`, `drive` and `serve-mcp`,
+for one duck: `arena`, `two-rooms`, `hall`, or a `.yaml` file of your own. This is `two-rooms`:
+
+```yaml
+name: two-rooms
+size: [3.0, 2.0]
+walls:
+  - [0.0, -1.0, 0.0, -0.3]
+  - [0.0, 0.3, 0.0, 1.0]
+boxes:
+  - [1.0, 0.6, 0.4, 0.3]
+start: [-1.0, 0.0, 0.0]
+ball: {region: [0.3, -0.8, 1.4, 0.3]}
+person: [-1.2, 0.7]
+```
+
+`size` is the outer walls, in metres across and centred on the origin. Each wall runs from `x0, y0`
+to `x1, y1`, 4 cm thick unless a fifth number says, and each box is a centre and a size, `cx, cy,
+width, depth`. `start` is where the duck stands and which way it faces, and `ball` a spot or a
+region the seed draws it in. A mistake in a file is refused with the file and the key named.
+
+In a room, a wall holds a walking duck where it is and counts a bump, and the ball rolls back off
+it. The duck's camera sees the walls and the furniture, in greys no detector takes for anything,
+and nothing behind them. And the duck keeps a map of the room the way its own `mapd` keeps one,
+kept to the numbers quackd read of `mapd` ([the Microduck's page](../adapters/microduck/README.md#mapd-the-onboard-map-unverified-an-upstream-branch-in-no-release)):
+it looks only from a stop, once the duck has stood still for 0.4 s, as far as the head's ToF sees,
+45° across and 2 m out, and it is lost at the start and after a bump or a fall until two stops
+agree. `map` draws it. Every state says the map is quackd's stand-in, so a walk in a room is no
+measure of the real map's errors. Without `--room` the simulator is the arena it always was, and
+says nothing of where the duck is.
+
 ## Memory that knows where
 
 A note a pilot saves with `remember` keeps where the robot stood, read off the robot, when it knew.
@@ -90,7 +127,8 @@ note saved before places, or where the robot did not know, reads as it always di
 ## What quackd does not do
 
 - **Make a map.** A map is the robot's own work: a Microduck's `mapd`, when a robotd release
-  carries it.
+  carries it. The simulator's map of a room is a stand-in for that one, and knows the room's walls
+  exactly.
 - **Share a frame between robots.** Two robots that have just met share no frame of reference
   ([ADR-0020](../adr/0020-heterogeneous-flocks.md)), so their places stay their own.
 
