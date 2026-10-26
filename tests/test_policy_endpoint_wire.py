@@ -872,6 +872,32 @@ def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_anoth
     assert _store().get("arm") is not None
 
 
+@pytest.mark.parametrize("token", ["", "\udc80"], ids=["empty", "a lone surrogate"])
+def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_to(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, token: str
+) -> None:
+    """A record whose token cannot be read gives no tag to hold the endpoint by that name to, and
+    quackd's own tag, which is all there is then, another machine's up gives its endpoints too:
+    the remote delete is refused before anything is asked, and --forget still forgets the
+    record."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    other = _made_elsewhere(hf, monkeypatch, tagged=True)
+    store = _store()
+    saved = json.loads(store.path.read_text(encoding="utf-8"))
+    saved["endpoints"]["arm"]["token"] = token
+    store.path.write_text(json.dumps(saved), encoding="utf-8")
+    before = len(hf.requests)
+    refused = _cli("policy", "endpoint", "delete", "arm", "--yes")
+    said = _flat(refused.output)
+    assert refused.exit_code == 1 and "holds no token quackd can read" in said, said
+    assert "delete it on huggingface.co if it is yours" in said
+    assert "quackd policy endpoint delete arm --forget forgets the record" in said
+    assert len(hf.requests) == before and hf.endpoints.get(("rok", "arm")) is other
+    forgot = _cli("policy", "endpoint", "delete", "arm", "--forget", "--yes")
+    assert forgot.exit_code == 0 and not _store().recorded("arm"), forgot.output
+    assert hf.endpoints.get(("rok", "arm")) is other
+
+
 def test_delete_forget_forgets_the_record_and_leaves_hugging_face_as_it_is(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:

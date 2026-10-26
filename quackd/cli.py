@@ -5602,6 +5602,15 @@ def endpoint_delete(
             f"no endpoint called {name} is recorded on this machine: quackd policy endpoint "
             "list says what there is"
         )
+    if namespace is not None and marked is None and not forget:
+        # quackd's own tag is all there is to go by then, and another machine's up gives that
+        # to its endpoints too
+        _fail(
+            f"this machine's record of hf:{name} holds no token quackd can read, so the endpoint "
+            f"by that name on {namespace}'s account cannot be told from another machine's, and "
+            "quackd does not delete it: delete it on huggingface.co if it is yours, and quackd "
+            f"policy endpoint delete {name} --forget forgets the record"
+        )
     doing = "forgetting" if forget else "deleting"
     if not yes and not _can_prompt():
         _fail(

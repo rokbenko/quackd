@@ -759,16 +759,20 @@ class EndpointStore:
         """The account `name`'s record says its endpoint is on, and the tag `up` gave that
         endpoint from the record's token (`mark`), each read without checking the rest of the
         record, for `delete` to remove an endpoint whose record went wrong, held to that tag
-        first (`confirmed`). None for either the record does not hold as `up` writes it, and for
+        first (`confirmed`). None for either the record does not hold as `up` writes it, a token
+        its server could not take among them, which gives no tag to hold an endpoint to, and for
         both with no record."""
         raw = self._load().get(name)
         if not isinstance(raw, dict):
             return None, None
         space, token = raw.get("namespace"), raw.get("token")
-        return (
-            space if isinstance(space, str) and ACCOUNT.match(space) else None,
-            _mark_of(token) if isinstance(token, str) and token.strip() else None,
-        )
+        try:
+            marked = (
+                _mark_of(wire.clean_token(token, "a record")) if isinstance(token, str) else None
+            )
+        except ValueError:
+            marked = None
+        return space if isinstance(space, str) and ACCOUNT.match(space) else None, marked
 
     def recorded(self, name: str) -> bool:
         return name in self._load()
