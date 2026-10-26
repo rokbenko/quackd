@@ -52,6 +52,7 @@ from quackd.adapters.factory import (
     needs_rest_pose,
     parse_robot_spec,
 )
+from quackd.dotenv_names import from_dotenv
 from quackd.host import clean_token, parse_host
 from quackd.memory import robot_slug
 
@@ -72,6 +73,15 @@ def registry_dir(override: str | Path | None = None) -> Path:
     """`--registry-dir`, else `$QUACKD_REGISTRY_DIR`, else `~/.quackd`."""
     raw = override or os.environ.get(ENV_DIR) or DEFAULT_DIR
     return Path(raw).expanduser()
+
+
+def named_by_dotenv(override: str | Path | None = None) -> bool:
+    """Whether the registry `registry_dir(override)` gives is one a `.env` file chose: there is
+    no `--registry-dir`, and the `QUACKD_REGISTRY_DIR` in effect is the value a `.env` gave it
+    rather than the shell (`dotenv_names`). Robots and flocks may live there; an endpoint's
+    record, which decides which policy drives an arm, is never read from one
+    (`quackd_lerobot.policy.endpoint.reach`)."""
+    return not override and bool(os.environ.get(ENV_DIR)) and from_dotenv(ENV_DIR)
 
 
 def _now() -> str:

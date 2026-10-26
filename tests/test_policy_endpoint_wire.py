@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -928,19 +929,19 @@ def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
 
 
 @pytest.mark.parametrize("answer", [404, 403])
-def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
+def test_a_planted_record_sends_the_account_token_nowhere(
     hf: FakeAPI,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     _no_request_reaches_hugging_face: list[str],
     answer: int,
 ) -> None:
-    """The CLI loads the working directory's `.env`, which can name another registry, so a
-    project cloned from somebody else can plant a record of hf:arm naming an endpoint of theirs.
-    A run reads the endpoint from the API with the account's token before the bearer goes
-    anywhere, and Hugging Face has no such endpoint of the account's, or refuses the token for
-    an account it is not: the run is refused, and the planted address is never even looked up,
-    which the suite's guard would have written down."""
+    """A record of hf:arm naming an endpoint of somebody else's, planted in the registry this
+    shell names, as anybody who could write a file in it could. A run reads the endpoint from
+    the API with the account's token before the bearer goes anywhere, and Hugging Face has no
+    such endpoint of the account's, or refuses the token for an account it is not: the run is
+    refused, and the planted address is never even looked up, which the suite's guard would
+    have written down."""
     planted = tmp_path / "planted"
     attacker = replace(
         E.new_record(
@@ -955,11 +956,7 @@ def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
         url="https://a7tacker00.endpoints.huggingface.cloud",
     )
     E.EndpointStore(planted).save(attacker)
-    project = tmp_path / "cloned-project"
-    project.mkdir()
-    (project / ".env").write_text(f"QUACKD_REGISTRY_DIR={planted}\n", encoding="utf-8")
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR", raising=False)
-    monkeypatch.chdir(project)
+    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(planted))
     if answer == 403:
         real = FakeAPI._endpoint
 
@@ -981,6 +978,62 @@ def test_a_record_a_dotenv_plants_sends_the_account_token_nowhere(
     assert read.headers["authorization"] == f"Bearer {ACCOUNT_TOKEN}"
     assert not _no_request_reaches_hugging_face, "the planted address was looked up"
     assert ACCOUNT_TOKEN not in result.output and attacker.token not in result.output
+
+
+def _cloned_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dotenv: str) -> None:
+    """The working directory a project cloned from somebody else is, with its `.env`."""
+    project = tmp_path / "cloned-project"
+    project.mkdir()
+    (project / ".env").write_text(dotenv, encoding="utf-8")
+    monkeypatch.chdir(project)
+
+
+def test_a_registry_a_dotenv_names_is_not_one_hf_name_reads(
+    hf: FakeAPI,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _no_request_reaches_hugging_face: list[str],
+) -> None:
+    """A project's `.env` may set most things, and not the registry hf:NAME reads an endpoint's
+    record from: the same `.env` could set an account token of its own beside a record of its
+    own, and choose which policy drives the arm. One a `.env` named is refused before anything
+    is asked of anyone, even when it holds a record Hugging Face would confirm."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    shells = os.environ["QUACKD_REGISTRY_DIR"]  # the suite's, which this shell exported
+    _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={Path(shells).as_posix()}\n")
+    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+    before = len(hf.requests)
+    result = _cli("policy", "check", "--policy-url", "hf:arm")
+    said = _flat(result.output)
+    assert result.exit_code == 1, said
+    assert "QUACKD_REGISTRY_DIR comes from a .env file here" in said
+    assert "export it in the shell, or pass --registry-dir" in said
+    assert len(hf.requests) == before and not _no_request_reaches_hugging_face
+
+
+@pytest.mark.parametrize("named", ["by the shell", "by --registry-dir", "not by the .env"])
+def test_hf_name_reads_a_registry_the_shell_or_the_flag_names(
+    hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, named: str
+) -> None:
+    """The shell's own `QUACKD_REGISTRY_DIR`, which a `.env` never overrides, and
+    `--registry-dir` are both read, and a `.env` that sets anything but the registry changes
+    nothing."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    shells = os.environ["QUACKD_REGISTRY_DIR"]
+    elsewhere = (tmp_path / "elsewhere").as_posix()
+    check = ["policy", "check", "--policy-url", "hf:arm"]
+    if named == "by the shell":
+        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
+    elif named == "by --registry-dir":
+        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
+        monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+        check += ["--registry-dir", shells]
+    else:
+        monkeypatch.delenv("QUACKD_TEST_SOMETHING_ELSE", raising=False)
+        _cloned_project(tmp_path, monkeypatch, "QUACKD_TEST_SOMETHING_ELSE=1\n")
+    result = _cli(*check)
+    said = _flat(result.output)
+    assert result.exit_code == 0 and "policy scripted:sweep" in said, said
 
 
 @pytest.mark.parametrize("forwarded", [True, False])

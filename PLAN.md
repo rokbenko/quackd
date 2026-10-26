@@ -170,7 +170,7 @@ before.
   `quackd policy check --policy-url hf:NAME --bench`, from the laptop, for the first round trip
   through an endpoint anybody has timed, and the cold start a wake from zero takes. A second
   account of yours then settles whether the API keeps one account's endpoints from another's
-  token, which the refusal of a record a project's `.env` planted rests on.
+  token, which the refusal of a planted record rests on.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
   with neither a lookout task nor a checklist. A coordinator flock across two machines needs a
   distributed clock first; a pilot flock needs none and has simply never been tried across two.

@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from rich.text import Text
 
-from quackd import __version__, ui
+from quackd import __version__, dotenv_names, ui
 from quackd.agent.decision.frames import MAX_SIDE_PX as DECISION_FRAME_PX
 from quackd.agent.providers.catalogue import (
     CLOUD_NAMES,
@@ -244,9 +244,13 @@ def _main(
     # The one beside where you run, then the bare call, which walks up from quackd's own
     # installed directory and so finds the `.env` a `uv venv` user put in their venv root.
     # Neither overrides a variable already in the environment, and the first file to define
-    # a name wins, so the file next to the command you typed is the one that counts.
+    # a name wins, so the file next to the command you typed is the one that counts. What they
+    # added is kept apart from what the shell exported (`dotenv_names`), for the few settings
+    # a project's own `.env` may not decide, such as the registry `--policy-url hf:NAME` reads.
+    before = set(os.environ)
     load_dotenv(Path.cwd() / ".env")
     load_dotenv()
+    dotenv_names.remember(before)
     ui.configure(no_color=no_color)
     _warn_old_spellings()
 

@@ -1106,6 +1106,12 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     for needle in ("quackd policy endpoint up", "hf:NAME", "/v1/health", "--token-env"):
         assert needle in unreleased, f"CHANGELOG.md's [Unreleased] does not name {needle!r}"
     assert _one_line(read_first) in _one_line(unreleased), "the changelog says no API read first"
+    # and reads it from no registry a project's .env named
+    no_dotenv = "A project's `.env` cannot name the registry it reads"
+    assert _one_line(no_dotenv) in _one_line(unreleased), "the changelog keeps the .env gap open"
+    assert "is trusted as the shell is" not in unreleased, "the changelog still says it is open"
+    dotenv_refused = "came from a project's `.env` is refused before anything is asked"
+    assert _one_line(dotenv_refused) in _one_line(security), "SECURITY.md keeps the .env gap open"
     assert "never created a Hugging Face Endpoint" in unreleased.split("### Known limitations")[1]
     assert "**A first real Hugging Face Endpoint.**" in (REPO / "PLAN.md").read_text(
         encoding="utf-8"
