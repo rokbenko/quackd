@@ -384,10 +384,10 @@ NAMESPACE_READS = UpstreamRef(
     "of a member of the organisation it is. The document gives `GET .../{namespace}/{name}` a "
     "bearer and one answer, a 200, and calls the namespace a user or an organisation, and says "
     "no more. A run reads the recorded endpoint with the account's token before that token goes "
-    "to the recorded address as the bearer, and goes on only when the answer carries quackd's "
-    "tag and that address (`endpoint.reach`), so a record planted by a project's `.env` that "
-    "names another account's endpoint is refused as long as this holds, and an organisation "
-    "the account belongs to is trusted as the account is",
+    "to the recorded address as the bearer, and goes on only when the answer carries the tags "
+    "`up` gave it and that address (`endpoint.reach`), so a record planted by a project's "
+    "`.env` that names another account's endpoint is refused as long as this holds, and an "
+    "organisation the account belongs to is trusted as the account is",
 )
 ADDRESS_KEPT = UpstreamRef(
     "ADDRESS_KEPT",
@@ -396,11 +396,10 @@ ADDRESS_KEPT = UpstreamRef(
     "that an endpoint keeps the `status.url` it was given for its life, through a pause, a resume "
     "and a scale to zero. The API's document calls it the URL the endpoint is reachable at and "
     "says nothing of when it changes, and its pause and resume routes say nothing of it. quackd "
-    "records the address the first time Hugging Face gives one, and takes an endpoint by that "
-    "name at another address for another endpoint, one made after it was deleted: `up`, "
-    "`pause` and `delete` leave that one as it is, and `delete --forget` forgets the record. "
-    "Were Hugging Face to move an endpoint, `up` would refuse its own the same way, which a "
-    "first real pause and resume settles",
+    "records the address the first time Hugging Face gives one and sends the account's token to "
+    "no other: a run refuses an endpoint the API gives another address, and `up` pauses one "
+    "whose address changes while it waits, saying so. Which endpoint is the record's is told by "
+    "a tag `up` gives it, not by its address. A first real pause and resume settles this",
 )
 GPU_IN_CONTAINER = UpstreamRef(
     "GPU_IN_CONTAINER",

@@ -507,15 +507,17 @@ class FakeAPI:
         *,
         url: str,
         tags: Sequence[str] | None = None,
+        mark: str | None = None,
         state: str = "running",
     ) -> FakeEndpoint:
         """An endpoint the API has that no `up` against it created, for a test of what a run
-        finds: at `url`, an address no stand-in serves, or `""` for none, with quackd's tag
-        unless `tags` says otherwise, in `state`. Its proxy is never started: nothing should
-        reach it."""
+        finds: at `url`, an address no stand-in serves, or `""` for none, with quackd's tag and
+        `mark`, the tag a record gives its endpoint (`endpoint.mark`), unless `tags` says
+        otherwise, in `state`. Its proxy is never started: nothing should reach it."""
         from quackd_lerobot.policy import endpoint
 
-        payload = {"name": name, "type": "authenticated", "tags": list(tags or [endpoint.TAG])}
+        given = [endpoint.TAG, *([mark] if mark else [])] if tags is None else list(tags)
+        payload = {"name": name, "type": "authenticated", "tags": given}
         ep = FakeEndpoint(namespace, name, payload, FakeProxy(self.token), state=state, url=url)
         with self._lock:
             self.endpoints[(namespace, name)] = ep

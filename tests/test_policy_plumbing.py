@@ -904,8 +904,10 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
     `QUACKD_POLICY_TOKEN`, which is another server's, is not read. `--policy-token` beats the
     record, as it beats everything on any server. Each build asks Hugging Face's API first,
     here its stand-in, which has the endpoint at the recorded address."""
+    from quackd_lerobot.policy import endpoint
+
     record = _recorded(tmp_path)
-    hf_api.seed("rok", "arm", url=ENDPOINT_URL)
+    hf_api.seed("rok", "arm", url=ENDPOINT_URL, mark=endpoint.mark(record))
     monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
     monkeypatch.setenv(wire.TOKEN_ENV, "e" * 64)
     choice = PolicyChoice("hf:arm", registry_dir=str(tmp_path))

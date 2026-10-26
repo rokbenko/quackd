@@ -341,7 +341,7 @@ def test_an_endpoint_is_created_authenticated_on_one_replica_with_quackds_token_
         "--token-env",
         wire.TOKEN_ENV,
     ]
-    assert payload["tags"] == [E.TAG]
+    assert payload["tags"] == [E.TAG, E.mark(record)]
     text = json.dumps(payload)
     assert ACCOUNT_TOKEN not in text and "\\\\" not in text
     gated = E.create_payload(record, accelerator="gpu", exclude_newer=AFTER, hub_token=HUB_TOKEN)
@@ -618,29 +618,40 @@ def test_one_that_scaled_to_zero_is_woken_by_the_wait_and_waited_for(
     assert said == ["scaledToZero", "initializing", "running"]
 
 
-@pytest.mark.parametrize("other", ["untagged", "elsewhere"])
-def test_the_wait_takes_an_address_only_when_none_is_recorded_and_holds_every_read_to_it(
+def test_a_records_tag_is_its_own_and_says_nothing_of_its_token() -> None:
+    record, other = _record(), _record()
+    assert E.mark(record) == E.mark(replace(record, url=GOOD_URL)), "the tag is the record's"
+    assert E.mark(record) != E.mark(other) and E.mark(record).startswith(f"{E.TAG}-")
+    assert len(E.mark(record)) == len(E.TAG) + 13 and record.token[:12] not in E.mark(record)
+
+
+@pytest.mark.parametrize("other", ["untagged", "another machine's", "moved"])
+def test_the_wait_holds_every_read_to_the_record_and_its_address_to_the_first_one(
     hf: FakeAPI, tmp_path: Path, other: str
 ) -> None:
-    """An address is recorded once, the first time Hugging Face gives one. An endpoint by that
-    name that carries no quackd tag, or that is at another address than the one recorded, is
-    another endpoint: the wait refuses it before anything is sent to it, and the record keeps
-    what it had."""
+    """An endpoint by that name that carries no quackd tag, or quackd's but not the one this
+    record gave it, is another endpoint: the wait refuses it as Unconfirmed before anything is
+    sent to it, whether or not the record holds an address. The address is recorded once, the
+    first time Hugging Face gives one, and one the endpoint comes back with later is refused
+    too, and sent nothing. The record keeps what it had."""
     store = E.EndpointStore(tmp_path)
     record = _record()
     store.save(record)
     api = _created(hf, record)
     ep = hf.endpoints[("rok", "arm")]
+    refusal: type[E.EndpointError] = E.Unconfirmed
     if other == "untagged":
         ep.payload["tags"] = ["production"]
         needle = "carries no quackd-policy tag"
+    elif other == "another machine's":
+        ep.payload["tags"] = [E.TAG, "quackd-policy-0123456789ab"]
+        needle = "carries quackd's tag but not the one this machine's up gave hf:arm"
     else:
-        record = replace(record, url=GOOD_URL)  # recorded before, and not where this one is
+        record = replace(record, url=GOOD_URL)  # recorded before, and not where it is now
         store.save(record)
-        needle = "is not at the address this machine recorded"
-    with pytest.raises(E.Unconfirmed, match=needle) as refused:
+        refusal, needle = E.EndpointError, "another address than the one this machine recorded"
+    with pytest.raises(refusal, match=needle):
         E.wait_until_serving(api, record, minutes=1, store=store)
-    assert "delete arm --forget" in str(refused.value)
     assert store.get("arm") == record and not ep.proxy.requests
 
 
@@ -715,7 +726,7 @@ def test_hf_name_reaches_the_recorded_address_with_its_token_and_the_accounts_be
     store = E.EndpointStore(tmp_path)
     record = _record(url=GOOD_URL)
     store.save(record)
-    hf.seed("rok", "arm", url=GOOD_URL)
+    hf.seed("rok", "arm", url=GOOD_URL, mark=E.mark(record))
     monkeypatch.setenv(wire.TOKEN_ENV, "e" * 64)
     reached = E.reach("hf:arm", registry_dir=tmp_path)
     assert reached == E.Reached(GOOD_URL, record.token, ACCOUNT_TOKEN, "hf:arm")
@@ -734,7 +745,8 @@ def test_hf_name_reaches_the_recorded_address_with_its_token_and_the_accounts_be
     [
         ("gone", "Hugging Face has no endpoint called arm on rok's account, so nothing was sent"),
         ("untagged", "carries no quackd-policy tag, so quackd did not start it"),
-        ("elsewhere", "is not at the address this machine recorded for it"),
+        ("another machine's", "carries quackd's tag but not the one this machine's up gave"),
+        ("elsewhere", "another address than the one this machine recorded, so nothing was sent"),
         ("no address now", "Hugging Face gives hf:arm no address while it is paused"),
         ("refused", "Hugging Face refused the token when asked to say how arm is (HTTP 401"),
     ],
@@ -751,12 +763,15 @@ def test_hf_name_is_reached_only_once_the_api_confirms_the_record(
     store.save(record)
     if case == "untagged":
         hf.seed("rok", "arm", url=GOOD_URL, tags=["production"])
+    elif case == "another machine's":
+        hf.seed("rok", "arm", url=GOOD_URL, mark="quackd-policy-0123456789ab")
     elif case == "elsewhere":
-        hf.seed("rok", "arm", url="https://0a1b2c3d4e5f.endpoints.huggingface.cloud")
+        moved = "https://0a1b2c3d4e5f.endpoints.huggingface.cloud"
+        hf.seed("rok", "arm", url=moved, mark=E.mark(record))
     elif case == "no address now":
-        hf.seed("rok", "arm", url="", state="paused")
+        hf.seed("rok", "arm", url="", state="paused", mark=E.mark(record))
     elif case == "refused":
-        hf.seed("rok", "arm", url=GOOD_URL)
+        hf.seed("rok", "arm", url=GOOD_URL, mark=E.mark(record))
         hf.token = "hf_" + "SomebodyElse" * 3
     with pytest.raises(ValueError) as refused:
         E.reach("hf:arm", registry_dir=tmp_path)

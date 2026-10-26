@@ -44,6 +44,7 @@ error is said in one sentence with every token scrubbed out of it.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import http.client
 import json
@@ -129,9 +130,10 @@ class EndpointTimeout(EndpointError):
 
 class Unconfirmed(EndpointError):
     """An endpoint by a recorded name that Hugging Face's answer does not confirm is the one this
-    machine's `up` started: one without quackd's tag, or at another address than the recorded
-    one, as one made on huggingface.co after quackd's was deleted there would be. quackd sends it
-    nothing and changes nothing on it, and the refusal says how to forget the record."""
+    machine's `up` started: one without quackd's tag, as one made on huggingface.co after
+    quackd's was deleted there would be, or without the tag `up` gave it from this machine's
+    record (`mark`), as one another machine's `up` made by the same name would be. quackd sends
+    it nothing and changes nothing on it, and the refusal says how to forget the record."""
 
 
 # ── the account's token ─────────────────────────────────────────────────────────────────
@@ -645,6 +647,20 @@ _FIELDS = {
 }
 
 
+def _mark_of(token: str) -> str:
+    return f"{TAG}-{hashlib.sha256(token.encode('utf-8')).hexdigest()[:12]}"
+
+
+def mark(record: EndpointRecord) -> str:
+    """The tag that ties an endpoint to this machine's record of it, beside quackd's own: `TAG`,
+    a hyphen, and the first 12 hex digits of the SHA-256 of the record's token. `up` creates an
+    endpoint with both, so one by the same name that another machine's `up` made carries that
+    machine's, one made on huggingface.co carries neither, and a record names one endpoint and
+    no other, whether or not it holds an address yet. It says nothing of the token: 12 hex
+    digits of a hash of 64 random ones."""
+    return _mark_of(record.token)
+
+
 class EndpointStore:
     """`endpoints.json` under the registry's directory, `--registry-dir`, else
     `$QUACKD_REGISTRY_DIR`, else `~/.quackd`: the endpoints this machine's `up` started, by
@@ -731,17 +747,18 @@ class EndpointStore:
         return None if raw is None else self._record(name, raw)
 
     def located(self, name: str) -> tuple[str | None, str | None]:
-        """The account `name`'s record says its endpoint is on, and the address it recorded,
-        each read without checking the rest of the record, for `delete` to remove an endpoint
-        whose record went wrong, held to that address first (`confirmed`). None for either one
-        the record does not hold as `up` writes it, and for both with no record."""
+        """The account `name`'s record says its endpoint is on, and the tag `up` gave that
+        endpoint from the record's token (`mark`), each read without checking the rest of the
+        record, for `delete` to remove an endpoint whose record went wrong, held to that tag
+        first (`confirmed`). None for either the record does not hold as `up` writes it, and for
+        both with no record."""
         raw = self._load().get(name)
         if not isinstance(raw, dict):
             return None, None
-        space, url = raw.get("namespace"), raw.get("url")
+        space, token = raw.get("namespace"), raw.get("token")
         return (
             space if isinstance(space, str) and ACCOUNT.match(space) else None,
-            url if isinstance(url, str) and client.is_endpoint_host(url) else None,
+            _mark_of(token) if isinstance(token, str) and token.strip() else None,
         )
 
     def recorded(self, name: str) -> bool:
@@ -878,10 +895,10 @@ def create_payload(
     `authenticated` always, one GPU and one replica at most, since a session lives in one
     process, scaled to zero after `idle_minutes` with no request and to nothing more, uv's image
     by its digest running `container_command` with `container_args`, quackd's token in the
-    secrets, a Hub token beside it only for a gated checkpoint, and quackd's tag. The account's
-    token is never in it. The repository and revision are the checkpoint's, which Hugging Face
-    mounts at `/repository` and the server never reads: the pipeline fetches what it loads
-    through its own checks."""
+    secrets, a Hub token beside it only for a gated checkpoint, and quackd's tags, its own and
+    the one this record gives it (`mark`). The account's token is never in it. The repository
+    and revision are the checkpoint's, which Hugging Face mounts at `/repository` and the
+    server never reads: the pipeline fetches what it loads through its own checks."""
     repo, _, revision = record.policy.partition("@")
     model_secrets = {TOKEN_SECRET: record.token}
     if hub_token is not None:
@@ -916,7 +933,7 @@ def create_payload(
             "command": container_command(record.version, exclude_newer),
             "args": container_args(record),
         },
-        "tags": [TAG],
+        "tags": [TAG, mark(record)],
     }
 
 
@@ -929,10 +946,10 @@ def create_endpoint(
     A refusal, a 4xx, created nothing, and the record is forgotten again. Any other failure, no
     answer within the deadline, a connection that dropped or a 5xx, may have come after the
     endpoint was made, and forgetting the record then would leave one billing that this machine
-    has no token for and cannot reach. So the endpoint is read: one that is there, with quackd's
-    tag, is taken as created, the record kept, and what became of the answer comes back for
-    `up` to say; one that is not there forgets the record and raises the failure; and one that
-    cannot be read keeps the record, saying `up` finds out and `delete` removes it."""
+    has no token for and cannot reach. So the endpoint is read: one that is there, with the tags
+    this record gave it, is taken as created, the record kept, and what became of the answer
+    comes back for `up` to say; one that is not there forgets the record and raises the failure;
+    and one that cannot be read keeps the record, saying `up` finds out and `delete` removes it."""
     api.also_scrub(record.token)
     store.save(record)
     try:
@@ -946,7 +963,7 @@ def create_endpoint(
     try:
         found = api.get(record.namespace, record.name)
         if found is not None:
-            confirmed(found, namespace=record.namespace, name=record.name, url=None)
+            confirmed(found, namespace=record.namespace, name=record.name, mark=mark(record))
     except Unconfirmed:
         store.forget(record.name)  # another's by that name, so this create made nothing
         raise lost from None
@@ -1209,27 +1226,29 @@ def _same_address(a: str, b: str) -> bool:
     return a.strip().rstrip("/").lower() == b.strip().rstrip("/").lower()
 
 
-def confirmed(found: Mapping[str, Any], *, namespace: str, name: str, url: str | None) -> None:
+def confirmed(found: Mapping[str, Any], *, namespace: str, name: str, mark: str | None) -> None:
     """Refuse `found`, an endpoint as the API answered a read of `name` on `namespace`, unless it
     is the one this machine's `up` started: it carries quackd's tag, as every endpoint `up`
-    creates does, and its address is the recorded `url` wherever both are known, since an
-    endpoint keeps its address for its life (`endpoint_upstream_api.ADDRESS_KEPT`) and one made
-    by that name after it was deleted has an address of its own. A record outlives what it
-    records: an endpoint deleted on huggingface.co leaves this machine's record behind, and
-    another by that name would otherwise be resumed, paused or deleted in its place."""
+    creates does, and the record's own (`mark`), which no endpoint but the one created from
+    this record carries, wherever the record's token can be read, which is every record but a
+    broken one `delete` reads. A record outlives what it records: an endpoint deleted on
+    huggingface.co leaves this machine's record behind, and another by that name, made there or
+    by another machine's `up`, would otherwise be resumed, paused or deleted in its place, or
+    sent the account's token. The address is not what tells them apart: a record has none
+    until Hugging Face gives one (`hold_address` holds it to that one after)."""
     tags = found.get("tags") if isinstance(found, Mapping) else None
-    if not isinstance(tags, list) or TAG not in tags:
+    tags = tags if isinstance(tags, list) else []
+    if TAG not in tags:
         raise Unconfirmed(
             f"{namespace}'s endpoint called {name} carries no {TAG} tag, so quackd did not "
             f"start it and leaves it as it is: this machine's record of hf:{name} is out of "
             f"date, and quackd policy endpoint delete {name} --forget forgets the record"
         )
-    there = state_of(found)[1]
-    if url is not None and there is not None and not _same_address(there, url):
+    if mark is not None and mark not in tags:
         raise Unconfirmed(
-            f"{namespace}'s endpoint called {name} is not at the address this machine recorded "
-            "for it, so it is another endpoint by that name, and quackd leaves it as it is: "
-            f"quackd policy endpoint delete {name} --forget forgets the record"
+            f"{namespace}'s endpoint called {name} carries quackd's tag but not the one this "
+            f"machine's up gave hf:{name}, so another machine's up started it, and quackd leaves "
+            f"it as it is: quackd policy endpoint delete {name} --forget forgets the record"
         )
 
 
@@ -1240,8 +1259,34 @@ def confirm(api: HFEndpoints, record: EndpointRecord) -> dict[str, Any] | None:
     reads before the account's token goes to the recorded address as the bearer (`reach`)."""
     found = api.get(record.namespace, record.name)
     if found is not None:
-        confirmed(found, namespace=record.namespace, name=record.name, url=record.url)
+        confirmed(found, namespace=record.namespace, name=record.name, mark=mark(record))
     return found
+
+
+def hold_address(store: EndpointStore, record: EndpointRecord, url: str | None) -> EndpointRecord:
+    """`record` held to the address Hugging Face gives its endpoint now, `url`, before the
+    account's token goes there as the bearer: recorded, when the record holds none and it is
+    wholly an endpoint's (`EndpointStore`), and the record as it is when `url` is the recorded
+    one or there is none. Another than the one recorded is refused, and is sent nothing: an
+    endpoint keeps its address for its life (`endpoint_upstream_api.ADDRESS_KEPT`), and one
+    that came back with another would be one this machine cannot tell from a copy of it."""
+    if url is None:
+        return record
+    if record.url is None:
+        if not client.is_endpoint_host(url):
+            raise EndpointError(
+                f"Hugging Face gave {record.endpoint} an address that is not an endpoint's, "
+                f"{url[:80]!r}, and quackd sends the account's token to no other"
+            )
+        record = replace(record, url=url)
+        store.save(record)
+        return record
+    if not _same_address(url, record.url):
+        raise EndpointError(
+            f"Hugging Face gives {record.endpoint} another address than the one this machine "
+            "recorded for it, and the account's token was not sent there"
+        )
+    return record
 
 
 # ── waiting for it to serve ─────────────────────────────────────────────────────────────
@@ -1274,12 +1319,11 @@ def wait_until_serving(
     """Read the endpoint every `POLL_S` until it is `running` with an address and its server
     answers ready on `/v1/health` there, as huggingface_hub waits for one
     (`endpoint_upstream_api.WAIT_POLL`), and say each state it passes with the seconds since the
-    wait began. The address is recorded the moment Hugging Face gives it, when the record holds
-    none, before the account's token goes there as the bearer, and only an address wholly an
-    endpoint's is (`EndpointStore`). Every read is held to the record first (`confirmed`): an
-    endpoint by that name without quackd's tag, or at another address than one already
-    recorded, is `Unconfirmed`, and is sent nothing. One that scaled to zero is woken by the
-    first health request. An endpoint that fails is `EndpointFailed`, one paused or deleted
+    wait began. Every read is held to the record first (`confirmed`): an endpoint by that name
+    without the tags `up` gave it is `Unconfirmed`, and is sent nothing. The address is
+    recorded the moment Hugging Face gives it, before the account's token goes there as the
+    bearer, and another one later is refused (`hold_address`). One that scaled to zero is woken
+    by the first health request. An endpoint that fails is `EndpointFailed`, one paused or deleted
     meanwhile an `EndpointError`, and one that does not serve within `minutes`
     `EndpointTimeout`. The record, with its address, comes back."""
     api.also_scrub(record.token)
@@ -1293,7 +1337,7 @@ def wait_until_serving(
                 f"Hugging Face has no endpoint called {record.name} any more: quackd policy "
                 f"endpoint delete {record.name} forgets the record"
             )
-        confirmed(endpoint, namespace=record.namespace, name=record.name, url=record.url)
+        confirmed(endpoint, namespace=record.namespace, name=record.name, mark=mark(record))
         state, url, message = state_of(endpoint)
         if state != last:
             said(state, clock() - start)
@@ -1306,14 +1350,7 @@ def wait_until_serving(
                 f"{record.endpoint} was paused while quackd waited for it: quackd policy endpoint "
                 f"up {record.name} resumes it"
             )
-        if url is not None and record.url is None:
-            if not client.is_endpoint_host(url):
-                raise EndpointError(
-                    f"Hugging Face gave {record.endpoint} an address that is not an endpoint's, "
-                    f"{url[:80]!r}, and quackd sends the account's token to no other"
-                )
-            record = replace(record, url=url)
-            store.save(record)
+        record = hold_address(store, record, url)
         if url is not None and state in (SERVING, ASLEEP) and api.health(url):
             return record
         if clock() >= deadline:
@@ -1372,14 +1409,14 @@ def reach(
 
     Then the endpoint is read from the API with the account's token, one request, and the
     record is bound to what Hugging Face answers before the token goes anywhere else: the
-    endpoint by that name on the recorded account has to carry quackd's tag and the recorded
-    address (`confirm`). The record is a file in the registry's directory, which a `.env` in
-    the working directory can name with `QUACKD_REGISTRY_DIR`, so a project cloned from
-    somebody else could plant one naming an endpoint of theirs, and a record outlives an
-    endpoint deleted on huggingface.co. Either is refused here, in a sentence, and nothing is
-    sent to the address it holds. That the API answers a read of an account's endpoints only to
-    that account and its organisations' members is what this trusts
-    (`endpoint_upstream_api.NAMESPACE_READS`)."""
+    endpoint by that name on the recorded account has to carry the tags `up` gave it, quackd's
+    and the record's own (`confirm`), at the recorded address. The record is a file in the
+    registry's directory, which a `.env` in the working directory can name with
+    `QUACKD_REGISTRY_DIR`, so a project cloned from somebody else could plant one naming an
+    endpoint of theirs, and a record outlives an endpoint deleted on huggingface.co. Either is
+    refused here, in a sentence, and nothing is sent to the address it holds. That the API
+    answers a read of an account's endpoints only to that account and its organisations'
+    members is what this trusts (`endpoint_upstream_api.NAMESPACE_READS`)."""
     text = given.strip()
     match = POLICY_ENDPOINT.fullmatch(text)
     store = EndpointStore(registry_dir)
@@ -1434,6 +1471,12 @@ def reach(
             f"sent to the one this machine recorded: quackd policy endpoint up {record.name} "
             "waits until it has one"
         )
+    if not _same_address(url, record.url):
+        raise EndpointError(
+            f"Hugging Face gives {record.endpoint} another address than the one this machine "
+            f"recorded, so nothing was sent to either: quackd policy endpoint delete {record.name} "
+            "removes it, and up starts it afresh"
+        )
     return Reached(record.url, token, account[0], record.endpoint)
 
 
@@ -1462,7 +1505,9 @@ __all__ = [
     "exclude_newer",
     "find_compute",
     "hf_token",
+    "hold_address",
     "hub_token_from",
+    "mark",
     "new_record",
     "no_token",
     "pause_and_quote",

@@ -375,10 +375,10 @@ quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
 ```
 
 Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
-that token to the endpoint only when the API says the endpoint by that name carries quackd's tag
-at the address `up` recorded. The record is a file, and a project's `.env` can name another
-registry with `QUACKD_REGISTRY_DIR`, so a record you did not make, or one left behind by an
-endpoint deleted on huggingface.co, is refused unless the API confirms it, and your token goes
+that token to the endpoint only when the API says the endpoint by that name carries the tags `up`
+gave it, at the address `up` recorded. The record is a file, and a project's `.env` can name
+another registry with `QUACKD_REGISTRY_DIR`, so a record you did not make, or one left behind by
+an endpoint deleted on huggingface.co, is refused unless the API confirms it, and your token goes
 nowhere else.
 
 **Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
@@ -398,13 +398,13 @@ until it answers
 
 `quackd policy endpoint list` says what this machine started and how each is now, and `delete`
 removes one from Hugging Face and forgets it here. `up`, `pause` and `delete` each read the
-endpoint first, and leave alone one by that name that quackd did not start, or that is at another
-address than the one `up` recorded, as one made on huggingface.co after yours was deleted there
-would be: `delete NAME --forget` forgets such a record and asks Hugging Face nothing. An endpoint
-that has no request for `--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and
-bills nothing, and the next request wakes it, which takes minutes: start it with `up` before a
-run rather than waking it with one. `up` asks before it wakes one, as before it resumes a paused
-one. quackd starts no endpoint that never scales to zero.
+endpoint first, and leave alone one by that name that does not carry the tag `up` gave yours, as
+one made on huggingface.co after yours was deleted there, or by another machine's `up`, would
+not: `delete NAME --forget` forgets such a record and asks Hugging Face nothing. An endpoint that
+has no request for `--idle-minutes`, 15 unless told and from 15 to 720, scales to zero and bills
+nothing, and the next request wakes it, which takes minutes: start it with `up` before a run
+rather than waking it with one. `up` asks before it wakes one, as before it resumes a paused one.
+quackd starts no endpoint that never scales to zero.
 
 **What it costs.** Hugging Face's price list, `GET /v2/provider`, which `up` reads with no token
 before it asks you, said this of AWS on 2026-10-25. An endpoint bills by the minute while it is

@@ -658,6 +658,42 @@ def test_an_endpoint_at_zero_is_woken_by_up_only_after_asking(
     assert ep.state != "scaledToZero"
 
 
+def test_up_wakes_one_at_zero_at_its_address_when_the_record_had_none_yet(hf: FakeAPI) -> None:
+    """A record `up --no-wait` left has no address, and its endpoint may run and idle to zero
+    before anybody asks: the wake records the address Hugging Face gives it first, and wakes it
+    there, with --no-wait too."""
+    assert _cli(*UP, "--yes", "--no-wait").exit_code == 0
+    kept = _store().get("arm")
+    assert kept is not None and kept.url is None
+    ep = hf.endpoints[("rok", "arm")]
+    ep.state, ep.ahead = "scaledToZero", []
+    woken = _cli("policy", "endpoint", "up", "arm", "--yes", "--no-wait")
+    assert woken.exit_code == 0 and "waking arm" in _flat(woken.output), woken.output
+    kept = _store().get("arm")
+    assert kept is not None and kept.url == ep.proxy.url and ep.state != "scaledToZero"
+
+
+def test_an_endpoint_whose_address_moves_while_up_waits_is_sent_nothing_and_paused(
+    hf: FakeAPI,
+) -> None:
+    """The address is recorded once and the account's token goes to no other: one Hugging Face
+    gives the endpoint later is refused, and the endpoint, which carries this record's tag and so
+    is this machine's, is paused rather than left starting. Nothing is looked up at the new
+    address, which the suite's guard would have written down."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    assert _cli("policy", "endpoint", "pause", "arm").exit_code == 0
+    recorded = _store().get("arm")
+    assert recorded is not None
+    ep = hf.endpoints[("rok", "arm")]
+    ep.url = "https://0a1b2c3d4e5f.endpoints.huggingface.cloud"
+    result = _cli("policy", "endpoint", "up", "arm", "--yes", "--wait-minutes", "0.05")
+    said = _flat(result.output)
+    assert result.exit_code == 1, said
+    assert "Hugging Face gives hf:arm another address than the one this machine recorded" in said
+    assert "so it was paused, and bills nothing now" in said and ep.state == "paused"
+    assert _store().get("arm") == recorded
+
+
 def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -737,8 +773,9 @@ def test_list_says_what_this_machine_started_and_what_hugging_face_says_of_it(
 def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: bool) -> Any:
     """quackd's arm deleted on huggingface.co, and another endpoint called arm made there in its
     place, running at an address of its own: untagged, as one made on huggingface.co would be,
-    or with quackd's tag, as another machine's `up` would make it. The address the record holds
-    stays one the client's rule takes, as a real endpoint's would once it is gone."""
+    or with quackd's tag and the one another machine's record gives it, as that machine's `up`
+    would make it. The address the record holds, if it holds one, stays one the client's rule
+    takes, as a real endpoint's would once it is gone."""
     taken = set(hf.proxies)
     monkeypatch.setattr(
         C,
@@ -752,7 +789,7 @@ def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: boo
         "provider": {"vendor": "aws", "region": "us-east-1"},
         "compute": {"accelerator": "gpu", "instanceType": "nvidia-a10g", "instanceSize": "x1"},
         "model": {"repository": "someone/llm", "framework": "custom", "image": {}},
-        "tags": [E.TAG] if tagged else ["production"],
+        "tags": [E.TAG, "quackd-policy-0123456789ab"] if tagged else ["production"],
     }
     E._request("POST", E.API, "/v2/endpoint/rok", bearer=ACCOUNT_TOKEN, body=body)
     other = hf.endpoints[("rok", "arm")]
@@ -760,7 +797,8 @@ def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: boo
     return other
 
 
-@pytest.mark.parametrize("tagged", [False, True], ids=["untagged", "elsewhere"])
+@pytest.mark.parametrize("addressed", [True, False], ids=["with an address", "without one"])
+@pytest.mark.parametrize("tagged", [False, True], ids=["untagged", "another machine's"])
 @pytest.mark.parametrize(
     "command",
     [
@@ -771,20 +809,26 @@ def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: boo
     ids=["up", "pause", "delete"],
 )
 def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_another(
-    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, command: list[str], tagged: bool
+    hf: FakeAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    tagged: bool,
+    addressed: bool,
 ) -> None:
     """An endpoint deleted on huggingface.co leaves this machine's record behind, and another
     made by that name is not quackd's to wake, pause or delete. Each command reads it first and
-    leaves it as it is when it carries no quackd tag, or is at another address than the one
-    recorded, saying how to forget the record: nothing is changed on it, nothing is sent to it,
-    and the record is kept."""
-    assert _cli(*UP, "--yes").exit_code == 0
+    leaves it as it is when it carries no quackd tag, or not the one this record gave its own,
+    whether or not the record has an address yet, as one `up --no-wait` left has not, saying
+    how to forget the record: nothing is changed on it, nothing is sent to it, and the record
+    is kept."""
+    started = _cli(*UP, "--yes") if addressed else _cli(*UP, "--yes", "--no-wait")
+    assert started.exit_code == 0, started.output
     other = _made_elsewhere(hf, monkeypatch, tagged=tagged)
     before = len(hf.requests)
     result = _cli(*command)
     said = _flat(result.output)
     needle = (
-        "is not at the address this machine recorded for it"
+        "carries quackd's tag but not the one this machine's up gave hf:arm"
         if tagged
         else "carries no quackd-policy tag, so quackd did not start it"
     )

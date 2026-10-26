@@ -403,8 +403,9 @@ Also in scope:
   api.endpoints.huggingface.cloud, to manage the account's endpoints, and as the bearer to the one
   endpoint address that machine's `up` recorded, whose whole authority has to be an endpoint's,
   over https on port 443, and only once the API, asked with that token, has said the endpoint by
-  that name on the recorded account carries quackd's tag at that address. The record is a file in
-  the registry's directory, which a project's `.env` can name with `QUACKD_REGISTRY_DIR`, and it
+  that name on the recorded account carries the tags `up` gave it, quackd's and one made from the
+  record's token that no other endpoint carries, at that address. The record is a file in the
+  registry's directory, which a project's `.env` can name with `QUACKD_REGISTRY_DIR`, and it
   outlives an endpoint deleted on huggingface.co, so whatever record is read, the token goes to no
   address the API has not confirmed, and `up`, `pause` and `delete` make the same read and leave
   alone an endpoint it does not confirm. That read trusts Hugging Face to answer for an account's

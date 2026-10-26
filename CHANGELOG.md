@@ -29,19 +29,20 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   token goes to huggingface.co and the API, and as the bearer to the one endpoint address `up`
   recorded, and nowhere else. `list` merges this machine's records with what the API says, `pause`
   stops the bill and `delete` removes one. `up`, `pause` and `delete` read the endpoint first, and
-  leave alone one by that name that quackd did not start, or that is at another address than the
-  one recorded, and `delete --forget` forgets such a record and asks Hugging Face nothing
+  leave alone one by that name that does not carry the tag `up` gave it from this machine's
+  record, as one made on huggingface.co or by another machine's `up` does not, and
+  `delete --forget` forgets such a record and asks Hugging Face nothing
   ([docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint),
   [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
 - **`--policy-url hf:NAME`** on `quackd run`, `quackd preflight`, `quackd serve-mcp` and
   `quackd policy check` reaches an endpoint this machine started, as the record `up` kept says:
   its address, its own token unless `--policy-token` is typed, and the account's token as the
   bearer. It reads the endpoint from Hugging Face's API first, one request with the account's
-  token, and goes on only when it carries quackd's tag at the recorded address, so neither a
-  record left behind by an endpoint deleted on huggingface.co nor one a project's `.env` planted
-  by naming another registry can send the account's token to an address the API does not confirm.
-  `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never read for one. The run's `policy`
-  block keeps the address as `server` and adds `endpoint`.
+  token, and goes on only when it carries the tags `up` gave it at the recorded address, so
+  neither a record left behind by an endpoint deleted on huggingface.co nor one a project's `.env`
+  planted by naming another registry can send the account's token to an address the API does not
+  confirm. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never read for one. The run's
+  `policy` block keeps the address as `server` and adds `endpoint`.
 - **`GET /v1/health` on the policy server**, answered with no token, says whether it serves,
   `{"ready": true}`, or is stopping, a 503, and nothing else, for a platform's readiness probe. It
   reads no body and touches no session. The protocol stays version 1. The server also logs once,

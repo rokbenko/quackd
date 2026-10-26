@@ -5141,7 +5141,7 @@ def endpoint_up(
                     f"serves what it was started with: {', '.join(changed)} would change that. "
                     f"Give up {name} none of them, or delete {name} and start it afresh"
                 )
-            _endpoint_resume(ep, api, record, yes=yes)
+            record = _endpoint_resume(ep, api, store, record, yes=yes)
         if no_wait:
             _endpoint_note(
                 f"Not waiting: quackd policy endpoint up {name} waits until it serves, and a run "
@@ -5243,13 +5243,14 @@ def _endpoint_create(
     return record
 
 
-def _endpoint_resume(ep: Any, api: Any, record: Any, *, yes: bool) -> None:
+def _endpoint_resume(ep: Any, api: Any, store: Any, record: Any, *, yes: bool) -> Any:
     """Wake an endpoint this machine started: resume one that is paused, or wake one that
-    scaled to zero with a request to its health route, each after asking, since it bills again,
-    and leave one that is starting or running to the wait. One that failed is said with its log
-    and its message, every token taken out, and not waited for. It is read first and held to
-    the record (`endpoint.confirm`), so one by that name that quackd did not start, or at
-    another address, is left as it is."""
+    scaled to zero with a request to its health route at its address, recorded first when the
+    record holds none (`endpoint.hold_address`), each after asking, since it bills again, and
+    leave one that is starting or running to the wait. One that failed is said with its log and
+    its message, every token taken out, and not waited for. It is read first and held to the
+    record (`endpoint.confirm`), so one by that name that this machine's `up` did not start is
+    left as it is. The record comes back, with any address it gained."""
     api.also_scrub(record.token)
     found = ep.confirm(api, record)
     if found is None:
@@ -5273,12 +5274,17 @@ def _endpoint_resume(ep: Any, api: Any, record: Any, *, yes: bool) -> None:
         _ask_or_refuse(ep.confirmation(record, compute, doing=doing), yes)
         if state == ep.PAUSED:
             api.resume(record.namespace, record.name)
-        elif url is not None and record.url is not None:
-            api.health(record.url)  # a request wakes it, and --no-wait sends no other
+        elif url is not None:
+            record = ep.hold_address(store, record, url)
+            api.health(url)  # a request wakes it, and --no-wait sends no other
+        else:
+            _endpoint_note(f"Hugging Face gives {record.name} no address yet, so nothing woke it.")
+            return record
         _endpoint_row(
             "resumed" if state == ep.PAUSED else "waking",
             f"{record.name}, ${compute.price_per_hour:.2f} an hour while it runs",
         )
+    return record
 
 
 @endpoint_app.command("list")
@@ -5408,7 +5414,7 @@ def endpoint_delete(
     ep = _endpoints()
     store = ep.EndpointStore(registry_dir)
     try:
-        recorded, (namespace, url) = store.recorded(name), store.located(name)
+        recorded, (namespace, marked) = store.recorded(name), store.located(name)
     except ep.EndpointError as e:
         _fail(str(e))
         return
@@ -5431,7 +5437,7 @@ def endpoint_delete(
         try:
             found = api.get(namespace, name)
             if found is not None:
-                ep.confirmed(found, namespace=namespace, name=name, url=url)
+                ep.confirmed(found, namespace=namespace, name=name, mark=marked)
             else:
                 api = None  # gone already: nothing to delete
         except ValueError as e:
