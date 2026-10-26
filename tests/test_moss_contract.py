@@ -30,6 +30,7 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor, Heartbeat, allow_all
 from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.verbs.places import GO_TO_PLACE_MAX_S
 from quackd.verbs.registry import VerbContext, registry_from_manifest
 from quackd_moss import MossAdapter, describe
 from quackd_moss import cockpit as client
@@ -194,6 +195,10 @@ async def test_connect_over_the_cockpit_and_the_bridge_gives_the_whole_body(rove
         "explore",
         "pick_and_drop",
         "stow_arm",
+        "map",
+        "mark_place",
+        "forget_place",
+        "go_to_place",
     }
     assert manifest.safety_authority.deadman is True
     assert manifest.extras["bridge"]["version"] == B.BRIDGE_VERSION
@@ -303,6 +308,8 @@ def test_every_verb_leaves_its_own_stop_room_before_the_executor_cuts_it() -> No
     for name, verb in own.items():
         assert verb.timeout_s is not None and verb.timeout_s <= 600, name
     assert own["explore"].timeout_s == moss_verbs.EXPLORE_MAX_MIN * 60 + moss_verbs.VERB_MARGIN_S
+    # each of its goals is given only the time it has left, so its own clock and the margin
+    assert own["go_to_place"].timeout_s == GO_TO_PLACE_MAX_S + moss_verbs.VERB_MARGIN_S
     for spec in describe("cockpit").verbs:
         assert spec.timeout_s is None or spec.timeout_s <= 600, spec.name
 
@@ -1066,7 +1073,15 @@ async def test_pick_and_drop_runs_the_cycle_on_the_bridge(rover: Rover) -> None:
 async def test_on_moss_litter_the_stop_ends_the_mission_and_it_stays_ended(rover: Rover) -> None:
     adapter = MossAdapter(rover.transport())
     manifest = await adapter.connect()
-    assert set(manifest.verb_names()) == {"observe", "report_state", "stop", "collect_litter"}
+    assert set(manifest.verb_names()) == {
+        "observe",
+        "report_state",
+        "stop",
+        "collect_litter",
+        "map",
+        "mark_place",
+        "forget_place",
+    }
     state = await adapter.get_state()
     assert state.extras["mission"]["answering"] is True
     await adapter.stop()

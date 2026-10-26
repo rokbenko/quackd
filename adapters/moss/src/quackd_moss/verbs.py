@@ -1,8 +1,9 @@
 """MOSS's own verbs, and the named preconditions its manifest references.
 
-Five verbs, none of them a core verb overridden. Two drive the base through the cockpit's own
-planner (`drive_to`, `explore`), one hands the base and the arm to MOSS's litter mission for a
-while (`collect_litter`), and two play the maker's arm cycle through quackd's bridge
+Six verbs. Two drive the base through the cockpit's own planner (`drive_to`, `explore`), and
+a third stands in for the core verb of its name, `go_to_place`, driving to a place by the same
+planner's goals. One hands the base and the arm to MOSS's litter mission for a while
+(`collect_litter`), and two play the maker's arm cycle through quackd's bridge
 (`pick_and_drop`, `stow_arm`). Each one sends an intent the transport maps to one surface, so
 the mock and the real transport are driven the same way:
 
@@ -20,12 +21,13 @@ what the rover reports about itself. The numbers that are quackd's own are said 
 from __future__ import annotations
 
 import math
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import send_or_fail
+from quackd.verbs.places import GO_TO_PLACE_MAX_S, GoToPlaceParams, place_to_walk
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -447,6 +449,19 @@ def _no_goal(why: str) -> VerbResult:
     )
 
 
+class Leg(NamedTuple):
+    """One of `drive_to`'s goals: the result in drive_to's own words, whether the goal went out,
+    and why it ended short of it, or None once the planner said it was reached."""
+
+    result: VerbResult
+    sent: bool
+    ended: str | None
+
+
+RAN_OUT = "its time ran out"
+"""Why a goal ended at the deadline `go_to_place` gave it, rather than at drive_to's own."""
+
+
 async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
     """A goal for MOSS's own planner, and a wait for the planner's own word on it.
 
@@ -463,6 +478,22 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
     if state.x is None or state.y is None:
         return VerbResult.fail("drive_to needs the rover's pose, and the cockpit reports none")
     gx, gy = world_goal(state, p)
+    return (await drive_to_goal(ctx, gx, gy, state)).result
+
+
+async def drive_to_goal(
+    ctx: VerbContext,
+    gx: float,
+    gy: float,
+    state: DuckState,
+    *,
+    deadline: float | None = None,
+) -> Leg:
+    """`drive_to`'s goal at (gx, gy) in the world frame, from `state`, a state read just before:
+    the explorer stopped first where the cockpit cannot see it, then the goal, then the planner's
+    own word on it. `go_to_place` hands it goals of its own, never further than `drive_to`
+    allows, and a `deadline` on the transport's clock: no goal goes out once it has passed, and
+    the wait for one ends there if that is sooner than drive_to's own give up."""
     nav, seen = state.extras.get("nav") or {}, state.extras.get("cockpit_nav")
     if nav.get("exploring") is True and isinstance(seen, dict) and not seen.get("exploring"):
         # the base stack explores and the cockpit cannot see it: it reads only the newest dimOS
@@ -471,25 +502,28 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
         # goal, which the cockpit's deferral is for
         stop = Intent(kind="do", params={"skill": SKILL_EXPLORE, "action": "stop"})
         if (fail := await send_or_fail(ctx, stop)) is not None:
-            return fail
+            return Leg(fail, False, fail.summary)
         waited, wait = 0.0, float(up.GOAL_AFTER_STOP_S.name)
-        while waited < wait:
+        while waited < wait and (deadline is None or ctx.transport.now() < deadline):
             # a stop asked for beside the verb while it waits is heard here, not after the goal
             if (why := ctx.interrupted()) is not None:
-                return _no_goal(why)
+                return Leg(_no_goal(why), False, why)
             step = min(DRIVE_TO_POLL_S, wait - waited)
             await ctx.transport.sleep(step)
             waited += step
     if (why := ctx.interrupted()) is not None:
-        return _no_goal(why)
+        return Leg(_no_goal(why), False, why)
+    if deadline is not None and ctx.transport.now() >= deadline:
+        return Leg(_no_goal(RAN_OUT), False, RAN_OUT)
     goal = Intent(kind="pose", params={"x": gx, "y": gy, "frame": "world"})
     if (fail := await send_or_fail(ctx, goal)) is not None:
-        return fail
+        return Leg(fail, False, fail.summary)
     t0 = ctx.transport.now()
+    limit = DRIVE_TO_GIVE_UP_S if deadline is None else min(DRIVE_TO_GIVE_UP_S, deadline - t0)
     echoed = False
     ended: str | None = None
     try:
-        while ctx.transport.now() - t0 < DRIVE_TO_GIVE_UP_S:
+        while ctx.transport.now() - t0 < limit:
             if (why := ctx.interrupted()) is not None:
                 ended = why
                 break
@@ -514,24 +548,130 @@ async def drive_to(ctx: VerbContext, p: DriveToParams) -> VerbResult:
                 if state.x is not None and state.y is not None:
                     left = math.hypot(gx - state.x, gy - state.y)
                 said = f", {left:.2f} m from it by the odometry" if left is not None else ""
-                return VerbResult.success(
+                reached = VerbResult.success(
                     f"reached the goal ({gx:.2f}, {gy:.2f}) in the world frame{said}",
                     goal=[round(gx, 3), round(gy, 3)],
                     pose=[state.x, state.y, state.theta],
                     seconds=round(ctx.transport.now() - t0, 1),
                 )
+                return Leg(reached, True, None)
             if echoed and nav.get("goal_reached") is False:
                 ended = "the planner gave the goal up"
                 break
         else:
-            ended = f"timed out after {DRIVE_TO_GIVE_UP_S:g} s"
+            ended = (
+                f"timed out after {DRIVE_TO_GIVE_UP_S:g} s"
+                if limit >= DRIVE_TO_GIVE_UP_S
+                else RAN_OUT
+            )
     finally:
         await ctx.transport.stop()
-    return VerbResult.fail(
+    failed = VerbResult.fail(
         f"drive_to did not reach ({gx:.2f}, {gy:.2f}): {ended}. The rover is stopped.",
         goal=[round(gx, 3), round(gy, 3)],
         echoed=echoed,
         **_braked(ended),
+    )
+    return Leg(failed, True, ended)
+
+
+_LEG_GATES: tuple[Precondition, ...] = (_cockpit_fresh, _pose_fresh, _battery_ok, _not_stalled)
+"""The planner's gates that can change while the rover drives, which `go_to_place` reads again
+before each of its goals. The executor reads every gate the verb has once, before it begins."""
+
+
+def _leg_refusal(state: DuckState) -> str | None:
+    for gate in _LEG_GATES:
+        if (why := gate(state)) is not None:
+            return why
+    return None
+
+
+async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
+    """To a named place by MOSS's own planner: goals no further than `drive_to` allows, along
+    the straight line from where the rover is to the place, each waiting for the planner's own
+    word on it (`drive_to_goal`), and never a twist while one is out, since every message on the
+    pad's topic cancels the planner's goal. Before each goal it hears a stop, reads the run's
+    rules and the planner's gates again (`_LEG_GATES`), and gives the goal only the time it has
+    left. It does not turn to face the way the place faced: the rover's pivots run at full
+    power, and its odometry under-reads them. It says what the planner said, and how far the
+    odometry puts the rover from the place."""
+    found = place_to_walk(ctx, p.name)
+    if isinstance(found, VerbResult):
+        return found
+    book, place = found
+    reading = book.source.fix()
+    if not reading.localized:
+        return VerbResult.fail(
+            f"go_to_place: the rover does not know where it is ({reading.lost or 'no reading'})"
+        )
+    deadline = ctx.transport.now() + p.timeout_s
+    goals = 0
+
+    def left_of(state: DuckState) -> float | None:
+        if state.x is None or state.y is None:
+            return None
+        return math.hypot(place.x - state.x, place.y - state.y)
+
+    async def short(why: str, **data: Any) -> VerbResult:
+        """go_to_place's own words for a drive that ended short of the place: why, how far the
+        odometry puts the rover from it now, and how many goals went out. The rover is stopped
+        by then: every goal ends with drive_to's own stop, and none went out after it."""
+        left = left_of(await ctx.transport.get_state())
+        where = (
+            f"{left:.2f} m from '{place.name}' by the odometry"
+            if left is not None
+            else f"short of '{place.name}'"
+        )
+        sent = f"after {goals} goal{'s' if goals != 1 else ''}" if goals else "before any goal"
+        error = round(left, 3) if left is not None else None
+        return VerbResult.fail(
+            f"go_to_place: {why}, so the rover is stopped {where}, {sent}",
+            goals=goals,
+            error_m=error,
+            **data,
+        )
+
+    while True:
+        if (why := ctx.interrupted()) is not None:
+            return await short(why, interrupted=why, **_braked(why))
+        state = await ctx.transport.get_state()
+        await ctx.abort_when(state)
+        if state.x is None or state.y is None:
+            return await short("the cockpit reports no pose for the rover")
+        if (refusal := _leg_refusal(state)) is not None:
+            return await short(refusal)
+        if ctx.transport.now() >= deadline:
+            return await short(f"its {p.timeout_s:g} s ran out")
+        dx, dy = place.x - state.x, place.y - state.y
+        away = math.hypot(dx, dy)
+        last = away <= DRIVE_TO_MAX_M
+        k = 1.0 if last else DRIVE_TO_MAX_M / away
+        leg = await drive_to_goal(ctx, state.x + dx * k, state.y + dy * k, state, deadline=deadline)
+        if leg.sent:
+            goals += 1
+        if leg.ended is not None:
+            if (why := ctx.interrupted()) is not None:
+                return await short(why, interrupted=why, **_braked(why))
+            if leg.ended == RAN_OUT:
+                return await short(f"its {p.timeout_s:g} s ran out")
+            return await short(leg.ended)
+        if last:
+            break
+    left = left_of(await ctx.transport.get_state())
+    said = f", {left:.2f} m from it by the odometry" if left is not None else ""
+    turned = (
+        "; it does not turn to face the way the place faced, since the rover's pivots run at "
+        "full power and its odometry under-reads them"
+        if p.face
+        else ""
+    )
+    plural = "s" if goals != 1 else ""
+    return VerbResult.success(
+        f"go_to_place: the planner said it reached '{place.name}'{said}{turned}; {goals} "
+        f"goal{plural}",
+        goals=goals,
+        error_m=round(left, 3) if left is not None else None,
     )
 
 
@@ -766,6 +906,17 @@ def moss_verbs() -> dict[str, Verb]:
             DriveToParams,
             timeout_s=DRIVE_TO_GIVE_UP_S + VERB_MARGIN_S,
             done_condition="the planner said the goal was reached, gave it up, or it timed out.",
+        ),
+        Verb(
+            "go_to_place",
+            "Drive to a place marked earlier with mark_place, by MOSS's own planner, in goals of "
+            "at most 2 m along the way. It does not turn to face the way the place faced, and it "
+            "ends with a stop whatever happens.",
+            go_to_place,
+            GoToPlaceParams,
+            timeout_s=GO_TO_PLACE_MAX_S + VERB_MARGIN_S,
+            done_condition="the planner said the place was reached, a goal failed, or its time "
+            "ran out.",
         ),
         Verb(
             "explore",

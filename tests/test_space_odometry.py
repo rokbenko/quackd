@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.odometry import PERIOD_SAMPLES, OdometrySource, OdometryTrack
 from quackd.space.pose import Pose2D
 
 
@@ -58,6 +58,56 @@ def test_a_clock_that_goes_back_begins_the_frame_again() -> None:
     t.update(0.1, 0.0, 0.0, 5.1)
     t.update(0.1, 0.0, 0.0, 0.2)  # whatever produced the readings started over
     assert t.frame.epoch == 1 and t.walked_m == 0.0
+
+
+def test_pauses_fewer_than_half_its_samples_leave_the_period_the_streams_own() -> None:
+    """A mean let one pause stretch the period, and every window a walk sizes from it: a
+    stream that went quiet for half a minute read afterwards as a slow one."""
+    period, pause = 0.02, 30.0
+    t, clock = track(), 100.0
+    t.update(0.0, 0.0, 0.0, clock)
+    pauses = (PERIOD_SAMPLES - 1) // 2
+    for i in range(PERIOD_SAMPLES):
+        clock += pause if i < pauses else period
+        t.update(0.0, 0.0, 0.0, clock)
+    assert t.period_s == pytest.approx(period)
+
+
+def test_one_interval_alone_gives_no_period_and_two_give_the_shorter() -> None:
+    """One interval may be a pause, so it says nothing; of two, the shorter, since a period
+    read short only tightens the windows sized from it."""
+    t = track()
+    t.update(0.0, 0.0, 0.0, 100.0)
+    t.update(0.0, 0.0, 0.0, 130.0)
+    assert t.period_s is None
+    t.update(0.0, 0.0, 0.0, 130.02)
+    assert t.period_s == pytest.approx(0.02)
+
+
+def test_a_frame_something_else_keeps_goes_on_when_the_clock_goes_back() -> None:
+    """A rover's run says when its odometry starts over, so a date going back there is a clock
+    being set, or read loosely: the frame and what was walked in it go on, and the period is
+    measured afresh."""
+    t = OdometryTrack("odom:run", persistent=True, restarts_with_clock=False)
+    for i in range(3):
+        t.update(0.1 * i, 0.0, 0.0, 5.0 + 0.1 * i)
+    walked = t.walked_m
+    t.update(0.3, 0.0, 0.0, 5.0)  # dated a fifth of a second back
+    assert t.frame.epoch == 0 and t.walked_m == pytest.approx(walked)
+    assert t.period_s is None and t.fix().localized
+
+
+def test_readings_dated_on_another_clock_from_here_on_go_on_in_the_same_frame() -> None:
+    """A stream dated by its arrival here until the stack began stamping it: the stamps are
+    another clock, far behind this machine's, and the frame goes on across the change."""
+    t = track()
+    t.update(0.0, 0.0, 0.0, 50_000.0)
+    t.update(0.1, 0.0, 0.0, 50_000.1)
+    t.reclock()
+    for i in range(3):
+        t.update(0.2 + 0.1 * i, 0.0, 0.0, 3.0 + 0.1 * i)
+    assert t.frame.epoch == 0 and t.fix().t == pytest.approx(3.2)
+    assert t.period_s == pytest.approx(0.1)
 
 
 def test_a_step_no_walk_could_make_begins_the_frame_again() -> None:

@@ -2229,6 +2229,8 @@ _VERB_TABLE_ROWS = {
 
 _CORE_VERBS = frozenset(
     {"observe", "report_state", "stop", "say", "move", "go_to", "search_scan", "approach_and"}
+    # the place verbs, core verbs a body offers once it says where it is, in the Core row
+    | {"map", "mark_place", "forget_place", "go_to_place"}
 )
 
 

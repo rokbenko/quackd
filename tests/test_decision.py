@@ -139,6 +139,8 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "collect_litter": (None, "never"),
         "drive_to": (None, "motion"),
         "explore": (None, "confirm"),
+        # its own go_to_place, by the planner: the core one's class
+        "go_to_place": (None, "motion"),
         "pick_and_drop": (2, "confirm"),
         "stow_arm": (1, "confirm"),
     },

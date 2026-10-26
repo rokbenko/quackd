@@ -4,7 +4,8 @@ The first robot in quackd that is not a specific product: any wheeled base that 
 `geometry_msgs/msg/Twist` and is reachable through `rosbridge_server`. quackd talks to it
 with [roslibpy](https://github.com/gramaziokohler/roslibpy) over a WebSocket. The manifest
 is small and honest: one intent (`twist`), odometry, optionally a compressed image topic,
-and therefore `move`, `stop`, `report_state`, plus `observe`, `go_to`, `search_scan` and
+and therefore `move`, `stop`, `report_state`, the place verbs `map`, `mark_place`,
+`forget_place` and `go_to_place` on its `/odom`, plus `observe`, `go_to`, `search_scan` and
 `approach_and` only when a camera topic is given. No `say`, no `gaze`, no `kick`. It has one
 verb of its own, `introspect`, which asks the bridge what the body under it actually is. The
 `ws` backend has **never been run against a bridge by us**.
@@ -112,6 +113,15 @@ base's driver. quackd re-sends the Twist at 10 Hz while a verb runs and publishe
 Twist on `stop`, on `close()`, and when the heartbeat fails, and that is the only stop
 authority. The manifest says exactly that (`native: none`, `deadman: false`). A base
 whose driver does implement a command timeout is safer than this page assumes.
+
+`go_to_place` walks on `/odom`, every message taken into the reading as it arrives, so the
+stream's own period sizes the walk's windows however seldom quackd reads it. A message is dated
+by its header stamp, or by its arrival while the stack has stamped none; once one is stamped, an
+unstamped message is another clock's and no reading, and the same stamp again is the same
+reading. With no deadman, a twist left standing would drive the base on, so a walk whose reading
+stops moving on sends a zero Twist within a reading's freshness, and ends once no new reading
+has come for five of the stream's periods, a second at least. Its frame lasts one connection,
+as `/odom`'s origin is wherever the stack started.
 
 ## Upstream API
 

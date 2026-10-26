@@ -14,11 +14,17 @@ a frame that has ended (`quackd.space.places`).
 from __future__ import annotations
 
 import math
+import statistics
+from collections import deque
 from collections.abc import Callable
 from dataclasses import replace
 
 from quackd.space.pose import Fix, FrameRef, Pose2D
 from quackd.space.source import SpatialSourceBase
+
+PERIOD_SAMPLES = 11
+"""How many of the newest intervals between readings the period is judged by, quackd's own
+number. Their median stays the stream's own while fewer than half of them are pauses."""
 
 
 class OdometryTrack:
@@ -27,30 +33,48 @@ class OdometryTrack:
     `key` names the frame, and `epoch` counts the times it began again within the connection.
     `max_speed_mps` is the fastest the body can walk, from a figure its maker gave: a step longer
     than that times the time between two readings, with one measured period of slack for a
-    reading that came late, is no walk, and the frame begins again. None trusts every step."""
+    reading that came late, is no walk, and the frame begins again. None trusts every step.
+    `persistent` says the frame outlives the connection, for a body whose odometry is kept by
+    something that does, as a rover's by the run of its own stack. `restarts_with_clock` False
+    keeps the frame when the robot's clock goes backwards, for odometry whose start something
+    else says, as that run: a date going back there is a clock being set or read loosely, and
+    only the period is measured afresh."""
 
-    def __init__(self, key: str, *, max_speed_mps: float | None = None) -> None:
+    def __init__(
+        self,
+        key: str,
+        *,
+        max_speed_mps: float | None = None,
+        persistent: bool = False,
+        restarts_with_clock: bool = True,
+    ) -> None:
         self.key = key
         self.max_speed_mps = max_speed_mps
+        self.persistent = persistent
+        self.restarts_with_clock = restarts_with_clock
         self.epoch = 0
         self.walked_m = 0.0
         self.held: str | None = None
         """Why the robot is off its feet now, in words, or None while it stands on them."""
         self._pose: Pose2D | None = None
         self._t: float | None = None
-        self._first_t: float | None = None
-        self._intervals = 0
+        self._intervals: deque[float] = deque(maxlen=PERIOD_SAMPLES)
 
     @property
     def frame(self) -> FrameRef:
-        return FrameRef("odometry", self.key, persistent=False, epoch=self.epoch)
+        return FrameRef("odometry", self.key, persistent=self.persistent, epoch=self.epoch)
 
     @property
     def period_s(self) -> float | None:
-        """The mean time between two readings that moved the robot's clock on, this connection."""
-        if self._intervals == 0 or self._first_t is None or self._t is None:
+        """The time between two readings that moved the robot's clock on: the lower median of
+        the newest intervals (`PERIOD_SAMPLES`). A mean let one pause stretch it: a stream that
+        went quiet for half a minute read afterwards as a slow one, and a walk sized from that
+        took a base three metres off for one already at its place. The lower of two middles,
+        since a period read short only makes the windows sized from it tighter. None before two
+        intervals, since one alone may be such a pause."""
+        if len(self._intervals) < 2:
             return None
-        return (self._t - self._first_t) / self._intervals
+        return statistics.median_low(self._intervals)
 
     def update(
         self, x: float, y: float, yaw: float, t: float | None, *, held: str | None = None
@@ -76,8 +100,9 @@ class OdometryTrack:
         if last is not None and t is not None and last_t is not None:
             dt = t - last_t
             if dt < 0:
-                self._begin_again()
-                self._first_t, self._intervals = None, 0
+                if self.restarts_with_clock:
+                    self._begin_again()
+                self._intervals.clear()
             elif dt > 0:
                 step = math.hypot(x - last.x, y - last.y)
                 slack = self.period_s or dt
@@ -88,16 +113,19 @@ class OdometryTrack:
         self._remember(pose, t, count=True)
 
     def _remember(self, pose: Pose2D, t: float | None, *, count: bool) -> None:
-        if t is not None:
-            if self._first_t is None:
-                self._first_t = t
-            elif count and self._t is not None and t > self._t:
-                self._intervals += 1
+        if count and t is not None and self._t is not None and t > self._t:
+            self._intervals.append(t - self._t)
         self._pose, self._t = pose, t
 
     def _begin_again(self) -> None:
         self.epoch += 1
         self.walked_m = 0.0
+
+    def reclock(self) -> None:
+        """The readings are dated on another clock from the next one on, in the same frame: no
+        step is judged across the change, and the period is measured afresh."""
+        self._t = None
+        self._intervals.clear()
 
     def fix(self) -> Fix:
         if self._pose is None:

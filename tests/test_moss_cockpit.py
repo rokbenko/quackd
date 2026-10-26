@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import socket
 import time
 from collections.abc import Iterator
@@ -181,6 +182,10 @@ async def test_with_no_bridge_the_manifest_is_the_cockpits_alone(cockpit: FakeCo
         "stop",
         "drive_to",
         "explore",
+        # where it is, by the cockpit's pose; its own go_to_place needs the bridge too
+        "map",
+        "mark_place",
+        "forget_place",
     }
     assert manifest.safety_authority.deadman is False
     assert manifest.extras["bridge"] is None and "did not answer" in manifest.extras["bridge_error"]
@@ -192,7 +197,8 @@ async def test_with_no_bridge_the_manifest_is_the_cockpits_alone(cockpit: FakeCo
 async def test_moss_nav_with_no_bridge_has_nothing_that_moves(cockpit: FakeCockpit) -> None:
     cockpit.blueprint = "moss-nav"
     manifest = await MossAdapter(_transport(cockpit)).connect()
-    assert set(manifest.verb_names()) == {"observe", "report_state", "stop"}
+    places = {"map", "mark_place", "forget_place"}  # where it is, which moves nothing
+    assert set(manifest.verb_names()) == {"observe", "report_state", "stop", *places}
 
 
 @pytest.mark.parametrize(
@@ -474,3 +480,104 @@ async def test_a_stack_the_idle_stop_ended_fails_the_heartbeat_by_name(
     with pytest.raises(HeartbeatError, match="idle stop"):
         await transport.heartbeat()
     await transport.close()
+
+
+# ── where the rover is ──────────────────────────────────────────────────────────────────
+
+
+def _dated(wall: float, u: float, x: float = 1.0) -> dict[str, Any]:
+    """A state as LiveCockpit.state builds it for one /odom message that arrived at `wall` on
+    the rover's clock, read `u` seconds later: ts unrounded, the age rounded to a hundredth."""
+    return {
+        "ts": wall + u,
+        "pose": {"x": x, "y": 2.0, "yaw": 0.0, "age_s": round(u, 2)},
+        "topics": {"odom": {"age_s": round(u, 2), "hz": 10.0}},
+    }
+
+
+async def test_one_pose_read_again_keeps_its_date_and_its_places() -> None:
+    """The same /odom message read either side of the cockpit's rounding of its age dates a few
+    milliseconds apart, the second earlier: read as two readings, it began the frame again and
+    orphaned the place marked on the first."""
+    from quackd.space.places import PlaceBook, PlaceStore
+
+    with FakeCockpit() as fake:
+        t = _transport(fake)
+        await t.connect()
+        try:
+            assert t.spatial is not None
+            book = PlaceBook(PlaceStore("rover", persist=False), t.spatial)
+            wall = time.time() + 100.0
+            t._feed_pose(_dated(wall, 0.0149))
+            place, _ = book.mark("dock")
+            first = t.spatial.fix().t
+            t._feed_pose(_dated(wall, 0.0151))  # the same message, a fifth of a millisecond on
+            assert t.spatial.fix().t == first
+            assert book.view(place).status == "here"
+        finally:
+            await t.close()
+
+
+async def test_a_date_going_back_never_begins_the_runs_frame_again(tmp_path: Any) -> None:
+    """The run is the frame. A date going back began it again within one connection, and the
+    next connection to the same run began at the first again: a place marked in between was
+    orphaned for good, while the ones before it came back."""
+    from quackd.space.places import PlaceBook, PlaceStore
+
+    with FakeCockpit() as fake:
+        t = _transport(fake)
+        await t.connect()
+        try:
+            assert t.spatial is not None
+            book = PlaceBook(PlaceStore("rover", base_dir=tmp_path), t.spatial)
+            book.mark("a")
+            wall = time.time() + 100.0
+            t._feed_pose(_dated(wall, 0.0, x=1.0))
+            t._feed_pose(_dated(wall - 1.0, 0.0, x=1.1))  # the rover's clock set back a second
+            book.mark("b")
+        finally:
+            await t.close()
+        again = _transport(fake)  # another connection to the same run
+        await again.connect()
+        try:
+            assert again.spatial is not None
+            book = PlaceBook(PlaceStore("rover", base_dir=tmp_path), again.spatial)
+            assert {v.place.name: v.status for v in book.views()} == {"a": "here", "b": "here"}
+        finally:
+            await again.close()
+
+
+class _UpstreamDated(FakeCockpit):
+    """ts and the pose's age as the real cockpit builds them, /odom arriving ten times a second
+    and the rover standing still."""
+
+    def state(self) -> dict[str, Any]:
+        doc = super().state()
+        now = time.monotonic()
+        hz = self.odom_hz
+        arrived = math.floor(now * hz) / hz
+        if isinstance(doc.get("pose"), dict):
+            doc["pose"] = {**doc["pose"], "age_s": round(now - arrived, 2)}
+        doc["ts"] = time.time()
+        return doc
+
+
+async def test_a_standing_rover_read_by_heartbeat_and_verbs_keeps_its_places() -> None:
+    """Reads in pairs a few milliseconds apart, as a heartbeat and a verb's poll fall."""
+    from quackd.space.places import PlaceBook, PlaceStore
+
+    with _UpstreamDated() as fake:
+        t = _transport(fake)
+        await t.connect()
+        try:
+            assert t.spatial is not None
+            book = PlaceBook(PlaceStore("rover", persist=False), t.spatial)
+            place, _ = book.mark("dock")
+            for _ in range(40):
+                await t.get_state()
+                await t.get_state()
+                await asyncio.sleep(1.0 / fake.odom_hz / 8)
+            assert book.view(place).status == "here"
+            assert t.spatial.track.epoch == 0
+        finally:
+            await t.close()

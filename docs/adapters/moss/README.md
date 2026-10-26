@@ -140,6 +140,8 @@ against before anything connects. Connect narrows it to what answered:
 | the planner: `drive_to`, `explore` | no planner | ✓ | no |
 | with the bridge, the arm's coordinator answering and the maker's cycle found: `pick_and_drop`, `stow_arm` | ✓ | ✓ | no: the mission owns the arm |
 | with the bridge and the mission answering: `collect_litter` | | | ✓ |
+| where it is, by the cockpit's pose: `map`, `mark_place`, `forget_place` (all core) | ✓ | ✓ | ✓ |
+| with the planner and the bridge: its own `go_to_place` | no planner | ✓ | no |
 
 **Refused at connect**, each in a sentence that names the fix: no cockpit, a cockpit that answers
 its state with an error, a cockpit in `--demo` mode, a bridge that refuses the token or speaks
@@ -179,6 +181,19 @@ cockpit on the rover (tools/moss-fly.sh cockpit) and reach it through the tunnel
 | `explore_stack` | the stack is not `moss-explore` |
 | `mission_up` | the litter mission's RPC does not answer, or the mission is stopped |
 
+## Where it is, and its places
+
+The cockpit's pose is the stack's odometry, and quackd reads it as where the rover is, dated on
+the rover's clock: the state's own `ts` less the pose's age. That date wanders by milliseconds,
+since the cockpit rounds the age to a hundredth of a second and reads its wall clock after other
+work, so the same pose read again is taken for the same reading and keeps its date. Its frame is
+the stack's run, `odom:moss:<run_id>`, and nothing but a new run begins it again, a date going
+back included: a place marked in one run is there to drive back to over any connection to the
+same run, and orphaned once the stack starts again. A pose older than the rover's own odom rate
+allows (`pose_limit_s`) is no reading. The map MOSS keeps is its own, and quackd draws none of
+it: `map` says where the rover is and lists its places
+([concepts/places.md](../../concepts/places.md)).
+
 ## Its own verbs
 
 None of them is named `pick`, which is a policy verb.
@@ -186,6 +201,7 @@ None of them is named `pick`, which is a policy verb.
 | Verb | Class | What it does |
 |---|---|---|
 | `drive_to(x_m, y_m, frame)` | `safe`, as core `go_to` | a goal for MOSS's own planner, at most 2 m from the rover, in the body frame (forward and left) or along the map's axes. It trusts `goal_reached` only once the cockpit echoes the goal it sent, fails if another goal replaces it, stops on a stall or after 48 s, and always ends with a stop |
+| `go_to_place(name, face, timeout_s)` | `safe`, as the core verb it stands in for | to a place `mark_place` kept, by the planner: `drive_to`'s goals, at most 2 m each along the straight line to it, and never a twist while one is out, since every message on the pad's topic cancels the planner's goal. Before each goal it hears a stop and reads the run's `abort_when` rules and the planner's gates that can change on the way (`cockpit_fresh`, `pose_fresh`, `battery_ok`, `not_stalled`) again, and each goal gets only what is left of `timeout_s`. It does not turn to face the way the place faced, since the rover's pivots run at full power and its odometry under-reads them, and says so when asked. It says what the planner said and how far the odometry puts the rover from the place, and when it ends short, why and after how many goals |
 | `explore(minutes)` | `confirm` | MOSS's own explorer, at most 8 minutes. It checks for an interruption every second and ends with the explorer's stop and the soft stop, early if the explorer runs out of frontier |
 | `collect_litter(minutes)` | `dangerous` | the rover handed to MOSS's own litter mission, at most 8 minutes: it explores, drives to any litter it confirms and runs the arm cycle by itself. It ends with the mission's own stop, and succeeds only if the bridge confirmed it |
 | `pick_and_drop(pick_pose)` | `confirm` | the maker's fixed cycle, about 37 s: out of the drive pose, the jaws closed at one point in front, and whatever they hold into the bin. `pick` for an object standing, `pick_low` for one lying down. Every parameter has a default, so `approach_and(then="pick_and_drop")` can run it |

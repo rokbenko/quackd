@@ -16,6 +16,8 @@ A body's transport carries a reading, its `spatial` source, for the life of one 
 | Microduck over `robotd` (`jsonrpc`), with `mapd` beside it | the duck's own map, `mapd`: its newest pose carried on by robotd's odometry since (UNVERIFIED: `mapd` is in no release yet) | the map's own, known again in a later session by its first stops after its origin, until a wipe or a map with fewer stops |
 | Microduck over `robotd` (`jsonrpc`) | contact odometry, `robot.state.odom`, which every robotd quackd serves has sent since before the release quackd reads | one connection, begun again within it when the duck is picked up, falls or rides a fall down, when robotd's clock goes back, or on a step longer than its walking policy could make in the time between two frames |
 | Microduck `mock` | the mock's scripted pose | the mock's own, for as long as it runs |
+| MOSS (`cockpit`, `mock`) | the cockpit's pose, the stack's odometry, dated on the rover's clock | the stack's run, `odom:moss:<run_id>`, over every connection to it, and begun again by nothing else; its own `go_to_place` drives by the planner |
+| rosbridge (`ws`, `mock`) | `/odom`, dated by its header stamp, or by its arrival when the stack stamps nothing | one connection |
 | Microduck `sim2d` or `mujoco` in a room, with `--room` | quackd's stand-in for the duck's own map, `mapd`, kept to the numbers quackd read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
 
 Every other body says nothing of where it is yet, and the place verbs are not offered on it. The

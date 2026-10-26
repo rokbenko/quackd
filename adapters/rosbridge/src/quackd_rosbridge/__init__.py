@@ -92,10 +92,12 @@ def rosbridge_manifest(
     image: str | None = None,
     roslibpy_version: str | None = None,
     datasheet: Datasheet | None = None,
+    places: bool = True,
 ) -> RobotManifest:
     """The base as data. `camera` is whether an image topic is configured, and `datasheet` is
     what the bridge said about the body when it was asked (`introspection.py`); without one,
-    the static sheet says nothing is known, which is the honest answer for a name."""
+    the static sheet says nothing is known, which is the honest answer for a name. `places` is
+    whether its /odom is read as where it is, which the place verbs walk by."""
     verbs = [
         verb_spec(CORE["report_state"], core=True),
         verb_spec(CORE["stop"], core=True),
@@ -109,6 +111,11 @@ def rosbridge_manifest(
             verb_spec(CORE["go_to"], core=True),
             verb_spec(CORE["search_scan"], core=True),
             verb_spec(CORE["approach_and"], core=True),
+        ]
+    if places:
+        verbs += [
+            verb_spec(CORE[name], core=True)
+            for name in ("map", "mark_place", "forget_place", "go_to_place")
         ]
     sensors: list[Any] = ["odometry"] + (["camera"] if camera else [])
     return RobotManifest(
@@ -163,8 +170,15 @@ class RosbridgeAdapter:
             datasheet=datasheet_from_introspection(
                 getattr(self.transport, "introspection", None), base=DATASHEET
             ),
+            places=self.spatial is not None,
         )
         return self.manifest
+
+    @property
+    def spatial(self) -> Any:
+        """Where the base is by its /odom, passed on from the transport by name, as every wrapper
+        passes it (`quackd.transport.base.spatial_of`)."""
+        return getattr(self.transport, "spatial", None)
 
     async def introspect(self) -> Introspection:
         """Re-read the bridge and refresh the datasheet in place, so a pilot that asks again

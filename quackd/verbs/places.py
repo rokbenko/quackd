@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from quackd.space.places import PLACE_NAME_MAX, PlaceView, place_listing
+from quackd.space.places import PLACE_NAME_MAX, Place, PlaceBook, PlaceView, place_listing
 from quackd.space.pose import Fix, where_record, where_summary
 from quackd.space.source import SpatialSource
 from quackd.verbs.registry import Verb, VerbContext, VerbResult
@@ -147,16 +147,17 @@ async def mark_place(ctx: VerbContext, p: MarkPlaceParams) -> VerbResult:
     return VerbResult.success(said, place=place.to_json())
 
 
-async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
-    """Walk to a place on the robot's own reading of where it is (`quackd.verbs.navigate`). A
-    place in another frame is refused before anything moves, with why."""
+def place_to_walk(ctx: VerbContext, name: str) -> tuple[PlaceBook, Place] | VerbResult:
+    """The place `go_to_place` goes to, and the book it is read in, or why not: no reading of
+    where the robot is, no place by that name, or a place in another frame, which is refused
+    before anything moves. A body's own `go_to_place` asks this too."""
     book = ctx.places
     if book is None:
         return VerbResult.fail(f"go_to_place: {NO_POSE}")
-    place = book.store.get(p.name)
+    place = book.store.get(name)
     if place is None:
         known = ", ".join(pl.name for pl in book.store.places()) or "none"
-        return VerbResult.fail(f"go_to_place: no place called '{p.name}' (places: {known})")
+        return VerbResult.fail(f"go_to_place: no place called '{name}' (places: {known})")
     view = book.view(place)
     if view.status == "orphaned":
         return VerbResult.fail(
@@ -164,6 +165,16 @@ async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
             "known now: mark it again once the robot is there",
             place=view_record(view),
         )
+    return book, place
+
+
+async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
+    """Walk to a place on the robot's own reading of where it is (`quackd.verbs.navigate`). A
+    place in another frame is refused before anything moves, with why."""
+    found = place_to_walk(ctx, p.name)
+    if isinstance(found, VerbResult):
+        return found
+    book, place = found
     from quackd.verbs.navigate import navigate, verb_result  # it steers with core's helpers
 
     walked = await navigate(

@@ -117,7 +117,11 @@ STATE_POSE = UpstreamRef(
     "VERIFIED",
     src(_COCKPIT, 1862),
     "the newest /odom in the world frame with its age since it arrived, or null before the "
-    "first. quackd reads it as the pose and the age as how fresh it is.",
+    "first: x and y rounded to the millimetre, yaw to 1e-4 rad and the age to a hundredth of a "
+    "second, against a monotonic clock read at the top of LiveCockpit.state, while the state's "
+    "ts is time.time() read after the stack's status (line 1964). So ts less the age wanders by "
+    "that rounding and that work. quackd reads the pose as where the rover is, the age as how "
+    "fresh it is, and the same pose read again as the same reading.",
 )
 STATE_TOPIC_RATES = UpstreamRef(
     "topics: age_s, hz",

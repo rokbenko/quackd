@@ -67,6 +67,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   leaves the odometry as before, with a warning when you named the address. `quackd doctor
   --map-address` adds a `mapd` row, and fails when nothing answers at an address you named
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+- **MOSS and a rosbridge base keep places too.** MOSS reads its cockpit's pose as where the
+  rover is, in a frame that lasts its stack's run, so a place outlives a connection to the same
+  run; its own `go_to_place` drives there by MOSS's planner, in goals of at most 2 m, never
+  sends a twist while a goal is out, since any would cancel it, and reads the run's rules and the
+  planner's gates again before each goal. A rosbridge base reads `/odom`, every message as it
+  arrives, and since it has no deadman, a walk whose reading stops moving on holds the base still
+  with a zero Twist and then ends ([docs/concepts/places.md](docs/concepts/places.md)).
 
 ### Fixed
 
