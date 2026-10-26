@@ -38,8 +38,8 @@ Reading for more families turned up two things wrong with what the server alread
 
 ## Decision
 
-1. **A step is allowed by the type that names it.** `STEPS_BY_TYPE` gives each served type the
-   steps every policy is built from and the steps its own processors add, each read at the pin
+1. **A step is allowed by the type that names it.** `STEPS_BY_TYPE` gives each served type
+   LeRobot's default steps and its own family's, each read at the pin
    and named by a ref of its own (`SMOLVLA_PROCESSOR_STEPS`, `PI05_PROCESSOR_STEPS`, and one per
    family after them). A step another type uses is refused with a sentence that lists what this
    type allows. A step no type may name, the action tokenizer first among them, is refused with
@@ -81,10 +81,16 @@ Reading for more families turned up two things wrong with what the server alread
 - Serving a pinned model offline found that `snapshot_download` asks the Hub for a commit's file
   list whatever `HF_HUB_OFFLINE` says, so the server now asks it for the cache's own files
   offline, and CI serves a tiny random X-VLA beside its tiny ACT.
-- The plan left peft out. GR00T's extra brings it, and with it installed transformers loads a
+- The plan left peft out. LeRobot's `[groot]` extra brings it, and with it installed
+  transformers loads a
   PEFT adapter it finds in a model's directory onto that model, or, when the directory has no
   `config.json`, loads the base model the adapter names, which no pin fixes, so a pinned model
   whose directory holds an `adapter_config.json` is refused.
+- **Amended 2026-10-26:** the server's extra brings diffusers and dm-tree, which a GR00T
+  answers with, rather than LeRobot's `[groot]`, whose datasets, pyarrow, pandas, av,
+  torchcodec, decord, peft and timm, about 340 MB, are for training
+  (`GROOT_INFERENCE_PACKAGES`). A GR00T on a server without either is refused before a pin
+  or a weight. The PEFT refusal stays, for a peft installed some other way.
 
 ## Why not
 

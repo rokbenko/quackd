@@ -192,11 +192,15 @@ def _hub(
 
 
 def _fetch(hub: FakeHub, **kw: Any) -> P.Checkpoint:
+    """The stand-in Hub's checkpoint fetched as the server fetches one. Every package a family
+    answers with counts as installed unless a test says otherwise, since CI's jobs install
+    none of them and the read is what these tests hold."""
     return P.fetch_checkpoint(
         f"{REPO}@{_commit(REPO)}",
         fps=kw.pop("fps", None),
         device=kw.pop("device", "cpu"),
         hub=hub,
+        importable=kw.pop("importable", lambda _name: True),
         **kw,
     )
 
@@ -1001,6 +1005,29 @@ def test_a_groot_whose_steps_are_n1_5s_or_whose_decode_is_missing_is_refused(
     with pytest.raises(P.PipelineRefused, match=f"has no {up.CONFIG_FILE}, so it is not a GR00T"):
         _fetch(hub, fps=float(FPS), pins=GROOT_PINS)
     assert up.WEIGHTS_FILE not in [filename for _, _, filename in hub.asked]
+
+
+@pytest.mark.parametrize(("absent", "package"), [("diffusers", "diffusers"), ("tree", "dm-tree")])
+def test_a_groot_that_could_not_answer_here_is_refused_before_its_weights(
+    tmp_path: Path, absent: str, package: str
+) -> None:
+    """GR00T's action head is built only with diffusers, and its inputs go through dm-tree, so a
+    server without either would fetch 16 GB and more to fail building it. The server's extra
+    brings both, and one installed some other way is told to install it again, before a pin or
+    a weight is fetched (`upstream_api.GROOT_INFERENCE_PACKAGES`)."""
+    hub = _groot(tmp_path)
+    with pytest.raises(P.PipelineRefused, match=re.escape(f"which answers with {package}, and")):
+        _fetch(hub, fps=float(FPS), pins=GROOT_PINS, importable=lambda name: name != absent)
+    asked = [filename for _, _, filename in hub.asked]
+    assert up.WEIGHTS_FILE not in asked and not hub.snapshots, "something was fetched first"
+    assert _fetch(hub, fps=float(FPS), pins=GROOT_PINS).shape.policy_type == "groot"
+
+
+def test_whether_a_package_would_import_is_found_without_importing_it() -> None:
+    assert P.importable_module("json") and P.importable_module("quackd_lerobot.policy")
+    assert not P.importable_module("quackd_no_such_package")
+    assert not P.importable_module("quackd_no_such_package.inner")
+    assert not P.importable_module("")
 
 
 class _Stat:

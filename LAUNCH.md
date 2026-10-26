@@ -47,9 +47,14 @@ pilot, though none of it has run between two machines or on a robot yet. 0.24's 
 go of the SO-101 means putting it down first, with a fold that misses asking twice before anything
 drops and an arm with no rest pose never let fall, and that a turn the model's API could not
 answer is asked again with the robot holding still, though none of it has run on the arm or met a
-real 429 yet. **0.25's is that the SO-101 plays on while a policy's next chunk is on its way,
+real 429 yet. 0.25's was that the SO-101 plays on while a policy's next chunk is on its way,
 whatever latency its server declares, and that `--no-async-chunks` plays each chunk out first, as
-LeRobot's own loop does, though no policy has driven the arm through either yet.**
+LeRobot's own loop does, though no policy has driven the arm through either yet. **0.26's is that
+the arm's policy server serves Physical Intelligence's pi0, X-VLA in its `auto` action mode and
+NVIDIA's GR00T N1.7 whose action groups are joints, beside ACT, SmolVLA and pi05, that `quackd
+policy endpoint` starts it on a GPU Hugging Face rents by the hour, and that the README and
+`docs/models/` say which pilot LLMs, decision LLMs and VLAs quackd takes, though quackd has
+created no endpoint and run no trained pi0, X-VLA or GR00T yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 

@@ -414,28 +414,27 @@ Also in scope:
   endpoint address that machine's `up` recorded, whose whole authority has to be an endpoint's,
   over https on port 443, and only once the API, asked with that token, has said the endpoint by
   that name on the recorded account carries the tags `up` gave it, quackd's and one made from the
-  record's token that no other endpoint carries, at that address. The record is a file in the
-  registry's directory, which a project's `.env` can name with `QUACKD_REGISTRY_DIR`, and it
-  outlives an endpoint deleted on huggingface.co, so whatever record is read, the token goes to no
-  address the API has not confirmed, and `up`, `pause` and `delete` make the same read and leave
-  alone an endpoint it does not confirm. That read trusts Hugging Face to answer for an account's
-  endpoints only to that account and the members of its organisations, which nothing it publishes
-  says (the `NAMESPACE_READS` row of
+  record's token that no other endpoint carries, at that address. A run reads the record only from
+  a registry the shell or `--registry-dir` names: a `QUACKD_REGISTRY_DIR` that came from a
+  project's `.env` is refused before anything is asked, since that `.env` could set an account
+  token of its own beside a record of its own and choose which endpoint's policy drives the arm. A
+  record outlives an endpoint deleted on huggingface.co, so whatever record is read, the token
+  goes to no address the API has not confirmed, and `up`, `pause` and `delete` make the same read
+  and leave alone an endpoint it does not confirm. That read trusts Hugging Face to answer for an
+  account's endpoints only to that account and the members of its organisations, which nothing it
+  publishes says (the `NAMESPACE_READS` row of
   [the endpoint's table](docs/adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints)),
-  so an organisation the account belongs to is trusted as the account is. A project's `.env` that
-  sets `HF_TOKEN` as well, where the shell sets none, makes its own account the one asked and its
-  endpoint the one a run reaches: the user's own token is still sent nowhere, but the arm is
-  driven by that endpoint's policy and its frames go there, so a cloned project's `.env` is
-  trusted as the shell is. The token goes to nothing else: not into the endpoint, not to PyPI and
-  not to the price list, which is asked with no token. No variable moves where it is sent. A Hub
-  token for a gated checkpoint, named by `--hub-token-from`, goes only into the endpoint's secrets
-  and to huggingface.co, and is refused when it is the account's own. A record whose address is
-  not an endpoint's is refused, and every log line or refusal quoted has every token taken out.
-  What would be a security issue: the account's token reaching any other host, an address the API
-  has not confirmed, the endpoint, a record or the terminal, the server's token reaching a URL, a
-  run's record or the terminal, an endpoint created, resumed or woken by `up` without a yes, or
-  resumed, paused or deleted when quackd did not start it, created `public` or with more than one
-  replica, or one that never scales to zero.
+  so an organisation the account belongs to is trusted as the account is. The token goes to
+  nothing else: not into the endpoint, not to PyPI and not to the price list, which is asked with
+  no token. No variable moves where it is sent. A Hub token for a gated checkpoint, named by
+  `--hub-token-from`, goes only into the endpoint's secrets and to huggingface.co, and is refused
+  when it is the account's own. A record whose address is not an endpoint's is refused, and every
+  log line or refusal quoted has every token taken out. What would be a security issue: the
+  account's token reaching any other host, an address the API has not confirmed, the endpoint, a
+  record or the terminal, the server's token reaching a URL, a run's record or the terminal, an
+  endpoint created, resumed or woken by `up` without a yes, or resumed, paused or deleted when
+  quackd did not start it, created `public` or with more than one replica, or one that never
+  scales to zero.
 - **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
   `hmac.compare_digest`, but a token is only required if one is configured, and binding it

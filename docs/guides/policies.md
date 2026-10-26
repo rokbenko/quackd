@@ -354,7 +354,7 @@ state    initializing at 1 s
 state    running at 2 s
 url      http://127.0.0.1:51814
 token    kept in ~/.quackd/endpoints.json, for hf:arm-smolvla
-serving  scripted:sweep (quackd-policy 1, quackd 0.25.0), gpu yes
+serving  scripted:sweep (quackd-policy 1, quackd 0.26.0), gpu yes
   Run with --policy-url hf:arm-smolvla. quackd policy endpoint pause arm-smolvla stops the bill.
 ```
 
@@ -376,12 +376,11 @@ quackd run task.duck --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
 
 Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
 that token to the endpoint only when the API says the endpoint by that name carries the tags `up`
-gave it, at the address `up` recorded. The record is a file, and a project's `.env` can name
-another registry with `QUACKD_REGISTRY_DIR`, so a record you did not make, or one left behind by
-an endpoint deleted on huggingface.co, is refused unless the API confirms it, and your token goes
-nowhere else. A `.env` that also sets `HF_TOKEN`, where your shell sets none, is another account
-asking, and its endpoint is the one a run reaches: trust a project's `.env` as you trust your
-shell.
+gave it, at the address `up` recorded. A record left behind by an endpoint deleted on
+huggingface.co is refused unless the API confirms it, and your token goes nowhere else. The
+record is read only from a registry your shell or `--registry-dir` names, so a project's `.env`
+cannot choose which endpoint drives your arm: a `QUACKD_REGISTRY_DIR` that came from one is
+refused, saying so.
 
 **Pause it** when you are done, which stops the bill until `up` resumes it, asking again first:
 
@@ -736,8 +735,9 @@ server reads before it builds:
   processor step names, comes without its weights, and a backbone the checkpoint's config names
   comes with them. Its directory in the Hub's cache is refused if it holds any other kind of
   file, or a config that maps a class to code, with a sentence saying to point `HF_HUB_CACHE` at
-  a fresh cache. One that holds a PEFT adapter is refused too, since GR00T's extra installs
-  peft, and with it transformers would load the adapter onto the model.
+  a fresh cache. One that holds a PEFT adapter is refused too, since with peft installed,
+  which LeRobot's own `[peft]` and `[groot]` extras bring, transformers would load the
+  adapter onto the model.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
   run's record.

@@ -22,9 +22,10 @@ runs and the arm's process never does.
   (`endpoint_upstream_api.TOKEN_LOOKUP`). It goes to `HUB` and `API` for the account's own
   business, and as the bearer to the one address this machine's `up` recorded for an endpoint,
   which the client holds to (`client.is_endpoint_host`), once the API, asked with it, has said
-  the endpoint by that name is quackd's and at that address (`confirm`): a record is a file in a
-  directory a project's `.env` can name. `GET /v2/provider` and PyPI are asked with no token. It
-  never goes into an endpoint: an `authenticated` endpoint admits any account
+  the endpoint by that name is quackd's and at that address (`confirm`), and only from a record
+  in a registry the shell or `--registry-dir` names, never one a project's `.env` named
+  (`reach`). `GET /v2/provider` and PyPI are asked with no token. It never goes into an
+  endpoint: an `authenticated` endpoint admits any account
   (`endpoint_upstream_api.AUTHENTICATED_ADMITS`), and nothing in the container needs it.
 - **quackd's token**, `secrets.token_hex(32)` made by `up`, which is the lock on the server
   whatever the proxy does. It goes into the endpoint's secrets as `QUACKD_POLICY_TOKEN`, which
@@ -62,7 +63,8 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
 from quackd.adapters.base import POLICY_ENDPOINT
-from quackd.registry import RegistryError, registry_dir, write_json
+from quackd.registry import ENV_DIR as REGISTRY_ENV
+from quackd.registry import RegistryError, named_by_dotenv, registry_dir, write_json
 from quackd_lerobot import __version__
 from quackd_lerobot.policy import client
 from quackd_lerobot.policy import endpoint_upstream_api as up
@@ -467,9 +469,20 @@ class HFEndpoints:
         return said if isinstance(said, dict) else {}
 
     def get(self, namespace: str, name: str) -> dict[str, Any] | None:
-        """The endpoint as Hugging Face has it now, or None when it has none by that name."""
+        """The endpoint as Hugging Face has it now, or None when it has none by that name. An
+        answer that is no endpoint at all, an empty body or one that is not an object, is an
+        `EndpointError`, as an answer that cannot be read is: it says nothing of whose the
+        endpoint is, so it is neither one that is gone nor one quackd did not start, and the
+        wait pauses quackd's own rather than leave it starting."""
         said = self._api("GET", self._path(namespace, name), f"say how {name} is", missing_ok=True)
-        return said if isinstance(said, dict) or said is None else {}
+        if said is None:
+            return None
+        if not isinstance(said, dict) or not said:
+            raise EndpointError(
+                f"Hugging Face answered a read of {name} with something that is not an endpoint, "
+                "so how it is cannot be said"
+            )
+        return said
 
     def list_endpoints(self, namespace: str) -> list[dict[str, Any]]:
         """Every endpoint of `namespace`'s that carries quackd's tag, a page at a time, and no
@@ -757,16 +770,20 @@ class EndpointStore:
         """The account `name`'s record says its endpoint is on, and the tag `up` gave that
         endpoint from the record's token (`mark`), each read without checking the rest of the
         record, for `delete` to remove an endpoint whose record went wrong, held to that tag
-        first (`confirmed`). None for either the record does not hold as `up` writes it, and for
+        first (`confirmed`). None for either the record does not hold as `up` writes it, a token
+        its server could not take among them, which gives no tag to hold an endpoint to, and for
         both with no record."""
         raw = self._load().get(name)
         if not isinstance(raw, dict):
             return None, None
         space, token = raw.get("namespace"), raw.get("token")
-        return (
-            space if isinstance(space, str) and ACCOUNT.match(space) else None,
-            _mark_of(token) if isinstance(token, str) and token.strip() else None,
-        )
+        try:
+            marked = (
+                _mark_of(wire.clean_token(token, "a record")) if isinstance(token, str) else None
+            )
+        except ValueError:
+            marked = None
+        return space if isinstance(space, str) and ACCOUNT.match(space) else None, marked
 
     def recorded(self, name: str) -> bool:
         return name in self._load()
@@ -1432,20 +1449,34 @@ def reach(
     connects. A record that cannot be read refuses `hf:NAME`, and leaves an https address to be
     reached as any other.
 
+    The record is a file in the registry's directory, and the registry has to be one the shell
+    or `--registry-dir` names: a `QUACKD_REGISTRY_DIR` that came from a `.env` file
+    (`dotenv_names`) is refused before anything is read. A project cloned from somebody else
+    brings its `.env` along, and one that named a registry of its own, with a record in it and
+    an account token of its own beside it, would otherwise choose which endpoint's policy
+    drives the arm, and where its frames go.
+
     Then the endpoint is read from the API with the account's token, one request, and the
     record is bound to what Hugging Face answers before the token goes anywhere else: the
     endpoint by that name on the recorded account has to carry the tags `up` gave it, quackd's
-    and the record's own (`confirm`), at the recorded address. The record is a file in the
-    registry's directory, which a `.env` in the working directory can name with
-    `QUACKD_REGISTRY_DIR`, so a project cloned from somebody else could plant one naming an
-    endpoint of theirs, and a record outlives an endpoint deleted on huggingface.co. Either is
-    refused here, in a sentence, and nothing is sent to the address it holds. That the API
-    answers a read of an account's endpoints only to that account and its organisations'
-    members is what this trusts (`endpoint_upstream_api.NAMESPACE_READS`). A `.env` that sets
-    `HF_TOKEN` as well is another account asking, whose endpoint is then the one reached with
-    that account's token, never this one's: the `.env` is trusted as the shell is."""
+    and the record's own (`confirm`), at the recorded address. A record outlives an endpoint
+    deleted on huggingface.co, and one of those is refused here, in a sentence, and nothing is
+    sent to the address it holds. That the API answers a read of an account's endpoints only to
+    that account and its organisations' members is what this trusts
+    (`endpoint_upstream_api.NAMESPACE_READS`)."""
     text = given.strip()
     match = POLICY_ENDPOINT.fullmatch(text)
+    if match is None and not (
+        text.lower().startswith("https://") and client.is_endpoint_host(text)
+    ):
+        return None  # no record holds an address that is not an endpoint's
+    if named_by_dotenv(registry_dir):
+        raise EndpointError(
+            f"{REGISTRY_ENV} comes from a .env file here, and an endpoint's record is read only "
+            "from a registry this shell or --registry-dir names, since a project's .env could "
+            "otherwise choose which endpoint drives the arm: export it in the shell, or pass "
+            "--registry-dir"
+        )
     store = EndpointStore(registry_dir)
     if match is not None:
         name = match.group(1)
@@ -1462,8 +1493,6 @@ def reach(
                 "has one"
             )
     else:
-        if not text.lower().startswith("https://"):
-            return None
         try:
             records = store.read()
         except EndpointError:

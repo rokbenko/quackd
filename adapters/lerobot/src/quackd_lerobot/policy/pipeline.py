@@ -52,11 +52,12 @@ from __future__ import annotations
 import contextlib
 import fnmatch
 import functools
+import importlib.util
 import json
 import math
 import re
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -83,10 +84,11 @@ STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
     "groot": frozenset(up.DEFAULT_STEP_NAMES + up.GROOT_STEP_NAMES),
 }
 """The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
-registers it under: the steps every policy is built from, which are all of ACT's, and those
-the type's own processors add. Each is one of LeRobot's own classes, found in its registry,
-never imported by a path, and a type may name no other type's: an ACT that names a VLA's step
-is code nobody read for an ACT."""
+registers it under: LeRobot's default steps, which are all of ACT's, and those of the type's
+own family. GR00T's processors leave the default normaliser pair out and normalise in steps
+of their own, and it is allowed the pair as every type is. Each is one of LeRobot's own
+classes, found in its registry, never imported by a path, and a type may name no other
+type's: an ACT that names a VLA's step is code nobody read for an ACT."""
 REFUSED_STEPS: Mapping[str, str] = {
     "action_tokenizer_processor": (
         "which loads its tokenizer trusting the repository's own code unless told not to, and "
@@ -142,8 +144,9 @@ CODE_MAP_KEY = "auto_map"
 """The key of a transformers config that maps a class to code of the repository's own, or of
 another repository's (`upstream_api.TOKENIZER_TRUSTS_REMOTE_CODE`)."""
 ADAPTER_CONFIG = "adapter_config.json"
-"""The file that makes a directory a PEFT adapter. With peft installed, which LeRobot's
-`[groot]` extra brings, transformers building a model from a directory that holds one loads the
+"""The file that makes a directory a PEFT adapter. With peft installed, which the server's
+extra does not bring and LeRobot's own `[peft]` and `[groot]` do, transformers building a model
+from a directory that holds one loads the
 adapter onto it, or, with no `config.json` beside it, loads the base model the adapter names,
 which no pin fixes."""
 LENIENT_LOADERS = frozenset({"pi05", "pi0"})
@@ -448,17 +451,48 @@ class Family:
     action_quantiles: wire.Quantiles | None = None
 
 
+PACKAGE_OF = {"tree": "dm-tree"}
+"""The package that installs an import name, where the two differ."""
+
+
+def importable_module(name: str) -> bool:
+    """Whether `name` would import here, found without importing it."""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def check_family(
-    config: Mapping[str, Any], steps: Sequence[Mapping[str, Any]], spec: str
+    config: Mapping[str, Any],
+    steps: Sequence[Mapping[str, Any]],
+    spec: str,
+    *,
+    importable: Callable[[str], bool] = importable_module,
 ) -> Family:
     """A checkpoint's config and its processors' steps read the way its own type's code reads
     them, before any pin is checked or any weight fetched, or a refusal that says what in them
     could not drive an arm's joints. ACT, SmolVLA, pi05 and pi0 have nothing past what every type
-    is checked for (`check_config`, `check_processor`), so theirs is an empty `Family`."""
+    is checked for (`check_config`, `check_processor`), so theirs is an empty `Family`. A type
+    that answers with packages of its own is refused when they would not import, which
+    `importable` says (`upstream_api.GROOT_INFERENCE_PACKAGES`)."""
     if config.get("type") == "xvla":
         _check_xvla(config, steps, spec)
     if config.get("type") == "groot":
-        return _check_groot(config, steps, spec)
+        family = _check_groot(config, steps, spec)
+        missing = [
+            PACKAGE_OF.get(name, name)
+            for name in up.GROOT_INFERENCE_MODULES
+            if not importable(name)
+        ]
+        if missing:
+            raise PipelineRefused(
+                f"{spec} is a GR00T N1.7, which answers with {' and '.join(missing)}, and this "
+                f"server cannot import {'them' if len(missing) > 1 else 'it'}: install the "
+                'server\'s extra again, uv pip install "quackd[lerobot-vla]", which brings '
+                "diffusers and dm-tree (upstream_api.GROOT_INFERENCE_PACKAGES)"
+            )
+        return family
     return Family()
 
 
@@ -967,10 +1001,12 @@ def fetch_checkpoint(
     pins: Sequence[str] = (),
     device: str,
     hub: Hub,
+    importable: Callable[[str], bool] = importable_module,
 ) -> Checkpoint:
     """`spec` fetched and checked as the module's docstring says, in that order, or a refusal.
     Nothing is built here, and nothing that could run code is fetched before the JSON that
-    says what the checkpoint is has been checked."""
+    says what the checkpoint is has been checked. `importable` says whether a package a type
+    answers with would import here (`check_family`)."""
     repo, revision = parse_repo(spec, "--policy")
     spec = f"{repo}@{revision}"
     pinned = parse_pins(pins)
@@ -984,7 +1020,7 @@ def fetch_checkpoint(
         doc = _json(path, f"{spec}'s {filename}")
         steps[filename] = check_processor(doc, filename, spec, shape.policy_type)
     every = steps[up.PREPROCESSOR_FILE] + steps[up.POSTPROCESSOR_FILE]
-    family = check_family(config, every, spec)
+    family = check_family(config, every, spec, importable=importable)
     nested = nested_models(config, every, spec)
     pinned_models(nested, pinned, spec)
     for m in nested:

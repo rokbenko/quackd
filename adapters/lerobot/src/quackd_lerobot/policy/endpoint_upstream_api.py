@@ -385,12 +385,10 @@ NAMESPACE_READS = UpstreamRef(
     "bearer and one answer, a 200, and calls the namespace a user or an organisation, and says "
     "no more. A run reads the recorded endpoint with the account's token before that token goes "
     "to the recorded address as the bearer, and goes on only when the answer carries the tags "
-    "`up` gave it and that address (`endpoint.reach`), so a record planted by a project's "
-    "`.env` that names another account's endpoint is refused while this holds and the "
-    "account's own token is the one asking. A `.env` that sets `HF_TOKEN` as well makes its "
-    "own account the one asking, and that account's endpoint the one a run reaches, with that "
-    "account's token and never this one's. An organisation the account belongs to is trusted "
-    "as the account is",
+    "`up` gave it and that address (`endpoint.reach`), so a record planted in the registry "
+    "that names another account's endpoint is refused while this holds. The registry is one "
+    "the shell or `--registry-dir` names, never one a project's `.env` named. An organisation "
+    "the account belongs to is trusted as the account is",
 )
 ADDRESS_KEPT = UpstreamRef(
     "ADDRESS_KEPT",

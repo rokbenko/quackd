@@ -199,8 +199,11 @@ on a rented GPU, and never needed by the process that drives the arm:
 uv pip install "quackd[lerobot-vla]"   # LeRobot, torch and transformers, on Python 3.12
 ```
 
-It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,groot,xvla]` with no `[feetech]`,
-since the server never opens a serial port. `doctor` gives it the row
+It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,xvla]` with LeRobot's own pin of
+diffusers and with dm-tree, which a GR00T answers with, rather than LeRobot's
+`[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord, peft and timm are for
+training (`GROOT_INFERENCE_PACKAGES`), and with no `[feetech]`, since the server never opens a
+serial port. `doctor` gives it the row
 `lerobot-vla (transformers)`, read from the installer's metadata so that asking costs no import
 of transformers.
 
@@ -853,7 +856,7 @@ quackd policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
 
 ```text
   http://127.0.0.1:9875
-policy           scripted:sweep (quackd-policy 1, quackd 0.25.0)
+policy           scripted:sweep (quackd-policy 1, quackd 0.26.0)
 features         whatever the arm has (a scripted policy)
 rate             10 Hz, from scripted:sweep's own, the verbs' tick
 chunks           10 actions, 10 played from each
@@ -986,8 +989,8 @@ Loading one reads before it builds, and refuses rather than guesses:
 - **The JSON first.** `config.json` and both processor JSONs are fetched at the revision named,
   and nothing else of the repository. A policy type other than those six is refused, so is a
   feature that is neither the state, an image nor the action, and so is a processor step named
-  by a `class` key or by any registry name outside the ones the checkpoint's own type uses: the
-  steps every policy is built from, and the ones that type's processors add. An ACT that names a
+  by a `class` key or by any registry name outside the ones the checkpoint's own type may name:
+  LeRobot's default steps, and its own family's. An ACT that names a
   pi05's tokenizer is refused, in a sentence that lists what an ACT allows. A step named by
   class is imported from wherever it says, which is code the checkpoint chose, so the weights
   are never fetched for one.
@@ -1005,7 +1008,8 @@ Loading one reads before it builds, and refuses rather than guesses:
   pinned model whose directory holds any other kind of file, or whose configs map a class to code
   of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE` at a
   fresh cache. So is one that holds a PEFT adapter (`adapter_config.json`): with peft installed,
-  as GR00T's extra installs it, transformers would load the adapter onto the model, or, with no
+  which the server's extra does not install but LeRobot's own `[peft]` and `[groot]` do,
+  transformers would load the adapter onto the model, or, with no
   `config.json` beside it, load the base model the adapter names, which no pin fixes.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
@@ -1042,7 +1046,7 @@ quackd policy check --policy quackd-test/tiny-act@v1 --bench --seconds 3
 
 ```text
   served here for the check, at http://127.0.0.1:53804
-policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.25.0)
+policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.26.0)
 features         state 6, action 6, images observation.images.front 64x48
 rate             10 Hz, from
                  quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
@@ -3050,7 +3054,7 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `observation.state, observation.images.<name>, action` | the keys a policy's state, images and action go by. An image's frame is handed over under its key with `observation.images.` cut off, which is why each camera is the image of its own name |
 | `FeatureType: "STATE", "VISUAL", "ENV", "ACTION", "REWARD", "LANGUAGE"` | a checkpoint whose inputs are anything but one state and some images, or whose output is anything but one action, is refused, since an arm has nothing to give the rest from |
 | `"act", "smolvla", "pi05", "pi0", "xvla", "groot"` | the types whose processors the allowlist was read from, each its own, and any other is refused before its weights are fetched |
-| `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | the steps every policy's processors are built from, and all of ACT's |
+| `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | LeRobot's default steps, and all of ACT's. Every served type's processors are built from all five but GR00T N1.7's, which leave the normaliser pair out |
 | `smolvla_new_line_processor, tokenizer_processor` | the steps SmolVLA's pre-processor adds. With the row above, the only steps a SmolVLA may name, and the server allows each type its own steps and no other type's |
 | `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name |
 | `pi0_new_line_processor, tokenizer_processor, relative_actions_processor, absolute_actions_processor` | the steps pi0's processors add: pi05's, with a step that ends the task with a newline for PaliGemma's tokenizer in place of pi05's state tokenizer. With the row above, the only steps a pi0 may name |
@@ -3066,6 +3070,7 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `a relative GR00T keeps its state's percentiles in the pack step's raw_stats` | where LeRobot's normaliser keeps none, so the server reads the state's and the action's q01 and q99 from there, group by group, and reports them for the arm's frame check |
 | `LeRobot 0.6.1 serves GR00T N1.7 alone, and refuses N1.5's step names` | so an N1.5 checkpoint, by its steps, its `tokenizer_assets_repo` or its base, is refused in a sentence of its own |
 | `GR00T's pack step feeds every camera in alphabetical order when none is one its video modality keys name` | it pads no missing view, so the arm needs a camera for every image a GR00T looks at, and a checkpoint whose modality keys name an image its config does not is refused |
+| `a GR00T N1.7 answers with diffusers and dm-tree beside what every family needs, and LeRobot's own [groot] extra adds the rest for training` | so the server's extra brings those two, about 25 MB, rather than LeRobot's `[groot]`, about 340 MB, and a GR00T on a server that cannot import either is refused before a pin or a weight, since LeRobot would find out only once the model is built |
 | `overrides={"device_processor": {"device": device}}` | how upstream's own loops put a loaded pre-processor on their device. The server does the same and puts the post-processor's on the CPU, where the answers are read |
 | `lerobot.utils.device_utils.auto_select_torch_device()` | the device a checkpoint is loaded on, and whether the server says it has a GPU |
 | `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does |
@@ -3152,7 +3157,7 @@ worst: quackd's own token on the server is the lock, whatever the proxy in front
 | `PAUSED_ANSWERS` | what the proxy answers for a paused or a deleted endpoint. The client says any 5xx as not serving and a 404 as gone, and `list` reads the state from the API |
 | `LOGS_BODY` | what the log route answers, which the API's document leaves out. quackd takes a JSON list of entries when it is one and text when not, bounded, scrubbed of both tokens and cut to a few lines |
 | `QUOTA_LISTING` | whether the quota listing names every instance type or only those with quota. A type it names with no room is refused, and one it does not name is left to Hugging Face to refuse |
-| `NAMESPACE_READS` | that the API answers a read of an account's endpoints only to that account's token, or an organisation member's, which its document does not say. A run reads the recorded endpoint first and sends the bearer only to an address the answer confirms, carrying the tags `up` gave it, so a planted record naming another account's endpoint is refused while this holds and the account's own token is the one asking. A `.env` that sets `HF_TOKEN` as well makes its account the one asking, and its endpoint the one a run reaches, with its token and never this one's. An organisation the account belongs to is trusted as the account is |
+| `NAMESPACE_READS` | that the API answers a read of an account's endpoints only to that account's token, or an organisation member's, which its document does not say. A run reads the recorded endpoint first and sends the bearer only to an address the answer confirms, carrying the tags `up` gave it, so a record planted in the registry naming another account's endpoint is refused while this holds, and the registry is one the shell or `--registry-dir` names, never one a project's `.env` named. An organisation the account belongs to is trusted as the account is |
 | `ADDRESS_KEPT` | that an endpoint keeps its `status.url` for its life, through a pause, a resume and a scale to zero, which the API's document does not say. quackd records the first address it is given and sends the account's token to no other: a run refuses an endpoint the API gives another address, and `up` pauses one whose address changes while it waits. Which endpoint is the record's is told by a tag `up` gives it, not by its address |
 | `GPU_IN_CONTAINER` | that torch from PyPI finds the endpoint's GPU in the container, which a CUDA build newer than the host's driver would not. `up` asks the server whether it has one and pauses an endpoint that has none, quoting its log |
 

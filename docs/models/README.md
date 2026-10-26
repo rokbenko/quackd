@@ -57,9 +57,9 @@ the three roles it can fill, the key and the extra it needs.
 
 ## Where the lists live
 
-Every table on these pages is rendered from the code that decides what quackd takes, by
-[`scripts/models_docs.py`](../../scripts/models_docs.py), and a test fails when a page and the
-code disagree:
+Every table of models on these pages is rendered from the code that decides what quackd
+takes, by [`scripts/models_docs.py`](../../scripts/models_docs.py), and a test fails when a
+page and the code disagree:
 
 - the pilots: [`quackd/agent/providers/catalogue.py`](../../quackd/agent/providers/catalogue.py),
   with the keys, extras and addresses in

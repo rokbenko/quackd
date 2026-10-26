@@ -1287,6 +1287,31 @@ def test_env_is_also_read_from_the_cwd(tmp_path: Path, monkeypatch: pytest.Monke
     assert "exported-duck" in again.output and "dotenv-duck" not in again.output
 
 
+def test_what_a_dotenv_set_is_told_from_what_the_shell_exported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`dotenv_names` keeps what the root command's `.env` loading added, name and value: a
+    variable the shell had stays the shell's when a `.env` names it too, and one a `.env` set
+    stops being the file's once something else sets it, so one command's files never speak for
+    a value they did not give."""
+    from quackd import dotenv_names
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / ".env").write_text(
+        "QUACKD_TEST_FROM_THE_FILE=file\nQUACKD_TEST_EXPORTED=file\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(work)
+    monkeypatch.delenv("QUACKD_TEST_FROM_THE_FILE", raising=False)
+    monkeypatch.setenv("QUACKD_TEST_EXPORTED", "shell")
+    listed = runner.invoke(app, ["list-adapters"])
+    assert listed.exit_code == 0, listed.output
+    assert dotenv_names.from_dotenv("QUACKD_TEST_FROM_THE_FILE")
+    assert not dotenv_names.from_dotenv("QUACKD_TEST_EXPORTED")
+    monkeypatch.setenv("QUACKD_TEST_FROM_THE_FILE", "exported after")
+    assert not dotenv_names.from_dotenv("QUACKD_TEST_FROM_THE_FILE")
+
+
 def test_the_env_beside_the_command_is_read_before_the_one_beside_the_install(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
