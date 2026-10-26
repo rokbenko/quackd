@@ -257,7 +257,13 @@ async def test_factory_describes_and_makes_adapters() -> None:
     spec = parse_robot_spec("microduck:mock")
     static = describe(spec)
     assert static.model == "microduck" and static.backend == "mock" and static.id == "microduck"
-    assert registry_for(spec).names() == default_registry().names()
+    # the default is the simulator's vocabulary, and the mock says where the duck is, which the
+    # simulators do not yet: the place verbs and nothing else
+    assert set(registry_for(spec).names()) == set(default_registry().names()) | {
+        "map",
+        "mark_place",
+        "forget_place",
+    }
     adapter = make_adapter("microduck:mock")
     live = await adapter.connect()
     assert live.digest() == static.digest()  # the static description is the real one

@@ -92,6 +92,8 @@ to try a real one in.
 - [Safety](concepts/safety.md): the layers and who owns each, the executor's rules, the heartbeat,
   the kill switch and the dry run, what to do on each body's hardware, and what quackd does not
   protect against.
+- [Places](concepts/places.md): where a robot says it is, the places it keeps under names, and
+  why a place belongs to the frame it was marked in.
 - [Learned verbs](concepts/learned-verbs.md): a reserved extension point. Nothing in it runs yet.
 
 ## Robot Passport

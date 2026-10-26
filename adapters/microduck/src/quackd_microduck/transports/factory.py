@@ -47,7 +47,7 @@ def make_transport(
     if name == "mock":
         from quackd.transport.mock import MockTransport
 
-        return MockTransport()
+        return MockTransport(spatial=True)
     if name == "jsonrpc":
         from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 

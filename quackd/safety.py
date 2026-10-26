@@ -42,7 +42,8 @@ from quackd.log import (
     fmt_params,
 )
 from quackd.perception.base import Detector, detect_times
-from quackd.transport.base import CameraFrame, DuckState, DuckTransport
+from quackd.space.places import PlaceBook, PlaceStore
+from quackd.transport.base import CameraFrame, DuckState, DuckTransport, spatial_of
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -94,7 +95,19 @@ PEER_VERBS = ("stop", "say")
 which a body identifies itself by sound with. A peer never asks for either by name; the handler
 runs them for it, and the `peer` gate refuses anything else a peer might reach."""
 
-WHILE_PAUSED = frozenset({"stop", "observe", "report_state", "say", "quack", "introspect"})
+WHILE_PAUSED = frozenset(
+    {
+        "stop",
+        "observe",
+        "report_state",
+        "say",
+        "quack",
+        "introspect",
+        "map",
+        "mark_place",
+        "forget_place",
+    }
+)
 """What still runs while a pause this robot granted holds: the brake, and the verbs quackd knows
 move no part of the body. It is not `BEFORE_VERDICT`, which is what a pilot needs before it
 judges: `gaze`, `look` and `watch` turn a head and `express` moves antennas, and a robot that
@@ -330,6 +343,17 @@ class Executor:
     segment: str | None = field(default=None, init=False)
     """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check
     against `policy_total_s` and its charge, or None. Another is refused meanwhile."""
+    places: PlaceStore = field(default_factory=lambda: PlaceStore("session", persist=False))
+    """This robot's places (`quackd.space.places`). A run or an MCP session with memory on hands
+    in the store beside its memory file; every other keeps one that writes nothing, so places
+    marked where nothing is remembered last as long as the executor does. Verbs read them against
+    where the robot is now through `place_book`."""
+
+    def place_book(self) -> PlaceBook | None:
+        """The robot's places read against where it is now, or None on a body that does not say
+        where it is (`quackd.transport.base.spatial_of`)."""
+        source = spatial_of(self.transport)
+        return PlaceBook(self.places, source) if source is not None else None
 
     # ── narration ───────────────────────────────────────────────────────────────────
 
@@ -528,6 +552,7 @@ class Executor:
             eyes=self.eyes,
             interrupted=self._interruption(stops_then),
             abort_when=self._abort_rule_reader(name),
+            places=self.place_book(),
         )
 
     def _abort_rule_reader(self, name: str | None) -> Callable[[DuckState], Awaitable[None]]:

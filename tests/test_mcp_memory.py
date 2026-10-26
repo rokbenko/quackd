@@ -99,3 +99,26 @@ async def test_the_instructions_only_sell_memory_when_it_is_on(tmp_path: Path) -
     one = {"duck": two_robots()["duck"]}
     async with connected(one, memory=False, memory_dir=tmp_path) as (_client, fleet):
         assert "robot_recall" not in _instructions(fleet)
+
+
+async def test_a_note_remembered_over_mcp_keeps_where_the_robot_stood(tmp_path: Path) -> None:
+    """robot_remember reads where the body stands off the body, never from the pilot, and
+    robot_recall answers with the places it knows and how far each note was saved from them."""
+    duck = make_adapter(RobotSpec("microduck", "mock", "duck"))
+    async with connected({"duck": duck}, memory_dir=tmp_path) as (client, _fleet):
+        marked = _data(
+            await client.call_tool(
+                "robot_run_verb", {"verb": "mark_place", "params": {"name": "dock"}}
+            )
+        )
+        assert marked["ok"], marked
+        _data(await client.call_tool("robot_remember", {"text": "the charger is at the dock"}))
+        recalled = _data(await client.call_tool("robot_recall", {}))
+        assert [p["name"] for p in recalled["places"]] == ["dock"]
+        assert recalled["places"][0]["status"] == "here"
+        assert (
+            "the charger is at the dock (saved 0.0 m from dock, 0.0 m from here)"
+            in (recalled["summary"])
+        )
+    (note,) = RobotMemory("microduck:mock", tmp_path).notes()
+    assert note.where is not None and note.where["frame"] == "odom:mock"

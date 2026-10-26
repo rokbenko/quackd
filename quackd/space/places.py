@@ -373,6 +373,26 @@ class PlaceBook:
         old = self.store.mark(place, reserved_ok=reserved_ok)
         return place, old
 
+    def where_words(self, where: dict[str, Any]) -> str | None:
+        """A few words for where a memory note was saved, from its `where`: how far it was from
+        the nearest place and from here, in the frame the robot is in now, or that its frame has
+        ended since. None for a `where` with no position in it."""
+        x, y, frame_id = where.get("x"), where.get("y"), where.get("frame")
+        if not isinstance(x, int | float) or not isinstance(y, int | float):
+            return None
+        frame = self.frame()
+        if frame is None or frame_id != frame.id:
+            return "saved in a frame that has ended since, so where is not known now"
+        parts: list[str] = []
+        usable = [v.place for v in self.views() if v.status == "here"]
+        if usable:
+            near = min(usable, key=lambda p: math.hypot(p.x - x, p.y - y))
+            parts.append(f"saved {math.hypot(near.x - x, near.y - y):.1f} m from {near.name}")
+        fix = self.source.fix()
+        if fix.localized and fix.pose is not None:
+            parts.append(f"{fix.pose.distance_to(x, y):.1f} m from here")
+        return ", ".join(parts) or None
+
     def _why_orphaned(self, place: Place, frame: FrameRef | None) -> str:
         record = self.store.frame_record(place.frame)
         if record is not None and record.wiped:
@@ -382,3 +402,54 @@ class PlaceBook:
         if place.kind == "odometry":
             return "it was marked on odometry that has started again since"
         return "it was marked in another map"
+
+
+def bearing_words(bearing_rad: float) -> str:
+    """`38° to the left`, `dead ahead`, `95° to the right`, `behind`."""
+    degrees = math.degrees(bearing_rad)
+    if abs(degrees) < 0.5:
+        return "dead ahead"
+    if abs(degrees) > 179.5:
+        return "behind"
+    return f"{abs(degrees):.0f}° to the {'left' if degrees > 0 else 'right'}"
+
+
+def _how_far(v: PlaceView) -> str:
+    """`kitchen 1.2 m +38°`: a usable place, its distance, and its bearing from the heading."""
+    return f"{v.place.name} {v.distance_m or 0.0:.1f} m {math.degrees(v.bearing_rad or 0.0):+.0f}°"
+
+
+def places_line(views: list[PlaceView], *, nearest: int = 5) -> str | None:
+    """The one line an observation carries: the nearest usable places with how far and which way
+    (degrees from where the robot faces, positive to its left), then the names of those waiting
+    for the robot to know where it is, then the orphaned. None when there are no places."""
+    if not views:
+        return None
+    here = [v for v in views if v.status == "here"][:nearest]
+    waiting = [v.place.name for v in views if v.status == "lost"]
+    orphaned = [v.place.name for v in views if v.status == "orphaned"]
+    parts: list[str] = []
+    if here:
+        parts.append(", ".join(_how_far(v) for v in here))
+    if waiting:
+        parts.append("until the robot knows where it is: " + ", ".join(waiting))
+    if orphaned:
+        parts.append("orphaned: " + ", ".join(orphaned))
+    return "places: " + " · ".join(parts)
+
+
+def place_listing(views: list[PlaceView]) -> list[str]:
+    """Every place on a line of its own, as `map` and `quackd places list` say them: how far and
+    which way, or why it cannot be walked to now."""
+    lines: list[str] = []
+    for v in views:
+        if v.status == "here":
+            lines.append(
+                f"- {v.place.name}: {v.distance_m or 0.0:.2f} m away, "
+                f"{bearing_words(v.bearing_rad or 0.0)}"
+            )
+        elif v.status == "lost":
+            lines.append(f"- {v.place.name}: waiting, {v.reason}")
+        else:
+            lines.append(f"- {v.place.name}: orphaned, {v.reason}")
+    return lines

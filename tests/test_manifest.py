@@ -81,10 +81,13 @@ def test_extra_keys_and_bad_ids_are_rejected() -> None:
 
 
 def test_digest_is_a_capability_fingerprint() -> None:
+    # the backend and the id are not capabilities: two backends that offer the same verbs match
     a = microduck_manifest("sim2d", "duck-a")
-    b = microduck_manifest("mock", "duck-b")
+    b = microduck_manifest("mujoco", "duck-b")
     assert a.digest() == b.digest() and len(a.digest()) == 16
     assert _manifest().digest() != a.digest()
+    # and one that says where the duck is offers more, which the fingerprint shows
+    assert microduck_manifest("mock", "duck-c").digest() != a.digest()
 
 
 def test_provides_is_alias_aware() -> None:

@@ -69,12 +69,15 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
+from quackd.space.places import PlaceStore
+from quackd.space.pose import where_record
 from quackd.transport.base import (
     CameraFrame,
     DuckTransport,
     TransportError,
     camera_names_of,
 )
+from quackd.verbs.places import view_record
 from quackd.verbs.registry import (
     Verb,
     VerbRegistry,
@@ -143,10 +146,16 @@ needs a new verdict. Every action is a *verb*; the executor enforces an allowlis
 and confirmation gates, so a refused call is a rule, not a bug. Prefer composite verbs
 (search_scan, go_to) over micro-managing velocities. Load a .duck file with
 robot_load_duckfile(path) to adopt a task contract; then follow its body as your
-instructions.{memory} Call robot_run_verb(verb="stop") if anything looks wrong."""
+instructions.{memory}{places} Call robot_run_verb(verb="stop") if anything looks wrong."""
 
 SOLO_MEMORY = """ Call robot_recall early: it is what this robot learned in earlier
 sessions, and robot_remember(text) keeps one short fact for the next one."""
+
+PLACES_NOTE = """ If robot_list_verbs lists map, the body says where it is: map tells you where
+and by what, and lists its places with how far and which way, and mark_place names the spot it
+stands on. Trust a position as far as map says: odometry drifts as the body walks."""
+"""Said when a body's static manifest declares `map`. Conditional on the live list, since a
+connection whose transport says nothing of where the body is leaves the place verbs out."""
 
 FLEET_INSTRUCTIONS = """You are piloting {n} robot(s) through quackd: {names}.
 Call robot_list first, then robot_list_verbs(robot) for each body you will use: verbs come
@@ -154,8 +163,8 @@ from each robot's own manifest, so they differ per robot. Every action is a *ver
 robot's executor enforces its own allowlist, budgets and confirmation gates, so a refused
 call is a rule, not a bug. Prefer composite verbs (search_scan, go_to) over micro-managing
 velocities. Load a .duck file with robot_load_duckfile(path, robot) to adopt a task
-contract on one robot; then follow its body as your instructions.{memory} Without a robot
-argument a tool acts on the default, {default}.
+contract on one robot; then follow its body as your instructions.{memory}{places} Without a
+robot argument a tool acts on the default, {default}.
 Before the first verb that moves a body, call robot_assess_task(robot=...) with your verdict
 on whether that body can do the task, judged against its datasheet below: feasible,
 infeasible or uncertain. robot_run_verb refuses anything that moves that body until you
@@ -663,8 +672,9 @@ class RobotSession:
     def recall(self) -> dict[str, Any]:
         if self.memory is None:
             return {"ok": False, "robot": self.name, "summary": "memory is off for this server"}
-        text = self.memory.recall()
-        return {
+        book = self.executor.place_book()
+        text = self.memory.recall(where_said=book.where_words if book else None)
+        out: dict[str, Any] = {
             "ok": True,
             "robot": self.name,
             "summary": text or "nothing remembered yet: this is the first session on this robot",
@@ -672,13 +682,23 @@ class RobotSession:
             "episodes": [e.text for e in self.memory.episodes()[-5:]],
             "path": str(self.memory.path),
         }
+        if book is not None:
+            # the places this robot knows, read against where it is now, on a body that says
+            out["places"] = [view_record(v) for v in book.views()]
+        return out
 
     def remember(self, text: str, tags: list[str] | None = None) -> dict[str, Any]:
         if self.memory is None:
             return {"ok": False, "robot": self.name, "summary": "memory is off for this server"}
+        # where the robot stands, read off the robot and never from the pilot's arguments
+        book = self.executor.place_book()
+        fix = book.source.fix() if book is not None else None
         try:
             entry = self.memory.remember(
-                text, tags=tags, duck=self.duck.name if self.duck else None
+                text,
+                tags=tags,
+                duck=self.duck.name if self.duck else None,
+                where=where_record(fix) if fix is not None and fix.localized else None,
             )
         except (ValueError, OSError) as e:
             return {"ok": False, "robot": self.name, "summary": f"could not remember: {e}"}
@@ -853,22 +873,29 @@ def _instructions(fleet: Fleet) -> str:
     # with --no-memory both tools answer "memory is off", so telling the pilot to call
     # them early is an instruction to waste a turn
     on = any(s.memory is not None for s in fleet.sessions.values())
+    described = {name: fleet.described(name) for name in fleet.sessions}
+    places = (
+        PLACES_NOTE
+        if any(m is not None and "map" in {v.name for v in m.verbs} for m in described.values())
+        else ""
+    )
     if len(fleet.sessions) == 1:
-        manifest = fleet.described(fleet.default)
+        manifest = described[fleet.default]
         blurb = manifest.blurb if manifest and manifest.blurb else "a small robot"
         return INSTRUCTIONS.format(
             names=fleet.default,
             blurb=blurb,
             datasheet=body_summary(manifest) if manifest else "no datasheet until it connects.",
             memory=SOLO_MEMORY if on else "",
+            places=places,
         )
-    described = {name: fleet.described(name) for name in fleet.sessions}
     newline = "\n"
     return FLEET_INSTRUCTIONS.format(
         n=len(fleet.sessions),
         names=", ".join(fleet.sessions),
         default=fleet.default,
         memory=FLEET_MEMORY if on else "",
+        places=places,
         datasheets=newline.join(
             f"- {name}: {body_summary(m) if m else 'no datasheet until it connects.'}"
             for name, m in described.items()
@@ -933,6 +960,9 @@ def build_fleet_server(
         # Its clock starts again at the connect, on the clock the robot keeps once connected.
         budget = Budget(Budgets(), now=transport.now)
         budget.start()
+        memory_key = (memory_keys or {}).get(name) or (
+            f"{adapter_name(transport) or name}:{backend_name(transport)}"
+        )
         executor = Executor(
             registry=reg,
             transport=transport,
@@ -945,6 +975,9 @@ def build_fleet_server(
             # same verb twice on stderr); those drop to DEBUG rather than vanish
             log=_prefixed(logger.debug if log else logger.info, name),
             event_log=event_log,
+            # beside the memory file and keyed as it is; with memory off, or on a dry run,
+            # places last as long as the session and nothing is written
+            places=PlaceStore(memory_key, memory_dir, persist=memory and not dry_run),
         )
         # the pilot is offered `robot_assess_task`, so the executor holds it to the answer
         executor.require_verdict = True
@@ -963,15 +996,7 @@ def build_fleet_server(
             heartbeat=heartbeat,
             detector=det,
             explicit_registry=registry is not None,
-            memory=(
-                RobotMemory(
-                    (memory_keys or {}).get(name)
-                    or f"{adapter_name(transport) or name}:{backend_name(transport)}",
-                    memory_dir,
-                )
-                if memory
-                else None
-            ),
+            memory=RobotMemory(memory_key, memory_dir) if memory else None,
             event_log=event_log,
             passport=(passports or {}).get(name),
         )

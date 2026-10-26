@@ -134,7 +134,12 @@ is read by the next `quackd run` on the same `adapter:backend`, and the other wa
   trained from LLM-written rewards) are a separate, unshipped v2 feature
   ([concepts/learned-verbs.md](../concepts/learned-verbs.md)).
 - **Not retrieval.** There is no embedding, no search: the newest entries win, and the cap
-  keeps the prompt small. If you need a map of your house, write it as a few notes.
+  keeps the prompt small.
+- **Not where things are, on its own.** A body that says where it is keeps named places beside
+  this file, `<slug>.places.jsonl`, and a note saved there keeps where the robot stood: recalled,
+  it says how far that was from the nearest place and from here, "saved 0.3 m from sofa, 2.1 m
+  from here", or that its frame has ended since ([concepts/places.md](../concepts/places.md)).
+  On a body that does not, write where things are as a few notes.
 - **Not shared between bodies.** By design, where a body means an `adapter:backend`. Use
   `quackd memory add` on the other robot if a fact really transfers. The same rule decides a
   [flock](flock.md): members key by body, so two of one kind share a file unless they are

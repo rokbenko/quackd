@@ -200,8 +200,11 @@ def test_every_shipped_verb_was_classified_on_purpose() -> None:
     """A verb in neither set is a verb nobody decided about, and the gate would refuse it
     for ever without anybody noticing."""
     from quackd.adapters.factory import _module
+    from quackd.verbs.core import CORE
 
-    shipped = {canonical(v.name) for v in default_registry().verbs()}
+    # every core template as well, since a core verb a body offers only on some connections,
+    # the place verbs, is in no static default and is still shipped
+    shipped = {canonical(v.name) for v in default_registry().verbs()} | set(CORE)
     for adapter in ADAPTER_NAMES:
         shipped |= {canonical(name) for name in _module(adapter).implementations()}
     shipped |= {canonical(alias) for alias in ALIASES}

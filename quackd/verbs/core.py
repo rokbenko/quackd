@@ -31,6 +31,7 @@ from quackd.transport.base import (
     primary_of,
     twist_shown_since_of,
 )
+from quackd.verbs.places import PLACE_VERBS
 from quackd.verbs.registry import STOP_ENDED, STOPPED, NoParams, Verb, VerbContext, VerbResult
 
 if TYPE_CHECKING:
@@ -897,6 +898,8 @@ class Requirement:
     """`mobility` must not be `none`."""
     camera: bool = False
     """`camera` must be among the sensors."""
+    sensors: frozenset[str] = frozenset()
+    """Every one of these sensors: `odometry` for a verb that reads where the robot is."""
 
 
 REQUIREMENTS: dict[str, Requirement] = {
@@ -908,6 +911,9 @@ REQUIREMENTS: dict[str, Requirement] = {
     "go_to": Requirement(intents=frozenset({"twist"}), mobility=True, camera=True),
     "search_scan": Requirement(camera=True, any_intents=frozenset({"twist", "gaze"})),
     "approach_and": Requirement(intents=frozenset({"twist"}), mobility=True, camera=True),
+    "map": Requirement(sensors=frozenset({"odometry"})),
+    "mark_place": Requirement(sensors=frozenset({"odometry"})),
+    "forget_place": Requirement(sensors=frozenset({"odometry"})),
 }
 
 
@@ -919,6 +925,9 @@ def core_requirements_unmet(name: str, manifest: RobotManifest) -> str | None:
     missing: list[str] = []
     if req.camera and "camera" not in manifest.sensors:
         missing.append("a camera")
+    for sensor in sorted(req.sensors):
+        if sensor not in manifest.sensors:
+            missing.append(f"the {sensor} sensor")
     if req.mobility and manifest.mobility == "none":
         missing.append("mobility")
     for intent in sorted(req.intents):
@@ -1003,3 +1012,5 @@ CORE: dict[str, Verb] = {
         ),
     )
 }
+# the verbs that name places and list them, on every body that says where it is
+CORE |= PLACE_VERBS

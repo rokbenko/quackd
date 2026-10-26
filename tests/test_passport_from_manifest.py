@@ -56,7 +56,10 @@ def test_every_body_gets_a_passport_a_reader_accepts_and_a_writer_may_send(adapt
 def test_the_microduck_vector_is_what_the_converter_builds() -> None:
     expected = json.loads((VECTORS / "microduck.json").read_text(encoding="utf-8"))
     built = passport_from_manifest(
-        describe(RobotSpec("microduck", "mock", "duck-01")),
+        # a backend that says nothing of where the duck is, as every Microduck backend did when
+        # the vector was frozen: the mock and a robotd now add the place verbs to its skills, and
+        # the published vectors stay what they were
+        describe(RobotSpec("microduck", "sim2d", "duck-01")),
         robot_id=expected["id"],
         name="duck-01",
         software_version="0.23.0",

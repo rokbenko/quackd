@@ -21,6 +21,7 @@ from quackd.verbs.aliases import ALIASES
 
 if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
+    from quackd.space.places import PlaceBook
     from quackd.verbs.watch import Eyes
 
 SafetyClass = Literal["safe", "confirm", "dangerous"]
@@ -90,6 +91,9 @@ class VerbContext:
     that move the body for a while, `move`, `go_to`, `search_scan` and `approach_and`, before
     each twist and between steps: a `stop` asked for beside one of them used to send its stop and
     then watch the verb's next twist undo it, over MCP and anywhere else two calls overlap."""
+    places: PlaceBook | None = None
+    """This robot's places read against where it is now (`quackd.space.places`), on a body whose
+    transport says where it is; None on every other."""
     abort_when: Callable[[DuckState], Awaitable[None]] = _no_abort_rule
     """The run's `abort_when` rules, read against a state the verb has just taken. A verb that
     runs for a while and stops along the way awaits it at each stop: once a rule fires it sends a

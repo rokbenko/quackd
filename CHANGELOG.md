@@ -21,6 +21,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   zero through a walk, give no reading. `x`, `y` and `theta` stay empty on the real duck, as the
   flock reads them as one arena every member shares
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+- **Places: a robot that says where it is can name the spots it stood on.** Three core verbs that
+  move nothing: `mark_place` names the spot the robot stands on now, from its own reading and never
+  from coordinates, `map` says where it is, by what, and every place with how far and which way,
+  and `forget_place` drops a name. A place belongs to the frame it was marked in: one marked before
+  a Microduck was picked up is orphaned, listed with the reason and never walked to, and no
+  position is converted between frames. Every observation lists the nearest places as `places:`,
+  the system prompt says how far to trust each kind of reading, and a note saved with `remember`
+  keeps where the robot stood, which `robot_recall` and the next run's prompt read back as how far
+  it was from the places and from here. Places live beside the memory file, keyed as it is, and
+  nothing is written with `--no-memory` or on a dry run. A Microduck on `jsonrpc` or `mock` has
+  them today; the simulators, MOSS and rosbridge do not yet
+  ([docs/concepts/places.md](docs/concepts/places.md),
+  [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
 
 ### Fixed
 

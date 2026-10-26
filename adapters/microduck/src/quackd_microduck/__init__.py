@@ -102,6 +102,11 @@ DATASHEET = Datasheet(
 )
 
 
+PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
+"""The backends that say where the duck is before anything connects: robotd's contact odometry
+(`upstream_api.STATE_ODOM`) and the mock's scripted pose. The simulators say nothing yet."""
+
+
 def microduck_manifest(
     backend: str,
     robot_id: str = "microduck",
@@ -109,8 +114,16 @@ def microduck_manifest(
     camera: bool = True,
     camera_fov_deg: float | None = None,
     camera_fov_assumed: str | None = None,
+    places: bool | None = None,
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
+
+    `places` is whether the duck says where it is on this connection, which settles whether it
+    can name places and list them (`quackd.verbs.places`). None is what the backend promises
+    before anything connects: a robotd sends its odometry and the mock scripts a pose, so both
+    declare them, and the simulators say nothing of where the duck is and declare none. A
+    connection whose transport carries no reading (`spatial_of`) leaves them out whatever was
+    declared, as one with no frame leaves out the camera's verbs.
 
     `camera` is the one thing a description of the robot cannot settle on its own. robotd's
     socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
@@ -139,6 +152,8 @@ def microduck_manifest(
             verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
             verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
         ]
+    if places if places is not None else backend in PLACES_BACKENDS:
+        core += [verb_spec(CORE[name], core=True) for name in ("map", "mark_place", "forget_place")]
     # `watch` looks through the camera, so it is a verb of a duck that has one, declared below
     extensions = [
         verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n not in ("say", "watch")
@@ -248,6 +263,9 @@ class MicroduckAdapter:
             camera=camera,
             camera_fov_deg=_lens(getattr(self.transport, "camera_fov_deg", None)),
             camera_fov_assumed=assumed if isinstance(assumed, str) else None,
+            # a robotd that reports no odometry, and a simulator not asked for a room, say
+            # nothing of where the duck is, and a pilot offered places there could mark none
+            places=spatial_of(self.transport) is not None,
         )
         return self.manifest
 
