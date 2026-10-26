@@ -45,6 +45,10 @@ dependencies = [
   # in through pyjwt[crypto], and a module that imports it says so here rather than leaning
   # on somebody else's dependency staying put.
   "cryptography>=42",
+  # `quackd drive`'s keyboard (quackd/drive/terminal.py), and imported nowhere else. 3.0.42 is
+  # the release that fixed `patch_stdout`'s line wrapping on Windows, which drive keeps Rich's
+  # lines above the prompt with; its pipe input became a context manager earlier, in 3.0.29.
+  "prompt-toolkit>=3.0.42",
 ]
 
 [project.optional-dependencies]
