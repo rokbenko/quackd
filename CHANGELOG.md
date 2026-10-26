@@ -46,6 +46,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `stopped` gate; one that only looks or speaks still runs. `approach_and` carries its `then`
   verb's `ended_by`, so a kick the brake kept from starting is not a failure in a row
   ([docs/concepts/safety.md](docs/concepts/safety.md)).
+- **`quackd drive` runs `approach_and kick` as the call it spells.** The words after a verb's name
+  were counted at the spaces, while the name itself was read with its `_` as a space, so a verb
+  spelled with an underscore and given words to take was handed to the pilot as a goal, and only
+  `approach and kick` ran. Both spellings are the call now, as they are for `mark_place` and
+  `forget_place`, whose name can be several words.
 
 ### Documentation
 
