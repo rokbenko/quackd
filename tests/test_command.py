@@ -368,6 +368,10 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         # is in and never holds the value, which goes into the endpoint's secrets and nowhere
         # a record or a terminal could show it
         "--hub-token-from",
+        # `quackd robot add` and `edit`'s, beside `--token-env`: it names the variable the
+        # board's token is in and never holds the value, and a value that is not a variable's
+        # name is refused without being quoted
+        "--host-token-env",
     }
     secret_words = ("key", "token", "secret", "password", "passwd", "credential")
     url_words = ("url", "address", "endpoint", "host", "broker")

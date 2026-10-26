@@ -396,6 +396,96 @@ def test_remove_asks_unless_yes(tmp_path: Path) -> None:
     assert Registry(tmp_path).get_robot("duck-a") is None
 
 
+# ── a token from a variable (--token-env, --host-token-env) ────────────────────────────
+
+
+def test_add_and_edit_read_a_token_from_the_variable_named_and_never_print_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """How the page `quackd ui` saves a robot: the token is in its child's environment, and
+    only the variable's name is on the command line."""
+    monkeypatch.setenv("DUCK_TOKEN", " br1dge-s3cret \n")
+    monkeypatch.setenv("BOARD_TOKEN", "hostd-s3cret")
+    added = runner.invoke(
+        app,
+        [
+            "robot",
+            "add",
+            "duck",
+            "microduck:mock",
+            "--address",
+            "tcp://x:1",
+            "--token-env",
+            "DUCK_TOKEN",
+            "--host",
+            "jetson.local:9874",
+            "--host-token-env",
+            "BOARD_TOKEN",
+            *_reg(tmp_path),
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    entry = Registry(tmp_path).robot("duck")
+    assert (entry.token, entry.host_token) == ("br1dge-s3cret", "hostd-s3cret")
+    assert "s3cret" not in added.output
+    monkeypatch.setenv("DUCK_TOKEN", "n3w-s3cret")
+    edited = runner.invoke(
+        app, ["robot", "edit", "duck", "--token-env", "DUCK_TOKEN", *_reg(tmp_path)]
+    )
+    assert edited.exit_code == 0, edited.output
+    assert Registry(tmp_path).robot("duck").token == "n3w-s3cret"
+    assert "s3cret" not in edited.output
+
+
+@pytest.mark.parametrize(
+    ("args", "said"),
+    [
+        (
+            ["--token-env", "DUCK_TOKEN", "--token", "t0k-typed"],
+            "--token and --token-env both give the token: give it one way",
+        ),
+        (
+            ["--token-env", "t0k-typed-in-the-wrong-place"],
+            "--token-env takes the name of the variable that holds the token",
+        ),
+        (["--token-env", "UNSET_TOKEN_VAR"], "the variable --token-env names is not set"),
+        (["--token-env", "EMPTY_TOKEN_VAR"], "the variable --token-env names is empty"),
+        (
+            ["--host", "jetson.local", "--host-token-env", "t0k typed"],
+            "--host-token-env takes the name of the variable that holds the token",
+        ),
+    ],
+    ids=["both", "not-a-name", "unset", "empty", "host-not-a-name"],
+)
+def test_a_token_variable_refused_registers_nothing_and_quotes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], said: str
+) -> None:
+    """What was typed where a variable's name goes may be the token itself, put in the wrong
+    place, so no refusal quotes it, nor what any variable holds."""
+    monkeypatch.setenv("DUCK_TOKEN", "br1dge-s3cret")
+    monkeypatch.setenv("EMPTY_TOKEN_VAR", "  ")
+    monkeypatch.delenv("UNSET_TOKEN_VAR", raising=False)
+    result = runner.invoke(
+        app,
+        [
+            "robot",
+            "add",
+            "duck",
+            "microduck:mock",
+            "--address",
+            "tcp://x:1",
+            *args,
+            *_reg(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    flat = " ".join(result.output.split())
+    assert said in flat, flat
+    assert "t0k" not in result.output and "s3cret" not in result.output
+    assert "Traceback" not in result.output
+    assert Registry(tmp_path).get_robot("duck") is None
+
+
 # ── --json and --probe ──────────────────────────────────────────────────────────────────
 
 
