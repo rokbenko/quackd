@@ -88,6 +88,27 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   read off OpenAI's pages on 2026-10-26 and dated so on its row, and on the Responses API as the
   other GPT-6 rows are. `--llm openai` still means `gpt-6-sol`, which OpenAI still serves with no
   shutdown date.
+- **`quackd drive` drives one robot, one command at a time.** A line that names a call runs it
+  with no model asked: a verb of the body's own (`kick left`, `say good morning`, or
+  `move(vx=0.2, duration_s=2)`, whose values are read as literals and never evaluated), or a
+  preset walk, `forward`, `back`, `turn left` or `right` and `step left` or `right`, each derived
+  from the body's own clamps with no number of its own. On the mock Microduck such a line is read
+  in under a millisecond. An empty Enter, `stop`, `halt`, `brake` or `q` brakes at once and waits
+  on nothing, and a newer command ends whatever is moving the body and waits for its stop before
+  it sends anything. With `--decision-llm`, a line no verb names is put to that decision LLM as
+  one closed question, held to the stepper's floors and its second, which asks `did you mean
+  kick(leg=left)? [y/N]` below a floor. Anything else is a goal, which the pilot (`--llm`, or a
+  registered robot's own) flies as a whole run of its own on the body the session holds. A
+  person's own command is the verdict for its own call, and lines piped in are recorded as a
+  pipe's, never a person's. Without a `--duckfile`, a session allows every verb that is not
+  dangerous, keeps the battery rule a goal is held to, and runs on the schema's own ceilings for
+  its budgets. The keyboard goes through prompt_toolkit, and a pipe is read a line at a time, each
+  waited for. The session's record is a run directory `quackd log` replays, with each goal's own
+  run under `goals/`, and its summary gives the waits from a line to its call starting, to the
+  body's first motion for it, and from a brake to its stop, by lane
+  ([docs/guides/drive.md](docs/guides/drive.md),
+  [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
+  [ADR-0066](docs/adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)).
 
 ### Changed
 
@@ -148,6 +169,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A turn's picture is encoded once.** Every frame was encoded to PNG twice, once for `frames/`
   and once more for the request. The save hands back the bytes it wrote and the model is sent
   those, so the file a reader opens is the picture the pilot was shown.
+- **prompt_toolkit is a core dependency.** `quackd drive`'s keyboard reads a line while a verb
+  runs, which `input()` cannot, through prompt_toolkit 3.0.42 or later. Only that front end
+  imports it, so no other command pays for it, and the lock gains prompt-toolkit and wcwidth.
 
 ### Fixed
 
@@ -179,6 +203,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   budget. On a simulator the budget's clock is the simulator's and stands still while a model
   thinks, so a simulated run is never cut off this way
   ([docs/concepts/safety.md](docs/concepts/safety.md#when-the-models-api-fails)).
+- **A `stop` over MCP ends the verb beside it.** A `stop` called while a `move`, a `go_to` or a
+  `search_scan` ran sent its stop, and the verb's next twist, a tenth of a second later, walked
+  the body on. `move`, `go_to`, `search_scan` and `approach_and` read a stop asked for beside them
+  before each twist they send now, as `watch` did, and end with the body stopped once more and a
+  failed result saying how far each got, which `abort_when`'s count of failures in a row passes
+  over. `approach_and` no longer runs its `then` verb after one
+  ([ADR-0067](docs/adr/0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md)).
 
 ### Documentation
 
@@ -225,6 +256,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   out the thinking a trim invalidates and has the API drop the one block it may not leave out.
   That markers can move around it freely comes from Anthropic's guidance, and no paid request has
   proved it.
+- **`quackd drive` has driven no real robot.** It has run against the mock Microduck and the
+  scripted pilot, and its keyboard against prompt_toolkit's own pipe input. Its prompt is
+  untried in PowerShell under conhost, in Windows Terminal and in VS Code's terminal, and how long
+  a real robot takes from a line to its first motion is unmeasured. The fast lane's floors are the
+  stepper's, unmeasured on its question. `quackd log` does not yet draw drive's own lines. A
+  goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
+  keeps no memory. A verb an adapter brings, the arm's joint moves among them, does not read a
+  stop asked for beside it, though drive's brake and a newer command end it.
 
 ## [0.25.0] — 2026-10-25
 
