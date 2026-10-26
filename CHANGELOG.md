@@ -167,10 +167,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
+- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the
+  three roles a model can have in a run side by side, every pilot vendor and every one of the
+  123 model ids with its extra, its key, its address and its rate, the eight decision LLMs, the
+  policy types the arm's server serves and the ones it does not, with why, and the companies
+  behind them, each with the roles it fills. Every table on them is rendered from the
+  catalogues by `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not
+  what the script writes, so a row is changed in the code and never in a table. The guides
+  stay where they were and are linked, so no published link moved, and `docs/README.md` maps
+  the folder ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
+- **The README says which models work, right after which robots work.** One table of the three
+  roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
+  the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer
+  to many VLAs is Hugging Face is said there in one paragraph, with the commands that serve a
+  policy on the laptop, on a rented GPU and on a Hugging Face Endpoint.
+- **The counts that are still typed by hand are held by tests.** The catalogue's 123 ids, the
+  119 priced and the four unpriced, which the README, the FAQ and the architecture page each
+  typed, now fail a test the day a row is added, and so does a page that miscounts the policy
+  types. The local LLMs guide's table of presets is held to the addresses a run dials.
 - **`GOOGLE_API_KEY` is named where keys are configured.** The Gemini provider has read it
   after `GEMINI_API_KEY` since 0.1.0, and the README's API keys row and `.env.example` said so
   for Cohere's and Meta's second names only. A test now holds both to every name in
   `KEY_FALLBACKS`.
+
 ### Known limitations
 
 - **No pi0 has run.** quackd has not loaded, benched or served one, on a laptop or on a GPU, and

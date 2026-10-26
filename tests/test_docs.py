@@ -8,15 +8,19 @@ import math
 import os
 import re
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
 from quackd.agent.providers.factory import (
     CLOUD_NAMES,
+    EXTRA_FOR,
     KEY_ENV,
     KEY_FALLBACKS,
+    LOCAL_NAMES,
     default_model_for,
+    models_for,
 )
 from quackd.verbs.registry import default_registry
 from quackd_microduck import upstream_api as up
@@ -1607,9 +1611,12 @@ def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
         OPENROUTER_PAGE,
         REPO / "web" / "README.md",
         REPO / "web" / "src" / "providers.js",
+        REPO / "docs" / "models" / "README.md",
+        REPO / "docs" / "models" / "pilot-llms.md",
+        REPO / "docs" / "models" / "vendors.md",
         *sorted((REPO / "docs" / "adr").glob("0050-*.md")),
     ]
-    assert len(pages) == 6, "ADR-0050 is missing"
+    assert len(pages) == 9, "ADR-0050 is missing"
     for page in pages:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
@@ -2463,6 +2470,10 @@ def test_every_relative_link_and_anchor_in_the_markdown_resolves() -> None:
     assert not broken, "links that go nowhere:\n" + "\n".join(broken)
 
 
+MAPPED_FOLDERS = ("guides", "adapters", "reference", "concepts", "models", "passport")
+"""The folders under docs/ whose every page docs/README.md links, and whose rule it states."""
+
+
 def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> None:
     """docs/README.md is the map, and a page it leaves out is one a reader finds only by luck.
 
@@ -2479,11 +2490,14 @@ def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> No
         if not re.match(r"^[a-z][a-z0-9+.-]*:", target)
     }
     pages = [
-        page
-        for folder in ("guides", "adapters", "reference", "concepts", "passport")
-        for page in sorted((REPO / "docs" / folder).rglob("*.md"))
+        page for folder in MAPPED_FOLDERS for page in sorted((REPO / "docs" / folder).rglob("*.md"))
     ]
     assert len(pages) > 20, "the folders under docs/ moved, so this test is checking nothing"
+    rule = _one_line(index.read_text(encoding="utf-8").split("## Where a new page goes", 1)[1])
+    for folder in MAPPED_FOLDERS:
+        assert f"`{folder}/`" in rule, (
+            f"docs/README.md's rule never says where a {folder}/ page goes"
+        )
     missing = [page.relative_to(REPO).as_posix() for page in pages if page.resolve() not in linked]
     assert not missing, f"docs/README.md does not link: {missing}"
 
@@ -4067,3 +4081,174 @@ def test_releasing_md_runs_no_line_past_its_wrap() -> None:
             continue  # one link or code span too long to break
         long.append(f"line {number}: {len(line)} columns")
     assert not long, f"{name} runs these lines past its wrap: {long}"
+
+
+# ── the models pages, and the code they render ─────────────────────────────────────────────
+
+MODELS_DOCS = REPO / "docs" / "models"
+
+
+def _models_docs_script() -> ModuleType:
+    """`scripts/models_docs.py`, loaded by path as `test_web.py` loads the browser's generator:
+    `scripts/` is not a package, and this keeps the script a script."""
+    import importlib.util
+
+    script = REPO / "scripts" / "models_docs.py"
+    spec = importlib.util.spec_from_file_location("models_docs", script)
+    assert spec and spec.loader, f"{script} could not be loaded as a module"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
+    """Every table on the models pages is a catalogue rendered, and a rendered table that
+    nothing renders again is a stale table with a comment on it. So the script runs here over
+    every page, and what it would write is compared with what is committed."""
+    script = _models_docs_script()
+    for page in script.PAGES:
+        committed = (MODELS_DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
+        assert script.rewrite(committed, page) == committed, (
+            f"docs/models/{page} is not what scripts/models_docs.py writes from the code: run "
+            "uv run --no-sync python scripts/models_docs.py and commit what it changes"
+        )
+
+
+def test_every_block_the_script_renders_is_on_one_page_once() -> None:
+    """A block rendered onto no page is a table nobody reads, and one on two pages is two
+    places to look for the same row."""
+    script = _models_docs_script()
+    placed = [name for blocks in script.PAGES.values() for name in blocks]
+    assert sorted(placed) == sorted(script.BLOCKS), "a block is rendered onto no page, or two"
+    for path in sorted(MODELS_DOCS.glob("*.md")):
+        found = re.findall(
+            r"^<!-- generated: ([a-z0-9-]+)\b", path.read_text(encoding="utf-8"), flags=re.M
+        )
+        assert tuple(found) == script.PAGES.get(path.name, ()), (
+            f"docs/models/{path.name} carries the blocks {found}"
+        )
+
+
+def test_the_models_pages_name_every_row_in_the_code() -> None:
+    """Read off the pages directly rather than through the script, because a renderer that
+    dropped a row would agree with itself."""
+    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    for name in CLOUD_NAMES:
+        assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for --llm {name}"
+        for m in models_for(name):
+            assert f"`{name}:{m.id}`" in pilots, f"pilot-llms.md never names {name}:{m.id}"
+    for name in LOCAL_NAMES:
+        assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for the {name} preset"
+    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    for name in PRESET_NAMES:
+        assert f"| `{name}` |" in decisions, f"decision-llms.md has no row for {name}"
+        assert f"(../guides/decision-llms/{name}.md)" in decisions, (
+            f"decision-llms.md does not link {name}'s own page"
+        )
+
+
+def test_the_models_pages_say_what_has_never_run() -> None:
+    """The sentences the guides they summarise carry, in the same words, so a page that lists
+    a vendor cannot read as if it had been flown when it has only met a stand-in."""
+    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    assert "**No OpenRouter model has answered a real quackd request.**" in pilots
+    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    assert "**Nothing here has ever answered a real robot.**" in decisions
+
+
+def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
+    """The catalogue's size was typed into the README, the FAQ and the architecture page by
+    hand, and nothing read it back, so the day a row was added three pages would have kept a
+    number the catalogue no longer had. The models page renders its own count, and every other
+    one is held to the rows here: the ids, the ones priced and the ones not."""
+    rows = [m for name in CLOUD_NAMES for m in models_for(name)]
+    priced = sum(1 for m in rows if m.price is not None)
+    unpriced = _NUMBER_WORDS.get(len(rows) - priced, str(len(rows) - priced))
+    counted = 0
+    for path in [*_living_docs(), REPO / "web" / "README.md"]:
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).replace(">", " ").split())
+        totals = re.findall(r"\b(\d+) (?:model )?ids\b", prose)
+        totals += re.findall(r"\bcatalogue's (\d+) models\b", prose)
+        for n in totals:
+            counted += 1
+            assert int(n) == len(rows), (
+                f"{path.name} says the catalogue has {n} ids, and it has {len(rows)}"
+            )
+        for have, of in re.findall(r"\b(\d+) of the (\d+) ids have one\b", prose):
+            assert (int(have), int(of)) == (priced, len(rows)), (
+                f"{path.name} says {have} of {of} ids are priced, and {priced} of {len(rows)} are"
+            )
+        for word in re.findall(r"\b(\w+) of the catalogue's \d+ models are unpriced\b", prose):
+            assert word.lower() == unpriced, (
+                f"{path.name} says {word} of the catalogue's ids are unpriced, not {unpriced}"
+            )
+    assert counted >= 4, "the counts this test holds have moved: find them and point it there"
+
+
+def test_the_local_presets_table_is_the_one_the_code_holds() -> None:
+    """The guide's table of presets and addresses was typed by hand beside `local.PRESETS`,
+    which is what a run actually dials."""
+    from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
+
+    page = (REPO / "docs" / "guides" / "local-llms.md").read_text(encoding="utf-8")
+    for name, url in LOCAL_PRESETS.items():
+        where = f"`{url}`" if url else "none, you must pass one"
+        assert f"| `{name}` | {where} |" in page, (
+            f"docs/guides/local-llms.md's presets table does not give {name} as {where}"
+        )
+
+
+def test_no_living_document_claims_the_wrong_number_of_policy_types() -> None:
+    """The server served three types for nine releases and six from 0.26.0, and every page
+    that spells the number is one nobody re-reads the day it moves again."""
+    from quackd.adapters.policies import FAMILIES
+
+    right = _NUMBER_WORDS[len(FAMILIES)]
+    for path in _living_docs():
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).split()).lower()
+        for count, word in _NUMBER_WORDS.items():
+            if count == len(FAMILIES):
+                continue
+            for shape in ("{w} policy types", "{w} lerobot policy types"):
+                claim = shape.format(w=word)
+                assert claim not in prose, (
+                    f"{path.name} says {claim!r}, and the server serves {right}"
+                )
+
+
+def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
+    """The three kinds of model were spread over some twenty-five places in the README, and a
+    reader asking which models quackd takes had no one section to read."""
+    from quackd.adapters.policies import FAMILIES
+
+    headings = re.findall(r"^## (.+)$", _prose(README), flags=re.M)
+    robots = headings.index("Which robots work")
+    assert headings[robots + 1] == "Which models work", "the models section must follow the robots"
+    assert "- [Which models work](#which-models-work)" in README, "the contents do not list it"
+    section = README.split("\n## Which models work\n", 1)[1].split("\n## ", 1)[0]
+    for needle in (
+        "docs/models/README.md",
+        "### Pilot LLMs",
+        "### Decision LLMs",
+        "### Learned policies and VLAs",
+        "quackd policy serve",
+        "quackd policy endpoint up",
+        "--decision-mode shadow",
+    ):
+        assert needle in section, f"the README's models section does not say {needle!r}"
+    for family in FAMILIES:
+        assert family.label in section or f" {family.type}" in section, (
+            f"the README's models section never names {family.label}"
+        )
+
+
+def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -> None:
+    """The pilots' table moved into the models section whole, and is held there row by row:
+    each cloud vendor's row names its extra, its key and the `--llm` that runs it."""
+    section = README.split("\n### Pilot LLMs\n", 1)[1].split("\n### ", 1)[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ")]
+    assert rows and rows[0] == "| Provider | Extra | Key | Run |", "the pilots' table has moved"
+    for name in CLOUD_NAMES:
+        row = next((r for r in rows if f"--llm {name}`" in r), None)
+        assert row is not None, f"the pilots' table has no row that runs --llm {name}"
+        assert f"`quackd[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row

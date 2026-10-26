@@ -12,6 +12,8 @@ that, sorted by what you came to do. What has run on a real robot and what has n
   driving it from somewhere else, security and privacy, what it can and cannot drive, and the
   name.
 - [Safety](concepts/safety.md): read it before anything with a motor.
+- [Models](models/README.md): which models quackd can fly a robot with, which can decide for
+  it and which can drive the arm, and how to name each one.
 
 ## Guides
 
@@ -30,6 +32,25 @@ How to do one thing with quackd.
 | [Flock mode](guides/flock.md) | several robots on one task, as pilots or under a coordinator |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
 | [An NVIDIA Jetson](guides/jetson.md) | a board quackd reaches with `--host` and never runs on |
+
+## Models
+
+Robots have [adapters/](adapters/), and models have [models/](models/README.md): a page for
+each of the three roles a model can have in a run and one for the companies behind them.
+Their tables are rendered from the code by `scripts/models_docs.py`, so they say what this
+build takes.
+
+| Page | What it covers |
+|---|---|
+| [Models](models/README.md) | the three roles side by side, how one run uses all three, and how to choose |
+| [Pilot LLMs](models/pilot-llms.md) | every vendor `--llm` takes and every model id, with its extra, its key, its address and its rate |
+| [Decision LLMs](models/decision-llms.md) | every decision LLM `--decision-llm` names, where it runs, its key and its rate |
+| [VLAs and the other learned policies](models/vlas.md) | the policy types the arm's policy server serves, where they run, and what is not served and why |
+| [Who makes what](models/vendors.md) | each company and project, the roles it fills, and the key and the extra it needs |
+
+How to set each one up is a guide: [local LLMs](guides/local-llms.md),
+[OpenRouter](guides/openrouter.md), [decision LLMs](guides/decision-llms/README.md) and
+[policies](guides/policies.md).
 
 ## Robots
 
@@ -127,9 +148,12 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
 - `concepts/` for how quackd works, and why.
+- `models/` for which models quackd names, a page for each role and one for the companies.
+  Their tables are rendered from the code by `scripts/models_docs.py`, so a row is changed
+  there and never in a table. How to set a model up is a guide.
 - `passport/` for anything about Robot Passport, the protocol and quackd's part in it, kept in one
   folder so it can leave quackd whole.
 - `adr/` for a decision, numbered after the last one.
 
 Then link it from this page. A test fails while any page under `guides/`, `adapters/`,
-`reference/`, `concepts/` or `passport/` is missing from it.
+`reference/`, `concepts/`, `models/` or `passport/` is missing from it.

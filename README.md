@@ -45,7 +45,7 @@
   <sub><strong>A real arm, a real model, one sentence.</strong> An SO-101 follower arm on 2026-09-15, piloted by OpenAI's <code>gpt-6-astra</code> through <code>quackd run --goal "Wave to the camera with an extended arm"</code>. The model was handed the arm's five verbs and its datasheet and chose one call at a time: raise the shoulder and elbow, roll the wrist four times, return, stop. Nobody wrote a wave. The whole run at ten times speed, filmed on a phone: it opens on the command going into a terminal, watches the run scroll, then pans to the bench, and the wave itself is the part where the wrist rocks. What the model was told, all ten of its calls and what went wrong are in <a href="#what-happened-in-that-run">What happened in that run</a>, and how every recording here was made is in <a href="docs/assets/README.md">docs/assets</a>.</sub>
 </p>
 
-**quackd** is a command line for the robots you own. Each one joins through an adapter that declares, as a manifest, what the body is and what it can do, and you register it once by name with how to reach it. Give a robot a goal like *"find the ball and kick it"* and a large language model picks one skill at a time from the list that manifest declares, quackd runs it, looks at the camera, and asks again until the job is done or clearly impossible. Give the same goal to a flock and every robot in it gets a model of its own, and they divide the work by telling each other what they are going to do. A goal can arrive from a chat, a command line or a `.duck` task file, and whichever way it comes, quackd enforces a contract the model cannot talk its way out of: which skills are allowed, how many steps, when a human must say yes, when to abort. Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM and Meta work over their APIs, and so do the models OpenRouter routes to, behind one key of its own. Open source models work on your own machine through Ollama, vLLM, llama.cpp or LM Studio, with no key. A model is the pilot on every run. `--decision-llm` optionally puts something in front of it that is **not** a language model and cannot be used as one: a decision LLM generates no text at all, it scores a fixed set of options against a state and returns which one with a probability for each, so it answers the turns that are a choice among calls the robot already has and can no more write a joint angle than a thermometer can. TypeSafe's Jev was the first of them and is hosted, OpenAI's Decisions API is the other hosted one, and the rest quackd names are open servers you run yourself or a checkpoint loaded into this process, each with a page of its own. Off unless you name one, and `--decision-mode shadow` records what one would have chosen without letting it change a thing ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)).
+**quackd** is a command line for the robots you own. Each one joins through an adapter that declares, as a manifest, what the body is and what it can do, and you register it once by name with how to reach it. Give a robot a goal like *"find the ball and kick it"* and a large language model picks one skill at a time from the list that manifest declares, quackd runs it, looks at the camera, and asks again until the job is done or clearly impossible. Give the same goal to a flock and every robot in it gets a model of its own, and they divide the work by telling each other what they are going to do. A goal can arrive from a chat, a command line or a `.duck` task file, and whichever way it comes, quackd enforces a contract the model cannot talk its way out of: which skills are allowed, how many steps, when a human must say yes, when to abort. Claude, OpenAI, Gemini, Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM and Meta work over their APIs, and so do the models OpenRouter routes to, behind one key of its own. Open source models work on your own machine through Ollama, vLLM, llama.cpp or LM Studio, with no key. A model is the pilot on every run. `--decision-llm` optionally puts something in front of it that is **not** a language model and cannot be used as one: a decision LLM generates no text at all, it scores a fixed set of options against a state and returns which one with a probability for each, so it answers the turns that are a choice among calls the robot already has and can no more write a joint angle than a thermometer can. TypeSafe's Jev was the first of them and is hosted, OpenAI's Decisions API is the other hosted one, and the rest quackd names are open servers you run yourself or a checkpoint loaded into this process, each with a page of its own. Off unless you name one, and `--decision-mode shadow` records what one would have chosen without letting it change a thing ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). On the SO-101 arm a learned policy from Hugging Face's Hub, NVIDIA's GR00T and Physical Intelligence's pi0 among them, can drive the arm for one short segment at a time, and [Which models work](#which-models-work) lists every model of all three kinds and how to name each one.
 
 The first robot is the [Microduck](https://pollen-robotics.com/microduck/) from Pollen Robotics: a 25 cm, 800 g biped with fifteen small servos, a camera in its head, a depth sensor, a speaker and an onboard computer, open source and about $399, which already knows how to walk, turn, kick, scoop something off the floor, look around and quack at 50 Hz on its own hardware. It is the robot quackd started on, independently and unofficially. Eight more bodies follow it through adapters that declare what each can do: an [Open Duck Mini v2](https://github.com/apirrone/Open_Duck_Mini) you can print and build yourself, an SO-101 class arm through LeRobot, any wheeled base over rosbridge, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot humanoid, a [Huebot](https://ce-net.com/huebot), a 25 cm biped with behaviour code of its own, whose maker is writing a shim for it that is to answer the Microduck's calls the same way, and [MOSS](https://github.com/metrox-eth/moss), a small tracked rover that picks up litter, reached through its own cockpit and a bridge quackd ships for it.
 
@@ -71,6 +71,10 @@ The first of those has passed 10 of 10 on the physics simulator too, with the du
 - [Example](#example)
 - [Status](#status)
 - [Which robots work](#which-robots-work)
+- [Which models work](#which-models-work)
+  * [Pilot LLMs](#pilot-llms)
+  * [Decision LLMs](#decision-llms)
+  * [Learned policies and VLAs](#learned-policies-and-vlas)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -537,6 +541,72 @@ Each of the nine is its own package, pulled in by the extra that carries its nam
 
 <br>
 
+## Which models work
+
+A run has up to three models in it, and only the first is required: the pilot LLM, which plans and calls the robot's verbs, an optional decision LLM in front of it for the turns that are a choice, and on the SO-101 arm a learned policy that drives the arm for one short segment at a time. The robots are the section above. Every model id, what each one needs and who makes it is in [docs/models/](docs/models/README.md), whose tables are rendered from the code that decides what quackd takes, and `quackd list-models` prints the same rows (`--kind decision` and `--kind policy` for the other two).
+
+| Role | Named with | What it does | What quackd names | How far it has got |
+|---|---|---|---|---|
+| **Pilot LLM**, required | `--llm VENDOR[:MODEL]` | reads the robot's manifest, plans, calls its verbs one turn at a time and judges the result | 123 model ids from twelve cloud vendors, more through OpenRouter, and any model your own Ollama, vLLM, llama.cpp or LM Studio serves | 🤖 two of OpenAI's have flown the SO-101 arm, `gpt-6-astra` on 2026-09-15 and it and `gpt-6-sol` on 2026-09-23. No OpenRouter model has answered a real quackd request |
+| **Decision LLM**, optional | `--decision-llm NAME[:MODEL]` | answers the turns that are a choice among calls the body already has, with a probability, and writes nothing | eight decision LLMs, hosted or your own | 🧪 stand-ins only. None has answered a real robot |
+| **Learned policy**, the SO-101 arm only | `--policy-url`, to `quackd policy serve` or to an endpoint as `hf:NAME` | drives the arm for one `manipulate` or `pick` segment, at the arm's rate, with every goal held to its travel | six LeRobot policy types from the Hub, five of them VLAs: ACT, SmolVLA, pi05, pi0, X-VLA and NVIDIA's GR00T N1.7 | ✅ simulator. A trained ACT drove the arm's twin on 2026-09-28 and 2026-09-29, and none has driven the real arm |
+
+### Pilot LLMs
+
+| Provider | Extra | Key | Run |
+|---|---|---|---|
+| Claude | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | `uvx --from "quackd[microduck,anthropic]" quackd run find-and-kick --llm anthropic` |
+| OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm openai` |
+| Gemini | `quackd[gemini]` | `GEMINI_API_KEY` | `uvx --from "quackd[microduck,gemini]" quackd run find-and-kick --llm gemini` |
+| Grok | `quackd[grok]` | `XAI_API_KEY` | `uvx --from "quackd[microduck,grok]" quackd run find-and-kick --llm grok` |
+| Mistral | `quackd[mistral]` | `MISTRAL_API_KEY` | `uvx --from "quackd[microduck,mistral]" quackd run find-and-kick --llm mistral` |
+| DeepSeek | `quackd[deepseek]` | `DEEPSEEK_API_KEY` | `uvx --from "quackd[microduck,deepseek]" quackd run find-and-kick --llm deepseek` |
+| Cohere | `quackd[cohere]` | `COHERE_API_KEY` | `uvx --from "quackd[microduck,cohere]" quackd run find-and-kick --llm cohere` |
+| Qwen | `quackd[qwen]` | `DASHSCOPE_API_KEY` | `uvx --from "quackd[microduck,qwen]" quackd run find-and-kick --llm qwen` |
+| Kimi | `quackd[kimi]` | `MOONSHOT_API_KEY` | `uvx --from "quackd[microduck,kimi]" quackd run find-and-kick --llm kimi` |
+| GLM | `quackd[glm]` | `ZAI_API_KEY` | `uvx --from "quackd[microduck,glm]" quackd run find-and-kick --llm glm` |
+| Meta | `quackd[meta]` | `META_API_KEY` | `uvx --from "quackd[microduck,meta]" quackd run find-and-kick --llm meta` |
+| OpenRouter | `quackd[openrouter]` | `OPENROUTER_API_KEY` | `uvx --from "quackd[microduck,openrouter]" quackd run find-and-kick --llm openrouter` |
+| fake (scripted) | none | none | `uvx --from "quackd[microduck]" quackd run find-and-kick --llm fake` |
+| Ollama (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm ollama:qwen3:8b` |
+| vLLM (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm vllm:Qwen/Qwen3-8B` |
+| llama.cpp (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm llamacpp` |
+| LM Studio (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm lmstudio` |
+| any OpenAI compatible server | `quackd[openai]` | optional | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm local --base-url http://host:8000/v1` |
+
+Every row above runs the cartoon, because `quackd[microduck]` is the body those lines ask for and `find-and-kick` names no robot of its own. To put the same model on the physics simulator instead, swap that extra for `quackd[mujoco]`, which is the same duck with MuJoCo behind it, and name the backend: `uvx --from "quackd[mujoco,anthropic]" quackd run find-and-kick --llm anthropic --robot microduck:mujoco`. The extras are independent, so `quackd[anthropic]` alone gives you a brain and no body at all. Nobody stands in the physics arena, so `follow-me`, whose whole task is to follow somebody, cannot succeed there and nothing stops you pointing it at that backend anyway.
+
+A cloud model that takes an image sees the camera frame. Where a vendor does not document image input, `quackd list-models` marks that model `no frames` and quackd sends it the detections as text instead. An OpenRouter id quackd does not carry gets the frame when OpenRouter's model list says it takes images, and the detections as text when it does not. Local models get the text detections by default and the frame too with `--vision`, which also overrides a `no frames` mark. `--no-vision` is the other direction, for a vision model you would rather send text to. The scripted pilot only reads the detection summary. A body that reads several cameras sends every frame each step, each one labelled with the camera's own name, on Claude, both OpenAI APIs, Gemini and any OpenAI compatible local server with `--vision` on. That costs what it sounds like, because the last two exchanges keep their images: two cameras is four pictures in every request rather than two, and up to eighteen on Claude Opus 5.5 and Fable 5.1 on `--llm anthropic`, whose old frames are trimmed every eight exchanges rather than on every one. A local server or a model that takes one image per message needs a single `--camera-url`. Local setup, tool calling flags per server and what to expect from small models: [docs/guides/local-llms.md](docs/guides/local-llms.md).
+
+Over MCP there is no `--llm` at all. `quackd serve-mcp` selects no model, and the chat client's own model is the pilot ([docs/guides/mcp.md](docs/guides/mcp.md)).
+
+### Decision LLMs
+
+**Decision LLMs are not in the pilots' table on purpose.** A decision LLM is not a provider and `--llm` does not take one: it answers typed questions about a state and writes nothing, so it cannot pilot a robot on its own. It sits in front of whichever provider you did pick, for the turns whose answer is a choice, it is named with `--decision-llm` instead, and it is off unless you name one ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)).
+
+There are eight, `jev` and `openai` hosted by their makers, `kev`, `von`, `openjev` and `opendecision` servers you run yourself, `local` for any other server that speaks the same wire format, and `laya` in quackd's own process. Try one in shadow first, where it is asked every turn and changes nothing, and the run's record says what it would have answered:
+
+```bash
+quackd run arm-grip-check --robot lerobot:mock --llm openai --decision-llm jev --decision-mode shadow
+```
+
+Each one's key, extra, address and rate are in [docs/models/decision-llms.md](docs/models/decision-llms.md).
+
+### Learned policies and VLAs
+
+No vendor serves many VLAs per call the way OpenRouter serves many language models, so quackd's answer is Hugging Face: LeRobot's checkpoints on the Hub, served by quackd's own policy server, which reads each family's code before it serves it and refuses the rest before a byte of weights is fetched. It serves ACT, SmolVLA, Physical Intelligence's pi05 and pi0, X-VLA in the arm's own joints and NVIDIA's GR00T N1.7, and refuses pi0-FAST, whose policy runs its tokenizer's code from the Hub. The server runs in a process of its own, never in the one that owns the arm's serial bus: on the laptop, on a GPU you rent and tunnel to, or on a Hugging Face Inference Endpoint, a GPU that quackd starts for you and Hugging Face bills by the hour.
+
+```bash
+uv pip install "quackd[lerobot-vla]"                                      # where the policy runs, Python 3.12
+quackd policy serve --policy OWNER/NAME@REVISION                          # on this machine, or on a GPU you rent
+quackd policy endpoint up arm --policy OWNER/NAME@REVISION                # or on a Hugging Face GPU, by the hour
+quackd run task.duck --robot arm-01-sim --llm openai --policy-url hf:arm  # the arm's twin first
+```
+
+The endpoint asks before it bills, waits until the server answers, pauses itself when it fails, and `quackd policy endpoint pause arm` stops the bill. quackd has never created one: it has run against the test suite's stand-ins alone. What each family needs, its licence, where it runs and what is not served and why are in [docs/models/vlas.md](docs/models/vlas.md), and setting one up is [docs/guides/policies.md](docs/guides/policies.md).
+
+<br>
+
 ## Architecture
 
 Three loops, three rates, three owners. The LLM decides **what**, at 0.2 to 1 Hz. The steering loop decides **how to get there**, at 10 Hz, and never waits for the model. The robot's own controllers do the **moving**, at their own rate: balance on a biped, a pick policy on an arm, a gait policy on a humanoid, the driver on a wheeled base. The table with the rates and the owners is in [docs/concepts/architecture.md](docs/concepts/architecture.md).
@@ -621,34 +691,7 @@ uvx --from "quackd[microduck]" quackd run find-and-kick --llm fake --seed 3
 
 Every run writes `runs/<timestamp>-<name>/` (`--runs-dir` replaces `runs/`, and `--run-name "Example 1"` adds your own label to the end of that directory, `runs/20260921-155518-find-and-kick-example-1/`) with `transcript.jsonl` (every prompt, tool call, gate, intent, result and token count, what each model call cost and what the run has cost so far, when the run started and when it ended, plus the robot's manifest in `run_start`), every frame quackd captured, `summary.json`, `terminal.txt` (everything that was on the terminal during the run, as plain text, opening with the command that started it and the version that ran it), and `run.gif` on a simulator, though the arm's simulator, `lerobot:mujoco`, writes none. `quackd log` replays any of it afterwards.
 
-Cloud or local, same command.
-
-| Provider | Extra | Key | Run |
-|---|---|---|---|
-| Claude | `quackd[anthropic]` | `ANTHROPIC_API_KEY` | `uvx --from "quackd[microduck,anthropic]" quackd run find-and-kick --llm anthropic` |
-| OpenAI | `quackd[openai]` | `OPENAI_API_KEY` | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm openai` |
-| Gemini | `quackd[gemini]` | `GEMINI_API_KEY` | `uvx --from "quackd[microduck,gemini]" quackd run find-and-kick --llm gemini` |
-| Grok | `quackd[grok]` | `XAI_API_KEY` | `uvx --from "quackd[microduck,grok]" quackd run find-and-kick --llm grok` |
-| Mistral | `quackd[mistral]` | `MISTRAL_API_KEY` | `uvx --from "quackd[microduck,mistral]" quackd run find-and-kick --llm mistral` |
-| DeepSeek | `quackd[deepseek]` | `DEEPSEEK_API_KEY` | `uvx --from "quackd[microduck,deepseek]" quackd run find-and-kick --llm deepseek` |
-| Cohere | `quackd[cohere]` | `COHERE_API_KEY` | `uvx --from "quackd[microduck,cohere]" quackd run find-and-kick --llm cohere` |
-| Qwen | `quackd[qwen]` | `DASHSCOPE_API_KEY` | `uvx --from "quackd[microduck,qwen]" quackd run find-and-kick --llm qwen` |
-| Kimi | `quackd[kimi]` | `MOONSHOT_API_KEY` | `uvx --from "quackd[microduck,kimi]" quackd run find-and-kick --llm kimi` |
-| GLM | `quackd[glm]` | `ZAI_API_KEY` | `uvx --from "quackd[microduck,glm]" quackd run find-and-kick --llm glm` |
-| Meta | `quackd[meta]` | `META_API_KEY` | `uvx --from "quackd[microduck,meta]" quackd run find-and-kick --llm meta` |
-| OpenRouter | `quackd[openrouter]` | `OPENROUTER_API_KEY` | `uvx --from "quackd[microduck,openrouter]" quackd run find-and-kick --llm openrouter` |
-| fake (scripted) | none | none | `uvx --from "quackd[microduck]" quackd run find-and-kick --llm fake` |
-| Ollama (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm ollama:qwen3:8b` |
-| vLLM (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm vllm:Qwen/Qwen3-8B` |
-| llama.cpp (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm llamacpp` |
-| LM Studio (local) | `quackd[openai]` | none | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm lmstudio` |
-| any OpenAI compatible server | `quackd[openai]` | optional | `uvx --from "quackd[microduck,openai]" quackd run find-and-kick --llm local --base-url http://host:8000/v1` |
-
-Every row above runs the cartoon, because `quackd[microduck]` is the body those lines ask for and `find-and-kick` names no robot of its own. To put the same model on the physics simulator instead, swap that extra for `quackd[mujoco]`, which is the same duck with MuJoCo behind it, and name the backend: `uvx --from "quackd[mujoco,anthropic]" quackd run find-and-kick --llm anthropic --robot microduck:mujoco`. The extras are independent, so `quackd[anthropic]` alone gives you a brain and no body at all. Nobody stands in the physics arena, so `follow-me`, whose whole task is to follow somebody, cannot succeed there and nothing stops you pointing it at that backend anyway.
-
-A cloud model that takes an image sees the camera frame. Where a vendor does not document image input, `quackd list-models` marks that model `no frames` and quackd sends it the detections as text instead. An OpenRouter id quackd does not carry gets the frame when OpenRouter's model list says it takes images, and the detections as text when it does not. Local models get the text detections by default and the frame too with `--vision`, which also overrides a `no frames` mark. `--no-vision` is the other direction, for a vision model you would rather send text to. The scripted pilot only reads the detection summary. A body that reads several cameras sends every frame each step, each one labelled with the camera's own name, on Claude, both OpenAI APIs, Gemini and any OpenAI compatible local server with `--vision` on. That costs what it sounds like, because the last two exchanges keep their images: two cameras is four pictures in every request rather than two, and up to eighteen on Claude Opus 5.5 and Fable 5.1 on `--llm anthropic`, whose old frames are trimmed every eight exchanges rather than on every one. A local server or a model that takes one image per message needs a single `--camera-url`. Local setup, tool calling flags per server and what to expect from small models: [docs/guides/local-llms.md](docs/guides/local-llms.md).
-
-**Decision LLMs are not in that table on purpose.** A decision LLM is not a provider and `--llm` does not take one: it answers typed questions about a state and writes nothing, so it cannot pilot a robot on its own. It sits in front of whichever provider you did pick, for the turns whose answer is a choice, it is named with `--decision-llm` instead, and it is off unless you name one ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)).
+Cloud or local, same command. [Pilot LLMs](#pilot-llms), in the section on models above, has every vendor with its extra, its key and the line that runs it.
 
 | Command | What it does |
 |---|---|
