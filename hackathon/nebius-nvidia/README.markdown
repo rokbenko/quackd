@@ -11,9 +11,12 @@ over HTTP, DNS-SD, MQTT and QR stickers, published test vectors, and a talk prot
 robot may ask another for a pause or to identify itself.
 
 quackd is the agent runtime: it connects each robot, gives it a pilot, and enforces what that
-pilot may do. This edition gives every robot an NVIDIA brain on Nebius. Nemotron on Nebius Token
-Factory pilots the robots, explains a passport to the person standing next to the robot, and
-tells which passport belongs to which robot in a camera's view.
+pilot may do. This edition gives every robot an NVIDIA brain on Nebius, and puts quackd onboard
+the postman. Its run, its key, its passport, its trust decisions and its pilot all sit on the
+postman's own computer, which is a Jetson Thor on the real robot and here a Nebius GPU that
+serves Nemotron with vLLM. The duck's own computer is too small for a model, so its pilot is
+Nemotron on Nebius Token Factory. Token Factory also explains a passport to the person standing
+next to a robot, and tells which passport belongs to which robot in a camera's view.
 
 The demo is a postman and a duck. **Agile ONE SN**, the humanoid Agile Robots built on NVIDIA
 Isaac GR00T, brings a letter to a home. **Microduck**, Pollen Robotics' 25 cm duck, is the
@@ -28,47 +31,55 @@ for a pause, which fixed code grants within limits and which ends on its own; no
 another to move, or to stop for good.
 
 > [!NOTE]
-> The commands are tested offline against a stand-in for Token Factory and against quackd 0.23
-> itself, with real runs, all but two that need hardware or a network: `whois --camera` and
-> `whois --lan`. The commands that need a Nebius key are shown as commands; their output is
-> added here from real runs before submission.
+> The commands are tested offline against stand-ins for Token Factory and for the postman's own
+> model server, and against quackd 0.23 itself, with real runs, all but two that need hardware
+> or a network: `whois --camera` and `whois --lan`. The job's two scripts are tested against
+> stand-in commands. The commands that need a Nebius key or a GPU are shown as commands, and
+> their output is added here from real runs before submission.
 
 ## How NVIDIA and Nebius are used
 
 | Part | NVIDIA model | Nebius |
 |---|---|---|
-| The robots' pilots | a Nemotron model with tool calling | Token Factory chat completions, one per turn |
+| The postman's pilot, onboard | a Nemotron model NVIDIA tests on Jetson Thor, served by vLLM | a Serverless AI Job on one GPU, standing in for the postman's Jetson Thor |
+| The duck's pilot | a Nemotron model with tool calling | Token Factory chat completions, one per turn |
 | `explain` | a Nemotron model | Token Factory, answering from passport fields |
 | `whois` | an NVIDIA vision model (a Nemotron VL or Omni row) | Token Factory, an image and a JSON schema |
-| Both acts on AI Cloud | the same pilots | a Serverless AI Job on a CPU preset |
 
-No model id is written down anywhere. Every command reads the key's live `GET /v1/models` list
-and takes an NVIDIA id only when that list carries it, spelled as the list spells it.
+No model id is written into the code. Every command reads a live `GET /v1/models` list and takes
+an NVIDIA id only when that list carries it, spelled as the list spells it. For Token Factory
+that is the key's list. For the postman it is the list of its own server, which serves the one
+model the job was told to serve.
 
 The postman comes from NVIDIA's robotics ecosystem too: Agile Robots launched Agile ONE SN on
-21 October 2026 as "a humanoid reference platform built on NVIDIA Isaac GR00T", with NVIDIA
-Jetson Thor onboard.
+21 October 2026 as "a humanoid reference platform built on NVIDIA Isaac GR00T", with "NVIDIA
+Jetson Thor onboard compute for real-time sensor processing and robot inference". That is why
+the postman's brain runs on its own computer here.
 
 **Where Token Factory sped the work up.** quackd already spoke to OpenAI-compatible servers, so
 giving every robot a Nemotron pilot took an address and a key and no new client code: the work
-went into the scene around it. Nothing here needs a GPU of our own, since the robots run on a
-laptop or a CPU job and every pilot turn is one call to Token Factory. And with the live model
-list as the one source of ids, trying a larger Nemotron for the pilots or a smaller one for
-`explain` is a change of one id.
+went into the scene around it. Onboard it is the same, since vLLM speaks the same API: moving
+the postman's brain onto its own computer took one more address. On a laptop nothing needs a GPU,
+since every pilot turn is then one call to Token Factory. And with the live model list as the one
+source of ids, trying a larger Nemotron for the duck or a smaller one for `explain` is a change
+of one id.
 
-**Nebius services used:** Token Factory for every model call; Serverless AI Jobs to play both
-acts on Nebius AI Cloud; MysteryBox to hand the job its key.
+**Nebius services used:** Token Factory for the duck's pilot, `explain` and `whois`. A Serverless
+AI Job on one GPU, which serves the postman's Nemotron and plays both acts on Nebius AI Cloud.
+MysteryBox to hand the job its key.
 
 The pilots are quackd's own `quackd run`, unchanged: its `local` provider speaks to any
-OpenAI-compatible server, so Token Factory is an address and a key. The key goes to quackd in
-its environment, never on a command line.
+OpenAI-compatible server, so Token Factory is an address and a key, and so is the postman's own
+server. Each robot's quackd gets only the key its own pilot's server takes, in its environment,
+never on a command line.
 
 ## Requirements
 
 * Windows, macOS or Linux with [uv](https://docs.astral.sh/uv/), which installs the Python this
   folder needs.
 * A Nebius Token Factory API key.
-* For the job only: the Nebius CLI, configured, and a project that can start one CPU VM.
+* For the job only: the Nebius CLI, configured, and a project in eu-north1 that can start a
+  Serverless Job on one H100.
 
 ## Setup
 
@@ -172,6 +183,16 @@ uv run passport-nebius doorstep run --act appointment --role postman
 uv run passport-nebius doorstep run --act appointment --role duck
 ```
 
+**Thinking onboard.** With `--onboard`, the postman's pilot asks a model server on its own
+computer instead, any OpenAI-compatible one such as vLLM, and never Token Factory. It takes the
+one NVIDIA model that server lists, or the one `--onboard-model` names, and the key in
+`ONBOARD_API_KEY` when the server was started with one. The duck's pilot stays on Token Factory.
+On Nebius this is what the job does (below):
+
+```
+uv run passport-nebius doorstep run --act appointment --onboard http://127.0.0.1:8000/v1
+```
+
 **The brake.** A peer can ask for a pause, never for a stop. While the duck walks, the postman
 asks it for five seconds, signing the request with its own key; the duck's owner policy grants it
 by fixed code, and the body brakes at once and holds:
@@ -197,6 +218,17 @@ quackd running for real. The bodies are not:
   stands in for the letter, and the scoop is open loop, so it can miss and be tried again.
 * The two run as separate processes, so no simulator carries the letter from one to the other:
   the letter changing hands is what the passports, the talk and the two pilots agree on.
+
+And neither is the postman's computer:
+
+* On Nebius the postman's onboard computer is a Serverless Job, an x86 server with an NVIDIA
+  H100. A real Agile ONE SN carries a Jetson Thor, an Arm module with an NVIDIA Blackwell GPU.
+  The job stands in for it: it serves a model NVIDIA tests on Jetson Thor, with quackd beside
+  it, but it is not a Thor.
+* The postman's brain is Nemotron, not GR00T, which drives a humanoid's body, and the body here
+  is a mock.
+* Both robots' computers share the job's one container, each robot with its own registry, key
+  and port, so their talk crosses no network.
 
 ## explain
 
@@ -226,25 +258,37 @@ passport fits which robot in view, and which fits none. The model sees each pass
 body under a label such as `r1`, and what does not hold of its answer is dropped. It is advice
 for a person: it pins nothing, stamps nothing and changes no tier.
 
-## On Nebius AI Cloud: a Serverless Job
+## On Nebius AI Cloud: the postman's onboard computer
 
-Both acts run as one Nebius Serverless AI Job, a container that plays them and ends. It takes a
-CPU preset, since the robots are simulated and their pilots run on Token Factory. The key stays
-in a MysteryBox secret: create one named `nebius-api-key` whose payload key is
-`NEBIUS_API_KEY`, then, from this folder:
+On the real robot the postman's brain would run on its Jetson Thor. Here one Nebius Serverless
+AI Job on one GPU stands in for that computer, a container that plays both acts and ends. vLLM
+serves a Nemotron on the job's GPU, on 127.0.0.1 only. The postman's `quackd run` beside it
+holds the postman's key, serves its passport, judges the duck's, takes its talk, and asks that
+server for every turn, never Token Factory. The duck runs in the same container as a second
+quackd with its own registry, key and port, and its pilot on Token Factory.
+
+The Token Factory key stays in a MysteryBox secret: create one named `nebius-api-key` whose
+payload key is `NEBIUS_API_KEY`. Then, from this folder, give the duck's Token Factory id, the
+postman's model, the GPU, and the flags that model's own card gives vLLM:
 
 ```
-bash deploy/serverless-job.sh <an NVIDIA id from passport-nebius models>
+bash deploy/serverless-job.sh <an NVIDIA id from passport-nebius models> \
+  <an nvidia/ model on Hugging Face> gpu-h100-sxm 1gpu-16vcpu-200gb <its vLLM flags>
 nebius ai job logs <job id> --follow
 ```
 
-The job's log shows the NVIDIA models the key can use, then each act with both robots' runs in
-full. What the container runs is `deploy/doorstep-job.sh`.
+Before any job exists, the script refuses a model outside `nvidia/`, a flag the job sets itself,
+and flags without `--enable-auto-tool-choice` and `--tool-call-parser`, which vLLM needs to
+answer quackd's tool calls. The job's log shows the machine and its GPU, the NVIDIA models the
+key can use, vLLM ready, then each act with both robots' runs in full, the brake included. What
+the container runs is `deploy/doorstep-job.sh`. The model and flags of the run shown here, with
+its log, are added from the real run.
 
 ## Testing this entry
 
 **Without a key.** The tests run offline in a few minutes, against a stand-in for Token Factory
-that serves its documented model list and answers its chat completions:
+that serves its documented model list and answers its chat completions, and a second one for the
+postman's own server:
 
 ```
 uv run pytest
@@ -254,6 +298,15 @@ uv run pytest
   in the stranger act the postman's words arrive and are kept from the duck's model, which is
   told so, and the line saying what the duck's beak cannot do never reaches the postman's
   model; in the appointment act both reach them, and each robot sees the other by its own name.
+* The appointment act with the postman thinking onboard, both keys in the environment as in the
+  job: each robot's turns reach only its own server with its own key, and neither key reaches
+  the other server.
+* The onboard model is the one its server lists, and `--onboard` is refused with `--role duck`,
+  with `--vision` and at Token Factory's own address, before anything is asked.
+* The job's two scripts against stand-in commands: the job made on the GPU given, the key from
+  MysteryBox, every job that could not work refused before it exists, and in the container only
+  this folder taken from the repository, the postman's brain served before any act on a key the
+  job made, and the job ended at once when vLLM dies or is late.
 * The brake in a live act: the postman's pause is granted and the duck holds.
 * Agile ONE SN as a body quackd finds by its entry point: its figures and their source, its
   passport, its two verbs, and a real `quackd run` in which it lays the letter down.
@@ -269,8 +322,8 @@ uv run pytest
 **With a key.** Setup, then the two acts, `explain` on `runs/doorstep/duck-01.jws`, and
 `whois` on a picture or a camera, as above. **On Nebius,** the job.
 
-What is not proven yet: none of it has met Token Factory itself. That run, and its transcripts,
-are added here before submission.
+What is not proven yet: none of it has met Token Factory, vLLM or a Nebius GPU itself. Those
+runs, and their transcripts, are added here before submission.
 
 ## New during the Submission Period
 
