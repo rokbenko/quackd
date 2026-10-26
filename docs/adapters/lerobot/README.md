@@ -199,8 +199,11 @@ on a rented GPU, and never needed by the process that drives the arm:
 uv pip install "quackd[lerobot-vla]"   # LeRobot, torch and transformers, on Python 3.12
 ```
 
-It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,groot,xvla]` with no `[feetech]`,
-since the server never opens a serial port. `doctor` gives it the row
+It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,xvla]` with LeRobot's own pin of
+diffusers and with dm-tree, which a GR00T answers with, rather than LeRobot's
+`[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord, peft and timm are for
+training (`GROOT_INFERENCE_PACKAGES`), and with no `[feetech]`, since the server never opens a
+serial port. `doctor` gives it the row
 `lerobot-vla (transformers)`, read from the installer's metadata so that asking costs no import
 of transformers.
 
@@ -1005,7 +1008,8 @@ Loading one reads before it builds, and refuses rather than guesses:
   pinned model whose directory holds any other kind of file, or whose configs map a class to code
   of their own (`auto_map`), is refused, with a sentence saying to point `HF_HUB_CACHE` at a
   fresh cache. So is one that holds a PEFT adapter (`adapter_config.json`): with peft installed,
-  as GR00T's extra installs it, transformers would load the adapter onto the model, or, with no
+  which the server's extra does not install but LeRobot's own `[peft]` and `[groot]` do,
+  transformers would load the adapter onto the model, or, with no
   `config.json` beside it, load the base model the adapter names, which no pin fixes.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
@@ -3066,6 +3070,7 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `a relative GR00T keeps its state's percentiles in the pack step's raw_stats` | where LeRobot's normaliser keeps none, so the server reads the state's and the action's q01 and q99 from there, group by group, and reports them for the arm's frame check |
 | `LeRobot 0.6.1 serves GR00T N1.7 alone, and refuses N1.5's step names` | so an N1.5 checkpoint, by its steps, its `tokenizer_assets_repo` or its base, is refused in a sentence of its own |
 | `GR00T's pack step feeds every camera in alphabetical order when none is one its video modality keys name` | it pads no missing view, so the arm needs a camera for every image a GR00T looks at, and a checkpoint whose modality keys name an image its config does not is refused |
+| `a GR00T N1.7 answers with diffusers and dm-tree beside what every family needs, and LeRobot's own [groot] extra adds the rest for training` | so the server's extra brings those two, about 25 MB, rather than LeRobot's `[groot]`, about 340 MB, and a GR00T on a server that cannot import either is refused before a pin or a weight, since LeRobot would find out only once the model is built |
 | `overrides={"device_processor": {"device": device}}` | how upstream's own loops put a loaded pre-processor on their device. The server does the same and puts the post-processor's on the CPU, where the answers are read |
 | `lerobot.utils.device_utils.auto_select_torch_device()` | the device a checkpoint is loaded on, and whether the server says it has a GPU |
 | `DataProcessorPipeline.reset()` | the policy and both processors are reset at every session's reset, as upstream's own loop does |

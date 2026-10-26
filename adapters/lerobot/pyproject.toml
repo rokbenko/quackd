@@ -23,11 +23,17 @@ sdk = ["lerobot[feetech]>=0.6; python_version >= '3.12'"]
 sim = ["mujoco>=3.12,<4"]
 # The policy server's, `quackd policy serve --policy REPO@REVISION`, in a process of its own and
 # never the arm's: LeRobot with torch, and the extras of every type the server serves that has
-# one, `[smolvla]`, `[pi]` for pi05 and pi0, `[groot]` and `[xvla]`, which bring the transformers
-# their tokenizers load with and GR00T's own dependencies, decord on x86 alone. No `[feetech]`,
-# since the server never opens a serial port. A pi05, a pi0 or a GR00T also wants a Hub token
-# for its gated tokenizer (docs/adapters/lerobot/README.md).
-vla = ["lerobot[smolvla,pi,groot,xvla]>=0.6,<0.7; python_version >= '3.12'"]
+# one, `[smolvla]`, `[pi]` for pi05 and pi0 and `[xvla]`, which bring the transformers their
+# tokenizers load with. A GR00T answers with diffusers and dm-tree besides, so those two come
+# here rather than LeRobot's `[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord,
+# peft and timm, about 340 MB, are for training (upstream_api.GROOT_INFERENCE_PACKAGES).
+# `[diffusers-dep]` is LeRobot's own pin of diffusers, and dm-tree's is the one its `[groot]`
+# takes. No `[feetech]`, since the server never opens a serial port. A pi05, a pi0 or a GR00T
+# also wants a Hub token for its gated tokenizer (docs/adapters/lerobot/README.md).
+vla = [
+  "lerobot[smolvla,pi,xvla,diffusers-dep]>=0.6,<0.7; python_version >= '3.12'",
+  "dm-tree>=0.1.8,<1.0.0; python_version >= '3.12'",
+]
 
 [project.entry-points."quackd.adapters"]
 lerobot = "quackd_lerobot"

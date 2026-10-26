@@ -736,8 +736,9 @@ server reads before it builds:
   processor step names, comes without its weights, and a backbone the checkpoint's config names
   comes with them. Its directory in the Hub's cache is refused if it holds any other kind of
   file, or a config that maps a class to code, with a sentence saying to point `HF_HUB_CACHE` at
-  a fresh cache. One that holds a PEFT adapter is refused too, since GR00T's extra installs
-  peft, and with it transformers would load the adapter onto the model.
+  a fresh cache. One that holds a PEFT adapter is refused too, since with peft installed,
+  which LeRobot's own `[peft]` and `[groot]` extras bring, transformers would load the
+  adapter onto the model.
 - Every weight is loaded strictly, or the server refuses to start.
 - Every repository loaded, and the revision it was loaded at, is in `/v1/policy` and in the
   run's record.
