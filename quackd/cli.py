@@ -5248,9 +5248,11 @@ def _endpoint_resume(ep: Any, api: Any, store: Any, record: Any, *, yes: bool) -
     scaled to zero with a request to its health route at its address, recorded first when the
     record holds none (`endpoint.hold_address`), each after asking, since it bills again, and
     leave one that is starting or running to the wait. One that failed is said with its log and
-    its message, every token taken out, and not waited for. It is read first and held to the
-    record (`endpoint.confirm`), so one by that name that this machine's `up` did not start is
-    left as it is. The record comes back, with any address it gained."""
+    its message, every token taken out, and not waited for. A resume whose answer is lost, with
+    no answer or a 5xx, may have taken all the same, so the endpoint is paused again rather than
+    left starting. It is read first and held to the record (`endpoint.confirm`), so one by that
+    name that this machine's `up` did not start is left as it is. The record comes back, with
+    any address it gained."""
     api.also_scrub(record.token)
     found = ep.confirm(api, record)
     if found is None:
@@ -5273,7 +5275,14 @@ def _endpoint_resume(ep: Any, api: Any, store: Any, record: Any, *, yes: bool) -
         doing = "resume" if state == ep.PAUSED else "wake"
         _ask_or_refuse(ep.confirmation(record, compute, doing=doing), yes)
         if state == ep.PAUSED:
-            api.resume(record.namespace, record.name)
+            try:
+                api.resume(record.namespace, record.name)
+            except ep.EndpointError as e:
+                if e.status is not None and 400 <= e.status < 500:
+                    raise  # refused, so nothing was resumed
+                # no answer, or a 5xx, may come after Hugging Face resumed it all the same
+                why = f"{str(e).rstrip('.')}, and it may have resumed all the same"
+                _paused_and_quoted(ep, api, record, why)
         elif url is not None:
             record = ep.hold_address(store, record, url)
             api.health(url)  # a request wakes it, and --no-wait sends no other

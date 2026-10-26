@@ -948,8 +948,10 @@ def create_endpoint(
     endpoint was made, and forgetting the record then would leave one billing that this machine
     has no token for and cannot reach. So the endpoint is read: one that is there, with the tags
     this record gave it, is taken as created, the record kept, and what became of the answer
-    comes back for `up` to say; one that is not there forgets the record and raises the failure;
-    and one that cannot be read keeps the record, saying `up` finds out and `delete` removes it."""
+    comes back for `up` to say; one by that name without them is another's, so this create made
+    nothing and the record is forgotten; and when there is none yet, or it cannot be read, the
+    record is kept, since Hugging Face may still be making it, and the refusal says `up` finds
+    out and `delete` forgets it."""
     api.also_scrub(record.token)
     store.save(record)
     try:
@@ -974,8 +976,11 @@ def create_endpoint(
             f"{record.name} finds out, and delete {record.name} removes it"
         ) from None
     if found is None:
-        store.forget(record.name)
-        raise lost
+        raise EndpointError(
+            f"{str(lost).rstrip('.')}, and Hugging Face has no {record.name} yet, which it may "
+            "still be making, so this machine keeps its record and its token: quackd policy "
+            f"endpoint up {record.name} finds out, and delete {record.name} forgets it"
+        ) from None
     return str(lost)
 
 

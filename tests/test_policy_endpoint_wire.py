@@ -354,8 +354,9 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
 ) -> None:
     """A 504, or no answer at all, may come after the endpoint was made, and forgetting the
     record then would leave one billing that this machine has no token for. So the endpoint is
-    read: made, the record is kept and up goes on; not made, the record is forgotten; and when
-    that read fails too, the record is kept and up says how to find out."""
+    read: made, the record is kept and up goes on; not there yet, or a read that fails too, and
+    the record is kept, since Hugging Face may still be making it, and up says how to find out.
+    Once there is none, delete forgets it."""
     real = FakeAPI._create
     after = {"create": False}
 
@@ -387,7 +388,11 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
         assert secrets[wire.TOKEN_ENV] == kept.token
     elif made == "not made":
         assert result.exit_code == 1 and "would not create arm (HTTP 504)" in said, said
-        assert kept is None and ("rok", "arm") not in hf.endpoints
+        assert "Hugging Face has no arm yet, which it may still be making" in said
+        assert kept is not None and ("rok", "arm") not in hf.endpoints
+        forgot = _cli("policy", "endpoint", "delete", "arm", "--yes")
+        assert forgot.exit_code == 0 and "Hugging Face had no arm on rok" in _flat(forgot.output)
+        assert _store().get("arm") is None
     else:
         assert result.exit_code == 1, said
         assert "whether arm was created could not be read either" in said
@@ -721,6 +726,29 @@ def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
     assert "Traceback: argv held <token>" in said
     assert record.token not in result.output and "\x1b" not in result.output
     assert "x" * 400 not in said.replace(" ", ""), "the message was not cut"
+
+
+def test_a_resume_whose_answer_is_lost_pauses_the_endpoint_again(
+    hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 504 may come after Hugging Face resumed the endpoint, and one left starting bills until it
+    idles to zero, so it is paused again, saying so, rather than left."""
+    assert _cli(*UP, "--yes").exit_code == 0
+    assert _cli("policy", "endpoint", "pause", "arm").exit_code == 0
+    real = FakeAPI._endpoint
+
+    def lost(self: FakeAPI, method: str, path: list[str], seen: Any, query: Any) -> Any:
+        said = real(self, method, path, seen, query)
+        if method == "POST" and path[-1:] == ["resume"]:
+            return 504, {"Content-Type": "text/plain"}, b"Gateway Timeout"
+        return said
+
+    monkeypatch.setattr(FakeAPI, "_endpoint", lost)
+    result = _cli("policy", "endpoint", "up", "arm", "--yes")
+    said = _flat(result.output)
+    assert result.exit_code == 1 and "would not resume arm (HTTP 504)" in said, said
+    assert "and it may have resumed all the same, so it was paused, and bills nothing now" in said
+    assert hf.endpoints[("rok", "arm")].state == "paused"
 
 
 def test_up_again_with_anything_other_than_what_it_was_started_with_is_refused(
