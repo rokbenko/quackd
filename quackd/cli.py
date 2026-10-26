@@ -47,6 +47,7 @@ from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 if TYPE_CHECKING:  # every heavy module is imported inside the command that needs it
     from quackd.adapters.base import RestResult
     from quackd.adapters.factory import RobotSpec
+    from quackd.front import Front
     from quackd.safety import KillSwitch
 
 app = typer.Typer(
@@ -689,6 +690,8 @@ def _fail(msg: str, code: int = 1, *, hint: str | None = None) -> None:
     The message routinely names an extra (`quackd[anthropic]`) or a model's own brackets, so
     it travels as text rather than as markup Rich would eat."""
     ui.err_console.print(ui.fail_line(msg, hint=hint))
+    if _FRONT is not None and _FRONT.outcome is None:
+        _FRONT.refused(msg, hint)
     raise typer.Exit(code=code)
 
 
@@ -1451,6 +1454,63 @@ class _TerminalHandOff:
         return fresh_press()
 
 
+_FRONT: Front | None = None
+"""The page's end of this command, under the hidden `--front jsonl` that `quackd ui` starts
+its runs with, or None at a terminal (`quackd.front`). Module level for the reason `_SWITCH`
+is: the refusals and the prompts it changes are plain functions with no handle to pass it."""
+
+FRONTS = ("terminal", "jsonl")
+
+_FRONT_OPTION = typer.Option(
+    "terminal",
+    "--front",
+    hidden=True,
+    help="Who the command talks to: terminal, or jsonl for a program on the other end of a "
+    "pipe, which is how the page quackd ui drives it.",
+)
+
+
+def _fronted(command: str, front: str, body: Callable[[], None]) -> None:
+    """Run `body` behind the front end `front` names: the terminal, as always, or the page.
+
+    Behind the page, the protocol owns stdout from the first line, and whatever happens, a
+    refusal, a run's end, a crash or a second Stop, the last line it gets is one `end` naming the
+    outcome and the exit code the process is about to leave with."""
+    global _FRONT
+    choice = (front or "").strip().lower() or FRONTS[0]
+    if choice not in FRONTS:
+        _fail(f"--front is {' or '.join(FRONTS)}, not {front!r}")
+        return
+    if choice == "terminal":
+        body()
+        return
+    from quackd.front import Front
+
+    opened = Front.open(command)
+    _FRONT = opened
+    code = 0
+    fallback: str | None = None
+    try:
+        body()
+    except typer.Exit as e:
+        code = e.exit_code
+        raise
+    except KeyboardInterrupt:
+        # the page's second Stop, which quits at once as a second Ctrl-C does
+        code = 1
+        if opened.outcome is None or opened.outcome.get("outcome") == "refused":
+            opened.outcome = {"outcome": "aborted", "reason": "quit at once from the page"}
+        raise
+    except BaseException as e:
+        code = 1
+        opened.errored(f"{type(e).__name__}: {e}")
+        fallback = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        _FRONT = None
+        opened.end(code, fallback=fallback)
+
+
 _SWITCH: KillSwitch | None = None
 """The kill switch of the run that is going on, or None outside one.
 
@@ -1472,6 +1532,10 @@ def _ask(question: str) -> bool:
     the question goes out raw and the answer is echoed by the terminal driver, so a tee on
     quackd's own output sees the asking and not the answering. A run with `--yes` never
     reaches here, which is why a recorded question always means a person was really asked."""
+    if _FRONT is not None:
+        # every question a run driven from the page puts goes to the page, and a prompt here
+        # would read the page's own lines off stdin (`quackd.front`)
+        raise RuntimeError("a run driven from the page puts no question to a terminal")
     switch = _SWITCH
     if switch is None:
         agreed = typer.confirm(question, default=False)
@@ -1515,6 +1579,73 @@ def _judge_prompt(why: str) -> bool:
         return _ask("Did the arm do it?")
 
 
+def _someone_to_ask() -> bool:
+    """A person to put a run's questions to: at the page the run is driven from, or at a
+    terminal."""
+    return _FRONT is not None or _can_prompt()
+
+
+def _front_refusal(
+    *, by_hand: bool, flock: str | None, robots: str | None, duck: Any, specs: Sequence[Any]
+) -> tuple[str, str] | None:
+    """Why the page cannot drive this run, as a sentence and a hint, or None.
+
+    The page drives one robot and puts its questions in the page. `--by-hand` waits for Enter
+    from somebody at the arm, and a flock runs every member behind a kill switch of its own,
+    which no Stop in the page would reach, so each is refused before anything is built."""
+    if by_hand:
+        return (
+            "--by-hand waits for somebody at the arm to press Enter, and this run is driven "
+            "from the page",
+            "run it from a terminal, or drop --by-hand and start from the rest pose",
+        )
+    if flock is not None or robots:
+        return (
+            "the page drives one robot at a time, and "
+            f"{'--flock' if flock is not None else '--robots'} names several",
+            "run a flock from a terminal",
+        )
+    if duck is not None and duck.frontmatter.flock is not None:
+        return (
+            f"{duck.name} is a task for a flock, and the page drives one robot at a time",
+            "run it from a terminal",
+        )
+    if len(specs) > 1:
+        return (
+            "the page drives one robot at a time, and this task names several",
+            "run it from a terminal",
+        )
+    return None
+
+
+def _warn(text: str) -> None:
+    """A warning said before a run starts: on the terminal as always, and to the page as a
+    notice where one is reading (`quackd.front`)."""
+    ui.console.print(_warn_line(text), soft_wrap=True)
+    if _FRONT is not None:
+        _FRONT.notice(text)
+
+
+def _frame_hook(recorder: Any, front: Front | None) -> Any:
+    """The run's frame callback: the GIF recorder's, the page's, both, or none."""
+    hooks = [
+        hook
+        for hook in (
+            recorder.capture if recorder is not None else None,
+            front.frame if front is not None else None,
+        )
+        if hook is not None
+    ]
+    if len(hooks) < 2:
+        return hooks[0] if hooks else None
+
+    def both(image: Any, caption: str) -> None:
+        for hook in hooks:
+            hook(image, caption)
+
+    return both
+
+
 def _a_person_is_there() -> bool:
     """`_can_prompt` looked up now rather than bound now, because it is the seam the tests
     replace and a reference taken at import would not see the replacement."""
@@ -1553,7 +1684,7 @@ def _vla_refusal(
             "and --yes answers every question without asking anybody",
             "drop --yes: a vla run asks you before its first segment and after its last",
         )
-    if not _can_prompt():
+    if not _someone_to_ask():
         return (
             "--controller vla asks a person whether the arm did the task, and there is no "
             "terminal to ask on",
@@ -1710,7 +1841,7 @@ def _run_impl(
     )
     from quackd.perception import DETECTOR_CHOICES, detector_for, explicit_detector
     from quackd.registry import RegistryError, Resolved, no_rest_pose_refusal
-    from quackd.safety import KillSwitch, allow_all
+    from quackd.safety import Aborted, KillSwitch, allow_all
     from quackd.transport.base import TransportError
 
     if (duckfile is None) == (goal is None):
@@ -1817,6 +1948,13 @@ def _run_impl(
     except (DuckParseError, TransportError, RegistryError) as e:
         _fail(str(e))
         return
+    if _FRONT is not None:
+        refused = _front_refusal(
+            by_hand=by_hand, flock=flock, robots=robots, duck=duck, specs=specs
+        )
+        if refused is not None:
+            _fail(refused[0], hint=refused[1])
+            return
     if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
         # Here rather than with the flags above, which run before the file is read, and before
         # the instructions, which a played file would otherwise be sent to add first. The
@@ -2400,10 +2538,7 @@ def _run_impl(
         available, why = decision_llm_is_available(chosen, url=decision_url)
         if not available:
             # and with no decision LLM, no frame goes anywhere either
-            ui.console.print(
-                _warn_line(f"--decision-llm {chosen.name} asked for, running without it: {why}"),
-                soft_wrap=True,
-            )
+            _warn(f"--decision-llm {chosen.name} asked for, running without it: {why}")
             decision = "off"
             frames = False
         else:
@@ -2422,10 +2557,7 @@ def _run_impl(
                 watch = (
                     "watch" in described.verb_names() and "watch" in duck.frontmatter.verbs.allow
                 )
-                ui.console.print(
-                    _warn_line(_frames_notice(decision, decision_pilot.url, watch=watch)),
-                    soft_wrap=True,
-                )
+                _warn(_frames_notice(decision, decision_pilot.url, watch=watch))
     if "watch" in duck.frontmatter.effective_requires and not frames:
         # A task that needs `watch` on a run with nothing for it to look through is refused here,
         # before the robot connects, rather than by the loop once it has (`withdraw_watch`).
@@ -2443,7 +2575,7 @@ def _run_impl(
         # Refusing the flag over that would be the wrong shape of gate, because the executor
         # binds a stepper-authored call exactly as it binds the model's. Saying it once, where
         # the person switching it on is looking, is the right size of one.
-        ui.console.print(_warn_line(_DECISION_MODE_ON_UNMEASURED), soft_wrap=True)
+        _warn(_DECISION_MODE_ON_UNMEASURED)
     if task_images and not pilot.supports_vision:
         # Refused rather than dropped. A pilot that cannot see would be handed "draw what is
         # in the picture" with no picture, improvise something, and the only sign of why would
@@ -2520,26 +2652,29 @@ def _run_impl(
     if talk or meet:
         ref = here.entry.name if here.entry is not None else f"{spec.adapter}:{spec.backend}"
         nearby, talk_server = _talk_for_run(ref, meet, registry_dir, port=talk_port)
+    front = _FRONT
     cfg = RunConfig(
         duck=duck,
         provider=pilot,
         transport=duck_transport,
         detector=detector,
         dry_run=dry_run,
-        confirm=allow_all if yes else _confirm_prompt,
+        confirm=allow_all if yes else (front.confirm if front is not None else _confirm_prompt),
         runs_dir=runs_dir,
         run_name=run_name,
         price=price,
         max_steps=max_steps,
         log=log,
-        on_frame=recorder.capture if recorder is not None else None,
+        on_frame=_frame_hook(recorder, front),
         memory=robot_memory,
         fov_deg=fov_deg,
-        acknowledge=None if yes else _acknowledge_prompt,
-        decide=_yes_to_go if yes else _decide_prompt,
+        acknowledge=None
+        if yes
+        else (front.acknowledge if front is not None else _acknowledge_prompt),
+        decide=_yes_to_go if yes else (front.decide if front is not None else _decide_prompt),
         # only the vla pilot asks, and it never runs with --yes, so there is no standing answer
-        judge=_judge_prompt if vla else None,
-        view=fan_out(console_log, status.sink),
+        judge=(front.judge if front is not None else _judge_prompt) if vla else None,
+        view=fan_out(console_log, status.sink, front.view if front is not None else None),
         task_images=task_images,
         hand_off=hand_off,
         person=person,
@@ -2550,6 +2685,7 @@ def _run_impl(
         play=play,
         decision_frames=frames,
         nearby=nearby,
+        front="jsonl" if front is not None else None,
     )
     # Nothing is left that can refuse the run, and the body is connected next, so this is
     # where a backend its adapter is retiring is said, above the header as the root callback's
@@ -2578,7 +2714,9 @@ def _run_impl(
                 talk=nearby.inbox if nearby is not None else None,
                 effort=effort,
             ),
-            hint="Ctrl-C or q stops the duck. Press it twice to quit at once.",
+            hint="Ctrl-C or q stops the duck. Press it twice to quit at once."
+            if front is None
+            else "Stop in the page stops the duck.",
         )
     )
 
@@ -2602,6 +2740,15 @@ def _run_impl(
         # The first moment there is a directory to write into. Everything printed before
         # now went into the capture's buffer and is carried across by `attach`.
         ui.attach_capture(loop.run_dir)
+        if front is not None:
+            # the page's Stop sets this loop's abort as the kill switch's first press does,
+            # and nothing reads the terminal: no switch, no key thread
+            front.run_dir(loop.run_dir)
+            front.bind(loop, asyncio.get_running_loop())
+            try:
+                return await loop.run()
+            finally:
+                front.unbind()
         ks = KillSwitch(loop.executor.abort, log=killed)
         if hand_off is not None:
             hand_off.bind(ks)
@@ -2620,9 +2767,18 @@ def _run_impl(
         with status:
             status.update(f"connecting to {here.label}")
             result = asyncio.run(main())
+    except Aborted as e:
+        # Before the first step: nobody said they were watching a robot that cannot see a
+        # fall, or nobody answered. The loop has parked the body; this is the one-line verdict.
+        if front is not None:
+            front.finished("aborted", str(e), run_dir=ran[0].run_dir if ran else None)
+        _fail(str(e))
+        return
     except (TransportError, ProviderError) as e:
         # the log has already shown the call that failed; this is the one-line verdict
         summary = getattr(ran[0], "summary", None) if ran else None
+        if front is not None:
+            front.errored(str(e))
         if isinstance(summary, Mapping) and "llm_retries" in summary:
             # A run that waited to ask the model's API again, and gave up, says beside its
             # verdict what the waiting cost, as a run that ended any other way does under its
@@ -2642,6 +2798,10 @@ def _run_impl(
         with ui.spinner(f"encoding {len(recorder.frames)} frames into run.gif"):
             gif_path = recorder.save_gif(result.run_dir / "run.gif")
         result.gif_path = gif_path
+    if front is not None:
+        front.finished(
+            result.outcome, result.reason, run_dir=result.run_dir, summary=result.summary
+        )
     _print_outcome(
         result.outcome,
         result.reason,
@@ -3784,8 +3944,119 @@ def run(
     registry_dir: str | None = _REGISTRY_DIR,
     log: bool | None = _LOG,
     log_prompt: bool | None = _LOG_PROMPT,
+    front: str = _FRONT_OPTION,
 ) -> None:
     """Run a .duck file (or a --goal): the LLM picks verbs, quackd enforces the contract."""
+    _fronted(
+        "run",
+        front,
+        lambda: _run_command(
+            duckfile=duckfile,
+            goal=goal,
+            image=image,
+            by_hand=by_hand,
+            llm=llm,
+            robot=robot,
+            robots=robots,
+            seed=seed,
+            dry_run=dry_run,
+            max_steps=max_steps,
+            play=play,
+            runs_dir=runs_dir,
+            yes=yes,
+            live=live,
+            address=address,
+            camera_url=camera_url,
+            token=token,
+            fov_deg=fov_deg,
+            host=host,
+            host_token=host_token,
+            detector=detector,
+            policy_url=policy_url,
+            policy_token=policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
+            gif=gif,
+            gif_size=gif_size,
+            verbose=verbose,
+            base_url=base_url,
+            api_key=api_key,
+            vision=vision,
+            extra_body=extra_body,
+            effort=effort,
+            decision_llm=decision_llm,
+            decision_url=decision_url,
+            decision_mode=decision_mode,
+            decision_frames=decision_frames,
+            controller=controller,
+            flock=flock,
+            talk=talk,
+            meet=meet,
+            talk_port=talk_port,
+            run_name=run_name,
+            price=price,
+            memory=memory,
+            memory_dir=memory_dir,
+            registry_dir=registry_dir,
+            log=log,
+            log_prompt=log_prompt,
+        ),
+    )
+
+
+def _run_command(
+    *,
+    duckfile: str | None,
+    goal: str | None,
+    image: list[str],
+    by_hand: bool,
+    llm: str | None,
+    robot: str | None,
+    robots: str | None,
+    seed: int | None,
+    dry_run: bool,
+    max_steps: int | None,
+    play: bool | None,
+    runs_dir: str,
+    yes: bool,
+    live: bool,
+    address: str | None,
+    camera_url: list[str],
+    token: str | None,
+    fov_deg: float | None,
+    host: str | None,
+    host_token: str | None,
+    detector: str | None,
+    policy_url: str | None,
+    policy_token: str | None,
+    accept_other_frame: bool,
+    async_chunks: bool,
+    gif: bool,
+    gif_size: int,
+    verbose: bool,
+    base_url: str | None,
+    api_key: str | None,
+    vision: bool | None,
+    extra_body: str | None,
+    effort: str | None,
+    decision_llm: str | None,
+    decision_url: str | None,
+    decision_mode: str | None,
+    decision_frames: bool | None,
+    controller: str | None,
+    flock: str | None,
+    talk: bool,
+    meet: list[str],
+    talk_port: int,
+    run_name: str | None,
+    price: str | None,
+    memory: bool,
+    memory_dir: str | None,
+    registry_dir: str | None,
+    log: bool | None,
+    log_prompt: bool | None,
+) -> None:
+    """`quackd run`'s body, the same behind either front end."""
     with _terminal_record():
         _run_impl(
             duckfile,
@@ -4361,9 +4632,56 @@ def drive_cmd(
     dry_run: bool = _DRY,
     runs_dir: str = _RUNS,
     run_name: str | None = _RUN_NAME,
+    front: str = _FRONT_OPTION,
 ) -> None:
     """Drive one robot, one command at a time: a verb of its own, a preset such as `forward`
     or `turn left`, or a goal in your own words for the pilot. Enter on its own brakes."""
+    _fronted(
+        "drive",
+        front,
+        lambda: _drive_command(
+            robot=robot,
+            registry_dir=registry_dir,
+            address=address,
+            camera_url=camera_url,
+            token=token,
+            host=host,
+            host_token=host_token,
+            detector=detector,
+            seed=seed,
+            llm=llm,
+            decision_llm=decision_llm,
+            decision_url=decision_url,
+            duckfile=duckfile,
+            yes=yes,
+            dry_run=dry_run,
+            runs_dir=runs_dir,
+            run_name=run_name,
+        ),
+    )
+
+
+def _drive_command(
+    *,
+    robot: str | None,
+    registry_dir: str | None,
+    address: str | None,
+    camera_url: list[str],
+    token: str | None,
+    host: str | None,
+    host_token: str | None,
+    detector: str | None,
+    seed: int | None,
+    llm: str | None,
+    decision_llm: str | None,
+    decision_url: str | None,
+    duckfile: str | None,
+    yes: bool,
+    dry_run: bool,
+    runs_dir: str,
+    run_name: str | None,
+) -> None:
+    """`quackd drive`'s body, the same behind either front end."""
     from quackd.adapters.base import AdapterError
     from quackd.agent.decision.base import DecisionError
     from quackd.agent.providers.base import ProviderError
@@ -4392,8 +4710,12 @@ def drive_cmd(
         run_name=run_name,
     )
 
+    front = _FRONT
+
     def say(line: str) -> None:
         ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
+        if front is not None:
+            front.say(line)
 
     # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
     # keyboard opens, and what it reads is recorded as a person's, is decided as every question
@@ -4406,7 +4728,7 @@ def drive_cmd(
             "a time and each waited for, as from a pipe"
         )
     try:
-        run_dir = asyncio.run(run_drive(args, say=say, keyboard=keyboard))
+        run_dir = asyncio.run(run_drive(args, say=say, keyboard=keyboard, front=front))
     except (
         DriveError,
         ProviderError,
@@ -4418,6 +4740,13 @@ def drive_cmd(
     ) as e:
         _fail(str(e))
         return
+    except SystemExit as e:
+        # `fleet_from_flags` refuses a robot it cannot build with a sentence of its own, which
+        # behind the page is the page's refusal; at a terminal it leaves as it always has
+        if front is not None and isinstance(e.code, str):
+            _fail(e.code)
+            return
+        raise
     say(f"{'record':<8} {run_dir}")
 
 
@@ -5845,7 +6174,12 @@ def _can_prompt() -> bool:
     `isatty` alone is not that on Windows, where it says yes to NUL, because NUL is a character
     device: a script or a scheduled task started with its input from NUL was asked every
     question, answered each with end-of-input, and had its record name a person who answered.
-    Only a console has a console mode, so on Windows that is asked as well."""
+    Only a console has a console mode, so on Windows that is asked as well.
+
+    Behind the page it is never one, whatever stdin is: the page's lines arrive there, and the
+    page puts a run's questions itself (`_someone_to_ask`)."""
+    if _FRONT is not None:
+        return False
     return _is_a_console(sys.stdin)
 
 

@@ -1,4 +1,4 @@
-"""drive's front ends: the keyboard, through prompt_toolkit, and a pipe or a file.
+"""drive's front ends: the keyboard, through prompt_toolkit, a pipe or a file, and the page.
 
 The keyboard never waits on a command: a line goes to the session as Enter is pressed and the
 prompt is back at once, so a person can type over a walk, and an empty Enter or Ctrl-C brakes
@@ -7,7 +7,8 @@ kick(leg=left)?", is answered by a `y` or an `n` typed next, and any other line 
 command, which drops it. A pipe reads one line, waits for that command to end, and reads the
 next, so a captured session is the same every time, and a question put to it is answered no:
 nobody is there to answer it. Neither installs the kill switch, whose `q` would end a session at
-"quack".
+"quack". The page (`quackd ui`, through `quackd.front`) takes lines as the keyboard does, each the
+moment it arrives, and puts a question to the person at the page, by id, to answer there.
 
 prompt_toolkit is imported here and nowhere else in quackd, and only when the keyboard is used.
 """
@@ -17,11 +18,14 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
-from collections.abc import Callable
-from typing import Any, TextIO
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, TextIO
 
 from quackd.drive.lanes import answer_word, is_brake, session_word
 from quackd.drive.session import Command, DriveSession
+
+if TYPE_CHECKING:
+    from quackd.front import Front
 
 QUIT_AGAIN_S = 1.5
 """A second Ctrl-C within this many seconds of the first ends the session, in order: the robot
@@ -147,6 +151,88 @@ async def drive_from_keyboard(
             if session_word(line) in ENDS:
                 break
     # ended rather than waited for: a walk still going when the person quit is stopped
+    await session.close()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+class PageAsker:
+    """A yes-or-no question put to the person at the page, who answers it there, by its id.
+
+    Never answered by a line: the page answers with an `answer` op naming the question, so a line
+    typed into the chat is always a command, and a brake or a newer line drops the question as
+    it drops one at the keyboard. It waits as long as the keyboard's does: nothing blocks while it
+    waits, and a session nobody watches is ended by the page."""
+
+    def __init__(self, front: Front, say: Callable[[str], None]) -> None:
+        self.front = front
+        self.say = say
+
+    async def __call__(self, question: str) -> bool:
+        self.say(f"{'ask':<8} {question} [answered in the page]")
+        return await self.front.questions.ask_async("drive", question)
+
+
+async def drive_from_jsonl(
+    session: DriveSession,
+    front: Front,
+    ops: asyncio.Queue[Mapping[str, Any]],
+    *,
+    say: Callable[[str], None] = print,
+) -> None:
+    """The page's ops until it quits, its input ends, or a second Stop ends the session.
+
+    `ops` is filled from the page's reader thread from the moment the session began, so a line
+    sent while the robot was still connecting is waiting here, not lost. A line goes to the
+    session at once, a person's on the channel the page's answers are recorded under, and a Stop
+    brakes; `quit`, the end of the page's input and a second Stop end the session in order."""
+    from quackd.front import CHANNEL
+
+    tasks: set[asyncio.Task[None]] = set()
+
+    async def tell(cmd: Command) -> None:
+        await asyncio.wait({cmd.ended})
+        if cmd.routed.done() and cmd.ended.done():
+            routed, ended = cmd.routed.result(), cmd.ended.result()
+            front.send(
+                "command",
+                n=cmd.n,
+                text=cmd.text,
+                lane=routed.lane,
+                label=routed.label or None,
+                note=routed.note or None,
+                latency_ms=routed.latency_ms,
+                outcome=ended.outcome,
+                summary=ended.summary,
+            )
+        for out in told(cmd):
+            say(out)
+
+    while True:
+        op = await ops.get()
+        name = op.get("op")
+        if name == "line":
+            line = str(op.get("text") or "")
+            cmd = session.submit(line, by="person", channel=CHANNEL)
+            task = asyncio.ensure_future(tell(cmd))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+            if session_word(line) in ENDS:
+                break
+        elif name == "stop":
+            session.brake("Stop in the page", channel=CHANNEL)
+            if op.get("now") is True:
+                # the second Stop: the session ends, in order, as two Ctrl-C end it
+                break
+        elif name == "quit":
+            break
+        elif name == "end":
+            # nobody pressed anything: the page's input ended, as a pipe's does
+            session.brake("the page went away", channel=CHANNEL, by="cli")
+            break
+        else:
+            front.notice(f"quackd drive takes line, stop, quit and answer, not {name!r}")
+    # ended rather than waited for: a walk still going when the page quit is stopped
     await session.close()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)

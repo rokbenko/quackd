@@ -9,20 +9,24 @@ MCP session has. The record is a run directory of its own, `runs/<stamp>-drive[-
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 from quackd import __version__
 from quackd.drive.lanes import BRAKE_WORDS
 from quackd.drive.session import Answered, DriveSession
 from quackd.duckfile.parser import duck_from_goal
 from quackd.duckfile.schema import Budgets, DuckFile
+
+if TYPE_CHECKING:
+    from quackd.front import Front
 
 GOAL_VERBS_SAFE = "safe"
 """A goal gets the body's safe verbs, as `quackd run --goal` gives one."""
@@ -98,8 +102,12 @@ async def run_drive(
     say: Callable[[str], None] = print,
     stream: TextIO | None = None,
     keyboard: bool | None = None,
+    front: Front | None = None,
 ) -> Path:
-    """Drive one robot until the person quits, and return the session's run directory."""
+    """Drive one robot until the person quits, and return the session's run directory.
+
+    `front` is the page's end of the session (`quackd.front`), where the page drives it: lines
+    and Stops come from there, questions go there, and every record is read there too."""
     from quackd.adapters.base import backend_name
     from quackd.agent.decision.factory import (
         decision_llm_is_available,
@@ -115,6 +123,18 @@ async def run_drive(
     from quackd.registry import Registry, resolve_robot_ref
     from quackd.safety import Budget, Executor, Heartbeat
     from quackd.verbs.registry import default_registry
+
+    ops: asyncio.Queue[Mapping[str, Any]] = asyncio.Queue()
+    if front is not None:
+        # from the first moment, so a line or a Stop the page sends while the robot is still
+        # connecting waits for the session rather than being lost
+        loop = asyncio.get_running_loop()
+
+        def take(op: Mapping[str, Any]) -> None:
+            with contextlib.suppress(RuntimeError):  # the loop has closed: the session is over
+                loop.call_soon_threadsafe(ops.put_nowait, op)
+
+        front.attach_drive(take)
 
     plan = fleet_from_flags(
         robot=args.robot,
@@ -154,13 +174,24 @@ async def run_drive(
 
     run_dir = new_run_dir(args.runs_dir, "drive", _slug(args.run_name) if args.run_name else None)
     transcript = Transcript(run_dir)
+    if front is not None:
+        front.run_dir(run_dir)
     sessions: list[DriveSession] = []
+
+    def record(kind: str, **data: Any) -> None:
+        """The session's own records, written beside the event log rather than through it, and
+        read by the page as they are written where one drives the session."""
+        transcript.write(kind, **data)
+        if front is not None:
+            front.record(kind, data)
 
     def observe(event: LogEvent) -> None:
         if event.kind == "intent" and sessions:
             sessions[0].saw_intent(str(event.data.get("intent")), bool(event.data.get("accepted")))
 
-    event_log = EventLog(record=transcript.sink, observers=[observe])
+    event_log = EventLog(
+        record=transcript.sink, observers=[observe] if front is None else [observe, front.view]
+    )
     detector = plan.detector
     if detector is None and backend_name(adapter) in ("sim2d", "mujoco"):
         from quackd.perception.color_blob import ColorBlobDetector
@@ -227,23 +258,33 @@ async def run_drive(
             chooser = CommandChooser(
                 chooser_llm, offers_for(verbs, presets_for(executor.manifest, verbs), gated), blurb
             )
-        from quackd.drive.terminal import Asker, drive_from_keyboard, drive_from_pipe
+        from quackd.drive.terminal import (
+            Asker,
+            PageAsker,
+            drive_from_jsonl,
+            drive_from_keyboard,
+            drive_from_pipe,
+        )
 
-        at_keyboard = keyboard if keyboard is not None else (stream is None and sys.stdin.isatty())
+        at_keyboard = front is None and (
+            keyboard if keyboard is not None else (stream is None and sys.stdin.isatty())
+        )
         asker = Asker(say) if at_keyboard else None
         drive = DriveSession(
             robot,
-            record=transcript.write,
+            record=record,
             chooser=chooser,
             pilot=pilot,
             goals=run_dir / "goals",
             goal_verbs=goal_verbs,
-            ask=asker,
+            ask=PageAsker(front, say) if front is not None else asker,
             yes=args.yes,
+            goal_view=front.goal_view if front is not None else None,
+            goal_frames=front.frame if front is not None else None,
         )
         sessions.append(drive)
         await drive.prepare()
-        transcript.write(
+        record(
             "run_start",
             duck="drive",
             # the pilot a goal is flown by, as the header of every run names its own
@@ -260,9 +301,14 @@ async def run_drive(
                 "decision_llm": getattr(chooser_llm, "name", None),
                 "pilot": vendor,
             },
+            # the front end the session's lines came through, only where it was not a
+            # terminal, so every record from a terminal reads as it did (`quackd.front`)
+            **({"front": "jsonl"} if front is not None else {}),
         )
         say(f"{'drive':<8} {name}: type a command, a goal, or help; Enter brakes")
-        if at_keyboard and asker is not None:
+        if front is not None:
+            await drive_from_jsonl(drive, front, ops, say=say)
+        elif at_keyboard and asker is not None:
             await drive_from_keyboard(drive, asker, say=say)
         else:
             await drive_from_pipe(drive, stream, say=say)
@@ -292,6 +338,8 @@ async def run_drive(
             "drive": sessions[0].stats.block() if sessions else {},
         }
         transcript.write_summary(summary)
-        transcript.write("run_end", **summary)
+        record("run_end", **summary)
         transcript.close()
+        if front is not None:
+            front.finished(outcome, reason, run_dir=run_dir, summary=summary)
     return run_dir

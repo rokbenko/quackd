@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from quackd.agent.decision.commands import Choice, CommandChooser
     from quackd.agent.providers.base import LLMProvider
     from quackd.duckfile.schema import DuckFile
+    from quackd.log import Sink
     from quackd.mcp_server import RobotSession
     from quackd.verbs.registry import Verb
 
@@ -73,6 +74,8 @@ class _Answer:
     state: str = "pending"
     """`pending` until the call's confirm reads it, `given` once it has, and `spent` once the
     gate has also asked whether a person gave it, which it asks once, for its record."""
+    channel: str | None = None
+    """Where the person was asked: the line's channel, `keyboard` or the page's `web`."""
 
 
 _ANSWER: contextvars.ContextVar[_Answer | None] = contextvars.ContextVar(
@@ -115,6 +118,16 @@ class Answered:
         if answer.state == "given":
             answer.state = "spent"
         return True
+
+    @property
+    def channel(self) -> str | None:
+        """Where the person who answered this call was asked, for the gate's record, wherever
+        that was not the keyboard: `web`, the page's (`quackd.front`). None for the keyboard,
+        so a terminal's records read as they always have, and for an answer nobody gave."""
+        answer = _ANSWER.get()
+        if answer is None or not answer.person or answer.channel in (None, "keyboard"):
+            return None
+        return answer.channel
 
 
 @dataclass
@@ -247,6 +260,8 @@ class DriveSession:
         ask: Callable[[str], Awaitable[bool]] | None = None,
         yes: bool = False,
         clock: Callable[[], float] = time.perf_counter,
+        goal_view: Callable[[int], Sink | None] | None = None,
+        goal_frames: Callable[[Any, str], None] | None = None,
     ) -> None:
         self.robot = robot
         self.record = record
@@ -257,6 +272,11 @@ class DriveSession:
         self.ask = ask
         self.yes = yes
         self.clock = clock
+        self.goal_view = goal_view
+        """A reader for each goal's own record as it is written, given the goal's number: the
+        page's (`quackd.front`). None, at a terminal, leaves a goal's record to its transcript."""
+        self.goal_frames = goal_frames
+        """Where a goal's camera frames go as they are taken, for the page as `goal_view` is."""
         self.stats = Stats()
         self._count = itertools.count(1)
         self._goal_count = itertools.count(1)
@@ -304,7 +324,14 @@ class DriveSession:
         if cmd.by != "person" or self.ask is None:
             return f"{warning} Nobody here can say they are watching it: pass --yes to say so."
         watching = await self._asked(f"{warning} Are you watching the robot right now?")
-        self.record("prompt", what="acknowledge", question=warning, answer=watching)
+        self.record(
+            "prompt",
+            what="acknowledge",
+            question=warning,
+            answer=watching,
+            # where the person was asked, wherever it was not the keyboard: the page's `web`
+            **({"channel": cmd.channel} if cmd.channel != "keyboard" else {}),
+        )
         if not watching:
             return "nobody confirmed they were watching a robot that cannot see a fall"
         self._watching = True
@@ -569,7 +596,7 @@ class DriveSession:
                 answer = _Answer(matched.verb, yes=True, person=False)
             elif cmd.by == "person" and self.ask is not None and question is not None:
                 said = await self._asked(question)
-                answer = _Answer(matched.verb, yes=said, person=True)
+                answer = _Answer(matched.verb, yes=said, person=True, channel=cmd.channel)
             else:
                 answer = _Answer(matched.verb, yes=False, person=False)
         self._route(cmd, routed)
@@ -756,6 +783,8 @@ class DriveSession:
                 # a session started with --dry-run sends nothing, a goal's verbs included: the
                 # goal's own executor ran every verb for real on the body the session holds
                 dry_run=executor.dry_run,
+                view=self.goal_view(number) if self.goal_view is not None else None,
+                on_frame=self.goal_frames,
             )
         )
         self._route(cmd, Routed(lane, label=f"goal {number}", note=str(run_dir.name)))
