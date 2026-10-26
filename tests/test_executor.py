@@ -121,6 +121,30 @@ async def test_dry_run_sends_nothing(registry: VerbRegistry, mock_transport: Moc
     assert frame.ok and "frame captured" in frame.summary
 
 
+async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`first_motion_at` is the robot moving. A third party's `read_only` sensor runs for real on
+    a dry run, since it sends nothing, and the pause gate's caution, which holds such a verb
+    still because the flag is no promise, had the record take it for the robot moving."""
+
+    async def locate(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        return VerbResult.success("the ball is 1 m ahead")
+
+    registry.register(Verb("locate", "reads where things are", locate, read_only=True))
+    contract = duck("locate, walk").frontmatter
+    dry = Executor(registry, mock_transport, contract=contract, dry_run=True)
+    assert (await dry.run_verb("locate")).ok
+    assert (await dry.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
+    assert dry.first_motion_at is None and dry.first_motion_llm_calls is None
+
+    live = Executor(registry, MockTransport(), contract=contract)
+    assert (await live.run_verb("locate")).ok
+    assert live.first_motion_at is None, "a read is not the robot moving"
+    assert (await live.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
+    assert live.first_motion_at is not None
+
+
 @pytest.mark.parametrize("adapter", ADAPTER_NAMES)
 async def test_a_read_only_verb_sends_nothing(adapter: str) -> None:
     """What the flag claims, on every body that ships. Two gates believe a read-only verb

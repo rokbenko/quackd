@@ -284,11 +284,11 @@ class Executor:
     verb's context compares it with the count when the verb began (`VerbContext.interrupted`),
     so a verb that runs for a while ends on a brake pulled from beside it."""
     first_motion_at: float | None = None
-    """When the first verb that may move the body (`_may_move`) was handed to the transport, on
+    """When the first verb that moves the body (`_moves_now`) was handed to the transport, on
     `time.monotonic()`'s clock, or None until one has been. Never on a dry run, which hands
-    nothing over. The loop writes it as `first_motion_s` on the record's own clock, which is how
-    long somebody standing by the robot waited for it to do anything at all: on the README's arm
-    run two model calls and the serial port's ten seconds came first."""
+    nothing over, and never a read. The loop writes it as `first_motion_s` on the record's own
+    clock, which is how long somebody standing by the robot waited for it to do anything at all:
+    on the README's arm run two model calls and the serial port's ten seconds came first."""
     first_motion_llm_calls: int | None = None
     """How many model calls the run had made when that verb went, the one that chose it
     included, or None until one has gone."""
@@ -396,6 +396,21 @@ class Executor:
         """Whether a verb may move the body, which a pause refuses and ends: anything outside
         `WHILE_PAUSED`, and a learned verb whatever it is called, since it is an unproven policy."""
         return canonical not in WHILE_PAUSED or verb.kind == "learned"
+
+    def _moves_now(self, canonical: str, verb: Verb) -> bool:
+        """Whether a verb about to run is the robot moving, for `first_motion_at`: one that may
+        move the body (`_may_move`), less a sensor marked `read_only` that quackd has not named
+        as motion, as the verdict gate reads it, and never on a dry run.
+
+        Not `_may_move` alone, which is the pause gate's caution: it holds a third party's
+        `read_only` verb still because the flag is no promise, and the record took a `locate`
+        that reads where things are for the robot moving, on a dry run as well, where such a
+        verb runs for real since it sends nothing."""
+        if self.dry_run:
+            return False
+        if verb.read_only and canonical not in MOVES_THE_BODY:
+            return False
+        return self._may_move(canonical, verb)
 
     def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
         """The `paused` gate: refuse a verb that may move the body while a pause holds."""
@@ -794,7 +809,7 @@ class Executor:
             )
 
         self.log(f"→ {name}({parsed.model_dump()})")
-        if self.first_motion_at is None and self._may_move(canonical, verb):
+        if self.first_motion_at is None and self._moves_now(canonical, verb):
             # Here, after every gate, the state read, the preconditions and the dry run's branch,
             # so a verb that was refused, a dry run and a read never count as the robot moving.
             self.first_motion_at = time.monotonic()
