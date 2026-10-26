@@ -9,17 +9,49 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-10-26
+
+0.26.0 lets the arm's policy server serve three more VLA families from the Hugging Face Hub, and
+starts that server on a GPU Hugging Face rents by the hour. No service on 2026-10-25 hosted many
+VLAs behind one API the way OpenRouter hosts many LLMs, and what comes closest is Hugging Face's
+two halves: the policy families LeRobot loads from the Hub, where the server's checkpoints already
+came from, and Inference Endpoints, on which `quackd policy endpoint` starts the server.
+
+`quackd policy serve` serves Physical Intelligence's pi0, X-VLA in its `auto` action mode and
+NVIDIA's GR00T N1.7 whose every action group is joints, beside ACT, SmolVLA and pi05. A pi0-FAST
+is refused in a sentence, since loading its tokenizer would run the Python the tokenizer's
+repository brings, and so is a GR00T N1.5, which LeRobot 0.6.1 no longer serves. Each policy type
+now allows LeRobot's default steps and its own family's, and none that only another family uses,
+and a pi05 fetches PaliGemma's tokenizer files, 21.9 MB, rather than 11.69 GB of weights nothing
+loads.
+
+`quackd policy endpoint up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
+that runs the server, on AWS's L4 in us-east-1 unless told otherwise, asks with the day's price
+before anything bills, scales it to zero when it idles, and pauses one that fails, times out or
+has no GPU while it waits. `--policy-url hf:NAME` reaches it from `quackd run` and every other
+command that takes `--policy-url`, and sends the account's token as the bearer only to an address
+Hugging Face's API confirms is that endpoint's.
+
+A new section of the README, Which models work, right after Which robots work, says which pilot
+LLMs, decision LLMs and VLAs quackd takes and how far each has got. `docs/models/` gives each of
+the three a page, and the companies behind them one more, every table of models there rendered
+from the catalogues, and `quackd list-models --kind decision`, `--kind policy` and `--kind all`
+print the same lists.
+
+No pi0, GR00T or trained X-VLA has run, and quackd has never created a Hugging Face Endpoint:
+`quackd policy endpoint` and `hf:NAME` have run against the test suite's stand-ins for Hugging
+Face alone. What that leaves owed is under Known limitations.
+
 ### Added
 
-- **`quackd list-models --kind` lists the decision LLMs and the learned policies too.**
-  `--kind decision` prints every decision LLM `--decision-llm` names, in the order `quackd
-  doctor` does, which until now was the one command that said they existed. `--kind policy`
-  prints the policy types `quackd policy serve` serves, what each needs and how far it has got,
-  and the ones people ask about that it does not serve, with why, read from data in the core so
-  that a machine with no LeRobot can be told. `--kind all` prints the three, and `--kind pilot`,
-  the default, prints what the command always has, byte for byte. Every `--json` row now says
-  which kind it is, and `--llm`, which narrows the pilot rows to one vendor, is refused beside
-  another kind rather than ignored.
+- **`quackd list-models --kind` lists the decision LLMs and the learned policies too.** `--kind
+  decision` prints the eight decision LLMs quackd names, in the order `quackd doctor` lists them.
+  `--kind policy` prints the policy types `quackd policy serve` serves, what each needs and how
+  far it has got, and the ones people ask about that it does not serve, with why, read from data
+  in the core so that a machine with no LeRobot can be told. `--kind all` prints the three, and
+  `--kind pilot`, the default, prints what the command always has, byte for byte. Every `--json`
+  row now says which kind it is, and `--llm`, which narrows the pilot rows to one vendor, is
+  refused beside another kind rather than ignored.
 - **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
   is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
   with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
@@ -56,23 +88,23 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `--pin`, the base fetched with its weights and the tokenizer without. A config that names no
   base is refused, since LeRobot would fill in its own at no revision, and the pinned base's
   `config.json` is read before any weight, since LeRobot builds the backbone from a config of its
-  own only while the base names Cosmos-Reason2-2B and fetches any other trusting its
-  repository's code. It decodes its answer group by group, and a group decoded as an end
-  effector's pose, LIBERO's gripper of -1 or 1, a decode with no statistics, whose actions would
-  reach the arm still normalised to -1..1, and any N1.5 checkpoint are each refused in a sentence
-  of their own, before a weight. A fine-tune that learned relative joints decodes by statistics
-  its processors keep grouped, a whole chunk at a time against the state it was predicted from,
-  and keeps the percentiles of the state it learned from there too, where LeRobot's normaliser
-  keeps none, so the server reads them from there and the arm's frame check is made on them. One
-  that learned absolute joints decodes by its dataset's statistics and is read as every other
-  type is. It pads no missing camera, so the arm needs one for every image, and a checkpoint
-  whose processors look for a camera its config has no image for is refused. The extra brings
-  diffusers and dm-tree, which a GR00T answers with, about 25 MB, and not LeRobot's
-  own `[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord, peft and timm, about
-  340 MB, are for training, and a GR00T on a server without either is refused before a pin or
-  a weight, saying to install the extra again. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every
-  check, the reported percentiles to the grouped q01 and q99 and not their min and max, and each
-  refusal to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
+  own only while the base names Cosmos-Reason2-2B and fetches any other trusting its repository's
+  code. It decodes its answer group by group, and a group decoded as an end effector's pose,
+  LIBERO's gripper of -1 or 1, a decode with no statistics, whose actions would reach the arm
+  still normalised to -1..1, and any N1.5 checkpoint are each refused in a sentence of their own,
+  before a weight. A fine-tune that learned relative joints decodes by statistics its processors
+  keep grouped, a whole chunk at a time against the state it was predicted from, and keeps the
+  percentiles of the state it learned from there too, where LeRobot's normaliser keeps none, so
+  the server reads them from there and the arm's frame check is made on them. One that learned
+  absolute joints decodes by its dataset's statistics and is read as every other type is. It pads
+  no missing camera, so the arm needs one for every image, and a checkpoint whose processors look
+  for a camera its config has no image for is refused. The extra brings diffusers and dm-tree,
+  which a GR00T answers with, about 25 MB, and not LeRobot's own `[groot]`, whose datasets,
+  pyarrow, pandas, av, torchcodec, decord, peft and timm, about 340 MB, are for training, and a
+  GR00T on a server without either is refused before a pin or a weight, saying to install the
+  extra again. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every check,
+  the reported percentiles to the grouped q01 and q99 and not their min and max, and each refusal
+  to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
 - **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
   from Hugging Face.** `up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
   that runs the same `quackd policy serve`, behind Hugging Face's TLS, and waits until it serves,
@@ -117,27 +149,26 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Changed
 
-- **A processor step is allowed by the type that names it.** `quackd policy serve` and
-  `quackd policy check` allowed a checkpoint any step that ACT's, SmolVLA's or pi05's processors
-  used, whatever its own type, so an ACT could name pi05's tokenizer, which nobody had read for
-  an ACT. Each type now allows the steps every policy is built from and the ones its own
-  processors add, read at LeRobot 0.6.1, and a step another type uses is refused before any
-  weight is fetched, in a sentence that lists what that type does allow. The action tokenizer,
-  which no type may name, is refused in a sentence of its own, saying that it trusts its
-  repository's code unless told not to and turns actions into tokens for training, which a
-  server never does. No checkpoint LeRobot's own processor factories write names another type's
-  step. `quackd.adapters.policies` says which policy types the server serves and which it does
-  not, and why, as data the core prints with no LeRobot installed, and a test ties its rows to
-  the server's types ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
-- **A pinned model that holds a PEFT adapter is refused.** The server's extra does not bring
-  peft, and LeRobot's own `[peft]` and `[groot]` extras do, and with peft installed
-  transformers loads a PEFT adapter it finds in a model's directory onto that
-  model, or, when the directory has no `config.json`, loads the base model the adapter names,
-  which no pin fixes. A pinned model whose directory holds an `adapter_config.json` was loaded
-  without its adapter before, and is refused now, in a sentence saying to pin a model with the
-  adapter merged into its weights. None of the five models the served families' checkpoints
-  name, read on the Hub on 2026-10-25, holds one. A test holds a pinned directory with one to
-  being refused.
+- **A processor step is allowed by the type that names it.** `quackd policy serve` and `quackd
+  policy check` allowed a checkpoint any step that ACT's, SmolVLA's or pi05's processors used,
+  whatever its own type, so an ACT could name pi05's tokenizer, which nobody had read for an ACT.
+  Each type now allows LeRobot's default steps and its own family's, read at LeRobot 0.6.1, and a
+  step another type uses is refused before any weight is fetched, in a sentence that lists what
+  that type does allow. The action tokenizer, which no type may name, is refused in a sentence of
+  its own, saying that it trusts its repository's code unless told not to and turns actions into
+  tokens for training, which a server never does. No checkpoint LeRobot's own processor factories
+  write names another type's step. `quackd.adapters.policies` says which policy types the server
+  serves and which it does not, and why, as data the core prints with no LeRobot installed, and a
+  test ties its rows to the server's types
+  ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
+- **A pinned model that holds a PEFT adapter is refused.** The server's extra does not bring peft,
+  and LeRobot's own `[peft]` and `[groot]` extras do, and with peft installed transformers loads a
+  PEFT adapter it finds in a model's directory onto that model, or, when the directory has no
+  `config.json`, loads the base model the adapter names, which no pin fixes. A pinned model whose
+  directory holds an `adapter_config.json` was loaded without its adapter before, and is refused
+  now, in a sentence saying to pin a model with the adapter merged into its weights. None of the
+  five models the served families' checkpoints name, read on the Hub on 2026-10-25, holds one. A
+  test holds a pinned directory with one to being refused.
 
 ### Fixed
 
@@ -171,15 +202,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Documentation
 
-- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the
-  three roles a model can have in a run side by side, every pilot vendor and every one of the
-  123 model ids with its extra, its key, its address and its rate, the eight decision LLMs, the
-  policy types the arm's server serves and the ones it does not, with why, and the companies
-  behind them, each with the roles it fills. Every table on them is rendered from the
-  catalogues by `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not
-  what the script writes, so a row is changed in the code and never in a table. The guides
-  stay where they were and are linked, so no published link moved, and `docs/README.md` maps
-  the folder ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
+- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the three
+  roles a model can have in a run side by side, every pilot vendor and every one of the 123 model
+  ids with its extra, its key, its address and its rate, the eight decision LLMs, the policy types
+  the arm's server serves and the ones it does not, with why, and the companies behind them, each
+  with the roles it fills. Every table of models on them is rendered from the catalogues by
+  `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not what the script
+  writes, so a row is changed in the code and never in a table. The guides stay where they were
+  and are linked, so no published link moved, and `docs/README.md` maps the folder
+  ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
 - **The README says which models work, right after which robots work.** One table of the three
   roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
   the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer
@@ -8215,7 +8246,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/rokbenko/quackd/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/rokbenko/quackd/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/rokbenko/quackd/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/rokbenko/quackd/compare/v0.22.0...v0.23.0

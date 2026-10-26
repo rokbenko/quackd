@@ -1174,8 +1174,7 @@ def _list_pilots(llm: str | None, as_json: bool) -> None:
 
 
 def _list_decision_llms(as_json: bool) -> None:
-    """Every decision LLM quackd names, in the order `quackd doctor` prints them, which until
-    `--kind decision` was the only command that said they existed."""
+    """Every decision LLM quackd names, in the order `quackd doctor` prints them."""
     from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
 
     rows = [PRESETS[name] for name in PRESET_NAMES]

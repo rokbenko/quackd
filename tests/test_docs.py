@@ -4118,7 +4118,7 @@ def _models_docs_script() -> ModuleType:
 
 
 def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
-    """Every table on the models pages is a catalogue rendered, and a rendered table that
+    """Every table of models on those pages is a catalogue rendered, and a rendered table that
     nothing renders again is a stale table with a comment on it. So the script runs here over
     every page, and what it would write is compared with what is committed."""
     script = _models_docs_script()

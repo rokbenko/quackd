@@ -38,8 +38,8 @@ Reading for more families turned up two things wrong with what the server alread
 
 ## Decision
 
-1. **A step is allowed by the type that names it.** `STEPS_BY_TYPE` gives each served type the
-   steps every policy is built from and the steps its own processors add, each read at the pin
+1. **A step is allowed by the type that names it.** `STEPS_BY_TYPE` gives each served type
+   LeRobot's default steps and its own family's, each read at the pin
    and named by a ref of its own (`SMOLVLA_PROCESSOR_STEPS`, `PI05_PROCESSOR_STEPS`, and one per
    family after them). A step another type uses is refused with a sentence that lists what this
    type allows. A step no type may name, the action tokenizer first among them, is refused with
