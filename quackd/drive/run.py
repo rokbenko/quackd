@@ -190,6 +190,7 @@ async def run_drive(
     if args.duckfile:
         robot.adopt(load_duck(args.duckfile))
     started = time.perf_counter()
+    outcome, reason = "success", "the session ended"
     try:
         await robot.connect()
         registry = executor.registry
@@ -198,8 +199,15 @@ async def run_drive(
             robot.adopt(
                 session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
             )
-        allowed = set(executor.allowed) if robot.duck is not None else None
-        verbs = {n: registry.get(n) for n in registry.names() if allowed is None or n in allowed}
+        # by `is_allowed`, which reads an alias as the verb it names: a `.duck` allowing `walk`
+        # allows `move`, and matching the names alone left it out
+        verbs = {n: registry.get(n) for n in registry.names() if executor.is_allowed(n)}
+        contract = robot.duck.frontmatter if robot.duck is not None else None
+        # the `.duck`'s own confirm gates, which the fast lane's floors answer to as the run's
+        # stepper's do (`verb_class`)
+        gated = frozenset(
+            registry.canonical(c) for c in (contract.verbs.confirm if contract is not None else ())
+        )
         goal_verbs = sorted(n for n, v in verbs.items() if v.safety_class == GOAL_VERBS_SAFE)
 
         def pilot(goal: str) -> Any:
@@ -217,7 +225,7 @@ async def run_drive(
                 await warm()
             blurb = executor.manifest.blurb if executor.manifest is not None else ""
             chooser = CommandChooser(
-                chooser_llm, offers_for(verbs, presets_for(executor.manifest, verbs)), blurb
+                chooser_llm, offers_for(verbs, presets_for(executor.manifest, verbs), gated), blurb
             )
         from quackd.drive.terminal import Asker, drive_from_keyboard, drive_from_pipe
 
@@ -234,6 +242,7 @@ async def run_drive(
             yes=args.yes,
         )
         sessions.append(drive)
+        await drive.prepare()
         transcript.write(
             "run_start",
             duck="drive",
@@ -257,6 +266,12 @@ async def run_drive(
             await drive_from_keyboard(drive, asker, say=say)
         else:
             await drive_from_pipe(drive, stream, say=say)
+    except Exception as e:
+        outcome, reason = "error", f"{type(e).__name__}: {e}"
+        raise
+    except BaseException as e:
+        outcome, reason = "aborted", f"interrupted: {type(e).__name__}"
+        raise
     finally:
         # every way out, an error and an interrupt among them, ends what is still moving the
         # body before the body is folded and let go of
@@ -267,9 +282,10 @@ async def run_drive(
             await robot.close()
         summary = {
             "duck": "drive",
-            # a session a person ended, by quit or the end of its input, ended as asked
-            "outcome": "success",
-            "reason": "the session ended",
+            # a session a person ended, by quit or the end of its input, ended as asked, and one
+            # that broke, a connect that failed among them, says how
+            "outcome": outcome,
+            "reason": reason,
             "steps": executor.budget.steps if executor.budget is not None else 0,
             "wall_s": round(time.perf_counter() - started, 3),
             "started_at": transcript.started_at_iso,

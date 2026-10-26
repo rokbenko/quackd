@@ -38,6 +38,10 @@ class AttachedBody:
     """Nor did a goal close anything, so it has nothing to say about a close."""
     set_stop_check: Any = None
     """Not callable, so a goal's connect, which connects nothing, lends the body no stop check."""
+    set_segment_s: Any = None
+    """Not callable, so a goal leaves the length of the arm's policy segments as the session's
+    contract set it: a goal's own, its contract's default, was set on the session's arm and
+    outlived the goal, under the session's `manipulate` timeout for its own length."""
 
     def __init__(self, inner: Any, manifest: RobotManifest) -> None:
         self._inner = inner

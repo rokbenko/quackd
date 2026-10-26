@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -11,7 +13,7 @@ from typer.testing import CliRunner
 
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
-from quackd.drive.run import SESSION_BUDGETS, session_duck
+from quackd.drive.run import SESSION_BUDGETS, DriveArgs, run_drive, session_duck
 from quackd.duckfile.schema import Budgets
 
 runner = CliRunner()
@@ -81,12 +83,13 @@ def test_a_session_without_a_duck_keeps_the_battery_rule_and_the_ceilings() -> N
             Budgets(**{name: getattr(SESSION_BUDGETS, name) + 1})
 
 
-@pytest.mark.parametrize("terminal", [True, False])
+@pytest.mark.parametrize(("terminal", "drawn"), [(True, True), (True, False), (False, True)])
 def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
-    terminal: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    terminal: bool, drawn: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same seam every question quackd puts goes through (`_can_prompt`), and not `isatty`
-    alone, which says yes to NUL on Windows."""
+    alone, which says yes to NUL on Windows; and an output the prompt can be drawn on, since a
+    session whose output was piped to a file died before its first line on Windows."""
     import quackd.cli
     import quackd.drive.run
 
@@ -97,10 +100,14 @@ def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
         return tmp_path
 
     monkeypatch.setattr(quackd.cli, "_can_prompt", lambda: terminal)
+    monkeypatch.setattr(quackd.cli, "_can_draw_a_prompt", lambda: drawn)
     monkeypatch.setattr(quackd.drive.run, "run_drive", run_drive)
     result = runner.invoke(app, ["--no-color", "drive", "--robot", "microduck:mock"])
     assert result.exit_code == 0, result.output
-    assert handed["keyboard"] is terminal
+    assert handed["keyboard"] is (terminal and drawn)
+    assert ("the prompt needs a terminal for its output too" in result.output) is (
+        terminal and not drawn
+    )
 
 
 def test_a_registered_robot_is_flown_by_the_pilot_it_names(
@@ -127,3 +134,99 @@ def test_a_registered_robot_is_flown_by_the_pilot_it_names(
     assert asked == ["openai"]
     (run,) = (tmp_path / "runs").glob("*-drive")
     assert Transcript.read(run / "transcript.jsonl")[0]["provider"] == "openai"
+
+
+def _summary_of(runs: Path) -> dict[str, Any]:
+    (run,) = runs.glob("*-drive")
+    summary: dict[str, Any] = json.loads((run / "summary.json").read_text(encoding="utf-8"))
+    return summary
+
+
+class _Broken:
+    """A stdin whose read fails after its first line, as a broken pipe's does."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    def readline(self) -> str:
+        self.n += 1
+        if self.n == 1:
+            return "forward\n"
+        raise OSError("the pipe broke")
+
+
+async def test_a_session_whose_input_broke_is_not_recorded_as_a_success(tmp_path: Path) -> None:
+    """Every way out was written down as a success, a crash included."""
+    args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
+    with pytest.raises(OSError, match="the pipe broke"):
+        await run_drive(args, say=lambda _line: None, stream=_Broken(), keyboard=False)  # type: ignore[arg-type]
+    summary = _summary_of(tmp_path)
+    assert summary["outcome"] == "error" and "the pipe broke" in summary["reason"]
+
+
+async def test_a_session_whose_robot_never_connected_is_not_a_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import quackd.mcp_server
+    from quackd.transport.base import TransportError
+
+    async def refuse(self: object) -> None:
+        raise TransportError("the robot did not answer")
+
+    monkeypatch.setattr(quackd.mcp_server.RobotSession, "connect", refuse)
+    args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
+    with pytest.raises(TransportError):
+        await run_drive(args, say=lambda _line: None, stream=None, keyboard=False)
+    summary = _summary_of(tmp_path)
+    assert summary["outcome"] == "error" and "did not answer" in summary["reason"]
+
+
+GATED_KICK = """---
+duck: 0
+name: gated
+description: kick behind a yes
+verbs:
+  allow: [kick, move, report_state, stop]
+  confirm: [kick]
+success: [x]
+abort_when: []
+---
+# Task
+x
+"""
+
+
+async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A kick the `.duck` gates answered to the motion floor rather than the confirm one, the
+    bug `verb_class` names in the run's own stepper: under `--yes` it ran unasked at a
+    confidence the stepper would have asked about."""
+    import quackd.agent.decision.commands as commands
+    import quackd.agent.decision.factory as factory
+
+    class _Decider:
+        name = "scripted"
+
+    real = commands.offers_for
+    seen: list[frozenset[str]] = []
+
+    def offers_for(verbs: Any, presets: Any, gated: frozenset[str] = frozenset()) -> Any:
+        seen.append(gated)
+        return real(verbs, presets, gated)
+
+    monkeypatch.setattr(commands, "offers_for", offers_for)
+    monkeypatch.setattr(factory, "parse_decision_llm", lambda name: (object(), None))
+    monkeypatch.setattr(factory, "decision_llm_is_available", lambda spec, url=None: (True, ""))
+    monkeypatch.setattr(factory, "make_decision_llm", lambda spec, model=None, url=None: _Decider())
+    duck = tmp_path / "gated.duck"
+    duck.write_text(GATED_KICK, encoding="utf-8")
+    args = DriveArgs(
+        robot="microduck:mock",
+        llm="fake",
+        decision_llm="scripted",
+        duckfile=str(duck),
+        runs_dir=str(tmp_path / "runs"),
+    )
+    await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
+    assert seen == [frozenset({"kick"})]

@@ -29,16 +29,37 @@ async def _does_nothing(_ctx: Any, _p: Any) -> VerbResult:
 
 
 @pytest.mark.parametrize(
-    "line", ["", "   ", "stop", "STOP!", "stop now", "halt", "brake", "q", "Stop.", "q.", "'stop'"]
+    "line",
+    [
+        "",
+        "   ",
+        "stop",
+        "STOP!",
+        "stop now",
+        "halt",
+        "brake",
+        "q",
+        "Stop.",
+        "q.",
+        "'stop'",
+        "-",
+        "--",
+        "-stop",
+        "stop-",
+        "stop-now",
+        "q-tip",
+    ],
 )
 def test_these_brake(line: str) -> None:
     """A full stop is punctuation, as an exclamation mark is: "Stop." read as the word "stop."
-    and never braked."""
+    and never braked. A line with no letter or digit in it brakes, and a first word read up to a
+    hyphen: "-" became a goal, and "stop-now" walked on. "q-tip" brakes with them, since a
+    false brake costs a line typed again and a missed one can cost a fall."""
     assert is_brake(line)
 
 
 @pytest.mark.parametrize(
-    "line", ["quack", "quack.", "stopwatch", "qq", "don't stop", "sit", "q-tip"]
+    "line", ["quack", "quack.", "stopwatch", "qq", "don't stop", "sit", "quack-stop", "-0.5"]
 )
 def test_these_do_not(line: str) -> None:
     """By whole word and from the front only: "quack" is a duck's word and never a brake."""

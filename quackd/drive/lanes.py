@@ -26,6 +26,11 @@ BRAKE_WORDS = ("", "stop", "halt", "brake", "q")
 SESSION_WORDS = ("help", "status", "quit", "exit")
 """Words that are the session's own, read after the brake and before any call."""
 
+YES = ("y", "yes")
+NO = ("n", "no")
+"""The answers to a question drive puts, `did you mean kick(leg=left)? [y/N]`: a lone `y` or
+`yes`, and a lone `n` or `no`."""
+
 PRESET_VERBS = ("walk", "go", "move")
 """What may stand before `forward` or `back`: "walk forward" is the preset `forward`."""
 
@@ -42,13 +47,34 @@ def words(line: str) -> list[str]:
 
 
 def is_brake(line: str) -> bool:
+    """A line with no letter or digit in it, an empty Enter or a `-` among them, or one whose
+    first word, read up to a hyphen, is a brake word: "stop-now" and "-stop" brake, and so does
+    "q-tip", while "quack" and "stopwatch" do not. Erring on the side of braking, since a false
+    brake costs a line typed again and a missed one can cost a fall."""
+    if not any(ch.isalnum() for ch in line):
+        return True
     said = words(line)
-    return not said or said[0] in BRAKE_WORDS[1:]
+    if not said:
+        return True
+    first = next((part for part in said[0].split("-") if part), "")
+    return first in BRAKE_WORDS[1:]
 
 
 def session_word(line: str) -> str | None:
     said = words(line)
     return said[0] if len(said) == 1 and said[0] in SESSION_WORDS else None
+
+
+def answer_word(line: str) -> bool | None:
+    """True for a lone yes, False for a lone no, and None for any other line."""
+    said = words(line)
+    if len(said) != 1:
+        return None
+    if said[0] in YES:
+        return True
+    if said[0] in NO:
+        return False
+    return None
 
 
 @dataclass(frozen=True)

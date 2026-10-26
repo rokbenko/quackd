@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TextIO
 
-from quackd.drive.lanes import is_brake, session_word, words
+from quackd.drive.lanes import answer_word, is_brake, session_word
 from quackd.drive.session import Command, DriveSession
 
 QUIT_AGAIN_S = 1.5
@@ -28,9 +28,6 @@ QUIT_AGAIN_S = 1.5
 stopped, folded where it folds, and let go of."""
 
 ENDS = ("quit", "exit")
-
-YES = ("y", "yes")
-NO = ("n", "no")
 
 
 def told(cmd: Command) -> list[str]:
@@ -85,10 +82,10 @@ class Asker:
     def answers(self, line: str) -> bool:
         """Whether `line` answered a question, which it then has."""
         pending = self.pending
-        said = words(line)
-        if pending is None or pending.done() or len(said) != 1 or said[0] not in YES + NO:
+        said = answer_word(line)
+        if pending is None or pending.done() or said is None:
             return False
-        pending.set_result(said[0] in YES)
+        pending.set_result(said)
         return True
 
 

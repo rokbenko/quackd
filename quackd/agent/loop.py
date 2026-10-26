@@ -532,6 +532,33 @@ class RunResult:
         return self.outcome == "success"
 
 
+LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
+"""Verbs that can put the robot on the floor. A fall-blind robot only needs a human watching if
+the task can actually make it walk."""
+
+
+def fall_blind_warning(registry: VerbRegistry, allow: list[str], state: DuckState) -> str | None:
+    """Why the human has to watch this one, or None if they do not: asked once by a run, and once
+    by a drive session, before anything moves.
+
+    Deliberately a one-time gate and not a precondition. On the Open Duck's bridge backend
+    `fall_detection` is a constant False — the IMU has one owner and it is upstream's loop — so
+    refusing per verb would refuse every locomotion verb forever and decommission the robot. The
+    Microduck is a different case: it goes blind and comes back, and it has `stand_up`, so it
+    keeps its per-call refusal and is not gated here."""
+    if not any(registry.canonical(n) in LOCOMOTION for n in allow):
+        return None
+    if "stand_up" in registry:  # it can recover; being briefly blind is survivable
+        return None
+    if state.extras.get("fall_detection") is not False:
+        return None
+    return (
+        "nothing on this robot detects a fall, and it has no way to get up. quackd will "
+        "not know it is down, no verb will refuse because it is, and this task can make "
+        "it walk. Keep it on a stand with a hand near the power switch, and watch it."
+    )
+
+
 class AgentLoop:
     def __init__(self, cfg: RunConfig) -> None:
         self.cfg = cfg
@@ -2368,32 +2395,12 @@ class AgentLoop:
 
     # ── the loop ────────────────────────────────────────────────────────────────────
 
-    #: Verbs that can put the robot on the floor. A fall-blind robot only needs a human
-    #: watching if the task can actually make it walk.
-    _LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
+    _LOCOMOTION = LOCOMOTION
 
     def _fall_blind_warning(
         self, registry: VerbRegistry, allow: list[str], state: DuckState
     ) -> str | None:
-        """Why the human has to watch this one, or None if they do not.
-
-        Deliberately a one-time gate and not a precondition. On the Open Duck's bridge
-        backend `fall_detection` is a constant False — the IMU has one owner and it is
-        upstream's loop — so refusing per verb would refuse every locomotion verb forever
-        and decommission the robot. The Microduck is a different case: it goes blind and
-        comes back, and it has `stand_up`, so it keeps its per-call refusal and is not
-        gated here."""
-        if not any(registry.canonical(n) in self._LOCOMOTION for n in allow):
-            return None
-        if "stand_up" in registry:  # it can recover; being briefly blind is survivable
-            return None
-        if state.extras.get("fall_detection") is not False:
-            return None
-        return (
-            "nothing on this robot detects a fall, and it has no way to get up. quackd will "
-            "not know it is down, no verb will refuse because it is, and this task can make "
-            "it walk. Keep it on a stand with a hand near the power switch, and watch it."
-        )
+        return fall_blind_warning(registry, allow, state)
 
     async def run(self) -> RunResult:
         cfg = self.cfg

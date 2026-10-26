@@ -3205,6 +3205,17 @@ _DECISION_LLM = typer.Option(
     autocompletion=_complete_decision_llm,
     rich_help_panel="Model",
 )
+_DRIVE_DECISION_LLM = typer.Option(
+    None,
+    "--decision-llm",
+    help="The fast lane: a line no verb names is put to this decision LLM, as NAME[:MODEL], as "
+    "one closed question, which of the body's calls or presets it means, or whether it is a "
+    "goal for the pilot. A call it is sure of runs, and one it is less sure of is asked about "
+    "first. The same names, extras and keys as `quackd run --decision-llm`. Off unless you name "
+    "one. QUACKD_DECISION_LLM does the same.",
+    autocompletion=_complete_decision_llm,
+    rich_help_panel="Model",
+)
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
@@ -4168,7 +4179,7 @@ def drive_cmd(
     detector: str | None = _DETECTOR,
     seed: int | None = _SEED,
     llm: str | None = _LLM,
-    decision_llm: str | None = _DECISION_LLM,
+    decision_llm: str | None = _DRIVE_DECISION_LLM,
     decision_url: str | None = _DECISION_URL,
     duckfile: str | None = typer.Option(
         None,
@@ -4214,11 +4225,18 @@ def drive_cmd(
     def say(line: str) -> None:
         ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
 
+    # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
+    # keyboard opens, and what it reads is recorded as a person's, is decided as every question
+    # quackd puts to a person is. Its prompt needs a terminal to be drawn on as well.
+    at_terminal = _can_prompt()
+    keyboard = at_terminal and _can_draw_a_prompt()
+    if at_terminal and not keyboard:
+        say(
+            f"{'note':<8} the prompt needs a terminal for its output too, so lines are read one at "
+            "a time and each waited for, as from a pipe"
+        )
     try:
-        # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
-        # keyboard opens, and what it reads is recorded as a person's, is decided as every
-        # question quackd puts to a person is
-        run_dir = asyncio.run(run_drive(args, say=say, keyboard=_can_prompt()))
+        run_dir = asyncio.run(run_drive(args, say=say, keyboard=keyboard))
     except (
         DriveError,
         ProviderError,
@@ -4927,15 +4945,26 @@ def _can_prompt() -> bool:
     device: a script or a scheduled task started with its input from NUL was asked every
     question, answered each with end-of-input, and had its record name a person who answered.
     Only a console has a console mode, so on Windows that is asked as well."""
-    stdin = sys.stdin
-    if stdin is None or not stdin.isatty():
+    return _is_a_console(sys.stdin)
+
+
+def _can_draw_a_prompt() -> bool:
+    """Whether the output is a terminal a prompt can be drawn on, as `quackd drive`'s keyboard
+    draws one. prompt_toolkit cannot draw into a file or a pipe, and on Windows a session whose
+    output was piped to `Tee-Object` connected the robot and died before its first line. The
+    seam tests replace."""
+    return _is_a_console(sys.stdout)
+
+
+def _is_a_console(stream: Any) -> bool:
+    if stream is None or not stream.isatty():
         return False
     if sys.platform == "win32":
         import ctypes
         import msvcrt
 
         try:
-            handle = msvcrt.get_osfhandle(stdin.fileno())
+            handle = msvcrt.get_osfhandle(stream.fileno())
         except (OSError, ValueError):
             return False
         mode = ctypes.c_ulong()
