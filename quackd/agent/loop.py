@@ -597,6 +597,11 @@ class AgentLoop:
             on_frames=self._on_frames,
             event_log=self.event_log,
         )
+        self.stop_reason: str | None = None
+        """Why the run is being stopped from outside, in the words it ends with, by whoever sets
+        `executor.abort` for a reason that is neither a person's key nor the body's link: a drive
+        session that moves on from a goal to a newer command (`_abort_reason`). None leaves the
+        abort's words to the heartbeat, a flock's link or the kill switch, as before."""
         self.heartbeat = Heartbeat(
             cfg.transport,
             self.executor.abort,
@@ -717,14 +722,14 @@ class AgentLoop:
     def _abort_reason(self) -> str:
         """Why the abort flag is set, in the words the run should end with.
 
-        A flock stops its members when one of them breaks, and a heartbeat stops a run when
-        the body stops answering; the record has to say which rather than blaming a kill
-        switch nobody pressed."""
-        return (
-            str(self.heartbeat.failure)
-            if self.heartbeat.failure
-            else (self.cfg.link.abort_reason if self.cfg.link is not None else None) or KILL_SWITCH
-        )
+        A flock stops its members when one of them breaks, a heartbeat stops a run when the body
+        stops answering, and a drive session stops a goal for a newer command (`stop_reason`);
+        the record has to say which rather than blaming a kill switch nobody pressed."""
+        if self.heartbeat.failure:
+            return str(self.heartbeat.failure)
+        if self.stop_reason:
+            return self.stop_reason
+        return (self.cfg.link.abort_reason if self.cfg.link is not None else None) or KILL_SWITCH
 
     def _ask_recorded(self, what: str, question: str, answer: bool, asker: Any) -> None:
         """Record a question a PERSON was put, and what they said.
