@@ -33,6 +33,8 @@ from quackd.duckfile.schema import (
     DuckFrontmatter,
 )
 from quackd.log import (
+    A_PERSON,
+    A_PIPE,
     EventLog,
     LoggedTransport,
     a_person_was_asked,
@@ -68,14 +70,24 @@ handed (`Executor._execute`): the abort it races, a pause granted to a robot met
 command (`Executor.preempt`), the verb's own timeout, or the caller going away. A verb that keeps
 a record of its own names its ending by it."""
 
-Source = Literal["agent", "mcp", "cli", "decision", "peer"]
+Source = Literal["agent", "mcp", "cli", "person", "decision", "peer"]
 """Who asked for this verb. `decision` is the discrete stepper answering a turn the model
 never saw, whichever decision LLM was behind it: which one that was is recorded once for the
 run (`run_start.decision_llm`) rather than on every verb, so swapping Jev for a server you run
 yourself changes nothing here. The log already prints `from <source>` for anything that is not
 the agent, so the record says who chose a verb without a renderer knowing the word. `peer` is
 a robot met over Robot Passport, through the courtesy handler and nothing else
-(`quackd.passport_courtesy`), and the `peer` gate holds it to the two verbs a courtesy runs."""
+(`quackd.passport_courtesy`), and the `peer` gate holds it to the two verbs a courtesy runs.
+`person` is somebody at `quackd drive`'s keyboard naming one call, and `cli` a line drive read
+off a pipe or a file (`PERSONS`)."""
+
+PERSONS = frozenset({"person", "cli"})
+"""The sources whose own call clears the verdict gate by itself. Somebody who named one call of
+this body's, at the keyboard or in a file they piped in, has made the judgement the gate waits
+for, for that call and the verbs it runs, and for nothing after it: `verdict` is never written,
+so the pilot's next call is gated as it always was. A composite's calls inherit its source, so a
+nested call from one of these can only come from such a person's own command. Only
+`quackd/drive` passes either, and a test holds every other caller to that."""
 
 PEER_VERBS = ("stop", "say")
 """The verbs a peer's courtesy may run: `stop`, which a granted pause begins with, and `say`,
@@ -670,7 +682,18 @@ class Executor:
             verb.read_only and canonical not in MOVES_THE_BODY
         )
         self._hold_still_for(name, canonical, verb)
-        if self.require_verdict and not looks and not self.cleared:
+        if self.require_verdict and not looks and not self.cleared and source in PERSONS:
+            # the person's own command is the verdict for its own call, and the record says
+            # whose word it was, the way an answer to a confirm says it (`who_answered`)
+            said = A_PERSON if source == "person" else A_PIPE
+            self._emit(
+                "gate",
+                name=name,
+                gate="verdict",
+                outcome="allowed",
+                reason=f"{said} named this call, which stands for the verdict for it alone",
+            )
+        elif self.require_verdict and not looks and not self.cleared:
             why = (
                 self.verdict.blocking_reason()
                 if self.verdict is not None
