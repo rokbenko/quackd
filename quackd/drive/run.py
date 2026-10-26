@@ -112,6 +112,7 @@ async def run_drive(
     from quackd.duckfile.schema import Budgets
     from quackd.log import EventLog, LogEvent
     from quackd.mcp_server import RobotSession, fleet_from_flags
+    from quackd.registry import Registry, resolve_robot_ref
     from quackd.safety import Budget, Executor, Heartbeat
     from quackd.verbs.registry import default_registry
 
@@ -130,7 +131,15 @@ async def run_drive(
     if len(plan.adapters) != 1:
         raise DriveError("drive drives one robot at a time: name it with --robot")
     ((name, adapter),) = plan.adapters.items()
-    vendor, model_id, llm_source = resolve_llm(args.llm)
+    # a registered robot may name the pilot that flies it, as `quackd run` reads it: the flag
+    # first, then the robot's own, then `QUACKD_LLM`
+    here = resolve_robot_ref(args.robot, Registry(args.registry_dir))
+    entry = here.entry
+    vendor, model_id, llm_source = resolve_llm(
+        args.llm,
+        entry.llm if entry is not None else None,
+        robot=entry.name if entry is not None else None,
+    )
     if vendor != "fake":
         built = make_provider(vendor, model=model_id, source=llm_source)
     chooser_llm = None

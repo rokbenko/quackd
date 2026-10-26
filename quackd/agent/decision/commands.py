@@ -184,7 +184,8 @@ class CommandChooser:
             return Choice("unreadable", record={**record, "gate": "unreadable"})
         floor = FLOORS[offer.kind]
         gate = "taken" if confidence >= floor else "ask"
-        record.update(gate=gate, floor=floor, kind=offer.kind)
+        # `class`, as the stepper's own `decision` row names it: `kind` is every record's own
+        record.update({"gate": gate, "floor": floor, "class": offer.kind})
         return Choice(gate, offer, confidence, floor, record)
 
 

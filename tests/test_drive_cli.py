@@ -101,3 +101,29 @@ def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
     result = runner.invoke(app, ["--no-color", "drive", "--robot", "microduck:mock"])
     assert result.exit_code == 0, result.output
     assert handed["keyboard"] is terminal
+
+
+def test_a_registered_robot_is_flown_by_the_pilot_it_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """As `quackd run` reads it: drive took `--llm` alone, and a robot registered against a
+    vendor was driven by the scripted pilot."""
+    import quackd.agent.providers.factory as factory
+    from quackd.registry import Registry, RobotEntry
+
+    registry = tmp_path / "registry"
+    Registry(registry).add_robot(RobotEntry(name="duck", spec="microduck:mock", llm="openai"))
+    asked: list[str] = []
+
+    def make_provider(vendor: str, **kwargs: object) -> object:
+        asked.append(vendor)
+        return object()
+
+    monkeypatch.setattr(factory, "make_provider", make_provider)
+    monkeypatch.delenv("QUACKD_LLM", raising=False)
+    args = ["--no-color", "drive", "--robot", "duck", "--registry-dir", str(registry)]
+    result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path / "runs")], input="quit\n")
+    assert result.exit_code == 0, result.output
+    assert asked == ["openai"]
+    (run,) = (tmp_path / "runs").glob("*-drive")
+    assert Transcript.read(run / "transcript.jsonl")[0]["provider"] == "openai"

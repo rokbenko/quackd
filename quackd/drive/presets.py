@@ -5,7 +5,8 @@ own.
 types says how fast or how far. So the word names a preset and quackd supplies every number:
 the share of each clamp a preset moves at is the share `move`'s own default speed is of the
 schema's bound, a walk lasts `move`'s own default second, and a turn covers `search_scan`'s own
-default step. On the Microduck, whose clamps are the schema's, `forward` is `move()` exactly.
+default step. On the Microduck, whose forward clamp is the schema's bound, `forward` is `move()`
+exactly.
 """
 
 from __future__ import annotations

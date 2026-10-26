@@ -396,3 +396,16 @@ async def test_the_sessions_abort_ends_a_goal_it_is_running(tmp_path: Path) -> N
     ]
     assert "the session was aborted" in ends[0]["reason"], "the goal's own record says no why"
     await drive.robot.close()
+
+
+async def test_the_fast_lanes_question_is_on_the_record(tmp_path: Path) -> None:
+    """Its confidence, its floor and its gate are what the floors are to be measured by, and the
+    session wrote none of them down."""
+    drive, _body, records = await _drive(tmp_path, llm=_Llm("kick(leg=left)", confidence=0.99))
+    kicked = drive.submit("give the ball a boot")
+    await _settled(kicked)
+    assert (await kicked.routed).lane == "fast"
+    (fast,) = [r for r in records if r["kind"] == "fast"]
+    assert (fast["n"], fast["gate"], fast["choice"]) == (kicked.n, "taken", "kick(leg=left)")
+    assert fast["confidence"] == 0.99 and fast["floor"] is not None and fast["class"] == "motion"
+    await drive.robot.close()

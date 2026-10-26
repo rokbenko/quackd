@@ -354,6 +354,9 @@ class DriveSession:
             return
         if self.chooser is not None:
             choice = await self.chooser.choose(cmd.text, self.doing())
+            # the question as it was answered: its confidence, floor and gate, with the person's
+            # yes or no to it in the `routed` row after, are what the floors are measured by
+            self.record("fast", n=cmd.n, **choice.record)
             if await self._chosen(cmd, choice):
                 return
         await self._run_goal(cmd, lane="pilot")
