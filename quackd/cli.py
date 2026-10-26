@@ -4156,6 +4156,80 @@ _LOG_RUN = typer.Argument(
 )
 
 
+@app.command("drive", rich_help_panel="Run a duck")
+def drive_cmd(
+    robot: str | None = _ROBOT,
+    registry_dir: str | None = _REGISTRY_DIR,
+    address: str | None = _ADDR,
+    camera_url: list[str] = _CAMERA_URL,
+    token: str | None = _TOKEN,
+    host: str | None = _HOST,
+    host_token: str | None = _HOST_TOKEN,
+    detector: str | None = _DETECTOR,
+    seed: int | None = _SEED,
+    llm: str | None = _LLM,
+    decision_llm: str | None = _DECISION_LLM,
+    decision_url: str | None = _DECISION_URL,
+    duckfile: str | None = typer.Option(
+        None,
+        "--duckfile",
+        help="Adopt a .duck's contract for the session: its allowlist, gates and budgets. Its "
+        "body is not run.",
+    ),
+    yes: bool = _YES,
+    dry_run: bool = _DRY,
+    runs_dir: str = _RUNS,
+    run_name: str | None = _RUN_NAME,
+) -> None:
+    """Drive one robot, one command at a time: a verb of its own, a preset such as `forward`
+    or `turn left`, or a goal in your own words for the pilot. Enter on its own brakes."""
+    from quackd.adapters.base import AdapterError
+    from quackd.agent.decision.base import DecisionError
+    from quackd.agent.providers.base import ProviderError
+    from quackd.drive.run import DriveArgs, DriveError, run_drive
+    from quackd.duckfile.parser import DuckParseError
+    from quackd.registry import RegistryError
+    from quackd.transport.base import TransportError
+
+    args = DriveArgs(
+        robot=robot,
+        registry_dir=registry_dir,
+        address=address,
+        camera_url=tuple(camera_url),
+        token=token,
+        host=host,
+        host_token=host_token,
+        detector=detector,
+        seed=seed,
+        llm=llm,
+        decision_llm=decision_llm,
+        decision_url=decision_url,
+        duckfile=duckfile,
+        yes=yes,
+        dry_run=dry_run,
+        runs_dir=runs_dir,
+        run_name=run_name,
+    )
+
+    def say(line: str) -> None:
+        ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
+
+    try:
+        run_dir = asyncio.run(run_drive(args, say=say))
+    except (
+        DriveError,
+        ProviderError,
+        DecisionError,
+        RegistryError,
+        AdapterError,
+        TransportError,
+        DuckParseError,
+    ) as e:
+        _fail(str(e))
+        return
+    say(f"{'record':<8} {run_dir}")
+
+
 @app.command("log", rich_help_panel="Run a duck")
 def log_cmd(
     run: str | None = _LOG_RUN,
