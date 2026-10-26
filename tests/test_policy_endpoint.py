@@ -198,6 +198,10 @@ def test_a_hub_token_is_named_by_its_variable_and_is_never_the_account_token(
     with pytest.raises(E.EndpointError, match="is not set") as refused:
         E.hub_token_from(HUB_TOKEN, ACCOUNT_TOKEN)
     assert HUB_TOKEN not in str(refused.value)
+    monkeypatch.setenv("HUB_READ", "hf_short")
+    with pytest.raises(E.EndpointError, match="too few characters to be a Hub token") as refused:
+        E.hub_token_from("HUB_READ", ACCOUNT_TOKEN)
+    assert "HF_TOKEN" not in str(refused.value) and "short" not in str(refused.value)
     monkeypatch.setenv("HUB_READ", f" {ACCOUNT_TOKEN} ")
     with pytest.raises(E.EndpointError, match="the account's own token") as refused:
         E.hub_token_from("HUB_READ", ACCOUNT_TOKEN)
@@ -498,6 +502,12 @@ def test_preflight_refuses_before_anything_is_created(
             "list of GPUs is not the shape it documents",
         ),
         ("pypi", {"info": {}, "urls": 5}, "PyPI gave no upload time"),
+        ("provider", {"vendors": [{"name": ["aws"], "regions": []}]}, "no vendor called aws"),
+        (
+            "provider",
+            {"vendors": [{"name": "aws", "regions": [{"name": {"us": 1}, "computes": []}]}]},
+            "aws has no region us-east-1",
+        ),
     ],
 )
 def test_an_answer_not_the_shape_documented_is_refused_in_a_sentence(
@@ -520,6 +530,20 @@ def test_an_answer_not_the_shape_documented_is_refused_in_a_sentence(
         _preflight()
     assert ACCOUNT_TOKEN not in str(refused.value)
     assert all(r.method == "GET" for r in hf.requests), "nothing was created"
+
+
+def test_an_upload_time_with_no_offset_is_taken_as_utc_and_a_price_must_be_a_number() -> None:
+    """PyPI writes its times in UTC, and one written without the offset beside one with it would
+    otherwise crash the comparison. A price that is not a finite number is no price."""
+    naive = {"urls": [{"upload_time_iso_8601": "2026-10-25T13:08:57"}]}
+    aware = {"urls": [{"upload_time_iso_8601": "2026-10-25T12:00:00Z"}]}
+    assert E.exclude_newer(naive, aware) == AFTER
+    listing = provider_listing()
+    computes = listing["vendors"][0]["regions"][0]["computes"]
+    for compute in computes:
+        compute["pricePerHour"] = float("nan")
+    with pytest.raises(E.EndpointError, match="gives nvidia-l4 no price an hour"):
+        E.find_compute(listing, "aws", "us-east-1", "nvidia-l4")
 
 
 def test_a_list_of_endpoints_not_the_shape_documented_is_refused_in_a_sentence(

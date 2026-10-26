@@ -48,6 +48,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import math
 import os
 import re
 import secrets
@@ -195,7 +196,13 @@ def hub_token_from(variable: str, account_token: str) -> str:
             "the variable --hub-token-from names is not set: put a read token there that has "
             "been granted the gated repository"
         )
-    token = clean_bearer(value)
+    try:
+        token = clean_bearer(value)
+    except ValueError:
+        raise EndpointError(
+            "the variable --hub-token-from names holds a space, a line break or too few "
+            "characters to be a Hub token: make a fine-grained read token on huggingface.co"
+        ) from None
     if hmac.compare_digest(token.encode("utf-8"), account_token.encode("utf-8")):
         raise EndpointError(
             "the variable --hub-token-from names holds the account's own token, which never goes "
@@ -1007,7 +1014,7 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
     not offer now."""
     gpus_listed = "list of GPUs"
     listed = _listed(listing.get("vendors"), gpus_listed)
-    vendors = {v.get("name"): v for v in listed if isinstance(v, dict)}
+    vendors = {v["name"]: v for v in listed if isinstance(v, dict) and _named(v)}
     found = vendors.get(vendor)
     if found is None:
         raise EndpointError(
@@ -1015,7 +1022,7 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
             f"{', '.join(sorted(str(v) for v in vendors))}"
         )
     in_vendor = _listed(found.get("regions"), gpus_listed)
-    regions = {r.get("name"): r for r in in_vendor if isinstance(r, dict)}
+    regions = {r["name"]: r for r in in_vendor if isinstance(r, dict) and _named(r)}
     place = regions.get(region)
     if place is None:
         raise EndpointError(
@@ -1049,7 +1056,12 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
             f"try another --region or --instance ({', '.join(gpus)})"
         )
     price = match.get("pricePerHour")
-    if isinstance(price, bool) or not isinstance(price, int | float) or price < 0:
+    if (
+        isinstance(price, bool)
+        or not isinstance(price, int | float)
+        or not math.isfinite(price)
+        or price < 0
+    ):
         raise EndpointError(f"Hugging Face's listing gives {instance} no price an hour")
     memory = match.get("gpuMemoryGb")
     return Compute(
@@ -1062,10 +1074,17 @@ def find_compute(listing: Mapping[str, Any], vendor: str, region: str, instance:
     )
 
 
+def _named(entry: Mapping[str, Any]) -> bool:
+    """Whether a vendor or a region of the provider listing has a name that is text, as the
+    listing documents: one that is a list or an object names nothing --vendor could give."""
+    return isinstance(entry.get("name"), str)
+
+
 def exclude_newer(*releases: Mapping[str, Any]) -> str:
     """The container's `--exclude-newer`: an hour after the last file of `releases` was
     uploaded, as PyPI's JSON says (`endpoint_upstream_api.PYPI_RELEASE`), as RFC 3339 in UTC.
-    A `urls` that is not a list holds no upload time."""
+    A `urls` that is not a list holds no upload time, and a time with no offset is taken as
+    UTC, which is what PyPI writes, so the latest of them can be found at all."""
     times = []
     for release in releases:
         files = release.get("urls")
@@ -1073,9 +1092,10 @@ def exclude_newer(*releases: Mapping[str, Any]) -> str:
             when = file.get("upload_time_iso_8601") if isinstance(file, dict) else None
             if isinstance(when, str):
                 try:
-                    times.append(datetime.fromisoformat(when.replace("Z", "+00:00")))
+                    moment = datetime.fromisoformat(when.replace("Z", "+00:00"))
                 except ValueError:
                     continue
+                times.append(moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC))
     if not times:
         raise EndpointError("PyPI gave no upload time for quackd's release")
     return (max(times) + EXCLUDE_NEWER_AFTER).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1421,7 +1441,9 @@ def reach(
     endpoint of theirs, and a record outlives an endpoint deleted on huggingface.co. Either is
     refused here, in a sentence, and nothing is sent to the address it holds. That the API
     answers a read of an account's endpoints only to that account and its organisations'
-    members is what this trusts (`endpoint_upstream_api.NAMESPACE_READS`)."""
+    members is what this trusts (`endpoint_upstream_api.NAMESPACE_READS`). A `.env` that sets
+    `HF_TOKEN` as well is another account asking, whose endpoint is then the one reached with
+    that account's token, never this one's: the `.env` is trusted as the shell is."""
     text = given.strip()
     match = POLICY_ENDPOINT.fullmatch(text)
     store = EndpointStore(registry_dir)

@@ -412,16 +412,20 @@ Also in scope:
   endpoints only to that account and the members of its organisations, which nothing it publishes
   says (the `NAMESPACE_READS` row of
   [the endpoint's table](docs/adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints)),
-  so an organisation the account belongs to is trusted as the account is. The token goes to
-  nothing else: not into the endpoint, not to PyPI and not to the price list, which is asked with
-  no token. No variable moves where it is sent. A Hub token for a gated checkpoint, named by
-  `--hub-token-from`, goes only into the endpoint's secrets and to huggingface.co, and is refused
-  when it is the account's own. A record whose address is not an endpoint's is refused, and every
-  log line or refusal quoted has every token taken out. What would be a security issue: the
-  account's token reaching any other host, an address the API has not confirmed, the endpoint, a
-  record or the terminal, the server's token reaching a URL, a run's record or the terminal, an
-  endpoint created, resumed or woken without a yes, or resumed, paused or deleted when quackd did
-  not start it, created `public` or with more than one replica, or one that never scales to zero.
+  so an organisation the account belongs to is trusted as the account is. A project's `.env` that
+  sets `HF_TOKEN` as well, where the shell sets none, makes its own account the one asked and its
+  endpoint the one a run reaches: the user's own token is still sent nowhere, but the arm is
+  driven by that endpoint's policy and its frames go there, so a cloned project's `.env` is
+  trusted as the shell is. The token goes to nothing else: not into the endpoint, not to PyPI and
+  not to the price list, which is asked with no token. No variable moves where it is sent. A Hub
+  token for a gated checkpoint, named by `--hub-token-from`, goes only into the endpoint's secrets
+  and to huggingface.co, and is refused when it is the account's own. A record whose address is
+  not an endpoint's is refused, and every log line or refusal quoted has every token taken out.
+  What would be a security issue: the account's token reaching any other host, an address the API
+  has not confirmed, the endpoint, a record or the terminal, the server's token reaching a URL, a
+  run's record or the terminal, an endpoint created, resumed or woken by `up` without a yes, or
+  resumed, paused or deleted when quackd did not start it, created `public` or with more than one
+  replica, or one that never scales to zero.
 - **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
   `hmac.compare_digest`, but a token is only required if one is configured, and binding it

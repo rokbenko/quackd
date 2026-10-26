@@ -5253,7 +5253,10 @@ def _endpoint_resume(ep: Any, api: Any, store: Any, record: Any, *, yes: bool) -
     left starting. It is read first and held to the record (`endpoint.confirm`), so one by that
     name that this machine's `up` did not start is left as it is. The record comes back, with
     any address it gained."""
-    api.also_scrub(record.token)
+    # the Hub token a gated checkpoint is fetched with sits in the endpoint's secrets too,
+    # and a failed container's log may show it: scrubbed when this shell still holds it
+    hub = os.environ.get(record.hub_token_from) if record.hub_token_from else None
+    api.also_scrub(record.token, hub.strip() if hub else None)
     found = ep.confirm(api, record)
     if found is None:
         _fail(

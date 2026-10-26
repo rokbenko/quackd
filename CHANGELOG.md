@@ -62,8 +62,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   image from ghcr.io, whether the proxy answers 503 or 502 while a replica starts, what a paused
   endpoint answers, what a `private` endpoint admits, what the log route answers, which instance
   types the quota listing names, whether the API answers a read of an account's endpoints to that
-  account alone, whether an endpoint keeps its address for its life, and whether torch finds the
-  GPU. No bench through an endpoint has been timed.
+  account and its organisations' members alone, whether an endpoint keeps its address for its
+  life, and whether torch finds the GPU. No bench through an endpoint has been timed.
 - **A cold start takes minutes**, since the container installs torch from PyPI and fetches the
   checkpoint each time it starts, and a run that reaches an endpoint at zero is told it is not
   serving rather than held. Start it with `up` before a run.
@@ -72,6 +72,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   bill at once.
 - **A CUDA build of torch newer than the endpoint's driver would run on the CPU.** `up` asks the
   server whether it has a GPU once it serves, and pauses one that says it has none.
+- **A project's `.env` is trusted as the shell is.** One that names another registry with
+  `QUACKD_REGISTRY_DIR` and sets `HF_TOKEN`, where the shell sets none, makes
+  `--policy-url hf:NAME` reach an endpoint of that token's account, with that token: the user's
+  own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
+  frames go there.
 
 ## [0.25.0] — 2026-10-25
 

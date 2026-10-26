@@ -703,15 +703,17 @@ def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One that failed is said with the last of its log and its message, and either may hold the
-    server's token, a container's argv being what it is, or what a terminal would act on: both
-    are taken out, and the message is cut."""
-    assert _cli(*UP, "--yes").exit_code == 0
+    server's token, a container's argv being what it is, or the Hub token in its secrets, or
+    what a terminal would act on: all are taken out, and the message is cut."""
+    hub = "hf_" + "HubReadToken" * 3
+    monkeypatch.setenv("QUACKD_TEST_HUB", hub)
+    assert _cli(*UP, "--yes", "--hub-token-from", "QUACKD_TEST_HUB").exit_code == 0
     record = _store().get("arm")
     assert record is not None
     ep = hf.endpoints[("rok", "arm")]
     hf._stop(ep)
     ep.state, ep.ahead = "failed", []
-    ep.log = [f"Traceback: argv held {record.token}"]
+    ep.log = [f"Traceback: argv held {record.token}", f"env HF_TOKEN={hub}"]
     real = FakeAPI._status
 
     def status(self: FakeAPI, e: Any) -> dict[str, Any]:
@@ -723,8 +725,9 @@ def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
     result = _cli("policy", "endpoint", "up", "arm")
     said = _flat(result.output)
     assert result.exit_code == 1 and "hf:arm is failed: exited 1 with <token>" in said, said
-    assert "Traceback: argv held <token>" in said
-    assert record.token not in result.output and "\x1b" not in result.output
+    assert "Traceback: argv held <token>" in said and "env HF_TOKEN=<token>" in said
+    assert record.token not in result.output and hub not in result.output
+    assert "\x1b" not in result.output
     assert "x" * 400 not in said.replace(" ", ""), "the message was not cut"
 
 
