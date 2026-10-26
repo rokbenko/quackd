@@ -12,8 +12,9 @@ from typing import Any, Literal
 
 LocalizationKind = Literal["map", "odometry"]
 """How a pose was found. `map`: in a map that corrects itself and outlives the connection, which
-a robot can be lost in. `odometry`: relative motion since the frame began, which drifts with every
-metre walked and is never lost, only started again."""
+a robot can be lost in and found again. `odometry`: relative motion since the frame began, which
+drifts with every metre walked and begins again whenever the robot leaves its feet; while it is
+off them there is no pose (`quackd.space.odometry`)."""
 
 
 def wrap_angle(rad: float) -> float:

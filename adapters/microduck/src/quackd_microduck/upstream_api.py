@@ -273,6 +273,27 @@ ROBOT_STATE = UpstreamRef(
     "head is the head robotd commands this tick: the slot robot.look and robot.head write, "
     "smoothed, with the idle look-around's glances on top (ROBOT_HEAD).",
 )
+STATE_ODOM = UpstreamRef(
+    "robot.state.odom",
+    "VERIFIED",
+    src(_PROTO, 4061),
+    "{position: [x, y, z] in metres, z the trunk's height above the ground plane; yaw in "
+    "radians} (lib.rs:4061-4066). 'The contact-odometry estimate: trunk pose in the world frame "
+    "the IMU chose at boot. There is no magnetometer and no absolute reference', the frame being "
+    "'wherever the robot was when it came up' (lib.rs:4056-4059). The field is `default` "
+    "(lib.rs:3918-3922), so a robotd from before the estimator sends no key, which quackd reads "
+    "as no odometry. quackd reads it as a pose whose frame lasts one connection and begins again "
+    "when the duck is picked up, falls or rides a fall down (quackd.space.odometry).",
+)
+STATE_T_NS = UpstreamRef(
+    "robot.state.t_ns",
+    "VERIFIED",
+    src(_PROTO, 3931),
+    "CLOCK_MONOTONIC at the tick in nanoseconds, 'the same clock as TofFrame::t_ns, so a mapper "
+    "can put a state sample and a depth frame on one axis'; zero from a daemon predating it, "
+    "where 't is still the loop's own elapsed time' (lib.rs:3931-3935). quackd times odometry by "
+    "it, and by t on a robotd that sends no t_ns.",
+)
 #: The order robot.state.joints is indexed in, JOINT_NAMES (lib.rs:552-568): the left leg, the
 #: neck, head and mouth, then the right leg.
 JOINT_NAMES = (

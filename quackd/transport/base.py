@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
+from quackd.space.pose import where_summary
+
 if TYPE_CHECKING:
     from quackd.space.source import SpatialSource
 
@@ -115,7 +117,12 @@ class DuckState(BaseModel):
             parts.append(f"battery={self.battery_percent:.0f}%")
         if self.holding:
             parts.append("holding=object-in-beak")
-        if self.x is not None and self.y is not None and self.theta is not None:
+        # A reading of where the robot is says which kind it is, since an odometry pose drifts
+        # and a map's can be lost; `pose=` is the simulators' plain truth, kept for a state with
+        # no reading, which every recorded run before places was.
+        if isinstance(where := self.extras.get("where"), dict):
+            parts.append(f"where={where_summary(where)}")
+        elif self.x is not None and self.y is not None and self.theta is not None:
             parts.append(f"pose=({self.x:.2f}, {self.y:.2f}, {self.theta:.2f} rad)")
         return " ".join(parts)
 

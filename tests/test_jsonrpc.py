@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.error
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -34,11 +35,13 @@ from quackd.duckfile.parser import parse_duck_text
 from quackd.perception import ASSUMED_LENS
 from quackd.perception.base import Detection
 from quackd.safety import Executor
+from quackd.space.places import PlaceBook, PlaceStore
 from quackd.transport.base import (
     HeartbeatError,
     Intent,
     TransportError,
     frame_head_yaw_of,
+    spatial_of,
     twist_shown_since_of,
 )
 from quackd.transport.mock import MockTransport
@@ -206,6 +209,10 @@ class FakeRobotd:
         back, and `move.requested` goes on reporting what it was asked for before."""
         self.reports_frames = reports_frames
         """False leaves `frames` out of the state, as a robotd from before API 24 does."""
+        self.reports_odom = True
+        """False leaves `odom` out of the state, as a robotd from before the estimator does."""
+        self.odom: dict[str, Any] = {"position": [0.0, 0.0, 0.0], "yaw": 0.0}
+        """What every state frame reports as `odom`: where contact odometry puts the duck."""
         self.extra_state: dict[str, Any] = {}
         """Members added to every state frame, to make one as long as a test needs."""
         self.frames_sent = 0
@@ -326,9 +333,10 @@ class FakeRobotd:
             "loop": {"hz": 50.0, "missed": 0},
             "joints": joints,
             "targets": joints,
-            "odom": {"position": [0.0, 0.0, 0.0], "yaw": 0.0},
             "t_ns": int(time.monotonic_ns()),
         }
+        if self.reports_odom:
+            params["odom"] = {"position": list(self.odom["position"]), "yaw": self.odom["yaw"]}
         if self.reports_frames:
             # the fake's own head: yaw turns the camera, and a positive head_pitch tilts it down,
             # the sign upstream's FK test pins (`up.HEAD_YAW_SIGN`)
@@ -3967,3 +3975,124 @@ def test_doctor_prints_the_cameras_last_error(monkeypatch: pytest.MonkeyPatch) -
     error = rows["  error"]
     assert error.state == "fail" and "503" in error.value and UNAVAILABLE_SAID in error.value
     assert camera.requests > 1
+
+
+# ── odometry ──────────────────────────────────────────────────────────────────────────
+
+
+async def _connected(robotd: FakeRobotd) -> JsonRpcUnixTransport:
+    t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
+    await t.connect()
+    return t
+
+
+def _x_of(t: JsonRpcUnixTransport) -> float | None:
+    fix = t.spatial.fix() if t.spatial is not None else None
+    return fix.pose.x if fix is not None and fix.pose is not None else None
+
+
+async def test_robotds_odometry_is_a_pose_in_extras_and_never_in_x_y_theta(
+    robotd: FakeRobotd,
+) -> None:
+    """robotd has sent `odom` on every frame since before the pin, and quackd passed it through
+    raw and read nothing of it. It is a pose now, which says it is odometry, and the adapter
+    passes the source on by name. `x`, `y` and `theta` stay empty, since the flock reads those
+    as one arena every member shares."""
+    t = await _connected(robotd)
+    robotd.odom = {"position": [0.4, -0.2, 0.06], "yaw": 0.5}
+    await _eventually(lambda: _x_of(t) == 0.4, "the duck's odometry reaching quackd")
+    state = await t.get_state()
+    where = state.extras["where"]
+    assert where["kind"] == "odometry" and where["frame"].startswith("odom:")
+    assert (where["x"], where["y"], where["yaw"]) == (0.4, -0.2, 0.5)
+    assert "where=odometry(0.40, -0.20, 0.50 rad, walked " in state.summary()
+    assert (state.x, state.y, state.theta) == (None, None, None)
+    assert spatial_of(t) is t.spatial and MicroduckAdapter(t).spatial is t.spatial
+    assert MicroduckAdapter(MockTransport()).spatial is None
+    await t.close()
+
+
+async def test_a_robotd_from_before_the_estimator_gives_the_duck_no_pose(
+    robotd: FakeRobotd,
+) -> None:
+    robotd.reports_odom = False
+    t = await _connected(robotd)
+    assert spatial_of(t) is None
+    state = await t.get_state()
+    assert "where" not in state.extras and "where=" not in state.summary()
+    await t.close()
+
+
+@pytest.mark.parametrize("walking", [True, False], ids=["mid-walk", "between-verbs"])
+async def test_a_pick_up_orphans_every_place_marked_before_it(
+    robotd: FakeRobotd, tmp_path: Path, walking: bool
+) -> None:
+    """Contact odometry follows feet on the floor, so a duck picked up and put down elsewhere
+    reads the pose it left. A place marked before is a place in a frame that ended, whether a
+    verb was walking when the duck was lifted or not: the frames are read either way."""
+    robotd.odom = {"position": [0.05, 0.0, 0.06], "yaw": 0.0}
+    t = await _connected(robotd)
+    source = t.spatial
+    assert source is not None
+    await _eventually(lambda: source.fix().localized, "a first pose", wait_s=5)
+    book = PlaceBook(PlaceStore("microduck:jsonrpc", tmp_path), source)
+    book.mark("sofa")
+    if walking:
+        robotd.twist = [0.1, 0.0, 0.0]
+    robotd.picked_up = True
+    await _eventually(lambda: source.fix().lost == "picked up", "the pick-up", wait_s=5)
+    robotd.picked_up, robotd.twist = False, [0.0, 0.0, 0.0]
+    await _eventually(lambda: source.fix().localized, "the duck back on its feet", wait_s=5)
+    (view,) = book.views()
+    assert view.status == "orphaned"
+    assert view.reason == "it was marked on odometry that has started again since"
+    await t.close()
+
+
+async def test_a_frozen_robot_clock_walks_nowhere_and_one_that_goes_back_begins_again(
+    robotd: FakeRobotd,
+) -> None:
+    """Freshness is the robot's own clock moving on, not frames arriving: a stream that sends
+    its last frame again has walked nowhere, and a clock that goes back is a robotd that started
+    over, whose frame cannot be the one places were marked in."""
+    t = await _connected(robotd)
+    source = t.spatial
+    assert source is not None
+    robotd.extra_state = {"t_ns": 5_000_000_000}
+    robotd.odom = {"position": [0.05, 0.0, 0.06], "yaw": 0.0}
+    await _eventually(lambda: source.fix().t == 5.0 and _x_of(t) == 0.05, "a frozen clock")
+    walked, before = source.fix().walked_m, source.fix().frame
+    robotd.odom = {"position": [0.1, 0.0, 0.06], "yaw": 0.0}
+    await _eventually(lambda: _x_of(t) == 0.1, "a step on the frozen clock", wait_s=5)
+    assert source.fix().walked_m == walked, "a step counted with no time passing"
+    robotd.extra_state = {"t_ns": 1_000_000_000}
+    await _eventually(lambda: source.fix().t == 1.0, "the clock going back", wait_s=5)
+    after = source.fix().frame
+    assert before is not None and after is not None and after.epoch == before.epoch + 1
+    await t.close()
+
+
+async def test_odometry_that_stays_at_zero_through_a_walk_is_no_odometry(
+    robotd: FakeRobotd,
+) -> None:
+    """robotd with `--fake` has no servos to read, and its estimator never moves: a second of a
+    walk robotd's state showed it taking, with not a millimetre of odometry, is no pose."""
+    t = await _connected(robotd)
+    source = t.spatial
+    assert source is not None
+    robotd.twist = [0.2, 0.0, 0.0]
+    await _eventually(lambda: "stayed at zero" in (source.fix().lost or ""), "zeros", wait_s=10)
+    assert source.fix().pose is None
+    await t.close()
+
+
+async def test_odometry_with_no_fresh_state_frame_is_no_pose(
+    robotd: FakeRobotd, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    t = await _connected(robotd)
+    source = t.spatial
+    assert source is not None
+    await _eventually(lambda: source.fix().localized, "a first pose", wait_s=5)
+    monkeypatch.setattr(t, "state_age_s", lambda: 9.0)
+    assert source.fix().lost == "the newest robot.state frame is 9.0 s old"
+    await t.close()

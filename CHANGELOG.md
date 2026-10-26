@@ -9,6 +9,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **A Microduck says where it is by its own odometry.** robotd has sent contact odometry on
+  every state frame since before the release quackd reads, and quackd passed it through raw and
+  read none of it. The state now carries it as a reading, `extras.where`, and the line a pilot
+  reads says `where=odometry(x, y, yaw rad, walked N m)`. Its frame lasts one connection and
+  begins again whenever the duck is picked up, falls or rides a fall down, its clock goes back,
+  or it makes a step longer than its walking policy could, since contact odometry follows feet on
+  the floor and nothing else. A robotd from before the estimator, and one whose odometry stays at
+  zero through a walk, give no reading. `x`, `y` and `theta` stay empty on the real duck, as the
+  flock reads them as one arena every member shares
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+
 ### Fixed
 
 - **A stop sent while a composite runs keeps its next move from starting.** Each call a

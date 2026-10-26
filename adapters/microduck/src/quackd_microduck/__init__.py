@@ -25,6 +25,7 @@ from quackd.adapters.manifest import (
     verb_spec,
 )
 from quackd.perception import ASSUMED_LENS
+from quackd.space.source import SpatialSource
 from quackd.transport.base import (
     Ack,
     DuckState,
@@ -33,6 +34,7 @@ from quackd.transport.base import (
     Intent,
     frame_period_of,
     frame_taken_at_of,
+    spatial_of,
 )
 from quackd.verbs.core import CORE
 from quackd.verbs.registry import Precondition, Verb
@@ -356,6 +358,15 @@ class MicroduckAdapter:
         A method here that answered for every backend would read as a body that took none."""
         shown = getattr(self.transport, "twist_shown_since", None)
         return shown if callable(shown) else None
+
+    @property
+    def spatial(self) -> SpatialSource | None:
+        """Where the duck is: the transport's own source, contact odometry on `jsonrpc` when
+        robotd reports it, and None on every backend that does not say. Passed on by name for
+        the reason `twist_shown_since` is: anything else reads this adapter, not the transport,
+        and a property that answered for every backend would read as a duck that knows where it
+        is (`quackd.transport.base.spatial_of`)."""
+        return spatial_of(self.transport)
 
     @property
     def head_pitches(self) -> bool:

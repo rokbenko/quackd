@@ -36,13 +36,26 @@ class SpatialSource(Protocol):
     - `keyframes_follow_head`: whether a view the head turns to is one the map takes.
     """
 
-    period_s: float | None
-    footprint_m: float | None
-    stop_every_m: float | None
-    settle_timeout_s: float | None
-    keyframes_follow_head: bool
-    has_grid: bool
-    can_wipe: bool
+    @property
+    def period_s(self) -> float | None: ...
+
+    @property
+    def footprint_m(self) -> float | None: ...
+
+    @property
+    def stop_every_m(self) -> float | None: ...
+
+    @property
+    def settle_timeout_s(self) -> float | None: ...
+
+    @property
+    def keyframes_follow_head(self) -> bool: ...
+
+    @property
+    def has_grid(self) -> bool: ...
+
+    @property
+    def can_wipe(self) -> bool: ...
 
     def fix(self) -> Fix: ...
 
@@ -56,16 +69,37 @@ class SpatialSource(Protocol):
 
 
 class SpatialSourceBase:
-    """A source with no grid and nothing to wipe, whose frame is the one its readings carry.
-    Every source here starts from it and overrides what its body offers."""
+    """A source with no grid and nothing to wipe, whose frame is the one its readings carry,
+    and which says nothing of its period, footprint or stops. Every source here starts from it
+    and overrides what its body offers."""
 
-    period_s: float | None = None
-    footprint_m: float | None = None
-    stop_every_m: float | None = None
-    settle_timeout_s: float | None = None
-    keyframes_follow_head: bool = False
-    has_grid: bool = False
-    can_wipe: bool = False
+    @property
+    def period_s(self) -> float | None:
+        return None
+
+    @property
+    def footprint_m(self) -> float | None:
+        return None
+
+    @property
+    def stop_every_m(self) -> float | None:
+        return None
+
+    @property
+    def settle_timeout_s(self) -> float | None:
+        return None
+
+    @property
+    def keyframes_follow_head(self) -> bool:
+        return False
+
+    @property
+    def has_grid(self) -> bool:
+        return False
+
+    @property
+    def can_wipe(self) -> bool:
+        return False
 
     def fix(self) -> Fix:
         raise NotImplementedError

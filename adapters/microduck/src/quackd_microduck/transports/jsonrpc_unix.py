@@ -89,6 +89,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections import deque
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
@@ -97,6 +98,8 @@ from typing import Any, NamedTuple
 
 from PIL import Image
 
+from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.pose import where_record
 from quackd.transport.base import (
     FRAME_HEAD_YAW_DEG,
     Ack,
@@ -107,6 +110,7 @@ from quackd.transport.base import (
     TransportError,
 )
 from quackd_microduck import upstream_api as up
+from quackd_microduck.sim3d.gait import CMD_MAX_VX, CMD_MAX_VY
 from quackd_microduck.webrtc import WebRtcCamera, is_webrtc_url
 
 STATUS = "EXPERIMENTAL — verified method names, unverified against hardware"
@@ -589,6 +593,36 @@ def _pickup_detection(read: StateRead) -> bool | None:
     return ("picked_up" in safety) if isinstance(safety, dict) else None
 
 
+def _robot_clock(state: dict[str, Any]) -> float | None:
+    """When a state frame was taken on robotd's own clock, in seconds: `t_ns`, CLOCK_MONOTONIC,
+    on a robotd that sends it, else `t`, the loop's own elapsed seconds (`up.STATE_T_NS`). One
+    robotd sends one or the other on every frame, so the two are never compared."""
+    t_ns = _finite_float(state.get("t_ns"))
+    if t_ns is not None and t_ns > 0:
+        return t_ns / 1e9
+    return _finite_float(state.get("t"))
+
+
+def _finite_float(value: Any) -> float | None:
+    """`value` as a float when it is a finite number, else None."""
+    return float(value) if _finite(value) else None
+
+
+def _off_its_feet(state: dict[str, Any]) -> str | None:
+    """Why a state frame says the duck is off its feet, in words, or None while it is on them:
+    held up by somebody, fallen, or riding a fall down at limp gain. Contact odometry follows
+    feet on the floor, so its frame ends there (`quackd.space.odometry`)."""
+    safety = state.get("safety")
+    safety = safety if isinstance(safety, dict) else {}
+    if safety.get("picked_up") is True:
+        return "picked up"
+    if safety.get("fallen") is True:
+        return "fallen"
+    if safety.get("limp") is True or state.get("policy") in up.LIMP_FALL_LABELS:
+        return "riding a fall"
+    return None
+
+
 def _not_still(read: StateRead, skills: Sequence[str]) -> bool:
     """Whether the newest frame comes from a tick robotd did not count the duck still on, so that
     its idle look-around was not waiting out IDLE_AFTER through it (`up.IDLE_HEAD`): somebody
@@ -667,6 +701,19 @@ class JsonRpcUnixTransport:
         self.camera_wait_s = FIRST_FRAME_WAIT_S if camera_wait_s is None else camera_wait_s
         """How long `connect()` waits for an HTTP camera's first frame (`_await_first_frame`)."""
         self.gaze_hold_s = gaze_hold_s
+        self.spatial: OdometrySource | None = None
+        """Where the duck is, read off robot.state's `odom` (`up.STATE_ODOM`): a source set at
+        connect when robotd reports it, whose frame lasts this connection and begins again when
+        the duck leaves its feet (`quackd.space.odometry`). None before, and on a robotd that
+        reports no `odom`, and then the place verbs are not offered."""
+        self._odometry: OdometryTrack | None = None
+        self._odom_moved = False
+        """Whether any `odom` this connection has been anything but zeros."""
+        self._walk_frames = 0
+        """How many state frames have shown robotd applying a twist this connection."""
+        self._odometry_dead: str | None = None
+        """Why this robotd's `odom` is taken for no odometry at all, once it stayed at zeros
+        through a walk robotd's own state showed it taking (`--fake` has no servos to move)."""
         self.head_fade_s = 0.0
         """How long robotd takes to fade an idle glance out once a look arrives: `up.IDLE_FADE_S`
         on a robotd that glances, from `up.IDLE_HEAD_SINCE_API`, and 0 on one that does not, set
@@ -861,6 +908,7 @@ class JsonRpcUnixTransport:
         result = await self.request(up.ROBOT_SUBSCRIBE.name, {"hz": self.state_hz})
         self.subscribed = result if isinstance(result, dict) else {}
         await self._await_first_state()
+        self._start_odometry()
         # `camera_working` is what the manifest narrows on, and it has to mean "a frame
         # arrived", not "a URL was typed": a typo'd host, a missing extra or a mediad that
         # never reached PLAYING would otherwise still advertise observe, go_to, search_scan
@@ -1085,6 +1133,7 @@ class JsonRpcUnixTransport:
         self._last_state_at = time.monotonic()
         self._frames_read += 1
         self._state_arrived.set()
+        self._feed_odometry(self._last_state)
         self._settle(self._last_state, self._last_state_at)
         self._prune()
         walking = any(task not in self._held for task in self._walking)
@@ -1609,8 +1658,76 @@ class JsonRpcUnixTransport:
                 # the policy to drive and is all quackd has for a duck on the floor, and the lens
                 # of mediad's /frame while it is assumed from the first frame's shape.
                 "assumptions": self._assumptions(),
+                # Where the duck is by its odometry (`quackd.space.pose.where_record`), on a
+                # robotd that reports it. `x`, `y` and `theta` stay empty: they are the
+                # simulators' frame, which the flock reads as one arena all its members share.
+                **self._where_extras(),
             },
         )
+
+    # ── odometry ────────────────────────────────────────────────────────────────────
+
+    def _start_odometry(self) -> None:
+        """A new odometry frame for this connection, on a robotd whose first state frame carries
+        `odom`. One that sends no `odom` predates the estimator (`up.STATE_ODOM`), and the duck
+        has no pose quackd can read."""
+        self._odom_moved, self._walk_frames, self._odometry_dead = False, 0, None
+        if not isinstance((self._last_state or {}).get("odom"), dict):
+            self._odometry, self.spatial = None, None
+            return
+        self._odometry = OdometryTrack(
+            f"odom:{uuid.uuid4().hex[:12]}",
+            # the fastest the walking policy is trained to follow, forward and sideways at once
+            max_speed_mps=math.hypot(CMD_MAX_VX, CMD_MAX_VY),
+        )
+        self._feed_odometry(self._last_state or {})
+        self.spatial = OdometrySource(
+            self._odometry, stale=self._pose_staleness, label="contact odometry from robotd"
+        )
+
+    def _feed_odometry(self, state: dict[str, Any]) -> None:
+        """Hand one state frame's `odom` to the track, timed by robotd's own clock, and say when
+        the duck is off its feet, which begins the frame again."""
+        track = self._odometry
+        odom = state.get("odom")
+        if track is None or not isinstance(odom, dict):
+            return
+        position, yaw = odom.get("position"), _finite_float(odom.get("yaw"))
+        if not isinstance(position, list) or len(position) < 2 or yaw is None:
+            return
+        x, y = _finite_float(position[0]), _finite_float(position[1])
+        if x is None or y is None:
+            return
+        if x or y or yaw:
+            self._odom_moved = True
+        applied = (state.get("move") or {}).get("applied")
+        if isinstance(applied, list) and any(_finite(v) and v != 0 for v in applied):
+            self._walk_frames += 1
+            # a second of a walk robotd showed it taking, and not a millimetre of odometry: this
+            # robotd's estimator moves with nothing, as `--fake`'s does, with no servos to read
+            if not self._odom_moved and self._walk_frames >= self.state_hz:
+                self._odometry_dead = (
+                    "this robotd's odometry stayed at zero through a second of walking its own "
+                    "state showed it taking, so it reports no odometry at all"
+                )
+        track.update(x, y, yaw, _robot_clock(state), held=_off_its_feet(state))
+
+    def _pose_staleness(self) -> str | None:
+        """Why the newest odometry cannot be trusted now, or None: the link is gone, no state
+        frame is fresh, or this robotd reports odometry that never moves."""
+        if self._odometry_dead is not None:
+            return self._odometry_dead
+        if self._lost is not None:
+            return f"the link to robotd is gone ({self._lost})"
+        age = self.state_age_s()
+        if age is None:
+            return "no robot.state frame has arrived"
+        if age > state_stale_after_s(self.state_hz):
+            return f"the newest robot.state frame is {age:.1f} s old"
+        return None
+
+    def _where_extras(self) -> dict[str, Any]:
+        return {"where": where_record(self.spatial.fix())} if self.spatial is not None else {}
 
     def _assumptions(self) -> list[str]:
         """`extras.assumptions`: `stand_up`'s `robot.enable` always, and the lens of `mediad`'s
