@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "passport-nebius"
 version = "0.1.0"
-description = "Robot Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's entry to the Nebius x NVIDIA Global AI Hackathon 2026"
+description = "quackd Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's entry to the Nebius x NVIDIA Global AI Hackathon 2026"
 readme = { file = "README.markdown", content-type = "text/markdown" }
 license = "Apache-2.0"
 requires-python = ">=3.11"

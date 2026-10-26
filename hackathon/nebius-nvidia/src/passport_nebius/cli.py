@@ -29,7 +29,7 @@ from .pilot import run_launch, unpriced
 
 app = typer.Typer(
     name="passport-nebius",
-    help="Robot Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's hackathon "
+    help="quackd Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's hackathon "
     "edition. Every model call goes to Token Factory, and every id is read from its live list.",
     no_args_is_help=True,
     add_completion=False,
@@ -354,7 +354,7 @@ def whois(
 doorstep_app = typer.Typer(
     help="The doorstep: a postman robot and a household robot that have never met agree how a "
     "letter changes hands by "
-    "Robot Passport, each piloted by Nemotron on Token Factory.",
+    "quackd Passport, each piloted by Nemotron on Token Factory.",
     no_args_is_help=True,
     rich_markup_mode=None,
     pretty_exceptions_show_locals=False,

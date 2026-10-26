@@ -1,5 +1,5 @@
 """The doorstep: a postman robot and a household robot that have never met, each with its own
-owner, registry and Nemotron pilot, meet by Robot Passport and settle how a letter changes hands.
+owner, registry and Nemotron pilot, meet by quackd Passport and settle how a letter changes hands.
 
 The postman is Agile ONE SN, Agile Robots' humanoid built on NVIDIA Isaac GR00T, as a mock body
 (`agile_one_sn.py`). The household robot is Microduck, Pollen Robotics' 25 cm duck, on quackd's
