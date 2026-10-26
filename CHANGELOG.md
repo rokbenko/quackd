@@ -238,7 +238,6 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
   frames go there.
 
-
 ## [0.25.0] — 2026-10-25
 
 0.25.0 keeps the SO-101 playing while a policy's next chunk is on its way. A policy served with
