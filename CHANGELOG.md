@@ -9,6 +9,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stop sent between two of a composite's calls ends the composite there.** Each call a
+  composite made took its own count of stops when it was admitted, so a stop sent between two of
+  them was already counted when the second began, and the second walked or kicked as if nobody
+  had braked, unless the composite checked between its calls, as `approach_and` does. A nested
+  call answers to the stops its composite answers to now, and one a stop overtook is not started,
+  which the log records as a `stopped` gate ([docs/concepts/safety.md](docs/concepts/safety.md)).
+
 ## [0.27.0] — 2026-10-26
 
 0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`

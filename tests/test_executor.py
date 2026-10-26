@@ -1345,3 +1345,69 @@ async def test_a_battery_the_rule_reads_as_too_low_still_lets_the_stop_through(
     assert ex.abort.is_set()
     with pytest.raises(Aborted):
         await ex.run_verb("walk", {"vx": 0.1})
+
+
+async def test_a_stop_between_two_of_a_composites_calls_ends_the_second_before_it_starts(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A composite's nested call took a count of stops of its own when it was admitted, so a stop
+    sent between two of the composite's calls was already in the count the second started from,
+    and it walked its whole walk after the brake. It answers to the composite's count now, and is
+    not started at all."""
+    first_done = asyncio.Event()
+    go_on = asyncio.Event()
+    second: list[VerbResult] = []
+
+    async def two_walks(ctx: VerbContext, _: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        await ctx.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+        first_done.set()
+        await go_on.wait()
+        # no look at `ctx.interrupted()` here, on purpose: the nested call has to hold the line
+        # by itself, for a composite that does not
+        second.append(await ctx.run_verb("walk", {"vx": 0.1, "duration_s": 0.5}))
+        return second[-1]
+
+    registry.register(Verb("two_walks", "two walks", two_walks, timeout_s=10))
+    ex, seen = logged(registry, mock_transport, allow="two_walks, walk")
+    running = asyncio.create_task(ex.run_verb("two_walks"))
+    await asyncio.wait_for(first_done.wait(), 5)
+    assert (await ex.run_verb("stop")).ok
+    after = len(mock_transport.intents)
+    go_on.set()
+    result = await asyncio.wait_for(running, 5)
+    assert not [i for i in mock_transport.intents[after:] if i.kind == "move"], "walked after it"
+    assert second and second[0].summary == f"walk did not start: {STOPPED}"
+    assert second[0].data["ended_by"] == STOP_ENDED
+    assert ("stopped", "refused") in gates(seen)
+    assert not result.ok
+
+
+async def test_a_rule_a_verb_reads_mid_way_stops_the_body_and_then_aborts_the_run(
+    registry: VerbRegistry,
+) -> None:
+    """The executor read `abort_when` when it admitted a verb and not again until the next, so a
+    verb that walked for minutes never heard the battery fall below the task's line. One that
+    reads it at a stop (`VerbContext.abort_when`) is stopped where it stands, and then the run is
+    aborted, in the words the admission's gate uses."""
+    body = MockTransport(
+        states=[
+            DuckState(policy="mock", posture="standing", battery_percent=40),
+            DuckState(policy="mock", posture="standing", battery_percent=10),
+        ]
+    )
+
+    async def long_walk(ctx: VerbContext, _: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        await ctx.abort_when(await ctx.transport.get_state())
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        return VerbResult.success("walked on past the rule")
+
+    registry.register(Verb("long_walk", "walks for a while", long_walk, timeout_s=10))
+    ex, seen = logged(registry, body, allow="long_walk", abort="Battery below 15%")
+    with pytest.raises(Aborted, match="battery 10% below 15%"):
+        await ex.run_verb("long_walk")
+    assert ex.abort.is_set()
+    assert [i.kind for i in body.intents] == ["move", "stop"], "a twist after it, or no stop"
+    fired = [e.data for e in seen if e.kind == "gate" and e.data["gate"] == "abort_when"]
+    assert fired and fired[0]["name"] == "long_walk" and fired[0]["outcome"] == "fired"
