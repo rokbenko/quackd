@@ -17,10 +17,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and the page's `stop`, `answer`, `line` and `quit` on stdin. Everything a terminal would show
   still goes to stderr. A stop is a message, so it reaches a run on Windows too, where no signal a
   parent can send stops a child before it folds, and a page that goes away is a stop nobody
-  pressed. A page's answer is recorded as a person's, with `channel: web` beside it in the
-  `prompt` row, and a question taken back is recorded as unanswered, never as a no. `run_start`
-  gains `front: jsonl` on such a run, and the command it names leaves `--front` out. `--by-hand`,
-  `--flock`, `--robots` and a task file with a `flock:` block are refused under it
+  pressed. A stop sent before the robot connects means it never connects. A page's answer is
+  recorded as a person's, with `channel: web` beside it in the `prompt` row, and a question taken
+  back is recorded as unanswered, never as a no. `run_start` gains `front: jsonl` on such a run, and
+  the command it names leaves `--front` out. `--by-hand`, `--flock`, `--robots` and a task file with
+  a `flock:` block are refused under it
   ([ADR-0069](docs/adr/0069-a-page-drives-quackds-own-commands-over-json-lines.md)).
 - **`python -m quackd` runs the same command as `quackd`.**
 
@@ -31,6 +32,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   because nothing caught the abort it raised. A question there that nobody answered, a prompt
   that raised on Ctrl-C or the end of its input, ends the run the same way, where it used to
   escape as whatever the prompt raised.
+- **A confirm nobody answered is no longer recorded as a no.** When the y/N prompt raised, on
+  Ctrl-C or the end of its input, the `gate` row said `answer: false` and the pilot was told
+  `human declined kick (the prompt raised Abort)`, though nobody had declined anything. The row
+  now says `answer: null`, and the pilot is told `nobody answered whether to run kick (the prompt
+  raised Abort)`. The verb is still refused.
 
 ### Documentation
 

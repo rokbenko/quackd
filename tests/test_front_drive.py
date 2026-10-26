@@ -153,3 +153,23 @@ def test_drive_from_the_page_takes_lines_before_it_is_ready_and_ends_on_quit(
     assert any(line.get("goal") == 1 for line in page.lines if line["ev"] == "event")
     start = next(r for r in _transcript(end["run_dir"]) if r["kind"] == "run_start")
     assert start["front"] == "jsonl"
+
+
+def test_a_drive_the_page_stops_while_it_is_set_up_never_connects(tmp_path: Path) -> None:
+    """A Stop sent with the command: the session ends before its robot connects, as when a
+    Ctrl-C at a terminal comes that early, and says so rather than braking a robot it was never
+    meant to reach."""
+    runs = tmp_path / "runs"
+    page = _Page(
+        ["drive", "--robot", "microduck:sim2d", "--llm", "fake", "--runs-dir", str(runs)],
+        tmp_path,
+    )
+    page.send(op="stop")
+    end = page.wait_for(lambda line: line["ev"] == "end")
+    assert page.finish() == 1
+    said = "the page stopped the session before the robot connected"
+    assert (end["outcome"], end["reason"], end["exit_code"]) == ("aborted", said, 1)
+    records = _transcript(end["run_dir"])
+    assert not [r for r in records if r["kind"] == "run_start"], "it never connected"
+    assert (records[-1]["kind"], records[-1]["outcome"]) == ("run_end", "aborted")
+    assert said in "".join(page.stderr)

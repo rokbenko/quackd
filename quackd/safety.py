@@ -762,10 +762,12 @@ class Executor:
                 # EOF. An asker that raised has not said yes, and the run deserves to be told
                 # so in the gate's words rather than as `verb_end error "Abort: "`.
                 why = f"the prompt raised {type(e).__name__}" + (f": {e}" if str(e) else "")
+                # unanswered, never declined: nobody said no, so neither the gate's `answer`
+                # nor the words the pilot reads may say somebody did
                 self._emit(
-                    "gate", name=name, gate="confirm", outcome="denied", answer=False, reason=why
+                    "gate", name=name, gate="confirm", outcome="denied", answer=None, reason=why
                 )
-                raise ConfirmDenied(f"human declined {name} ({why})") from e
+                raise ConfirmDenied(f"nobody answered whether to run {name} ({why})") from e
             asked = a_person_was_asked(self.confirm)
             if asked:
                 # the exchange, beside the gate's record of what it decided: only where a

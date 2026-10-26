@@ -917,7 +917,8 @@ async def test_a_confirm_prompt_that_raises_is_a_denial_that_names_the_exception
 ) -> None:
     """typer's y/N prompt raises click's `Abort` on Ctrl-C, whose `str()` is empty. That used
     to escape as `verb_end error "Abort: "` with no gate at all, so the log never recorded
-    that a human had been asked."""
+    that a human had been asked. Denied, and answered by nobody: the gate's `answer` is None,
+    never False, and the pilot is told nobody answered rather than that a human declined."""
 
     class Abort(RuntimeError):  # the shape click's own Abort has
         pass
@@ -927,10 +928,10 @@ async def test_a_confirm_prompt_that_raises_is_a_denial_that_names_the_exception
 
     ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
     ex.confirm = raises
-    with pytest.raises(ConfirmDenied, match="Abort"):
+    with pytest.raises(ConfirmDenied, match=r"^nobody answered whether to run kick \(.*Abort"):
         await ex.run_verb("kick")
     assert gates(seen) == [("confirm", "denied")]
-    assert "Abort" in seen[1].data["reason"] and seen[1].data["answer"] is False
+    assert "Abort" in seen[1].data["reason"] and seen[1].data["answer"] is None
     assert ends(seen)[0]["outcome"] == "denied"
     assert mock_transport.intents_of("do") == []
 

@@ -1496,8 +1496,9 @@ def _fronted(command: str, front: str, body: Callable[[], None]) -> None:
         code = e.exit_code
         raise
     except KeyboardInterrupt:
-        # the page's second Stop, which quits at once as a second Ctrl-C does
-        code = 1
+        # the page's second Stop, which quits at once as a second Ctrl-C does, and leaves with
+        # the code a command a Ctrl-C ended leaves with
+        code = 130
         if opened.outcome is None or opened.outcome.get("outcome") == "refused":
             opened.outcome = {"outcome": "aborted", "reason": "quit at once from the page"}
         raise
@@ -2733,6 +2734,10 @@ def _run_impl(
         from quackd.agent.loop import AgentLoop
 
         global _SWITCH
+        if front is not None and front.stopped_before_start() is not None:
+            # the page's Stop came before there was a run to stop: nothing connects, as nothing
+            # does when a Ctrl-C at a terminal comes that early
+            return None
         loop = AgentLoop(cfg)
         ran.append(loop)
         if nearby is not None:
@@ -2792,6 +2797,11 @@ def _run_impl(
     finally:
         if talk_server is not None:
             talk_server.close()
+    if result is None and front is not None:
+        stopped = front.stopped_before_start() or "stopped"
+        front.finished("aborted", stopped)
+        _fail(f"stopped before the robot connected ({stopped})")
+        return
     if recorder is not None:
         # after the status line rather than under it: Rich 13.7 refuses a second live region
         # on one console, and a long run can be a thousand frames to quantise

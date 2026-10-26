@@ -67,6 +67,10 @@ def session_duck(allow: Sequence[str]) -> DuckFile:
     return DuckFile(frontmatter=front, body=goal.body, path="<drive>")
 
 
+class Halted(Exception):
+    """The page sent a Stop, a quit or its going away while the session was being set up."""
+
+
 class DriveError(Exception):
     """A session refused before anything connected, in a sentence of its own."""
 
@@ -223,6 +227,9 @@ async def run_drive(
     started = time.perf_counter()
     outcome, reason = "success", "the session ended"
     try:
+        if front is not None and front.halted():
+            # nothing connects, as nothing does when a Ctrl-C at a terminal comes that early
+            raise Halted("the page stopped the session before the robot connected")
         await robot.connect()
         registry = executor.registry
         if robot.duck is None:
@@ -312,6 +319,9 @@ async def run_drive(
             await drive_from_keyboard(drive, asker, say=say)
         else:
             await drive_from_pipe(drive, stream, say=say)
+    except Halted as e:
+        outcome, reason = "aborted", str(e)
+        raise DriveError(str(e)) from None
     except Exception as e:
         outcome, reason = "error", f"{type(e).__name__}: {e}"
         raise

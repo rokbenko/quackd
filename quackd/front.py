@@ -57,6 +57,7 @@ import functools
 import io
 import itertools
 import json
+import math
 import os
 import sys
 import threading
@@ -65,7 +66,7 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, TextIO, cast
 
 from quackd import __version__
 
@@ -98,8 +99,10 @@ prompt or a model's whole reply follows the run directory, and a pipe is no plac
 ITEMS_CAP = 100
 DEPTH_CAP = 8
 
-END_FLUSH_S = 5.0
-"""How long the last line waits for the page to read the ones before it."""
+END_FLUSH_S = 60.0
+"""How long the last line waits for the page to read the ones before it. A page that has gone
+fails the write at once, so this is only ever waited out on one that is there and slow, and the
+run is over by then: the process exiting sooner would lose its `end` line."""
 
 PAGE_GONE = "the page went away"
 """The reason a run ends with when the page's input ended, which nobody pressed: unlike the Stop
@@ -133,6 +136,66 @@ def trimmed(value: Any, depth: int = 0) -> Any:
             kept.append(f"... ({len(items) - ITEMS_CAP} more)")
         return kept
     return value
+
+
+def finite(value: Any) -> Any:
+    """`value` with every number JSON has no word for, NaN and the infinities, said as text: a
+    page reads the lines with a strict parser, and `NaN` is not JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {k: finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [finite(v) for v in value]
+    return value
+
+
+class Forgiving:
+    """stderr as a run behind the page writes it: a write the pipe refuses is dropped, and
+    every write after it, rather than raised into the middle of a stop or a fold.
+
+    The page dying closes the pipe its run's stderr goes to. On Linux and macOS the next write
+    raises BrokenPipeError, which Rich hands to `quiet_broken_pipes`; on Windows it raises
+    OSError (EINVAL), which nothing caught, so a stop that said what it was doing before setting
+    the abort never set it, and the robot went on. Nothing a run says on stderr is worth that:
+    its record is its own files. Text only, as the stream it wraps: a write of bytes still
+    raises, which is how click tells a text stream from a binary one."""
+
+    def __init__(self, stream: IO[str]) -> None:
+        self._stream = stream
+        self.dead = False
+        """A write failed, and nothing more is written."""
+        self.encoding: str = getattr(stream, "encoding", None) or "utf-8"
+        self.errors: str = getattr(stream, "errors", None) or "replace"
+
+    def write(self, text: str) -> int:
+        if not isinstance(text, str):
+            raise TypeError(f"write() argument must be str, not {type(text).__name__}")
+        if not self.dead:
+            try:
+                self._stream.write(text)
+            except (OSError, ValueError):
+                self.dead = True
+        return len(text)
+
+    def flush(self) -> None:
+        if not self.dead:
+            try:
+                self._stream.flush()
+            except (OSError, ValueError):
+                self.dead = True
+
+    def fileno(self) -> int:
+        return self._stream.fileno()
+
+    def isatty(self) -> bool:
+        try:
+            return self._stream.isatty()
+        except (OSError, ValueError):
+            return False
+
+    def writable(self) -> bool:
+        return True
 
 
 def _frame_line(image: Image.Image, caption: str | None) -> dict[str, Any]:
@@ -177,14 +240,17 @@ class Channel:
     def open(cls) -> Channel:
         """Keep stdout for the protocol from here on, and send every other write to stderr.
 
-        fd 1 is duplicated for the lines, then pointed at stderr, and `sys.stdout` is pointed at
-        `sys.stderr` rather than rewrapped, which keeps the `errors="replace"` that `ui` gave it.
-        quackd's consoles look the stream up at every print, so they follow without a rebuild.
-        Only ever called in the process the page started, never under a test runner, where it
-        would take the runner's own stdout away for good."""
+        fd 1 is duplicated for the lines, then pointed at stderr, and `sys.stdout` and
+        `sys.stderr` both become one `Forgiving` round the stderr `ui` configured, rather than a
+        new wrapper, which keeps the `errors="replace"` it was given; a page that has gone can
+        then never turn a line said on stderr into an exception. quackd's consoles look the
+        stream up at every print, so they follow without a rebuild. Only ever called in the
+        process the page started, never under a test runner, where it would take the runner's
+        own stdout away for good."""
         sys.stdout.flush()
         out = os.fdopen(os.dup(1), "w", encoding="utf-8", newline="\n", buffering=1)
         os.dup2(2, 1)
+        sys.stderr = cast("TextIO", Forgiving(sys.stderr))
         sys.stdout = sys.stderr
         return cls(out)
 
@@ -193,7 +259,7 @@ class Channel:
 
     def send(self, ev: str, **data: Any) -> None:
         with self._cv:
-            if self._closing:
+            if self._closing or self.broken.is_set():
                 return
             self._events.append({"ev": ev, **data})
             self._cv.notify()
@@ -250,7 +316,11 @@ class Channel:
         if self.broken.is_set():
             return
         try:
-            self._out.write(json.dumps(line, ensure_ascii=True, default=str) + "\n")
+            try:
+                text = json.dumps(line, ensure_ascii=True, default=str, allow_nan=False)
+            except ValueError:
+                text = json.dumps(finite(line), ensure_ascii=True, default=str, allow_nan=False)
+            self._out.write(text + "\n")
             self._out.flush()
         except (OSError, ValueError):
             self.broken.set()
@@ -389,15 +459,24 @@ class Questions:
     def someone_there(self) -> bool:
         return not self.gone
 
+    def end(self) -> bool:
+        """Nobody is at the page any more: no question is put from now on. False where that was
+        already so. Under the lock `_put` takes, so no question slips in after it."""
+        with self._lock:
+            if self.gone:
+                return False
+            self.gone = True
+            return True
+
     def _put(
         self, kind: str, question: str, detail: str | None, loop: asyncio.AbstractEventLoop | None
     ) -> _Question:
-        if self.gone:
-            raise QuestionWithdrawn("nobody is at the page to answer it")
-        asked = _Question(next(self._ids), kind, question)
-        if loop is not None:
-            asked.loop, asked.future = loop, loop.create_future()
         with self._lock:
+            if self.gone:
+                raise QuestionWithdrawn("nobody is at the page to answer it")
+            asked = _Question(next(self._ids), kind, question)
+            if loop is not None:
+                asked.loop, asked.future = loop, loop.create_future()
             self._pending[asked.id] = asked
         extra = {"detail": detail} if detail else {}
         self._channel.send("ask", id=asked.id, kind=kind, question=question, **extra)
@@ -546,6 +625,7 @@ class Front:
         self._gone_stop = False
         self._finished = False
         self._drive: Callable[[Mapping[str, Any]], None] | None = None
+        self._halted = False
         self._early: list[dict[str, Any]] = []
         """Drive's ops that arrived before its session took them (`attach_drive`)."""
         self.outcome: dict[str, Any] | None = None
@@ -673,22 +753,46 @@ class Front:
         Said on stderr and kept in the saved terminal, as a terminal's question and its answer
         are. A question taken back because the run was stopped sets the stop before the loop
         runs another line, so nothing moves between the two."""
+        from quackd import ui
+
+        if self._stops or self.questions.gone:
+            # a run already stopped puts no new question: it would hold the loop, and the
+            # heartbeat with it, for an answer nobody is going to give
+            self._stop_on_loop()
+            raise QuestionWithdrawn(self._withdrawal())
+        if detail:
+            self._say(detail, warn=True)
+        self._say(f"{question} [answered in the page]")
+        try:
+            answer = self.questions.ask(kind, question, detail)
+        except QuestionWithdrawn as e:
+            with contextlib.suppress(Exception):
+                ui.note(f"{question} [page]: withdrawn ({e})")
+            if self._stops or self.questions.gone:
+                self._stop_on_loop()
+            raise
+        with contextlib.suppress(Exception):
+            ui.note(f"{question} [page]: {'y' if answer else 'n'}")
+        return answer
+
+    def _say(self, text: str, *, warn: bool = False) -> None:
+        """A line on stderr, for the page's view of the terminal, that can never fail whatever
+        said it: a stop, a question or its answer."""
         from rich.text import Text
 
         from quackd import ui
 
-        if detail:
-            ui.err_console.print(Text(detail, style=ui.STYLES["warn"]))
-        ui.err_console.print(Text(f"{question} [answered in the page]"), markup=False)
-        try:
-            answer = self.questions.ask(kind, question, detail)
-        except QuestionWithdrawn as e:
-            ui.note(f"{question} [page]: withdrawn ({e})")
-            if self._stops or self.questions.gone:
-                self._stop_on_loop()
-            raise
-        ui.note(f"{question} [page]: {'y' if answer else 'n'}")
-        return answer
+        with contextlib.suppress(Exception):
+            ui.err_console.print(Text(text, style=ui.STYLES["warn"] if warn else ""))
+
+    def _gone(self) -> bool:
+        """Whether the run's stop is the page's going away rather than its Stop: the first stop
+        says which, and before any stop, the page's input having ended does."""
+        with self._lock:
+            return self._gone_stop if self._stops else self.questions.gone
+
+    def _withdrawal(self) -> str:
+        return "the page went away" if self._gone() else "the run was stopped"
 
     # ── ops in ──
 
@@ -709,22 +813,27 @@ class Front:
         """The page's input ended, or its pipe broke: nobody is there any more. Every question
         is taken back, and the run is stopped, or the session ended, as the stop and the quit
         a person there would have sent."""
-        with self._lock:
-            if self.questions.gone:
-                return
-            self.questions.gone = True
-        self.questions.withdraw_all("the page went away")
-        if not self._for_drive({"op": "end"}):
-            self.stop(gone=True)
+        if not self.questions.end():
+            return
+        if self._for_drive({"op": "end"}):
+            self.questions.withdraw_all("the page went away")
+            return
+        # the stop first: it is named the page's going away before any question is taken back,
+        # so a question withdrawn by it can never be read as the Stop button's
+        self.stop(gone=True)
 
     def _for_drive(self, op: Mapping[str, Any]) -> bool:
         """Hand `op` to drive's session, or keep it until the session takes them, and say so.
         False for a run, whose ops this front acts on itself."""
         with self._lock:
+            if self.command != "drive":
+                return False
+            if op.get("op") in ("stop", "quit", "end"):
+                # read once, before the robot connects: any of these sent by then means it never
+                # should (`halted`)
+                self._halted = True
             drive = self._drive
             if drive is None:
-                if self.command != "drive":
-                    return False
                 # drive's session is still being set up: a line or a Stop sent now waits for it
                 self._early.append(dict(op))
                 return True
@@ -737,8 +846,10 @@ class Front:
         with self._lock:
             self._drive = take
             early, self._early = self._early, []
-        for op in early:
-            take(op)
+            # under the lock, so no op the reader hands over meanwhile can overtake one sent
+            # before it; `take` only puts the op on the session's loop
+            for op in early:
+                take(op)
 
     # ── a run's stop ──
 
@@ -750,6 +861,23 @@ class Front:
             stopped = self._stops > 0
         if stopped:
             self._stop_on_loop()
+
+    def stopped_before_start(self) -> str | None:
+        """The stop the page sent before the run had a loop, as the reason the run ends with,
+        or None: a run stopped that early never connects, as one a Ctrl-C stops at that point
+        never does."""
+        from quackd.agent.loop import STOP_BUTTON
+
+        with self._lock:
+            if not self._stops:
+                return None
+            return PAGE_GONE if self._gone_stop else STOP_BUTTON
+
+    def halted(self) -> bool:
+        """Drive's: a Stop, a quit or the page's going away has come since the session began to
+        be set up. Read just before the robot connects, which it then never does."""
+        with self._lock:
+            return self._halted
 
     def unbind(self) -> None:
         """The run has ended: a stop from now on stops nothing, and is not said to."""
@@ -765,10 +893,6 @@ class Front:
         `gone` is the stop the page's input ending makes, which nobody pressed: the run ends as
         `PAGE_GONE` says, and a fold the run began by itself goes on to its pose, as it does when
         a heartbeat fails, since only a person's stop leaves an arm where it is."""
-        from rich.text import Text
-
-        from quackd import ui
-
         with self._lock:
             if self._finished:
                 return
@@ -777,23 +901,23 @@ class Front:
             if first:
                 self._gone_stop = gone
             aio = self._aio
+        # The stop first, and any word of it after: a line on stderr can block on a page slow
+        # to read it, or fail on one that has gone, and neither may keep the abort unset.
+        if first and aio is not None:
+            with contextlib.suppress(RuntimeError):  # the loop has already closed
+                aio.call_soon_threadsafe(self._stop_on_loop)
+        # Every stop, a repeat and `now` among them: a question put since the first is taken
+        # back too, since a run waiting on one holds its loop, where no second press reaches.
+        self.questions.withdraw_all(self._withdrawal())
         if now and not first:
-            ui.err_console.print(Text("stop: quitting at once", style=ui.STYLES["warn"]))
+            self._say("stop: quitting at once", warn=True)
             _thread.interrupt_main()
             return
         if not first:
             return
-        said = "the page went away" if gone else "the page's Stop"
-        ui.err_console.print(
-            Text(
-                f"stop: {said}, cancelling the verb and stopping the robot", style=ui.STYLES["warn"]
-            )
-        )
         self._channel.send("status", text="stopping the robot", step=None)
-        if aio is not None:
-            with contextlib.suppress(RuntimeError):  # the loop has already closed
-                aio.call_soon_threadsafe(self._stop_on_loop)
-        self.questions.withdraw_all("the page went away" if gone else "the run was stopped")
+        said = "the page went away" if gone else "the page's Stop"
+        self._say(f"stop: {said}, cancelling the verb and stopping the robot", warn=True)
 
     def _stop_on_loop(self) -> None:
         """On the loop's thread: name the stop, unless something else already stopped the run,
@@ -804,5 +928,5 @@ class Front:
         if agent is None or self._finished:
             return
         if not agent.executor.abort.is_set() and not agent.stop_reason:
-            agent.stop_reason = PAGE_GONE if self._gone_stop else STOP_BUTTON
+            agent.stop_reason = PAGE_GONE if self._gone() else STOP_BUTTON
         agent.executor.abort.set()

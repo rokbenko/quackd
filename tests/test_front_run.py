@@ -185,6 +185,8 @@ def test_a_stop_while_the_page_is_asked_takes_the_question_back(tmp_path: Path) 
     assert not [r for r in records if r["kind"] == "prompt"]
     walk = next(r for r in records if r["kind"] == "gate" and r["name"] == "walk")
     assert walk["reason"] == "the prompt raised QuestionWithdrawn: the run was stopped"
+    assert walk["answer"] is None
+    assert not [r for r in records if "human declined" in json.dumps(r)]
     assert records[-1]["kind"] == "run_end"
 
 
@@ -294,6 +296,106 @@ def test_a_run_whose_page_dies_still_stops_and_closes_its_record(tmp_path: Path)
         assert time.monotonic() < deadline, "the child never ended its run"
         time.sleep(0.05)
     end = _transcript(run_dir)[-1]
+    assert (end["kind"], end["outcome"], end["reason"]) == (
+        "run_end",
+        "aborted",
+        "the page went away",
+    )
+
+
+def test_a_run_the_page_stops_before_it_has_begun_connects_nothing(tmp_path: Path) -> None:
+    """A Stop sent with the command, before there is a run to stop: nothing connects and no run
+    directory is made, as when a Ctrl-C at a terminal comes that early."""
+    page = _Page(_run_args(tmp_path, "hello-world"), tmp_path)
+    page.send(op="stop")
+    end = page.wait_for(lambda line: line["ev"] == "end")
+    assert page.finish() == 1
+    assert (end["outcome"], end["reason"], end["exit_code"]) == ("aborted", "stop button", 1)
+    assert end["run_dir"] is None
+    assert not (tmp_path / "runs").exists()
+    assert "stopped before the robot connected (stop button)" in "".join(page.stderr)
+
+
+def test_a_page_that_dies_while_the_pilot_thinks_still_stops_the_run(tmp_path: Path) -> None:
+    """The page's process killed while the pilot's call is out, with the run's stderr piped to
+    the page, as the page pipes it. On Windows the stop's first word to the dead pipe raised
+    before it set the abort, and the call, and the run, went on. The run must end at once, as
+    for a stop nobody pressed, and close its record."""
+    calling = tmp_path / "calling"
+    pilot = tmp_path / "slow_pilot.py"
+    pilot.write_text(
+        textwrap.dedent(
+            f"""
+            import asyncio, pathlib, sys
+            from quackd.agent.providers import fake
+
+            async def thinking(self, system, history, tools):
+                pathlib.Path({str(calling)!r}).write_text("calling", encoding="utf-8")
+                await asyncio.sleep(30)
+                raise RuntimeError("the page's going away never stopped this call")
+
+            fake.FakeProvider.step = thinking
+            from quackd.cli import main
+            sys.argv[0] = "quackd"
+            main()
+            """
+        ),
+        encoding="utf-8",
+    )
+    out_file = tmp_path / "child-out.jsonl"
+    child = [sys.executable, "-P", str(pilot), *_run_args(tmp_path, "hello-world")]
+    child += ["--front", "jsonl"]
+    parent = tmp_path / "page.py"
+    parent.write_text(
+        textwrap.dedent(
+            f"""
+            import subprocess, threading, time
+            child = subprocess.Popen(
+                {child!r},
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            def drain(source, into):
+                for raw in source:
+                    if into is not None:
+                        into.write(raw)
+                        into.flush()
+            with open({str(out_file)!r}, "wb") as out:
+                threading.Thread(target=drain, args=(child.stdout, out), daemon=True).start()
+                threading.Thread(target=drain, args=(child.stderr, None), daemon=True).start()
+                time.sleep(600)
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    def run_dir() -> str | None:
+        if not out_file.exists():
+            return None
+        for line in out_file.read_text(encoding="utf-8").splitlines():
+            if '"ev": "run_dir"' in line:
+                return str(json.loads(line)["path"])
+        return None
+
+    page = subprocess.Popen(
+        [sys.executable, str(parent)], cwd=tmp_path, env=_env(), stdin=subprocess.DEVNULL
+    )
+    try:
+        deadline = time.monotonic() + 60
+        while not (calling.exists() and run_dir()):
+            assert time.monotonic() < deadline, "the pilot was never called"
+            assert page.poll() is None, "the page ended by itself"
+            time.sleep(0.05)
+    finally:
+        page.kill()
+        page.wait(30)
+    found = run_dir()
+    assert found is not None
+    transcript = Path(found) / "transcript.jsonl"
+    deadline = time.monotonic() + 60
+    while '"run_end"' not in transcript.read_text(encoding="utf-8"):
+        assert time.monotonic() < deadline, "the child never ended its run"
+        time.sleep(0.05)
+    end = _transcript(found)[-1]
     assert (end["kind"], end["outcome"], end["reason"]) == (
         "run_end",
         "aborted",

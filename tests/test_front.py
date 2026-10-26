@@ -27,6 +27,7 @@ from quackd.front import (
     CHANNEL,
     PAGE_GONE,
     Channel,
+    Forgiving,
     Front,
     Questions,
     QuestionWithdrawn,
@@ -146,6 +147,52 @@ def test_a_broken_page_is_noticed_once_and_nothing_more_is_written() -> None:
     channel.close()
     assert channel.broken.is_set()
     assert broken == ["gone"]
+
+
+def test_a_number_json_has_no_word_for_is_sent_as_text_and_the_line_stays_json() -> None:
+    """A page reads the lines with a strict parser, and `NaN` is not JSON: a record carrying
+    one, a distance nothing was measured for, still arrives, with the number said in words."""
+    out = io.StringIO()
+    channel = Channel(out)
+    channel.send("event", kind="verb_end", data={"range_m": float("nan"), "seen": [float("inf")]})
+    channel.send("event", kind="verb_end", data={"range_m": 0.5})
+    channel.close()
+
+    def strict(word: str) -> Any:
+        raise ValueError(f"{word} is not JSON")
+
+    lines = [json.loads(line, parse_constant=strict) for line in out.getvalue().splitlines()]
+    assert [line["data"] for line in lines] == [
+        {"range_m": "nan", "seen": ["inf"]},
+        {"range_m": 0.5},
+    ]
+
+
+def test_stderr_behind_the_page_drops_a_write_the_pipe_refuses_and_every_one_after() -> None:
+    """On Windows a write to the pipe of a page that has gone raises OSError (EINVAL), which
+    nothing caught: whatever was saying something, a stop among them, raised instead of
+    finishing. Behind the page stderr drops it, and every write after it."""
+
+    class Pipe(io.StringIO):
+        refuse = False
+
+        def write(self, text: str) -> int:
+            if self.refuse:
+                raise OSError(22, "Invalid argument")
+            return super().write(text)
+
+    pipe = Pipe()
+    err = Forgiving(pipe)
+    assert err.write("said\n") == 5
+    pipe.refuse = True
+    assert err.write("not said\n") == 9
+    err.flush()
+    assert err.dead
+    pipe.refuse = False
+    err.write("nor this\n")
+    assert pipe.getvalue() == "said\n", "once dead, nothing more is written"
+    with pytest.raises(TypeError):
+        err.write(b"bytes")  # type: ignore[arg-type]
 
 
 # ── the ops in ──
@@ -440,6 +487,97 @@ def test_a_stop_withdraws_the_question_the_run_is_waiting_on() -> None:
     assert caught == {"why": "the run was stopped"}
 
 
+async def test_a_stop_sets_the_abort_even_where_saying_so_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The page's process dying closes its run's stderr, and on Windows the next write to it
+    raises. The stop used to say what it was doing first, raise there, and never set the abort,
+    so the robot went on: the abort is set first now, and a word that fails is not said."""
+    from quackd import ui
+
+    def gone(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(ui.err_console, "print", gone)
+    front, _out = _front()
+    agent = _Agent()
+    front.bind(agent, asyncio.get_running_loop())
+    await asyncio.to_thread(front.on_end)
+    await asyncio.wait_for(agent.executor.abort.wait(), 10)
+    assert agent.stop_reason == PAGE_GONE
+
+
+def test_a_run_already_stopped_puts_no_new_question() -> None:
+    """A question asked once the page's Stop has come would hold the loop, and the heartbeat
+    with it, for an answer nobody is going to give: it is taken back before it is put."""
+    front, out = _front()
+    front.stop()
+    caught: dict[str, str] = {}
+
+    def ask() -> None:
+        try:
+            front.confirm("kick", {"leg": "left"})
+        except QuestionWithdrawn as e:
+            caught["why"] = str(e)
+
+    asking = threading.Thread(target=ask)
+    asking.start()
+    asking.join(10)
+    waited = asking.is_alive()
+    front.questions.withdraw_all("the test is over")  # a question wrongly put is let go
+    asking.join(10)
+    assert not waited, "the question was put, and waited for an answer"
+    assert caught == {"why": "the run was stopped"}
+    front.end(1)
+    assert not [line for line in _lines(out) if line["ev"] == "ask"]
+
+
+def test_a_second_stop_takes_back_a_question_put_since_the_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question that got in after the first stop, as one being put at that moment can, holds
+    the loop's thread, where no second press reaches. Every stop takes such a question back, and
+    the one that quits at once does it before quitting."""
+    front, out = _front()
+    front.stop()
+    caught: dict[str, str] = {}
+
+    def ask() -> None:
+        try:
+            front.questions.ask("confirm", "run kick(leg=left)?")
+        except QuestionWithdrawn as e:
+            caught["why"] = str(e)
+
+    asking = threading.Thread(target=ask)
+    asking.start()
+    _until(_asked(out))
+    released_before_the_quit: list[bool] = []
+
+    def quit_at_once() -> None:
+        asking.join(10)
+        released_before_the_quit.append(not asking.is_alive())
+
+    monkeypatch.setattr(front_mod._thread, "interrupt_main", quit_at_once)
+    front.stop(now=True)
+    asking.join(10)
+    assert caught == {"why": "the run was stopped"}
+    assert released_before_the_quit == [True]
+
+
+async def test_a_question_the_page_takes_back_by_going_away_never_names_the_stop_button() -> None:
+    """The page's input ending takes back the question the run waits on, and the run stops on
+    that withdrawal, perhaps before the stop is counted: it names the page's going away either
+    way, and never a Stop nobody pressed."""
+    front, _out = _front()
+    agent = _Agent()
+    front.bind(agent, asyncio.get_running_loop())
+    front.questions.end()  # the page has gone, and its stop is not counted yet
+    with pytest.raises(QuestionWithdrawn, match="the page went away"):
+        front.confirm("kick", {"leg": "left"})
+    assert agent.executor.abort.is_set()
+    assert agent.stop_reason == PAGE_GONE
+
+
 # ── the last line, and drive's ops ──
 
 
@@ -499,3 +637,31 @@ def test_a_run_takes_stop_and_answer_and_says_so_of_anything_else() -> None:
         "quackd run takes stop and answer, not 'line'",
         "no question 9 is waiting for that answer",
     ]
+
+
+def test_a_run_stopped_before_it_began_says_by_which_stop() -> None:
+    """Read before the run is built: a run the page stopped that early never connects."""
+    front, _out = _front()
+    assert front.stopped_before_start() is None
+    front.stop()
+    front.stop()
+    assert front.stopped_before_start() == STOP_BUTTON
+    gone, _out = _front()
+    gone.on_end()
+    assert gone.stopped_before_start() == PAGE_GONE
+
+
+def test_drive_is_halted_by_a_stop_a_quit_or_the_page_going_away_and_never_by_a_line() -> None:
+    """Read just before drive's robot connects, which it then never does."""
+    for op in ({"op": "stop"}, {"op": "quit"}):
+        front, _out = _front("drive")
+        front.on_op(op)
+        assert front.halted(), op
+    front, _out = _front("drive")
+    front.on_op({"op": "line", "text": "walk forward"})
+    assert not front.halted(), "a line is what the session is for"
+    front.on_end()
+    assert front.halted()
+    run, _out = _front("run")
+    run.on_op({"op": "stop"})
+    assert not run.halted(), "a run's stop is its own (`stopped_before_start`)"

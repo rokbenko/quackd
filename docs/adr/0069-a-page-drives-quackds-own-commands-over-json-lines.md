@@ -42,13 +42,22 @@ switch's first press does, so the full teardown runs on every operating system: 
 is ended, a stop is sent, the arm folds and the record closes. The run ends `aborted` for the
 `stop button`, a person's stop like the kill switch, so it also ends a fold the run began by
 itself (`PERSON_STOPS`). A second Stop, asked for as such, quits at once as a second Ctrl-C does.
-In drive, a Stop brakes, and a second one ends the session in order.
+In drive, a Stop brakes, and a second one ends the session in order. A Stop that comes before
+there is a robot to stop means none connects: the run ends `aborted` with no run directory, and a
+drive session ends before its connect. A run already stopped puts no new question to the page,
+and every Stop takes back a question put since the first, since a run waiting on one holds its
+loop, where no second press reaches.
 
 **The page going away is a stop nobody pressed.** When the page's input ends, or its pipe
 breaks, every question is taken back and the run stops with `the page went away`, which is no
 person's stop, so a fold the run began by itself goes on to its pose, as it does when a heartbeat
 fails. A drive session brakes and ends, its brake recorded as a pipe's. A page that dies outright
-is the same thing: its pipes close with it.
+is the same thing: its pipes close with it. Its stderr pipe closes too, and on Windows a write to
+it raises OSError (EINVAL) where Linux and macOS raise BrokenPipeError, which Rich handles. The
+stop said what it was doing before it set the abort, so its first word raised and the robot went
+on, which the review found before this shipped. The abort is set first now, every word of a stop
+or a question is one that cannot fail, and behind a page stderr drops a write the pipe refuses,
+and every write after it (`Forgiving`).
 
 **A page's yes is a person's yes.** Its answers are marked as a person's, `a person` in the
 record with `channel: web` beside it, so a page can clear a dangerous verb (ADR-0056) and run
@@ -56,7 +65,10 @@ record with `channel: web` beside it, so a page can clear a dangerous verb (ADR-
 `quackd ui` sees to. Each question carries an id and an answer names the one it answers, so a
 second tap answers nothing. A question taken back, by a stop, by the page going away, or by
 nobody answering within five minutes, raises rather than answering no: the record says the
-prompt raised and writes no `prompt` row, and never says a person said no when nobody did.
+prompt raised and writes no `prompt` row, and never says a person said no when nobody did. The
+confirm gate's own row says `answer: null` there, where it said `false`, and the pilot is told
+nobody answered whether to run the verb rather than that a human declined it, which holds for a
+terminal's prompt that raised as well.
 
 **What the page does not drive.** `--by-hand` waits for Enter from somebody at the arm, and a
 flock runs every member behind a kill switch of its own, which no Stop in the page would reach,
