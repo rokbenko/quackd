@@ -523,10 +523,12 @@ __all__ = [
 ]
 
 
-# What this adapter reads from upstream, for `quackd doctor`. Two rows: the robot's own IPC
-# protocol, and the model and walking policy the physics backend fetches at run time and never
-# ships. Declared here rather than in a table in the core (ADR-0022).
+# What this adapter reads from upstream, for `quackd doctor`. Three rows: the robot's own IPC
+# protocol, the model and walking policy the physics backend fetches at run time and never ships,
+# and `mapd`, the onboard map read on its branch. Declared here rather than in a table in the
+# core (ADR-0022).
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
+    from quackd_microduck import mapd_upstream_api as mapd
     from quackd_microduck import upstream_api as robotd
     from quackd_microduck.sim3d import upstream_api as rl
 
@@ -542,6 +544,12 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
             rl,
             "docs/adr/0030-mujoco-physics-backend.md",
             "a robot: the model and the policies are fetched at run time and never shipped",
+        ),
+        (
+            "mapd",
+            mapd,
+            "docs/adapters/microduck/README.md",
+            "a robot: it is on an upstream branch, in no robotd release",
         ),
     )
 

@@ -72,6 +72,19 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     assert not unverified, f"the Microduck's page is missing microduck_rl assumptions: {unverified}"
 
 
+def test_the_microduck_page_lists_every_mapd_ref() -> None:
+    """`mapd`, the duck's onboard map, is a third upstream on the same page: a branch quackd read
+    and no release carries, every row of it an assumption, so every row is said."""
+    from quackd_microduck import mapd_upstream_api as mapd
+
+    doc = _as_rendered(
+        (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    )
+    missing = [ref.name for ref in mapd.all_refs() if ref.name not in doc]
+    assert not missing, f"docs/adapters/microduck/README.md is missing mapd's: {missing}"
+    assert mapd.PIN[:7] in doc and mapd.BRANCH in doc
+
+
 def test_the_microduck_page_says_which_read_it_is() -> None:
     """The page names the commit it read, the release that commit is and the day, and links the
     robot's repository at that commit and no other.

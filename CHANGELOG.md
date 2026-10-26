@@ -47,6 +47,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   verb's `ended_by`, so a kick the brake kept from starting is not a failure in a row
   ([docs/concepts/safety.md](docs/concepts/safety.md)).
 
+### Documentation
+
+- **The Microduck's page says what quackd read of `mapd`, the duck's own map.** `mapd` is on the
+  upstream branch `maploc-v2`, read at `7e0be18`, and in no robotd release, so its socket, its
+  five calls and the numbers it keeps to are listed as assumptions, in their own file
+  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. Nothing in quackd speaks
+  to it yet. One of them differs from Pollen's post: a keyframe is taken after 0.4 s of
+  stillness in the code, where the post says half a second
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+
 ## [0.27.0] — 2026-10-26
 
 0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`

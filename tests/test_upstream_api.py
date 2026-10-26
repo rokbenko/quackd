@@ -19,6 +19,7 @@ from quackd_lerobot import upstream_api as lerobot_api
 from quackd_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
 from quackd_lerobot.policy import upstream_api as lerobot_policy_api
 from quackd_lerobot.sim import upstream_api as so_arm100_api
+from quackd_microduck import mapd_upstream_api as mapd_api
 from quackd_microduck import upstream_api
 from quackd_microduck.sim3d import upstream_api as microduck_rl_api
 from quackd_moss import upstream_api as moss_api
@@ -174,6 +175,15 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         ),
     ),
     (
+        mapd_api,
+        {
+            "adapters/microduck/mapd_upstream_api.py",
+            # the client that speaks to it, which also hands the simulated map its numbers
+            "adapters/microduck/transports/mapd.py",
+        },
+        ("https://github.com/pollen-robotics/microduck",),
+    ),
+    (
         so_arm100_api,
         {
             "adapters/lerobot/sim/upstream_api.py",
@@ -204,6 +214,7 @@ IDS = [
     "huebot",
     "moss",
     "microduck_rl",
+    "mapd",
     "so_arm100",
 ]
 
@@ -287,6 +298,17 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
     for ref in upstream_api.all_refs():
         assert "/blob/main/" not in ref.source, ref
         assert upstream_api.PIN in ref.source, ref
+
+
+def test_the_mapd_refs_are_assumptions_read_at_one_branch_commit() -> None:
+    """`mapd` is on an upstream branch and in no release, so every name quackd spells for it is
+    an assumption until a release carries it, and every one cites the one commit it was read at:
+    the re-read at that release starts from one place, as robotd's does."""
+    assert len(mapd_api.PIN) == 40 and mapd_api.PIN.isalnum() and mapd_api.BRANCH == "maploc-v2"
+    assert mapd_api.refs_by_status("VERIFIED") == [], "no release carries it to verify against"
+    assert len(mapd_api.all_refs()) == len(mapd_api.refs_by_status("UNVERIFIED")) > 0
+    for ref in mapd_api.all_refs():
+        assert mapd_api.PIN in ref.source, ref
 
 
 def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
