@@ -341,7 +341,7 @@ subtask was done, so never declare success on its word alone.
 """
 
 
-PLACE_VERB_NAMES = ("map", "mark_place", "forget_place")
+PLACE_VERB_NAMES = ("map", "mark_place", "forget_place", "go_to_place")
 """The verbs that read where the robot is or name it (`quackd.verbs.places`)."""
 
 
@@ -363,6 +363,11 @@ def places_section(allow: Sequence[str]) -> str:
         said.append("`map` says where it is, by what, and every place with how far and which way")
     if "forget_place" in names:
         said.append("`forget_place` drops a name")
+    if "go_to_place" in names:
+        said.append(
+            "`go_to_place` walks there on the robot's own reading of where it is, and says how "
+            "close it got by what, or why it stopped"
+        )
     return f"""
 ## Places
 A place is a spot this robot stood on, kept under a name: {"; ".join(said)}. Every observation

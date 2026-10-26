@@ -254,6 +254,10 @@ class SimulatedMap(SpatialSourceBase):
         return True
 
     @property
+    def view(self) -> tuple[float, float] | None:
+        return self.params.tof_fov_rad, self.params.tof_range_m
+
+    @property
     def has_grid(self) -> bool:
         return True
 
@@ -324,6 +328,11 @@ class SimulatedMap(SpatialSourceBase):
         )
 
     async def wipe(self) -> int:
+        return self.wipe_now()
+
+    def wipe_now(self) -> int:
+        """`wipe`, from a simulator's clock hook as well, which cannot await: forget the map, and
+        start a frame of its own at the next stop. How many stops it forgot."""
         forgotten = len(self._keyframes)
         self._cells[:] = UNKNOWN
         self._keyframes.clear()

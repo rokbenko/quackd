@@ -159,8 +159,12 @@ def microduck_manifest(
             verb_spec(CORE["search_scan"], core=True, description=_SEARCH_SCAN_DESCRIPTION),
             verb_spec(CORE["approach_and"], core=True, description=_APPROACH_AND_DESCRIPTION),
         ]
-    if places if places is not None else backend in PLACES_BACKENDS:
-        core += [verb_spec(CORE[name], core=True) for name in ("map", "mark_place", "forget_place")]
+    offers_places = places if places is not None else backend in PLACES_BACKENDS
+    if offers_places:
+        core += [
+            verb_spec(CORE[name], core=True)
+            for name in ("map", "mark_place", "forget_place", "go_to_place")
+        ]
     # `watch` looks through the camera, so it is a verb of a duck that has one, declared below
     extensions = [
         verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n not in ("say", "watch")
@@ -189,6 +193,8 @@ def microduck_manifest(
         preconditions |= {verb: ["standing"] for verb in ("go_to", "search_scan", "approach_and")}
         # the head alone, as `gaze`: a seated duck may watch, and a fallen or held one may not
         preconditions["watch"] = ["not_fallen"]
+    if offers_places:
+        preconditions["go_to_place"] = ["standing"]  # it walks; where it is the verb checks
     # quackd's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
     # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
     # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.

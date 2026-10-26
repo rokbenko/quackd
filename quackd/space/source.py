@@ -33,7 +33,8 @@ class SpatialSource(Protocol):
     - `footprint_m`: the radius a planner grows walls by, from a figure somebody cited;
     - `stop_every_m`: how far to walk between stops, for a map that corrects itself only at stops;
     - `settle_timeout_s`: how long to stand at a stop for the map to take its view;
-    - `keyframes_follow_head`: whether a view the head turns to is one the map takes.
+    - `keyframes_follow_head`: whether a view the head turns to is one the map takes;
+    - `view`: what one stop's look covers, the field across in radians and how far in metres.
     """
 
     @property
@@ -50,6 +51,9 @@ class SpatialSource(Protocol):
 
     @property
     def keyframes_follow_head(self) -> bool: ...
+
+    @property
+    def view(self) -> tuple[float, float] | None: ...
 
     @property
     def has_grid(self) -> bool: ...
@@ -92,6 +96,10 @@ class SpatialSourceBase:
     @property
     def keyframes_follow_head(self) -> bool:
         return False
+
+    @property
+    def view(self) -> tuple[float, float] | None:
+        return None
 
     @property
     def has_grid(self) -> bool:

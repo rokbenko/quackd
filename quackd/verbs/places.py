@@ -1,4 +1,4 @@
-"""The verbs that name places, list them and forget them. None of them moves the body.
+"""The verbs that name places, list them, forget them, and walk to them.
 
 A place is where the robot stood when somebody named it, read off the robot's own reading of
 where it is (`quackd.space`), never from coordinates a pilot gives. These verbs exist on a body
@@ -54,6 +54,23 @@ class ForgetPlaceParams(BaseModel):
     name: str = Field(..., min_length=1, max_length=PLACE_NAME_MAX, description="The place.")
 
 
+GO_TO_PLACE_MAX_S = 120.0
+"""The longest a walk to a place may be given: the verb's own clock, which the executor's outlasts
+by a margin (`go_to_place`'s `timeout_s`) so the walk ends on its own words, stopped."""
+
+
+class GoToPlaceParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=PLACE_NAME_MAX, description="The place.")
+    face: bool = Field(
+        default=True, description="Turn at the end to face the way the robot faced there."
+    )
+    timeout_s: float = Field(
+        default=60.0, gt=0, le=GO_TO_PLACE_MAX_S, description="How long it may take."
+    )
+
+
 def view_record(v: PlaceView) -> dict[str, Any]:
     """One place as a verb's result carries it, for a pilot over MCP that reads data, not lines."""
     out: dict[str, Any] = {"name": v.place.name, "status": v.status, "kind": v.place.kind}
@@ -67,16 +84,18 @@ def view_record(v: PlaceView) -> dict[str, Any]:
     return out
 
 
-async def settled_fix(ctx: VerbContext, source: SpatialSource) -> Fix:
+async def settled_fix(ctx: VerbContext, source: SpatialSource, *, tick: float | None = None) -> Fix:
     """The source's reading once the stop the robot stands at has been looked from. A map that
     takes its keyframes at stops says it is `collecting` one while the robot stands still, and is
-    given up to its own settle time to finish, a sleep at a time of its own period, so what is
-    read, drawn or marked is what that stop saw. A source that keeps no such time is read at once,
-    and a stop or a pause reads it as it is."""
+    given up to its own settle time to finish, a sleep at a time of its own period, or of `tick`
+    when that is shorter, so what is read, drawn or marked is what that stop saw. A source that
+    keeps no such time is read at once, and a stop or a pause reads it as it is."""
     fix = source.fix()
     limit, step = source.settle_timeout_s, source.period_s
     if not fix.collecting or limit is None or not step:
         return fix
+    if tick is not None:
+        step = min(step, tick)
     deadline = ctx.transport.now() + limit
     while fix.collecting and ctx.transport.now() < deadline and ctx.interrupted() is None:
         await ctx.transport.sleep(step)
@@ -128,6 +147,37 @@ async def mark_place(ctx: VerbContext, p: MarkPlaceParams) -> VerbResult:
     return VerbResult.success(said, place=place.to_json())
 
 
+async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
+    """Walk to a place on the robot's own reading of where it is (`quackd.verbs.navigate`). A
+    place in another frame is refused before anything moves, with why."""
+    book = ctx.places
+    if book is None:
+        return VerbResult.fail(f"go_to_place: {NO_POSE}")
+    place = book.store.get(p.name)
+    if place is None:
+        known = ", ".join(pl.name for pl in book.store.places()) or "none"
+        return VerbResult.fail(f"go_to_place: no place called '{p.name}' (places: {known})")
+    view = book.view(place)
+    if view.status == "orphaned":
+        return VerbResult.fail(
+            f"go_to_place: '{place.name}' is orphaned, {view.reason}, so where it is is not "
+            "known now: mark it again once the robot is there",
+            place=view_record(view),
+        )
+    from quackd.verbs.navigate import navigate, verb_result  # it steers with core's helpers
+
+    walked = await navigate(
+        ctx,
+        book.source,
+        (place.x, place.y),
+        goal_yaw=place.yaw if p.face else None,
+        frame_id=place.frame,
+        timeout_s=p.timeout_s,
+        label=f"'{place.name}'",
+    )
+    return verb_result(walked)
+
+
 async def forget_place(ctx: VerbContext, p: ForgetPlaceParams) -> VerbResult:
     book = ctx.places
     if book is None:
@@ -168,6 +218,18 @@ PLACE_VERBS: dict[str, Verb] = {
             ForgetPlaceParams,
             timeout_s=5,
             core=True,
+        ),
+        Verb(
+            "go_to_place",
+            "Walk to a place by name, round what the robot's map shows when it keeps one, and "
+            "turn to face the way it faced there. Stops on its own: arrived, or why not.",
+            go_to_place,
+            GoToPlaceParams,
+            timeout_s=GO_TO_PLACE_MAX_S + 10,
+            kind="composite",
+            core=True,
+            done_condition="within a tolerance of the place by the robot's reading, or stopped "
+            "saying why: lost, blocked, out of time, or as far as it may walk unseen.",
         ),
     )
 }

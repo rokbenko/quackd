@@ -41,6 +41,10 @@ the moment the line arrived to the moment that lane took it. Here that is quackd
 since no line went to a decision LLM. A question put to you after it, `run it? [y/N]`, is
 never counted in it, and the robot's link and the robot itself come after it.
 
+A robot that says where it is can name a spot with `mark_place NAME` and walk back to it with
+`go_to_place NAME`, and the Microduck's simulators lay out a room to do it in with `--room`
+([guides/places.md](places.md)).
+
 ## What a line can be
 
 Every line goes through the lanes in this order, and the first that takes it wins.

@@ -94,6 +94,7 @@ MOVES_THE_BODY = frozenset(
         "collect_litter",
         "pick_and_drop",
         "stow_arm",
+        "go_to_place",
     }
 )
 """The other half. The gate never reads this; it exists so a test can say every verb every

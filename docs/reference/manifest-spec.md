@@ -59,8 +59,9 @@ that has it), `description` (LLM-facing; empty means the implementation's defaul
 | `map` | the `odometry` sensor |
 | `mark_place` | the `odometry` sensor |
 | `forget_place` | the `odometry` sensor |
+| `go_to_place` | `twist`, mobility and the `odometry` sensor |
 
-The three place verbs need more than a manifest can promise: a transport that says where the
+The four place verbs need more than a manifest can promise: a transport that says where the
 robot is on this connection (`quackd.transport.base.spatial_of`). An adapter declares them in its
 static manifest for a backend that says where the robot is, and leaves them out at `connect()`
 when the transport carries no reading after all, as it leaves out a camera's verbs when no frame

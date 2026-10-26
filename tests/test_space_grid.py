@@ -171,6 +171,58 @@ def test_a_walk_that_starts_against_a_wall_still_gets_away_from_it() -> None:
     assert not crosses_solid(g, start, plan)
 
 
+def test_a_walk_that_starts_in_a_walls_band_leaves_it_and_never_runs_along_it() -> None:
+    """The band round a wall is walkable from a start inside it only by steps that each go further
+    from the wall: the whole connected band was, and a walk from one end of a wall to the other
+    ran the length of it inside the room a body needs."""
+    g = grid(
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "..........",
+        "##########",
+    )
+    start, goal = centre(g, 1, 4), centre(g, 8, 4)  # a cell above the wall, both in its band
+    plan = g.plan(start, goal, radius_m=0.1)
+    assert plan is not None
+    clear_of_band = centre(g, 0, 2)[1]
+    assert max(y for _x, y in plan.waypoints) >= clear_of_band - 1e-9, "it ran along the wall"
+    assert plan.length_m > math.dist(start, goal)
+
+
+def test_a_walk_keeps_the_body_off_unseen_floor_where_a_seen_way_does() -> None:
+    """A step counts as unseen when floor the body covers there is, not only the cell under its
+    middle: a way along the edge of what was seen brushed what nobody had seen."""
+    g = grid(
+        "????????????",
+        "............",
+        "............",
+        "............",
+        "????????????",
+    )
+    start, goal = centre(g, 0, 1), centre(g, 11, 1)  # beside the unseen top row, both
+    plan = g.plan(start, goal, radius_m=0.1)
+    assert plan is not None and plan.unseen_m == 0.0
+    middle = centre(g, 0, 2)[1]
+    assert any(abs(y - middle) < 1e-9 for _x, y in plan.waypoints[:-1]), "it kept to the edge"
+
+
+def test_a_walk_that_starts_inside_a_narrow_passage_can_walk_out_of_it() -> None:
+    """Every cell of a passage narrower than the room a body wants is in the band, at the same
+    distance from both walls down its middle: a rule of every step further from the walls left a
+    robot standing in one no way out."""
+    g = grid(
+        "##########..........",
+        "....................",
+        "....................",
+        "##########..........",
+    )
+    start, goal = centre(g, 1, 1), centre(g, 17, 1)
+    plan = g.plan(start, goal, radius_m=0.1)
+    assert plan is not None and not crosses_solid(g, start, plan)
+
+
 def test_a_goal_past_the_edge_of_the_map_is_unseen_floor_to_walk_over() -> None:
     g = grid("....", "....")
     start = centre(g, 0, 0)

@@ -51,9 +51,10 @@ pilot is told how far the duck has walked in it.
 | `map` | where the robot is and by what, and every place with how far and which way, or why it cannot be walked to now; the map itself, when the robot keeps one | safe, reads only |
 | `mark_place` | names the spot the robot stands on now; marking a name it has moves that place here | safe |
 | `forget_place` | drops a name | safe |
+| `go_to_place` | walks to a place on the robot's own reading of where it is, and turns to face the way it faced there ([below](#walking-to-a-place)) | safe, moves the body |
 
-None of them moves the body, so all three run before the pilot's verdict and while a pause a
-robot met was granted holds. `mark_place` takes no coordinates: a place is where the robot stood,
+The first three move nothing, so they run before the pilot's verdict and while a pause a robot
+met was granted holds. `mark_place` takes no coordinates: a place is where the robot stood,
 read off the robot, never a spot a pilot named. It is refused while the robot does not know where
 it is. A map that looks only when the robot stops says when it has not looked from the stop the
 robot stands at yet, and `map` and `mark_place` wait for that look, up to the map's own settle
@@ -83,6 +84,50 @@ hyphens or apostrophes, names are the same in any case, and `start` is a name qu
 itself. With `--no-memory`, places last as long as the run or the session and nothing is written.
 A dry run reads the places a robot has and changes none, as it runs no `mark_place` or
 `forget_place`. `quackd drive` keeps them as a run does.
+
+## Walking to a place
+
+`go_to_place NAME` walks there on the robot's reading of where it is, never on its camera, which
+is what `go_to` steers by.
+
+- **The way.** With a map the robot keeps and a size its body is known by, it plans round what
+  the map has seen to be solid, keeps the body's width off floor nobody has seen wherever a way
+  over seen floor does, and crosses unseen floor only where none does. With neither, it walks a
+  straight line.
+- **Its stops.** It stops where its front, once it has come to rest, would be on floor its map
+  has not seen, unless it has just looked from there that way, and at least once a leg of the
+  length its map can follow, about 1.9 m for `mapd`, and waits there for the map to look. A stop
+  that shows more, or corrects where the robot is, plans the way again.
+- **Its numbers.** It walks at the share of the forward clamp `move` walks at by default, raised
+  to the gait floor a body publishes, and turns at `search_scan`'s rate. How closely it follows
+  its way is the distance it covers between two readings and a tick, at the share of what it asks
+  for that the body says it achieves: the planner keeps that much room beside the body, and it
+  turns in place rather than walk an arc that would bulge further. It calls a place reached
+  within the body's footprint, or that distance when it is more. None is a number of its own.
+- **How far blind.** Over floor nothing has seen, it walks no further than one `move` could,
+  ten seconds at the forward clamp, and then stops and says how far is left.
+- **What ends it.** Arrived, by the reading after its last look; a stop or a pause from beside
+  it; a twist the body refuses; the battery rule, which it reads at every stop and which ends the
+  run in the rule's own words; lost; the frame changing under it, a map wiped or odometry begun
+  again; a reading that stops moving on, which holds the body still and then ends the walk; a
+  reading that jumps further than any walk could between two; no headway, walking or turning in
+  place toward its way, judged over twice the time the headway should take and the stale window
+  more, since a gait that stood takes a moment to start and no body says how long; another try at
+  the place that came less than half its tolerance nearer than the tries before; and its own
+  `timeout_s`, two minutes at most. Each stops the body and says which it was. It walks on no
+  reading that has not moved on since it began, nor one that has not since a stop, and the time
+  it waits for one is not counted against its headway.
+- **Facing the way.** At the place it turns to the way it faced there. A reading taken turning
+  sways with the gait, so the reading after its last look judges that too; a body at the place
+  that turns no nearer on another try is there, and says how far off the way it faces, and how
+  near a try before came when one came nearer.
+- **Refused before anything moves.** An orphaned place, a robot that does not know where it is,
+  no way there, a way longer than its time, and a map that cannot be read. A place its map now
+  has something solid at, or too near for the body, it walks to the nearest floor the body fits
+  on, a body's width away at most, and says so; with none that near, it refuses.
+
+It says how close it got and by what, `0.07 m from 'far' by its map`, and on odometry that the
+reading drifts. It never says the robot is at a place.
 
 ## A room for the simulator
 

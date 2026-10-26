@@ -46,6 +46,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   recorded GIF of the cartoon shades the floor it has not seen. Without `--room` each simulator is
   what it was, to the bit
   ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
+- **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
+  camera: round what its map has seen to be solid when it keeps a map and its size is known,
+  crossing unseen floor only where no seen way goes, and straight otherwise, never further blind
+  than one `move` could walk. It stops where its map runs out and once a leg its map can follow,
+  waits there for the map to look, and plans again on what it saw. Every number is the body's
+  or its source's. Whatever ends it stops the body and says what it was, and an orphaned place, a
+  robot that does not know where it is, no way there or a way longer than its time is refused
+  before anything moves ([docs/concepts/places.md](docs/concepts/places.md#walking-to-a-place)).
 
 ### Fixed
 

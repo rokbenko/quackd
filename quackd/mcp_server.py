@@ -153,8 +153,9 @@ SOLO_MEMORY = """ Call robot_recall early: it is what this robot learned in earl
 sessions, and robot_remember(text) keeps one short fact for the next one."""
 
 PLACES_NOTE = """ If robot_list_verbs lists map, the body says where it is: map tells you where
-and by what, and lists its places with how far and which way, and mark_place names the spot it
-stands on. Trust a position as far as map says: odometry drifts as the body walks."""
+and by what, and lists its places with how far and which way, mark_place names the spot it
+stands on, and go_to_place walks back to one. Trust a position as far as map says: odometry
+drifts as the body walks."""
 """Said when a body's static manifest declares `map`. Conditional on the live list, since a
 connection whose transport says nothing of where the body is leaves the place verbs out."""
 

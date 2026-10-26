@@ -258,11 +258,12 @@ async def test_factory_describes_and_makes_adapters() -> None:
     static = describe(spec)
     assert static.model == "microduck" and static.backend == "mock" and static.id == "microduck"
     # the default is the simulator's vocabulary, and the mock says where the duck is, which the
-    # simulators do not yet: the place verbs and nothing else
+    # simulator does only in a room: the place verbs and nothing else
     assert set(registry_for(spec).names()) == set(default_registry().names()) | {
         "map",
         "mark_place",
         "forget_place",
+        "go_to_place",
     }
     adapter = make_adapter("microduck:mock")
     live = await adapter.connect()

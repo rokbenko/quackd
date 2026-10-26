@@ -61,6 +61,8 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "forget_place": (None, "motion"),
         "gaze": (5, "motion"),
         "go_to": (None, "motion"),
+        # a place's name, free text like forget_place's
+        "go_to_place": (None, "motion"),
         "grab": (1, "motion"),
         "kick": (2, "motion"),
         # an integer width, which is a value as well

@@ -1,0 +1,89 @@
+# Places: naming a spot and walking back to it
+
+A robot that says where it is can name the spots it stands on and walk back to them. This guide
+drives the Microduck's simulator through it, in a room whose map it keeps the way a real
+Microduck's `mapd` would, so nothing here needs a robot. Why it works the way it does is in
+[concepts/places.md](../concepts/places.md).
+
+```bash
+quackd drive --robot microduck:sim2d --room two-rooms
+```
+
+`two-rooms` is two rooms with a doorway between them and a box in the far one. The duck starts in
+the near one, facing the doorway, and its map knows nothing until it has stood still long enough
+to look. This session was piped, a line at a time, with the scripted pilot:
+
+```
+$ printf 'mark_place sofa\nforward\nforward\nturn left\nforward\nmap\ngo_to_place sofa\nquit\n' | quackd --no-color drive --robot microduck:sim2d --room two-rooms --llm fake
+drive    microduck: type a command, a goal, or help; Enter brakes
+exact    mark_place(name='sofa') (0.362 ms)
+result   ok: marked 'sofa' where the robot stands, (-1.00, 0.00) by its map
+exact    forward: move(duration_s=1, vx=0.15) (0.272 ms)
+result   ok: walked vx=0.15 vy=0.00 wz=0.00 for 1.0s
+exact    forward: move(duration_s=1, vx=0.15) (0.347 ms)
+result   ok: walked vx=0.15 vy=0.00 wz=0.00 for 1.0s
+exact    turn left: move(duration_s=1.571, vx=0, wz=0.5) (0.276 ms)
+result   ok: walked vx=0.00 vy=0.00 wz=0.50 for 1.6s
+exact    forward: move(duration_s=1, vx=0.15) (0.353 ms)
+result   ok: walked vx=0.15 vy=0.00 wz=0.00 for 1.0s
+exact    map (0.306 ms)
+result   ok: where: map(-0.60, 0.11, 0.80 rad), by the simulator's stand-in for the robot's own map (two-rooms)
+places:
+- sofa: 0.42 m away, 149° to the left
+map: 31 x 21 cells of 10 cm, x right, y up (the map has no north)
+# solid · . floor seen empty · ? not seen · > ^ < v the robot, pointing the way it faces
+?????????????###???????????????
+????????????...#???????????????
+????????????...#???????????????
+???????????....#???????????????
+???????????....#???????????????
+??????????.....#??????.##??????
+??????????.....#??.......??????
+??????????.....#..........?????
+?????????.................?????
+?????....^................?????
+?????A....................?????
+??????....................?????
+?????????.................?????
+???????????....#..........?????
+??????????????.#??.......??????
+??????????????????????...??????
+???????????????????????????????
+???????????????????????????????
+???????????????????????????????
+???????????????????????????????
+???????????????????????????????
+places: A sofa
+exact    go_to_place(name='sofa') (0.38 ms)
+result   ok: go_to_place: 0.08 m from 'sofa' by its map, facing within 17° of the way it faced there; walked 0.4 m in 9 s, 1 stop, 0 re-plans
+session  quit (0.199 ms)
+result   ok: goodbye
+record   runs\20261026-180813-drive
+```
+
+What each step shows:
+
+- **`mark_place sofa`** waited for the duck's first look, then named the spot it stands on from
+  its own reading. It takes no coordinates: a place is always where the robot stood.
+- **`map`** says where the duck is and by what, every place with how far and which way, and the
+  map as the duck has seen it: `.` floor, `#` something solid, `?` not seen yet, and the duck as
+  an arrow, here `^`. The stops it made show as what it saw from each, a cone of the head's ToF,
+  and the doorway is the gap in the wall the first look saw through.
+- **`go_to_place sofa`** walked back on the map, over floor the map had seen all the way, so its
+  one stop is where it arrived and looked. Where a way runs onto floor the map has not seen, it
+  stops there first, lets the map look, and plans again on what the look showed. It says how close
+  it got by what, and that it is facing the way it faced when the place was marked, within what a
+  reading every quarter of a second allows.
+
+The places are kept beside the robot's memory and keyed as it is, so a `quackd run` on the same
+room finds `sofa` where it was left, and a run that is told to go back to the sofa can. Try a
+place in the other room: mark it there, walk back through the doorway, and send the duck to it.
+The map fills in a stop at a time as it goes.
+
+## On the physics simulator, and on a real duck
+
+`--room` works the same on `microduck:mujoco`, where the walls are solid and the walking duck
+meets them with its own feet. A real Microduck says where it is by its odometry, today, which
+drifts as it walks and begins again when it is picked up: `go_to_place` walks the straight line
+there, no further than one `move` could walk blind, and says the reading drifts. Places marked on
+one stretch of odometry are orphaned once it begins again, and listed with why.

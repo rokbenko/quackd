@@ -177,16 +177,12 @@ class OccupancyGrid:
         solid = self.cells == OCCUPIED
         if radius_m <= 0 or not solid.any():
             return solid.copy()
-        r = math.ceil(radius_m / self.res_m) + 1
-        out = solid.copy()
-        h, w = solid.shape
-        for dr in range(-r, r + 1):
-            for dc in range(-r, r + 1):
-                if dr * dr + dc * dc > r * r or not (dr or dc):
-                    continue
-                src = solid[max(0, -dr) : h - max(0, dr), max(0, -dc) : w - max(0, dc)]
-                out[max(0, dr) : h - max(0, -dr), max(0, dc) : w - max(0, -dc)] |= src
-        return out
+        return _grown(solid, math.ceil(radius_m / self.res_m) + 1)
+
+    def kept_clear_m(self, radius_m: float) -> float:
+        """How far from anything solid a walk planned for a body of `radius_m` keeps its middle:
+        the radius, rounded up to cells, and the cell more `inflated` grows it by."""
+        return (math.ceil(radius_m / self.res_m) + 1) * self.res_m
 
     def frontiers(self) -> list[Cell]:
         """Free cells with a side on floor nobody has seen, the edge of the grid counting as
@@ -211,13 +207,17 @@ class OccupancyGrid:
         """The walk from `start` to `goal` for a body of `radius_m`, or None when there is none.
 
         A* over the eight neighbours, never cutting a corner, on a cost compared in order: first
-        the cells of unseen floor crossed, then the length. So a walk crosses unseen floor only
-        where no walk over seen floor exists, by as little as it can, and no weight trades one
-        against the other. With `unknown_blocks` unseen floor is not crossed at all.
+        the steps where the body would cover floor nobody has seen, then the steps inside the
+        band a wall is grown by, then the length. So a walk keeps the body's width off unseen
+        floor wherever a way over seen floor does, crosses it only where none does, by as little
+        as it can, and leaves a wall's band by the fewest steps it can, and no weight trades one
+        against another. With `unknown_blocks` unseen floor is not crossed at all.
 
         Start and goal may lie in the band a wall is grown by (`inflated`), since a place is
         where the robot once stood and a robot can stand closer to a wall than the band allows.
-        So the band around each is walkable until the walk leaves it, and nothing solid ever is.
+        So a walk may leave the band from the start, and enter it to reach the goal, coming no
+        nearer to anything solid than each stands (`_escape`), and nothing solid is ever
+        walkable.
         `extra_blocked` are cells a caller has its own reason to avoid, in this grid's cells."""
         g = self.padded_to(start, goal, margin_m=radius_m + self.res_m)
         if g is not self:
@@ -242,13 +242,16 @@ class OccupancyGrid:
             return None
         passable = ~blocked
         for end in (s, t):
-            passable |= _band_around(end, band)
+            passable |= _escape(end, band, solid, math.ceil(radius_m / g.res_m) + 1)
         if not passable[t[1], t[0]]:
             return None
-        cells = _astar(passable, unseen, s, t)
+        # a step is on unseen floor when any of the floor the body covers there is
+        covered = _grown(unseen, math.ceil(radius_m / g.res_m))
+        criteria = (covered, band & passable)
+        cells = _astar(passable, criteria, s, t)
         if cells is None:
             return None
-        return g._as_plan(cells, start, goal, passable, unseen)
+        return g._as_plan(cells, start, goal, passable, unseen, criteria)
 
     def _as_plan(
         self,
@@ -257,8 +260,9 @@ class OccupancyGrid:
         goal: tuple[float, float],
         passable: npt.NDArray[np.bool_],
         unseen: npt.NDArray[np.bool_],
+        criteria: Sequence[npt.NDArray[np.bool_]],
     ) -> Plan:
-        corners = _line_of_sight(cells, passable, unseen)
+        corners = _line_of_sight(cells, passable, criteria)
         points = [self.center_of(c) for c in corners[1:-1]] + [goal]
         length = 0.0
         last = start
@@ -316,44 +320,96 @@ def _arrow(yaw: float) -> str:
     return ">^<v"[quarter]
 
 
-def _band_around(cell: Cell, band: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
-    """The connected stretch of `band` that `cell` stands in, or nothing when it stands outside it:
-    the way out of the band for a walk that starts there, and the way in for one that ends there."""
+def _grown(mask: npt.NDArray[np.bool_], r: int) -> npt.NDArray[np.bool_]:
+    """`mask` grown by a disc of `r` cells: every cell within `r` of one it holds."""
+    out = mask.copy()
+    if r <= 0 or not mask.any():
+        return out
+    h, w = mask.shape
+    for dr in range(-r, r + 1):
+        for dc in range(-r, r + 1):
+            if dr * dr + dc * dc > r * r or not (dr or dc):
+                continue
+            src = mask[max(0, -dr) : h - max(0, dr), max(0, -dc) : w - max(0, dc)]
+            out[max(0, dr) : h - max(0, -dr), max(0, dc) : w - max(0, -dc)] |= src
+    return out
+
+
+def _escape(
+    cell: Cell, band: npt.NDArray[np.bool_], solid: npt.NDArray[np.bool_], reach: int
+) -> npt.NDArray[np.bool_]:
+    """The cells of `band` a walk reaches from `cell` without coming any nearer to anything solid
+    than `cell` stands, or nothing when `cell` stands outside the band: the way out of the band
+    for a walk that starts there, and the way in for one that ends there. It may run beside a
+    wall at the end's own distance from it, along a passage's middle and round a corner, and
+    never nearer: the whole band was walkable, and a walk ran the length of a wall a cell off it.
+    `reach` is how far the band reaches from what is solid, in cells, so every cell of it has
+    something solid within that."""
     out = np.zeros_like(band)
     col, row = cell
     if not band[row, col]:
         return out
     h, w = band.shape
+    offsets = sorted(
+        (math.hypot(dc, dr), dc, dr)
+        for dr in range(-reach, reach + 1)
+        for dc in range(-reach, reach + 1)
+        if (dc or dr) and dc * dc + dr * dr <= reach * reach
+    )
+    known: dict[Cell, float] = {}
+
+    def clearance(c: int, r: int) -> float:
+        if (c, r) not in known:
+            known[(c, r)] = next(
+                (
+                    d
+                    for d, dc, dr in offsets
+                    if 0 <= c + dc < w and 0 <= r + dr < h and solid[r + dr, c + dc]
+                ),
+                math.inf,
+            )
+        return known[(c, r)]
+
+    least = clearance(col, row)
     stack = [cell]
     out[row, col] = True
     while stack:
         c, r = stack.pop()
-        for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        for dc, dr, _step in _STEPS:
             nc, nr = c + dc, r + dr
-            if 0 <= nc < w and 0 <= nr < h and band[nr, nc] and not out[nr, nc]:
+            if not (0 <= nc < w and 0 <= nr < h) or out[nr, nc] or not band[nr, nc]:
+                continue
+            if clearance(nc, nr) >= least - 1e-9:
                 out[nr, nc] = True
                 stack.append((nc, nr))
     return out
 
 
 def _astar(
-    passable: npt.NDArray[np.bool_], unseen: npt.NDArray[np.bool_], start: Cell, goal: Cell
+    passable: npt.NDArray[np.bool_],
+    criteria: Sequence[npt.NDArray[np.bool_]],
+    start: Cell,
+    goal: Cell,
 ) -> list[Cell] | None:
-    """Cells from `start` to `goal`, both included, on the cost (unseen cells entered, length)."""
+    """Cells from `start` to `goal`, both included, on a cost compared in order: the cells of
+    each of `criteria` entered, then the length."""
     h, w = passable.shape
     gx, gy = goal
 
     def heuristic(cell: Cell) -> float:
         return math.hypot(cell[0] - gx, cell[1] - gy)
 
-    best: dict[Cell, tuple[int, float]] = {start: (0, 0.0)}
+    zero = tuple(0 for _ in criteria)
+    best: dict[Cell, tuple[tuple[int, ...], float]] = {start: (zero, 0.0)}
     came: dict[Cell, Cell] = {}
-    frontier: list[tuple[int, float, int, Cell, float]] = [(0, heuristic(start), 0, start, 0.0)]
+    frontier: list[tuple[tuple[int, ...], float, int, Cell, float]] = [
+        (zero, heuristic(start), 0, start, 0.0)
+    ]
     order = 0
     while frontier:
-        crossed, _, _, cell, length = heapq.heappop(frontier)
+        counts, _, _, cell, length = heapq.heappop(frontier)
         cost = best[cell]
-        if (crossed, length) != cost:
+        if (counts, length) != cost:
             continue  # a cheaper way to this cell was found after this entry was queued
         if cell == goal:
             path = [cell]
@@ -367,7 +423,8 @@ def _astar(
                 continue
             if dc and dr and not (passable[r, nc] and passable[nr, c]):
                 continue  # never through the corner of two cells that are not both walkable
-            new = (cost[0] + int(unseen[nr, nc]), cost[1] + step)
+            entered = tuple(n + int(m[nr, nc]) for n, m in zip(cost[0], criteria, strict=True))
+            new = (entered, cost[1] + step)
             old = best.get((nc, nr))
             if old is not None and old <= new:
                 continue
@@ -375,7 +432,7 @@ def _astar(
             came[(nc, nr)] = cell
             order += 1
             heapq.heappush(
-                frontier, (new[0], new[1] + heuristic((nc, nr)), order, (nc, nr), new[1])
+                frontier, (entered, new[1] + heuristic((nc, nr)), order, (nc, nr), new[1])
             )
     return None
 
@@ -400,25 +457,28 @@ def _crossed(a: Cell, b: Cell) -> list[Cell]:
 
 
 def _line_of_sight(
-    cells: list[Cell], passable: npt.NDArray[np.bool_], unseen: npt.NDArray[np.bool_]
+    cells: list[Cell],
+    passable: npt.NDArray[np.bool_],
+    criteria: Sequence[npt.NDArray[np.bool_]],
 ) -> list[Cell]:
     """The path's corners: from each kept cell, the farthest later cell reachable in a straight
-    line over walkable cells crossing no more unseen floor than the path it replaces."""
+    line over walkable cells entering no more cells of each of `criteria` than the path it
+    replaces."""
     if len(cells) <= 2:
         return list(cells)
-    unseen_before = [0]
+    before = [[0] for _ in criteria]
     for cell in cells[1:]:
-        unseen_before.append(unseen_before[-1] + int(unseen[cell[1], cell[0]]))
+        for counted, mask in zip(before, criteria, strict=True):
+            counted.append(counted[-1] + int(mask[cell[1], cell[0]]))
     kept = [cells[0]]
     i = 0
     while i < len(cells) - 1:
         j = len(cells) - 1
         while j > i + 1:
             line = _crossed(cells[i], cells[j])
-            allowed = unseen_before[j] - unseen_before[i]
-            if (
-                all(passable[r, c] for c, r in line)
-                and sum(int(unseen[r, c]) for c, r in line[1:]) <= allowed
+            if all(passable[r, c] for c, r in line) and all(
+                sum(int(mask[r, c]) for c, r in line[1:]) <= counted[j] - counted[i]
+                for counted, mask in zip(before, criteria, strict=True)
             ):
                 break
             j -= 1

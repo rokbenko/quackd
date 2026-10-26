@@ -914,6 +914,9 @@ REQUIREMENTS: dict[str, Requirement] = {
     "map": Requirement(sensors=frozenset({"odometry"})),
     "mark_place": Requirement(sensors=frozenset({"odometry"})),
     "forget_place": Requirement(sensors=frozenset({"odometry"})),
+    "go_to_place": Requirement(
+        intents=frozenset({"twist"}), mobility=True, sensors=frozenset({"odometry"})
+    ),
 }
 
 

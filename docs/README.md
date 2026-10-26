@@ -29,6 +29,7 @@ How to do one thing with quackd.
 | [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `quackd policy serve` |
 | [Registered robots and flocks](guides/registry.md) | a name for a robot, and for a flock, kept between runs |
 | [Memory](guides/memory.md) | what a robot keeps between runs |
+| [Places](guides/places.md) | naming a spot a robot stands on and walking back to it, in a simulated room with its own map or on a real duck's odometry |
 | [Playing a part](guides/play.md) | a task that gives the pilot a part to play, an animal, a person or a character, acted out with the body it has |
 | [Flock mode](guides/flock.md) | several robots on one task, as pilots or under a coordinator |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
