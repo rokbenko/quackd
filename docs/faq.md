@@ -78,7 +78,7 @@ map is in [web/README.md](../web/README.md).
 
 **Why does the duck in the physics simulator not go the speed I asked for?** Because the walking
 policy has a floor and quackd will not hide it. Under the model's own actuators the gait does
-not start below about 0.23 m/s or 1.0 rad/s, and above that it achieves roughly 0.38 of what it
+not start below about 0.24 m/s or 1.2 rad/s, and above that it achieves roughly 0.38 of what it
 is asked. Both were measured here on one machine and are tagged UNVERIFIED in
 `adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`. `move` defaults to 0.15 m/s,
 so a non-zero twist below the floor is scaled up bodily, keeping the ratio between its axes

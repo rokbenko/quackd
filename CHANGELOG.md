@@ -63,6 +63,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   spelled with an underscore and given words to take was handed to the pilot as a goal, and only
   `approach and kick` ran. Both spellings are the call now, as they are for `mark_place` and
   `forget_place`, whose name can be several words.
+- **The physics duck walks and turns after it has stood still.** `microduck:mujoco` raises a slow
+  twist to its walking policy's floor, and both floors were measured on an earlier MuJoCo. On the
+  3.16 the lock now carries, once the stand policy had held the duck still for two seconds, as it
+  does after a stop, it stepped at the forward floor, 0.23 m/s, on none of six seeds, so a `move`
+  at its default speed said it walked for six seconds and covered nothing; and turning in place
+  at the turning floor, 1.0 rad/s, which is also quackd's turn clamp, it turned right no more
+  than sixteen degrees in five seconds, from a stand or a reset, so a `turn` right barely turned.
+  The floors are 0.24 m/s and 1.2 rad/s now, where a duck that stood one, five or ten seconds
+  starts walking within 1.5 s and turns both ways at once. The browser's simulator takes the
+  same two numbers, as it always has.
 
 ### Documentation
 

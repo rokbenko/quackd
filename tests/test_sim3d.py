@@ -690,6 +690,60 @@ def test_the_real_duck_walks_turns_and_stays_upright() -> None:
 
 
 @pytest.mark.real_duck
+def test_a_duck_that_has_stood_still_walks_when_asked_for_the_forward_floor() -> None:
+    """The floor was measured from a reset, where the walking policy stepped at 0.23. Once the
+    stand policy had held the duck still two seconds it stepped at 0.23 on no seed, so a `move`
+    raised to the floor after a stop said it walked and covered nothing."""
+    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX
+    from quackd_microduck.sim3d.microduck import MicroduckBody
+
+    w = MujocoWorld(seed=3, body=MicroduckBody(_cached_microduck()))
+    for _ in range(round(2.0 / CONTROL_DT)):
+        w.step()  # nothing asked of it: the stand policy holds it still
+    x0, y0 = w.x, w.y
+    seconds = 6.0
+    for i in range(round(seconds / CONTROL_DT)):
+        if i % 5 == 0:  # re-sent at 10 Hz, as the move verb does
+            w.set_velocity(GAIT_FLOOR_VX, 0.0, 0.0)
+        w.step()
+    walked = math.hypot(w.x - x0, w.y - y0)
+    promised = ACHIEVED_FRACTION * GAIT_FLOOR_VX * seconds
+    assert walked > promised / 2, f"asked for the floor after a stand, it walked {walked:.2f} m"
+    assert w.posture == "standing"
+    w.close()
+
+
+@pytest.mark.real_duck
+@pytest.mark.parametrize("way", [1.0, -1.0], ids=["left", "right"])
+def test_a_duck_that_has_stood_still_turns_both_ways_when_asked_at_quackds_clamp(
+    way: float,
+) -> None:
+    """The turning floor was 1.0 rad/s, quackd's own turn clamp, and asked for that the duck turned
+    right no more than sixteen degrees in five seconds, from a stand or a reset, and from a stand
+    stalled two seconds before it turned left: a `turn` right barely turned."""
+    from quackd_microduck import microduck_manifest
+    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_WZ
+    from quackd_microduck.sim3d.microduck import MicroduckBody
+
+    clamp = float(microduck_manifest("mujoco").limits["max_wz"])
+    w = MujocoWorld(seed=3, body=MicroduckBody(_cached_microduck()))
+    for _ in range(round(2.0 / CONTROL_DT)):
+        w.step()  # nothing asked of it: the stand policy holds it still
+    turned, previous = 0.0, w.theta
+    seconds = 3.0
+    for i in range(round(seconds / CONTROL_DT)):
+        if i % 5 == 0:  # re-sent at 10 Hz, as the turn verb does
+            w.set_velocity(0.0, 0.0, way * clamp)
+        w.step()
+        turned += math.atan2(math.sin(w.theta - previous), math.cos(w.theta - previous))
+        previous = w.theta
+    promised = ACHIEVED_FRACTION * max(clamp, GAIT_FLOOR_WZ) * seconds
+    assert way * turned > promised / 2, f"asked to turn after a stand, it turned {turned:.2f} rad"
+    assert w.posture == "standing"
+    w.close()
+
+
+@pytest.mark.real_duck
 def test_a_duck_that_fell_on_its_face_stands_up_facing_the_way_it_was_going() -> None:
     """Yaw from the trunk quaternion is the right answer while the duck is upright and an
     arbitrary one where it usually is not. Face-down is the gimbal degeneracy, and it is also

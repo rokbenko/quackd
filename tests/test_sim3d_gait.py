@@ -1,7 +1,7 @@
 """The gait floor: the arithmetic between a twist quackd sends and a duck that moves.
 
 This is the one piece of the physics backend that decides whether a run is honest. The
-walking policy does not step below about 0.22 m/s, `move` defaults to 0.15 and `go_to` creeps
+walking policy does not step below about 0.24 m/s, `move` defaults to 0.15 and `go_to` creeps
 at 0.05, so passing those through unchanged gives a duck that reports walking and stands
 still. It lived on `MicroduckBody` and so could only be tested where the physics extra and a
 filled asset cache happened to meet, which was nowhere in CI. It is pure arithmetic and it is
