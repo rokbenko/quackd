@@ -59,13 +59,14 @@ CANCELLED_BY_ABORT = "abort"
 CANCELLED_BY_TIMEOUT = "timeout"
 CANCELLED_FROM_OUTSIDE = "cancel"
 CANCELLED_BY_PAUSE = "pause"
+CANCELLED_BY_PREEMPT = "preempt"
 PAUSE_ENDED = "pause"
 """`ended_by` in the result of a verb a granted pause ended (`Executor._ended_by_pause`), which
 `abort_when`'s count of failures in a row passes over."""
 """Why the executor cancelled a running verb, as the message of the `CancelledError` the verb is
-handed (`Executor._execute`): the abort it races, a pause granted to a robot met, the verb's own
-timeout, or the caller going
-away. A verb that keeps a record of its own names its ending by it."""
+handed (`Executor._execute`): the abort it races, a pause granted to a robot met, a newer
+command (`Executor.preempt`), the verb's own timeout, or the caller going away. A verb that keeps
+a record of its own names its ending by it."""
 
 Source = Literal["agent", "mcp", "cli", "decision", "peer"]
 """Who asked for this verb. `decision` is the discrete stepper answering a turn the model
@@ -97,6 +98,17 @@ class SafetyStop(Exception):
     """The word `verb_end` records. A layer above the executor that ends a verb for a reason
     of its own overrides this, so the log says `PREEMPTED` and not the red `ERROR` that
     means a bug."""
+
+
+class Preempted(SafetyStop):
+    """A verb a newer command ended before it was done, the body stopped after it, or one a
+    newer command came in time to stop from starting (`Executor.preempt`). Raised rather than
+    returned, so `abort_when`'s count of failures in a row never sees it: moving on to the next
+    command is neither the verb's failure nor anybody's."""
+
+    outcome = "preempted"
+    """The flock's word for a member it redirected (`FlockPreempted`), and drive's for a command
+    it moved on from."""
 
 
 class BudgetExceeded(SafetyStop):
@@ -268,9 +280,19 @@ class Executor:
     has connected and until it closes. Outside those windows the body is moved by its rest move
     and its hand-over, which no gate sees, so a pause granted then could not be kept."""
     _moving: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
-    """The verbs moving the body now, which a granted pause ends (`pause_for`)."""
-    _halted: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
-    """Those a pause ended, so `_execute` answers for them rather than raising their cancel."""
+    """The verbs moving the body now, which a granted pause or a newer command ends (`pause_for`,
+    `preempt`)."""
+    _halted: dict[asyncio.Task[VerbResult], tuple[str, str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    """Those a pause or a newer command ended, with which it was and why, so `_execute` answers
+    for them rather than raising their cancel (`CANCELLED_BY_PAUSE`, `CANCELLED_BY_PREEMPT`)."""
+    preempts: int = 0
+    """How many times a newer command has ended the verbs moving the body (`preempt`). A verb
+    compares it with the count from before its gates once its state is read, so one admitted
+    while a newer command came does not start after it (`_run_admitted`)."""
+    preempted_by: str = ""
+    """Why the last of those happened, in the newer command's words."""
     require_verdict: bool = False
     """On where an `assess_task` tool was offered: the agent loop and every MCP session. A
     flock member is a state machine with no pilot to ask, so its executor never does."""
@@ -437,8 +459,29 @@ class Executor:
         # stop the courtesy sends next is the last thing the body is told.
         for task in list(self._moving):
             if not task.done():
-                self._halted.add(task)
+                self._halted[task] = (CANCELLED_BY_PAUSE, "")
                 task.cancel(CANCELLED_BY_PAUSE)
+
+    def preempt(self, reason: str) -> int:
+        """End every verb moving the body now, for a newer command, and say how many there were.
+
+        `pause_for` with no hold after it: the command that asks for this starts as soon as they
+        have stopped, and nothing is refused after it but a verb already admitted and still
+        reading the body's state, which would otherwise start after the newer one had begun
+        (`_run_admitted`). Each verb it ends answers with `Preempted`, in `reason`'s words, once
+        a stop has been sent after it. A read runs on beside it, as it runs on beside a pause,
+        and `stop` is never in its way."""
+        self.preempts += 1
+        self.preempted_by = reason
+        ended = 0
+        # cancelled here, for the reason `pause_for` gives: a task cancelled before its next step
+        # never takes it, so nothing it would have sent goes out after this returns
+        for task in list(self._moving):
+            if not task.done():
+                self._halted[task] = (CANCELLED_BY_PREEMPT, reason)
+                task.cancel(CANCELLED_BY_PREEMPT)
+                ended += 1
+        return ended
 
     def context(self, source: Source = "agent") -> VerbContext:
         """`source` is the outer call's, so a composite's nested verbs are narrated as coming
@@ -576,6 +619,9 @@ class Executor:
         source: Source,
         nested: bool,
     ) -> VerbResult:
+        # before any gate, so a newer command that comes while this one is still being admitted
+        # stops it starting after that command has (`_run_admitted`)
+        preempts = self.preempts
         if canonical == "stop":
             # counted before any gate, since a brake asked for is a brake pulled, whoever asked:
             # a verb running beside this call ends on it (`_interruption`)
@@ -733,12 +779,14 @@ class Executor:
                 self._emit("gate", name=name, gate="budget", outcome="exceeded", reason=str(e))
                 raise
         if not timed:
-            return await self._run_admitted(name, canonical, params, verb, parsed, source=source)
+            return await self._run_admitted(
+                name, canonical, params, verb, parsed, source=source, preempts=preempts
+            )
         # held from the check above, with nothing awaited since it, to the segment's charge
         self.segment = name
         try:
             return await self._run_admitted(
-                name, canonical, params, verb, parsed, source=source, timed=True
+                name, canonical, params, verb, parsed, source=source, timed=True, preempts=preempts
             )
         finally:
             self.segment = None
@@ -753,10 +801,13 @@ class Executor:
         *,
         source: Source,
         timed: bool = False,
+        preempts: int | None = None,
     ) -> VerbResult:
         """A verb every gate has let through: its state, its abort conditions and its
         preconditions, then the verb itself, or the dry run's word for it. `timed` is a policy
-        segment's, whose seconds are charged on every way out."""
+        segment's, whose seconds are charged on every way out. `preempts` is the executor's count
+        of newer commands from before the gates, which a verb that may move the body is refused
+        on once it has changed (`preempt`)."""
         try:
             state = await self.transport.get_state()
         except Exception:
@@ -770,6 +821,12 @@ class Executor:
         # it, found nothing to end, and the gate it had already passed is not asked twice, so
         # the verb used to run in full after the stop a robot met was promised.
         self._hold_still_for(name, canonical, verb)
+        # and a newer command that came meanwhile found nothing moving to end, so this verb, which
+        # it replaces, would start after it had: refused here instead, before anything is sent
+        if preempts is not None and self.preempts != preempts and self._may_move(canonical, verb):
+            reason = f"{name} did not start: {self.preempted_by}"
+            self._emit("gate", name=name, gate="preempted", outcome="refused", reason=reason)
+            raise Preempted(reason)
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
@@ -890,8 +947,7 @@ class Executor:
             # the loser is always cancelled: an abort waiter left behind would otherwise
             # accumulate one task per verb for the life of the run
             self._moving.discard(verb_task)
-            halted = verb_task in self._halted
-            self._halted.discard(verb_task)
+            halted = self._halted.pop(verb_task, None)
             if abort_task is not None and not abort_task.done():
                 abort_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -911,7 +967,7 @@ class Executor:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await verb_task
             if not finished:
-                if not halted:  # one a pause ended is said once, by the call that holds it
+                if halted is None:  # one a pause or a newer command ended is said once, below
                     self._emit(
                         "gate",
                         name=called,
@@ -921,9 +977,12 @@ class Executor:
                     )
                 with contextlib.suppress(Exception):
                     await self.logged_transport().stop()
-        if halted:
+        if halted is not None:
             if self.abort.is_set():  # an abort that landed with the pause is what leaves
                 await self._aborted_mid_verb(called)
+            kind, why = halted
+            if kind == CANCELLED_BY_PREEMPT:
+                await self._preempted_mid_verb(called, why)
             return await self._ended_by_pause(called)
         if verb_task in done:
             return verb_task.result()
@@ -948,6 +1007,23 @@ class Executor:
                 f"{unstopped}"
             )
         raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
+
+    async def _preempted_mid_verb(self, called: str, why: str) -> NoReturn:
+        """What a verb a newer command ended comes to: a stop after it, and `Preempted` in the
+        newer command's words, which the caller that asked for the verb reads as the verb's end
+        and goes on from (`preempt`)."""
+        self._emit(
+            "gate",
+            name=called,
+            gate="preempted",
+            outcome="fired",
+            reason=f"ended by a newer command, {why}; a stop was sent",
+        )
+        unstopped = await self._stop_after()
+        raise Preempted(
+            f"{called} ended: {why}; a stop was sent"
+            + (f", and it failed: {unstopped}" if unstopped else "")
+        )
 
     async def _ended_by_pause(self, called: str) -> VerbResult:
         """What a verb a granted pause ended comes to: a stop after it, and a result saying why,

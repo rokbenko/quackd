@@ -20,6 +20,7 @@ from quackd.safety import (
     ConfirmDenied,
     Executor,
     Heartbeat,
+    Preempted,
     SafetyStop,
     VerbNotAllowed,
     allow_all,
@@ -1218,3 +1219,80 @@ async def test_a_walk_a_stop_ended_is_no_failure_for_abort_when_to_count(
         result = await _walk_braked(ex, mock_transport, twists=2)
         assert result.data["ended_by"] == STOP_ENDED, result.summary
     assert ex.consecutive_failures.get("move", 0) == 0
+
+
+class _SlowState(MockTransport):
+    """A body whose first state read waits until the test lets it answer, so a verb can be held
+    admitted, past every gate, and not yet moving."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reading = asyncio.Event()
+        self.answer = asyncio.Event()
+        self._held = False
+
+    async def get_state(self) -> DuckState:
+        if not self._held:
+            self._held = True
+            self.reading.set()
+            await self.answer.wait()
+        return await super().get_state()
+
+
+async def test_a_newer_command_ends_the_walk_it_finds_moving(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """`preempt` is a granted pause with no hold after it: the walk moving the body is ended
+    before its next twist, a stop is sent after it, and the walk's caller is told it was a newer
+    command, which `abort_when` never counts."""
+    ex, seen = logged(
+        registry, mock_transport, allow="walk", abort="the same verb fails 1 time in a row"
+    )
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    for _ in range(1000):
+        if len(mock_transport.intents_of("move")) >= 2:
+            break
+        await asyncio.sleep(0)
+    assert ex.preempt("a newer command, turn left") == 1
+    after = len(mock_transport.intents)
+    with pytest.raises(Preempted, match="walk ended: a newer command, turn left"):
+        await walking
+    assert [i.kind for i in mock_transport.intents[after:]] == ["stop"], "it moved again"
+    (end,) = ends(seen)
+    assert end["outcome"] == "preempted"
+    assert ex.consecutive_failures.get("move", 0) == 0
+
+
+async def test_a_newer_command_leaves_a_read_running_beside_it(registry: VerbRegistry) -> None:
+    """A read moves nothing, so it is not the newer command's to end, as it is not a pause's."""
+    reading, answer = asyncio.Event(), asyncio.Event()
+
+    async def slow_state(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        reading.set()
+        await answer.wait()
+        return VerbResult.success("standing, battery 88%")
+
+    registry.register(Verb("report_state", "reads the body", slow_state), replace=True)
+    ex = Executor(registry, MockTransport(), contract=duck("report_state").frontmatter)
+    read = asyncio.create_task(ex.run_verb("report_state"))
+    await asyncio.wait_for(reading.wait(), 5)
+    assert ex.preempt("a newer command") == 0
+    answer.set()
+    assert (await read).summary == "standing, battery 88%"
+
+
+async def test_a_walk_admitted_before_a_newer_command_does_not_start_after_it(
+    registry: VerbRegistry,
+) -> None:
+    """A walk past every gate and still reading the body's state is in nothing `preempt` can end,
+    and would start after the command that replaced it had. It is refused once the read returns,
+    before it sends anything."""
+    body = _SlowState()
+    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    assert ex.preempt("a newer command, sit") == 0
+    body.answer.set()
+    with pytest.raises(Preempted, match="walk did not start: a newer command, sit"):
+        await walking
+    assert body.intents_of("move") == [], "it started after the newer command"
