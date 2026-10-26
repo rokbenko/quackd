@@ -8,6 +8,13 @@ read before it is served. A step is now allowed by the type that names it rather
 of every served type's steps, and a model a processor step names is fetched as a tokenizer,
 without its weights.
 
+**Amended 2026-10-25 by [ADR-0061](0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md):**
+quackd may now start the policy server for you, on a GPU rented from Hugging Face as an
+Inference Endpoint (`quackd policy endpoint up`), still in a process of its own and never the
+arm's, and a run reaches it with `--policy-url hf:NAME`, which is still typed on the flag and
+named nowhere else. The user still starts any other server, and a child process spawned by
+`quackd run`, below, is still not how a server is started.
+
 ## Context
 
 A language model on the SO-101 decides about once every six seconds. The run at the top of the

@@ -835,6 +835,16 @@ LOCAL_NAMES: tuple[str, ...] = ("local", "ollama", "vllm", "llamacpp", "lmstudio
 
 PROVIDER_NAMES: tuple[str, ...] = ("fake", *CLOUD_NAMES, *LOCAL_NAMES)
 
+#: The second variable a vendor's key is read from when its own (`factory.KEY_ENV`) is empty,
+#: because that vendor's SDK or examples export the key under another name. One table, so the
+#: provider that reads it, `quackd doctor` that reports it and the docs that name it agree on
+#: which vendors have one. It lives here because the providers that read it import this module.
+KEY_FALLBACKS: dict[str, str] = {
+    "cohere": "CO_API_KEY",
+    "gemini": "GOOGLE_API_KEY",
+    "meta": "MODEL_API_KEY",
+}
+
 DEFAULT_LLM = "fake"
 """The pilot when nothing names one: no key, no network, a rule that plays the starters.
 

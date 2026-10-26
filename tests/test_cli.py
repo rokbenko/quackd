@@ -786,6 +786,77 @@ def test_list_models_points_a_slashed_id_with_no_vendor_at_openrouter(_wide: Non
     assert "OpenRouter" not in nope.output, "a typo with no slash says nothing of it"
 
 
+def test_list_models_lists_only_pilots_unless_asked(_wide: None) -> None:
+    """`--kind` was added beside a command people already script against, so with no `--kind`
+    it prints the pilots alone, as it always has, and a decision LLM or a policy type is listed
+    only when asked for."""
+    flat = " ".join(runner.invoke(app, ["list-models"]).output.split())
+    assert "decision LLMs (" not in flat and "policy types (" not in flat
+    assert flat == " ".join(runner.invoke(app, ["list-models", "--kind", "pilot"]).output.split())
+    every = " ".join(runner.invoke(app, ["list-models", "--kind", "all"]).output.split())
+    assert "models (--llm" in every and "decision LLMs (" in every and "policy types (" in every
+
+
+def test_list_models_kind_decision_prints_every_preset_in_doctors_order(_wide: None) -> None:
+    """Until `--kind decision`, `quackd doctor` was the one command that said which decision
+    LLMs quackd names, buried under the providers."""
+    from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
+
+    result = runner.invoke(app, ["list-models", "--kind", "decision"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    places = [flat.index(f" {name} ") for name in PRESET_NAMES]
+    assert places == sorted(places), "the decision LLMs are not in the order doctor prints them"
+    for name in PRESET_NAMES:
+        assert PRESETS[name].summary in flat, f"{name}'s row does not say what it is"
+    assert "models (--llm" not in flat, "asking for the decision LLMs printed the pilots too"
+
+
+def test_list_models_kind_policy_needs_no_adapter(
+    _wide: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The policy rows are data in the core, so a machine with no LeRobot and no arm package
+    can still be told which policies quackd serves and which it does not, and why."""
+    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+
+    monkeypatch.setitem(sys.modules, "quackd_lerobot", None)
+    result = runner.invoke(app, ["list-models", "--kind", "policy"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    for family in FAMILIES:
+        assert f" {family.type} " in flat and family.label in flat, family.type
+    for refused in NOT_SERVED:
+        assert f"not served: {refused.name}, by {refused.maker}" in flat, refused.name
+    assert "never the arm's" in flat, "the note must say where a policy is served, and where not"
+
+
+def test_list_models_json_tags_every_row_with_its_kind(_wide: None) -> None:
+    """One stream for a script, whichever kinds it asked for: every row says which it is."""
+    from quackd.adapters.policies import FAMILIES, NOT_SERVED
+    from quackd.agent.decision.catalogue import PRESET_NAMES
+
+    result = runner.invoke(app, ["list-models", "--kind", "all", "--json"])
+    assert result.exit_code == 0, result.output
+    rows = [json.loads(line) for line in result.output.splitlines() if line.strip()]
+    kinds = [row["kind"] for row in rows]
+    assert kinds.count("pilot") == sum(len(model_ids(name)) for name in CLOUD_NAMES)
+    assert kinds.count("decision") == len(PRESET_NAMES)
+    assert kinds.count("policy") == len(FAMILIES) + len(NOT_SERVED)
+    assert kinds == sorted(kinds, key=("pilot", "decision", "policy").index), "kinds interleave"
+    served = [row for row in rows if row["kind"] == "policy" and row["served"]]
+    assert [row["type"] for row in served] == [family.type for family in FAMILIES]
+
+
+def test_list_models_refuses_a_kind_it_does_not_know_and_llm_beside_another_kind() -> None:
+    """`--llm` narrows the pilot table to one vendor, and has nothing to narrow in the others,
+    so it is refused beside them rather than silently ignored."""
+    bad = runner.invoke(app, ["list-models", "--kind", "vla"])
+    assert bad.exit_code == 1 and "--kind is pilot, decision, policy or all" in bad.output
+    both = runner.invoke(app, ["list-models", "--kind", "decision", "--llm", "openai"])
+    assert both.exit_code == 1
+    assert "--llm narrows the pilot rows only" in " ".join(both.output.split())
+
+
 def test_run_refuses_an_openrouter_alias_before_any_key_or_robot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -647,13 +647,30 @@ def _policy_runner(policy: PolicyChoice | None) -> Any:
     client's own rule (`policy.client.client_token`). An address the client would refuse, and a
     token found nowhere, are refused here, before anything connects. Its motors are the arm's
     joints until the connect's fit hands it the bus's own (`LeRobotReal._fit_policy`), and
-    `--accept-other-frame` is the fit's override of the same name (`policy.fit.fit`)."""
+    `--accept-other-frame` is the fit's override of the same name (`policy.fit.fit`).
+
+    `hf:NAME`, and the https address of an endpoint this machine started, are reached as the
+    record `quackd policy endpoint up` kept says (`policy.endpoint.reach`): its address, its
+    own token unless `--policy-token` was typed, and the account's Hugging Face token as the
+    bearer for the proxy in front. One with no record, no address yet or no account token is
+    refused here, before anything connects."""
     if policy is None:
         return None
     from quackd_lerobot.policy.client import RemoteRunner, client_token, policy_address
+    from quackd_lerobot.policy.endpoint import reach
 
     url, token = policy.reach()
     try:
+        reached = reach(url, policy_token=token, registry_dir=policy.registry_dir)
+        if reached is not None:
+            return RemoteRunner(
+                reached.url,
+                token=reached.token,
+                motors=JOINTS,
+                accept_other_frame=policy.accept_other_frame,
+                bearer=reached.bearer,
+                endpoint=reached.endpoint,
+            )
         policy_address(url)  # an address that will be refused is said before a missing token
         return RemoteRunner(
             url,

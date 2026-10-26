@@ -26,7 +26,7 @@ from typer.testing import CliRunner
 
 from quackd import doctor
 from quackd.adapters.factory import ADAPTER_NAMES
-from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, PROVIDER_NAMES
+from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, KEY_FALLBACKS, PROVIDER_NAMES
 from quackd.cli import app
 from quackd.doctor import PlacementRow
 from quackd.host import HostBoard, HostClient
@@ -73,7 +73,7 @@ def test_doctor_lists_every_provider_and_its_key(monkeypatch: pytest.MonkeyPatch
     a machine with one real key this asserted against a masked value instead. Empty reads as
     unset and, unlike `delenv`, survives `load_dotenv`, which does not overwrite a name that
     is already in the environment."""
-    for env in set(KEY_ENV.values()):
+    for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
         monkeypatch.setenv(env, "")
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 0, result.output
@@ -82,6 +82,25 @@ def test_doctor_lists_every_provider_and_its_key(monkeypatch: pytest.MonkeyPatch
         assert name in flat, f"{name} has no row in doctor's providers table"
     for cloud in CLOUD_NAMES:
         assert KEY_ENV[cloud] in flat, f"{cloud} does not say which key it wants"
+
+
+@pytest.mark.parametrize(("name", "fallback"), sorted(KEY_FALLBACKS.items()))
+def test_doctor_finds_a_key_under_the_second_name_its_vendor_reads(
+    name: str, fallback: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The provider reads its second name when the first is empty, so a row that said the first
+    was unset told a reader the run would fail when it would not. The row says where the key
+    came from, so nobody hunts for a COHERE_API_KEY they never set."""
+    for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
+        monkeypatch.setenv(env, "")
+    monkeypatch.setenv(fallback, "sk-test-0123456789")
+    report = doctor.collect()
+    row = next(r for r in report.providers if r.name == name)
+    assert row.key, f"doctor says {name} has no key with {fallback} exported"
+    assert row.key_from == fallback
+    assert row.to_dict()["key_from"] == fallback
+    others = [r for r in report.providers if r.name != name and r.name in KEY_FALLBACKS]
+    assert all(not r.key and not r.key_from for r in others)
 
 
 def test_doctor_pins_an_openrouter_id_it_does_not_carry_without_asking_openrouter(

@@ -129,10 +129,12 @@ import quackd_lerobot.sim.transport
 import quackd_lerobot.sim.upstream_api
 import quackd_lerobot.sim.world
 quackd_lerobot.sim.standin.mjcf()
-# a policy server, its client and their protocol need no torch either: a checkpoint is loaded
-# in the server's own process when it starts, never when any of them is imported, and a
-# scripted policy is served with nothing loaded at all
+# a policy server, its client, their protocol and the endpoint a run reaches one on need no
+# torch either: a checkpoint is loaded in the server's own process when it starts, never when
+# any of them is imported, and a scripted policy is served with nothing loaded at all
 import quackd_lerobot.policy.client
+import quackd_lerobot.policy.endpoint
+import quackd_lerobot.policy.endpoint_upstream_api
 import quackd_lerobot.policy.protocol
 import quackd_lerobot.policy.server
 import quackd_lerobot.policy.upstream_api

@@ -11,6 +11,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Added
 
+- **`quackd list-models --kind` lists the decision LLMs and the learned policies too.**
+  `--kind decision` prints every decision LLM `--decision-llm` names, in the order `quackd
+  doctor` does, which until now was the one command that said they existed. `--kind policy`
+  prints the policy types `quackd policy serve` serves, what each needs and how far it has got,
+  and the ones people ask about that it does not serve, with why, read from data in the core so
+  that a machine with no LeRobot can be told. `--kind all` prints the three, and `--kind pilot`,
+  the default, prints what the command always has, byte for byte. Every `--json` row now says
+  which kind it is, and `--llm`, which narrows the pilot rows to one vendor, is refused beside
+  another kind rather than ignored.
 - **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
   is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
   with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
@@ -112,6 +121,46 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   ([docs/guides/drive.md](docs/guides/drive.md),
   [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
   [ADR-0066](docs/adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)).
+- **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
+  from Hugging Face.** `up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
+  that runs the same `quackd policy serve`, behind Hugging Face's TLS, and waits until it serves,
+  saying each state as it passes. It rents AWS's `nvidia-l4` in `us-east-1` unless `--instance`,
+  `--vendor` and `--region` say otherwise (`--region eu-west-1 --instance nvidia-a10g` in
+  Europe), takes the serve flags a checkpoint needs and passes them on unchanged, and scales the
+  endpoint to zero after `--idle-minutes`, 15 to 720 and never none. Before anything bills it
+  checks that this quackd is a release on PyPI, the instance, its price on the day, the quota,
+  that the checkpoint and its pins are neither gated nor private without `--hub-token-from`, and
+  the checkpoint's `config.json`, then asks with the price, as it does before it resumes or wakes
+  one, and refuses with no terminal and no `--yes`. An endpoint that fails, does not serve in
+  time, has no GPU or meets any other error while `up` waits is paused, its log quoted with every
+  token taken out. The container installs this release from PyPI with `uvx` in uv's own image,
+  pinned by digest, with nothing uploaded after an hour past the release, and the endpoint is
+  `authenticated`, on one replica, with a token of quackd's own as its one secret. The account's
+  token goes to huggingface.co and the API, and as the bearer to the one endpoint address `up`
+  recorded, and nowhere else. `list` merges this machine's records with what the API says, `pause`
+  stops the bill and `delete` removes one. `up`, `pause` and `delete` read the endpoint first, and
+  leave alone one by that name that does not carry the tag `up` gave it from this machine's
+  record, as one made on huggingface.co or by another machine's `up` does not, and
+  `delete --forget` forgets such a record and asks Hugging Face nothing
+  ([docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint),
+  [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
+- **`--policy-url hf:NAME`** on `quackd run`, `quackd preflight`, `quackd serve-mcp` and
+  `quackd policy check` reaches an endpoint this machine started, as the record `up` kept says:
+  its address, its own token unless `--policy-token` is typed, and the account's token as the
+  bearer. It reads the endpoint from Hugging Face's API first, one request with the account's
+  token, and goes on only when it carries the tags `up` gave it at the recorded address, so
+  neither a record left behind by an endpoint deleted on huggingface.co nor one a project's `.env`
+  planted by naming another registry can send the account's token to an address the API does not
+  confirm. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never read for one. The run's
+  `policy` block keeps the address as `server` and adds `endpoint`.
+- **`GET /v1/health` on the policy server**, answered with no token, says whether it serves,
+  `{"ready": true}`, or is stopping, a 503, and nothing else, for a platform's readiness probe. It
+  reads no body and touches no session. The protocol stays version 1. The server also logs once,
+  as a warning, the first request that arrives carrying an `Authorization` header, and never
+  the header's value.
+- **`quackd policy serve --token-env NAME`** reads the token from the variable `NAME`, instead of
+  a file, and the serving rows name the variable and never what it holds. It is refused beside
+  `--token-file`, and with a variable that is unset, empty, short or holds a space.
 
 ### Changed
 
@@ -228,6 +277,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
   refused every other verb, so the brake reached for once the battery read low was a stop never
   sent. It still ends every other call after it.
+- **`quackd doctor` said a vendor's key was unset when only its second name was exported.**
+  Cohere's provider reads `CO_API_KEY` when `COHERE_API_KEY` is empty, Meta's reads
+  `MODEL_API_KEY` after `META_API_KEY` and Gemini's `GOOGLE_API_KEY` after `GEMINI_API_KEY`, so
+  a run with only the second one exported worked while doctor's row said `COHERE_API_KEY unset`.
+  The three second names are now one table, `KEY_FALLBACKS`, which the providers and doctor
+  both read, and doctor's row shows the masked key with the name it came from
+  (`from CO_API_KEY`), which `doctor --json` carries as `key_from`.
 
 ### Documentation
 
@@ -240,6 +296,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)
   records the cache and [ADR-0064](docs/adr/0064-a-run-says-where-its-seconds-went-and-waits-for-less.md)
   the rest, and they amend ADR-0010, ADR-0040, ADR-0041 and ADR-0059.
+- **[docs/models/](docs/models/README.md), the models beside the robots.** Five pages: the
+  three roles a model can have in a run side by side, every pilot vendor and every one of the
+  123 model ids with its extra, its key, its address and its rate, the eight decision LLMs, the
+  policy types the arm's server serves and the ones it does not, with why, and the companies
+  behind them, each with the roles it fills. Every table on them is rendered from the
+  catalogues by `scripts/models_docs.py`, and `tests/test_docs.py` fails when a page is not
+  what the script writes, so a row is changed in the code and never in a table. The guides
+  stay where they were and are linked, so no published link moved, and `docs/README.md` maps
+  the folder ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
+- **The README says which models work, right after which robots work.** One table of the three
+  roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
+  the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer
+  to many VLAs is Hugging Face is said there in one paragraph, with the commands that serve a
+  policy on the laptop, on a rented GPU and on a Hugging Face Endpoint.
+- **The counts that are still typed by hand are held by tests.** The catalogue's 123 ids, the
+  119 priced and the four unpriced, which the README, the FAQ and the architecture page each
+  typed, now fail a test the day a row is added, and so does a page that miscounts the policy
+  types. The local LLMs guide's table of presets is held to the addresses a run dials.
+- **`GOOGLE_API_KEY` is named where keys are configured.** The Gemini provider has read it
+  after `GEMINI_API_KEY` since 0.1.0, and the README's API keys row and `.env.example` said so
+  for Cohere's and Meta's second names only. A test now holds both to every name in
+  `KEY_FALLBACKS`.
 
 ### Known limitations
 
@@ -284,6 +362,29 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `--yes` alone. Over MCP, a verb an adapter brings may not read a stop asked for beside it, the
   ToddlerBot's own `search_scan` and the arm's joint moves among them. Drive's brake and a newer
   command end any of them.
+- **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
+  `--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and
+  the container on 127.0.0.1, the container serving `scripted:sweep`, and nothing was paid for.
+  What Hugging Face's pages leave out is designed for at its worst and recorded as UNVERIFIED:
+  whether the proxy passes `Authorization` on to the container, whether an endpoint pulls the
+  image from ghcr.io, whether the proxy answers 503 or 502 while a replica starts, what a paused
+  endpoint answers, what a `private` endpoint admits, what the log route answers, which instance
+  types the quota listing names, whether the API answers a read of an account's endpoints to that
+  account and its organisations' members alone, whether an endpoint keeps its address for its
+  life, and whether torch finds the GPU. No bench through an endpoint has been timed.
+- **A cold start takes minutes**, since the container installs torch from PyPI and fetches the
+  checkpoint each time it starts, and a run that reaches an endpoint at zero is told it is not
+  serving rather than held. Start it with `up` before a run.
+- **A laptop closed while `up` waits leaves the endpoint starting**, and billing until it idles
+  to zero, `--idle-minutes` later. Ctrl-C says so, and `quackd policy endpoint pause` stops the
+  bill at once.
+- **A CUDA build of torch newer than the endpoint's driver would run on the CPU.** `up` asks the
+  server whether it has a GPU once it serves, and pauses one that says it has none.
+- **A project's `.env` is trusted as the shell is.** One that names another registry with
+  `QUACKD_REGISTRY_DIR` and sets `HF_TOKEN`, where the shell sets none, makes
+  `--policy-url hf:NAME` reach an endpoint of that token's account, with that token: the user's
+  own Hugging Face token is never sent, but the arm is driven by that endpoint's policy and its
+  frames go there.
 
 ## [0.25.0] — 2026-10-25
 

@@ -11,13 +11,14 @@ made to make one. `parallel_tool_calls=False` is sent, which the same page docum
 to get one call per turn; its default is to allow several.
 
 The key is read from `META_API_KEY`, then `MODEL_API_KEY`, which is the name Meta's own examples
-export.
+export (`KEY_FALLBACKS`).
 """
 
 from __future__ import annotations
 
 import os
 
+from quackd.agent.providers.catalogue import KEY_FALLBACKS
 from quackd.agent.providers.openai import OpenAIProvider
 
 
@@ -29,4 +30,4 @@ class MetaProvider(OpenAIProvider):
     default_tool_choice = "auto"
 
     def _fallback_key(self) -> str | None:
-        return os.environ.get("MODEL_API_KEY")
+        return os.environ.get(KEY_FALLBACKS[self.name])

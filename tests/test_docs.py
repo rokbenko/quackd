@@ -8,11 +8,21 @@ import math
 import os
 import re
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
-from quackd.agent.providers.factory import CLOUD_NAMES, KEY_ENV, default_model_for
+from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, PRICES_CHECKED
+from quackd.agent.providers.factory import (
+    CLOUD_NAMES,
+    EXTRA_FOR,
+    KEY_ENV,
+    KEY_FALLBACKS,
+    LOCAL_NAMES,
+    default_model_for,
+    models_for,
+)
 from quackd.verbs.registry import default_registry
 from quackd_microduck import upstream_api as up
 from tests.adapter_layout import adapter_module
@@ -545,6 +555,34 @@ def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     assert not stale, f"the arm's own tables still carry policy rows: {stale}"
 
 
+def test_adapter_doc_lists_every_endpoint_upstream_ref() -> None:
+    """Hugging Face's Inference Endpoints, where `quackd policy endpoint` starts a policy server,
+    are read from the API's own document, Hugging Face's pages and huggingface_hub at its tag, in
+    `quackd_lerobot.policy.endpoint_upstream_api`, and the arm's page carries them in a section
+    of their own. Each ref needs a row of its own in the table for its status, as the policies'
+    do, and the section says when it was read, at which commit and API version, and that quackd
+    has never created an endpoint."""
+    from quackd_lerobot.policy import endpoint_upstream_api as endpoints
+
+    doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
+    heading = "\n## The endpoint's upstream: Hugging Face Inference Endpoints\n"
+    section = doc.split(heading, 1)[1].split("\n## ", 1)[0]
+    verified, unverified = section.split("\n### UNVERIFIED (", 1)
+    tables = {"VERIFIED": verified.split("\n### VERIFIED (", 1)[1], "UNVERIFIED": unverified}
+    missing = [
+        f"{ref.status} {ref.name}"
+        for ref in endpoints.all_refs()
+        if f"\n| `{ref.name}` |" not in tables[ref.status]
+    ]
+    assert not missing, (
+        f"docs/adapters/lerobot/README.md has no row for these endpoint refs: {missing}"
+    )
+    assert endpoints.PIN[:7] in section and endpoints.READ_ON in section
+    assert f"version {endpoints.API_VERSION}" in section
+    # the honesty label
+    assert "quackd has never created a Hugging Face Endpoint" in section
+
+
 def test_readme_promises() -> None:
     for needle in (
         "not affiliated with or endorsed by Pollen Robotics",
@@ -600,6 +638,18 @@ def test_every_provider_key_is_named_where_keys_are_configured() -> None:
         assert f"\n{KEY_ENV[name]}=" in env_example, f".env.example has no {KEY_ENV[name]} line"
 
 
+def test_every_key_a_vendor_falls_back_to_is_named_where_keys_are_configured() -> None:
+    """`GOOGLE_API_KEY` was read by the Gemini provider since 0.1.0 and named nowhere a reader
+    looks, so somebody with only that one exported was told by nothing that it would work."""
+    env_example = (REPO / ".env.example").read_text(encoding="utf-8")
+    row = next(line for line in README.splitlines() if line.startswith("| API keys |"))
+    for name, fallback in KEY_FALLBACKS.items():
+        assert f"`{KEY_ENV[name]}` (or `{fallback}`)" in row, (
+            f"the README's API keys row does not say {KEY_ENV[name]} falls back to {fallback}"
+        )
+        assert fallback in env_example, f".env.example never names {fallback}"
+
+
 def test_the_catalogue_is_documented_where_it_is_configured() -> None:
     """The same rule the log is held to, for the thing that now decides every run's model."""
     for path, needles in (
@@ -613,6 +663,16 @@ def test_the_catalogue_is_documented_where_it_is_configured() -> None:
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
             assert needle in text, f"{path} does not mention {needle!r}"
+
+
+def test_the_list_models_row_names_every_kind_it_lists() -> None:
+    """`--kind` is how a reader finds the decision LLMs and the policy types from a terminal, so
+    the command table says each one it takes."""
+    from quackd.cli import MODEL_KINDS
+
+    row = next(line for line in README.splitlines() if line.startswith("| `quackd list-models` |"))
+    for kind in MODEL_KINDS:
+        assert f"`--kind {kind}`" in row, f"the README's list-models row never names --kind {kind}"
 
 
 #: The one dash the README is allowed: the leading one of a blockquote attribution,
@@ -1005,6 +1065,114 @@ def test_play_is_documented_where_it_is_configured() -> None:
     assert "QUACKD_PLAY" not in env_example, "no variable sets play"
 
 
+def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> None:
+    """`quackd policy endpoint` rents a GPU that bills by the hour, so somebody about to start one
+    has to find what it costs, what it asks, where each token goes and that quackd has never
+    created one: the front page's command and Policy rows, the guide's section with its warning,
+    SECURITY.md, `.env.example`, the architecture page, the ADR and its note on ADR-0048, the
+    changelog and PLAN.md's item for the first real one. The question the guide quotes is the
+    one `up` asks, and the refusal it quotes is the one the client says, each built here by the
+    code itself, so a change to either fails here until the page has it."""
+    from quackd_lerobot.policy import endpoint
+    from quackd_lerobot.policy.client import RemoteRunner
+    from quackd_lerobot.verbs import JOINTS
+    from tests.fake_hugging_face import provider_listing
+
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    row = next(
+        line for line in rows if line.startswith("| `quackd policy serve\\|check\\|endpoint`")
+    )
+    for needle in ("endpoint up NAME --policy", "--policy-url hf:NAME", "never created one"):
+        assert needle in row, f"the README's policy row does not say {needle!r}"
+    policy_row = next(line for line in README.splitlines() if line.startswith("| Policy |"))
+    assert "`hf:NAME`" in policy_row and "quackd policy endpoint up NAME" in policy_row
+    guide = (REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8")
+    section = guide.split("\n## On a Hugging Face Endpoint\n", 1)[1].split("\n## ", 1)[0]
+    warning = (
+        "quackd has never created a Hugging Face Endpoint: everything here ran against the test "
+        "suite's stand-ins on 127.0.0.1 with a scripted policy behind them."
+    )
+    unquoted = re.sub(r"^> ?", "", section, flags=re.M).replace("**", "")
+    assert section.lstrip().startswith("> [!WARNING]") and _one_line(warning) in _one_line(unquoted)
+    for needle in (
+        "--hub-token-from",
+        "--region eu-west-1 --instance nvidia-a10g",
+        "quackd policy endpoint pause",
+        "--idle-minutes",
+        "2026-10-25",
+        "python tests/fake_hugging_face.py",
+        "quackd policy check --policy-url hf:arm-smolvla --bench",
+    ):
+        assert needle in section, f"docs/guides/policies.md's endpoint section lacks {needle!r}"
+    record = endpoint.EndpointRecord(
+        name="arm-smolvla",
+        namespace="rok",
+        policy="lerobot/smolvla_base@d9f33c94a60fb382c90dea2164c96845bd955e28",
+        instance="nvidia-l4",
+        vendor="aws",
+        region="us-east-1",
+        idle_minutes=15,
+        token="0" * 64,
+        created="2026-10-25T00:00:00Z",
+        version="0",
+    )
+    compute = endpoint.find_compute(provider_listing(), "aws", "us-east-1", "nvidia-l4")
+    asked = endpoint.confirmation(record, compute)
+    assert f"{asked} [y/N]: y\n" in section, "the guide does not quote the question up asks"
+    client = RemoteRunner(
+        "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud",
+        token="0" * 64,
+        motors=JOINTS,
+        bearer="hf_" + "1" * 34,
+        endpoint="hf:arm-smolvla",
+    )
+    refused = client._proxy_refusal(503)
+    assert refused is not None and _one_line(refused) in _one_line(section)
+    # a run asks the API about the endpoint before the account's token goes to it
+    read_first = "reads the endpoint from Hugging Face's API first"
+    assert _one_line(read_first) in _one_line(section), "the guide says no API read comes first"
+    security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
+    for needle in ("`GET /v1/health`", "quackd policy endpoint", "QUACKD_POLICY_TOKEN", "--yes"):
+        assert needle in security, f"SECURITY.md does not mention {needle!r}"
+    assert "`NAMESPACE_READS`" in security, "SECURITY.md does not say what the bind trusts"
+    architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
+    assert "`endpoint.py`" in architecture and "`policy/endpoint_upstream_api.py`" in architecture
+    adr = _adr("0061")
+    assert "Amends [ADR-0048](0048-" in _notes("0061") and "never created" in adr
+    assert "0061-a-hugging-face-endpoint" in _notes("0048"), "ADR-0048 has no note by ADR-0061"
+    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("\n## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
+    for needle in ("quackd policy endpoint up", "hf:NAME", "/v1/health", "--token-env"):
+        assert needle in unreleased, f"CHANGELOG.md's [Unreleased] does not name {needle!r}"
+    assert _one_line(read_first) in _one_line(unreleased), "the changelog says no API read first"
+    assert "never created a Hugging Face Endpoint" in unreleased.split("### Known limitations")[1]
+    assert "**A first real Hugging Face Endpoint.**" in (REPO / "PLAN.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_nothing_names_an_address_for_hugging_face_but_the_code() -> None:
+    """The account's token goes to `endpoint.API` and `endpoint.HUB`, which are constants: a
+    variable that moved one, as `HF_ENDPOINT` moves huggingface_hub's, would move where the token
+    goes. So `.env.example` names the token and no address for it, and the one module that sends
+    it reads no variable but the token's own lookup and the Hub token `--hub-token-from` names."""
+    env_example = (REPO / ".env.example").read_text(encoding="utf-8")
+    assert "\n# HF_TOKEN=\n" in env_example, ".env.example does not name HF_TOKEN"
+    assert not re.search(r"^#?\s*(HF_ENDPOINT|QUACKD_HF\w*|\w*ENDPOINTS?_URL)=", env_example, re.M)
+    source = (
+        REPO / "adapters" / "lerobot" / "src" / "quackd_lerobot" / "policy" / "endpoint.py"
+    ).read_text(encoding="utf-8")
+    read = set(re.findall(r"os\.environ\.get\(([^)]*)\)", source))
+    assert read == {
+        "name",
+        "up.TOKEN_PATH_VARIABLE",
+        '"XDG_CACHE_HOME"',
+        "up.HOME_VARIABLE",
+        "variable",
+    }, read
+    assert "os.getenv" not in source and "environ[" not in source
+
+
 def test_the_controller_is_documented_where_it_is_configured() -> None:
     """`--controller vla` takes the model out of a run and leaves its success to a person, so
     somebody choosing it has to find what it asks of them: the front page's `run` row and its
@@ -1071,14 +1239,22 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
     how the arm plays its chunks (`PolicyLoop.served`), and the summary's block starts with it,
     so the architecture page's `run_start` row names each of its keys. `accept_other_frame` went
     missing from that row when `--accept-other-frame` added it, and a reader of a run taken
-    under the override would have met a key no page explained."""
+    under the override would have met a key no page explained. The runner here is one reached
+    by `--policy-url hf:NAME`, which has every key a block can hold, `endpoint` among them."""
     from quackd_lerobot.policy import server
     from quackd_lerobot.policy.client import RemoteRunner
     from quackd_lerobot.policy.loop import PolicyLoop
     from quackd_lerobot.verbs import JOINTS
 
     _, info = server.served_policy(server.ServeOptions(policy="scripted:hold"))
-    runner = RemoteRunner("http://127.0.0.1:1", token="0" * 64, motors=JOINTS)
+    # a server on a Hugging Face Endpoint, which adds the hf:NAME it was reached by
+    runner = RemoteRunner(
+        "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud",
+        token="0" * 64,
+        motors=JOINTS,
+        bearer="hf_" + "1" * 34,
+        endpoint="hf:arm",
+    )
     runner.info = info  # as the connect heard it, with nothing asked
     row = next(
         line
@@ -1474,9 +1650,12 @@ def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
         OPENROUTER_PAGE,
         REPO / "web" / "README.md",
         REPO / "web" / "src" / "providers.js",
+        REPO / "docs" / "models" / "README.md",
+        REPO / "docs" / "models" / "pilot-llms.md",
+        REPO / "docs" / "models" / "vendors.md",
         *sorted((REPO / "docs" / "adr").glob("0050-*.md")),
     ]
-    assert len(pages) == 6, "ADR-0050 is missing"
+    assert len(pages) == 9, "ADR-0050 is missing"
     for page in pages:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
@@ -2330,6 +2509,10 @@ def test_every_relative_link_and_anchor_in_the_markdown_resolves() -> None:
     assert not broken, "links that go nowhere:\n" + "\n".join(broken)
 
 
+MAPPED_FOLDERS = ("guides", "adapters", "reference", "concepts", "models", "passport")
+"""The folders under docs/ whose every page docs/README.md links, and whose rule it states."""
+
+
 def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> None:
     """docs/README.md is the map, and a page it leaves out is one a reader finds only by luck.
 
@@ -2346,11 +2529,14 @@ def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> No
         if not re.match(r"^[a-z][a-z0-9+.-]*:", target)
     }
     pages = [
-        page
-        for folder in ("guides", "adapters", "reference", "concepts", "passport")
-        for page in sorted((REPO / "docs" / folder).rglob("*.md"))
+        page for folder in MAPPED_FOLDERS for page in sorted((REPO / "docs" / folder).rglob("*.md"))
     ]
     assert len(pages) > 20, "the folders under docs/ moved, so this test is checking nothing"
+    rule = _one_line(index.read_text(encoding="utf-8").split("## Where a new page goes", 1)[1])
+    for folder in MAPPED_FOLDERS:
+        assert f"`{folder}/`" in rule, (
+            f"docs/README.md's rule never says where a {folder}/ page goes"
+        )
     missing = [page.relative_to(REPO).as_posix() for page in pages if page.resolve() not in linked]
     assert not missing, f"docs/README.md does not link: {missing}"
 
@@ -3938,3 +4124,185 @@ def test_releasing_md_runs_no_line_past_its_wrap() -> None:
             continue  # one link or code span too long to break
         long.append(f"line {number}: {len(line)} columns")
     assert not long, f"{name} runs these lines past its wrap: {long}"
+
+
+# ── the models pages, and the code they render ─────────────────────────────────────────────
+
+MODELS_DOCS = REPO / "docs" / "models"
+
+
+def _models_docs_script() -> ModuleType:
+    """`scripts/models_docs.py`, loaded by path as `test_web.py` loads the browser's generator:
+    `scripts/` is not a package, and this keeps the script a script."""
+    import importlib.util
+
+    script = REPO / "scripts" / "models_docs.py"
+    spec = importlib.util.spec_from_file_location("models_docs", script)
+    assert spec and spec.loader, f"{script} could not be loaded as a module"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
+    """Every table on the models pages is a catalogue rendered, and a rendered table that
+    nothing renders again is a stale table with a comment on it. So the script runs here over
+    every page, and what it would write is compared with what is committed."""
+    script = _models_docs_script()
+    for page in script.PAGES:
+        committed = (MODELS_DOCS / page).read_text(encoding="utf-8").replace("\r\n", "\n")
+        assert script.rewrite(committed, page) == committed, (
+            f"docs/models/{page} is not what scripts/models_docs.py writes from the code: run "
+            "uv run --no-sync python scripts/models_docs.py and commit what it changes"
+        )
+
+
+def test_every_block_the_script_renders_is_on_one_page_once() -> None:
+    """A block rendered onto no page is a table nobody reads, and one on two pages is two
+    places to look for the same row."""
+    script = _models_docs_script()
+    placed = [name for blocks in script.PAGES.values() for name in blocks]
+    assert sorted(placed) == sorted(script.BLOCKS), "a block is rendered onto no page, or two"
+    for path in sorted(MODELS_DOCS.glob("*.md")):
+        found = re.findall(
+            r"^<!-- generated: ([a-z0-9-]+)\b", path.read_text(encoding="utf-8"), flags=re.M
+        )
+        assert tuple(found) == script.PAGES.get(path.name, ()), (
+            f"docs/models/{path.name} carries the blocks {found}"
+        )
+
+
+def test_the_models_pages_name_every_row_in_the_code() -> None:
+    """Read off the pages directly rather than through the script, because a renderer that
+    dropped a row would agree with itself."""
+    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    for name in CLOUD_NAMES:
+        assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for --llm {name}"
+        for m in models_for(name):
+            assert f"`{name}:{m.id}`" in pilots, f"pilot-llms.md never names {name}:{m.id}"
+    for name in LOCAL_NAMES:
+        assert f"| `{name}` |" in pilots, f"pilot-llms.md has no row for the {name} preset"
+    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    for name in PRESET_NAMES:
+        assert f"| `{name}` |" in decisions, f"decision-llms.md has no row for {name}"
+        assert f"(../guides/decision-llms/{name}.md)" in decisions, (
+            f"decision-llms.md does not link {name}'s own page"
+        )
+
+
+def test_a_rate_read_on_a_day_of_its_own_is_dated_so_on_the_page() -> None:
+    """The page dated every rate but OpenRouter's to the catalogue's own read, so a row added
+    after it, `gpt-6.1-sol` among them, was dated to a day nobody had read its rate."""
+    pilots = " ".join((MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8").split())
+    for name in CLOUD_NAMES:
+        for m in models_for(name):
+            day = m.price.checked if m.price is not None else None
+            if day not in (None, PRICES_CHECKED, OPENROUTER_PRICES_CHECKED):
+                assert f"`{name}:{m.id}`'s on {day}" in pilots, f"{name}:{m.id}, read on {day}"
+
+
+def test_the_models_pages_say_what_has_never_run() -> None:
+    """The sentences the guides they summarise carry, in the same words, so a page that lists
+    a vendor cannot read as if it had been flown when it has only met a stand-in."""
+    pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
+    assert "**No OpenRouter model has answered a real quackd request.**" in pilots
+    decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
+    assert "**Nothing here has ever answered a real robot.**" in decisions
+
+
+def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
+    """The catalogue's size was typed into the README, the FAQ and the architecture page by
+    hand, and nothing read it back, so the day a row was added three pages would have kept a
+    number the catalogue no longer had. The models page renders its own count, and every other
+    one is held to the rows here: the ids, the ones priced and the ones not."""
+    rows = [m for name in CLOUD_NAMES for m in models_for(name)]
+    priced = sum(1 for m in rows if m.price is not None)
+    unpriced = _NUMBER_WORDS.get(len(rows) - priced, str(len(rows) - priced))
+    counted = 0
+    for path in [*_living_docs(), REPO / "web" / "README.md"]:
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).replace(">", " ").split())
+        totals = re.findall(r"\b(\d+) (?:model )?ids\b", prose)
+        totals += re.findall(r"\bcatalogue's (\d+) models\b", prose)
+        for n in totals:
+            counted += 1
+            assert int(n) == len(rows), (
+                f"{path.name} says the catalogue has {n} ids, and it has {len(rows)}"
+            )
+        for have, of in re.findall(r"\b(\d+) of the (\d+) ids have one\b", prose):
+            assert (int(have), int(of)) == (priced, len(rows)), (
+                f"{path.name} says {have} of {of} ids are priced, and {priced} of {len(rows)} are"
+            )
+        for word in re.findall(r"\b(\w+) of the catalogue's \d+ models are unpriced\b", prose):
+            assert word.lower() == unpriced, (
+                f"{path.name} says {word} of the catalogue's ids are unpriced, not {unpriced}"
+            )
+    assert counted >= 4, "the counts this test holds have moved: find them and point it there"
+
+
+def test_the_local_presets_table_is_the_one_the_code_holds() -> None:
+    """The guide's table of presets and addresses was typed by hand beside `local.PRESETS`,
+    which is what a run actually dials."""
+    from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
+
+    page = (REPO / "docs" / "guides" / "local-llms.md").read_text(encoding="utf-8")
+    for name, url in LOCAL_PRESETS.items():
+        where = f"`{url}`" if url else "none, you must pass one"
+        assert f"| `{name}` | {where} |" in page, (
+            f"docs/guides/local-llms.md's presets table does not give {name} as {where}"
+        )
+
+
+def test_no_living_document_claims_the_wrong_number_of_policy_types() -> None:
+    """The server served three types for nine releases and six from 0.26.0, and every page
+    that spells the number is one nobody re-reads the day it moves again."""
+    from quackd.adapters.policies import FAMILIES
+
+    right = _NUMBER_WORDS[len(FAMILIES)]
+    for path in _living_docs():
+        prose = " ".join(_prose(path.read_text(encoding="utf-8")).split()).lower()
+        for count, word in _NUMBER_WORDS.items():
+            if count == len(FAMILIES):
+                continue
+            for shape in ("{w} policy types", "{w} lerobot policy types"):
+                claim = shape.format(w=word)
+                assert claim not in prose, (
+                    f"{path.name} says {claim!r}, and the server serves {right}"
+                )
+
+
+def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
+    """The three kinds of model were spread over some twenty-five places in the README, and a
+    reader asking which models quackd takes had no one section to read."""
+    from quackd.adapters.policies import FAMILIES
+
+    headings = re.findall(r"^## (.+)$", _prose(README), flags=re.M)
+    robots = headings.index("Which robots work")
+    assert headings[robots + 1] == "Which models work", "the models section must follow the robots"
+    assert "- [Which models work](#which-models-work)" in README, "the contents do not list it"
+    section = README.split("\n## Which models work\n", 1)[1].split("\n## ", 1)[0]
+    for needle in (
+        "docs/models/README.md",
+        "### Pilot LLMs",
+        "### Decision LLMs",
+        "### Learned policies and VLAs",
+        "quackd policy serve",
+        "quackd policy endpoint up",
+        "--decision-mode shadow",
+    ):
+        assert needle in section, f"the README's models section does not say {needle!r}"
+    for family in FAMILIES:
+        assert family.label in section or f" {family.type}" in section, (
+            f"the README's models section never names {family.label}"
+        )
+
+
+def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -> None:
+    """The pilots' table moved into the models section whole, and is held there row by row:
+    each cloud vendor's row names its extra, its key and the `--llm` that runs it."""
+    section = README.split("\n### Pilot LLMs\n", 1)[1].split("\n### ", 1)[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ")]
+    assert rows and rows[0] == "| Provider | Extra | Key | Run |", "the pilots' table has moved"
+    for name in CLOUD_NAMES:
+        row = next((r for r in rows if f"--llm {name}`" in r), None)
+        assert row is not None, f"the pilots' table has no row that runs --llm {name}"
+        assert f"`quackd[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row

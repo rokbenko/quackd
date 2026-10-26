@@ -840,3 +840,113 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
     assert replay.exit_code == 0, replay.output
     shown = _flat(replay.output)
     assert f"policy {held.url} scripted:hold" in shown and "policy 1 segment" in shown, shown
+
+
+# ── an endpoint, by its hf:NAME ─────────────────────────────────────────────────────────
+
+HF_TOKEN = "hf_" + "PlumbingStandIn" * 2
+ENDPOINT_URL = "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud"
+
+
+def _recorded(tmp_path: Path, **kw: Any) -> Any:
+    """A record of an endpoint `arm`, as `quackd policy endpoint up` keeps one, at its address."""
+    from dataclasses import replace
+
+    from quackd_lerobot.policy import endpoint
+
+    record = replace(
+        endpoint.new_record(
+            "arm",
+            namespace="rok",
+            policy="owner/act@abc123",
+            instance="nvidia-l4",
+            vendor="aws",
+            region="us-east-1",
+            idle_minutes=15,
+        ),
+        url=ENDPOINT_URL,
+        **kw,
+    )
+    endpoint.EndpointStore(tmp_path).save(record)
+    return record
+
+
+def test_hf_name_is_taken_on_the_flag_alone_and_a_name_hugging_face_would_refuse_is_not() -> None:
+    choice = PolicyChoice(" hf:arm-01 ")
+    assert (choice.url, choice.endpoint, choice.reach()) == (
+        "hf:arm-01",
+        "hf:arm-01",
+        ("hf:arm-01", None),
+    )
+    assert policy_choice("hf:arm-01", registry_dir="somewhere").registry_dir == "somewhere"  # type: ignore[union-attr]
+    for bad in ("hf:Arm", "hf:", "hf:" + "a" * 33, "HF:arm_1"):
+        with pytest.raises(ValueError, match="is not an endpoint's hf:NAME"):
+            PolicyChoice(bad)
+    assert PolicyChoice("http://127.0.0.1:9875").endpoint is None
+    assert describe(parse_robot_spec("lerobot:real"), policy=choice).provides("manipulate")
+
+
+@pytest.fixture
+def hf_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+    """The stand-in for Hugging Face's API, with quackd pointed at it and the plumbing's own
+    account token, which a run's `hf:NAME` asks before it builds the arm's client."""
+    from tests.fake_hugging_face import FakeAPI, point
+
+    with FakeAPI(token=HF_TOKEN) as api:
+        point(monkeypatch, api)
+        yield api
+
+
+def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hf_api: Any
+) -> None:
+    """The address and the token are the record's, the bearer the account's, and
+    `QUACKD_POLICY_TOKEN`, which is another server's, is not read. `--policy-token` beats the
+    record, as it beats everything on any server. Each build asks Hugging Face's API first,
+    here its stand-in, which has the endpoint at the recorded address."""
+    from quackd_lerobot.policy import endpoint
+
+    record = _recorded(tmp_path)
+    hf_api.seed("rok", "arm", url=ENDPOINT_URL, mark=endpoint.mark(record))
+    monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
+    monkeypatch.setenv(wire.TOKEN_ENV, "e" * 64)
+    choice = PolicyChoice("hf:arm", registry_dir=str(tmp_path))
+    adapter = make_adapter("lerobot:real", address="COM5", policy=choice)
+    client = adapter.transport.policy_loop.runner  # type: ignore[attr-defined]
+    assert isinstance(client, RemoteRunner)
+    assert (client.url, client.endpoint, client._token, client._bearer) == (
+        ENDPOINT_URL,
+        "hf:arm",
+        record.token,
+        HF_TOKEN,
+    )
+    assert client.record()["endpoint"] == "hf:arm" and client.record()["server"] == ENDPOINT_URL
+    typed = PolicyChoice("hf:arm", "f" * 64, registry_dir=str(tmp_path))
+    made = make_adapter("lerobot:mujoco", policy=typed, seed=0)
+    assert made.transport.policy_loop.runner._token == "f" * 64  # type: ignore[attr-defined]
+    assert len(hf_api.sent("/v2/endpoint/rok/arm")) == 2
+
+
+@pytest.mark.parametrize("case", ["no record", "no account token"])
+def test_hf_name_with_no_record_or_no_account_token_refuses_the_arm_before_it_connects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    if case == "no record":
+        monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
+        needle = "no endpoint called arm is recorded on this machine"
+    else:
+        _recorded(tmp_path)
+        needle = "no Hugging Face token to reach hf:arm"
+    choice = PolicyChoice("hf:arm", registry_dir=str(tmp_path))
+    with pytest.raises(AdapterError, match=needle):
+        make_adapter("lerobot:real", address="COM5", policy=choice)
+    result = _run(
+        tmp_path,
+        "--robot",
+        "lerobot:mujoco",
+        "--policy-url",
+        "hf:arm",
+        "--registry-dir",
+        str(tmp_path),
+    )
+    assert result.exit_code == 1 and needle in _flat(result.output), result.output

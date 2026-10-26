@@ -20,6 +20,7 @@ import contextlib
 import http.client
 import importlib.util
 import json
+import logging
 import math
 import re
 import socket
@@ -842,6 +843,152 @@ def test_serve_writes_a_token_and_says_where(
     assert "scripted:hold at http://127.0.0.1:" in flat
 
 
+TOKEN_VAR = "QUACKD_TEST_SERVE_TOKEN"
+"""A variable `--token-env` is pointed at, which no developer's `.env` holds."""
+
+
+def test_serve_reads_its_token_from_the_variable_token_env_names_and_never_says_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """How a platform that keeps a container's secrets hands the server its token: the token is
+    read from the variable, stripped as a file's is, and the serving rows name the variable and
+    never what it holds. No token file is read or written beside it."""
+    default = tmp_path / ".quackd" / "policy.token"
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(default))
+    monkeypatch.setenv(TOKEN_VAR, f"  {TOKEN}\n")
+    assert S.server_token(None, TOKEN_VAR) == (TOKEN, None, False)
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", TOKEN_VAR],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"token from ${TOKEN_VAR}" in " ".join(result.output.split())
+    assert TOKEN not in result.output and not default.exists()
+
+
+@pytest.mark.parametrize(
+    ("value", "needle"),
+    [
+        (None, "is not set"),
+        ("   ", "is empty"),
+        ("SECRET-1", "shorter than"),
+        ("SECRET-PART-ONE SECRET-PART-TWO", "a space"),
+    ],
+)
+def test_a_token_env_that_holds_no_token_a_short_one_or_one_no_header_carries_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None, needle: str
+) -> None:
+    # a server that ignored the variable would write its default file, and never the real one
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    if value is None:
+        monkeypatch.delenv(TOKEN_VAR, raising=False)
+    else:
+        monkeypatch.setenv(TOKEN_VAR, value)
+    with pytest.raises(S.ServeRefused) as refused:
+        S.server_token(None, TOKEN_VAR)
+    said = str(refused.value)
+    assert needle in said and "the variable --token-env names" in said, said
+    assert TOKEN_VAR not in said and "SECRET" not in said, said
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", TOKEN_VAR],
+    )
+    assert result.exit_code == 1 and "SECRET" not in result.output, result.output
+
+
+def test_token_env_beside_token_file_and_a_value_where_its_name_belongs_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two places for one token is one too many to know which was meant, and is refused before
+    a policy is built. A token typed where the variable's name belongs is refused without being
+    quoted back."""
+    named = tmp_path / "policy.token"
+    named.write_text(TOKEN + "\n", encoding="utf-8")
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    with pytest.raises(S.ServeRefused, match="give one of them"):
+        S.server_token(str(named), TOKEN_VAR)
+    both = S.ServeOptions(policy="scripted:hold", port=0, token_file=str(named), token_env="X")
+    with pytest.raises(S.ServeRefused, match="give one of them"):
+        S.open_server(both)
+    pasted = "0" + TOKEN  # a token begins with a digit as often as not
+    with pytest.raises(S.ServeRefused) as refused:
+        S.server_token(None, pasted)
+    assert "not a variable's name" in str(refused.value) and TOKEN not in str(refused.value)
+    # and with a letter as often, when it is a name as far as the rule goes, and is not set
+    lettered = "a" + TOKEN[1:]
+    monkeypatch.delenv(lettered, raising=False)
+    with pytest.raises(S.ServeRefused, match="is not set") as refused:
+        S.server_token(None, lettered)
+    assert TOKEN[1:] not in str(refused.value)
+    monkeypatch.setattr(S.Served, "wait", lambda self: None)
+    result = CliRunner().invoke(
+        app,
+        ["policy", "serve", "--policy", "scripted:hold", "--port", "0", "--token-env", lettered],
+    )
+    assert result.exit_code == 1 and TOKEN[1:] not in result.output, result.output
+
+
+# ── the health route, and what a proxy in front passes on ──────────────────────────────
+
+
+def test_the_health_route_needs_no_token_reads_no_body_and_says_only_whether_it_serves(
+    served: Serving,
+) -> None:
+    """A platform's readiness probe holds no token, so `GET /v1/health` is answered before the
+    token is asked for, and says nothing a probe could not learn from the port answering at
+    all: whether the server serves. It starts no session and reads no body: a POST is answered
+    405, and a body brought to it closes the connection with the body unread. Once the server
+    is stopping it says so, with a 503. Every other route still wants the token."""
+    for token in (None, "not-the-token-" + TOKEN[14:], TOKEN):
+        assert served.raw("GET", wire.HEALTH_PATH, token=token) == (200, {"ready": True}, False)
+    assert served.raw("GET", wire.HEALTH_PATH + "?probe=1", token=None)[:2] == (
+        200,
+        {"ready": True},
+    )
+    status, said, closed = served.raw(
+        "POST", wire.HEALTH_PATH, b"x" * 1000, token=None, headers={"Content-Length": "1000"}
+    )
+    assert status == 405 and said["ok"] is False and closed
+    status, said, closed = served.raw(
+        "GET", wire.HEALTH_PATH, b"x" * 1000, token=None, headers={"Content-Length": "1000"}
+    )
+    assert (status, said, closed) == (200, {"ready": True}, True)
+    assert served.app.resets == served.app.steps == 0 and served.app._session is None
+    assert served.raw("GET", wire.POLICY_PATH, token=None)[0] == 401
+    served.app.close()
+    assert served.raw("GET", wire.HEALTH_PATH, token=None)[:2] == (503, {"ready": False})
+
+
+def test_a_request_carrying_authorization_is_said_once_and_its_value_never(
+    served: Serving, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The bearer a Hugging Face Endpoint wants is for the proxy in front of the server, and
+    quackd's client never sends one to the server itself. So the first request that arrives
+    carrying an `Authorization` header says, as a warning and once, that the proxy passes a
+    client's credentials on, whatever route it asked and whether or not it held the token, and
+    nothing the server logs has the header's value in it."""
+    secret = "hf_" + "Q" * 34
+    caplog.set_level(logging.DEBUG, logger="quackd.policy")
+
+    def warned() -> list[logging.LogRecord]:
+        return [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "Authorization" in r.getMessage()
+        ]
+
+    served.client().policy()
+    assert not warned(), "the client sends no Authorization header of its own"
+    bearer = {"Authorization": f"Bearer {secret}"}
+    served.raw("GET", wire.HEALTH_PATH, token=None, headers=bearer)
+    served.raw("GET", wire.POLICY_PATH, headers=bearer)
+    served.raw("GET", wire.POLICY_PATH, token=None, headers=bearer)
+    assert len(warned()) == 1
+    assert all(secret not in r.getMessage() for r in caplog.records)
+
+
 # ── numbers, sizes and frames ───────────────────────────────────────────────────────────
 
 
@@ -1262,21 +1409,142 @@ def test_a_checkpoint_goes_to_the_pipeline_and_anything_else_is_named_or_refused
         S.served_policy(S.ServeOptions(policy=f"scripted:{name}"))
 
 
-@pytest.mark.parametrize(
-    ("options", "needle"),
-    [
-        (S.ServeOptions(policy="scripted:hold", fps=math.nan), "Hz"),
-        (S.ServeOptions(policy="scripted:hold", fps=1000.0), "Hz"),
-        (S.ServeOptions(policy="scripted:hold", latency_s=-1.0), "--latency-s"),
-        (S.ServeOptions(policy="scripted:hold", latency_s=FIRST_CHUNK_S), "first chunk"),
-        (S.ServeOptions(policy="scripted:hold", jpeg_quality=10), "--jpeg-quality"),
-        (S.ServeOptions(policy="scripted:hold", cameras="front"), "--cameras"),
-        (S.ServeOptions(policy="scripted:hold", threads=0), "--threads"),
-    ],
-)
+NOT_WORTH_STARTING = [
+    (S.ServeOptions(policy="scripted:hold", fps=math.nan), "Hz"),
+    (S.ServeOptions(policy="scripted:hold", fps=1000.0), "Hz"),
+    (S.ServeOptions(policy="scripted:hold", latency_s=-1.0), "--latency-s"),
+    (S.ServeOptions(policy="scripted:hold", latency_s=FIRST_CHUNK_S), "first chunk"),
+    (S.ServeOptions(policy="scripted:hold", jpeg_quality=10), "--jpeg-quality"),
+    (S.ServeOptions(policy="scripted:hold", cameras="front"), "--cameras"),
+    (S.ServeOptions(policy="scripted:hold", threads=0), "--threads"),
+]
+
+
+@pytest.mark.parametrize(("options", "needle"), NOT_WORTH_STARTING)
 def test_a_server_not_worth_starting_says_why(options: S.ServeOptions, needle: str) -> None:
     with pytest.raises(S.ServeRefused, match=needle):
         S.served_policy(options)
+
+
+@pytest.mark.parametrize(
+    ("options", "needle"),
+    [
+        *NOT_WORTH_STARTING,
+        (S.ServeOptions(policy="scripted:hold", bind="10.0.0.5"), "--behind-tls"),
+        (S.ServeOptions(policy="scripted:hold", port=70000), "is not a port"),
+        (S.ServeOptions(policy="scripted:hold", token_file="a", token_env="B"), "one of them"),
+        (S.ServeOptions(policy="scripted:hold", token_env="0" + TOKEN), "a variable's name"),
+        (S.ServeOptions(policy="lerobot/smolvla_base"), "has no revision"),
+        (S.ServeOptions(policy="scripted:dance"), "no scripted policy called"),
+        (S.ServeOptions(policy="nonsense"), "REPO@REVISION or scripted:NAME"),
+        (S.ServeOptions(policy="scripted:hold", pins=("a/b@c",)), "--pin"),
+    ],
+)
+def test_every_flag_a_server_refuses_is_refused_before_anything_is_built(
+    monkeypatch: pytest.MonkeyPatch, options: S.ServeOptions, needle: str
+) -> None:
+    """`check_options` is every refusal of a flag that needs no policy built, so a caller can
+    refuse bad flags before it starts anything: `quackd policy endpoint up` refuses them before
+    an endpoint exists. Neither a scripted policy nor a checkpoint is built for any of them, and
+    a token typed where its variable's name belongs is not quoted back."""
+
+    def built(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a policy was built for flags that are refused")
+
+    monkeypatch.setattr(S, "named", built)
+    monkeypatch.setattr(S.pipeline, "load", built)
+    with pytest.raises(S.ServeRefused, match=needle) as refused:
+        S.check_options(options)
+    assert TOKEN not in str(refused.value)
+
+
+def test_good_flags_for_a_checkpoint_are_checked_with_nothing_fetched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The flags an endpoint's container is started with pass the check on the laptop, which
+    fetches and builds nothing: the server behind its TLS proxy, its token in a variable, and
+    the JPEG quality that being behind TLS asks for."""
+
+    def built(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("the check fetched or built a checkpoint")
+
+    monkeypatch.setattr(S.pipeline, "load", built)
+    options = S.ServeOptions(
+        policy=" lerobot/smolvla_base@abc123 ",
+        cameras="front=observation.images.top",
+        latency_s=0.2,
+        bind="0.0.0.0",
+        behind_tls=True,
+        token_env=wire.TOKEN_ENV,
+        pins=("HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",),
+    )
+    assert S.check_options(options) == S.Checked(
+        spec="lerobot/smolvla_base@abc123",
+        checkpoint=True,
+        latency_s=0.2,
+        jpeg_quality=wire.DEFAULT_JPEG_QUALITY,
+        cameras={"front": "observation.images.top"},
+    )
+
+
+def test_the_serve_commands_arguments_build_the_options_it_serves_with(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`cli._serve_options` is where `quackd policy serve`'s flags become `ServeOptions`, and the
+    stand-in for an endpoint's container builds its own there, from the arguments it is given,
+    parsed by this command's own parser. So the options the command serves with and the ones
+    its parser and `_serve_options` make of the same arguments are one value."""
+    import typer.main
+
+    from quackd import cli
+
+    args = [
+        "--policy",
+        "lerobot/smolvla_base@abc123",
+        "--pin",
+        "HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",
+        "--fps",
+        "30",
+        "--cameras",
+        "front=observation.images.top",
+        "--latency-s",
+        "0.25",
+        "--threads",
+        "3",
+        "--jpeg-quality",
+        "80",
+        "--bind",
+        "0.0.0.0",
+        "--port",
+        "9875",
+        "--behind-tls",
+        "--token-env",
+        wire.TOKEN_ENV,
+    ]
+    serve = typer.main.get_command(app).commands["policy"].commands["serve"]  # type: ignore[attr-defined]
+    parsed = cli._serve_options(**serve.make_context("serve", list(args)).params)
+    assert parsed == S.ServeOptions(
+        policy="lerobot/smolvla_base@abc123",
+        fps=30.0,
+        cameras="front=observation.images.top",
+        latency_s=0.25,
+        bind="0.0.0.0",
+        port=wire.DEFAULT_PORT,
+        token_env=wire.TOKEN_ENV,
+        behind_tls=True,
+        threads=3,
+        jpeg_quality=80,
+        pins=("HuggingFaceTB/SmolVLM2-500M-Video-Instruct@def456",),
+    )
+    opened: list[S.ServeOptions] = []
+
+    def open_server(options: S.ServeOptions, **kwargs: Any) -> Any:
+        opened.append(options)
+        raise S.ServeRefused("stopped before it served")
+
+    monkeypatch.setattr(S, "open_server", open_server)
+    result = CliRunner().invoke(app, ["policy", "serve", *args])
+    assert result.exit_code == 1 and opened == [parsed], result.output
 
 
 def test_a_latency_the_arm_could_never_play_a_chunk_under_is_refused() -> None:

@@ -47,6 +47,7 @@ from quackd.agent.providers.factory import (
     DEFAULT_MODELS,
     EXTRA_FOR,
     KEY_ENV,
+    KEY_FALLBACKS,
     LOCAL_NAMES,
     PROVIDER_NAMES,
     SDK_FOR,
@@ -192,6 +193,9 @@ class ProviderRow:
     refused_model: str = ""
     """A QUACKD_LLM whose model half this vendor does not list, which is why `model` is the
     vendor's default and not what the environment asked for."""
+    key_from: str = ""
+    """The second name the key was found under (`KEY_FALLBACKS`), when `key_env` was empty: the
+    provider reads it there too, so a row that said `key_env unset` would be wrong about a run."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -200,6 +204,7 @@ class ProviderRow:
             "version": self.version,
             "key": self.key or None,
             "key_env": self.key_env,
+            "key_from": self.key_from or None,
             "key_optional": self.key_optional,
             "model": self.model,
             "url": self.url or None,
@@ -1356,6 +1361,12 @@ def collect(
             )
             continue
         key = os.environ.get(KEY_ENV[name], "")
+        # The provider reads its second name when the first is empty, so doctor does too: a row
+        # saying COHERE_API_KEY unset beside an exported CO_API_KEY was wrong about the run.
+        key_from = ""
+        if not key and name in KEY_FALLBACKS:
+            key = os.environ.get(KEY_FALLBACKS[name], "")
+            key_from = KEY_FALLBACKS[name] if key else ""
         # What this provider would actually be given, not what the table used to guess. The
         # vendor QUACKD_LLM names can still be handed a model it does not list, and doctor is
         # where a reader should find that out rather than three commands later.
@@ -1377,6 +1388,7 @@ def collect(
                 model=model,
                 pinned=name == env_vendor and not refused,
                 refused_model=refused,
+                key_from=key_from,
             )
         )
 
@@ -1846,7 +1858,11 @@ def _providers_table(report: DoctorReport) -> Any:
             else Text.assemble(("missing ", ui.STYLES["warn"]), (f"({row.extra})", ""))
         )
         key: Any
-        if row.key:
+        if row.key and row.key_from:
+            key = Text.assemble(
+                (row.key, ui.STYLES["ok"]), (f" from {row.key_from}", ui.STYLES["muted"])
+            )
+        elif row.key:
             key = ui.plain(row.key, style=ui.STYLES["ok"])
         elif row.key_optional:
             key = Text("optional", style=ui.STYLES["muted"])
