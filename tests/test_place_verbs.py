@@ -182,7 +182,7 @@ def test_the_pilot_reads_the_nearest_places_and_the_orphaned_after_them(tmp_path
     source.reading = at(0.0, 0.0, frame=FrameRef("odometry", "odom:test", False, epoch=1))
     book.mark("door")
     line = places_line(book.views())
-    assert line == "places: door 0.0 m +0° · orphaned: kitchen"
+    assert line == "places: door here · orphaned: kitchen"
     text = build_observation_text(
         step=1,
         max_steps=40,

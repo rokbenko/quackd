@@ -415,8 +415,12 @@ def bearing_words(bearing_rad: float) -> str:
 
 
 def _how_far(v: PlaceView) -> str:
-    """`kitchen 1.2 m +38°`: a usable place, its distance, and its bearing from the heading."""
-    return f"{v.place.name} {v.distance_m or 0.0:.1f} m {math.degrees(v.bearing_rad or 0.0):+.0f}°"
+    """`kitchen 1.2 m +38°`: a usable place, its distance, and its bearing from the heading, or
+    `kitchen here` for one no farther than the line says a distance to."""
+    far = f"{v.distance_m or 0.0:.1f}"
+    if float(far) == 0:
+        return f"{v.place.name} here"
+    return f"{v.place.name} {far} m {math.degrees(v.bearing_rad or 0.0):+.0f}°"
 
 
 def places_line(views: list[PlaceView], *, nearest: int = 5) -> str | None:
@@ -443,11 +447,13 @@ def place_listing(views: list[PlaceView]) -> list[str]:
     which way, or why it cannot be walked to now."""
     lines: list[str] = []
     for v in views:
-        if v.status == "here":
-            lines.append(
-                f"- {v.place.name}: {v.distance_m or 0.0:.2f} m away, "
-                f"{bearing_words(v.bearing_rad or 0.0)}"
-            )
+        far = f"{v.distance_m or 0.0:.2f}"
+        if v.status == "here" and float(far) == 0:
+            # the way to a place no farther than a distance is said to is no way at all, only the
+            # difference between two readings of one spot
+            lines.append(f"- {v.place.name}: here, where the robot stands")
+        elif v.status == "here":
+            lines.append(f"- {v.place.name}: {far} m away, {bearing_words(v.bearing_rad or 0.0)}")
         elif v.status == "lost":
             lines.append(f"- {v.place.name}: waiting, {v.reason}")
         else:

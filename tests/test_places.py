@@ -16,6 +16,8 @@ from quackd.space.places import (
     PlaceBook,
     PlaceStore,
     clean_name,
+    place_listing,
+    places_line,
 )
 from quackd.space.pose import Fix, FrameRef, Pose2D
 from quackd.space.source import SpatialError, SpatialSourceBase
@@ -135,6 +137,20 @@ def test_a_place_in_the_frame_the_robot_is_in_is_here_with_where_it_is(tmp_path:
     assert near.bearing_rad == pytest.approx(0.0)
     assert far.status == "here" and far.bearing_rad == pytest.approx(1.5708, abs=1e-4)
     assert [v.place.name for v in book.nearest(1)] == ["near"]
+
+
+def test_a_place_the_robot_stands_on_is_here_and_no_way_from_it(tmp_path: Path) -> None:
+    """The bearing to the spot underfoot is the heading's own noise: a robot facing 46° from the
+    way it faced when it marked the spot was told the spot was 46° to its right."""
+    source = Source(at(1.0, 1.0, 0.0))
+    book = PlaceBook(PlaceStore("r", tmp_path), source)
+    book.mark("door")
+    source.reading = at(1.0 + 0.002, 1.0, 0.8)
+    assert place_listing(book.views()) == ["- door: here, where the robot stands"]
+    assert places_line(book.views()) == "places: door here"
+    source.reading = at(1.0, 1.3, 0.0)
+    assert place_listing(book.views()) == ["- door: 0.30 m away, 90° to the right"]
+    assert places_line(book.views()) == "places: door 0.3 m -90°"
 
 
 def test_a_place_from_odometry_that_started_again_is_orphaned_and_says_why(

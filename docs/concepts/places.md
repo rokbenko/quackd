@@ -36,7 +36,8 @@ pilot is told how far the duck has walked in it.
   the simulators' plain truth, which a flock reads as one arena every member shares.
 - **Every observation** lists the nearest places as `places: kitchen 1.2 m +38°, door 0.6 m -95°`,
   each with how far it is and which way, in degrees from where the robot faces, positive to its
-  left, then the names of the places it cannot reach now and why. The line is absent on a body
+  left, or `door here` for the one it stands on, then the names of the places it cannot reach now
+  and why. The line is absent on a body
   with no places, so a run without them reads as it always did.
 - **The system prompt** gains a `## Places` section when a place verb is allowed, which says how
   far to trust each kind of reading.

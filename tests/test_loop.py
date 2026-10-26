@@ -6129,7 +6129,7 @@ async def test_a_run_shows_the_pilot_the_places_its_body_knows(
     )
     assert result.outcome == "success", result.reason
     texts = _observed(result.run_dir)
-    assert texts and all("places: dock 0.0 m +0°" in text.splitlines() for text in texts)
+    assert texts and all("places: dock here" in text.splitlines() for text in texts)
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     first = next(e for e in events if e["kind"] == "observation")
     assert [p["name"] for p in first["features"]["places"]] == ["dock"]
