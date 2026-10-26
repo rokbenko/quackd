@@ -13,7 +13,7 @@ other, and work together, without one robot's words ever steering another's brai
 
 ## What it does
 
-Robot Passport is a small signed document a robot serves about itself: name, maker, owner, its
+quackd Passport is a small signed document a robot serves about itself: name, maker, owner, its
 body with sourced numbers (mass, height, payload), its skills, what it cannot do and how a
 person stops it. quackd, my open robot runtime, shipped it in 0.23. This entry gives every
 robot a Nemotron brain on Nebius Token Factory and plays it out at a front door.
@@ -62,5 +62,5 @@ which body holds its passport.
 
 ## New during the Submission Period
 
-quackd's repository starts on 28 August 2026, after the period opened on 26 August. Robot
-Passport shipped on 22 October 2026, and this entry was built on it from that day.
+quackd's repository starts on 28 August 2026, after the period opened on 26 August.
+quackd Passport shipped on 22 October 2026, and this entry was built on it from that day.

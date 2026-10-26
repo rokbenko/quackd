@@ -1,9 +1,9 @@
-# Robot Passport on NVIDIA Nemotron and Nebius
+# quackd Passport on NVIDIA Nemotron and Nebius
 
 quackd's entry to the **Nebius x NVIDIA Global AI Hackathon 2026**, Physical AI track.
 
 Robots from different makers are starting to share hallways, front doors and warehouse floors,
-and none of them can say who it is to a robot it has never met. **Robot Passport**, which quackd
+and none of them can say who it is to a robot it has never met. **quackd Passport**, which quackd
 0.23 shipped, is the open answer: a small signed document a robot serves about itself. Its
 name, maker and owner, its body with sourced numbers (mass, height, payload, reach), its skills,
 what it cannot do, how a person stops it, and where to talk to it. Ed25519 signatures, discovery
@@ -91,7 +91,7 @@ Commands:
   pilot     Run `quackd run` with a Nemotron pilot on Token Factory.
   explain   Read a robot's passport the way quackd reads one, then ask...
   whois     Which passport belongs to which robot in view, by an NVIDIA...
-  doorstep  The doorstep: a postman robot and a household robot that...
+  doorstep  The doorstep: a postman robot and a household robot that have...
 ```
 
 ## The doorstep: a postman, a duck and a letter
@@ -275,7 +275,7 @@ are added here before submission.
 ## New during the Submission Period
 
 The Submission Period opened on 26 August 2026. quackd's repository starts on 28 August 2026, so
-none of it existed before the period: Robot Passport shipped in quackd 0.23.0 on 22 October
+none of it existed before the period: quackd Passport shipped in quackd 0.23.0 on 22 October
 2026, and this edition was built on it from that day.
 
 ## This folder
