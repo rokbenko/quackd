@@ -18,6 +18,7 @@ keywords = [
   "claude", "openai", "gemini", "grok", "mistral", "deepseek", "cohere", "qwen", "kimi", "glm", "meta",
   "openrouter",
   "jev", "kev", "von", "openjev", "opendecision", "laya",
+  "vla", "vision-language-action", "huggingface", "gr00t", "smolvla", "pi0",
   "ollama", "vllm", "llama-cpp", "local-llm", "jetson",
 ]
 classifiers = [
@@ -288,7 +289,7 @@ line-ending = "lf"
 # mypy reject numpy's stubs (PEP 695 `type` statements) when running under 3.12.
 # `bridge/` is the code that runs on the robot, and it was the only Python here that nothing
 # type-checked. mypy takes packages OR files, not both, so both are listed as paths.
-files = ["quackd", "adapters", "bridge", "docs/assets"]
+files = ["quackd", "adapters", "bridge", "docs/assets", "scripts/models_docs.py"]
 ignore_missing_imports = true
 warn_unused_ignores = false
 check_untyped_defs = true

@@ -63,11 +63,11 @@ third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by set
 | Path | What is there |
 |---|---|
 | `quackd/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.duck` contract, the MCP server, the 2D arena (`quackd/sim2d/`) and the mock transport (`quackd/transport/mock.py`) |
-| `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the nine quackd publishes, as strings), `factory.py` (`--robot` to a body) |
+| `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the nine quackd publishes, as strings), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, as strings), `factory.py` (`--robot` to a body) |
 | `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/quackd_<name>/` |
 | `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
 | `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
-| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py` |
+| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
 
 A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass
@@ -256,6 +256,11 @@ factory and against the vendor's own public list in the provider, rather than re
 ([ADR-0050](docs/adr/0050-a-router-is-a-vendor-whose-list-is-read-on-the-day.md)). A vendor
 that is a lab, which is every other one, gets no such mark.
 
+Then the models pages, which render every row: run `uv run --no-sync python
+scripts/models_docs.py` and commit what it rewrites under `docs/models/`, or the drift test in
+`tests/test_docs.py` fails. A vendor the script has no name for in `MAKERS` and `COMPANIES` is
+refused there rather than printed unnamed.
+
 Then the browser, which has its own copy of the model list and its own reason to refuse one.
 Run `python web/build_catalogue.py` and commit `web/src/catalogue.js`, or the generator-drift
 test in `tests/test_web.py` fails. Then decide whether the page can call the vendor at all: it
@@ -296,7 +301,9 @@ that answers a question rather than writing an answer, none of the six entries a
 `quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default model
 id, key variable if it wants one, price if anybody publishes one), one page under
 `docs/guides/decision-llms/`, and one row in the table in
-[docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md). No new file under
+[docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md), and
+`scripts/models_docs.py` run once to render the row onto
+[docs/models/decision-llms.md](docs/models/decision-llms.md). No new file under
 `quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
 already moves it off the port its row expects. The three shapes that are not just a row: one with
 a Python API of its own rather than a server, which is a plugin announcing itself under the
