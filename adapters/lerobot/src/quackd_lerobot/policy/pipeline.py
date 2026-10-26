@@ -84,10 +84,11 @@ STEPS_BY_TYPE: Mapping[str, frozenset[str]] = {
     "groot": frozenset(up.DEFAULT_STEP_NAMES + up.GROOT_STEP_NAMES),
 }
 """The processor steps a checkpoint may name, by its type, each by the registry name LeRobot
-registers it under: the steps every policy is built from, which are all of ACT's, and those
-the type's own processors add. Each is one of LeRobot's own classes, found in its registry,
-never imported by a path, and a type may name no other type's: an ACT that names a VLA's step
-is code nobody read for an ACT."""
+registers it under: LeRobot's default steps, which are all of ACT's, and those of the type's
+own family. GR00T's processors leave the default normaliser pair out and normalise in steps
+of their own, and it is allowed the pair as every type is. Each is one of LeRobot's own
+classes, found in its registry, never imported by a path, and a type may name no other
+type's: an ACT that names a VLA's step is code nobody read for an ACT."""
 REFUSED_STEPS: Mapping[str, str] = {
     "action_tokenizer_processor": (
         "which loads its tokenizer trusting the repository's own code unless told not to, and "

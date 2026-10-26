@@ -856,7 +856,7 @@ quackd policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
 
 ```text
   http://127.0.0.1:9875
-policy           scripted:sweep (quackd-policy 1, quackd 0.25.0)
+policy           scripted:sweep (quackd-policy 1, quackd 0.26.0)
 features         whatever the arm has (a scripted policy)
 rate             10 Hz, from scripted:sweep's own, the verbs' tick
 chunks           10 actions, 10 played from each
@@ -989,8 +989,8 @@ Loading one reads before it builds, and refuses rather than guesses:
 - **The JSON first.** `config.json` and both processor JSONs are fetched at the revision named,
   and nothing else of the repository. A policy type other than those six is refused, so is a
   feature that is neither the state, an image nor the action, and so is a processor step named
-  by a `class` key or by any registry name outside the ones the checkpoint's own type uses: the
-  steps every policy is built from, and the ones that type's processors add. An ACT that names a
+  by a `class` key or by any registry name outside the ones the checkpoint's own type may name:
+  LeRobot's default steps, and its own family's. An ACT that names a
   pi05's tokenizer is refused, in a sentence that lists what an ACT allows. A step named by
   class is imported from wherever it says, which is code the checkpoint chose, so the weights
   are never fetched for one.
@@ -1046,7 +1046,7 @@ quackd policy check --policy quackd-test/tiny-act@v1 --bench --seconds 3
 
 ```text
   served here for the check, at http://127.0.0.1:53804
-policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.25.0)
+policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.26.0)
 features         state 6, action 6, images observation.images.front 64x48
 rate             10 Hz, from
                  quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
@@ -3054,7 +3054,7 @@ GR00T N1.7, a trained X-VLA and tick mode have not run at all.
 | `observation.state, observation.images.<name>, action` | the keys a policy's state, images and action go by. An image's frame is handed over under its key with `observation.images.` cut off, which is why each camera is the image of its own name |
 | `FeatureType: "STATE", "VISUAL", "ENV", "ACTION", "REWARD", "LANGUAGE"` | a checkpoint whose inputs are anything but one state and some images, or whose output is anything but one action, is refused, since an arm has nothing to give the rest from |
 | `"act", "smolvla", "pi05", "pi0", "xvla", "groot"` | the types whose processors the allowlist was read from, each its own, and any other is refused before its weights are fetched |
-| `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | the steps every policy's processors are built from, and all of ACT's |
+| `rename_observations_processor, to_batch_processor, device_processor, normalizer_processor, unnormalizer_processor` | LeRobot's default steps, and all of ACT's. Every served type's processors are built from all five but GR00T N1.7's, which leave the normaliser pair out |
 | `smolvla_new_line_processor, tokenizer_processor` | the steps SmolVLA's pre-processor adds. With the row above, the only steps a SmolVLA may name, and the server allows each type its own steps and no other type's |
 | `relative_actions_processor, pi05_prepare_state_tokenizer_processor_step, tokenizer_processor, absolute_actions_processor` | the steps pi05's processors add. With the row above, the only steps a pi05 may name |
 | `pi0_new_line_processor, tokenizer_processor, relative_actions_processor, absolute_actions_processor` | the steps pi0's processors add: pi05's, with a step that ends the task with a newline for PaliGemma's tokenizer in place of pi05's state tokenizer. With the row above, the only steps a pi0 may name |

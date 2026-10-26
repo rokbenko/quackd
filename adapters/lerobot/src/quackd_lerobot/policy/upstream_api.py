@@ -271,11 +271,13 @@ DEFAULT_PROCESSOR_STEPS = UpstreamRef(
     "unnormalizer_processor",
     "VERIFIED",
     src(f"{_PROCESSOR}/factory.py", 100),
-    "the steps every policy's processors are built from (make_default_policy_processor_steps), "
+    "LeRobot's default steps (make_default_policy_processor_steps), "
     "and all of ACT's (line 158), under the names they register "
     f"({src(f'{_PROCESSOR}/rename_processor.py', 26)}, "
     f"{src(f'{_PROCESSOR}/batch_processor.py', 215)}, {src(_DEVICE, 34)}, "
-    f"{src(_NORMALIZE, 425)} and line 499). A processor JSON names each step by that name",
+    f"{src(_NORMALIZE, 425)} and line 499). Every served type's processors are built from all "
+    f"five but GR00T N1.7's, which leave the normaliser pair out ({src(_GROOT_PROC, 368)}). A "
+    "processor JSON names each step by that name",
 )
 DEFAULT_STEP_NAMES = (
     "rename_observations_processor",

@@ -1102,17 +1102,27 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     assert "Amends [ADR-0048](0048-" in _notes("0061") and "never created" in adr
     assert "0061-a-hugging-face-endpoint" in _notes("0048"), "ADR-0048 has no note by ADR-0061"
     changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.split("\n## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
-    for needle in ("quackd policy endpoint up", "hf:NAME", "/v1/health", "--token-env"):
-        assert needle in unreleased, f"CHANGELOG.md's [Unreleased] does not name {needle!r}"
-    assert _one_line(read_first) in _one_line(unreleased), "the changelog says no API read first"
+    # the section the endpoint shipped in, the oldest that names it, which is [Unreleased] until
+    # a release is cut and that release's own section after, whatever a later one says of it
+    shipped = next(
+        (
+            body
+            for _, body in reversed(_changelog_sections(changelog))
+            if "quackd policy endpoint up" in body
+        ),
+        "",
+    )
+    assert shipped, "no section of CHANGELOG.md names quackd policy endpoint up"
+    for needle in ("hf:NAME", "/v1/health", "--token-env"):
+        assert needle in shipped, f"CHANGELOG.md's endpoint section does not name {needle!r}"
+    assert _one_line(read_first) in _one_line(shipped), "the changelog says no API read first"
     # and reads it from no registry a project's .env named
     no_dotenv = "A project's `.env` cannot name the registry it reads"
-    assert _one_line(no_dotenv) in _one_line(unreleased), "the changelog keeps the .env gap open"
-    assert "is trusted as the shell is" not in unreleased, "the changelog still says it is open"
+    assert _one_line(no_dotenv) in _one_line(shipped), "the changelog keeps the .env gap open"
+    assert "is trusted as the shell is" not in shipped, "the changelog still says it is open"
     dotenv_refused = "came from a project's `.env` is refused before anything is asked"
     assert _one_line(dotenv_refused) in _one_line(security), "SECURITY.md keeps the .env gap open"
-    assert "never created a Hugging Face Endpoint" in unreleased.split("### Known limitations")[1]
+    assert "never created a Hugging Face Endpoint" in shipped.split("### Known limitations")[1]
     assert "**A first real Hugging Face Endpoint.**" in (REPO / "PLAN.md").read_text(
         encoding="utf-8"
     )
@@ -4108,7 +4118,7 @@ def _models_docs_script() -> ModuleType:
 
 
 def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
-    """Every table on the models pages is a catalogue rendered, and a rendered table that
+    """Every table of models on those pages is a catalogue rendered, and a rendered table that
     nothing renders again is a stale table with a comment on it. So the script runs here over
     every page, and what it would write is compared with what is committed."""
     script = _models_docs_script()
