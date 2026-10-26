@@ -3027,6 +3027,11 @@ class AgentLoop:
                 raise
         except Aborted as e:
             outcome, reason = "aborted", str(e)
+            if self.stop_reason and self.stop_reason not in reason:
+                # a verb the stop ended says how it ended, "aborted mid-verb", and nothing of
+                # why: a goal a drive session stopped read the same for the brake, a newer
+                # command and a link that had failed
+                reason = f"{self.stop_reason}; {reason}"
         except SafetyStop as e:
             outcome, reason = "aborted", str(e)
         except Exception as e:

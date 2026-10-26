@@ -28,12 +28,18 @@ async def _does_nothing(_ctx: Any, _p: Any) -> VerbResult:
     return VerbResult.success("done")
 
 
-@pytest.mark.parametrize("line", ["", "   ", "stop", "STOP!", "stop now", "halt", "brake", "q"])
+@pytest.mark.parametrize(
+    "line", ["", "   ", "stop", "STOP!", "stop now", "halt", "brake", "q", "Stop.", "q.", "'stop'"]
+)
 def test_these_brake(line: str) -> None:
+    """A full stop is punctuation, as an exclamation mark is: "Stop." read as the word "stop."
+    and never braked."""
     assert is_brake(line)
 
 
-@pytest.mark.parametrize("line", ["quack", "stopwatch", "qq", "don't stop", "sit", "q-tip"])
+@pytest.mark.parametrize(
+    "line", ["quack", "quack.", "stopwatch", "qq", "don't stop", "sit", "q-tip"]
+)
 def test_these_do_not(line: str) -> None:
     """By whole word and from the front only: "quack" is a duck's word and never a brake."""
     assert not is_brake(line)
@@ -61,6 +67,7 @@ def test_every_call_the_stepper_would_offer_reads_as_itself() -> None:
     [
         ("kick left", "kick", {"leg": "left"}),
         ("Kick Right", "kick", {"leg": "right"}),
+        ("Kick left.", "kick", {"leg": "left"}),
         ("gaze up", "gaze", {"direction": "up"}),
         ("report state", "report_state", {}),
         ("report_state", "report_state", {}),
@@ -89,6 +96,7 @@ def test_a_line_that_names_a_call_outright_is_that_call(
         ("walk forward", "forward"),
         ("go back", "back"),
         ("turn left", "turn left"),
+        ("Turn left.", "turn left"),
     ],
 )
 def test_a_preset_is_a_move_with_quackds_numbers(line: str, preset: str) -> None:

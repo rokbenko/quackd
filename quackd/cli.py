@@ -4215,7 +4215,10 @@ def drive_cmd(
         ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
 
     try:
-        run_dir = asyncio.run(run_drive(args, say=say))
+        # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
+        # keyboard opens, and what it reads is recorded as a person's, is decided as every
+        # question quackd puts to a person is
+        run_dir = asyncio.run(run_drive(args, say=say, keyboard=_can_prompt()))
     except (
         DriveError,
         ProviderError,

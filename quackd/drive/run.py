@@ -13,7 +13,7 @@ import contextlib
 import re
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -21,9 +21,46 @@ from typing import Any, TextIO
 from quackd import __version__
 from quackd.drive.lanes import BRAKE_WORDS
 from quackd.drive.session import Answered, DriveSession
+from quackd.duckfile.parser import duck_from_goal
+from quackd.duckfile.schema import Budgets, DuckFile
 
 GOAL_VERBS_SAFE = "safe"
 """A goal gets the body's safe verbs, as `quackd run --goal` gives one."""
+
+
+def _ceiling(name: str) -> Any:
+    """The schema's own bound on one of a task's budgets, or None where it sets none."""
+    for bound in Budgets.model_fields[name].metadata:
+        if (le := getattr(bound, "le", None)) is not None:
+            return le
+    return None
+
+
+SESSION_BUDGETS = Budgets(
+    **{name: le for name in Budgets.model_fields if (le := _ceiling(name)) is not None}
+)
+"""A session's budgets: the schema's own ceilings for a task's. A person drives for longer than one
+task's defaults last, and a session held to them refused every call after its fifth minute. Each
+goal runs under the defaults of its own, as `quackd run --goal` does."""
+
+
+def session_duck(allow: Sequence[str]) -> DuckFile:
+    """The contract a session without a `.duck` drives under: the verbs given, every one of the
+    body's that is not dangerous, as a contractless session allows; the battery rule `quackd run
+    --goal` holds a goal to; and `SESSION_BUDGETS`. Not that goal's rule that a verb failing three
+    times in a row ends the run: a person who kicks and misses three times has not asked for the
+    session to end, and the rule would refuse every call after it."""
+    goal = duck_from_goal("Drive the robot, one command at a time.", list(allow))
+    front = goal.frontmatter
+    battery = [
+        rule
+        for rule in front.abort_when
+        if front.model_copy(update={"abort_when": [rule]}).battery_abort_percent is not None
+    ]
+    front = front.model_copy(
+        update={"name": "drive", "abort_when": battery, "budgets": SESSION_BUDGETS}
+    )
+    return DuckFile(frontmatter=front, body=goal.body, path="<drive>")
 
 
 class DriveError(Exception):
@@ -147,6 +184,11 @@ async def run_drive(
     try:
         await robot.connect()
         registry = executor.registry
+        if robot.duck is None:
+            # after the connect, so the verbs are the body's own and not the default registry's
+            robot.adopt(
+                session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
+            )
         allowed = set(executor.allowed) if robot.duck is not None else None
         verbs = {n: registry.get(n) for n in registry.names() if allowed is None or n in allowed}
         goal_verbs = sorted(n for n, v in verbs.items() if v.safety_class == GOAL_VERBS_SAFE)
@@ -206,8 +248,12 @@ async def run_drive(
             await drive_from_keyboard(drive, asker, say=say)
         else:
             await drive_from_pipe(drive, stream, say=say)
-        await drive.drain()
     finally:
+        # every way out, an error and an interrupt among them, ends what is still moving the
+        # body before the body is folded and let go of
+        if sessions:
+            with contextlib.suppress(Exception):
+                await sessions[0].close()
         with contextlib.suppress(Exception):
             await robot.close()
         summary = {

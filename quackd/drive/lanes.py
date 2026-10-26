@@ -34,8 +34,11 @@ _WORD = re.compile(r"[a-z0-9_'.\-]+")
 
 def words(line: str) -> list[str]:
     """A line's words as the lanes compare them: casefolded, punctuation around them dropped, and
-    `_` read as a space, so `report_state` and "report state" are one call."""
-    return _WORD.findall(line.casefold().replace("_", " ").replace(",", " "))
+    `_` read as a space, so `report_state` and "report state" are one call. A full stop at a
+    word's end and a quote at either end are punctuation too, so "Stop." brakes as "stop" does,
+    while a point inside a number and a minus before one stay."""
+    found = _WORD.findall(line.casefold().replace("_", " ").replace(",", " "))
+    return [w for w in (word.strip("'").rstrip(".") for word in found) if w]
 
 
 def is_brake(line: str) -> bool:

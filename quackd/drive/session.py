@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import itertools
 import re
 import time
@@ -116,6 +117,11 @@ class Command:
     routed: asyncio.Future[Routed]
     ended: asyncio.Future[Ended]
     task: asyncio.Task[None] | None = None
+    dropped_by: str | None = None
+    """Why a line that never started was dropped, in the words its record gives."""
+    decided_at: float | None = None
+    """When a lane took the line, where a question was put after it: the latency the record gives
+    runs to here, and never includes the time a person took to answer."""
     started_at: float | None = None
     moved_at: float | None = None
 
@@ -186,9 +192,13 @@ class DriveSession:
         self._count = itertools.count(1)
         self._goal_count = itertools.count(1)
         self._routing: set[Command] = set()
+        self._movers: list[Command] = []
+        """Every command holding the body or waiting its turn for it, oldest first."""
         self._mover: Command | None = None
         self._goal: Any = None
+        self._tasks: set[asyncio.Task[None]] = set()
         self._brakes: list[asyncio.Task[None]] = []
+        self._closed = False
         self.exact = self._exact()
 
     def _exact(self) -> ExactLane:
@@ -220,38 +230,67 @@ class DriveSession:
         )
         self.record("command", n=cmd.n, text=text, by=by, channel=channel)
         if is_brake(text):
-            self.brake(text.strip() or "Enter", channel=channel)
+            self.brake(text.strip() or "Enter", channel=channel, by=by)
             self._route(cmd, Routed("brake", label=text.strip() or "Enter"))
             self._end(cmd, Ended("braked", "the brake"))
             return cmd
+        if (word := session_word(text)) is not None:
+            # the session's own, answered at once: nothing is routed, run or dropped for it, and
+            # a `quit` has its answer before the front end that read it closes the session
+            self._route(cmd, Routed("session", label=word))
+            self._end(cmd, Ended("ok", self._session_says(word)))
+            return cmd
         for older in list(self._routing):
-            if older.task is not None:
-                older.task.cancel()
+            self._drop(older, "a newer line came first")
         self._routing.add(cmd)
         cmd.task = asyncio.ensure_future(self._handle(cmd))
+        self._tasks.add(cmd.task)
+        cmd.task.add_done_callback(functools.partial(self._done, cmd))
         return cmd
 
-    def brake(self, why: str, *, channel: str = "keyboard") -> None:
-        """Stop everything, now, waiting on none of it: every line still being routed or asked
-        about is dropped, every verb moving the body is ended (`preempt`), a goal is stopped, and
-        the stop goes to the body directly, ahead of the `stop` verb, which reads the body's state
-        first and is run after it for the record."""
+    def _drop(self, cmd: Command, why: str) -> None:
+        """Drop a line that has not started, in `why`'s words."""
+        if cmd.task is not None and not cmd.task.done():
+            cmd.dropped_by = cmd.dropped_by or why
+            cmd.task.cancel()
+
+    def _done(self, cmd: Command, task: asyncio.Task[None]) -> None:
+        """Settle a command whose task is over. One cancelled before its first step never ran
+        `_handle` at all, so nothing else would settle it, and a front end waiting on it would
+        wait for good."""
+        self._tasks.discard(task)
+        self._routing.discard(cmd)
+        self._route(cmd, Routed("dropped"))
+        self._end(cmd, Ended("dropped", cmd.dropped_by or "it was cancelled"))
+
+    def brake(self, why: str, *, channel: str = "keyboard", by: Source = "person") -> None:
+        """Stop everything, now, waiting on none of it: every line that has not started, still
+        being routed, asked about or waiting its turn for the body, is dropped, every verb moving
+        the body is ended (`preempt`), a goal is stopped, and the stop goes to the body directly,
+        ahead of the `stop` verb, which reads the body's state first and is run after it for the
+        record, in the name of whoever braked."""
         at = self.clock()
-        for cmd in list(self._routing):
-            if cmd.task is not None:
-                cmd.task.cancel()
+        self._drop_unstarted(BRAKE)
         self.robot.executor.preempt(f"{BRAKE}, {why}")
         self._stop_goal(f"{BRAKE}, {why}")
-        self._brakes.append(asyncio.ensure_future(self._stop(at, why, channel)))
+        self._brakes.append(asyncio.ensure_future(self._stop(at, why, channel, by)))
 
-    async def _stop(self, at: float, why: str, channel: str) -> None:
+    def _drop_unstarted(self, why: str) -> None:
+        """Drop every line that has not started: still being routed, asked about, or waiting
+        its turn for the body behind a command still being stopped. One left waiting would start
+        once that command had stopped, after the brake that was meant to end it too."""
+        for cmd in [*self._routing, *self._movers]:
+            if cmd.started_at is None:
+                self._drop(cmd, why)
+
+    async def _stop(self, at: float, why: str, channel: str, by: Source) -> None:
         with contextlib.suppress(Exception):
             await self.robot.executor.logged_transport().stop()
         ms = round((self.clock() - at) * 1000, 1)
         self.stats.brake_ms.append(ms)
-        self.record("brake", why=why, channel=channel, brake_ms=ms)
+        self.record("brake", why=why, channel=channel, by=by, brake_ms=ms)
         with contextlib.suppress(Exception):
-            await self.robot.executor.run_verb("stop", source="person")
+            await self.robot.executor.run_verb("stop", source=by)
 
     def doing(self) -> str:
         """What the robot is doing now, in a few words, for the fast lane's question."""
@@ -262,19 +301,30 @@ class DriveSession:
         return "standing by for a command"
 
     async def drain(self) -> None:
-        """Wait for every command and every brake still going, as a session closes."""
-        tasks = [c.task for c in self._routing if c.task is not None]
-        if self._mover is not None and self._mover.task is not None:
-            tasks.append(self._mover.task)
-        tasks.extend(self._brakes)
+        """Wait for every command and every brake still going, a read running beside a walk
+        among them."""
+        tasks = [*self._tasks, *self._brakes]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def close(self, why: str = "the session ended") -> None:
+        """End every command still going as the session closes, and wait for each: nothing that
+        has not started runs, a verb moving the body is ended and a goal stopped, so a `quit`
+        typed over a walk stops the walk rather than waiting it out. A read still going is
+        waited for. A second call only waits."""
+        if not self._closed:
+            self._closed = True
+            self._drop_unstarted(why)
+            self.robot.executor.preempt(why)
+            self._stop_goal(why)
+        await self.drain()
 
     # ── routing ──
 
     def _route(self, cmd: Command, routed: Routed) -> None:
         if not cmd.routed.done():
-            routed.latency_ms = round((self.clock() - cmd.at) * 1000, 3)
+            decided = cmd.decided_at if cmd.decided_at is not None else self.clock()
+            routed.latency_ms = round((decided - cmd.at) * 1000, 3)
             self.stats.lanes[routed.lane] = self.stats.lanes.get(routed.lane, 0) + 1
             self.record("routed", n=cmd.n, **routed.record())
             cmd.routed.set_result(routed)
@@ -289,9 +339,9 @@ class DriveSession:
         try:
             await self._dispatch(cmd)
         except asyncio.CancelledError:
-            # a newer line, or the brake, dropped this one while it was routed or asked about
+            # a newer line, the brake or the session's end dropped this one before it started
             self._route(cmd, Routed("dropped"))
-            self._end(cmd, Ended("dropped", "a newer line came first"))
+            self._end(cmd, Ended("dropped", cmd.dropped_by or "it was cancelled"))
         except Exception as e:  # a command never ends the session
             self._route(cmd, Routed("error", note=f"{type(e).__name__}: {e}"))
             self._end(cmd, Ended("error", f"{type(e).__name__}: {e}"))
@@ -299,10 +349,6 @@ class DriveSession:
             self._routing.discard(cmd)
 
     async def _dispatch(self, cmd: Command) -> None:
-        if (word := session_word(cmd.text)) is not None:
-            self._route(cmd, Routed("session", label=word))
-            self._end(cmd, Ended("ok", self._session_says(word)))
-            return
         if (matched := self.exact.parse(cmd.text)) is not None:
             await self._matched(cmd, matched, "exact")
             return
@@ -328,6 +374,7 @@ class DriveSession:
     async def _chosen(self, cmd: Command, choice: Choice) -> bool:
         """What the fast lane's answer comes to. True where it settled the line, False where the
         pilot takes it."""
+        cmd.decided_at = self.clock()
         gate = choice.gate
         if gate in ("taken", "ask") and choice.offer is not None:
             offer = choice.offer
@@ -361,6 +408,8 @@ class DriveSession:
         return executor._may_move(executor.registry.canonical(name), verb)
 
     async def _matched(self, cmd: Command, matched: Matched, lane: str, gate: str = "") -> None:
+        if cmd.decided_at is None:
+            cmd.decided_at = self.clock()
         routed = Routed(
             lane,
             label=matched.label,
@@ -378,8 +427,9 @@ class DriveSession:
         verb = executor.registry.get(matched.verb)
         answer: tuple[bool, bool] | None = None
         if executor.needs_confirm(verb):
-            # `--yes` answers by its standing rule; a person at the keyboard is asked; a pipe
-            # without `--yes` is answered no, as `quackd run` answers one
+            # `--yes` answers by its standing rule; a person at the keyboard is asked; and a pipe
+            # without `--yes` is answered no, since drive reads a pipe's lines as commands and
+            # never as answers, where `quackd run` takes the pipe's next line for one
             if self.yes:
                 answer = (True, False)
             elif cmd.by == "person" and self.ask is not None:
@@ -421,21 +471,47 @@ class DriveSession:
         if cmd is not None and cmd.moved_at is None and accepted and kind != "stop":
             cmd.moved_at = self.clock()
 
-    def _stop_goal(self, why: str) -> None:
-        goal = self._goal
+    def _stop_goal(self, why: str, goal: Any = None) -> None:
+        goal = goal if goal is not None else self._goal
         if goal is not None:
             goal.stop_reason = why
             goal.executor.abort.set()
 
+    async def _end_on_abort(self, goal: Any) -> None:
+        """End a goal when the session is aborted, its heartbeat failing above all. The goal's
+        own heartbeat watches nothing (`AttachedBody`), since the session's watches the link,
+        and a goal nobody told went on sending its verbs down a link already known to be gone."""
+        await self.robot.executor.abort.wait()
+        failure = getattr(self.robot.heartbeat, "failure", None)
+        why = f"the session's heartbeat failed: {failure}" if failure else "the session was aborted"
+        self._stop_goal(why, goal)
+
+    def _gated_for_goals(self) -> list[str]:
+        """The verbs a goal runs behind a confirm: those the session's `.duck` gates, among the
+        goal's own. A goal is a contract of its own, written from its line, and one that left the
+        session's gates out let the pilot run a verb the `.duck` asks a yes for without one."""
+        duck = self.robot.duck
+        if duck is None:
+            return []
+        registry = self.robot.executor.registry
+        gated = {registry.canonical(name) for name in duck.frontmatter.verbs.confirm}
+        return [name for name in self.goal_verbs if registry.canonical(name) in gated]
+
     async def _take_over(self, cmd: Command) -> None:
         """Make `cmd` the one mover: whatever is moving the body, a verb or a goal, is ended for
         it and waited for, so the stop that ends it reaches the body before this command's first
-        twist rather than after it."""
-        old = self._mover
-        if old is not None and not old.ended.done():
-            self.robot.executor.preempt(f"a newer command, {cmd.text}")
-            self._stop_goal(f"a newer command, {cmd.text}")
-            await asyncio.wait({old.ended})
+        twist rather than after it. A command still waiting its own turn is dropped, so two
+        commands that come while a third is being stopped never both start once it has."""
+        earlier = [old for old in self._movers if not old.ended.done()]
+        self._movers = [*earlier, cmd]
+        if earlier:
+            why = f"a newer command, {cmd.text}"
+            for old in earlier:
+                if old.started_at is None:
+                    self._drop(old, why)
+            self.robot.executor.preempt(why)
+            self._stop_goal(why)
+            await asyncio.wait({old.ended for old in earlier})
         self._mover = cmd
 
     async def _run_goal(self, cmd: Command, *, lane: str) -> None:
@@ -455,7 +531,9 @@ class DriveSession:
             raise RuntimeError("a goal needs the body's manifest, and the session has none")
         loop = AgentLoop(
             RunConfig(
-                duck=duck_from_goal(cmd.text, self.goal_verbs or ["stop"]),
+                duck=duck_from_goal(
+                    cmd.text, self.goal_verbs or ["stop"], confirm=self._gated_for_goals()
+                ),
                 provider=self.pilot(cmd.text),
                 transport=AttachedBody(self.robot.transport, manifest),
                 detector=self.robot.detector,
@@ -472,12 +550,14 @@ class DriveSession:
         to_start = round((cmd.started_at - cmd.at) * 1000, 3)
         self.stats.to_start_ms.setdefault(lane, []).append(to_start)
         self.record("goal_start", n=cmd.n, goal=number, text=cmd.text, dir=run_dir.name)
+        watch = asyncio.ensure_future(self._end_on_abort(loop))
         try:
             result = await loop.run()
             ended = Ended(result.outcome, result.reason)
         except SafetyStop as e:
             ended = Ended(e.outcome, str(e))
         finally:
+            watch.cancel()
             if self._goal is loop:
                 self._goal = None
             if self._mover is cmd:

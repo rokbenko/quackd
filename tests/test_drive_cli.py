@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from quackd.agent.transcript import Transcript
 from quackd.cli import app
+from quackd.drive.run import SESSION_BUDGETS, session_duck
+from quackd.duckfile.schema import Budgets
 
 runner = CliRunner()
 
@@ -49,3 +53,51 @@ def test_drive_names_the_one_robot_it_drives_before_the_first_line(tmp_path: Pat
     )
     assert result.exit_code == 0, result.output
     assert "drive    microduck: type a command" in result.output
+
+
+def test_a_session_outlasts_one_tasks_budget(tmp_path: Path) -> None:
+    """A person drives for longer than one task's defaults last: a session held to them refused
+    every call once a task's steps were spent, and every one once its minutes were."""
+    calls = Budgets().max_steps + 1
+    result = runner.invoke(
+        app,
+        ["--no-color", "drive", "--robot", "microduck:mock", "--runs-dir", str(tmp_path)],
+        input="".join(f"{line}\n" for line in ["report state"] * calls + ["quit"]),
+    )
+    assert result.exit_code == 0, result.output
+    assert "max_steps" not in result.output
+    assert result.output.count("result   ok: ") == calls + 1, "a call was refused"
+
+
+def test_a_session_without_a_duck_keeps_the_battery_rule_and_the_ceilings() -> None:
+    """Not the rule that ends a run on three failures in a row, which would end a session a
+    person was still driving; and each budget the schema's own ceiling, one past it refused."""
+    front = session_duck(["move", "stop"]).frontmatter
+    assert front.battery_abort_percent is not None
+    assert front.repeat_failure_abort is None
+    assert front.budgets == SESSION_BUDGETS
+    for name in Budgets.model_fields:
+        with pytest.raises(ValidationError):
+            Budgets(**{name: getattr(SESSION_BUDGETS, name) + 1})
+
+
+@pytest.mark.parametrize("terminal", [True, False])
+def test_drive_opens_the_keyboard_only_where_a_person_can_be_asked(
+    terminal: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same seam every question quackd puts goes through (`_can_prompt`), and not `isatty`
+    alone, which says yes to NUL on Windows."""
+    import quackd.cli
+    import quackd.drive.run
+
+    handed: dict[str, object] = {}
+
+    async def run_drive(args: object, **kwargs: object) -> Path:
+        handed.update(kwargs)
+        return tmp_path
+
+    monkeypatch.setattr(quackd.cli, "_can_prompt", lambda: terminal)
+    monkeypatch.setattr(quackd.drive.run, "run_drive", run_drive)
+    result = runner.invoke(app, ["--no-color", "drive", "--robot", "microduck:mock"])
+    assert result.exit_code == 0, result.output
+    assert handed["keyboard"] is terminal

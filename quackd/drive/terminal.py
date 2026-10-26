@@ -2,10 +2,12 @@
 
 The keyboard never waits on a command: a line goes to the session as Enter is pressed and the
 prompt is back at once, so a person can type over a walk, and an empty Enter or Ctrl-C brakes
-whatever is going on. A question the session puts, "did you mean kick(leg=left)?", is answered by
-the next line typed. A pipe reads one line, waits for that command to end, and reads the next, so
-a captured session is the same every time, and a question put to it is answered no: nobody is
-there to answer it. Neither installs the kill switch, whose `q` would end a session at "quack".
+whatever is going on, a question pending included. A question the session puts, "did you mean
+kick(leg=left)?", is answered by a `y` or an `n` typed next, and any other line is a newer
+command, which drops it. A pipe reads one line, waits for that command to end, and reads the
+next, so a captured session is the same every time, and a question put to it is answered no:
+nobody is there to answer it. Neither installs the kill switch, whose `q` would end a session at
+"quack".
 
 prompt_toolkit is imported here and nowhere else in quackd, and only when the keyboard is used.
 """
@@ -18,7 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TextIO
 
-from quackd.drive.lanes import session_word
+from quackd.drive.lanes import is_brake, session_word, words
 from quackd.drive.session import Command, DriveSession
 
 QUIT_AGAIN_S = 1.5
@@ -26,6 +28,9 @@ QUIT_AGAIN_S = 1.5
 stopped, folded where it folds, and let go of."""
 
 ENDS = ("quit", "exit")
+
+YES = ("y", "yes")
+NO = ("n", "no")
 
 
 def told(cmd: Command) -> list[str]:
@@ -60,8 +65,10 @@ async def drive_from_pipe(
 
 
 class Asker:
-    """A yes-or-no question put to the person at the keyboard, answered by the next line typed:
-    `y` or `yes` is yes, and anything else, an empty line among them, is no."""
+    """A yes-or-no question put to the person at the keyboard: `y` or `yes` typed next is yes,
+    and `n` or `no` is no. Any other line is not an answer. An empty Enter or `stop` brakes as it
+    always does, and a command drops the question as a newer line drops any line still being
+    routed, so neither is taken for a no while something is still moving."""
 
     def __init__(self, say: Callable[[str], None]) -> None:
         self.say = say
@@ -78,9 +85,10 @@ class Asker:
     def answers(self, line: str) -> bool:
         """Whether `line` answered a question, which it then has."""
         pending = self.pending
-        if pending is None or pending.done():
+        said = words(line)
+        if pending is None or pending.done() or len(said) != 1 or said[0] not in YES + NO:
             return False
-        pending.set_result(line.strip().casefold() in ("y", "yes"))
+        pending.set_result(said[0] in YES)
         return True
 
 
@@ -133,7 +141,7 @@ async def drive_from_keyboard(
                 line = await prompt.prompt_async("drive> ")
             except EOFError:
                 break
-            if asker.answers(line):
+            if not is_brake(line) and asker.answers(line):
                 continue
             cmd = session.submit(line, by="person", channel="keyboard")
             task = asyncio.ensure_future(tell(cmd))
@@ -141,5 +149,7 @@ async def drive_from_keyboard(
             task.add_done_callback(tasks.discard)
             if session_word(line) in ENDS:
                 break
+    # ended rather than waited for: a walk still going when the person quit is stopped
+    await session.close()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
