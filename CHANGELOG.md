@@ -220,6 +220,11 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   that came while a verb was past its gates and reading the body's state found it in nothing
   it could cancel, and the verb sent its first twist after the abort. The abort is read again
   after the state, as a granted pause already was.
+- **A braked MOSS verb is no failure.** MOSS's `drive_to`, `explore` and arm cycles end on a
+  `stop` asked for beside them, and came back failed with no mark of the brake, so over MCP
+  three stops beside a `drive_to` ended the session on the rule that the same verb failing three
+  times in a row aborts. Each is marked `ended_by: stop` now, as the core verbs are, and only
+  for a stop: a budget that ran out is still a failure.
 - **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
   refused every other verb, so the brake reached for once the battery read low was a stop never
   sent. It still ends every other call after it.
@@ -277,9 +282,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
   keeps no memory. A verb that needs a yes, run inside a call a person named, is answered by
   `--yes` alone. Over MCP, a verb an adapter brings may not read a stop asked for beside it, the
-  ToddlerBot's own `search_scan` and the arm's joint moves among them, and MOSS's verbs, which
-  do, come back unmarked, so `abort_when` still counts a braked one as a failure. Drive's brake
-  and a newer command end any of them.
+  ToddlerBot's own `search_scan` and the arm's joint moves among them. Drive's brake and a newer
+  command end any of them.
 
 ## [0.25.0] — 2026-10-25
 

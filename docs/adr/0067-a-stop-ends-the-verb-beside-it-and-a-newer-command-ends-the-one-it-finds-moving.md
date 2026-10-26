@@ -1,6 +1,6 @@
 # ADR-0067: A stop ends the verb beside it, and a newer command ends the one it finds moving
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a stop asked for from beside a verb ends `move`, `go_to`, `search_scan` and `approach_and`, not `watch` alone) and [ADR-0012](0012-safety-executor.md) (the executor can end every verb moving the body for a newer command, and refuses one admitted before it that has not started) · Implemented in `quackd/verbs/core.py` (`_twist`, `_Interrupted`, `_ended_by`, `move`, `search_scan`, `approach_and`), `quackd/verbs/registry.py` (`STOP_ENDED`) and `quackd/safety.py` (`Executor.preempt`, `Preempted`, `_run_verb`, `_run_admitted`, `_record`, `context`) · Documented in [docs/guides/drive.md](../guides/drive.md#one-mover-at-a-time) and [docs/guides/mcp.md](../guides/mcp.md)
+**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a stop asked for from beside a verb ends `move`, `go_to`, `search_scan` and `approach_and`, not `watch` alone) and [ADR-0012](0012-safety-executor.md) (the executor can end every verb moving the body for a newer command, and refuses one admitted before it that has not started) · Implemented in `quackd/verbs/core.py` (`_twist`, `_Interrupted`, `_ended_by`, `move`, `search_scan`, `approach_and`), `quackd/verbs/registry.py` (`STOP_ENDED`), `quackd/safety.py` (`Executor.preempt`, `Preempted`, `_run_verb`, `_run_admitted`, `_record`, `context`) and `adapters/moss/src/quackd_moss/verbs.py` (`_braked`) · Documented in [docs/guides/drive.md](../guides/drive.md#one-mover-at-a-time) and [docs/guides/mcp.md](../guides/mcp.md)
 
 ## Context
 
@@ -65,7 +65,6 @@ for its seconds.
   `search_scan` runs, or is still reading the body's state, ends it before its next twist.
   `quackd run` gains decisions 7 and 8.
 - A verb an adapter brings reads the stop beside it only where the adapter asks. MOSS's verbs
-  do, though their results are not marked `ended_by: stop`, so `abort_when` still counts a
-  braked one as a failure. The ToddlerBot's own `search_scan` and the arm's joint moves do not
-  read it yet. Drive's brake and a newer command end every verb that moves the body through
+  do, and mark a braked result `ended_by: stop` as the core verbs do. The ToddlerBot's own
+  `search_scan` and the arm's joint moves do not read it yet. Drive's brake and a newer command end every verb that moves the body through
   `preempt`, which cancels it whatever it reads.
