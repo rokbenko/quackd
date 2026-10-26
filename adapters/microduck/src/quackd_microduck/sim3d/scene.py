@@ -24,9 +24,13 @@ an included robot brings its own names into the same document.
 
 from __future__ import annotations
 
+import math
 import os
 
+from quackd.space.room import HEIGHT_M, Room
+
 ARENA_HALF = 1.0  # metres; the arena is [-1, 1]², as in sim2d
+DUCK_R = 0.08  # the body's radius, the cartoon's: what a room's walls hold the puppet off by
 BALL_R = 0.05
 WALL_H = 0.08
 HEADCAM_FOV_DEG = 90.0  # the cartoon's, and the detector's default
@@ -64,6 +68,10 @@ FLOOR_GROUP = 1
 FLOOR_CAM_GROUP = 3
 
 BALL_RGBA = "1 0.55 0 1"  # (255, 140, 0): H≈16 in OpenCV, inside the detector's ball range
+# A room's walls and its furniture, in the cartoon's greys (`quackd.sim2d.render.ROOM_WALL`):
+# far below the saturation every detector band starts at, lit or not.
+ROOM_WALL_RGBA = "0.588 0.565 0.533 1"  # (150, 144, 136)
+FURNITURE_RGBA = "0.463 0.431 0.4 1"  # (118, 110, 102)
 DUCK_RGBA = "0.98 0.82 0.16 1"  # the cream colorway
 
 #: Where a held ball is parked: outside the walls, beyond what a 256 px frame can resolve.
@@ -103,27 +111,36 @@ def arena_xml(
     timestep: float = 0.005,
     include: str = "",
     shadows: bool | None = None,
+    room: Room | None = None,
 ) -> str:
     """The whole scene. `include` goes first (a robot's own MJCF, merged by MuJoCo's
     `<include>`); `body_xml` is dropped into `<worldbody>` as given.
 
     `shadows` defaults to whatever `QUACKD_MUJOCO_SHADOWS` says, and off when it says
-    nothing: see `SHADOWS_ENV`."""
+    nothing: see `SHADOWS_ENV`.
+
+    `room` replaces the arena with a room's floor and outer walls, and adds its walls and its
+    furniture (`room_geoms`). Without one, the arena exactly as it always was."""
     if shadows is None:
         shadows = os.environ.get(SHADOWS_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
     shadowsize = SHADOWSIZE if shadows else 0
     castshadow = "true" if shadows else "false"
-    lim = ARENA_HALF + 0.02
-    walls = "\n".join(
-        f'    <geom name="quackd_wall_{name}" type="box" pos="{px} {py} {WALL_H}" '
-        f'size="{sx} {sy} {WALL_H}" rgba="0.55 0.55 0.58 1"/>'
-        for name, px, py, sx, sy in (
-            ("east", lim, 0.0, 0.02, lim),
-            ("west", -lim, 0.0, 0.02, lim),
-            ("north", 0.0, lim, lim, 0.02),
-            ("south", 0.0, -lim, lim, 0.02),
+    if room is None:
+        half_x = half_y = ARENA_HALF
+        lim = ARENA_HALF + 0.02
+        walls = "\n".join(
+            f'    <geom name="quackd_wall_{name}" type="box" pos="{px} {py} {WALL_H}" '
+            f'size="{sx} {sy} {WALL_H}" rgba="0.55 0.55 0.58 1"/>'
+            for name, px, py, sx, sy in (
+                ("east", lim, 0.0, 0.02, lim),
+                ("west", -lim, 0.0, 0.02, lim),
+                ("north", 0.0, lim, lim, 0.02),
+                ("south", 0.0, -lim, lim, 0.02),
+            )
         )
-    )
+    else:
+        half_x, half_y = room.half_w, room.half_h
+        walls = room_geoms(room)
     return f"""
 <mujoco model="quackd arena">
 {include}
@@ -158,10 +175,10 @@ def arena_xml(
     <light name="quackd_sun" pos="0 0 3.5" dir="0 0 -1" directional="true"
            castshadow="{castshadow}"/>
     <geom name="quackd_floor" type="plane" group="{FLOOR_GROUP}"
-          size="{ARENA_HALF + 0.5:g} {ARENA_HALF + 0.5:g} 0.05"
+          size="{half_x + 0.5:g} {half_y + 0.5:g} 0.05"
           material="quackd_floor" friction="0.8 0.005 0.0001"/>
     <geom name="quackd_floor_cam" type="plane" group="{FLOOR_CAM_GROUP}" contype="0"
-          conaffinity="0" size="{ARENA_HALF + 0.5:g} {ARENA_HALF + 0.5:g} 0.05"
+          conaffinity="0" size="{half_x + 0.5:g} {half_y + 0.5:g} 0.05"
           material="quackd_floor_cam"/>
 {walls}
     <body name="ball" pos="{ball[0]} {ball[1]} {BALL_R}">
@@ -173,3 +190,52 @@ def arena_xml(
   </worldbody>
 </mujoco>
 """
+
+
+ROOM_GEOM_PREFIX = "quackd_room_"
+"""What every geom of a room's is named from, so a world can tell its walls from everything else."""
+
+
+def room_geoms(room: Room) -> str:
+    """A room's outer walls, walls and furniture as MJCF geoms, each `HEIGHT_M` tall: every wall
+    a box along its centre line with an upright cylinder at each end, which is the shape the room
+    is written as (`quackd.space.room.Wall`), and every box a box. Turned by quaternion, which no
+    `<compiler angle>` a robot's own MJCF brings can read another way."""
+    h = HEIGHT_M / 2
+    thick = 0.02
+    lines: list[str] = []
+    for name, px, py, sx, sy in (
+        ("east", room.half_w + thick, 0.0, thick, room.half_h + 2 * thick),
+        ("west", -room.half_w - thick, 0.0, thick, room.half_h + 2 * thick),
+        ("north", 0.0, room.half_h + thick, room.half_w + 2 * thick, thick),
+        ("south", 0.0, -room.half_h - thick, room.half_w + 2 * thick, thick),
+    ):
+        lines.append(
+            f'    <geom name="{ROOM_GEOM_PREFIX}outer_{name}" type="box" pos="{px:g} {py:g} {h:g}" '
+            f'size="{sx:g} {sy:g} {h:g}" rgba="{ROOM_WALL_RGBA}"/>'
+        )
+    for i, wall in enumerate(room.walls):
+        half_t = wall.thickness / 2
+        length = math.hypot(wall.x1 - wall.x0, wall.y1 - wall.y0)
+        if length > 0:
+            yaw = math.atan2(wall.y1 - wall.y0, wall.x1 - wall.x0)
+            cx, cy = (wall.x0 + wall.x1) / 2, (wall.y0 + wall.y1) / 2
+            # to twelve figures: at `:g`'s six a wall written at 45 degrees stood at 44.9999
+            turn = f"{math.cos(yaw / 2):.12g} 0 0 {math.sin(yaw / 2):.12g}"
+            lines.append(
+                f'    <geom name="{ROOM_GEOM_PREFIX}wall_{i}" type="box" '
+                f'pos="{cx:g} {cy:g} {h:g}" quat="{turn}" '
+                f'size="{length / 2:g} {half_t:g} {h:g}" rgba="{ROOM_WALL_RGBA}"/>'
+            )
+        for end, (ex, ey) in enumerate(((wall.x0, wall.y0), (wall.x1, wall.y1))):
+            lines.append(
+                f'    <geom name="{ROOM_GEOM_PREFIX}wall_{i}_end_{end}" type="cylinder" '
+                f'pos="{ex:g} {ey:g} {h:g}" size="{half_t:g} {h:g}" rgba="{ROOM_WALL_RGBA}"/>'
+            )
+    for i, box in enumerate(room.boxes):
+        lines.append(
+            f'    <geom name="{ROOM_GEOM_PREFIX}box_{i}" type="box" '
+            f'pos="{box.cx:g} {box.cy:g} {h:g}" size="{box.w / 2:g} {box.d / 2:g} {h:g}" '
+            f'rgba="{FURNITURE_RGBA}"/>'
+        )
+    return "\n".join(lines)

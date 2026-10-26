@@ -53,10 +53,22 @@ def make_transport(
         # The real duck by default: it is the whole point of a physics backend. The
         # kinematic stand-in is one env var away for anyone who would rather not spend ten
         # megabytes on upstream's meshes, and is what the tests use.
+        if room is None:
+            return MujocoTransport(
+                seed=seed if seed is not None else 0,
+                live=live,
+                body=os.environ.get(BODY_ENV) or DEFAULT_BODY,
+            )
+        from quackd.space.room import load_room
+        from quackd_microduck.sim3d.scene import DUCK_R as BODY_R
+        from quackd_microduck.transports.mapd import sim_map_params
+
         return MujocoTransport(
             seed=seed if seed is not None else 0,
             live=live,
             body=os.environ.get(BODY_ENV) or DEFAULT_BODY,
+            room=load_room(room),
+            map_params=sim_map_params(BODY_R),
         )
     if name == "mock":
         from quackd.transport.mock import MockTransport

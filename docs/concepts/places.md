@@ -15,7 +15,7 @@ A body's transport carries a reading, its `spatial` source, for the life of one 
 |---|---|---|
 | Microduck over `robotd` (`jsonrpc`) | contact odometry, `robot.state.odom`, which every robotd quackd serves has sent since before the release quackd reads | one connection, begun again within it when the duck is picked up, falls or rides a fall down, when robotd's clock goes back, or on a step longer than its walking policy could make in the time between two frames |
 | Microduck `mock` | the mock's scripted pose | the mock's own, for as long as it runs |
-| Microduck `sim2d` in a room, with `--room` | quackd's stand-in for the duck's own map, `mapd`, kept to the numbers quackd read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
+| Microduck `sim2d` or `mujoco` in a room, with `--room` | quackd's stand-in for the duck's own map, `mapd`, kept to the numbers quackd read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
 
 Every other body says nothing of where it is yet, and the place verbs are not offered on it. The
 simulator without a room is one of them. A
@@ -86,8 +86,9 @@ A dry run reads the places a robot has and changes none, as it runs no `mark_pla
 
 ## A room for the simulator
 
-`--room` lays a room out in the Microduck's simulator, on `run`, `record`, `drive` and `serve-mcp`,
-for one duck: `arena`, `two-rooms`, `hall`, or a `.yaml` file of your own. This is `two-rooms`:
+`--room` lays a room out in either of the Microduck's simulators, `sim2d` and `mujoco`, on `run`,
+`record`, `drive` and `serve-mcp`, for one duck: `arena`, `two-rooms`, `hall`, or a `.yaml` file
+of your own. This is `two-rooms`:
 
 ```yaml
 name: two-rooms
@@ -109,7 +110,9 @@ region the seed draws it in. A mistake in a file is refused with the file and th
 
 In a room, a wall holds a walking duck where it is and counts a bump, and the ball rolls back off
 it. The duck's camera sees the walls and the furniture, in greys no detector takes for anything,
-and nothing behind them. And the duck keeps a map of the room the way its own `mapd` keeps one,
+and nothing behind them. On `mujoco` they are solid geoms 30 cm tall: the puppet is held off
+them as the cartoon's duck is, and the walking duck meets them with its own feet, each touch
+counted as a bump. And the duck keeps a map of the room the way its own `mapd` keeps one,
 kept to the numbers quackd read of `mapd` ([the Microduck's page](../adapters/microduck/README.md#mapd-the-onboard-map-unverified-an-upstream-branch-in-no-release)):
 it looks only from a stop, once the duck has stood still for 0.4 s, as far as the head's ToF sees,
 45° across and 2 m out, and it is lost at the start and after a bump or a fall until two stops

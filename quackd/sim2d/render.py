@@ -19,7 +19,7 @@ from PIL import Image, ImageChops, ImageDraw
 
 from quackd.sim2d.world import ARENA_HALF, World
 from quackd.space.grid import UNKNOWN, OccupancyGrid
-from quackd.space.room import Room
+from quackd.space.room import HEIGHT_M, Room
 
 # Colours are part of the contract: the detector's HSV ranges are tuned to these.
 FLOOR = (236, 229, 212)
@@ -51,7 +51,6 @@ HORIZON = 0.45  # fraction of frame height
 # (`quackd.perception.color_blob`), so nothing solid is ever taken for a ball, a person or a duck.
 ROOM_WALL = (150, 144, 136)
 FURNITURE = (118, 110, 102)
-ROOM_WALL_H_M = 0.30  # how tall walls and furniture stand, above the camera so they hide the sky
 BEYOND = (128, 122, 114)  # the top-down view outside a room's walls
 UNSEEN = (96, 96, 104)  # laid over floor the simulated map has not seen yet
 UNSEEN_ALPHA = 110  # of 255
@@ -267,7 +266,7 @@ def _draw_room(
             continue
         along = max(hit[0] * math.cos(bearing), 0.01)
         depth[col] = along
-        top = horizon - f * (ROOM_WALL_H_M - cam_height) / along
+        top = horizon - f * (HEIGHT_M - cam_height) / along
         bottom = horizon + f * cam_height / along
         draw.line([(col, top), (col, bottom)], fill=FURNITURE if hit[1] == "box" else ROOM_WALL)
     return depth

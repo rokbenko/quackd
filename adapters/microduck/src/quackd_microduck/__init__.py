@@ -108,7 +108,7 @@ PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
 (`upstream_api.STATE_ODOM`) and the mock's scripted pose. A simulator says where the duck is only
 in a room it was given (`ROOM_BACKENDS`)."""
 
-ROOM_BACKENDS = ("sim2d",)
+ROOM_BACKENDS = ("sim2d", "mujoco")
 """The backends a room (`--room`) is laid out in. A simulator given one keeps a map of it the way
 the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
 real duck's room is the one it stands in, and the mock scripts its own."""

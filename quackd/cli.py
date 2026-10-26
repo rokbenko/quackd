@@ -3708,7 +3708,8 @@ _ROOM = typer.Option(
     "--room",
     help=f"A room for the duck's simulator to lay out: {', '.join(BUILT_IN_ROOMS)}, or a .yaml "
     "file of your own. The duck keeps a map of it the way its own mapd would, revealed where it "
-    "stops and looks, and can mark places in it. microduck:sim2d only, and one robot only.",
+    "stops and looks, and can mark places in it. microduck:sim2d or microduck:mujoco, and one "
+    "robot only.",
     rich_help_panel="Robot",
 )
 _FOV = typer.Option(

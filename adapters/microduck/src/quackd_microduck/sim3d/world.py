@@ -26,23 +26,25 @@ from typing import Any, Literal, Protocol
 import mujoco
 import numpy as np
 
+from quackd.space.room import Room, nearest_free, spawn
 from quackd.transport.base import TransportError
 from quackd_microduck.sim3d.scene import (
     ARENA_HALF,
     BALL_PARK,
     BALL_R,
+    DUCK_R,
     OFFSCREEN_PX,
     PUPPET_BODY_Z,
     PUPPET_HEAD_AHEAD,
     PUPPET_HEAD_Z,
     PUPPET_SIT_Z,
     PUPPET_XML,
+    ROOM_GEOM_PREFIX,
     arena_xml,
 )
 
 CONTROL_DT = 0.02  # 50 Hz: the cadence of every policy the Microduck ships
 PHYSICS_DT = 0.005  # upstream's timestep; four substeps per control tick
-DUCK_R = 0.08
 MAX_VX = 0.3
 MAX_VY = 0.2
 MAX_WZ = 1.5
@@ -173,6 +175,10 @@ class Puppet:
         self.head = (0.0, 0.0)
         self._data: Any = None
         self._mocap = -1
+        self.room: Room | None = None
+        """The room it walks in, whose walls hold it as the cartoon's hold its duck; a mocap body
+        goes through any geom, so the walls are kept here rather than by contact."""
+        self.bumps = 0
 
     @property
     def include_xml(self) -> str:
@@ -211,11 +217,16 @@ class Puppet:
         vy *= 1 + noise[1]
         wz *= 1 + noise[2]
         self.theta = _wrap(self.theta + wz * dt)
-        self.x += (vx * math.cos(self.theta) - vy * math.sin(self.theta)) * dt
-        self.y += (vx * math.sin(self.theta) + vy * math.cos(self.theta)) * dt
-        lim = ARENA_HALF - DUCK_R
-        self.x = float(np.clip(self.x, -lim, lim))
-        self.y = float(np.clip(self.y, -lim, lim))
+        x = self.x + (vx * math.cos(self.theta) - vy * math.sin(self.theta)) * dt
+        y = self.y + (vx * math.sin(self.theta) + vy * math.cos(self.theta)) * dt
+        if self.room is None:
+            lim = ARENA_HALF - DUCK_R
+            self.x = float(np.clip(x, -lim, lim))
+            self.y = float(np.clip(y, -lim, lim))
+        elif self.room.blocked(x, y, DUCK_R):
+            self.bumps += 1  # held where it is, turned as it turned, as the cartoon's duck is
+        else:
+            self.x, self.y = float(x), float(y)
         self._place()
 
     def pose(self) -> tuple[float, float, float]:
@@ -295,27 +306,41 @@ def make_body(name: str) -> Body:
 
 
 class MujocoWorld:
-    """One duck, one ball, four walls, and MuJoCo between them."""
+    """One duck, one ball, four walls, and MuJoCo between them, or a room's walls and furniture
+    (`room`), laid out as the cartoon lays them out."""
 
-    def __init__(self, *, seed: int = 0, body: Body | str = "puppet") -> None:
+    def __init__(
+        self, *, seed: int = 0, body: Body | str = "puppet", room: Room | None = None
+    ) -> None:
         self.seed = seed
         self.rng = np.random.default_rng(seed)
         self.body: Body = make_body(body) if isinstance(body, str) else body
-        # duck then ball, in EXACTLY sim2d's RNG order and from its distributions: a seed puts
-        # both where the cartoon puts them. The cartoon draws a person after these two and this
-        # world has none, and because that draw came last its absence moves neither of them.
-        x = float(self.rng.uniform(-0.3, 0.3))
-        y = float(self.rng.uniform(-0.3, 0.3))
-        theta = float(self.rng.uniform(-math.pi, math.pi))
-        for _ in range(1000):
-            bx, by = self.rng.uniform(-0.75, 0.75, size=2)
-            if math.hypot(bx - x, by - y) >= 0.5:
-                break
+        self.room = room
+        if room is not None:
+            # where the cartoon puts them in the same room, from the room's own stream, so the
+            # world's stream is drawn from for nothing but what it always drove
+            placed, _draw = spawn(room, seed, duck_r=DUCK_R, ball_r=BALL_R)
+            x, y, theta = placed.duck
+            bx, by = placed.ball
+        else:
+            # duck then ball, in EXACTLY sim2d's RNG order and from its distributions: a seed
+            # puts both where the cartoon puts them. The cartoon draws a person after these two
+            # and this world has none, and because that draw came last its absence moves neither.
+            x = float(self.rng.uniform(-0.3, 0.3))
+            y = float(self.rng.uniform(-0.3, 0.3))
+            theta = float(self.rng.uniform(-math.pi, math.pi))
+            for _ in range(1000):
+                bx, by = self.rng.uniform(-0.75, 0.75, size=2)
+                if math.hypot(bx - x, by - y) >= 0.5:
+                    break
+        if isinstance(self.body, Puppet):
+            self.body.room = room  # a physical body meets the walls as geoms instead
         xml = arena_xml(
             self.body.xml,
             ball=(float(bx), float(by)),
             timestep=PHYSICS_DT,
             include=self.body.include_xml,
+            room=room,
         )
         assets = self.body.mujoco_assets()
         self.model = mujoco.MjModel.from_xml_string(xml, assets or None)
@@ -337,6 +362,20 @@ class MujocoWorld:
         self.steps = 0
         self._renderers: dict[int, Any] = {}
         self.closed = False
+        # A room's geoms, and the two bodies a touch on one of them is no bump from: the floor's
+        # and the ball's. A body that walks into a wall touches one with a body of its own.
+        self._room_geoms = frozenset(
+            g
+            for g in range(self.model.ngeom)
+            if (mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith(
+                ROOM_GEOM_PREFIX
+            )
+        )
+        self._not_a_bump = frozenset(
+            {0, mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "ball")}
+        )
+        self._touching = False
+        self._contact_bumps = 0
         self.body.attach(self.model, self.data)
         self.body.set_head(self.head)
         self.body.reset(x, y, theta)
@@ -359,6 +398,12 @@ class MujocoWorld:
     @property
     def posture(self) -> Posture:
         return self.body.posture
+
+    @property
+    def bumps(self) -> int:
+        """Times the duck walked into a room's wall or furniture: the puppet's own count, which
+        no contact can see on a mocap body, and each touch a physical body began."""
+        return self._contact_bumps + int(getattr(self.body, "bumps", 0))
 
     @property
     def moving(self) -> bool:
@@ -508,9 +553,16 @@ class MujocoWorld:
             self.body.reset(sx, sy, theta)
 
     def _standing_spot(self, x: float, y: float) -> tuple[float, float]:
-        """`(x, y)` pushed out of anything solid and back inside the walls."""
+        """`(x, y)` pushed out of anything solid and back inside the walls, a room's included."""
         lim = ARENA_HALF - DUCK_R
-        x, y = min(max(x, -lim), lim), min(max(y, -lim), lim)
+        room = self.room
+
+        def inside(x: float, y: float) -> tuple[float, float]:
+            if room is not None:
+                return nearest_free(room, x, y, DUCK_R)
+            return min(max(x, -lim), lim), min(max(y, -lim), lim)
+
+        x, y = inside(x, y)
         obstacles = [(self.ball_x, self.ball_y, BALL_R)] if self.ball_present else []
         for ox, oy, r in obstacles:
             dx, dy = x - ox, y - oy
@@ -520,8 +572,7 @@ class MujocoWorld:
                 continue
             if dist < 1e-6:  # exactly on top of it: any direction will do, pick a fixed one
                 dx, dy, dist = 1.0, 0.0, 1.0
-            x = min(max(ox + dx / dist * need, -lim), lim)
-            y = min(max(oy + dy / dist * need, -lim), lim)
+            x, y = inside(ox + dx / dist * need, oy + dy / dist * need)
         return x, y
 
     def sound(self, tag: str, text: str | None) -> None:
@@ -537,10 +588,27 @@ class MujocoWorld:
         for _ in range(max(1, round(dt / self.model.opt.timestep))):
             mujoco.mj_step(self.model, self.data)
         self._check_diverged()
+        if self._room_geoms:
+            touching = self._touching_room()
+            if touching and not self._touching:
+                self._contact_bumps += 1
+            self._touching = touching
         if not self.ball_present:
             self._park_ball()
         self.t += dt
         self.steps += 1
+
+    def _touching_room(self) -> bool:
+        """Whether a body of the duck's touches a room's wall or furniture now."""
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            one, other = int(contact.geom1), int(contact.geom2)
+            if (one in self._room_geoms) == (other in self._room_geoms):
+                continue
+            theirs = other if one in self._room_geoms else one
+            if int(self.model.geom_bodyid[theirs]) not in self._not_a_bump:
+                return True
+        return False
 
     def _check_diverged(self) -> None:
         """Refuse to keep simulating a state MuJoCo has already given up on.
@@ -594,6 +662,8 @@ class MujocoWorld:
             "head_yaw_deg": round(math.degrees(self.head[0]), 1),
             "physics": self.body.name,
         }
+        if self.room is not None:
+            snap["room"] = self.room.name
         snap.update(self.body.extras())
         return snap
 

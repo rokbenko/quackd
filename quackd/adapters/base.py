@@ -307,7 +307,7 @@ the refusal every other body gives `--policy-url` (`quackd.adapters.factory`), a
 `MULTI_CAMERA_SPECS` is for a second camera: an adapter whose `make()` takes no `policy` is
 refused rather than handed one it would drop."""
 
-ROOM_SPECS = ("microduck:sim2d",)
+ROOM_SPECS = ("microduck:sim2d", "microduck:mujoco")
 """The bodies that lay out a room (`--room`) and keep a simulated map of it
 (`quackd.space.simmap`). Named here for the refusal every other body gives the flag
 (`quackd.adapters.factory`), as `POLICY_SPECS` is for `--policy-url`."""

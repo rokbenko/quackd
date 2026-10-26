@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from quackd.space.room import Room
+from quackd.space.room import Room, free_spot, spawn
 
 DT = 0.05  # 20 Hz
 ARENA_HALF = 1.0  # metres; the arena is [-1, 1]²
@@ -41,11 +41,6 @@ HEAD_YAW_LIMIT = math.radians(60)
 
 MAX_DUCKS = 4
 DUCK_MIN_SPAWN_SEP = 0.35  # pairwise, metres
-
-ROOM_STREAM = 7_003
-"""The room's own random stream, beside the seed: where a room puts the duck, the ball and the
-other ducks is drawn from it and never from the world's, so a room changes nothing about a world
-without one, and the world's stream still drives every duck's motion noise."""
 
 COLORWAYS = ("cream", "sky", "lavender", "graphite")
 
@@ -154,42 +149,21 @@ class World:
             d.colorway = COLORWAYS[i % len(COLORWAYS)]
 
     def _spawn_in(self, room: Room) -> None:
-        """Where a room puts everything: its own start, spot and person where it names them, and
-        free floor drawn from the room's stream where it does not."""
-        draw = np.random.default_rng([self.seed, ROOM_STREAM])
-
-        def free(
-            r: float,
-            region: tuple[float, float, float, float] | None,
-            avoid: list[tuple[float, float, float]],
-        ) -> tuple[float, float]:
-            xmin, ymin, xmax, ymax = region or room.bounds
-            for _ in range(10_000):
-                x = float(draw.uniform(xmin + r, xmax - r))
-                y = float(draw.uniform(ymin + r, ymax - r))
-                clear = all(math.hypot(x - ax, y - ay) >= sep for ax, ay, sep in avoid)
-                if clear and not room.blocked(x, y, r):
-                    return x, y
-            raise ValueError(f"room {room.name} has no free floor for something {2 * r:.2f} m wide")
-
-        if room.start is not None:
-            x, y, theta = room.start
-        else:
-            x, y = free(DUCK_R, None, [])
-            theta = float(draw.uniform(-math.pi, math.pi))
+        """Where a room puts everything (`quackd.space.room.spawn`): its own start, spot and
+        person where it names them, and free floor drawn from the room's stream where it does
+        not, the other ducks of a flock after the duck and the ball."""
+        placed, draw = spawn(room, self.seed, duck_r=DUCK_R, ball_r=BALL_R)
+        x, y, theta = placed.duck
         duck0 = Duck(x=x, y=y, theta=theta)
         duck0.rng = self.rng  # the world's stream drives its motion noise, as without a room
-        if room.ball is not None:
-            bx, by = room.ball
-        else:
-            bx, by = free(BALL_R, room.ball_region, [(x, y, 0.5)])
+        bx, by = placed.ball
         self.ball = Ball(bx, by, start_x=bx, start_y=by)
         self.people = [Person(*room.person)] if self.person and room.person is not None else []
         self.ducks = [duck0]
         for index in range(1, self.n_ducks):
             own = np.random.default_rng([self.seed, index])
             avoid = [(d.x, d.y, DUCK_MIN_SPAWN_SEP) for d in self.ducks] + [(bx, by, 0.5)]
-            ex, ey = free(DUCK_R, None, avoid)
+            ex, ey = free_spot(room, draw, DUCK_R, avoid=avoid)
             duck = Duck(x=ex, y=ey, theta=float(own.uniform(-math.pi, math.pi)))
             duck.rng = own
             self.ducks.append(duck)

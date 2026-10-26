@@ -35,10 +35,20 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 import yaml
 
 WALL_THICKNESS_M = 0.04
 """How thick a wall is drawn and collided with, unless the room says."""
+
+HEIGHT_M = 0.30
+"""How tall a room's walls and furniture stand, for whatever draws them standing up: above a
+duck's camera, so they hide what is behind them as a room's walls do."""
+
+ROOM_STREAM = 7_003
+"""A room's own random stream, beside the seed: where a room puts what it does not place itself
+is drawn from it and never from a world's, so a room changes nothing a world draws for anything
+else, the duck's motion noise above all."""
 
 BUILT_IN = ("arena", "two-rooms", "hall")
 """The rooms quackd ships, by name."""
@@ -215,6 +225,78 @@ def _capsule_hit(wall: Wall, x: float, y: float, c: float, s: float) -> float | 
         if -b + root >= 0:
             hits.append(max(0.0, -b - root))
     return min(hits) if hits else None
+
+
+@dataclass(frozen=True)
+class Spawn:
+    """Where a room puts the duck, and which way it faces, and the ball."""
+
+    duck: tuple[float, float, float]
+    ball: tuple[float, float]
+
+
+def spawn(
+    room: Room, seed: int, *, duck_r: float, ball_r: float
+) -> tuple[Spawn, np.random.Generator]:
+    """Where `room` puts the duck and the ball for `seed`: its own start and spot where it names
+    them, and free floor drawn from its stream where it does not, the ball half a metre or more
+    from the duck. The stream comes back with them, for a world that draws more from it."""
+    draw = np.random.default_rng([seed, ROOM_STREAM])
+    if room.start is not None:
+        duck = room.start
+    else:
+        x, y = free_spot(room, draw, duck_r)
+        duck = (x, y, float(draw.uniform(-math.pi, math.pi)))
+    if room.ball is not None:
+        ball = room.ball
+    else:
+        ball = free_spot(
+            room, draw, ball_r, region=room.ball_region, avoid=[(duck[0], duck[1], 0.5)]
+        )
+    return Spawn(duck, ball), draw
+
+
+def free_spot(
+    room: Room,
+    draw: np.random.Generator,
+    r: float,
+    *,
+    region: tuple[float, float, float, float] | None = None,
+    avoid: list[tuple[float, float, float]] | tuple[()] = (),
+) -> tuple[float, float]:
+    """A spot a disc of `r` stands on in `room`, inside `region` when one is given, and at least
+    each `avoid` entry's distance from its point, drawn from `draw`."""
+    xmin, ymin, xmax, ymax = region or room.bounds
+    for _ in range(10_000):
+        x = float(draw.uniform(xmin + r, xmax - r))
+        y = float(draw.uniform(ymin + r, ymax - r))
+        clear = all(math.hypot(x - ax, y - ay) >= sep for ax, ay, sep in avoid)
+        if clear and not room.blocked(x, y, r):
+            return x, y
+    raise RoomError(
+        f"{room.source or room.name}: no free floor for something {2 * r:.2f} m wide there"
+    )
+
+
+def nearest_free(room: Room, x: float, y: float, r: float) -> tuple[float, float]:
+    """The spot nearest (x, y) a disc of `r` stands on in `room`: (x, y) itself when it fits,
+    else the first that fits on rings outward a quarter of `r` apart, each ring's points no
+    further apart than that. For a body set back on its feet where it fell, which may be against
+    a wall or partly in one."""
+    if not room.blocked(x, y, r):
+        return x, y
+    step = r / 4
+    reach = 2 * math.hypot(room.half_w, room.half_h)
+    ring = step
+    while ring <= reach:
+        points = max(8, math.ceil(2 * math.pi * ring / step))
+        for k in range(points):
+            angle = 2 * math.pi * k / points
+            cx, cy = x + ring * math.cos(angle), y + ring * math.sin(angle)
+            if not room.blocked(cx, cy, r):
+                return cx, cy
+        ring += step
+    raise RoomError(f"{room.source or room.name}: no free floor for something {2 * r:.2f} m wide")
 
 
 def load_room(name_or_path: str | Path) -> Room:
