@@ -6,13 +6,14 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from fake_tokenfactory import FakeTokenFactory
+from fake_tokenfactory import ONBOARD_KEY, ONBOARD_MODEL, FakeTokenFactory, served
 
 #: Settings a developer's shell or .env could carry into a test and change what it proves.
 _SCRUBBED = (
     "NEBIUS_API_KEY",
     "NEBIUS_BASE_URL",
     "NEBIUS_MODEL",
+    "ONBOARD_API_KEY",
     "LOCAL_API_KEY",
     "QUACKD_BASE_URL",
     "QUACKD_LLM",
@@ -40,4 +41,12 @@ def tokenfactory(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeTokenFactory]:
     with FakeTokenFactory() as stand_in:
         monkeypatch.setenv("NEBIUS_API_KEY", "stand-in-key")
         monkeypatch.setenv("NEBIUS_BASE_URL", stand_in.base_url)
+        yield stand_in
+
+
+@pytest.fixture
+def onboard(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeTokenFactory]:
+    """A robot's own model server, running, with its key set the way a person would set it."""
+    with FakeTokenFactory(key=ONBOARD_KEY, models=[served(ONBOARD_MODEL)]) as stand_in:
+        monkeypatch.setenv("ONBOARD_API_KEY", ONBOARD_KEY)
         yield stand_in

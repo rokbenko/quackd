@@ -8,6 +8,7 @@ act, once each side pinned the other, both do.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import shutil
@@ -20,7 +21,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fake_tokenfactory import TEXT_MODEL, FakeTokenFactory, row, tool_completion
+from fake_tokenfactory import (
+    ONBOARD_KEY,
+    ONBOARD_MODEL,
+    TEXT_MODEL,
+    FakeTokenFactory,
+    row,
+    served,
+    tool_completion,
+)
 from passport_nebius import doorstep, nebius, pilot
 from passport_nebius.cli import app
 from typer.testing import CliRunner
@@ -42,6 +51,7 @@ def _text_model() -> nebius.Model:
 
 
 MODEL = _text_model()
+BRAIN = doorstep.Brain(SETTINGS, MODEL)
 
 
 def _pins(state: Path, robot: doorstep.Robot) -> list[str]:
@@ -94,7 +104,7 @@ def test_the_passports_say_who_each_robot_is_and_what_it_can_take(tmp_path: Path
 
 def test_the_postman_starts_first_and_the_duck_meets_it(tmp_path: Path) -> None:
     started = doorstep.launches(
-        SETTINGS, MODEL, tmp_path, "appointment", "both", postman_at="10.0.0.5:8790"
+        tmp_path, "appointment", "both", postman=BRAIN, duck=BRAIN, postman_at="10.0.0.5:8790"
     )
     (postman, p), (duck, d) = started
     assert (postman, duck) == (doorstep.POSTMAN, doorstep.DUCK)
@@ -103,16 +113,50 @@ def test_the_postman_starts_first_and_the_duck_meets_it(tmp_path: Path) -> None:
     assert d.argv[d.argv.index("--meet") + 1] == "10.0.0.5:8790"
     assert d.argv[d.argv.index("--talk-port") + 1] == "8791"
     assert p.argv[p.argv.index("--registry-dir") + 1] != d.argv[d.argv.index("--registry-dir") + 1]
-    assert [
-        robot
-        for robot, _ in doorstep.launches(
-            SETTINGS, MODEL, tmp_path, "stranger", "duck", postman_at="x:1"
-        )
-    ] == [doorstep.DUCK]
+    assert "--yes" in p.argv and "--yes" in d.argv, "nobody is at a terminal to answer for them"
+    alone = doorstep.launches(
+        tmp_path, "stranger", "duck", postman=None, duck=BRAIN, postman_at="x:1"
+    )
+    assert [robot for robot, _ in alone] == [doorstep.DUCK]
+    assert "--yes" not in alone[0][1].argv, "a run in a terminal leaves its doubts to a person"
     with pytest.raises(nebius.NebiusError, match="--role"):
-        doorstep.launches(SETTINGS, MODEL, tmp_path, "stranger", "neither", postman_at="x:1")
+        doorstep.launches(
+            tmp_path, "stranger", "neither", postman=BRAIN, duck=BRAIN, postman_at="x:1"
+        )
     with pytest.raises(nebius.NebiusError, match="--act"):
-        doorstep.launches(SETTINGS, MODEL, tmp_path, "rehearsal", "both", postman_at="x:1")
+        doorstep.launches(
+            tmp_path, "rehearsal", "both", postman=BRAIN, duck=BRAIN, postman_at="x:1"
+        )
+
+
+def test_each_robot_flies_on_its_own_brain(tmp_path: Path) -> None:
+    """The postman thinking onboard: its run names its own server, its model and its key, and
+    the duck's run names Token Factory's, so neither run can reach the other's server."""
+    own = nebius.Settings("http://127.0.0.1:8000/v1", "own-key", name="the onboard server")
+    found = nebius._model(served(ONBOARD_MODEL))
+    assert found is not None
+    onboard = doorstep.Brain(own, found)
+    (_, p), (_, d) = doorstep.launches(
+        tmp_path, "appointment", "both", postman=onboard, duck=BRAIN, postman_at="x:1"
+    )
+    assert p.argv[-4:] == ("--llm", f"local:{ONBOARD_MODEL}", "--base-url", own.base_url)
+    assert d.argv[-4:] == ("--llm", f"local:{TEXT_MODEL}", "--base-url", SETTINGS.base_url)
+    assert (p.env, d.env) == ({"LOCAL_API_KEY": "own-key"}, {"LOCAL_API_KEY": "the-key"})
+    alone = doorstep.launches(
+        tmp_path, "appointment", "postman", postman=onboard, duck=None, postman_at="x:1"
+    )
+    assert [robot for robot, _ in alone] == [doorstep.POSTMAN], "a postman alone needs no duck"
+    with pytest.raises(nebius.NebiusError, match="duck-01 has no pilot"):
+        doorstep.launches(
+            tmp_path, "appointment", "both", postman=onboard, duck=None, postman_at="x:1"
+        )
+
+
+def test_the_onboard_brain_is_the_one_model_its_server_lists(onboard: FakeTokenFactory) -> None:
+    brain = doorstep.onboard(onboard.base_url)
+    assert (brain.model.id, brain.settings.api_key) == (ONBOARD_MODEL, ONBOARD_KEY)
+    assert brain.settings.name == "the onboard server"
+    assert doorstep.onboard(onboard.base_url, ONBOARD_MODEL).model.id == ONBOARD_MODEL
 
 
 @pytest.mark.parametrize("robot", [doorstep.POSTMAN, doorstep.DUCK], ids=lambda r: r.name)
@@ -162,13 +206,16 @@ def _latest(body: dict[str, Any]) -> str:
 class TwoPilots:
     """Both pilots' scripts, one turn per request, each robot's own count."""
 
-    def __init__(self, *, linger: int = 0) -> None:
+    def __init__(self, *, linger: int = 0, doubt: bool = False) -> None:
         self.turns = {"postman": 0, "duck": 0}
         self.told: str | None = None
         self.duck_waits = 0
         self.linger = linger
         """Turns the duck goes on for once it heard the phrase, so a pause can land."""
         self.lingered = 0
+        self.doubt = doubt
+        """Whether the postman first judges its task uncertain, as Nemotron did on the first
+        run against Token Factory, since Agile ONE SN's reach is not published."""
         self.lock = threading.Lock()
 
     def __call__(self, n: int, body: dict[str, Any]) -> tuple[int, Any]:
@@ -182,6 +229,8 @@ class TwoPilots:
         model = str(body.get("model"))
         if turn == 1:
             verdict = {"verdict": "feasible", "reason": "a letter weighs next to nothing"}
+            if who == "postman" and self.doubt:
+                verdict = {"verdict": "uncertain", "reason": "my reach is not published"}
             return 200, tool_completion(n, "assess_task", verdict, model)
         seen = _latest(body)
         if who == "postman":
@@ -211,11 +260,13 @@ class TwoPilots:
 
 
 def _play(
-    state: Path, act: str, *, brake: bool = False
-) -> tuple[FakeTokenFactory, TwoPilots, dict[str, int], list[str]]:
-    """One act, both robots, the stand-in playing both pilots. With `brake`, the postman asks
-    the duck for a pause a few seconds into its run, as `doorstep pause` does."""
-    pilots = TwoPilots(linger=8 if brake else 0)
+    state: Path, act: str, *, brake: bool = False, onboard: bool = False, doubt: bool = False
+) -> tuple[FakeTokenFactory, FakeTokenFactory | None, TwoPilots, dict[str, int], list[str]]:
+    """One act, both robots, the stand-in playing both pilots. With `onboard`, a second
+    stand-in is the postman's own model server, its key the one $ONBOARD_API_KEY holds, and
+    the first is left with the duck's pilot alone. With `brake`, the postman asks the duck for a
+    pause a few seconds into its run, as `doorstep pause` does."""
+    pilots = TwoPilots(linger=8 if brake else 0, doubt=doubt)
     braked: list[str] = []
     threads: list[threading.Thread] = []
 
@@ -232,17 +283,26 @@ def _play(
             thread.start()
             threads.append(thread)
 
-    with FakeTokenFactory(chat=pilots) as stand_in:
-        settings = nebius.Settings(stand_in.base_url, "stand-in-key")
+    with contextlib.ExitStack() as servers:
+        stand_in = servers.enter_context(FakeTokenFactory(chat=pilots))
+        own = None
+        if onboard:
+            own = servers.enter_context(
+                FakeTokenFactory(key=ONBOARD_KEY, models=[served(ONBOARD_MODEL)], chat=pilots)
+            )
+        duck = doorstep.Brain(nebius.Settings(stand_in.base_url, "stand-in-key"), MODEL)
+        postman = doorstep.onboard(own.base_url) if own is not None else duck
         doorstep.setup(state, act)
         postman_at = f"{local_ip()}:{doorstep.POSTMAN.port}"
-        started = doorstep.launches(settings, MODEL, state, act, "both", postman_at=postman_at)
+        started = doorstep.launches(
+            state, act, "both", postman=postman, duck=duck, postman_at=postman_at
+        )
         codes = doorstep.play(
             started, postman_at=postman_at, logs=state / "logs", on_duck_started=duck_started
         )
         for thread in threads:
             thread.join(timeout=60)
-    return stand_in, pilots, codes, braked
+    return stand_in, own, pilots, codes, braked
 
 
 def _saw(stand_in: FakeTokenFactory, task: str, text: str) -> bool:
@@ -253,6 +313,11 @@ def _saw(stand_in: FakeTokenFactory, task: str, text: str) -> bool:
     )
 
 
+def _everything(stand_in: FakeTokenFactory) -> str:
+    """Every header and body a stand-in was sent, as one text to search."""
+    return json.dumps([[r.headers, r.body] for r in stand_in.requests], ensure_ascii=False)
+
+
 #: How quackd tells a pilot that a stranger spoke and its words were kept from it.
 WITHHELD = "a stranger's words go to the log, for a person"
 
@@ -261,8 +326,17 @@ needs_ports = pytest.mark.skipif(not _ports_free(), reason="ports 8790 and 8791 
 
 
 @needs_ports
-def test_appointment_words_and_the_beaks_limit_reach_each_model(tmp_path: Path) -> None:
-    stand_in, pilots, codes, braked = _play(tmp_path / "doorstep", "appointment", brake=True)
+def test_appointment_words_and_the_beaks_limit_reach_each_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Played with the postman thinking onboard, and both keys in this process's environment,
+    as when one command starts both robots."""
+    monkeypatch.setenv("NEBIUS_API_KEY", "stand-in-key")
+    monkeypatch.setenv("ONBOARD_API_KEY", ONBOARD_KEY)
+    stand_in, own, pilots, codes, braked = _play(
+        tmp_path / "doorstep", "appointment", brake=True, onboard=True
+    )
+    assert own is not None
     logs = tmp_path / "doorstep" / "logs"
     assert codes == {"postman-01": 0, "duck-01": 0}, [
         f.read_text(encoding="utf-8", errors="replace")[-2000:] for f in logs.glob("*.log")
@@ -270,9 +344,15 @@ def test_appointment_words_and_the_beaks_limit_reach_each_model(tmp_path: Path) 
     assert pilots.told == "duck-01", "a pinned robot is shown by its own name"
     assert _saw(stand_in, DUCK_TASK, "postman-01"), "and the postman too, to the duck"
     assert _saw(stand_in, DUCK_TASK, PHRASE), "the postman's words reached the duck's model"
-    # what the postman decides by: the duck's passport, its limit included, in its model's view
-    assert _saw(stand_in, POSTMAN_TASK, BEAK_LINE)
+    # what the postman decides by: the duck's passport, its limit included, in its own model's view
+    assert _saw(own, POSTMAN_TASK, BEAK_LINE)
+    # each robot's turns reach its own server alone, with its own model and its own key
+    assert own.posts() and all(POSTMAN_TASK in _system(p.body) for p in own.posts())
+    assert stand_in.posts() and all(DUCK_TASK in _system(p.body) for p in stand_in.posts())
+    assert {p.body["model"] for p in own.posts()} == {ONBOARD_MODEL}
     assert {p.body["model"] for p in stand_in.posts()} == {TEXT_MODEL}
+    assert "stand-in-key" not in _everything(own), "the Token Factory key reached the postman's"
+    assert ONBOARD_KEY not in _everything(stand_in), "the onboard key reached Token Factory"
     # the brake: a pinned postman's pause is granted, and the duck holds still for it
     assert len(braked) == 1 and ": ok, " in braked[0], braked
     assert "holding still for 3 s" in braked[0]
@@ -280,8 +360,14 @@ def test_appointment_words_and_the_beaks_limit_reach_each_model(tmp_path: Path) 
 
 @needs_ports
 def test_strangers_neither_words_nor_the_beaks_limit_reach_a_model(tmp_path: Path) -> None:
-    stand_in, pilots, codes, _braked = _play(tmp_path / "doorstep", "stranger")
-    assert codes == {"postman-01": 0, "duck-01": 0}
+    """The postman first doubts it can do its task, as Nemotron did on the first run against
+    Token Factory. Nobody is at a terminal with both runs here, so quackd's --yes answers it, and
+    the act goes on."""
+    stand_in, _own, pilots, codes, _braked = _play(tmp_path / "doorstep", "stranger", doubt=True)
+    logs = tmp_path / "doorstep" / "logs"
+    postman_log = (logs / "postman-01.log").read_text(encoding="utf-8", errors="replace")
+    assert codes == {"postman-01": 0, "duck-01": 0}, postman_log[-2000:]
+    assert "uncertain" in postman_log, "the postman did doubt"
     assert pilots.told is not None and pilots.told.startswith("stranger-")
     assert not _saw(stand_in, DUCK_TASK, PHRASE)
     assert not _saw(stand_in, DUCK_TASK, "postman-01"), "a name a stranger chose is its own words"
@@ -373,3 +459,85 @@ def test_pause_after_needs_the_duck_here(tokenfactory: FakeTokenFactory) -> None
     result = runner.invoke(app, args)
     assert result.exit_code == 1
     assert "--pause-after pauses the duck" in result.output
+
+
+def test_run_show_puts_the_postman_on_its_own_server(
+    tokenfactory: FakeTokenFactory, onboard: FakeTokenFactory
+) -> None:
+    args = ["doorstep", "run", "--show", "--model", TEXT_MODEL, "--postman-at", "10.0.0.5:8790"]
+    result = runner.invoke(app, [*args, "--onboard", onboard.base_url])
+    assert result.exit_code == 0, result.output
+    postman, duck = result.output.splitlines()
+    assert postman.endswith(f"--llm local:{ONBOARD_MODEL} --base-url {onboard.base_url}")
+    assert duck.endswith(f"--llm local:{TEXT_MODEL} --base-url {tokenfactory.base_url}")
+    assert {r.headers["authorization"] for r in onboard.requests} == {f"Bearer {ONBOARD_KEY}"}
+    assert {r.headers["authorization"] for r in tokenfactory.requests} == {"Bearer stand-in-key"}
+    assert "stand-in-key" not in result.output and ONBOARD_KEY not in result.output
+
+
+def test_an_onboard_postman_alone_needs_no_token_factory_key(onboard: FakeTokenFactory) -> None:
+    args = ["doorstep", "run", "--show", "--role", "postman", "--onboard", onboard.base_url]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    (postman,) = result.output.splitlines()
+    assert postman.startswith("postman-01: quackd run ") and onboard.base_url in postman
+
+
+@pytest.mark.parametrize(
+    ("given", "said"),
+    [
+        (["--onboard-model", ONBOARD_MODEL], "--onboard-model names a model on the --onboard"),
+        (["--role", "duck", "--onboard", "http://127.0.0.1:9/v1"], "the postman's own server"),
+        (["--onboard", "http://127.0.0.1:9/v1", "--vision"], "an onboard server's list never"),
+        (["--onboard", nebius.DEFAULT_BASE_URL + "/"], "names Token Factory's own address"),
+        (["--onboard", "127.0.0.1:8000"], "is not an http or https URL"),
+    ],
+)
+def test_onboard_is_refused_before_anything_is_asked(given: list[str], said: str) -> None:
+    """No key is set here, so a refusal that came after the first request would say so."""
+    result = runner.invoke(app, ["doorstep", "run", "--show", *given])
+    assert result.exit_code == 1
+    assert said in result.output
+
+
+def test_each_pilot_is_named_with_the_server_it_thinks_on(
+    tokenfactory: FakeTokenFactory, onboard: FakeTokenFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(doorstep, "setup", lambda state, act: [])
+    monkeypatch.setattr(
+        doorstep, "play", lambda started, **given: {robot.name: 0 for robot, _ in started}
+    )
+    both = runner.invoke(
+        app, ["doorstep", "run", "--model", TEXT_MODEL, "--onboard", onboard.base_url]
+    )
+    assert both.exit_code == 0, both.output
+    assert (
+        f"postman-01's pilot: {ONBOARD_MODEL} on the onboard server at {onboard.base_url}"
+        in both.output
+    )
+    assert f"duck-01's pilot: {TEXT_MODEL} on Token Factory at {tokenfactory.base_url}" in (
+        both.output
+    )
+    assert "records this run at $0" in both.output, "the duck's turns on Token Factory are unpriced"
+    alone = runner.invoke(
+        app, ["doorstep", "run", "--role", "postman", "--onboard", onboard.base_url]
+    )
+    assert alone.exit_code == 0, alone.output
+    assert "records this run at $0" not in alone.output, "an onboard model has no price per token"
+
+
+def test_both_runs_logs_are_printed_the_postman_first(tmp_path: Path) -> None:
+    (tmp_path / "duck-01.log").write_text("the duck heard it\n", encoding="utf-8")
+    (tmp_path / "postman-01.log").write_text("the postman told it\n", encoding="utf-8")
+    assert doorstep.logged(tmp_path) == [
+        ("postman-01", "the postman told it\n"),
+        ("duck-01", "the duck heard it\n"),
+    ]
+    assert doorstep.logged(tmp_path / "nothing-here") == []
+
+
+def test_print_logs_needs_the_logs_only_role_both_writes(tokenfactory: FakeTokenFactory) -> None:
+    args = ["doorstep", "run", "--role", "duck", "--print-logs", "--model", TEXT_MODEL]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1
+    assert "--print-logs prints the log files that only --role both writes" in result.output

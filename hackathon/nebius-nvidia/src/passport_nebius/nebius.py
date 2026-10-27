@@ -1,5 +1,6 @@
 """Nebius Token Factory, as this edition reaches it: an OpenAI-compatible API, one key, and the
-live model list, which is the only place a model id is ever taken from.
+live model list, which is the only place a model id is ever taken from. A robot's own model
+server, on its own computer, is reached the same way, with a key of its own.
 
 Nebius's own pages disagree on the base URL and third-party catalogues disagree on the case of
 the NVIDIA ids, so nothing here names a model. An id is accepted when the list a key can see
@@ -22,6 +23,10 @@ DEFAULT_BASE_URL = "https://api.tokenfactory.nebius.com/v1"
 KEY_ENV = "NEBIUS_API_KEY"
 BASE_URL_ENV = "NEBIUS_BASE_URL"
 MODEL_ENV = "NEBIUS_MODEL"
+#: The key a robot's own model server takes, when it was started with one.
+ONBOARD_KEY_ENV = "ONBOARD_API_KEY"
+#: What goes as the key to a server started with none: quackd's local provider's own word for it.
+NO_KEY = "not-needed"
 NVIDIA_PREFIX = "nvidia/"
 TIMEOUT_S = 30.0
 #: What a reasoning model may write before its answer, removed before anything reads one.
@@ -29,25 +34,47 @@ _THINKING = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 class NebiusError(Exception):
-    """Something Token Factory or the settings for it refused, said in one line."""
+    """Something a model server or the settings for it refused, said in one line."""
+
+
+def _address(url: str) -> str:
+    url = url.rstrip("/")
+    if not url.startswith(("https://", "http://")):
+        raise NebiusError(f"{url!r} is not an http or https URL")
+    return url
+
+
+def tokenfactory_url(base_url: str | None = None) -> str:
+    """Token Factory's address: the one given, else $NEBIUS_BASE_URL, else its documented one."""
+    return _address(base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL)
 
 
 @dataclass(frozen=True)
 class Settings:
-    """Where Token Factory is and the key it takes."""
+    """Where a model server is and the key it takes: Token Factory, or a robot's own."""
 
     base_url: str
     api_key: str = field(repr=False)
+    name: str = "Token Factory"
+    """What an error calls the server."""
+    key_env: str = KEY_ENV
+    """Where its key is set, for an error that says to check it."""
 
     @classmethod
     def from_env(cls, base_url: str | None = None, api_key: str | None = None) -> Settings:
-        url = (base_url or os.environ.get(BASE_URL_ENV) or DEFAULT_BASE_URL).rstrip("/")
-        if not url.startswith(("https://", "http://")):
-            raise NebiusError(f"{url!r} is not an http or https URL")
+        url = tokenfactory_url(base_url)
         key = api_key or os.environ.get(KEY_ENV)
         if not key:
             raise NebiusError(f"needs {KEY_ENV} (set it in .env or the environment)")
         return cls(url, key)
+
+    @classmethod
+    def onboard(cls, base_url: str) -> Settings:
+        """A robot's own model server, on its own computer: the address given, and
+        $ONBOARD_API_KEY when the server was started with a key. Never the Token Factory key,
+        which is for Token Factory alone."""
+        key = os.environ.get(ONBOARD_KEY_ENV, "").strip() or NO_KEY
+        return cls(_address(base_url), key, name="the onboard server", key_env=ONBOARD_KEY_ENV)
 
 
 @dataclass(frozen=True)
@@ -124,7 +151,7 @@ def _get(settings: Settings, path: str, timeout: float) -> Any:
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise NebiusError(
-                f"Token Factory refused the key ({e.code}): check {KEY_ENV}"
+                f"{settings.name} refused the key ({e.code}): check {settings.key_env}"
             ) from None
         if 300 <= e.code < 400:
             raise NebiusError(
@@ -155,7 +182,7 @@ def nvidia_models(models: Sequence[Model]) -> list[Model]:
     return [m for m in models if m.nvidia]
 
 
-def resolve(models: Sequence[Model], wanted: str) -> Model:
+def resolve(models: Sequence[Model], wanted: str, *, where: str = "this key's model list") -> Model:
     """The row for `wanted`, which must be an NVIDIA model the list carries, spelled exactly as
     the list spells it. A difference only in case is refused with the list's own spelling, since
     the server matches ids exactly and catalogues disagree on case."""
@@ -170,7 +197,25 @@ def resolve(models: Sequence[Model], wanted: str) -> Model:
         if m.id.lower() == wanted.lower():
             raise NebiusError(f"the list spells it {m.id}, not {wanted}")
     offered = ", ".join(m.id for m in nvidia_models(models)) or "none"
-    raise NebiusError(f"{wanted} is not on this key's model list; NVIDIA models there: {offered}")
+    raise NebiusError(f"{wanted} is not on {where}; NVIDIA models there: {offered}")
+
+
+def onboard_model(models: Sequence[Model], wanted: str | None = None) -> Model:
+    """The model a robot's own server serves: `wanted` when given, else the one NVIDIA model on
+    its list. A server such as vLLM lists the one model it was started with, under the name it
+    was given, so the list names it and nothing here has to."""
+    if wanted:
+        return resolve(models, wanted, where="the onboard server's model list")
+    served = nvidia_models(models)
+    if len(served) == 1:
+        return served[0]
+    listed = ", ".join(m.id for m in models) or "nothing"
+    if not served:
+        raise NebiusError(f"the onboard server serves no NVIDIA model (its list: {listed})")
+    raise NebiusError(
+        f"the onboard server serves more than one NVIDIA model ({listed}): --onboard-model "
+        "names one"
+    )
 
 
 def strip_thinking(text: str) -> str:

@@ -15,8 +15,9 @@ other, and work together, without one robot's words ever steering another's brai
 
 quackd Passport is a small signed document a robot serves about itself: name, maker, owner, its
 body with sourced numbers (mass, height, payload), its skills, what it cannot do and how a
-person stops it. quackd, my open robot runtime, shipped it in 0.23. This entry gives every
-robot a Nemotron brain on Nebius Token Factory and plays it out at a front door.
+person stops it. quackd, my open robot runtime, shipped it in 0.23. This entry runs quackd
+onboard each robot, gives both a Nemotron brain on Nebius Token Factory, and plays it out at a
+front door.
 
 A postman brings a letter to a home: Agile ONE SN, the humanoid Agile Robots built on NVIDIA
 Isaac GR00T. The household's robot is Microduck, Pollen Robotics' 25 cm duck. As strangers,
@@ -34,16 +35,21 @@ Nemotron answer a question about it, with how far to trust the robot decided by 
 
 ## How I built it
 
+* quackd runs onboard each robot. A robot's own run holds its key, serves its passport, decides
+  by fixed code how far to trust the other and whether to grant it a pause, and flies its pilot.
+  Here one laptop stands in for both robots' computers.
 * Every model call goes to Token Factory. The robots' pilots are quackd's own runs, with its
   OpenAI-compatible provider pointed at Token Factory, so a Nemotron pilot needed no new client
   code. Model ids come only from the key's live model list.
-* Both acts run on Nebius AI Cloud as a Serverless AI Job on a CPU preset, with the key in
-  MysteryBox.
 * Agile ONE SN ships in 2027 and quackd has no driver for it, so it joins quackd as a mock body
   through quackd's own adapter entry point, its passport carrying the figures Agile Robots
   published. Microduck runs on quackd's simulator, where its ball stands in for the letter.
-* The tests replay both acts with a real quackd run per robot against a stand-in for Token
-  Factory, and check what reaches each model: the postman's words, and the duck's limit.
+* The tests replay both acts with a real quackd run per robot, against stand-ins for Token
+  Factory and for a robot's own model server. They check what reaches each model, the postman's
+  words and the duck's limit, and that each robot's key reaches only its own server.
+* Then I ran it all live on Token Factory: both acts with Nemotron 3 Super piloting both robots,
+  `explain` and `whois`. That took 42 model calls in the two acts and cost under ten cents. The
+  README shows what each command printed, and the folder keeps every run's record.
 
 ## Challenges
 
@@ -54,11 +60,18 @@ cannot do: the line saying so is the duck's own words. While testing I also foun
 OpenAI SDK reads gateway credentials from its own environment variables and would send them to
 Token Factory; the client is now built so only the Nebius key goes out.
 
+The live runs found what no stand-in could. On the first one the postman never started: Nemotron
+judged its task uncertain, because Agile ONE SN's reach is not published, and quackd asks a
+person about that, but nobody sat at the terminal. Now the doorstep answers with quackd's own
+`--yes`, which the record names as itself and never as a person, and an infeasible verdict still
+stops a robot. On the next run the postman gave up after 12 seconds, before the duck had even
+started, so its task now tells it the household's robot can take a minute.
+
 ## What's next
 
 A real robot at the door: quackd already has adapters for the SO-101 arm and other bodies, and
-the same commands take a real one by its name. Then identify by motion, so a robot can show
-which body holds its passport.
+the same commands take a real one by its name. The postman's brain on a real Jetson Thor. Then
+identify by motion, so a robot can show which body holds its passport.
 
 ## New during the Submission Period
 

@@ -29,8 +29,9 @@ from .pilot import run_launch, unpriced
 
 app = typer.Typer(
     name="passport-nebius",
-    help="quackd Passport with NVIDIA Nemotron on Nebius Token Factory: quackd's hackathon "
-    "edition. Every model call goes to Token Factory, and every id is read from its live list.",
+    help="quackd Passport with NVIDIA Nemotron on Nebius: quackd's hackathon edition. Every "
+    "model call goes to Token Factory or to a robot's own model server, and every id is read "
+    "from that server's live list.",
     no_args_is_help=True,
     add_completion=False,
     rich_markup_mode=None,
@@ -353,8 +354,8 @@ def whois(
 
 doorstep_app = typer.Typer(
     help="The doorstep: a postman robot and a household robot that have never met agree how a "
-    "letter changes hands by "
-    "quackd Passport, each piloted by Nemotron on Token Factory.",
+    "letter changes hands by quackd Passport, each piloted by Nemotron, the postman's on its "
+    "own computer with --onboard.",
     no_args_is_help=True,
     rich_markup_mode=None,
     pretty_exceptions_show_locals=False,
@@ -413,26 +414,77 @@ def doorstep_run(
     print_logs: bool = typer.Option(
         False,
         "--print-logs",
-        help="With --role both, print each run's log once the act ends, for a place where "
-        "nobody reads the files, such as a Serverless Job's log.",
+        help="With --role both, print each run's log once the act ends, so one terminal shows "
+        "both runs.",
     ),
     state: Path = STATE_OPTION,
     base_url: str | None = BASE_URL_OPTION,
+    onboard: str | None = typer.Option(
+        None,
+        "--onboard",
+        help="The postman's own model server, an OpenAI-compatible address on its own computer "
+        "such as vLLM's http://127.0.0.1:8000/v1. The postman's pilot asks it and nothing else, "
+        f"with ${nebius.ONBOARD_KEY_ENV} or no key, never Token Factory's. The duck's stays on "
+        "Token Factory.",
+    ),
+    onboard_model: str | None = typer.Option(
+        None,
+        "--onboard-model",
+        help="The NVIDIA model on the --onboard server (default: the one NVIDIA model it lists).",
+    ),
 ) -> None:
-    """Play one act of the doorstep with both pilots on Token Factory."""
+    """Play one act of the doorstep: both pilots on Token Factory, or the postman's on its own
+    computer with --onboard."""
     from quackd.lan.announce import local_ip
 
     if pause_after > 0 and role == "postman":
         fail("--pause-after pauses the duck, which runs here only with --role both or duck")
     if print_logs and role != "both":
         fail("--print-logs prints the log files that only --role both writes")
-    settings = _settings(base_url)
-    chosen = _chosen(settings, model)
+    if onboard is None and onboard_model is not None:
+        fail("--onboard-model names a model on the --onboard server: give --onboard URL too")
+    if onboard is not None:
+        if role == "duck":
+            fail(
+                "--onboard is the postman's own server, and the postman runs here only with "
+                "--role both or postman"
+            )
+        if vision:
+            fail(
+                "--vision sends frames to every pilot here, and an onboard server's list never "
+                "says whether its model reads images: leave one of them out"
+            )
+        try:
+            if nebius.Settings.onboard(onboard).base_url == nebius.tokenfactory_url(base_url):
+                fail(
+                    "--onboard names Token Factory's own address, and the onboard server is one "
+                    "on the postman's own computer"
+                )
+        except nebius.NebiusError as e:
+            fail(str(e))
+    # Token Factory is asked only when a pilot here flies on it
+    tokenfactory: doorstep.Brain | None = None
+    if onboard is None or role != "postman":
+        settings = _settings(base_url)
+        tokenfactory = doorstep.Brain(settings, _chosen(settings, model))
+    postman = tokenfactory
+    if onboard is not None:
+        try:
+            postman = doorstep.onboard(onboard, onboard_model)
+        except nebius.NebiusError as e:
+            fail(str(e))
+    brains = {doorstep.POSTMAN.name: postman, doorstep.DUCK.name: tokenfactory}
     here = local_ip()
     postman_at = postman_at or f"{here}:{doorstep.POSTMAN.port}"
     try:
         started = doorstep.launches(
-            settings, chosen, state, act, role, postman_at=postman_at, vision=vision
+            state,
+            act,
+            role,
+            postman=postman,
+            duck=tokenfactory,
+            postman_at=postman_at,
+            vision=vision,
         )
     except nebius.NebiusError as e:
         fail(str(e))
@@ -451,7 +503,13 @@ def doorstep_run(
             )
     except nebius.NebiusError as e:
         fail(str(e))
-    _notes(chosen, [], vision)
+    for robot, _launch in started:
+        brain = brains[robot.name]
+        assert brain is not None, "launches refuses a robot with no pilot"
+        where = f"{brain.settings.name} at {brain.settings.base_url}"
+        console.print(Text(printable(f"{robot.name}'s pilot: {brain.model.id} on {where}")))
+    if tokenfactory is not None:
+        _notes(tokenfactory.model, [], vision)
     timers: list[threading.Timer] = []
 
     def ask_for_pause() -> None:

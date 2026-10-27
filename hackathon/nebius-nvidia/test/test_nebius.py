@@ -6,7 +6,16 @@ import json
 from typing import Any
 
 import pytest
-from fake_tokenfactory import OTHER_MODEL, TEXT_MODEL, VISION_MODEL, FakeTokenFactory, row
+from fake_tokenfactory import (
+    ONBOARD_KEY,
+    ONBOARD_MODEL,
+    OTHER_MODEL,
+    TEXT_MODEL,
+    VISION_MODEL,
+    FakeTokenFactory,
+    row,
+    served,
+)
 from passport_nebius import nebius
 from passport_nebius.cli import app
 from typer.testing import CliRunner
@@ -75,6 +84,48 @@ def test_only_an_nvidia_id_spelled_as_the_list_spells_it_is_taken() -> None:
         nebius.resolve(models, OTHER_MODEL)
     with pytest.raises(nebius.NebiusError, match=f"NVIDIA models there: {TEXT_MODEL}"):
         nebius.resolve(models, "nvidia/not-there")
+
+
+def test_an_onboard_server_never_gets_the_token_factory_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NEBIUS_API_KEY", "token-factory-key")
+    own = nebius.Settings.onboard("http://127.0.0.1:8000/v1/")
+    assert (own.base_url, own.api_key) == ("http://127.0.0.1:8000/v1", nebius.NO_KEY)
+    monkeypatch.setenv("ONBOARD_API_KEY", " own-key ")
+    assert nebius.Settings.onboard("http://127.0.0.1:8000/v1").api_key == "own-key"
+    with pytest.raises(nebius.NebiusError, match="not an http"):
+        nebius.Settings.onboard("127.0.0.1:8000")
+
+
+def test_the_onboard_model_is_the_one_its_server_serves() -> None:
+    def listed(*rows: dict[str, Any]) -> list[nebius.Model]:
+        return [m for m in map(nebius._model, rows) if m]
+
+    assert nebius.onboard_model(listed(served(ONBOARD_MODEL))).id == ONBOARD_MODEL
+    two = listed(served(ONBOARD_MODEL), served(TEXT_MODEL))
+    assert nebius.onboard_model(two, TEXT_MODEL).id == TEXT_MODEL
+    with pytest.raises(nebius.NebiusError, match="more than one NVIDIA model"):
+        nebius.onboard_model(two)
+    with pytest.raises(
+        nebius.NebiusError, match=f"serves no NVIDIA model \\(its list: {OTHER_MODEL}"
+    ):
+        nebius.onboard_model(listed(served(OTHER_MODEL)))
+    with pytest.raises(nebius.NebiusError, match="not on the onboard server's model list"):
+        nebius.onboard_model(listed(served(ONBOARD_MODEL)), "nvidia/not-there")
+
+
+def test_a_refused_onboard_key_names_its_own_variable(
+    onboard: FakeTokenFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert [m.id for m in nebius.list_models(nebius.Settings.onboard(onboard.base_url))] == [
+        ONBOARD_MODEL
+    ]
+    assert onboard.requests[0].headers["authorization"] == f"Bearer {ONBOARD_KEY}"
+    monkeypatch.setenv("ONBOARD_API_KEY", "not-its-key")
+    with pytest.raises(nebius.NebiusError) as refused:
+        nebius.list_models(nebius.Settings.onboard(onboard.base_url))
+    assert str(refused.value) == "the onboard server refused the key (401): check ONBOARD_API_KEY"
 
 
 def test_thinking_is_dropped_and_json_found() -> None:

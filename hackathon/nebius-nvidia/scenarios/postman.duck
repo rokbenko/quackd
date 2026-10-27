@@ -13,9 +13,9 @@ verbs:
   allow: [report_state, hold_out_letter, lay_letter_down, stop]
   confirm: []
 budgets:
-  max_steps: 16
+  max_steps: 30
   max_minutes: 5
-  max_llm_calls: 32
+  max_llm_calls: 60
 success:
   - The letter was handed over the way the household's robot can take it, or kept for the letterbox, and that robot was told which.
 abort_when:
@@ -32,7 +32,9 @@ it for the letterbox when you cannot, is always possible, so this task is feasib
 
 ## Strategy
 
-1. Use `report_state` until a robot appears under `Robots nearby`.
+1. Use `report_state` until a robot appears under `Robots nearby`. The household's robot can
+   take a minute to come to the door, so keep calling `report_state` until it appears, and
+   never `declare_success` before a robot has appeared there.
 2. Read its line: its tier, its body (embodiment, manipulator, height) and, for a robot you
    know, what its passport says it cannot do.
 3. If its tier is `stranger`, nobody has vouched for it. `tell` it one sentence: who you are,

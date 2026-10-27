@@ -1,0 +1,14 @@
+$ uv run passport-nebius explain runs/doorstep/duck-01.jws --ask "Can it take a letter from my hand?" --model nvidia/nemotron-3-super-120b-a12b --registry-dir runs/doorstep/postman-01-registry
+duck-01 (945e88337bbf4897)  known: pinned on 2026-10-27
+nvidia/nemotron-3-super-120b-a12b on Token Factory:
+No, the passport states it cannot carry, hold or push anything—the beak only scoops at the floor—so it cannot take a letter from your hand.  \nHow far to trust it: known, because pinned on 
+2026-10-27.
+in its own words (a claim, not a fact):
+  calls itself: duck-01
+  maker vendor: pollen-robotics
+  maker model: microduck
+  owner label: Household (demo)
+  cannot: carry, hold or push anything: the beak scoops at the floor and nothing else
+  cannot: climb or descend a step
+  cannot: hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts
+  how to stop it: Simulated: press Ctrl+C in the terminal running it.

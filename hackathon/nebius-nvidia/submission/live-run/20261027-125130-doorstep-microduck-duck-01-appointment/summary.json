@@ -1,0 +1,90 @@
+{
+  "duck": "doorstep-microduck",
+  "run_name": "duck-01-appointment",
+  "command": [
+    "quackd",
+    "run",
+    "D:\\Development\\quackd-hackathon\\hackathon\\nebius-nvidia\\scenarios\\microduck.duck",
+    "--robot",
+    "duck-01",
+    "--registry-dir",
+    "runs\\doorstep\\duck-01-registry",
+    "--talk",
+    "--talk-port",
+    "8791",
+    "--runs-dir",
+    "runs\\doorstep\\runs",
+    "--run-name",
+    "duck-01-appointment",
+    "--no-memory",
+    "--meet",
+    "192.168.150.115:8790",
+    "--yes",
+    "--llm",
+    "local:nvidia/nemotron-3-super-120b-a12b",
+    "--base-url",
+    "https://api.tokenfactory.nebius.com/v1"
+  ],
+  "version": "0.23.0",
+  "outcome": "success",
+  "reason": "Letter is in beak after successful grab; quacked confirmation.",
+  "steps": 7,
+  "llm_calls": 13,
+  "elapsed_s": 38.7,
+  "started_at": "2026-10-27T12:51:30.435Z",
+  "ended_at": "2026-10-27T12:52:01.576Z",
+  "wall_s": 31.141,
+  "connect_s": 0.103,
+  "llm_latency_s": 25.212,
+  "usage": {
+    "input_tokens": 90595,
+    "output_tokens": 1774,
+    "reasoning_tokens": 1185,
+    "cache_read_tokens": 72560,
+    "cache_write_tokens": 0
+  },
+  "price": {
+    "input": 0.3,
+    "output": 0.9,
+    "cache_read": null,
+    "cache_write": null,
+    "unit": "USD per million tokens",
+    "source": "QUACKD_PRICE",
+    "checked": null
+  },
+  "cost_usd": 0.028775,
+  "provider": "local",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "transport": "sim2d",
+  "robot": "duck-01",
+  "dry_run": false,
+  "final_state": {
+    "t": 38.69999999999994,
+    "x": -0.92,
+    "y": 0.92,
+    "theta": 2.3545727187451604,
+    "policy": "stand",
+    "posture": "standing",
+    "fallen": false,
+    "battery_percent": 99.226,
+    "holding": true,
+    "extras": {
+      "sim_time": 38.7,
+      "ball": {
+        "present": false
+      },
+      "ball_displacement_m": 0.613,
+      "last_kick_ball_moved_m": null,
+      "kicks": 0,
+      "quacks": 1,
+      "head_yaw_deg": 0.0,
+      "people": [
+        {
+          "x": 0.66,
+          "y": 0.171
+        }
+      ]
+    }
+  },
+  "log_dropped": 0
+}

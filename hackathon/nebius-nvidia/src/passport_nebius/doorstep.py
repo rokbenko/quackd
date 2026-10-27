@@ -18,6 +18,11 @@ One machine, one or two terminals: the postman serves its passport and talk inbo
 the duck serves its own on 8791 and says hello to the postman as it starts. quackd sends a reply
 only to a talk channel on the host a passport came from, and a run names the address its machine
 routes to the LAN by, so the duck meets the postman on that address.
+
+Each robot thinks with a brain of its own. The duck's is Nemotron on Token Factory, since a
+Microduck's own computer is too small for a model. The postman's is too, unless it thinks
+onboard: then its pilot asks a model server on its own computer and nothing else, as Agile ONE
+SN would ask its Jetson Thor.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .nebius import Model, NebiusError, Settings
+from .nebius import Model, NebiusError, Settings, list_models, onboard_model
 from .pilot import QUACKD, Launch, child_env, run_launch, start, wait
 
 ACTS = ("stranger", "appointment")
@@ -244,8 +249,16 @@ def is_set_up(state: Path) -> bool:
     )
 
 
-def run_args(robot: Robot, state: Path, act: str, *, meet: str | None) -> list[str]:
-    """`quackd run`'s arguments for one side, everything but the pilot."""
+def run_args(
+    robot: Robot, state: Path, act: str, *, meet: str | None, unattended: bool = False
+) -> list[str]:
+    """`quackd run`'s arguments for one side, everything but the pilot.
+
+    `unattended` is a run nobody sits at, so no person can answer a pilot that is unsure its
+    body can do the task: quackd's own `--yes` answers go instead, and the run's record names
+    `--yes` as having said it, never a person. A pilot that judges its task infeasible still
+    ends its run, `--yes` or not. Without it the question reaches nobody and the run ends before
+    it starts, which is how the first run against Token Factory ended."""
     args = [
         str(scenario(robot)),
         "--robot",
@@ -263,32 +276,56 @@ def run_args(robot: Robot, state: Path, act: str, *, meet: str | None) -> list[s
     ]
     if meet is not None:
         args += ["--meet", meet]
+    if unattended:
+        args.append("--yes")
     return args
 
 
+@dataclass(frozen=True)
+class Brain:
+    """Where one robot's pilot thinks: a model server, the key it takes, and the model there."""
+
+    settings: Settings
+    model: Model
+
+
+def onboard(base_url: str, wanted: str | None = None) -> Brain:
+    """The postman's own model server, on its own computer, and the model it serves."""
+    settings = Settings.onboard(base_url)
+    return Brain(settings, onboard_model(list_models(settings), wanted))
+
+
+def _launch(robot: Robot, brain: Brain | None, args: list[str], vision: bool) -> Launch:
+    if brain is None:
+        raise NebiusError(f"{robot.name} has no pilot")
+    return run_launch(brain.settings, brain.model, args, vision=vision)
+
+
 def launches(
-    settings: Settings,
-    model: Model,
     state: Path,
     act: str,
     role: str,
     *,
+    postman: Brain | None,
+    duck: Brain | None,
     postman_at: str,
     vision: bool = False,
 ) -> list[tuple[Robot, Launch]]:
     """The runs `role` starts, in the order they start: the postman first, since the duck
-    says hello to it as it begins."""
+    says hello to it as it begins. Each is piloted by its own brain."""
     if role not in ROLES:
         raise NebiusError(f"--role is one of {', '.join(ROLES)}")
     if act not in ACTS:
         raise NebiusError(f"--act is one of {', '.join(ACTS)}")
+    # with both runs here, their output goes to files and neither reads a terminal
+    unattended = role == "both"
     chosen: list[tuple[Robot, Launch]] = []
     if role in ("both", "postman"):
-        args = run_args(POSTMAN, state, act, meet=None)
-        chosen.append((POSTMAN, run_launch(settings, model, args, vision=vision)))
+        args = run_args(POSTMAN, state, act, meet=None, unattended=unattended)
+        chosen.append((POSTMAN, _launch(POSTMAN, postman, args, vision)))
     if role in ("both", "duck"):
-        args = run_args(DUCK, state, act, meet=postman_at)
-        chosen.append((DUCK, run_launch(settings, model, args, vision=vision)))
+        args = run_args(DUCK, state, act, meet=postman_at, unattended=unattended)
+        chosen.append((DUCK, _launch(DUCK, duck, args, vision)))
     return chosen
 
 
