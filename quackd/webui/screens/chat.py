@@ -33,15 +33,7 @@ def screen() -> None:
         if job is not None:
             _conversation(job)
             widgets.outcome(job.snapshot())
-        vla = setup().get("controller") == "vla"
-        if vla:
-            # drive takes no VLA pilot yet, and a chat started now would be flown by whatever
-            # LLM the robot or the environment names, without a word
-            st.info(
-                "A chat is flown by an LLM: quackd drive takes no VLA pilot yet. Choose An LLM "
-                "on Setup to chat, or give the arm its instruction on Goal."
-            )
-        if st.button("Start a chat", type="primary", width="stretch", disabled=vla):
+        if st.button("Start a chat", type="primary", width="stretch"):
             _start()
         st.caption("The chat runs with the robot and pilot chosen on Setup.")
         return

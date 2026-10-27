@@ -325,7 +325,8 @@ def _decision(controller: str) -> None:
         "Decision LLM",
         names,
         default=NO_DECISION,
-        help="A stepper beside the pilot in a goal, and the fast lane for a chat line.",
+        help="A stepper beside the pilot in a goal, and the fast lane for a chat line. A chat's "
+        "goals have the stepper too only with a mode chosen below.",
     )
     if name == NO_DECISION:
         widgets.forget("decision_llm")
