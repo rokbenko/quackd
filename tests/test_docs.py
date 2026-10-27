@@ -4393,3 +4393,41 @@ def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -
         row = next((r for r in rows if f"--llm {name}`" in r), None)
         assert row is not None, f"the pilots' table has no row that runs --llm {name}"
         assert f"`quackd[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row
+
+
+def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> None:
+    """`quackd map` and `quackd places` take a robot as `drive` does and a memory directory as
+    `quackd memory` does, and what each takes beyond those is its own: named in the front page's
+    rows for the two commands and in the places guide, with the commands themselves, so a flag
+    added to either is documented where it is used."""
+    from typing import Any
+
+    import typer.main
+
+    from quackd.cli import app
+
+    root: Any = typer.main.get_command(app)
+
+    def flags(command: Any) -> set[str]:
+        return {
+            name
+            for param in command.params
+            for name in getattr(param, "opts", [])
+            if name.startswith("--")
+        }
+
+    shared = flags(root.commands["drive"]) | flags(root.commands["memory"].commands["show"])
+    places = root.commands["places"].commands
+    own_map = flags(root.commands["map"]) - shared
+    own_places = set().union(*(flags(places[name]) for name in ("list", "add", "rm"))) - shared
+    assert own_map and own_places
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    map_row = next(line for line in rows if line.startswith("| `quackd map`"))
+    places_row = next(line for line in rows if line.startswith(r"| `quackd places list\|add\|rm`"))
+    guide = (REPO / "docs" / "guides" / "places.md").read_text(encoding="utf-8")
+    for row, own in ((map_row, own_map), (places_row, own_places)):
+        for flag in sorted(own):
+            assert flag in row, f"the README's row does not name {flag}: {row[:40]}"
+            assert flag in guide, f"docs/guides/places.md does not name {flag}"
+    for command in ("quackd map", "quackd places add", "quackd places list", "quackd places rm"):
+        assert command in guide, f"docs/guides/places.md does not show {command}"

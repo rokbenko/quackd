@@ -59,8 +59,8 @@ its feet. A map's frame is its first stop, and "a map has no north". Two robots 
 ## Consequences
 
 - A Microduck on any robotd quackd serves says where it is by odometry, which a pilot sees in
-  every state line, and can name and list places. The simulators, MOSS and rosbridge say nothing
-  yet.
+  every state line, and can name and list places. So do MOSS and a rosbridge base, each by its own
+  odometry, and the Microduck's simulators in a room; without a room a simulator says nothing.
 - A place marked on odometry lasts one connection at most, and less when the duck is picked up.
   That is the honest life of an odometry frame, and a map that outlives the connection is what
   changes it.

@@ -468,7 +468,7 @@ def places_line(views: list[PlaceView], *, nearest: int = 5) -> str | None:
 
 
 def place_listing(views: list[PlaceView]) -> list[str]:
-    """Every place on a line of its own, as `map` and `quackd places list` say them: how far and
+    """Every place on a line of its own, as the `map` verb and `quackd map` say them: how far and
     which way, or why it cannot be walked to now."""
     lines: list[str] = []
     for v in views:

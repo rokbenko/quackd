@@ -17,7 +17,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7846,6 +7846,350 @@ def memory_clear(
     ui.console.print(
         Text.assemble((f"forgot {n} entries for ", ""), (mem.robot_key, ui.STYLES["key"]))
     )
+
+
+# ── places and the robot's map ──────────────────────────────────────────────────────────
+
+places_app = typer.Typer(
+    name="places",
+    help="The spots a robot keeps under names, each where it stood when it was marked: list "
+    "them, mark one where the robot stands, forget one.",
+    no_args_is_help=True,
+)
+app.add_typer(places_app, name="places", rich_help_panel="Memory")
+
+MAP_WATCH_S = 1.0
+"""How often `quackd map --watch` draws the map again, quackd's own number: often enough to
+follow a walk, seldom enough to read."""
+
+_CELLS = typer.Option(
+    None,
+    "--cells",
+    help="How many columns wide to draw the map, when the robot keeps one: 10 to 80, and 40 when "
+    "not given, as the map verb draws it.",
+)
+
+
+def _place_store_for(robot: str | None, memory_dir: str | None, registry_dir: str | None) -> Any:
+    """One robot's places, keyed as its memory is, read with nothing connected."""
+    from quackd.adapters.base import AdapterError
+    from quackd.registry import Registry, RegistryError, resolve_robot_ref
+    from quackd.space.places import PlaceStore
+
+    try:
+        resolved = resolve_robot_ref(robot, Registry(registry_dir))
+    except (AdapterError, RegistryError) as e:
+        # every other --robot command answers in one line, not a traceback
+        _fail(str(e))
+    return PlaceStore(resolved.memory_key, memory_dir)
+
+
+def _room_hint(spec: Any, room: str | None) -> str | None:
+    """Where a body with no places would have them: its simulator, given a room."""
+    from quackd.adapters.base import AdapterError
+    from quackd.adapters.factory import describe
+
+    if room is not None:
+        return None
+    try:
+        roomy = describe(spec, room=next(iter(BUILT_IN_ROOMS)))
+    except AdapterError:
+        return None  # its adapter lays out no room
+    if "map" not in roomy.verb_names():
+        return None
+    rooms = ", ".join(BUILT_IN_ROOMS)
+    return f"its simulator keeps a map, and places in it, in a room: --room {rooms}"
+
+
+@contextlib.asynccontextmanager
+async def _robot_places(
+    robot: str | None,
+    *,
+    address: str | None,
+    token: str | None,
+    room: str | None,
+    map_address: str | None,
+    seed: int | None,
+    memory_dir: str | None,
+    registry_dir: str | None,
+) -> AsyncIterator[tuple[str, Any, Any]]:
+    """A robot connected for its map and its places and closed after, built from the robot
+    flags `drive` takes too, with no camera: its name, the robot, and its places read against
+    where it is now. A body that keeps no places is refused before anything connects."""
+    from quackd.adapters.base import AdapterError
+    from quackd.adapters.factory import describe, make_adapter
+    from quackd.registry import Registry, RegistryError, resolve_robot_ref
+    from quackd.space.places import PlaceBook, PlaceStore
+    from quackd.space.room import RoomError, load_room
+    from quackd.transport.base import spatial_of
+
+    try:
+        resolved = resolve_robot_ref(robot, Registry(registry_dir))
+        if room is not None:
+            load_room(room)
+        static = describe(resolved.spec, room=room)
+    except (AdapterError, RegistryError, RoomError) as e:
+        _fail(str(e))
+    name = resolved.entry.name if resolved.entry is not None else resolved.spec.key
+    if "map" not in static.verb_names():
+        _fail(
+            f"{name} keeps no places: it does not say where it is",
+            hint=_room_hint(resolved.spec, room),
+        )
+    kwargs = resolved.adapter_kwargs(address=address, token=token, map_address=map_address)
+    # a map needs no camera, and a camera that will not open refuses the whole connect
+    kwargs["camera_url"] = ()
+    try:
+        adapter = make_adapter(resolved.spec, seed=seed, room=room, **kwargs)
+    except (AdapterError, ImportError) as e:
+        _fail(str(e))
+    try:
+        await adapter.connect()
+    except Exception as e:
+        with contextlib.suppress(Exception):
+            await adapter.close()
+        _fail(f"{name} did not connect: {e}")
+    try:
+        source = spatial_of(adapter)
+        if source is None:
+            _fail(f"{name} does not say where it is on this connection, so it has no map or places")
+        else:
+            yield name, adapter, PlaceBook(PlaceStore(resolved.memory_key, memory_dir), source)
+    finally:
+        await adapter.close()
+
+
+def _print_map(summary: str, *, again: bool = False) -> None:
+    """The map verb's lines as they are: a grid is not wrapped, and a name is not markup."""
+    if again and ui.console.is_terminal:
+        ui.console.clear()
+    elif again:
+        ui.console.print()
+    ui.console.print(Text(summary), soft_wrap=True)
+
+
+async def _map_watch_pause() -> None:
+    """The wait between two drawings of `quackd map --watch`. The seam tests replace."""
+    await asyncio.sleep(MAP_WATCH_S)
+
+
+async def _wipe_map(name: str, book: Any) -> None:
+    """Forget the robot's map, once the person at the terminal has said yes to what it orphans.
+    The question is asked off the event loop, so the robot's own links keep being read while
+    the person thinks."""
+    source = book.source
+    if not source.can_wipe:
+        _fail(f"{source.describe()} keeps no map to wipe")
+    frame = book.frame()
+    doomed = sorted(
+        (p.name for p in book.store.places() if frame is not None and p.frame == frame.id),
+        key=str.lower,
+    )
+    orphans = (
+        f"and orphans {_plural(len(doomed), 'place')}: {', '.join(doomed)}"
+        if doomed
+        else "and orphans no place"
+    )
+    question = f"wipe {name}'s map? It forgets every stop it has looked from, {orphans}"
+    if not await asyncio.to_thread(typer.confirm, question, default=False):
+        ui.console.print(Text("nothing wiped", style=ui.STYLES["muted"]))
+        return
+    forgot = await source.wipe()
+    book.frame()  # the store keeps the map that ended as wiped, so its places stay orphaned
+    ui.console.print(
+        _ok_line(
+            f"wiped {name}'s map: it forgot {_plural(forgot, 'stop')}, and "
+            f"{_plural(len(doomed), 'place')} {'is' if len(doomed) == 1 else 'are'} orphaned"
+        )
+    )
+
+
+@app.command("map", rich_help_panel="Memory")
+def map_command(
+    robot: str | None = _ROBOT,
+    address: str | None = _ADDR,
+    token: str | None = _TOKEN,
+    room: str | None = _ROOM,
+    map_address: str | None = _MAP_ADDR,
+    seed: int | None = _SEED,
+    cells: int | None = _CELLS,
+    watch: bool = typer.Option(
+        False, "--watch", help="Draw it again every second, as the robot moves, until Ctrl+C."
+    ),
+    wipe: bool = typer.Option(
+        False,
+        "--wipe",
+        help="Forget the robot's map first, every stop it has looked from, which orphans every "
+        "place marked in it. Asked at the terminal, naming those places, and refused without "
+        "one: a map is never wiped by a pilot or a script.",
+    ),
+    memory_dir: str | None = _MEMORY_DIR,
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Where a robot is, its places with how far and which way, and its map as it has seen it.
+
+    It connects to the robot, with no camera, and reads it as the `map` verb does: nothing
+    moves. The places are the ones kept beside the robot's memory."""
+    from quackd.verbs.places import MapParams, map_verb
+    from quackd.verbs.registry import VerbContext
+
+    try:
+        params = MapParams() if cells is None else MapParams(cells_across=cells)
+    except ValidationError as e:
+        _fail(f"--cells: {e.errors()[0]['msg']}")
+        return
+    if wipe and not _can_prompt():
+        # refused before anything connects, so nothing is half done
+        _fail(
+            "--wipe asks the person at the terminal first, and there is no terminal here: run it "
+            "in one",
+            hint="a map is never wiped by a pilot or a script",
+        )
+        return
+
+    async def session() -> None:
+        async with _robot_places(
+            robot,
+            address=address,
+            token=token,
+            room=room,
+            map_address=map_address,
+            seed=seed,
+            memory_dir=memory_dir,
+            registry_dir=registry_dir,
+        ) as (name, adapter, book):
+            ctx = VerbContext(transport=adapter, places=book)
+            if wipe:
+                await _wipe_map(name, book)
+            result = await map_verb(ctx, params)
+            if not result.ok:
+                _fail(result.summary)
+            _print_map(result.summary)
+            if not watch:
+                return
+            try:
+                while True:
+                    await _map_watch_pause()
+                    _print_map((await map_verb(ctx, params)).summary, again=True)
+            except asyncio.CancelledError:
+                # Ctrl+C: the watch ends here, and the robot is closed on the way out
+                ui.console.print(Text("stopped watching", style=ui.STYLES["muted"]))
+
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(session())
+
+
+@places_app.command("list")
+def places_list(
+    robot: str | None = _ROBOT,
+    memory_dir: str | None = _MEMORY_DIR,
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Every place one robot keeps, with the frame it was marked in.
+
+    It reads the file and connects nothing, so it says nothing of where the robot is now:
+    `quackd map` says which places can be walked to."""
+    import math
+
+    store = _place_store_for(robot, memory_dir, registry_dir)
+    places = sorted(store.places(), key=lambda p: p.name.lower())
+    ui.console.print(
+        Text.assemble(
+            (store.robot_key, ui.STYLES["key"]),
+            (f"  {_plural(len(places), 'place')}  ", ""),
+            (str(store.path), ui.STYLES["muted"]),
+        )
+    )
+    if not places:
+        ui.console.print(Text("no places kept yet", style=ui.STYLES["muted"]))
+        return
+    wiped = {record.id for record in store.frames() if record.wiped}
+    table = ui.table("places, each in the frame it was marked in")
+    table.add_column("name", no_wrap=True)
+    table.add_column("x, y (m)", no_wrap=True, justify="right")
+    table.add_column("facing", no_wrap=True, justify="right")
+    table.add_column("by", no_wrap=True)
+    # an id is compared, never read for its parts, so a long one folds rather than losing its end
+    table.add_column("frame", style=ui.STYLES["muted"], overflow="fold")
+    table.add_column("marked", no_wrap=True)
+    table.add_column("note", ratio=1)
+    for place in places:
+        table.add_row(
+            Text(place.name),
+            Text(f"{place.x:.2f}, {place.y:.2f}"),
+            Text(f"{math.degrees(place.yaw):.0f}°"),
+            Text(place.kind),
+            Text(place.frame + (", its map wiped" if place.frame in wiped else "")),
+            Text(datetime.fromtimestamp(place.ts).strftime("%Y-%m-%d")),
+            Text(place.note or ""),
+        )
+    ui.console.print(table)
+    ui.console.print(
+        Text("quackd map says which of them can be walked to now", style=ui.STYLES["muted"])
+    )
+
+
+@places_app.command("add")
+def places_add(
+    name: str = typer.Argument(..., help="What to call the spot the robot stands on, e.g. sofa."),
+    note: str | None = typer.Option(None, "--note", help="What is there, in a few words."),
+    robot: str | None = _ROBOT,
+    address: str | None = _ADDR,
+    token: str | None = _TOKEN,
+    room: str | None = _ROOM,
+    map_address: str | None = _MAP_ADDR,
+    seed: int | None = _SEED,
+    memory_dir: str | None = _MEMORY_DIR,
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Mark the spot the robot stands on now under a name, as the `mark_place` verb does.
+
+    It connects to the robot and reads where it is from the robot's own reading, never from
+    coordinates anybody types. Nothing moves."""
+    from quackd.verbs.places import MarkPlaceParams, mark_place
+    from quackd.verbs.registry import VerbContext
+
+    try:
+        params = MarkPlaceParams(name=name, note=note)
+    except ValidationError as e:
+        error = e.errors()[0]
+        _fail(f"{'name' if error['loc'][0] == 'name' else '--note'}: {error['msg']}")
+        return
+
+    async def session() -> None:
+        async with _robot_places(
+            robot,
+            address=address,
+            token=token,
+            room=room,
+            map_address=map_address,
+            seed=seed,
+            memory_dir=memory_dir,
+            registry_dir=registry_dir,
+        ) as (who, adapter, book):
+            result = await mark_place(VerbContext(transport=adapter, places=book), params)
+            if not result.ok:
+                _fail(result.summary)
+            ui.console.print(_ok_line(f"{who}: {result.summary}"))
+
+    asyncio.run(session())
+
+
+@places_app.command("rm")
+def places_rm(
+    name: str = typer.Argument(..., help="The place to forget."),
+    robot: str | None = _ROBOT,
+    memory_dir: str | None = _MEMORY_DIR,
+    registry_dir: str | None = _REGISTRY_DIR,
+) -> None:
+    """Forget one place by name. It reads and writes the file and connects nothing."""
+    store = _place_store_for(robot, memory_dir, registry_dir)
+    old = store.forget(name)
+    if old is None:
+        known = ", ".join(sorted((p.name for p in store.places()), key=str.lower)) or "none"
+        _fail(f"{store.robot_key} keeps no place called '{name}' (places: {known})")
+        return
+    ui.console.print(_ok_line(f"{store.robot_key}: forgot '{old.name}'"))
 
 
 # ── lan (quackd[lan]) ───────────────────────────────────────────────────────────────────

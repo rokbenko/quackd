@@ -117,6 +117,7 @@ class SimulatedMap(SpatialSourceBase):
         self._cells: npt.NDArray[np.uint8] = np.full((h, w), UNKNOWN, dtype=np.uint8)
         self._keyframes: list[Pose2D] = []
         self._wipes = 0
+        self._retired: set[str] = set()
         self._lost: str | None = BOOT
         self._stops_since_lost = 0
         first = body()
@@ -266,6 +267,12 @@ class SimulatedMap(SpatialSourceBase):
         return True
 
     @property
+    def retired_frames(self) -> frozenset[str]:
+        """The frames its wipes ended, as mapd's source says its own, so the place store keeps
+        them as wiped and a later session of the same room does not take the map up again."""
+        return frozenset(self._retired)
+
+    @property
     def frame(self) -> FrameRef:
         return FrameRef("map", self._frame_key, persistent=True, epoch=self._wipes)
 
@@ -336,6 +343,7 @@ class SimulatedMap(SpatialSourceBase):
         forgotten = len(self._keyframes)
         self._cells[:] = UNKNOWN
         self._keyframes.clear()
+        self._retired.add(self.frame.id)
         self._wipes += 1
         self._lose(BOOT)
         return forgotten

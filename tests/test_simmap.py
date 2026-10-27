@@ -161,6 +161,23 @@ def test_a_wipe_forgets_the_map_and_starts_a_frame_of_its_own() -> None:
     assert m.fix().localized and m.fix().frame.id != before.id
 
 
+def test_a_wipe_retires_the_frame_it_ended_as_mapds_source_does() -> None:
+    """Said in `retired_frames`, so the place store keeps that map as wiped and a later session
+    of the same room skips it (below)."""
+    m, body = _map()
+    _still(m, body, PARAMS.still_s)
+    first = m.fix().frame
+    assert first is not None and m.retired_frames == frozenset()
+    m.wipe_now()
+    assert m.retired_frames == {first.id}
+    _turn(m, body, 0.2)
+    _still(m, body, PARAMS.still_s)
+    second = m.fix().frame
+    assert second is not None and second.id not in m.retired_frames
+    m.wipe_now()
+    assert m.retired_frames == {first.id, second.id}
+
+
 def test_a_map_wiped_in_an_earlier_session_stays_wiped() -> None:
     """The same room is the same frame from one session to the next, and a wipe in one of them
     orphans what was marked before it in every session after."""

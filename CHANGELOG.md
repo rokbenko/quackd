@@ -31,7 +31,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   keeps where the robot stood, which `robot_recall` and the next run's prompt read back as how far
   it was from the places and from here. Places live beside the memory file, keyed as it is, and
   nothing is written with `--no-memory` or on a dry run. A Microduck on `jsonrpc` or `mock` has
-  them, and so does its simulator in a room (below); MOSS and rosbridge do not yet
+  them, and so do its simulator in a room, MOSS and a rosbridge base (below)
   ([docs/concepts/places.md](docs/concepts/places.md),
   [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
 - **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
@@ -74,6 +74,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   planner's gates again before each goal. A rosbridge base reads `/odom`, every message as it
   arrives, and since it has no deadman, a walk whose reading stops moving on holds the base still
   with a zero Twist and then ends ([docs/concepts/places.md](docs/concepts/places.md)).
+- **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
+  far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
+  every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`
+  read and change the place file with nothing connected. `quackd map --wipe` forgets a robot's
+  map, the only way quackd ever wipes one: it asks the person at the terminal, naming the places it
+  orphans, and refuses without one. A simulator's map wiped in one session stays wiped in every
+  session after ([docs/guides/places.md](docs/guides/places.md)).
 
 ### Fixed
 
