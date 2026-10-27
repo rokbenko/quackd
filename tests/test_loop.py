@@ -7,7 +7,7 @@ import copy
 import itertools
 import json
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -4428,7 +4428,10 @@ class _FallBlindDuck(OpenDuckMock):
 
 
 def _fall_blind(
-    runs: Path, acknowledge: Callable[[str], bool], *, run_dir: Path | None = None
+    runs: Path,
+    acknowledge: Callable[[str], bool | Awaitable[bool]],
+    *,
+    run_dir: Path | None = None,
 ) -> RunConfig:
     """A run that reaches the fall warning: a task that can make this body walk is the whole
     of what turns it on. `run_dir` is for the ending that raises, where there is no
@@ -4524,6 +4527,68 @@ async def test_the_fall_warning_is_the_answer_that_used_to_be_recorded_nowhere(
         await run_duck(_fall_blind(tmp_path / "no", not_watching, run_dir=run_dir))
     refused = _prompts(Transcript.read(run_dir / "transcript.jsonl"))
     assert [(what, answer) for what, _question, answer in refused] == [("acknowledge", False)]
+
+
+def _later(answer: bool) -> Callable[[str], Awaitable[bool]]:
+    """A person who answers `answer` from a coroutine, as a drive session's goal asks the person
+    driving while the session goes on reading lines."""
+
+    async def says(_why: str) -> bool:
+        await asyncio.sleep(0)
+        return answer
+
+    says.asks_a_person = True  # type: ignore[attr-defined]
+    return says
+
+
+async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A coroutine is truthy: read without waiting, a no given later was a go nobody gave, and
+    the body moved. Both questions wait for the answer, and a no stays a no."""
+    transport = MockTransport()
+    refused = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    _verdict_call("uncertain", "cannot see the thing from here"),
+                    ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 1.0}),
+                ]
+            ),
+            transport=transport,
+            runs_dir=tmp_path / "decide-no",
+            decide=_later(False),
+        )
+    )
+    assert refused.outcome == "aborted", refused.reason
+    assert "and a person said no" in refused.reason
+    assert [i.kind for i in transport.intents if i.kind != "stop"] == [], "nothing moved"
+
+    cleared = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider(
+                script=[
+                    _verdict_call("uncertain", "cannot see the thing from here"),
+                    ToolCall(name="declare_success", arguments={"reason": "looked"}),
+                ]
+            ),
+            transport=MockTransport(),
+            runs_dir=tmp_path / "decide-yes",
+            decide=_later(True),
+        )
+    )
+    assert cleared.outcome == "success", cleared.reason
+    rows = _prompts(Transcript.read(cleared.run_dir / "transcript.jsonl"))
+    assert [(what, answer) for what, _question, answer in rows] == [("decide", True)]
+
+    watched = await run_duck(_fall_blind(tmp_path / "yes", _later(True)))
+    assert watched.outcome == "success", watched.reason
+    run_dir = tmp_path / "no"
+    run_dir.mkdir()
+    with pytest.raises(Aborted, match="watching"):
+        await run_duck(_fall_blind(tmp_path / "no", _later(False), run_dir=run_dir))
 
 
 async def test_both_waits_of_a_hand_off_record_what_the_person_said(tmp_path: Path) -> None:

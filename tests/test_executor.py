@@ -664,6 +664,64 @@ async def test_whether_anybody_is_there_is_asked_when_the_question_is_put(
     ]
 
 
+def _later(answer: bool, put: asyncio.Event | None = None) -> Any:
+    """A confirm that answers from a coroutine, as a drive session's goal asks the person
+    driving, marked as one that reaches a person. With `put`, it never answers: it sets `put`
+    and waits."""
+
+    async def says(_name: str, _params: dict[str, Any]) -> bool:
+        await asyncio.sleep(0)
+        if put is not None:
+            put.set()
+            await asyncio.Event().wait()
+        return answer
+
+    says.asks_a_person = True  # type: ignore[attr-defined]
+    return says
+
+
+async def test_a_confirm_answered_later_is_waited_for(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A coroutine is truthy: read without waiting, a no given later was a yes nobody gave, and
+    the kick ran. The executor waits for it, a yes opens the gate and a no shuts it."""
+    ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
+    ex.confirm = _later(True)
+    assert (await ex.run_verb("kick")).ok
+    assert mock_transport.intents_of("do"), "the kick was sent on the yes"
+    assert _confirm_gate(seen)["reason"] == "a human said yes"
+    assert [e.data["answer"] for e in seen if e.kind == "prompt"] == [True]
+
+    transport = MockTransport()
+    ex2, seen2 = logged(registry, transport, allow="quack, kick", confirm="kick")
+    ex2.confirm = _later(False)
+    with pytest.raises(ConfirmDenied, match="human declined kick"):
+        await ex2.run_verb("kick")
+    assert not transport.intents_of("do"), "and nothing was sent on the no"
+    assert _confirm_gate(seen2)["reason"] == "a human said no"
+
+
+async def test_a_confirm_still_waiting_when_the_run_is_stopped_was_answered_by_nobody(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A brake, a newer line or the page's Stop while the question waits takes it back: the
+    gate is denied with nobody's answer, no `prompt` row says somebody said no, and nothing
+    moves."""
+    put = asyncio.Event()
+    ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
+    ex.confirm = _later(True, put)
+    running = asyncio.ensure_future(ex.run_verb("kick"))
+    await asyncio.wait_for(put.wait(), timeout=2)
+    ex.abort.set()
+    with pytest.raises(ConfirmDenied, match="nobody answered whether to run kick"):
+        await asyncio.wait_for(running, timeout=2)
+    gate = _confirm_gate(seen)
+    assert gate["answer"] is None
+    assert gate["reason"] == "the prompt raised QuestionWithdrawn: the run was stopped"
+    assert not [e for e in seen if e.kind == "prompt"]
+    assert not mock_transport.intents_of("do")
+
+
 # ── a dangerous verb needs a person (ADR-0056) ──────────────────────────────────────────
 
 

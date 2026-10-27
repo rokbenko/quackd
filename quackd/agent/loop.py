@@ -69,6 +69,7 @@ from quackd.agent.providers.base import (
 from quackd.agent.providers.catalogue import Price
 from quackd.agent.providers.pricing import resolve_price, turn_cost
 from quackd.agent.transcript import Transcript, new_run_dir, run_label
+from quackd.answers import answered
 from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
@@ -436,15 +437,15 @@ class RunConfig:
     fov_deg: float | None = None
     """The horizontal field of view of the camera actually in front of you. None falls back
     to the robot's manifest, then to the simulator's, which is flagged as uncalibrated."""
-    acknowledge: Callable[[str], bool] | None = None
+    acknowledge: Callable[[str], bool | Awaitable[bool]] | None = None
     """Asked once, before the first leg moves, when the robot cannot see a fall and cannot
     recover from one — so the only guard is the person in the room. None means nobody is
     there to ask (MCP, tests), and the warning is logged instead of blocking."""
-    decide: Callable[[str], bool] | None = None
+    decide: Callable[[str], bool | Awaitable[bool]] | None = None
     """Asked when the pilot says it is not sure this body can do the task, so a person makes
     the call. None means nobody is there (MCP, tests), and the pilot is told to decide itself
     rather than being cleared by default."""
-    judge: Callable[[str], bool] | None = None
+    judge: Callable[[str], bool | Awaitable[bool]] | None = None
     """Asked once, when a pilot that cannot tell whether its task was done says it is time
     (`JudgedPilot`, `--controller vla`), whether the arm did it: after its last segment, or
     about the segments that ran when a budget ends the run first. The answer goes to the pilot
@@ -1991,7 +1992,7 @@ class AgentLoop:
         "with feasible or infeasible, on your own responsibility"
     )
 
-    def _assess(self, arguments: dict[str, Any]) -> tuple[VerbResult, str | None]:
+    async def _assess(self, arguments: dict[str, Any]) -> tuple[VerbResult, str | None]:
         """Record the pilot's verdict. Returns what it hears back, and the reason the run ends
         with when the verdict ends it.
 
@@ -2015,7 +2016,9 @@ class AgentLoop:
                 self.executor.verdict = verdict  # recorded, and still not cleared
                 return VerbResult.fail(self.NOBODY_TO_ASK), None
             try:
-                answer = bool(self.cfg.decide(verdict.question()))
+                answer = await answered(
+                    self.cfg.decide, verdict.question(), abort=self.executor.abort
+                )
             except Exception as e:
                 # a prompt that raised on Ctrl-C or EOF has not said yes, the same way the
                 # confirm gate reads it, and nobody said no either: it is recorded as the
@@ -2093,7 +2096,7 @@ class AgentLoop:
 
     # ── a person's word on the task, for a pilot that cannot tell ─────────────────────────
 
-    def _judgement(self, question: str) -> dict[str, Any]:
+    async def _judgement(self, question: str) -> dict[str, Any]:
         """Put `question` to whoever `RunConfig.judge` reaches, record the exchange, and keep
         what the pilot is handed back.
 
@@ -2111,7 +2114,7 @@ class AgentLoop:
         if judge is not None:
             put_at = self.budget.now()
             try:
-                judged["answer"] = bool(judge(question))
+                judged["answer"] = await answered(judge, question, abort=self.executor.abort)
             except Exception as e:
                 judged["raised"] = type(e).__name__
             finally:
@@ -2123,7 +2126,7 @@ class AgentLoop:
         self.judged = judged
         return judged
 
-    def _judged_observation(self, obs: Observation) -> Observation:
+    async def _judged_observation(self, obs: Observation) -> Observation:
         """`obs` with a person's answer on it, where the pilot is one that cannot tell whether
         its task was done and says it is time to ask. Every other turn, and every other pilot,
         gets `obs` as it was."""
@@ -2133,7 +2136,7 @@ class AgentLoop:
         question = pilot.judge_question([*self.history, Exchange(observation=obs)])
         if question is None:
             return obs
-        features = {**obs.features, JUDGE_FEATURE: self._judgement(question)}
+        features = {**obs.features, JUDGE_FEATURE: await self._judgement(question)}
         return obs.model_copy(update={"features": features})
 
     def _a_person_said_yes(self) -> bool:
@@ -2142,7 +2145,7 @@ class AgentLoop:
         judged = self.judged
         return judged is not None and judged["asked"] is True and judged["answer"] is True
 
-    def _cut_short(self, reason: str) -> str:
+    async def _cut_short(self, reason: str) -> str:
         """Why a budget ended a `JudgedPilot`'s run, with what a person said about the segments
         that ran before it did. They are asked now if they were not yet, so a run that spent its
         seconds on two subtasks of three still has somebody's word on those two. The outcome
@@ -2155,7 +2158,7 @@ class AgentLoop:
             question = pilot.judge_question(self.history, cut_short=reason)
             if question is None:
                 return reason
-            judged = self._judgement(question)
+            judged = await self._judgement(question)
         if not judged["asked"]:
             return f"{reason}; no person was asked whether the arm did what ran"
         if "raised" in judged:
@@ -2563,7 +2566,9 @@ class AgentLoop:
                 self._note(warning)
                 if cfg.acknowledge is not None:
                     try:
-                        watching = bool(cfg.acknowledge(warning))
+                        watching = await answered(
+                            cfg.acknowledge, warning, abort=self.executor.abort
+                        )
                     except Exception as e:
                         # A question taken back because the run was stopped ends it for the
                         # stop, which is what happened, and not for a question nobody answered
@@ -2793,7 +2798,7 @@ class AgentLoop:
                 # before the observation is recorded, so the record of the turn carries the
                 # person's answer the pilot is about to read, and after its clock stops, so
                 # the seconds they took to answer are not counted as the observation's
-                obs = self._judged_observation(obs)
+                obs = await self._judged_observation(obs)
                 self._emit(
                     "observation",
                     step=self.budget.steps,
@@ -2976,7 +2981,7 @@ class AgentLoop:
                     # one LLM call, exactly like `remember`
                     last_verb = mine_verb = ASSESS_TASK_NAME
                     standing = self.executor.verdict
-                    last_result, ends_with = self._assess(call.arguments)
+                    last_result, ends_with = await self._assess(call.arguments)
                     mine_result = last_result
                     recorded = self.executor.verdict
                     if recorded is standing:
@@ -3081,7 +3086,7 @@ class AgentLoop:
             # the budget's own reason or keep the teardown below from stopping the robot
             try:
                 with contextlib.suppress(Exception):
-                    reason = self._cut_short(reason)
+                    reason = await self._cut_short(reason)
             except BaseException as interrupted:
                 # the CLI's second Ctrl-C, or a cancel, while that question waits. The handler
                 # for an interrupt below never sees one raised in here, so this one says it:

@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO, cast
 
 from quackd import __version__
+from quackd.answers import QuestionWithdrawn
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -110,10 +111,6 @@ button's, it is no person's stop, so a fold the run began by itself goes on to i
 
 PIPE_POLL_S = 0.05
 """How often stdin is looked at on Windows, where it is never read until something is there."""
-
-
-class QuestionWithdrawn(Exception):
-    """A question the page was asked, taken back before anybody answered it."""
 
 
 def trimmed(value: Any, depth: int = 0) -> Any:

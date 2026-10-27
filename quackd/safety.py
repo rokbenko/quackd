@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn
 from pydantic import ValidationError
 
 from quackd.adapters.base import backend_name
+from quackd.answers import answered
 from quackd.duckfile.schema import (
     DEFAULT_POLICY_TOTAL_S,
     POLICY_VERBS,
@@ -261,8 +262,10 @@ def _segment_seconds(result: VerbResult | None, before: float | None, after: flo
     return 0.0
 
 
-ConfirmFn = Callable[[str, dict[str, Any]], bool]
-"""Asked before a gated verb runs. Return True to proceed."""
+ConfirmFn = Callable[[str, dict[str, Any]], bool | Awaitable[bool]]
+"""Asked before a gated verb runs. Return True to proceed: at once, as a terminal's prompt and
+every standing answer do, or later, from a coroutine, as a drive session's goal asks the person
+driving (`quackd.answers`)."""
 
 
 def deny_all(_name: str, _params: dict[str, Any]) -> bool:
@@ -842,7 +845,7 @@ class Executor:
                 self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
                 raise VerbNotAllowed(reason)
             try:
-                answer = bool(self.confirm(name, parsed.model_dump()))
+                answer = await answered(self.confirm, name, parsed.model_dump(), abort=self.abort)
             except Exception as e:
                 # typer's y/N prompt raises click's `Abort` (a RuntimeError) on Ctrl-C or
                 # EOF. An asker that raised has not said yes, and the run deserves to be told

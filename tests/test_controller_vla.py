@@ -13,10 +13,11 @@ refusal is checked to stop before a run directory exists.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -97,7 +98,7 @@ def _segments(result: RunResult) -> list[str]:
 async def _run(
     tmp_path: Path,
     *,
-    judge: Callable[[str], bool] | None,
+    judge: Callable[[str], bool | Awaitable[bool]] | None,
     decide: Callable[[str], bool] | None = None,
     total_s: float = len(INSTRUCTIONS) * SEGMENT_S,
     confirm: Any = allow_all,
@@ -169,6 +170,26 @@ async def test_a_person_who_says_no_fails_the_run(tmp_path: Path) -> None:
     assert "a person watched the arm and said it did not do the task" in result.reason
     assert _segments(result) == list(INSTRUCTIONS), "every segment ran before the question"
     assert [what for what, _q, _a in _prompts(result)] == ["decide", "judge"]
+
+
+async def test_a_person_who_answers_later_is_waited_for(tmp_path: Path) -> None:
+    """A drive session's VLA goal asks the person driving from a coroutine, which is truthy:
+    read without waiting, a no given later was a success nobody gave."""
+
+    def later(answer: bool) -> Callable[[str], Awaitable[bool]]:
+        async def ask(_question: str) -> bool:
+            await asyncio.sleep(0)
+            return answer
+
+        ask.asks_a_person = True  # type: ignore[attr-defined]
+        return ask
+
+    said_yes = await _run(tmp_path / "yes", judge=later(True))
+    assert said_yes.outcome == "success", said_yes.reason
+    said_no = await _run(tmp_path / "no", judge=later(False))
+    assert said_no.outcome == "failure", said_no.reason
+    assert "a person watched the arm and said it did not do the task" in said_no.reason
+    assert [what for what, _q, _a in _prompts(said_no)] == ["decide", "judge"]
 
 
 async def test_a_yes_nobody_gave_is_not_a_success(tmp_path: Path) -> None:
