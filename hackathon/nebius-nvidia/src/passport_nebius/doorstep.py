@@ -249,8 +249,16 @@ def is_set_up(state: Path) -> bool:
     )
 
 
-def run_args(robot: Robot, state: Path, act: str, *, meet: str | None) -> list[str]:
-    """`quackd run`'s arguments for one side, everything but the pilot."""
+def run_args(
+    robot: Robot, state: Path, act: str, *, meet: str | None, unattended: bool = False
+) -> list[str]:
+    """`quackd run`'s arguments for one side, everything but the pilot.
+
+    `unattended` is a run nobody sits at, so no person can answer a pilot that is unsure its
+    body can do the task: quackd's own `--yes` answers go instead, and the run's record names
+    `--yes` as having said it, never a person. A pilot that judges its task infeasible still
+    ends its run, `--yes` or not. Without it the question reaches nobody and the run ends before
+    it starts, which is how the first run against Token Factory ended."""
     args = [
         str(scenario(robot)),
         "--robot",
@@ -268,6 +276,8 @@ def run_args(robot: Robot, state: Path, act: str, *, meet: str | None) -> list[s
     ]
     if meet is not None:
         args += ["--meet", meet]
+    if unattended:
+        args.append("--yes")
     return args
 
 
@@ -307,12 +317,14 @@ def launches(
         raise NebiusError(f"--role is one of {', '.join(ROLES)}")
     if act not in ACTS:
         raise NebiusError(f"--act is one of {', '.join(ACTS)}")
+    # with both runs here, their output goes to files and neither reads a terminal
+    unattended = role == "both"
     chosen: list[tuple[Robot, Launch]] = []
     if role in ("both", "postman"):
-        args = run_args(POSTMAN, state, act, meet=None)
+        args = run_args(POSTMAN, state, act, meet=None, unattended=unattended)
         chosen.append((POSTMAN, _launch(POSTMAN, postman, args, vision)))
     if role in ("both", "duck"):
-        args = run_args(DUCK, state, act, meet=postman_at)
+        args = run_args(DUCK, state, act, meet=postman_at, unattended=unattended)
         chosen.append((DUCK, _launch(DUCK, duck, args, vision)))
     return chosen
 

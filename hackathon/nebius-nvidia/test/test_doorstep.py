@@ -113,12 +113,12 @@ def test_the_postman_starts_first_and_the_duck_meets_it(tmp_path: Path) -> None:
     assert d.argv[d.argv.index("--meet") + 1] == "10.0.0.5:8790"
     assert d.argv[d.argv.index("--talk-port") + 1] == "8791"
     assert p.argv[p.argv.index("--registry-dir") + 1] != d.argv[d.argv.index("--registry-dir") + 1]
-    assert [
-        robot
-        for robot, _ in doorstep.launches(
-            tmp_path, "stranger", "duck", postman=None, duck=BRAIN, postman_at="x:1"
-        )
-    ] == [doorstep.DUCK]
+    assert "--yes" in p.argv and "--yes" in d.argv, "nobody is at a terminal to answer for them"
+    alone = doorstep.launches(
+        tmp_path, "stranger", "duck", postman=None, duck=BRAIN, postman_at="x:1"
+    )
+    assert [robot for robot, _ in alone] == [doorstep.DUCK]
+    assert "--yes" not in alone[0][1].argv, "a run in a terminal leaves its doubts to a person"
     with pytest.raises(nebius.NebiusError, match="--role"):
         doorstep.launches(
             tmp_path, "stranger", "neither", postman=BRAIN, duck=BRAIN, postman_at="x:1"
@@ -206,13 +206,16 @@ def _latest(body: dict[str, Any]) -> str:
 class TwoPilots:
     """Both pilots' scripts, one turn per request, each robot's own count."""
 
-    def __init__(self, *, linger: int = 0) -> None:
+    def __init__(self, *, linger: int = 0, doubt: bool = False) -> None:
         self.turns = {"postman": 0, "duck": 0}
         self.told: str | None = None
         self.duck_waits = 0
         self.linger = linger
         """Turns the duck goes on for once it heard the phrase, so a pause can land."""
         self.lingered = 0
+        self.doubt = doubt
+        """Whether the postman first judges its task uncertain, as Nemotron did on the first
+        run against Token Factory, since Agile ONE SN's reach is not published."""
         self.lock = threading.Lock()
 
     def __call__(self, n: int, body: dict[str, Any]) -> tuple[int, Any]:
@@ -226,6 +229,8 @@ class TwoPilots:
         model = str(body.get("model"))
         if turn == 1:
             verdict = {"verdict": "feasible", "reason": "a letter weighs next to nothing"}
+            if who == "postman" and self.doubt:
+                verdict = {"verdict": "uncertain", "reason": "my reach is not published"}
             return 200, tool_completion(n, "assess_task", verdict, model)
         seen = _latest(body)
         if who == "postman":
@@ -255,13 +260,13 @@ class TwoPilots:
 
 
 def _play(
-    state: Path, act: str, *, brake: bool = False, onboard: bool = False
+    state: Path, act: str, *, brake: bool = False, onboard: bool = False, doubt: bool = False
 ) -> tuple[FakeTokenFactory, FakeTokenFactory | None, TwoPilots, dict[str, int], list[str]]:
     """One act, both robots, the stand-in playing both pilots. With `onboard`, a second
     stand-in is the postman's own model server, its key the one $ONBOARD_API_KEY holds, and
     the first is left with the duck's pilot alone. With `brake`, the postman asks the duck for a
     pause a few seconds into its run, as `doorstep pause` does."""
-    pilots = TwoPilots(linger=8 if brake else 0)
+    pilots = TwoPilots(linger=8 if brake else 0, doubt=doubt)
     braked: list[str] = []
     threads: list[threading.Thread] = []
 
@@ -355,8 +360,14 @@ def test_appointment_words_and_the_beaks_limit_reach_each_model(
 
 @needs_ports
 def test_strangers_neither_words_nor_the_beaks_limit_reach_a_model(tmp_path: Path) -> None:
-    stand_in, _own, pilots, codes, _braked = _play(tmp_path / "doorstep", "stranger")
-    assert codes == {"postman-01": 0, "duck-01": 0}
+    """The postman first doubts it can do its task, as Nemotron did on the first run against
+    Token Factory. Nobody is at a terminal with both runs here, so quackd's --yes answers it, and
+    the act goes on."""
+    stand_in, _own, pilots, codes, _braked = _play(tmp_path / "doorstep", "stranger", doubt=True)
+    logs = tmp_path / "doorstep" / "logs"
+    postman_log = (logs / "postman-01.log").read_text(encoding="utf-8", errors="replace")
+    assert codes == {"postman-01": 0, "duck-01": 0}, postman_log[-2000:]
+    assert "uncertain" in postman_log, "the postman did doubt"
     assert pilots.told is not None and pilots.told.startswith("stranger-")
     assert not _saw(stand_in, DUCK_TASK, PHRASE)
     assert not _saw(stand_in, DUCK_TASK, "postman-01"), "a name a stranger chose is its own words"
