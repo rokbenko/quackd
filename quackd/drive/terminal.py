@@ -69,22 +69,48 @@ class Asker:
     """A yes-or-no question put to the person at the keyboard: `y` or `yes` typed next is yes,
     and `n` or `no` is no. Any other line is not an answer. An empty Enter or `stop` brakes as it
     always does, and a command drops the question as a newer line drops any line still being
-    routed, so neither is taken for a no while something is still moving."""
+    routed, so neither is taken for a no while something is still moving.
+
+    One question is shown at a time, oldest first. A goal asks from its own task while a line
+    typed over it may ask too, and a `y` answers the question on the screen, never one put after
+    it; the next is shown once that one is answered or taken back.
+
+    Marked as a person, for the record of a goal's questions put through it: the keyboard opens
+    only where a person is at the terminal (`quackd.cli._can_prompt`)."""
+
+    asks_a_person = True
 
     def __init__(self, say: Callable[[str], None]) -> None:
         self.say = say
-        self.pending: asyncio.Future[bool] | None = None
+        self.waiting: list[tuple[str, asyncio.Future[bool]]] = []
+        """Every question not yet answered or taken back, oldest first: the first is shown."""
 
-    async def __call__(self, question: str) -> bool:
-        self.say(f"{'ask':<8} {question} [y/N]")
-        self.pending = asyncio.get_running_loop().create_future()
+    @property
+    def pending(self) -> asyncio.Future[bool] | None:
+        """The question on the screen, or None."""
+        return self.waiting[0][1] if self.waiting else None
+
+    async def __call__(
+        self, question: str, *, detail: str | None = None, kind: str = "drive"
+    ) -> bool:
+        shown = f"{detail} {question}" if detail else question
+        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        self.waiting.append((shown, future))
+        if len(self.waiting) == 1:
+            self._show()
         try:
-            return await self.pending
+            return await future
         finally:
-            self.pending = None
+            was_shown = bool(self.waiting) and self.waiting[0][1] is future
+            self.waiting = [(q, f) for q, f in self.waiting if f is not future]
+            if was_shown and self.waiting:
+                self._show()
+
+    def _show(self) -> None:
+        self.say(f"{'ask':<8} {self.waiting[0][0]} [y/N]")
 
     def answers(self, line: str) -> bool:
-        """Whether `line` answered a question, which it then has."""
+        """Whether `line` answered the question on the screen, which it then has."""
         pending = self.pending
         said = answer_word(line)
         if pending is None or pending.done() or said is None:
@@ -165,12 +191,24 @@ class PageAsker:
     waits, and a session nobody watches is ended by the page."""
 
     def __init__(self, front: Front, say: Callable[[str], None]) -> None:
+        from quackd.front import CHANNEL
+
         self.front = front
         self.say = say
+        self.channel = CHANNEL
+        """Where a goal's questions put through this were answered, for its record."""
 
-    async def __call__(self, question: str) -> bool:
-        self.say(f"{'ask':<8} {question} [answered in the page]")
-        return await self.front.questions.ask_async("drive", question)
+    async def __call__(
+        self, question: str, *, detail: str | None = None, kind: str = "drive"
+    ) -> bool:
+        shown = f"{detail} {question}" if detail else question
+        self.say(f"{'ask':<8} {shown} [answered in the page]")
+        return await self.front.questions.ask_async(kind, question, detail)
+
+    def asks_a_person(self) -> bool:
+        """Whether the page is there to answer, asked as each question is put: false once its
+        input has ended, as the run's own questions in the page are marked."""
+        return self.front.questions.someone_there()
 
 
 async def drive_from_jsonl(

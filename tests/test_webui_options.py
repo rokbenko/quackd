@@ -75,7 +75,10 @@ def test_one_set_of_choices_makes_both_commands() -> None:
     run = argv_for("run", chosen)
     drive = argv_for("drive", chosen)
     assert "--play" in run and "--no-gif" in run
-    assert drive == ["drive", "--robot", "microduck:sim2d", "--seed", "3", "--llm", "fake"]
+    assert drive == [
+        "drive",
+        *("--robot", "microduck:sim2d", "--seed", "3", "--llm", "fake", "--play"),
+    ], "drive takes --play for its goals, and no GIF"
     parsed(drive)
 
 

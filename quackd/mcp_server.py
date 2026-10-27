@@ -1323,6 +1323,7 @@ def fleet_from_flags(
     async_chunks: bool = True,
     room: str | None = None,
     map_address: str | None = None,
+    fov_deg: float | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1510,7 +1511,9 @@ def fleet_from_flags(
                 (detector or "").strip().lower() or None,
                 client=board,
                 hello=hello,
-                fov_deg=described.limits.get("camera_fov_deg"),
+                # `--fov-deg`, where `quackd drive` was given it, as `quackd run` builds its
+                # detector through it; serve-mcp takes no such flag
+                fov_deg=fov_deg or described.limits.get("camera_fov_deg"),
                 backend=specs[0].backend,
                 has_camera="camera" in described.sensors,
             )

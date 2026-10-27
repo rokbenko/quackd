@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 
@@ -31,6 +31,22 @@ class QuestionWithdrawn(Exception):
 
 WITHDRAWN = "the run was stopped"
 """What a question the run's abort took back says it was withdrawn for."""
+
+GO_AHEAD = "Go ahead anyway?"
+"""What a person is asked under the pilot's reason for doubting the task (`decide`)."""
+WATCHING = "Are you watching the robot right now?"
+"""What a person is asked under the warning about a body that cannot see a fall
+(`acknowledge`)."""
+DID_IT = "Did the arm do it?"
+"""What a person is asked under what ran, for a pilot that cannot tell (`judge`)."""
+
+
+def confirm_question(name: str, params: Mapping[str, Any]) -> str:
+    """The confirm gate's question, `run kick(leg=left)?`, in the words the gate's record quotes,
+    however the question is put."""
+    from quackd.log import fmt_params
+
+    return f"run {name}({fmt_params(params)})?"
 
 
 async def answered(

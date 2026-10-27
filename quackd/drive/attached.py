@@ -42,6 +42,11 @@ class AttachedBody:
     """Not callable, so a goal leaves the length of the arm's policy segments as the session's
     contract set it: a goal's own, its contract's default, was set on the session's arm and
     outlived the goal, under the session's `manipulate` timeout for its own length."""
+    lens_given: Any = None
+    """Not callable, so a goal leaves the lens the body names in every state as the session gave
+    it: `--fov-deg` is the session's, told to the body once as it connected
+    (`quackd.drive.run`), and each goal measures through the same lens without telling it
+    again."""
 
     def __init__(self, inner: Any, manifest: RobotManifest) -> None:
         self._inner = inner

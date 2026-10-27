@@ -527,8 +527,12 @@ class RunConfig:
     front: str | None = None
     """The front end the run's questions are put through and its narration read by, where it is
     not the terminal: `jsonl` for the page `quackd ui` (`quackd.front`). Written into
-    `run_start`; None is every terminal run, whose record says nothing of it. Last in the class,
-    for the reason `play` gives."""
+    `run_start`; None is every terminal run, whose record says nothing of it."""
+    places: PlaceStore | None = None
+    """Where the run marks and reads the robot's places, where its caller holds the store: a
+    drive session's own, which each goal shares with the commands typed between goals, so a
+    place marked in one is there for the next. None is every other run, which keeps its places
+    beside its memory (`_place_store`). Last in the class, for the reason `play` gives."""
 
 
 @dataclass
@@ -648,7 +652,9 @@ class AgentLoop:
             # writes exactly the frame and the record `on_frame` wrote before there were two
             on_frames=self._on_frames,
             event_log=self.event_log,
-            places=_place_store(cfg.memory, dry_run=cfg.dry_run),
+            places=cfg.places
+            if cfg.places is not None
+            else _place_store(cfg.memory, dry_run=cfg.dry_run),
         )
         self.stop_reason: str | None = None
         """Why the run is being stopped from outside, in the words it ends with, by whoever sets

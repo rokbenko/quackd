@@ -71,6 +71,32 @@ async def test_a_question_is_answered_by_a_yes_or_a_no_and_by_nothing_else() -> 
     assert not asker.answers("y"), "a line with no question pending was taken for an answer"
 
 
+async def test_questions_are_shown_one_at_a_time_and_a_yes_answers_the_one_shown() -> None:
+    """A goal asks from its own task while a line typed over it may ask too. With one question
+    pending at a time the second took the first's place, and the first waited for an answer
+    nobody could give; a `y` meant for the one on the screen must never answer another."""
+    said: list[str] = []
+    asker = Asker(said.append)
+    first = asyncio.ensure_future(asker("run kick(leg=left)?", kind="confirm"))
+    second = asyncio.ensure_future(
+        asker("Go ahead anyway?", detail="The ball is out of frame.", kind="decide")
+    )
+    await asyncio.sleep(0)
+    assert said == ["ask      run kick(leg=left)? [y/N]"], "only the first is shown"
+    assert asker.answers("y") and await asyncio.wait_for(first, 2) is True
+    await asyncio.sleep(0)
+    assert said[-1] == "ask      The ball is out of frame. Go ahead anyway? [y/N]"
+    third = asyncio.ensure_future(asker("did you mean forward?"))
+    await asyncio.sleep(0)
+    second.cancel()  # a brake ended the goal, and took its question back
+    with pytest.raises(asyncio.CancelledError):
+        await second
+    await asyncio.sleep(0)
+    assert said[-1] == "ask      did you mean forward? [y/N]"
+    assert asker.answers("n") and await asyncio.wait_for(third, 2) is False
+    assert asker.pending is None and not asker.answers("y")
+
+
 async def _at_keyboard(drive: Any, said: list[str], typed: Any) -> asyncio.Future[None]:
     """The keyboard front end on `typed`, its asker the session's, as `run_drive` wires them."""
     from prompt_toolkit.output import DummyOutput

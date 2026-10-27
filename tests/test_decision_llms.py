@@ -524,6 +524,34 @@ async def test_the_in_process_one_answers_from_its_own_mapping(
     assert router.calls[0][0] == {"goal": "look"}
 
 
+async def test_the_in_process_one_runs_one_forward_pass_at_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A drive session's fast lane and a goal's stepper ask the one router, each from a thread
+    of its own, and nothing says its weights may run from two threads at once."""
+    import threading
+    import time
+
+    running: list[int] = []
+    most: list[int] = []
+    lock = threading.Lock()
+
+    class Overlapping(fake_laya.FakeRouter):
+        def predict(self, state: Any, questions: Any, model: Any = None) -> Any:
+            with lock:
+                running.append(1)
+                most.append(len(running))
+            time.sleep(0.05)
+            with lock:
+                running.pop()
+            return super().predict(state, questions, model)
+
+    fake_laya.install(monkeypatch, Overlapping(answers=fake_laya.turn("stop")))
+    llm = make_decision_llm(PRESETS["laya"])
+    await asyncio.gather(*(llm.decide({"goal": str(n)}, {}) for n in range(3)))
+    assert len(most) == 3 and max(most) == 1, "two forward passes ran at once"
+
+
 async def test_the_in_process_one_loads_once_and_asks_for_the_decision_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

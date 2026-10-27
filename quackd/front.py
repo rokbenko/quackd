@@ -69,7 +69,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO, cast
 
 from quackd import __version__
-from quackd.answers import QuestionWithdrawn
+from quackd.answers import DID_IT, GO_AHEAD, WATCHING, QuestionWithdrawn, confirm_question
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -600,9 +600,7 @@ class Answerer:
 
 def _confirm_words(name: str, params: dict[str, Any]) -> tuple[str, str | None]:
     # the executor quotes the question in its record in exactly these words
-    from quackd.log import fmt_params
-
-    return f"run {name}({fmt_params(params)})?", None
+    return confirm_question(name, params), None
 
 
 def quiet_broken_pipes() -> None:
@@ -649,11 +647,9 @@ class Front:
         self.outcome: dict[str, Any] | None = None
         """What `end` reports, once known: a run's result, a refusal or an error."""
         self.confirm = Answerer(self, "confirm", _confirm_words)
-        self.decide = Answerer(self, "decide", lambda why: ("Go ahead anyway?", why))
-        self.acknowledge = Answerer(
-            self, "acknowledge", lambda why: ("Are you watching the robot right now?", why)
-        )
-        self.judge = Answerer(self, "judge", lambda why: ("Did the arm do it?", why))
+        self.decide = Answerer(self, "decide", lambda why: (GO_AHEAD, why))
+        self.acknowledge = Answerer(self, "acknowledge", lambda why: (WATCHING, why))
+        self.judge = Answerer(self, "judge", lambda why: (DID_IT, why))
 
     @classmethod
     def open(cls, command: str) -> Front:

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
+from quackd.answers import DID_IT, GO_AHEAD, WATCHING, confirm_question
 from quackd.drive.attached import AttachedBody
 from quackd.drive.lanes import (
     BRAKE_WORDS,
@@ -34,7 +35,7 @@ from quackd.drive.lanes import (
     session_word,
 )
 from quackd.drive.presets import presets_for
-from quackd.duckfile.schema import Budgets
+from quackd.duckfile.schema import POLICY_VERB, Budgets, instruction_line
 from quackd.latency import spread
 from quackd.safety import (
     BudgetExceeded,
@@ -47,11 +48,15 @@ from quackd.safety import (
 )
 
 if TYPE_CHECKING:
+    from quackd.agent.decision.base import DecisionLLM
+    from quackd.agent.decision.catalogue import DecisionMode
     from quackd.agent.decision.commands import Choice, CommandChooser
     from quackd.agent.providers.base import LLMProvider
+    from quackd.agent.providers.catalogue import Price
     from quackd.duckfile.schema import DuckFile
     from quackd.log import Sink
     from quackd.mcp_server import RobotSession
+    from quackd.memory import RobotMemory
     from quackd.verbs.registry import Verb
 
 BRAKE = "the brake"
@@ -128,6 +133,72 @@ class Answered:
         if answer is None or not answer.person or answer.channel in (None, "keyboard"):
             return None
         return answer.channel
+
+
+def _go(_why: str) -> bool:
+    """`--yes` answers a goal's doubt as it answers a run's: go."""
+    return True
+
+
+_go.answers_as = "--yes"  # type: ignore[attr-defined]
+"""What a goal's record names as having said go (`quackd.log.who_answered`), never a person."""
+
+
+@dataclass(frozen=True)
+class GoalSettings:
+    """What every goal of a session is flown with, beside its own line and the session's
+    contract: the flags `quackd run` takes for one goal, given once for the whole session. The
+    defaults are a session started with none of them, whose goals fly as they always have."""
+
+    max_steps: int | None = None
+    """`--max-steps`: each goal's steps, within what the session has left of its own."""
+    play: bool | None = None
+    """`--play`: whether a goal may give its pilot a part to play."""
+    price: str | None = None
+    """`--price`: what the pilot's model costs, over the catalogue."""
+    memory: RobotMemory | None = None
+    """`--memory`: the robot's memory, which each goal recalls and adds one fact to. None, the
+    default in drive, keeps none."""
+    fov_deg: float | None = None
+    """`--fov-deg`, which each goal measures through as the session does. The session told the
+    body once, as it connected, and a goal never tells it again (`AttachedBody.lens_given`)."""
+    decision: DecisionMode = "off"
+    """`--decision-mode`: how much a goal's stepper may do. `off` unless the command line said
+    otherwise: `--decision-llm` alone is the fast lane, and never a goal's stepper."""
+    decision_llm: DecisionLLM | None = None
+    """The decision LLM a goal's stepper asks, the fast lane's own client, where a goal has one."""
+    decision_price: Price | None = None
+    decision_frames: bool = False
+    """`--decision-frames`: whether a goal's stepper is shown the camera, and `watch` offered."""
+    vla: bool = False
+    """`--controller vla`: each goal is one instruction to the arm's learned policy, which a
+    scripted pilot hands over and the person driving judges."""
+    policy: bool = False
+    """Whether the body hands `manipulate` to a policy server (`--policy-url`), which a goal
+    then allows behind the confirm gate, as `quackd run --goal` allows it."""
+
+
+class GoalAsker:
+    """One of the questions a goal puts, to the person driving the session, at the keyboard or
+    in the page where the goal's line was typed. The goal waits for the answer while the session
+    goes on reading lines (`quackd.answers`), and a brake or a newer line ends the goal and takes
+    the question back. Marked for the goal's record as the session's own asker is marked."""
+
+    def __init__(
+        self,
+        ask: Callable[..., Awaitable[bool]],
+        kind: str,
+        words: Callable[..., tuple[str, str | None]],
+    ) -> None:
+        self._ask = ask
+        self._kind = kind
+        self._words = words
+        self.asks_a_person: Any = getattr(ask, "asks_a_person", False)
+        self.channel: str | None = getattr(ask, "channel", None)
+
+    async def __call__(self, *args: Any) -> bool:
+        question, detail = self._words(*args)
+        return bool(await self._ask(question, detail=detail, kind=self._kind))
 
 
 @dataclass
@@ -216,13 +287,11 @@ def _confirm_question(matched: Matched, verb: Verb) -> str | None:
     """The question the confirm gate's record quotes for this call (`prompt`), word for word, so
     a person is asked what the record says they were asked. None where the arguments do not fit
     the verb, which the gate refuses before it asks anybody anything."""
-    from quackd.log import fmt_params
-
     try:
         parsed = verb.params.model_validate(matched.arguments)
     except ValidationError:
         return None
-    return f"run {matched.verb}({fmt_params(parsed.model_dump())})?"
+    return confirm_question(matched.verb, parsed.model_dump())
 
 
 def _denied(matched: Matched, answer: _Answer | None, error: Exception) -> str:
@@ -246,7 +315,7 @@ class DriveSession:
     question is answered no. `pilot(goal)` hands over the pilot a goal is flown by: the scripted
     one is built afresh for each goal, since it picks its strategy from the goal's own words, and
     a vendor's is the one client for every goal. `goals` is where each goal's own run directory
-    goes."""
+    goes, and `settings` what every goal is flown with beside its line (`GoalSettings`)."""
 
     def __init__(
         self,
@@ -257,11 +326,12 @@ class DriveSession:
         pilot: Callable[[str], LLMProvider] | None = None,
         goals: Path | None = None,
         goal_verbs: Sequence[str] = (),
-        ask: Callable[[str], Awaitable[bool]] | None = None,
+        ask: Callable[..., Awaitable[bool]] | None = None,
         yes: bool = False,
         clock: Callable[[], float] = time.perf_counter,
         goal_view: Callable[[int], Sink | None] | None = None,
         goal_frames: Callable[[Any, str], None] | None = None,
+        settings: GoalSettings | None = None,
     ) -> None:
         self.robot = robot
         self.record = record
@@ -277,6 +347,7 @@ class DriveSession:
         page's (`quackd.front`). None, at a terminal, leaves a goal's record to its transcript."""
         self.goal_frames = goal_frames
         """Where a goal's camera frames go as they are taken, for the page as `goal_view` is."""
+        self.settings = settings or GoalSettings()
         self.stats = Stats()
         self._count = itertools.count(1)
         self._goal_count = itertools.count(1)
@@ -323,7 +394,7 @@ class DriveSession:
             return None
         if cmd.by != "person" or self.ask is None:
             return f"{warning} Nobody here can say they are watching it: pass --yes to say so."
-        watching = await self._asked(f"{warning} Are you watching the robot right now?")
+        watching = await self._asked(WATCHING, detail=warning, kind="acknowledge")
         self.record(
             "prompt",
             what="acknowledge",
@@ -547,10 +618,12 @@ class DriveSession:
             return True
         return False
 
-    async def _asked(self, question: str) -> bool:
+    async def _asked(
+        self, question: str, *, detail: str | None = None, kind: str = "drive"
+    ) -> bool:
         if self.ask is None:
             return False
-        return bool(await self.ask(question))
+        return bool(await self.ask(question, detail=detail, kind=kind))
 
     # ── running ──
 
@@ -659,13 +732,26 @@ class DriveSession:
     def _gated_for_goals(self) -> list[str]:
         """The verbs a goal runs behind a confirm: those the session's `.duck` gates, among the
         goal's own. A goal is a contract of its own, written from its line, and one that left the
-        session's gates out let the pilot run a verb the `.duck` asks a yes for without one."""
+        session's gates out let the pilot run a verb the `.duck` asks a yes for without one.
+
+        And `manipulate`, where the body hands it to a policy server and the session allows it:
+        no safe verb, so a goal allows it behind the gate, as `quackd run --goal` does
+        (`duck_from_goal`), or a goal could never use the policy the session was given."""
+        executor = self.robot.executor
+        registry = executor.registry
+        gated: list[str] = []
         duck = self.robot.duck
-        if duck is None:
-            return []
-        registry = self.robot.executor.registry
-        gated = {registry.canonical(name) for name in duck.frontmatter.verbs.confirm}
-        return [name for name in self.goal_verbs if registry.canonical(name) in gated]
+        if duck is not None:
+            confirmed = {registry.canonical(name) for name in duck.frontmatter.verbs.confirm}
+            gated = [name for name in self.goal_verbs if registry.canonical(name) in confirmed]
+        if (
+            self.settings.policy
+            and POLICY_VERB in registry
+            and executor.is_allowed(POLICY_VERB)
+            and POLICY_VERB not in gated
+        ):
+            gated.append(POLICY_VERB)
+        return gated
 
     async def _take_over(self, cmd: Command) -> None:
         """Make `cmd` the one mover: whatever is moving the body, a verb or a goal, is ended for
@@ -712,7 +798,12 @@ class DriveSession:
         walked where the session's own budget or battery rule had stopped a typed call."""
         from quackd.duckfile.parser import duck_from_goal
 
-        duck = duck_from_goal(text, self.goal_verbs or ["stop"], confirm=self._gated_for_goals())
+        duck = duck_from_goal(
+            text,
+            self.goal_verbs or ["stop"],
+            confirm=self._gated_for_goals(),
+            memory=self.settings.memory is not None,
+        )
         front = duck.frontmatter
         updates: dict[str, Any] = {"budgets": self._goal_budgets(front.budgets)}
         session = self.robot.duck
@@ -733,24 +824,80 @@ class DriveSession:
         return duck.model_copy(update={"frontmatter": front.model_copy(update=updates)})
 
     def _goal_budgets(self, defaults: Budgets) -> Budgets:
-        """A goal's own budgets, `quackd run --goal`'s, cut to what the session has left."""
+        """A goal's own budgets, `quackd run --goal`'s with `--max-steps` over its steps, cut to
+        what the session has left."""
+        steps = self.settings.max_steps
+        if steps is None:
+            steps = defaults.max_steps
         budget = self.robot.executor.budget
         if budget is None:
-            return defaults
+            return defaults.model_copy(update={"max_steps": steps})
         limits = budget.limits
         return Budgets(
-            max_steps=min(defaults.max_steps, limits.max_steps - budget.steps),
+            max_steps=min(steps, limits.max_steps - budget.steps),
             max_minutes=min(defaults.max_minutes, limits.max_minutes - budget.elapsed_s / 60),
             max_llm_calls=min(defaults.max_llm_calls, limits.max_llm_calls - budget.llm_calls),
         )
 
+    def _policy_left(self) -> float | None:
+        """The seconds of policy segments the session has left for its goals, or None for a
+        session with no budget."""
+        budget = self.robot.executor.budget
+        return None if budget is None else budget.policy_total_s - budget.policy_s
+
     def _charge(self, goal: Any) -> None:
         """A goal's steps and model calls are the session's as well, so the session's own
-        budgets bound every goal together rather than each one alone."""
+        budgets bound every goal together rather than each one alone. So are the seconds a
+        policy drove the body, which are the body's, as a second task file loaded into a session
+        keeps them (`RobotSession.adopt`)."""
         spent, mine = goal.executor.budget, self.robot.executor.budget
         if spent is not None and mine is not None:
             mine.steps += spent.steps
             mine.llm_calls += spent.llm_calls
+            mine.policy_s += spent.policy_s
+
+    def _vla_refusal(self, text: str) -> str | None:
+        """Why the session's VLA pilot cannot take this line, where it flies its goals with one:
+        the arm's policy is told the line word for word, so it is held to the rule every
+        instruction is (`instruction_line`), and it needs policy seconds the session has left."""
+        if not self.settings.vla:
+            return None
+        try:
+            instruction_line(text)
+        except ValueError as e:
+            return (
+                "--controller vla tells the arm's policy each line word for word, as its one "
+                f"instruction, and {e}"
+            )
+        budget = self.robot.executor.budget
+        if budget is not None and budget.policy_s >= budget.policy_total_s:
+            return (
+                f"the session's policy seconds are spent: {budget.policy_s:.1f} s of "
+                f"{budget.policy_total_s:g} s have run"
+            )
+        return None
+
+    def _goal_answerers(self, cmd: Command) -> tuple[Any, Any, Any]:
+        """What answers a goal's confirm gate, the pilot's doubt, and, for a pilot that cannot
+        tell, whether the arm did it.
+
+        The person who typed the goal, at the keyboard or in the page, as `quackd run` asks the
+        person at its terminal: the goal waits for the answer, and the session goes on reading
+        lines. `--yes` answers as it answers a run: yes to the gate and go to the doubt. A goal
+        nobody can be asked about, a pipe's, keeps the standing rule a session always gave it:
+        no to the gate, and the doubt left to the pilot. Nobody judges either, and a VLA pilot,
+        which needs somebody to, is refused both before the session starts."""
+        executor = self.robot.executor
+        if self.yes:
+            return executor.confirm, _go, None
+        if cmd.by != "person" or self.ask is None:
+            return executor.confirm, None, None
+        ask = self.ask
+        return (
+            GoalAsker(ask, "confirm", lambda name, params: (confirm_question(name, params), None)),
+            GoalAsker(ask, "decide", lambda why: (GO_AHEAD, why)),
+            GoalAsker(ask, "judge", lambda why: (DID_IT, why)) if self.settings.vla else None,
+        )
 
     async def _run_goal(self, cmd: Command, *, lane: str) -> None:
         from quackd.agent.loop import AgentLoop, RunConfig
@@ -759,7 +906,7 @@ class DriveSession:
             self._route(cmd, Routed("pilot", note="no pilot was named"))
             self._end(cmd, Ended("refused", "this session has no pilot to hand a goal to"))
             return
-        refusal = self._goal_refusal() or await self._watched(cmd)
+        refusal = self._goal_refusal() or self._vla_refusal(cmd.text) or await self._watched(cmd)
         if refusal is not None:
             self._route(cmd, Routed(lane, note=refusal))
             self._end(cmd, Ended("refused", refusal))
@@ -771,6 +918,8 @@ class DriveSession:
         manifest = executor.manifest
         if manifest is None:
             raise RuntimeError("a goal needs the body's manifest, and the session has none")
+        confirm, decide, judge = self._goal_answerers(cmd)
+        settings = self.settings
         loop = AgentLoop(
             RunConfig(
                 duck=self._goal_duck(cmd.text),
@@ -779,14 +928,31 @@ class DriveSession:
                 detector=self.robot.detector,
                 run_dir=run_dir,
                 runs_dir=self.goals,
-                confirm=executor.confirm,
+                confirm=confirm,
                 # a session started with --dry-run sends nothing, a goal's verbs included: the
                 # goal's own executor ran every verb for real on the body the session holds
                 dry_run=executor.dry_run,
                 view=self.goal_view(number) if self.goal_view is not None else None,
                 on_frame=self.goal_frames,
+                memory=settings.memory,
+                fov_deg=settings.fov_deg,
+                decide=decide,
+                judge=judge,
+                decision=settings.decision,
+                decision_llm=settings.decision_llm,
+                decision_price=settings.decision_price,
+                price=settings.price,
+                play=settings.play,
+                decision_frames=settings.decision_frames,
+                # the session's own, so a place marked by a typed command is there for a goal,
+                # and one a goal marks is there for the next command
+                places=executor.places,
             )
         )
+        if (left := self._policy_left()) is not None:
+            # the session's policy seconds, which its goals spend from together as they spend
+            # its steps; the observation's budget line says what is left once one has run
+            loop.budget.policy_total_s = min(loop.budget.policy_total_s, max(left, 0.0))
         self._route(cmd, Routed(lane, label=f"goal {number}", note=str(run_dir.name)))
         self._routing.discard(cmd)
         await self._take_over(cmd)

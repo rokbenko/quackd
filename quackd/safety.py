@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn
 from pydantic import ValidationError
 
 from quackd.adapters.base import backend_name
-from quackd.answers import answered
+from quackd.answers import answered, confirm_question
 from quackd.duckfile.schema import (
     DEFAULT_POLICY_TOTAL_S,
     POLICY_VERBS,
@@ -41,7 +41,6 @@ from quackd.log import (
     a_person_was_asked,
     asked_on,
     counting,
-    fmt_params,
 )
 from quackd.perception.base import Detector, detect_times
 from quackd.space.places import PlaceBook, PlaceStore
@@ -864,7 +863,7 @@ class Executor:
                 self._emit(
                     "prompt",
                     what="confirm",
-                    question=f"run {name}({fmt_params(parsed.model_dump())})?",
+                    question=confirm_question(name, parsed.model_dump()),
                     answer=answer,
                     **asked_on(self.confirm),
                 )
