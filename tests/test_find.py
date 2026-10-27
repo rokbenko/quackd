@@ -632,3 +632,20 @@ async def test_a_detector_that_cannot_read_a_frame_ends_it() -> None:
         assert body.sent[-1][1] == "stop"
     finally:
         await adapter.close()
+
+
+def test_the_prompt_names_find_among_the_verbs_that_ask_first() -> None:
+    """The task's own confirm list is empty, and `find` asks first whatever it says: the pilot is
+    told it will be asked, as the executor will ask."""
+    from quackd.adapters.factory import describe, parse_robot_spec, registry_for
+    from quackd.agent.prompts import build_system_prompt
+    from quackd.duckfile.parser import load_duck
+
+    robot = parse_robot_spec("microduck:sim2d")
+    manifest = describe(robot, room="two-rooms")
+    registry = registry_for(robot, manifest)
+    duck = load_duck("find-the-ball")
+    assert duck.frontmatter.verbs.confirm == []
+    verbs = [registry.view(name) for name in duck.frontmatter.verbs.allow]
+    prompt = build_system_prompt(duck, verbs, "sim2d", manifest=manifest)
+    assert "Verbs marked confirm (find) ask a human before running." in prompt

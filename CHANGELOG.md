@@ -97,6 +97,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   refused before anything moves, now that detectors say which labels they give. It is offered
   where `explore` is and the duck has a camera, and asks first
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#find-looking-for-something-by-exploring)).
+- **Two starters that explore: `find-the-ball` and `favourite-spot`.** `find-the-ball` finds the
+  ball hidden in the room the duck does not start in, walks up to it, says where it was and walks
+  back to `start`. `favourite-spot` marks where the duck stands, explores, and walks back to it.
+  Both run in the duck's simulator given a room, `quackd run find-the-ball --room two-rooms --yes`,
+  and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
+  ([docs/guides/explore.md](docs/guides/explore.md)).
+- **`quackd validate --room`.** Checks a task against the robot's simulator laid out in a room,
+  which offers the place verbs, `explore` and `find`. A task that names no robot is checked
+  against every verb something installed here offers, now a simulator in a room among them.
+- **The prompt names every verb that asks first.** The line "Verbs marked confirm (...) ask a
+  human" named only the task's own `confirm` list, and said `none` for a task that allows a verb
+  whose class asks whatever the task says, as `explore`, `find` and MOSS's `pick_and_drop` do. It
+  now names those too.
 - **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
   every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`

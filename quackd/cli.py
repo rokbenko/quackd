@@ -760,6 +760,12 @@ def validate(
     robots: str | None = typer.Option(
         None, "--robots", help="Check against a flock: name=<adapter>:<backend>,..."
     ),
+    room: str | None = typer.Option(
+        None,
+        "--room",
+        help="Check against the robot's simulator laid out in this room, as `run --room` lays "
+        "it out, which offers the place verbs, explore and find.",
+    ),
     registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
     """Validate .duck files against the spec and a robot's verbs. Exits 1 on any failure."""
@@ -800,7 +806,12 @@ def validate(
                 resolved = _robot_specs(None, None, duck)
             else:
                 resolved = []
-            manifests = [describe(r.spec) for r in resolved]
+            if room is not None and not resolved:
+                raise AdapterError(
+                    "--room lays out a room for a robot's simulator, and this file names no "
+                    "robot: name one with --robot"
+                )
+            manifests = [describe(r.spec, room=room) for r in resolved]
         except (AdapterError, RegistryError) as e:
             # a registered name means reading robots.json, and a broken one refuses
             row.update(ok=False, problems=[str(e)], summary=[str(e)])

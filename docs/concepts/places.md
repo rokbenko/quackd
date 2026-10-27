@@ -142,7 +142,8 @@ look, and marks where it saw what it was looking for as a place named after it. 
 do neither yet: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body
 radius, which a way round a room is planned by.
 Its rules are on [the Microduck's page](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
-and why it stops to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md).
+why it stops to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md),
+and [guides/explore.md](../guides/explore.md) runs both with two starter tasks.
 
 ## A room for the simulator
 
