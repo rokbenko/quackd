@@ -397,3 +397,24 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         elif any(w in bare for w in url_words) and name not in URL_FLAGS:
             missed.append((name, "URL_FLAGS"))
     assert not missed, f"flags shaped like a credential and redacted nowhere: {missed}"
+
+
+def test_the_record_leaves_out_the_page_front_and_keeps_every_other_word() -> None:
+    """`--front jsonl` is how the page starts a run, and a terminal given it answers in JSON
+    lines, so the command a record names, the one to type for the same run, leaves it out."""
+    from quackd.command import without_front
+
+    assert command_line(["run", "hello-world", "--front", "jsonl", "--robot", "x"]) == [
+        "quackd",
+        "run",
+        "hello-world",
+        "--robot",
+        "x",
+    ]
+    assert command_line(["drive", "--front=jsonl", "--llm", "fake"]) == [
+        "quackd",
+        "drive",
+        "--llm",
+        "fake",
+    ]
+    assert without_front(["--goal", "find the front door"]) == ["--goal", "find the front door"]

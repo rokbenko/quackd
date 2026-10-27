@@ -162,6 +162,14 @@ def who_answered(asker: object) -> str:
     return STANDING
 
 
+def asked_on(asker: object) -> dict[str, str]:
+    """Where the person was asked, for a `prompt` row, wherever the asker names a channel: `web`
+    for the page `quackd ui` serves (`quackd.front`). Empty for the terminal's own questions, so
+    every row a terminal wrote reads as it always has."""
+    channel = getattr(asker, "channel", None)
+    return {"channel": channel} if isinstance(channel, str) and channel else {}
+
+
 def capture_sink(event: LogEvent) -> None:
     """An observer that appends to whatever `capturing()` is open in this context. The MCP
     server runs every tool call as its own task, and asyncio copies the context into a task

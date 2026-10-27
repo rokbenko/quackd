@@ -38,6 +38,7 @@ from quackd.log import (
     EventLog,
     LoggedTransport,
     a_person_was_asked,
+    asked_on,
     counting,
     fmt_params,
 )
@@ -847,10 +848,12 @@ class Executor:
                 # EOF. An asker that raised has not said yes, and the run deserves to be told
                 # so in the gate's words rather than as `verb_end error "Abort: "`.
                 why = f"the prompt raised {type(e).__name__}" + (f": {e}" if str(e) else "")
+                # unanswered, never declined: nobody said no, so neither the gate's `answer`
+                # nor the words the pilot reads may say somebody did
                 self._emit(
-                    "gate", name=name, gate="confirm", outcome="denied", answer=False, reason=why
+                    "gate", name=name, gate="confirm", outcome="denied", answer=None, reason=why
                 )
-                raise ConfirmDenied(f"human declined {name} ({why})") from e
+                raise ConfirmDenied(f"nobody answered whether to run {name} ({why})") from e
             asked = a_person_was_asked(self.confirm)
             if asked:
                 # the exchange, beside the gate's record of what it decided: only where a
@@ -860,6 +863,7 @@ class Executor:
                     what="confirm",
                     question=f"run {name}({fmt_params(parsed.model_dump())})?",
                     answer=answer,
+                    **asked_on(self.confirm),
                 )
             # The same care in the gate's own reason, which said `a human said yes` however the
             # answer arrived. Under `--yes`, a flock's standing answer or a pipe on stdin the

@@ -198,16 +198,40 @@ def redacted_argv(argv: Sequence[str]) -> list[str]:
     return out
 
 
+FRONT_FLAG = "--front"
+"""The hidden flag the page `quackd ui` starts its runs with (`quackd.front`). Left out of the
+command a record names, which is the command to type at a terminal for the same run, and a
+terminal given `--front jsonl` answers in JSON lines; `run_start` names the front instead."""
+
+
+def without_front(args: Sequence[str]) -> list[str]:
+    """`args` with `--front X` and `--front=X` taken out, wherever they stand."""
+    out: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+            continue
+        if arg == FRONT_FLAG:
+            skip = True
+            continue
+        if arg.startswith(f"{FRONT_FLAG}="):
+            continue
+        out.append(arg)
+    return out
+
+
 def command_line(argv: Sequence[str] | None = None) -> list[str]:
     """What was run, as a list, redacted, starting with `quackd`.
 
     `sys.argv[0]` is replaced rather than reported: it is the absolute path of the console
     script that ran, which sits inside a virtualenv on one machine and in a uvx cache
     directory on the next, so it changes with the install and tells a reader of the record
-    nothing. What the person typed was `quackd`.
+    nothing. What the person typed was `quackd`. The page's `--front` is left out, as the
+    command to type at a terminal for the same run (`FRONT_FLAG`).
     """
     args = list(sys.argv[1:] if argv is None else argv)
-    return ["quackd", *redacted_argv(args)]
+    return ["quackd", *redacted_argv(without_front(args))]
 
 
 def command_text(argv: Sequence[str] | None = None) -> str:

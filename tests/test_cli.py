@@ -3469,3 +3469,22 @@ def test_a_yes_run_leaves_no_claim_that_anybody_was_asked(
     events = _events(tmp_path)
     assert [e for e in events if e["kind"] == "gate" and e.get("gate") == "confirm"]
     assert [e for e in events if e["kind"] == "prompt"] == []
+
+
+def test_a_run_nobody_watched_ends_in_its_sentence_rather_than_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A no, or no answer, to "Are you watching the robot right now?" ends the run before its
+    first step with `Aborted`, which nothing caught: the person who said no got a traceback."""
+    from quackd.agent.loop import AgentLoop
+    from quackd.safety import Aborted
+
+    async def nobody_watching(_self: Any) -> Any:
+        raise Aborted("nobody confirmed they were watching a robot that cannot see a fall")
+
+    monkeypatch.setattr(AgentLoop, "run", nobody_watching)
+    task = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-gif"]
+    result = runner.invoke(app, [*task, "--runs-dir", str(tmp_path)])
+    assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
+    assert "nobody confirmed they were watching" in " ".join(result.output.split())
+    assert "Traceback" not in result.output

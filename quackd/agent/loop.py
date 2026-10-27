@@ -73,7 +73,15 @@ from quackd.command import command_line, redacted_body, redacted_url
 from quackd.duckfile.narrow import narrow_policy_verb
 from quackd.duckfile.schema import DuckFile
 from quackd.latency import spread
-from quackd.log import A_PERSON, EventLog, Sink, a_person_was_asked, fmt_params, who_answered
+from quackd.log import (
+    A_PERSON,
+    EventLog,
+    Sink,
+    a_person_was_asked,
+    asked_on,
+    fmt_params,
+    who_answered,
+)
 from quackd.memory import RobotMemory
 from quackd.perception import detector_for, lens_of
 from quackd.perception.base import Detection, Detector, detect_off_loop, detect_times
@@ -192,6 +200,14 @@ answered is asked again on the full schedule: something answered it."""
 KILL_SWITCH = "kill switch"
 """The reason a run's abort carries when it was the kill switch, a Ctrl-C or `q`, that set it,
 rather than a heartbeat that failed or a flock stopping its members."""
+
+STOP_BUTTON = "stop button"
+"""The reason a run's abort carries when the Stop button of the page `quackd ui` set it: a
+person's press, as the kill switch's is, made through the page rather than at the terminal
+(`quackd.front`)."""
+
+PERSON_STOPS = (KILL_SWITCH, STOP_BUTTON)
+"""The stops a person makes, which end a fold nobody asked for (`_pressed_during_the_fold`)."""
 
 T = TypeVar("T")
 
@@ -506,7 +522,12 @@ class RunConfig:
     stepper then sends text alone. True asks `Stepper.build` for a stepper that shows frames,
     which it builds only for a decision LLM `frames.may_send_frames` allows, quackd's own client
     for OpenAI's Decisions API built to be shown them at OpenAI's own address, and refuses for
-    any other. Last in the class, for the reason `play` gives."""
+    any other. After every field older than it, for the reason `play` gives."""
+    front: str | None = None
+    """The front end the run's questions are put through and its narration read by, where it is
+    not the terminal: `jsonl` for the page `quackd ui` (`quackd.front`). Written into
+    `run_start`; None is every terminal run, whose record says nothing of it. Last in the class,
+    for the reason `play` gives."""
 
 
 @dataclass
@@ -775,7 +796,7 @@ class AgentLoop:
         is the exchange itself, which nothing held."""
         if not a_person_was_asked(asker):
             return
-        self._emit("prompt", what=what, question=question, answer=answer)
+        self._emit("prompt", what=what, question=question, answer=answer, **asked_on(asker))
 
     async def _ask_the_model(
         self,
@@ -1227,9 +1248,10 @@ class AgentLoop:
         for (`fold_unless_stopped`): cancelled at its next await, at most a step cap past where
         it was, then held there by a stop, with nothing released and the torque line said by
         the close. A flock stopping its members, or a heartbeat failing, sets the same flag,
-        and is no reason to leave an arm unfolded, so only the kill switch's stop counts
-        (`_pressed_during_the_fold`). The pause has been waited out just before this, and is
-        not waited out again inside the race, where the wait would swallow the cancellation."""
+        and is no reason to leave an arm unfolded, so only a person's stop counts, the kill
+        switch's or the page's Stop button (`_pressed_during_the_fold`). The pause has been
+        waited out just before this, and is not waited out again inside the race, where the
+        wait would swallow the cancellation."""
         if self.executor.abort.is_set() or self.cfg.dry_run:
             return await self._rest()
         try:
@@ -1243,10 +1265,11 @@ class AgentLoop:
             return None
 
     async def _pressed_during_the_fold(self) -> None:
-        """Returns when the kill switch sets the abort during the teardown's fold, and never
-        for anything else that sets it: a flock stopping its members, a heartbeat."""
+        """Returns when a person's stop, the kill switch or the page's Stop button, sets the
+        abort during the teardown's fold, and never for anything else that sets it: a flock
+        stopping its members, a heartbeat."""
         await self.executor.abort.wait()
-        if self._abort_reason() != KILL_SWITCH:
+        if self._abort_reason() not in PERSON_STOPS:
             await asyncio.Event().wait()  # never: the fold goes on to its pose
 
     PLACE_IT = (
@@ -2539,7 +2562,21 @@ class AgentLoop:
             if (warning := self._fall_blind_warning(registry, allow, first_state)) is not None:
                 self._note(warning)
                 if cfg.acknowledge is not None:
-                    watching = bool(cfg.acknowledge(warning))
+                    try:
+                        watching = bool(cfg.acknowledge(warning))
+                    except Exception as e:
+                        # A question taken back because the run was stopped ends it for the
+                        # stop, which is what happened, and not for a question nobody answered
+                        if self.executor.abort.is_set():
+                            raise Aborted(self._abort_reason()) from e
+                        # A question taken back, or a prompt that raised on Ctrl-C or EOF, has
+                        # not said anybody is watching, and nobody said they were not: it ends
+                        # the run as a no does, and leaves no `prompt` row, as a decide or a
+                        # judge that raised leaves none.
+                        raise Aborted(
+                            "nobody confirmed they were watching a robot that cannot see a "
+                            f"fall: the question went unanswered ({type(e).__name__})"
+                        ) from e
                     # The one question whose answer was nowhere in the record: a yes left no
                     # mark at all, so a run on a robot that cannot see a fall could not be
                     # told from one nobody was watching.
@@ -2668,6 +2705,9 @@ class AgentLoop:
                 # so this is the answer for every detection in the transcript.
                 detector=self._detector_record(manifest),
                 **({"host": self._host_record(manifest)} if cfg.host is not None else {}),
+                # the front end its questions were put through, only where it was not the
+                # terminal, so every record from a terminal reads as it did (`quackd.front`)
+                **({"front": cfg.front} if cfg.front is not None else {}),
                 # What this run was called and when it began. The directory name held both
                 # until now, at second precision on the local clock, and stopped being
                 # evidence the moment anybody renamed the folder or copied it off the machine.
