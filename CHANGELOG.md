@@ -75,6 +75,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   planner's gates again before each goal. A rosbridge base reads `/odom`, every message as it
   arrives, and since it has no deadman, a walk whose reading stops moving on holds the base still
   with a zero Twist and then ends ([docs/concepts/places.md](docs/concepts/places.md)).
+- **`explore`: a Microduck walks to what its own map has not seen.** In a simulator given
+  `--room`, `explore(minutes)` walks to the nearest floor its map has seen beside floor it has
+  not, stops so the map can look, and goes again, until nothing is left it can reach or its
+  minutes run out, at most 8. The first stop looks all the way round and every later one only
+  where a look would see floor nobody has seen, each look a keyframe of the map's, with the head
+  where the map takes its keyframes from the head and the body where it does not. What it looked
+  at and could not see past it gives up, what it could not get to it tries twice in a call, it
+  marks `start` where it began, and it asks first. A real duck is not offered it yet, and says
+  why: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body radius.
+  The pilot reads why beside the body, and a task that needs `explore` is refused in those words
+  by `quackd run`, `quackd validate` and MCP alike
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
+  [ADR-0071](docs/adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
 - **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
   every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`

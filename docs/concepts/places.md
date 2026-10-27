@@ -132,6 +132,16 @@ is what `go_to` steers by.
 It says how close it got and by what, `0.07 m from 'far' by its map`, and on odometry that the
 reading drifts. It never says the robot is at a place.
 
+## Exploring
+
+A Microduck in a simulator given a room can `explore`: walk to the nearest floor its map has seen
+beside floor it has not, stop so the map can look, and go again, until nothing is left it can
+reach or its minutes run out. It walks by the walk above and marks `start` where it begins, so
+`go_to_place start` is the way back. A real duck cannot yet: on odometry alone it keeps no map,
+and beside `mapd` nothing publishes its body radius, which a way round a room is planned by.
+Its rules are on [the Microduck's page](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
+and why it stops to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md).
+
 ## A room for the simulator
 
 `--room` lays a room out in either of the Microduck's simulators, `sim2d` and `mujoco`, on `run`,

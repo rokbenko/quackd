@@ -683,11 +683,13 @@ async def navigate(
     frame_id: str,
     timeout_s: float,
     label: str,
+    verb: str = "go_to_place",
 ) -> Walked:
     """Walk to `goal`, a point in the frame `frame_id`, on `source`'s reading, turning to face
     `goal_yaw` at the end when one is given. Refused before anything moves when the robot does not
     know where it is, its frame is not the goal's, its map has no way there, or the way is longer
-    than `timeout_s` allows. Stopped, whatever ends it."""
+    than `timeout_s` allows. Stopped, whatever ends it. `verb` is the one a stop or a refused twist
+    is said to have ended, for a verb that walks by this as `explore` does."""
     state = await ctx.transport.get_state()
     extras = state.extras if isinstance(state.extras, dict) else {}
     walk = _Walk(
@@ -708,10 +710,10 @@ async def navigate(
             await ctx.transport.stop()
             return end.walked
     except _Refused as refused:
-        failed = await _stopped_by(ctx, "go_to_place", "the body stopped", refused)
+        failed = await _stopped_by(ctx, verb, "the body stopped", refused)
         return walk.walked("body", failed.summary, move_refused=str(refused))
     except _Interrupted as told:
-        ended = await _ended_by(ctx, "go_to_place", told.why, "the body stopped")
+        ended = await _ended_by(ctx, verb, told.why, "the body stopped")
         return walk.walked("interrupted", ended.summary, **ended.data)
     except SafetyStop:
         # the run's own rule, read at a stop: its reader stopped the body before it raised, and a
@@ -744,6 +746,8 @@ async def _navigate(walk: _Walk) -> Walked:
                 f"the way to {walk.label} is {length:.1f} m, about {needs:.0f} s at the speed this "
                 f"body walks, longer than the {walk.timeout_s:g} s it was given",
                 way_m=round(length, 2),
+                needs_s=round(needs, 1),
+                given_s=round(walk.timeout_s, 1),
             )
         )
     # the head faces the way it walks, so a map that looks along it looks ahead

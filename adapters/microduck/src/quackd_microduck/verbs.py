@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.transport.base import DuckState, Intent
 from quackd.verbs.core import SayParams, send_or_fail
+from quackd.verbs.explore import ExploreSpec, explore_verb
 from quackd.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 from quackd.verbs.watch import HeadSpec, watch_verb
 from quackd_microduck import upstream_api as up
@@ -43,6 +44,17 @@ MICRODUCK_HEAD = HeadSpec(
     ),
 )
 """The Microduck's head as `watch` holds it: starting values, until a duck is measured."""
+
+MICRODUCK_EXPLORE = ExploreSpec(
+    # a look turns the head as far as `watch` may turn it, and the body past that, and waits for
+    # the head as `watch` does; how wide a look is and how far it reaches are the map's own
+    # (`SpatialSource.view`)
+    head_yaw_deg=MICRODUCK_HEAD.yaw_deg,
+    head_settle_s=MICRODUCK_HEAD.settle_s,
+    source="the head's reach and settle as watch holds them (MICRODUCK_HEAD), and the map's own "
+    "view",
+)
+"""The Microduck's numbers for `explore`, beside what its map says of itself."""
 
 
 class KickParams(BaseModel):
@@ -442,5 +454,7 @@ MICRODUCK_VERBS: dict[str, Verb] = {
         # Declared only on a duck with a camera (`microduck_manifest`), and offered only on a run
         # that can look through a decision LLM (`quackd.verbs.watch.withdraw_watch`).
         watch_verb(MICRODUCK_HEAD),
+        # Declared only where the duck's reading keeps a map (`microduck_manifest`).
+        explore_verb(MICRODUCK_EXPLORE),
     )
 }

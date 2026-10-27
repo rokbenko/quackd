@@ -43,7 +43,9 @@ never counted in it, and the robot's link and the robot itself come after it.
 
 A robot that says where it is can name a spot with `mark_place NAME` and walk back to it with
 `go_to_place NAME`, and the Microduck's simulators lay out a room to do it in with `--room`
-([guides/places.md](places.md)).
+([guides/places.md](places.md)). In a room, `explore` walks the duck to what its map has not seen
+for up to the minutes you give it, asking first, and an empty Enter brakes it as it brakes any
+walk.
 
 ## What a line can be
 

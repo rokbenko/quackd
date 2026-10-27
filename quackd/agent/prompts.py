@@ -735,6 +735,10 @@ def body_lines(manifest: RobotManifest) -> list[str]:
     if ds.cannot:
         lines.append("Whatever the task says, this body cannot:")
         lines += [f"- {s}" for s in ds.cannot]
+    if lacks := manifest.not_offered():
+        # what it lacks here, beside what the body cannot do anywhere
+        lines.append("Here, on this connection, it does not offer:")
+        lines += [f"- {verb}: {why}" for verb, why in lacks.items()]
     if ds.notes:
         lines.append("Worth knowing:")
         lines += [f"- {s}" for s in ds.notes]
@@ -765,6 +769,10 @@ def body_summary(manifest: RobotManifest) -> str:
         text += f" Not published: {', '.join(unknown)}."
     if ds.cannot:
         text += " Cannot: " + "; ".join(ds.cannot) + "."
+    if lacks := manifest.not_offered():
+        text += (
+            " Not offered here: " + "; ".join(f"{verb}, {why}" for verb, why in lacks.items()) + "."
+        )
     if clamps := _clamp_words(manifest.limits):
         text += f" Clamps: {clamps}."
     return text

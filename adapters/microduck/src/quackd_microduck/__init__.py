@@ -117,6 +117,22 @@ ROOM_BACKENDS = ("sim2d", "mujoco")
 the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
 real duck's room is the one it stands in, and the mock scripts its own."""
 
+NO_MAP_WHY = (
+    "it says where it is by odometry alone and keeps no map on this connection, and explore "
+    "walks by a map: a simulator given --room keeps one"
+)
+"""Why `explore` is not offered on a duck with places and no map, in `extras.not_offered`, which
+the pilot reads beside its body and a run quotes: `explore` walks to what a map has not seen, and
+odometry sees nothing."""
+
+NO_SIZE_WHY = (
+    "nothing publishes the real duck's body radius, which explore plans its way round a room "
+    "by: a simulator given --room knows its own"
+)
+"""Why `explore` is not offered on a real duck whatever answers beside its robotd: a way through a
+room keeps the body's radius from everything solid, and the real duck's is published nowhere,
+where each simulator's is its own body's (`transports.mapd.sim_map_params`)."""
+
 
 def microduck_manifest(
     backend: str,
@@ -126,6 +142,8 @@ def microduck_manifest(
     camera_fov_deg: float | None = None,
     camera_fov_assumed: str | None = None,
     places: bool | None = None,
+    mapped: bool | None = None,
+    sized: bool | None = None,
 ) -> RobotManifest:
     """The Microduck as data. Static: no connection needed (validate, announce, doctor).
 
@@ -135,6 +153,13 @@ def microduck_manifest(
     declare them, and the simulators say nothing of where the duck is and declare none. A
     connection whose transport carries no reading (`spatial_of`) leaves them out whatever was
     declared, as one with no frame leaves out the camera's verbs.
+
+    `mapped` is whether that reading keeps a map, which `explore` walks by, and `sized` whether
+    it knows how big the body is, which `explore` plans its way round a room by. None is what the
+    backend may have before anything connects: a robotd may have `mapd` beside it and a
+    simulator given a room keeps a map, but only a simulator knows how big its duck is, the real
+    duck's radius being published nowhere. A duck with places that cannot explore says why, in
+    `extras.not_offered`, which the pilot reads beside its body.
 
     `camera` is the one thing a description of the robot cannot settle on its own. robotd's
     socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
@@ -169,12 +194,20 @@ def microduck_manifest(
             verb_spec(CORE[name], core=True)
             for name in ("map", "mark_place", "forget_place", "go_to_place")
         ]
-    # `watch` looks through the camera, so it is a verb of a duck that has one, declared below
+    keeps_map = mapped if mapped is not None else backend in MAP_BACKENDS or places is True
+    knows_size = sized if sized is not None else backend in ROOM_BACKENDS
+    offers_explore = offers_places and keeps_map and knows_size
+    # `watch` looks through the camera and `explore` walks by a map, so each is a verb of a duck
+    # that has one, declared below
     extensions = [
-        verb_spec(v, core=False) for n, v in MICRODUCK_VERBS.items() if n not in ("say", "watch")
+        verb_spec(v, core=False)
+        for n, v in MICRODUCK_VERBS.items()
+        if n not in ("say", "watch", "explore")
     ]
     if camera:
         extensions.append(verb_spec(MICRODUCK_VERBS["watch"], core=False))
+    if offers_explore:
+        extensions.append(verb_spec(MICRODUCK_VERBS["explore"], core=False))
     sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
     if camera:
         sensors.insert(0, "camera")
@@ -199,11 +232,17 @@ def microduck_manifest(
         preconditions["watch"] = ["not_fallen"]
     if offers_places:
         preconditions["go_to_place"] = ["standing"]  # it walks; where it is the verb checks
+    if offers_explore:
+        preconditions["explore"] = ["standing"]
     # quackd's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
     # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
     # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.
     limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.0}
     extras: dict[str, Any] = {}
+    if offers_places and not offers_explore:
+        # what this duck lacks here, said beside its body where the pilot judges a task; the
+        # datasheet is the body's own, the same on every backend
+        extras["not_offered"] = {"explore": NO_SIZE_WHY if keeps_map else NO_MAP_WHY}
     if camera and camera_fov_deg is not None:
         limits["camera_fov_deg"] = float(camera_fov_deg)
         if camera_fov_assumed:
@@ -274,6 +313,7 @@ class MicroduckAdapter:
         # The lens the camera reported, read once a frame has arrived, which is where the
         # transport learns it. The simulators report none: the detector knows their lens.
         assumed = getattr(self.transport, "camera_fov_assumed", None)
+        source = spatial_of(self.transport)
         self.manifest = microduck_manifest(
             self.backend,
             self.robot_id,
@@ -282,7 +322,11 @@ class MicroduckAdapter:
             camera_fov_assumed=assumed if isinstance(assumed, str) else None,
             # a robotd that reports no odometry, and a simulator not asked for a room, say
             # nothing of where the duck is, and a pilot offered places there could mark none
-            places=spatial_of(self.transport) is not None,
+            places=source is not None,
+            # a reading of odometry alone, where no mapd answered, keeps no map to explore by,
+            # and mapd's map comes with no body radius to plan a way round a room by
+            mapped=source is not None and source.has_grid and source.view is not None,
+            sized=source is not None and bool(source.footprint_m),
         )
         return self.manifest
 
