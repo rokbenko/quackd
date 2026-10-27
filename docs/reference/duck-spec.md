@@ -154,9 +154,10 @@ The spec says this plainly rather than pretending prose is policy.
 Anything the robot's manifest provides (`quackd list-verbs`, or `list-verbs --robot`):
 the core verbs `observe report_state stop say move go_to search_scan approach_and` on any
 robot that meets their requirements, a robot's own extensions (Microduck: `sit stand
-stand_up kick grab gaze quack`, and `watch` on a run started with `--decision-frames`), plus
-any registered learned verb. The 0.3 names `get_frame`, `walk_to` and `walk` are permanent
-aliases of `observe`, `go_to` and `move`; a file may use either spelling but not both.
+stand_up kick grab gaze quack`, `watch` on a run started with `--decision-frames`, and `explore`
+and `find` in a simulator given `--room`), plus any registered learned verb. The 0.3 names
+`get_frame`, `walk_to` and `walk` are permanent aliases of `observe`, `go_to` and `move`; a file
+may use either spelling but not both.
 `stop` may never appear in `confirm`. Params and ranges come from the registry, not the
 `.duck` file ([ADR-0018](../adr/0018-core-verbs-extensions-aliases.md)).
 

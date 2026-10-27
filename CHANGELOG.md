@@ -103,17 +103,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Both run in the duck's simulator given a room, `quackd run find-the-ball --room two-rooms --yes`,
   and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
   ([docs/guides/explore.md](docs/guides/explore.md)).
-- **A recording names the verb that is running.** A frame's caption named the verb that ran
-  before it, so a verb that runs for most of a minute, as `find` does, was drawn all along under
-  the name of the one before. The run now tells the recorder each verb as it starts
-  (`RunConfig.on_caption`), and `docs/assets/explore.gif` is `find-the-ball` recorded with it.
 - **`quackd validate --room`.** Checks a task against the robot's simulator laid out in a room,
   which offers the place verbs, `explore` and `find`. A task that names no robot is checked
   against every verb something installed here offers, now a simulator in a room among them.
-- **The prompt names every verb that asks first.** The line "Verbs marked confirm (...) ask a
-  human" named only the task's own `confirm` list, and said `none` for a task that allows a verb
-  whose class asks whatever the task says, as `explore`, `find` and MOSS's `pick_and_drop` do. It
-  now names those too.
 - **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
   every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`
@@ -164,6 +156,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **A recording names the verb that is running.** A frame's caption named the verb that ran
+  before it, so a verb that runs for most of a minute, as `find` does, was drawn all along under
+  the name of the one before. The run now tells the recorder each verb as it starts
+  (`RunConfig.on_caption`), and `docs/assets/explore.gif` is `find-the-ball` recorded with it.
+- **The prompt names every verb that asks first.** The line "Verbs marked confirm (...) ask a
+  human" named only the task's own `confirm` list, and said `none` for a task that allows a verb
+  whose class asks whatever the task says, as MOSS's `pick_and_drop` has since 0.22.0, and as
+  `explore` and `find` do. It now names those too.
 - **A stop sent while a composite runs keeps its next move from starting.** Each call a
   composite made took its own count of stops when it was admitted, so a stop sent between two of
   them was already counted when the second began, and the second walked or kicked as if nobody
@@ -204,9 +204,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The Microduck's page says what quackd read of `mapd`, the duck's own map.** `mapd` is on the
   upstream branch `maploc-v2`, read at `7e0be18`, and in no robotd release, so its socket, its
   five calls and the numbers it keeps to are listed as assumptions, in their own file
-  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. Nothing in quackd speaks
-  to it yet. One of them differs from Pollen's post: a keyframe is taken after 0.4 s of
-  stillness in the code, where the post says half a second
+  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. One of them differs from
+  Pollen's post: a keyframe is taken after 0.4 s of stillness in the code, where the post says half
+  a second
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
 - `docs/concepts/architecture.md` describes `quackd/front.py`, and its `prompt` and `run_start`
   rows say what the page adds to them: `channel` and `front`.

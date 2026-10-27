@@ -162,7 +162,8 @@ What quackd does with it, beside the rows:
   answers at an address you named.
 
 The real duck's body radius is published nowhere, so a walk by `mapd`'s map still goes straight,
-capped as a blind one, and `explore`, which plans by it, is not offered, until somebody cites one.
+capped as a blind one, and `explore` and `find`, which plan by it, are not offered, until somebody
+cites one.
 
 | Thing | What upstream says | What quackd takes from it |
 |---|---|---|
@@ -179,7 +180,6 @@ capped as a blind one, and `explore`, which plans by it, is not offered, until s
 | `a correction within 10 cm and 3 degrees` | a match moving a stop further than that "from where odometry put it is not believed" | a correction inside it is believed and re-planned on, a jump beyond it ends a walk |
 | `two stops agree within 25 cm and 4 degrees` | a relocalization is "Accepted only when two consecutive stops agree on the same correction" | a lost duck stops twice before it knows where it is again |
 | `mapd places returns 0.08 to 2.0 m away` | `min_range_m` 0.08 and `max_range_m` 2.0, ranges taken as axial | how far the simulators' stand-in reveals a cell |
-| `a keyframe is taken from where the head looks` | a stop is kept on the odometry's stillness, which a head turned with the body still does not move, and nothing says whether such a turn makes another keyframe | `explore` would turn a real duck's body for every view, and the hardware checklist asks |
 
 ## What this robot is, as numbers
 
@@ -384,8 +384,9 @@ judges a task, and a run that requires it is refused in those words
 ([ADR-0071](../../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
 
 - **Where it goes.** To the floor the map has seen beside floor it has not, the stretch of it
-  nearest by the way the map knows, never over floor nobody has seen, and only a stretch whose
-  opening is as wide as the duck: a gap it cannot pass, it cannot see past either.
+  nearest by the way over floor the map has seen, and only a stretch whose opening is as wide as
+  the duck: a gap it cannot pass, it cannot see past either. It walks there by `go_to_place`'s
+  walk, which stops to look before its front reaches floor nobody has seen.
 - **How it looks.** A look is the map's keyframe, 45° across as the head's ToF sees (`TOF_FOV`)
   and out to the 2 m `mapd` places returns at. The first stop looks all the way round, in views
   40° apart, the step `search_scan` turns a camera by for a lens that wide, and every later stop

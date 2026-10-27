@@ -110,9 +110,9 @@ the duck is. Given an address nothing answers at, doctor exits 1. Everything qua
 beside `mapd` they would plan their way round a room by the duck's body radius, which nothing
 publishes yet. Once one is cited, they will turn the duck's body for every view, because nothing
 says whether `mapd` takes a keyframe when only the head turns. To find out, with the duck
-standing still, read the `mapd` row's stops, turn the head with `gaze left`, wait a second and
-read them again. One more stop means a head turn alone is a view there, as it is in the
-simulators, and both could look with the head on a real duck too: say so in an issue.
+standing still, read the keyframes the `mapd` row counts, turn the head with `gaze left`, wait a
+second and read them again. One more keyframe means a head turn alone is a view there, as it is
+in the simulators, and both could look with the head on a real duck too: say so in an issue.
 
 > **Abort if the handshake is refused.** quackd refuses a robotd older than API v23, the oldest
 > it has read end to end, and one whose `hello` names no version, and it prints why. A robot on

@@ -24,9 +24,9 @@ quackd run find-the-ball --room two-rooms --yes
 ```
 
 `two-rooms` hides the ball in the room the duck does not start in, so it has to go and look. Both
-verbs ask first, because they walk into floor the map has not seen: `--yes` answers for you, and at
-a terminal without it you are asked. This run used the scripted pilot and a seed, and is trimmed to
-the verbs, the first of `find`'s commands and the results:
+verbs ask first, because they walk a room nobody has looked at yet: `--yes` answers for you, and
+at a terminal without it you are asked. This run used the scripted pilot and a seed, and is
+trimmed to the verbs, the first of `find`'s commands and the results:
 
 ```
 $ quackd --no-color run find-the-ball --room two-rooms --llm fake --yes --seed 3
@@ -57,11 +57,11 @@ $ quackd --no-color run find-the-ball --room two-rooms --llm fake --yes --seed 3
 ```
 
 `find` was one verb and one confirm. Its first stop looked all the way round, the head turning for
-the views either side of straight ahead and the body for the rest, and saw nothing it knew. It walked through the
-doorway to the edge of what its map had seen, looked all the way round again, and saw the ball.
-It turned to face it, saw it again dead ahead, and marked the spot it stood on as `ball`, facing
-the ball. The pilot then walked up to the ball with `go_to`, said where it was, and walked back to
-`start`, which `find` had marked where it began.
+the views either side of straight ahead and the body for the rest, and saw no ball. It walked
+through the doorway to the edge of what its map had seen, looked all the way round again, and saw
+the ball. It turned to face it, saw it again dead ahead, and marked the spot it stood on as
+`ball`, facing the ball. The pilot then walked up to the ball with `go_to`, said where it was, and
+walked back to `start`, which `find` had marked where it began.
 
 The scripted pilot is a rule, so it does the same every time on the same seed. A model pilots the
 same task with `--llm anthropic` or any other, and decides between the verbs itself.
@@ -72,8 +72,9 @@ same task with `--llm anthropic` or any other, and decides between the verbs its
 quackd run favourite-spot --room two-rooms --yes
 ```
 
-`favourite-spot` marks where the duck stands as `favourite`, explores for two minutes, walks back
-to the spot and says so. `explore` ends on its own once nothing is left that it can reach:
+`favourite-spot` marks where the duck stands as `favourite`, explores for up to two minutes, walks
+back to the spot and says so. `explore` ends on its own once nothing is left that it can reach,
+as it did here well inside its minutes:
 
 ```
 $ quackd --no-color run favourite-spot --room two-rooms --llm fake --yes --seed 3
@@ -89,9 +90,9 @@ $ quackd --no-color run favourite-spot --room two-rooms --llm fake --yes --seed 
 
 ## Check a task against a room
 
-A task that needs `explore` or `find` names no robot, as these two do, and `quackd validate` checks
-it against every verb something installed here can offer, a simulator in a room among them. To
-check it against the duck's simulator itself, give the room the run would lay out:
+A task that names no robot, as these two do, is checked by `quackd validate` against every verb
+something installed here can offer, a simulator in a room among them. To check it against the
+duck's simulator itself, give the room the run would lay out:
 
 ```
 $ quackd --no-color validate ducks/find-the-ball.duck --robot microduck:sim2d --room two-rooms

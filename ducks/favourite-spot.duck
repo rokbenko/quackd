@@ -30,7 +30,7 @@ learned_verbs: []
 # Task
 
 You are a small biped duck robot. Mark the spot you are standing on as your favourite, explore
-the room for two minutes, then walk back to your favourite spot and say you are back.
+the room for up to two minutes, then walk back to your favourite spot and say you are back.
 
 ## Strategy
 
@@ -42,5 +42,5 @@ the room for two minutes, then walk back to your favourite spot and say you are 
 
 ## Notes
 
-- `explore` asks first: it walks into floor its map has not seen.
+- `explore` asks first, because it walks a room nobody has looked at yet.
 - `map` draws what you have seen so far, with your places on it.

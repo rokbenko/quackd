@@ -43,7 +43,7 @@ it, walk up to it, say where it was, and come back to where you began.
 
 ## Notes
 
-- `find` asks first: it walks into floor its map has not seen. It ends on its own, saying what
-  it found or why it did not.
+- `find` asks first, because it walks a room nobody has looked at yet. It ends on its own,
+  saying what it found or why it did not.
 - If `find` did not see the ball, declare failure with its words rather than walking about.
 - `map` draws what the duck has seen so far, with its places on it.

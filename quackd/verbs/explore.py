@@ -12,13 +12,18 @@ a body's width of it is then left until the next call: a person in a doorway, a 
 through and the body walks into, a map not read once. It marks the reserved place `start` where it
 begins, so `go_to_place start` is the way back.
 
+`find` is the same walk with a camera frame at every look and every view at every stop (`glance`).
+What the detector takes for the target is faced and seen again in the middle half of the view
+before it is believed (`confirm`), and the place named after it is then marked where the robot
+stands, facing it.
+
 What it walks, turns and waits by is a sensor's, a clamp's or upstream's word (`ExploreSpec`,
 `SpatialSource`):
 
 - a look is the map's own view, its width and its reach (`SpatialSource.view`), the views of a
   stop step round a circle by the rule `search_scan` turns a camera by (`views_round`), the first
-  stop takes them all and every later one only those that would see as many cells nobody has seen
-  as the body is wide (`views_worth_taking`);
+  stop takes them all, as every stop of a search does, and every later stop of an exploration only
+  those that would see as many cells nobody has seen as the body is wide (`views_worth_taking`);
 - a look holds until the map has taken its keyframe there, for the map's own settle at most
   (`settled_fix`), and one the head turned for first waits for a keyframe more than the map had,
   for the head's settle and the map's at most;
@@ -30,8 +35,9 @@ What it walks, turns and waits by is a sensor's, a clamp's or upstream's word (`
 It ends when no stretch is left that it can reach (`done`) or its minutes are up (`minutes`), and
 fails on a stop (`stopped`), the run's budget (`budget`), a map it cannot find itself in again
 (`lost`), a twist the body refused or a body it may move no more (`held`, `fallen`, `sitting`,
-`blind`), each in words of its own. The run's own rules, the battery's among them, are read at
-every stop. Whatever ends it, the body is stopped.
+`blind`), each in words of its own. A search ends well only by finding (`found`), and fails
+besides on a camera with no frame or a detector that cannot read one (`camera`). The run's own
+rules, the battery's among them, are read at every stop. Whatever ends it, the body is stopped.
 """
 
 from __future__ import annotations
@@ -910,8 +916,9 @@ def explore_verb(spec: ExploreSpec) -> Verb:
         "explore",
         "Walk to what the robot's own map has not seen yet and stop to look, again and again, "
         "until nothing is left it can reach or its minutes run out, at most 8. It marks where it "
-        "began as the place 'start'. It walks into floor its map has not seen, and its sensor "
-        "cannot see a step down, so keep it to one flat floor.",
+        "began as the place 'start'. It walks on floor its map has seen, looking before it steps "
+        "past the edge of it, but the map's sensor cannot see a step down, so keep it to one flat "
+        "floor.",
         run,
         ExploreParams,
         timeout_s=EXPLORE_TIMEOUT_S,
@@ -934,14 +941,15 @@ def find_verb(spec: ExploreSpec) -> Verb:
         "the robot's own map has not seen yet and look there, a camera frame at every look, "
         "until it sees it, faces it and sees it again, for at most 8 minutes. It marks where it "
         "then stands, facing it, as a place named after it, and where it began as 'start'. It "
-        "does not walk up to it: go_to does. It walks into floor its map has not seen, and its "
-        "sensor cannot see a step down, so keep it to one flat floor.",
+        "does not walk up to it: go_to does. It walks on floor its map has seen, looking before "
+        "it steps past the edge of it, but the map's sensor cannot see a step down, so keep it to "
+        "one flat floor.",
         run,
         FindParams,
         timeout_s=EXPLORE_TIMEOUT_S,
         kind="composite",
         safety_class="confirm",
         done_condition="it saw the target, faced it and saw it again, and marked where it "
-        "stands; or it did not, saying why: nothing left it can reach, its minutes, a stop, "
-        "lost, or a body it may move no more.",
+        "stands when it could; or it did not, saying why: nothing left it can reach, its "
+        "minutes, its camera, a stop, lost, or a body it may move no more.",
     )

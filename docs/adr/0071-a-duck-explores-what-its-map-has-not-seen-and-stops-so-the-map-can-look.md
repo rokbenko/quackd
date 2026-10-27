@@ -8,8 +8,8 @@
 when the duck stands still, and see a room a stop at a time. ADR-0068 gave quackd a reading of
 where the duck is, places, and a walk to a place on the map. What the map has not seen, nothing
 walked to: a pilot could only `move` and hope, and a map grew where a person happened to drive
-the duck. Pollen's post calls exploring a possibility, and its own design names planning as
-unowned.
+the duck. Pollen's posts, which ADR-0068 starts from, name exploring among what the map makes
+possible.
 
 ## Decision
 
@@ -19,10 +19,10 @@ unowned.
    `search_scan` turns by `_turn` rather than calling `move`, so a task that allows `explore`
    needs nothing else in its allowlist and no confirm is asked inside it.
 2. **It goes where the map can look, and looks only where that teaches it something.** A stretch is
-   walked to only when the opening it looks into is as wide as the body, nearest by the walk the
-   map knows, unseen floor never crossed to get there. The first stop looks all the way round, in
-   views a step apart by the rule `search_scan` turns a camera by, and every later stop only the
-   ways a look would see as many cells nobody has seen as the body is wide.
+   walked to only when the opening it looks into is as wide as the body, nearest by the way over
+   floor the map has seen. The first stop looks all the way round, in views a step apart by the
+   rule `search_scan` turns a camera by, and every later stop only the ways a look would see as
+   many cells nobody has seen as the body is wide.
 3. **A look is the map's keyframe.** Each waits until the map has taken one, for the map's own
    settle at most. One the head turned for first waits for a keyframe more than the map had, for
    the head's settle and the map's at most: a head that says where it got to has not moved when

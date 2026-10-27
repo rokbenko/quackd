@@ -3,8 +3,8 @@ on seeds 0..9 in two-rooms, headless, judged by the simulator's own truth as wel
 word, so a pilot that says it succeeded and did not cannot pass.
 
 The ball hides in the room the duck does not start in (`two-rooms`), so finding it means
-exploring through the doorway; the duck must then have stood within a body's width of the stop
-distance it asked for, and be back where it began.
+exploring through the doorway; the duck must then have come within the stop distance it asked for
+and a body's width of the ball, and be back where it began.
 """
 
 from __future__ import annotations
