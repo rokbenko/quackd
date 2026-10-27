@@ -4160,6 +4160,36 @@ def _models_docs_script() -> ModuleType:
     return module
 
 
+def _connect_docs_script() -> ModuleType:
+    """`scripts/connect_docs.py`, loaded by path as `scripts/models_docs.py` is."""
+    import importlib.util
+
+    script = REPO / "scripts" / "connect_docs.py"
+    spec = importlib.util.spec_from_file_location("connect_docs", script)
+    assert spec and spec.loader, f"{script} could not be loaded as a module"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_web_ui_guides_connect_table_is_what_scripts_connect_docs_writes() -> None:
+    """The guide's table of what connecting each robot takes is the catalogue's connect blocks
+    rendered, the blocks Setup shows beside its address field, so the page and the guide cannot
+    say different things. Read off the page directly too, since a renderer that dropped a row
+    would agree with itself."""
+    from quackd.adapters.catalogue import OFFICIAL
+
+    script = _connect_docs_script()
+    committed = script.PAGE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert script.rewrite(committed) == committed, (
+        "docs/guides/web-ui.md is not what scripts/connect_docs.py writes from the catalogue: run "
+        "uv run --no-sync python scripts/connect_docs.py and commit what it changes"
+    )
+    for info in OFFICIAL:
+        for backend in info.connect:
+            assert f"| `{info.name}:{backend}` |" in committed, f"no row for {info.name}:{backend}"
+
+
 def test_the_models_pages_are_what_scripts_models_docs_writes() -> None:
     """Every table of models on those pages is a catalogue rendered, and a rendered table that
     nothing renders again is a stale table with a comment on it. So the script runs here over

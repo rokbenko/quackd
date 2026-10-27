@@ -11,8 +11,34 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Added
 
+- **`quackd ui`, a page in your browser for what `quackd run` and `quackd drive` do.** Setup
+  chooses the robot, with the adapter's own word on connecting it and a check that drives it
+  nowhere, and the pilot: an LLM with its key's status, a VLA policy for the arm, and a decision
+  LLM, with every other option of the two commands under the panels their `--help` shows. Goal
+  runs one goal or task file to its end, and Chat gives the robot a goal, then the next, with the
+  robot kept connected. Runs, Robots, Memory and Policies are the run folders, the registry, each
+  robot's memory and the policy servers. Each goal and chat is the CLI's own command in a process
+  of its own, driven over `--front jsonl`, and Setup shows the command to type at a terminal for
+  the same run. The page listens on `127.0.0.1` unless `--bind` names another address, and asks
+  every visitor for its token, kept in the quackd home and printed with each address and a QR
+  code for a phone on the same Wi-Fi. The settings that decide who reaches the page are set by
+  `quackd ui` itself, over any config file or `.env` a project brings. A key typed into the page
+  stays in its memory and reaches a run through its environment alone.
+  Streamlit comes with the new `ui` extra, its usage statistics off, and `quackd doctor` checks
+  for it
+  ([ADR-0070](docs/adr/0070-the-page-is-reachable-by-its-own-user-alone.md)).
+- **`quackd robot add` and `robot edit` take `--token-env` and `--host-token-env`**, the name of a
+  variable holding the robot's or the board's token, so a program, the page among them, can save
+  a robot without putting a token on a command line. No refusal quotes what was typed where the
+  name goes.
+- **Each of the nine adapters says what connecting its real backends takes**, as data the page
+  shows beside its address field: what `--address` is, the default its transport uses, the
+  variable its token is read from, its camera, what has to run on the robot, what to do first,
+  and for the LeRobot arm that a connect takes torque off every motor for a moment. A third
+  party's adapter may say the same in a `CONNECT` mapping. A test holds each default address and
+  token variable to the transport's own constant.
 - **`quackd run` and `quackd drive` can be driven by a program over JSON lines.** Both take a
-  hidden `--front jsonl`, which is how the page `quackd ui` will drive them, each from a child
+  hidden `--front jsonl`, which is how the page `quackd ui` drives them, each from a child
   process: JSON lines on stdout, `hello` first and `end` last with the outcome and the exit code,
   and the page's `stop`, `answer`, `line` and `quit` on stdin. Everything a terminal would show
   still goes to stderr. A stop is a message, so it reaches a run on Windows too, where no signal a
@@ -43,6 +69,13 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 - `docs/concepts/architecture.md` describes `quackd/front.py`, and its `prompt` and `run_start`
   rows say what the page adds to them: `channel` and `front`.
+- `docs/guides/web-ui.md` is the page from its install to a first goal with no key, then chat,
+  the pilot, every option, connecting a robot, a phone on the same Wi-Fi, what a Stop and a page
+  going away do, troubleshooting and what the page does not do yet, with screenshots of real runs.
+  Its table of what connecting each robot takes is rendered from the catalogue by
+  `scripts/connect_docs.py`, and a test holds it there.
+- The README has a section on the page and a row for `quackd ui`, `architecture.md` describes
+  `quackd/webui/`, and `writing-an-adapter.md` says how an adapter declares `CONNECT`.
 
 ## [0.27.0] — 2026-10-26
 

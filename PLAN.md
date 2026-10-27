@@ -187,6 +187,16 @@ before.
   `quackd meet HOST --as NAME --ask pause:3` at a running `nearby-hello`. Then a pause asked of a
   robot that is really walking, which has to stop and hold still for the seconds it was granted.
   Each one flips its row in the roadmap's status table, and not before.
+- ⬜ **The page `quackd ui` on a phone.** Its phone path has run only in a headless browser made to
+  behave as a phone, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
+  0.0.0.0`, the firewall's question on Windows, the printed QR code scanned, a goal and a chat
+  line, the floating Stop, the screen locked mid-run and the run found again after, a home-screen
+  shortcut that still works after the page restarts, and a wrong token that shows nothing but the
+  refusal. Then the same through Tailscale, bound to its address. The phone steps in
+  [docs/guides/web-ui.md](docs/guides/web-ui.md) were written from the code, and change with what
+  this run finds. Closing the terminal window that started the page is untried too: killing its
+  process, as `quackd.exe` and as `python`, left a run waiting on a question to stop and close its
+  record, and a window closed by hand is the case left.
 
 ## Open here
 
@@ -410,6 +420,14 @@ before.
 - ⏸ **No asset shows a flock of pilots.** `flock.gif` is the coordinator: three identical ducks
   auctioning a kick. The kind of flock the README now leads with is two different bodies talking,
   and it has no recording, because a pilot flock writes no GIF (N members are N worlds).
+- ⬜ **What the page `quackd ui` does not do yet.** A chat takes `quackd drive`'s flags alone, so
+  the options Setup marks *goal only*, a VLA pilot, memory and the vendor settings among them, do
+  not reach it until drive gains run's flags, which waits for the place stores to land in drive.
+  Left out on purpose until somebody needs them: `--by-hand` and the end-of-run questions about an
+  arm, which wait for somebody at the arm; flocks; a picture with a chat line; `--live`; a lock on
+  a robot across processes, so a run started from a terminal beside the page is not seen; HTTPS on
+  a LAN, which Streamlit can serve through its own settings; and an app to install on a phone. The
+  JSON front end stays a hidden flag until a second program needs it.
 
 ## Open elsewhere
 

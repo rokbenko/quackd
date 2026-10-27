@@ -186,6 +186,46 @@ a diagnostics command to be describable.
 > about it. A row that raises therefore costs you its own line and nothing says so. If your
 > upstream pin or your probe is missing from `quackd doctor`, that silence is the bug.
 
+### One more, for the page
+
+**`CONNECT`** is what connecting each of your real backends takes, which the page `quackd ui`
+shows beside its address field when somebody picks your robot. It maps a backend to a
+`quackd.adapters.catalogue.Connect`, or to a dict of its fields. A simulator or a mock needs
+nothing and has no entry.
+
+| Field | What it says |
+|---|---|
+| `address` | what `--address` is for this backend, and the shapes it takes |
+| `default` | the address your transport uses when none is given, or `None` where one must be |
+| `example` | a real one, as your docs give it |
+| `token_env` | the variable your token is read from when `--token` is not given, or `None` |
+| `camera` | what a camera URL is for this body, or where its frames come from instead |
+| `on_robot` | what has to be running on the robot for a connect to succeed |
+| `first` | what to do once, before the first connect |
+| `docs` | your adapter's page |
+| `caution` | what a connect does to the body that somebody near it has to know first, which the page shows above its check |
+
+The page draws them as Markdown, so put addresses and commands in backticks. Keep `default`
+and `token_env` your transport's own: the page tells a person what quackd uses when they leave
+the address empty, and the nine's are held to their transports' constants by
+`tests/test_adapters_connect.py`. A block that cannot be read is left out and your adapter kept,
+as doctor treats its rows: it is help, not a contract.
+
+```python
+from quackd.adapters.catalogue import Connect
+
+CONNECT = {
+    "net": Connect(
+        address="the robot's daemon, `tcp://HOST:PORT`",
+        default="tcp://mybot.local:9900",
+        example="tcp://127.0.0.1:9900",
+        token_env="MYBOT_TOKEN",
+        on_robot="mybotd, started from its systemd unit.",
+        docs="https://example.com/mybot#quackd",
+    ),
+}
+```
+
 ## The manifest decides what exists
 
 A verb that is not in the manifest does not exist: not in the registry, not in the MCP
@@ -471,10 +511,12 @@ Then, for one quackd publishes:
 
 6. A row in `OFFICIAL` in `quackd/adapters/catalogue.py`: the name, the backends in order
    (the first is what `--robot <name>` means with no backend after it), the status line
-   `list-adapters` prints, a one-line summary, the extra and the SDK to probe for. The
-   catalogue is strings and imports nothing, which is what lets the table print the whole
-   nine on a machine with none of them installed, each marked "not installed". Append,
-   never insert: the tables that print these rows are order sensitive and a test pins them.
+   `list-adapters` prints, a one-line summary, the extra and the SDK to probe for, and in
+   `_CONNECT` beside it a `Connect` block for each real backend, which a row in
+   `tests/test_adapters_connect.py` holds to the transport's constants. The catalogue is
+   strings and imports nothing, which is what lets the table print the whole nine on a machine
+   with none of them installed, each marked "not installed". Append, never insert: the tables
+   that print these rows are order sensitive and a test pins them.
 7. A `quackd[<name>]` extra in the core's `pyproject.toml` pointing at `quackd-<name>` (with
    `[sdk]` if there is one), the package listed in the `dev` extra and in
    `[tool.uv.sources]` as a workspace member, and `uv lock`. The module gets a row in
@@ -498,6 +540,7 @@ machine where it is installed:
 | `--robot <yours>:<backend>` builds the body | the factory imports your module and calls its `make()` |
 | `quackd list-verbs`, `quackd validate`, the MCP tool list and the prompt all know your verbs | they come from your manifest, the same as everyone's |
 | `quackd doctor` prints your upstream pins and your probes | from your `UPSTREAMS` and `doctor_rows()` |
+| the page `quackd ui` says how to connect your robot | from your `CONNECT` |
 | your adapter is the default when it is the only one installed | a machine with one robot has no ambiguity to resolve |
 
 Your row in `list-adapters` reads module-level `BACKENDS`, `STATUS`, `SUMMARY`, `EXTRA` and
