@@ -157,6 +157,14 @@ def views_round(width_deg: float) -> tuple[float, int]:
     return 360.0 / per_turn, per_turn
 
 
+def nearest_view(headings: Iterable[float], yaw: float) -> float:
+    """The one of `headings` the shortest turn from `yaw` reaches, and of two as near, a step
+    either side of it, the smaller heading. The turns are rounded before they are compared: two as
+    long may differ in their last bit, and which is the shorter there differs from one platform's
+    libm to another's, so a run would choose by the platform it ran on."""
+    return min(headings, key=lambda h: (round(abs(math.remainder(h - yaw, math.tau)), 9), h))
+
+
 def fan(fov_rad: float, range_m: float, res_m: float) -> int:
     """How many rays a cone `fov_rad` wide is cast as, so two neighbours are no more than a cell
     apart at the end of its range."""

@@ -16,6 +16,7 @@ from quackd.space.frontier import (
     fan,
     frontier_groups,
     nearest_first,
+    nearest_view,
     opening_cells,
     ray_to_wall,
     still_unseen_beside,
@@ -182,6 +183,28 @@ def test_a_sensor_45_degrees_wide_looks_40_degrees_apart_as_a_camera_does() -> N
     assert views_round(45.0) == (40.0, 9)
     assert scan_steps(SearchScanParams(), 45.0) == (40.0, min(MAX_SCAN_STEPS, 9))
     assert views_round(90.0) == (72.0, 5)
+
+
+def test_of_two_views_as_near_the_smaller_heading_goes_first_whatever_the_last_bit() -> None:
+    """A stop's views lie whole steps either side of the way the robot faces, so each turn to the
+    left has one to the right as long. A yaw read a last bit or three off, as one platform's libm
+    gives it and another's does not, must not choose between the two: a run on Linux once turned
+    the other way from the same run on Windows and macOS, and every look after differed."""
+    step = math.radians(views_round(45.0)[0])
+    for yaw in (0.3, 1.1, 2.0, 2.9, -0.7, -1.9, -3.0):
+        for k in (1, 2, 3, 4):
+            pair = [
+                math.remainder(yaw + k * step, math.tau),
+                math.remainder(yaw - k * step, math.tau),
+            ]
+            nearer = math.remainder(yaw + (k - 1) * step, math.tau)
+            for ulps in range(-3, 4):
+                read = yaw
+                for _ in range(abs(ulps)):
+                    read = math.nextafter(read, math.copysign(math.inf, ulps))
+                assert nearest_view(pair, read) == min(pair)
+                assert nearest_view(pair[::-1], read) == min(pair)
+                assert nearest_view([*pair, nearer], read) == nearer
 
 
 def test_a_ray_stops_at_the_first_wall_and_runs_its_range_without_one() -> None:

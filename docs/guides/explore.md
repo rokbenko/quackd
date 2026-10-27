@@ -39,20 +39,20 @@ $ quackd --no-color run find-the-ball --room two-rooms --llm fake --yes --seed 3
 ⚠  gate    confirm: allowed the confirm gate was allowed
 →  send    look x4 over 1.5 s (x 0.766..1, y -0.643..0.643, z 0)
 →  send    stop
-→  send    move x11 over 1.0 s (vx 0, vy 0, wz 1)
-✓  result  find ok: find: found the ball: ball dead ahead ~0.87 m; marked 'ball' where it stands, facing it: 2 stops, 29 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (39.1 s sim, 1.3 s wall, 298 intents)
+→  send    move x11 over 1.0 s (vx 0, vy 0, wz -1)
+✓  result  find ok: find: found the ball: ball dead ahead ~0.87 m; marked 'ball' where it stands, facing it: 2 stops, 29 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (39.3 s sim, 1.6 s wall, 300 intents)
 ▶  verb    go_to(target='ball', stop_distance=0.3)
-✓  result  go_to ok: reached the ball: ~0.30 m away, bearing +0° (3.8 s sim, 0.3 s wall, 39 intents)
+✓  result  go_to ok: reached the ball: ~0.30 m away, bearing +0° (3.9 s sim, 0.4 s wall, 40 intents)
 ▶  verb    say(text='The ball was about 0.9 m from the spot I marked ball.')
 ✓  result  say ok: said 'The ball was about 0.9 m from the spot I marked ball.' as [chirp] (0.0 s, 1 intent)
 ▶  verb    go_to_place(name='start')
-✓  result  go_to_place ok: go_to_place: 0.07 m from 'start' by its map, facing within 17° of the way it faced there; walked 1.5 m in 16 s, 1 stop, 0 re-plans (16.3 s sim, 0.4 s wall, 159 intents)
+✓  result  go_to_place ok: go_to_place: 0.07 m from 'start' by its map, facing within 20° of the way it faced there; walked 1.5 m in 16 s, 1 stop, 0 re-plans (16.0 s sim, 0.4 s wall, 156 intents)
 ┌─ ✓ SUCCESS ─────────────────────────────────────────────────────────────────────────────────────┐
 │ found the ball, walked up to it, said where, and came back                                      │
-│ steps 4 · llm calls 6 · tokens 11613+96 · time 2.2 s (model 0.0 s) · model calls p50 0.0 s, p90 │
+│ steps 4 · llm calls 6 · tokens 12261+96 · time 2.7 s (model 0.0 s) · model calls p50 0.0 s, p90 │
 │ 0.0 s, max 0.0 s · first motion at 0.1 s, after 2 model calls · cost $0                         │
-│ run dir  runs\20261027-154718-find-the-ball                                                     │
-│ gif      runs\20261027-154718-find-the-ball\run.gif                                             │
+│ run dir  runs\20261027-191546-find-the-ball                                                     │
+│ gif      runs\20261027-191546-find-the-ball\run.gif                                             │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,9 +81,9 @@ $ quackd --no-color run favourite-spot --room two-rooms --llm fake --yes --seed 
 ▶  verb    mark_place(name='favourite')
 ✓  result  mark_place ok: marked 'favourite' where the robot stands, (-1.00, 0.00) by its map (0.0 s, 0 intents)
 ▶  verb    explore(minutes=2)
-✓  result  explore ok: explore: done, no gap in its map is left that it can reach: 2 stops, 26 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (35.8 s sim, 1.2 s wall, 271 intents)
+✓  result  explore ok: explore: done, no gap in its map is left that it can reach: 2 stops, 26 looks, walked 1.4 m, 5.5 m² of floor seen; 'start' is where it began (35.6 s sim, 1.1 s wall, 269 intents)
 ▶  verb    go_to_place(name='favourite')
-✓  result  go_to_place ok: go_to_place: 0.07 m from 'favourite' by its map, facing within 18° of the way it faced there; walked 1.3 m in 13 s, 1 stop, 0 re-plans (12.6 s sim, 0.3 s wall, 120 intents)
+✓  result  go_to_place ok: go_to_place: 0.07 m from 'favourite' by its map, facing within 19° of the way it faced there; walked 1.3 m in 13 s, 1 stop, 0 re-plans (12.7 s sim, 0.4 s wall, 121 intents)
 ▶  verb    say(text='Back at my favourite spot.')
 ✓  result  say ok: said 'Back at my favourite spot.' as [chirp] (0.0 s, 1 intent)
 ```

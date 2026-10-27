@@ -59,6 +59,7 @@ from quackd.space.frontier import (
     body_cells,
     frontier_groups,
     nearest_first,
+    nearest_view,
     still_unseen_beside,
     views_round,
     views_worth_taking,
@@ -401,7 +402,7 @@ class _Explore:
                 looked.append(heading)
             left = [h for h in left if h not in by_head]
             if left:
-                heading = min(left, key=lambda h: (abs(wrap_angle(h - pose.yaw)), h))
+                heading = nearest_view(left, pose.yaw)
                 fix, facing = await self.face(heading)
                 await self.glance()
                 looked.append(facing)
