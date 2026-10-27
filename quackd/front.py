@@ -519,7 +519,8 @@ class Questions:
         try:
             await asked.future
         except asyncio.CancelledError:
-            self._withdraw(asked, "a newer line or the brake took its place")
+            # by the brake, a newer line, the goal or the session ending: whichever, nobody answered
+            self._withdraw(asked, "taken back before anybody answered it")
             with self._lock:
                 self._pending.pop(asked.id, None)
             raise

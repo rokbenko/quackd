@@ -19,14 +19,14 @@ from quackd.agent.providers.vla import VlaProvider
 from quackd.drive.attached import AttachedBody
 from quackd.drive.run import SESSION_POLICY_S, _given_lens, session_duck
 from quackd.drive.session import Answered, DriveSession, GoalSettings
-from quackd.duckfile.parser import duck_from_goal
+from quackd.duckfile.parser import duck_from_goal, load_duck
 from quackd.duckfile.schema import Budgets
 from quackd.log import EventLog
 from quackd.mcp_server import RobotSession
 from quackd.memory import RobotMemory
 from quackd.safety import Budget, Executor, Heartbeat
 from quackd.verbs.registry import default_registry
-from tests.test_drive_session import _drive, _settled
+from tests.test_drive_session import _drive, _settled, _until
 
 VERBS = ["report_state", "observe", "search_scan", "go_to", "kick", "move", "stop"]
 
@@ -51,12 +51,20 @@ class _Person:
         self.answers = list(answers)
         self.then = then
         self.asked: list[tuple[str, str, str | None]] = []
+        self.labels: list[str | None] = []
         self.put = asyncio.Event()
 
     async def __call__(
-        self, question: str, *, detail: str | None = None, kind: str = "drive"
+        self,
+        question: str,
+        *,
+        detail: str | None = None,
+        kind: str = "drive",
+        behind: bool = False,
+        label: str | None = None,
     ) -> bool:
         self.asked.append((kind, question, detail))
+        self.labels.append(label)
         self.put.set()
         answer = self.answers.pop(0) if self.answers else self.then
         if answer is None:
@@ -203,10 +211,17 @@ async def test_a_brake_takes_a_goals_question_back_and_nobody_said_no(tmp_path: 
 
 
 async def _arm(
-    tmp_path: Path, person: Any, settings: GoalSettings | None = None
+    tmp_path: Path,
+    person: Any,
+    settings: GoalSettings | None = None,
+    *,
+    duck: Path | None = None,
+    yes: bool = False,
+    pilot: Any = None,
 ) -> tuple[DriveSession, list[dict[str, Any]]]:
-    """A session on the LeRobot mock, whose scripted policy answers `manipulate`, contractless
-    as `run_drive` leaves one, its goals flown by the VLA pilot."""
+    """A session on the LeRobot mock, whose scripted policy answers `manipulate`, its goals
+    flown by the VLA pilot unless `pilot` says otherwise. Contractless as `run_drive` leaves one,
+    or under `duck`, adopted before the connect as `run_drive` adopts a `--duckfile`."""
     adapter = make_adapter(RobotSpec("lerobot", "mock", "arm"))
     event_log = EventLog()
     executor = Executor(
@@ -214,7 +229,7 @@ async def _arm(
         transport=adapter,
         contract=None,
         budget=Budget(Budgets(), now=adapter.now),
-        confirm=Answered(yes=False),
+        confirm=Answered(yes=yes),
         event_log=event_log,
     )
     executor.require_verdict = True
@@ -225,19 +240,25 @@ async def _arm(
         executor=executor,
         heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
     )
+    if duck is not None:
+        robot.adopt(load_duck(str(duck)))
     await robot.connect()
-    registry = executor.registry
-    robot.adopt(session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"]))
-    assert executor.budget is not None
-    executor.budget.policy_total_s = SESSION_POLICY_S
+    if duck is None:
+        registry = executor.registry
+        robot.adopt(
+            session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
+        )
+        assert executor.budget is not None
+        executor.budget.policy_total_s = SESSION_POLICY_S
     records: list[dict[str, Any]] = []
     drive = DriveSession(
         robot,
         record=lambda kind, **data: records.append({"kind": kind, **data}),
-        pilot=lambda goal: VlaProvider([goal], label="goal"),
+        pilot=pilot or (lambda goal: VlaProvider([goal], label="goal")),
         goals=tmp_path / "goals",
         goal_verbs=["report_state", "observe", "stop"],
         ask=person,
+        yes=yes,
         settings=settings or GoalSettings(vla=True, policy=True),
     )
     return drive, records
@@ -315,11 +336,11 @@ async def test_each_goal_spends_from_what_the_session_has_left_of_its_policy_sec
 
     class Watching(_Person):
         async def __call__(
-            self, question: str, *, detail: str | None = None, kind: str = "drive"
+            self, question: str, *, detail: str | None = None, kind: str = "drive", **more: Any
         ) -> bool:
             if kind == "confirm" and drive._goal is not None:
                 seen.append(drive._goal.budget.policy_total_s)
-            return await super().__call__(question, detail=detail, kind=kind)
+            return await super().__call__(question, detail=detail, kind=kind, **more)
 
     drive, _records = await _arm(tmp_path, Watching(then=True))
     budget = drive.robot.executor.budget
@@ -382,11 +403,13 @@ async def test_play_is_given_to_every_goal(tmp_path: Path) -> None:
     assert start["play"] == {"on": True, "from": "--play"}
 
 
-async def test_a_goal_marks_and_reads_the_sessions_own_places(
+async def test_a_goal_reads_the_places_the_session_keeps(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Each goal kept places of its own that died with it, so a place a person marked between
-    goals was nowhere for the next goal to walk to."""
+    """Each goal kept places of its own, empty, that died with it, so a place a person marked
+    between goals was nowhere for the next goal to walk to."""
+    from quackd.space.places import Place
+
     built: list[Any] = []
     real = loop_module.AgentLoop
 
@@ -397,10 +420,11 @@ async def test_a_goal_marks_and_reads_the_sessions_own_places(
 
     monkeypatch.setattr(loop_module, "AgentLoop", Kept)
     drive, _body, _records = await _drive(tmp_path)
+    drive.robot.executor.places.mark(Place("dock", 0.5, 0.0, 0.0, "odom-1", "odometry", 0.0))
     await _settled(drive.submit("patrol the room", by="cli", channel="pipe"))
     await _done(drive)
     (goal,) = built
-    assert goal.executor.places is drive.robot.executor.places
+    assert goal.executor.places.get("dock") is not None
 
 
 def test_the_lens_is_told_to_the_body_once_by_the_session_and_never_by_a_goal() -> None:
@@ -446,3 +470,289 @@ def test_the_sessions_record_names_the_policy_server_as_a_runs_does() -> None:
 
     assert _served(Arm()) == {"server": "http://127.0.0.1:8080", "async_chunks": False}
     assert _served(Broken()) is None and _served(object()) is None
+
+
+# ── what the review of this branch found ───────────────────────────────────────────────
+
+BOWL = "put the block in the bowl"
+
+
+def _bowl(
+    tmp_path: Path, *, allow: str = "manipulate, report_state, stop", policy: str = ""
+) -> Path:
+    """A `.duck` whose policy may be told one thing alone."""
+    path = tmp_path / "bowl.duck"
+    path.write_text(
+        "---\nduck: 3\nname: bowl\ndescription: Only the bowl.\nverbs:\n"
+        f"  allow: [{allow}]\n  confirm: [manipulate]\nsuccess: [the block is in the bowl]\n"
+        f"policy:\n  instructions: [{BOWL}]\n{policy}"
+        "---\nPut the block in the bowl, and nothing else.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _policy_runs(drive: DriveSession) -> list[str]:
+    return list(drive.robot.transport.transport.policy_runs)
+
+
+async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
+    tmp_path: Path,
+) -> None:
+    """A goal held `manipulate` to its own contract, which lists nothing, so a session whose
+    `.duck` lists one instruction let a goal's pilot tell the policy anything, unasked under
+    `--yes`, where `quackd run` and a typed `manipulate` refuse every word off the list."""
+
+    def pilot(goal: str) -> Any:
+        return FakeProvider(
+            script=[
+                _verdict("feasible", "an arm with a policy"),
+                ToolCall(name="manipulate", arguments={"instruction": "sweep the table clear"}),
+                ToolCall(name="manipulate", arguments={"instruction": BOWL}),
+                ToolCall(name="declare_success", arguments={"reason": "in the bowl"}),
+            ]
+        )
+
+    drive, _records = await _arm(
+        tmp_path, None, GoalSettings(policy=True), duck=_bowl(tmp_path), yes=True, pilot=pilot
+    )
+    goal = drive.submit("clear the table", by="cli", channel="pipe")
+    await _settled(goal)
+    await _done(drive)
+    assert _policy_runs(drive) == [BOWL], "the policy was told words the .duck never listed"
+
+
+async def test_a_vla_line_the_sessions_duck_does_not_list_is_refused_before_the_arm_moves(
+    tmp_path: Path,
+) -> None:
+    person = _Person(then=True)
+    drive, _records = await _arm(tmp_path, person, duck=_bowl(tmp_path))
+    refused = drive.submit("wave the knife around")
+    await _settled(refused)
+    listed = drive.submit(BOWL)
+    await _settled(listed)
+    await _done(drive)
+    ended = await refused.ended
+    assert ended.outcome == "refused"
+    assert f"bowl lists the only instructions it may be told: '{BOWL}'" in ended.summary
+    assert (await listed.ended).outcome == "success"
+    assert _policy_runs(drive) == [BOWL]
+
+
+async def test_a_goal_typed_over_a_goal_spends_what_the_first_left(tmp_path: Path) -> None:
+    """The second goal was built before the first was stopped and charged, so it was given the
+    seconds the first had spent and the session ran a segment past its own total."""
+    seen: list[float] = []
+    confirms = {"n": 0}
+    held = asyncio.Event()
+
+    class Holding(_Person):
+        async def __call__(self, question: str, **more: Any) -> bool:
+            if more.get("kind") == "confirm":
+                confirms["n"] += 1
+                if drive._goal is not None:
+                    seen.append(drive._goal.budget.policy_total_s)
+                if confirms["n"] == 3:  # the first goal's third segment: nobody answers it
+                    held.set()
+                    await asyncio.Event().wait()
+            return await super().__call__(question, **more)
+
+    def three(goal: str) -> Any:
+        return FakeProvider(
+            script=[
+                _verdict("feasible", "an arm"),
+                *[
+                    ToolCall(name="manipulate", arguments={"instruction": f"step {i}"})
+                    for i in range(3)
+                ],
+                ToolCall(name="declare_success", arguments={"reason": "done"}),
+            ]
+        )
+
+    duck = tmp_path / "arm.duck"
+    duck.write_text(
+        "---\nduck: 3\nname: arm\ndescription: The arm.\nverbs:\n"
+        "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
+        "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 30\n---\nUse the arm.\n",
+        encoding="utf-8",
+    )
+    drive, _records = await _arm(
+        tmp_path, Holding(then=True), GoalSettings(policy=True), duck=duck, pilot=three
+    )
+    budget = drive.robot.executor.budget
+    assert budget is not None
+    first = drive.submit("work the arm")
+    await asyncio.wait_for(held.wait(), 30)
+    second = drive.submit("work the arm again")
+    await asyncio.wait_for(asyncio.gather(first.ended, second.ended), 60)
+    await _done(drive)
+    assert seen[:2] == [30.0, 30.0], "the first goal is held to the session's total"
+    assert seen[3] == 10.0, "the second was given what the first left, not the whole total"
+    assert budget.policy_s <= budget.policy_total_s, (
+        f"{budget.policy_s} s of {budget.policy_total_s}"
+    )
+
+
+async def test_a_vla_judge_taken_back_by_the_brake_ends_the_goal_for_the_brake(
+    tmp_path: Path,
+) -> None:
+    """A question about the arm a stop took back is nobody's answer, so the goal ended as a
+    failure the person never declared, and the brake was nowhere in its reason."""
+    judging = asyncio.Event()
+
+    class NeverJudges(_Person):
+        async def __call__(self, question: str, **more: Any) -> bool:
+            if more.get("kind") == "judge":
+                judging.set()
+                await asyncio.Event().wait()
+            return await super().__call__(question, **more)
+
+    drive, _records = await _arm(tmp_path, NeverJudges(then=True))
+    goal = drive.submit("pick up the red cube")
+    await asyncio.wait_for(judging.wait(), 20)
+    drive.submit("")
+    await _settled(goal)
+    await _done(drive)
+    ended = await goal.ended
+    assert ended.outcome == "aborted" and "the brake" in ended.summary, ended
+    events = _goal_events(tmp_path / "goals")
+    assert not [e for e in events if e["kind"] == "declare"], "a failure nobody declared"
+    assert ("judge", True) not in [
+        (e["what"], e.get("answer")) for e in events if e["kind"] == "prompt"
+    ]
+
+
+@pytest.mark.parametrize("memory", [False, True], ids=["memory off", "memory on"])
+async def test_a_goal_changes_the_kept_places_only_where_the_session_keeps_a_memory(
+    tmp_path: Path, memory: bool
+) -> None:
+    """Off, as drive's default is, a goal's `forget_place` deleted the robot's kept place, which
+    `quackd run --no-memory` could never do: what a goal marks or forgets lasts as long as it."""
+    from quackd.space.places import Place, PlaceStore
+
+    drive, _body, _records = await _drive(tmp_path)
+    kept = PlaceStore("microduck:mock", tmp_path / "home")
+    kept.mark(Place("kitchen", 1.0, 0.0, 0.0, "odom-1", "odometry", 0.0))
+    drive.robot.executor.places = kept
+    drive.goal_verbs = [*drive.goal_verbs, "forget_place"]
+    drive.pilot = lambda goal: FakeProvider(
+        script=[
+            _verdict("feasible", "it moves nothing"),
+            ToolCall(name="forget_place", arguments={"name": "kitchen"}),
+            ToolCall(name="declare_success", arguments={"reason": "tidied"}),
+        ]
+    )
+    if memory:
+        drive.settings = GoalSettings(memory=RobotMemory("microduck:mock", tmp_path / "home"))
+    await _settled(drive.submit("tidy up the map", by="cli", channel="pipe"))
+    await _done(drive)
+    assert [p.name for p in kept.places()] == ([] if memory else ["kitchen"])
+
+
+async def test_a_goal_measures_through_the_sessions_lens_after_its_own_connect(
+    tmp_path: Path,
+) -> None:
+    """Each goal recalibrates the session's detector as it connects, so one flown without the
+    session's `--fov-deg` set its lens back to the body's own."""
+    from quackd.perception import detector_for
+
+    drive, _body, _records = await _drive(tmp_path)
+    robot = drive.robot
+    manifest = robot.executor.manifest
+    assert manifest is not None
+    detector = detector_for(manifest.sensors, None, fov_deg=None, backend="mock")
+    assert detector is not None
+    robot.detector = detector
+    robot.executor.detector = detector
+    _given_lens(robot, 62.0)
+    drive.settings = GoalSettings(fov_deg=62.0)
+    await _settled(drive.submit("patrol the room", by="cli", channel="pipe"))
+    await _done(drive)
+    assert getattr(detector, "fov_deg", None) == 62.0
+
+
+async def test_a_y_after_a_gated_line_typed_over_a_goals_question_answers_that_line(
+    tmp_path: Path,
+) -> None:
+    """Shown oldest first, `kick left` typed over a goal's question was queued unseen behind it,
+    and the `y` the person meant for the kick cleared the goal's walk instead."""
+    from quackd.drive.terminal import Asker
+
+    said: list[str] = []
+    drive, body, _records = await _drive(tmp_path)
+    drive.robot.adopt(duck_from_goal("drive", VERBS, confirm=["move", "kick"]))
+    drive.exact = drive._exact()
+    asker = Asker(said.append)
+    drive.ask = asker
+    goal = drive.submit("patrol the room")
+    await _until(lambda: asker.pending is not None)
+    assert said[-1].startswith("ask      goal 1: run walk("), said
+    kick = drive.submit("kick left")
+    await _until(lambda: said[-1].startswith("ask      run kick("))
+    assert asker.answers("y")
+    await asyncio.wait_for(asyncio.gather(goal.ended, kick.ended), 20)
+    await _done(drive)
+    assert (await kick.ended).outcome == "ok", (await kick.ended).summary
+    assert (await goal.ended).outcome == "aborted", "the kick took the body over from the goal"
+    assert _walked(body) == [], "the y meant for the kick cleared the goal's walk"
+    assert asker.pending is None
+
+
+async def test_a_goals_question_never_takes_the_screen_from_one_showing() -> None:
+    """A goal asks when it gets there, and a question of its own that took the screen just
+    before a keystroke would take the answer meant for the one the person was reading."""
+    from quackd.answers import confirm_question
+    from quackd.drive.session import GoalAsker
+    from quackd.drive.terminal import Asker
+
+    said: list[str] = []
+    asker = Asker(said.append)
+    kick = asyncio.ensure_future(asker("run kick(leg=left)?"))
+    await asyncio.sleep(0)
+    confirm = GoalAsker(
+        asker,
+        "confirm",
+        lambda name, params: (confirm_question(name, params), None),
+        label="goal 1",
+    )
+    walk = asyncio.ensure_future(confirm("walk", {"vx": 0.12}))
+    await asyncio.sleep(0)
+    assert said[-1] == "ask      run kick(leg=left)? [y/N]", "the goal's took the screen"
+    assert asker.answers("y") and await asyncio.wait_for(kick, 2) is True
+    await asyncio.sleep(0)
+    assert said[-1] == "ask      goal 1: run walk(vx=0.12)? [y/N]"
+    assert asker.answers("n") and await asyncio.wait_for(walk, 2) is False
+
+
+async def test_a_vla_line_typed_over_a_goal_that_spent_the_last_seconds_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Checked again once the goal it takes over has been charged: the second line passed while
+    the first goal's segment was still uncharged, and started with no seconds left to run."""
+    judging = asyncio.Event()
+
+    class NeverJudges(_Person):
+        async def __call__(self, question: str, **more: Any) -> bool:
+            if more.get("kind") == "judge":
+                judging.set()
+                await asyncio.Event().wait()
+            return await super().__call__(question, **more)
+
+    duck = tmp_path / "one.duck"
+    duck.write_text(
+        "---\nduck: 3\nname: one\ndescription: One segment.\nverbs:\n"
+        "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
+        "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 10\n---\nOne segment.\n",
+        encoding="utf-8",
+    )
+    person = NeverJudges(then=True)
+    drive, _records = await _arm(tmp_path, person, duck=duck)
+    first = drive.submit("pick up the red cube")
+    await asyncio.wait_for(judging.wait(), 20)
+    asked_before = len(person.asked)
+    second = drive.submit("put it in the bowl")
+    await _settled(first, second)
+    await _done(drive)
+    ended = await second.ended
+    assert ended.outcome == "refused" and "policy seconds are spent" in ended.summary, ended
+    assert len(person.asked) == asked_before, "the second line asked something"

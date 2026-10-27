@@ -153,7 +153,8 @@ async def test_a_goals_question_is_put_to_the_page_and_its_record_names_the_page
         # the patrol asks before each of its walks, and each is answered no in the page
         for asked in (x for x in _lines(out) if x["ev"] == "ask"):
             if asked["id"] not in answered:
-                assert asked["kind"] == "confirm" and asked["question"].startswith("run walk(")
+                assert asked["kind"] == "confirm"
+                assert asked["question"].startswith("goal 1: run walk("), asked["question"]
                 assert front.questions.answer(asked["id"], False)
                 answered.add(asked["id"])
         return any(r["kind"] == "goal_end" for r in records)

@@ -784,3 +784,37 @@ def test_a_played_file_flown_with_no_play_says_its_part_was_off(
     start = next(e for e in events if e["kind"] == "run_start")
     assert start["play"] == {"on": False, "from": "--no-play"}
     assert start["contract"]["play"] is True, "the file's own word, which the flag overrode"
+
+
+async def test_a_stop_at_the_question_a_budget_puts_is_on_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A question about what ran that a stop took back, a drive session's brake say, is nobody's
+    answer. The run still ends on its budget, and its reason says why the question went
+    unanswered rather than calling what ran a failure."""
+    import asyncio
+
+    import quackd.agent.loop as loop_module
+
+    loops: list[Any] = []
+    real = loop_module.AgentLoop
+
+    class Kept(real):  # type: ignore[misc, valid-type]
+        def __init__(self, cfg: Any) -> None:
+            super().__init__(cfg)
+            loops.append(self)
+
+    monkeypatch.setattr(loop_module, "AgentLoop", Kept)
+
+    async def ask(_question: str) -> bool:
+        loops[0].stop_reason = "the brake, Enter"
+        loops[0].executor.abort.set()
+        await asyncio.Event().wait()
+        return True
+
+    ask.asks_a_person = True  # type: ignore[attr-defined]
+    result = await _run(tmp_path, judge=ask, total_s=2 * SEGMENT_S)
+    assert result.outcome == "budget", result.reason
+    assert result.reason.startswith("policy total_s"), result.reason
+    assert result.reason.endswith("the question about what ran was taken back: the brake, Enter")
+    assert "judge" not in [what for what, _q, _a in _prompts(result)]

@@ -35,7 +35,7 @@ from quackd.drive.lanes import (
     session_word,
 )
 from quackd.drive.presets import presets_for
-from quackd.duckfile.schema import POLICY_VERB, Budgets, instruction_line
+from quackd.duckfile.schema import POLICY_VERB, Budgets, PolicySection, instruction_line
 from quackd.latency import spread
 from quackd.safety import (
     BudgetExceeded,
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from quackd.agent.decision.commands import Choice, CommandChooser
     from quackd.agent.providers.base import LLMProvider
     from quackd.agent.providers.catalogue import Price
-    from quackd.duckfile.schema import DuckFile
+    from quackd.duckfile.schema import DuckFile, DuckFrontmatter
     from quackd.log import Sink
     from quackd.mcp_server import RobotSession
     from quackd.memory import RobotMemory
@@ -181,24 +181,35 @@ class GoalSettings:
 class GoalAsker:
     """One of the questions a goal puts, to the person driving the session, at the keyboard or
     in the page where the goal's line was typed. The goal waits for the answer while the session
-    goes on reading lines (`quackd.answers`), and a brake or a newer line ends the goal and takes
-    the question back. Marked for the goal's record as the session's own asker is marked."""
+    goes on reading lines (`quackd.answers`), and a brake, or a newer line that moves the body,
+    ends the goal and takes the question back. Marked for the goal's record as the session's own
+    asker is marked.
+
+    Put behind any question already showing and named after its goal, `goal 2: run walk(...)?`:
+    a question about the line a person has just typed goes in front of it, so a `y` they mean for
+    that line never answers the goal's (`terminal.Asker`)."""
 
     def __init__(
         self,
         ask: Callable[..., Awaitable[bool]],
         kind: str,
         words: Callable[..., tuple[str, str | None]],
+        *,
+        label: str,
     ) -> None:
         self._ask = ask
         self._kind = kind
         self._words = words
+        self._label = label
         self.asks_a_person: Any = getattr(ask, "asks_a_person", False)
         self.channel: str | None = getattr(ask, "channel", None)
 
     async def __call__(self, *args: Any) -> bool:
         question, detail = self._words(*args)
-        return bool(await self._ask(question, detail=detail, kind=self._kind))
+        said = await self._ask(
+            question, detail=detail, kind=self._kind, behind=True, label=self._label
+        )
+        return bool(said)
 
 
 @dataclass
@@ -807,8 +818,8 @@ class DriveSession:
         front = duck.frontmatter
         updates: dict[str, Any] = {"budgets": self._goal_budgets(front.budgets)}
         session = self.robot.duck
-        if session is not None:
-            mine = session.frontmatter
+        mine = session.frontmatter if session is not None else None
+        if mine is not None:
             rules = list(mine.abort_when)
             for rule in front.abort_when:
                 one = front.model_copy(update={"abort_when": [rule]})
@@ -821,7 +832,26 @@ class DriveSession:
                 if rule not in rules:
                     rules.append(rule)
             updates["abort_when"] = rules
+        if (policy := self._goal_policy(mine)) is not None:
+            updates["policy"] = policy
         return duck.model_copy(update={"frontmatter": front.model_copy(update=updates)})
+
+    def _goal_policy(self, session: DuckFrontmatter | None) -> PolicySection | None:
+        """What a goal holds `manipulate` to: the session `.duck`'s own `policy:` section, whose
+        listed instructions are the only words the arm's policy may be told, as a typed
+        `manipulate` and `quackd run` hold it, and its seconds cut to what the session has left.
+        A goal held to its own contract's defaults took any words at all, and was given its own
+        two minutes whatever the session had spent. None, for a goal held to the defaults, where
+        the session has no section and has a goal's seconds left: every goal of a session started
+        bare, whose record reads as it did."""
+        policy = session.policy if session is not None else None
+        held = policy if policy is not None else PolicySection()
+        left = self._policy_left()
+        if left is not None and left < held.total_s:
+            # by `model_copy`, which validates nothing: what is left may be less than a segment,
+            # and the last segment may run past the total by its own seconds, as a run's may
+            return held.model_copy(update={"total_s": max(left, 0.0)})
+        return policy
 
     def _goal_budgets(self, defaults: Budgets) -> Budgets:
         """A goal's own budgets, `quackd run --goal`'s with `--max-steps` over its steps, cut to
@@ -859,15 +889,24 @@ class DriveSession:
     def _vla_refusal(self, text: str) -> str | None:
         """Why the session's VLA pilot cannot take this line, where it flies its goals with one:
         the arm's policy is told the line word for word, so it is held to the rule every
-        instruction is (`instruction_line`), and it needs policy seconds the session has left."""
+        instruction is (`instruction_line`) and to the session `.duck`'s list where it has one,
+        and it needs policy seconds the session has left."""
         if not self.settings.vla:
             return None
         try:
-            instruction_line(text)
+            line = instruction_line(text)
         except ValueError as e:
             return (
                 "--controller vla tells the arm's policy each line word for word, as its one "
                 f"instruction, and {e}"
+            )
+        duck = self.robot.duck
+        listed = duck.frontmatter.effective_policy.instructions if duck is not None else []
+        if duck is not None and listed and line not in listed:
+            return (
+                "--controller vla tells the arm's policy each line word for word, and "
+                f"{duck.name} lists the only instructions it may be told: "
+                + ", ".join(repr(each) for each in listed)
             )
         budget = self.robot.executor.budget
         if budget is not None and budget.policy_s >= budget.policy_total_s:
@@ -877,7 +916,7 @@ class DriveSession:
             )
         return None
 
-    def _goal_answerers(self, cmd: Command) -> tuple[Any, Any, Any]:
+    def _goal_answerers(self, cmd: Command, number: int) -> tuple[Any, Any, Any]:
         """What answers a goal's confirm gate, the pilot's doubt, and, for a pilot that cannot
         tell, whether the arm did it.
 
@@ -892,11 +931,18 @@ class DriveSession:
             return executor.confirm, _go, None
         if cmd.by != "person" or self.ask is None:
             return executor.confirm, None, None
-        ask = self.ask
+        ask, label = self.ask, f"goal {number}"
         return (
-            GoalAsker(ask, "confirm", lambda name, params: (confirm_question(name, params), None)),
-            GoalAsker(ask, "decide", lambda why: (GO_AHEAD, why)),
-            GoalAsker(ask, "judge", lambda why: (DID_IT, why)) if self.settings.vla else None,
+            GoalAsker(
+                ask,
+                "confirm",
+                lambda name, params: (confirm_question(name, params), None),
+                label=label,
+            ),
+            GoalAsker(ask, "decide", lambda why: (GO_AHEAD, why), label=label),
+            GoalAsker(ask, "judge", lambda why: (DID_IT, why), label=label)
+            if self.settings.vla
+            else None,
         )
 
     async def _run_goal(self, cmd: Command, *, lane: str) -> None:
@@ -912,50 +958,65 @@ class DriveSession:
             self._end(cmd, Ended("refused", refusal))
             return
         executor = self.robot.executor
-        number = next(self._goal_count)
-        run_dir = self.goals / f"{number:02d}-{_slug(cmd.text)}"
-        run_dir.mkdir(parents=True, exist_ok=True)
         manifest = executor.manifest
         if manifest is None:
             raise RuntimeError("a goal needs the body's manifest, and the session has none")
-        confirm, decide, judge = self._goal_answerers(cmd)
-        settings = self.settings
-        loop = AgentLoop(
-            RunConfig(
-                duck=self._goal_duck(cmd.text),
-                provider=self.pilot(cmd.text),
-                transport=AttachedBody(self.robot.transport, manifest),
-                detector=self.robot.detector,
-                run_dir=run_dir,
-                runs_dir=self.goals,
-                confirm=confirm,
-                # a session started with --dry-run sends nothing, a goal's verbs included: the
-                # goal's own executor ran every verb for real on the body the session holds
-                dry_run=executor.dry_run,
-                view=self.goal_view(number) if self.goal_view is not None else None,
-                on_frame=self.goal_frames,
-                memory=settings.memory,
-                fov_deg=settings.fov_deg,
-                decide=decide,
-                judge=judge,
-                decision=settings.decision,
-                decision_llm=settings.decision_llm,
-                decision_price=settings.decision_price,
-                price=settings.price,
-                play=settings.play,
-                decision_frames=settings.decision_frames,
-                # the session's own, so a place marked by a typed command is there for a goal,
-                # and one a goal marks is there for the next command
-                places=executor.places,
-            )
-        )
-        if (left := self._policy_left()) is not None:
-            # the session's policy seconds, which its goals spend from together as they spend
-            # its steps; the observation's budget line says what is left once one has run
-            loop.budget.policy_total_s = min(loop.budget.policy_total_s, max(left, 0.0))
+        number = next(self._goal_count)
+        run_dir = self.goals / f"{number:02d}-{_slug(cmd.text)}"
         self._route(cmd, Routed(lane, label=f"goal {number}", note=str(run_dir.name)))
         self._routing.discard(cmd)
         await self._take_over(cmd)
+        # Built once whatever it took over from has ended, and been charged for what it spent,
+        # which `_charge` is before that command's `ended` settles: a goal typed over a goal was
+        # given the steps and policy seconds the first had spent and not yet been charged for,
+        # and ran past the session's own.
+        refusal = self._goal_refusal() or self._vla_refusal(cmd.text)
+        if refusal is not None:
+            if self._mover is cmd:
+                self._mover = None
+            self._end(cmd, Ended("refused", refusal))
+            return
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+            confirm, decide, judge = self._goal_answerers(cmd, number)
+            settings = self.settings
+            loop = AgentLoop(
+                RunConfig(
+                    duck=self._goal_duck(cmd.text),
+                    provider=self.pilot(cmd.text),
+                    transport=AttachedBody(self.robot.transport, manifest),
+                    detector=self.robot.detector,
+                    run_dir=run_dir,
+                    runs_dir=self.goals,
+                    confirm=confirm,
+                    # a session started with --dry-run sends nothing, a goal's verbs included:
+                    # the goal's own executor ran every verb for real on the body it holds
+                    dry_run=executor.dry_run,
+                    view=self.goal_view(number) if self.goal_view is not None else None,
+                    on_frame=self.goal_frames,
+                    memory=settings.memory,
+                    fov_deg=settings.fov_deg,
+                    decide=decide,
+                    judge=judge,
+                    decision=settings.decision,
+                    decision_llm=settings.decision_llm,
+                    decision_price=settings.decision_price,
+                    price=settings.price,
+                    play=settings.play,
+                    decision_frames=settings.decision_frames,
+                    # the session's own places, so one marked between two goals is there for
+                    # the second, and what a goal marks or forgets is kept where the session
+                    # keeps a memory: without one a goal changes a copy that lasts as long as it
+                    # does, as `quackd run --no-memory` keeps its own places
+                    places=executor.places
+                    if settings.memory is not None
+                    else executor.places.held_copy(),
+                )
+            )
+        except BaseException:
+            if self._mover is cmd:
+                self._mover = None
+            raise
         self._goal = loop
         cmd.started_at = self.clock()
         to_start = round((cmd.started_at - cmd.at) * 1000, 3)

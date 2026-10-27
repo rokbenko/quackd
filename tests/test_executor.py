@@ -722,6 +722,28 @@ async def test_a_confirm_still_waiting_when_the_run_is_stopped_was_answered_by_n
     assert not mock_transport.intents_of("do")
 
 
+async def test_a_confirm_its_composite_ran_out_of_time_on_was_answered_by_nobody(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A nested verb's question waits inside its composite's own time, and a composite that ran
+    out of it cancelled the question with no gate row at all: the record said a kick ended,
+    never that nobody had been asked to clear it, or had answered."""
+
+    async def combo(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        return await ctx.run_verb("kick", {"leg": "left"})
+
+    registry.register(Verb("combo", "walk up and kick", combo, NoParams, timeout_s=0.2))
+    ex, seen = logged(registry, mock_transport, allow="combo, kick", confirm="kick")
+    ex.confirm = _later(True, asyncio.Event())
+    result = await asyncio.wait_for(ex.run_verb("combo"), timeout=10)
+    assert not result.ok
+    gate = _confirm_gate(seen)
+    assert (gate["outcome"], gate["answer"]) == ("denied", None)
+    assert gate["reason"] == "the prompt raised CancelledError"
+    assert not mock_transport.intents_of("do")
+
+
 # ── a dangerous verb needs a person (ADR-0056) ──────────────────────────────────────────
 
 

@@ -2122,6 +2122,11 @@ class AgentLoop:
             try:
                 judged["answer"] = await answered(judge, question, abort=self.executor.abort)
             except Exception as e:
+                if self.executor.abort.is_set():
+                    # taken back because the run was stopped, a drive session's brake or a newer
+                    # line among them: it ends for the stop, as a fall warning taken back does,
+                    # and not as a failure nobody declared
+                    raise Aborted(self._abort_reason()) from e
                 judged["raised"] = type(e).__name__
             finally:
                 if self.budget.started_at is not None:
@@ -3092,7 +3097,12 @@ class AgentLoop:
             # the budget's own reason or keep the teardown below from stopping the robot
             try:
                 with contextlib.suppress(Exception):
-                    reason = await self._cut_short(reason)
+                    try:
+                        reason = await self._cut_short(reason)
+                    except Aborted as stopped:
+                        # a stop took that question back: the budget still ended the run, and the
+                        # record says nobody answered it, and why
+                        reason = f"{reason}; the question about what ran was taken back: {stopped}"
             except BaseException as interrupted:
                 # the CLI's second Ctrl-C, or a cancel, while that question waits. The handler
                 # for an interrupt below never sees one raised in here, so this one says it:

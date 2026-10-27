@@ -1679,6 +1679,7 @@ def _vla_refusal(
     goal: str | None,
     ignored: Sequence[str],
     someone: bool,
+    command: str = "run",
 ) -> tuple[str, str] | None:
     """Why `--controller vla` cannot fly this run, as a sentence and a hint, or None.
 
@@ -1687,7 +1688,8 @@ def _vla_refusal(
     that would take that person away, or leave them nothing real to judge, is refused here,
     before anything is built, connected or written down. `ignored` are the flags given for a
     model that this pilot would drop without a word, and `someone` whether a person can be asked
-    at all: at the page, at the terminal, or for a drive session at its keyboard."""
+    at all: at the page, at the terminal, or for a drive session at its keyboard. `command` is
+    the one refused, `run` or `drive`, which the words name."""
     from quackd.duckfile.schema import instruction_line
 
     if yes:
@@ -1716,9 +1718,10 @@ def _vla_refusal(
         )
     if not has_policy:
         return (
-            "--controller vla hands each instruction to the arm's learned policy, and this run "
-            "names no policy server",
-            "start one with quackd policy serve, and give quackd run its address with --policy-url",
+            "--controller vla hands each instruction to the arm's learned policy, and this "
+            f"{'run' if command == 'run' else 'session'} names no policy server",
+            f"start one with quackd policy serve, and give quackd {command} its address with "
+            "--policy-url",
         )
     if goal is not None:
         try:
@@ -3438,7 +3441,8 @@ _DRIVE_MEMORY = typer.Option(
     "--memory/--no-memory",
     help="Let each goal the pilot flies recall what earlier runs of this robot learned, and keep "
     "one fact for the next, as quackd run does (see `quackd memory`). Off in drive, where run "
-    "keeps it on. The places a person marks are kept either way.",
+    "keeps it on. The places a person marks are kept either way, and those a goal marks or "
+    "forgets only with it.",
     rich_help_panel="Memory",
 )
 _MEMORY_DIR = typer.Option(
@@ -4850,6 +4854,7 @@ def _drive_refusal(
         has_policy=policy is not None,
         goal=None,
         someone=someone,
+        command="drive",
         ignored=[
             flag
             for flag, given in (

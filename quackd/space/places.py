@@ -208,6 +208,20 @@ class PlaceStore:
         )
         tmp.replace(self.path)
 
+    def held_copy(self) -> PlaceStore:
+        """These places as they stand, in a store of their own that writes nothing: what a drive
+        session's goal reads and marks where the session keeps no memory, so the goal leaves the
+        robot's kept places as it found them, as `quackd run --no-memory` keeps its own for as long
+        as it lasts. Each record is copied, so nothing the goal changes reaches this store."""
+        held = PlaceStore(self.robot_key, persist=False)
+        held._held = [
+            Place.from_json(r.to_json())
+            if isinstance(r, Place)
+            else FrameRecord.from_json(r.to_json())
+            for r in self._records()
+        ]
+        return held
+
     # ── reading ─────────────────────────────────────────────────────────────────────
 
     def places(self) -> list[Place]:

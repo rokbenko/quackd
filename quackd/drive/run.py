@@ -331,6 +331,15 @@ async def run_drive(
     # the robot's memory for the goals the pilot flies, where --memory asked for it: off in
     # drive, where `quackd run` keeps it on, so a session of typed commands writes none
     memory = RobotMemory(memory_key, args.memory_dir) if args.memory else None
+    adopted = load_duck(args.duckfile) if args.duckfile else None
+    if vla and adopted is not None and POLICY_VERB not in adopted.frontmatter.verbs.allow:
+        # refused here, before anything is made or connected, rather than at every line, each
+        # asking whether to go ahead and then failing on the allowlist
+        raise DriveError(
+            "--controller vla hands each line to the arm's learned policy through "
+            f"{POLICY_VERB}, and {adopted.name} does not allow it: add {POLICY_VERB} to its "
+            "verbs.allow, or drive without --duckfile"
+        )
 
     run_dir = new_run_dir(args.runs_dir, "drive", _slug(args.run_name) if args.run_name else None)
     transcript = Transcript(run_dir)
@@ -356,7 +365,11 @@ async def run_drive(
     if detector is None and backend_name(adapter) in ("sim2d", "mujoco"):
         from quackd.perception.color_blob import ColorBlobDetector
 
-        detector = ColorBlobDetector()
+        # through `--fov-deg` where it was given, as `quackd run` builds its detector through it:
+        # this one learns no lens at connect, so the lens it is built with is the one it keeps
+        detector = (
+            ColorBlobDetector(fov_deg=float(args.fov_deg)) if args.fov_deg else ColorBlobDetector()
+        )
     executor = Executor(
         registry=default_registry(),
         transport=adapter,
@@ -382,8 +395,8 @@ async def run_drive(
         detector=detector,
         event_log=event_log,
     )
-    if args.duckfile:
-        robot.adopt(load_duck(args.duckfile))
+    if adopted is not None:
+        robot.adopt(adopted)
     started = time.perf_counter()
     outcome, reason = "success", "the session ended"
     try:
@@ -512,7 +525,7 @@ async def run_drive(
             },
             # the policy server the arm hands its segments to, as a run's record names it,
             # `--accept-other-frame` and `--no-async-chunks` among what it says
-            **({"policy": served} if (served := _served(adapter)) is not None else {}),
+            **({"policy": served} if (served := _served(adapter)) else {}),
             # the front end the session's lines came through, only where it was not a
             # terminal, so every record from a terminal reads as it did (`quackd.front`)
             **({"front": "jsonl"} if front is not None else {}),

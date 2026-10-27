@@ -242,7 +242,7 @@ POLICY = ["--policy-url", "http://127.0.0.1:9"]
     [
         (["--controller", "vla", *POLICY, "--yes"], "--yes answers every question"),
         (["--controller", "vla", *POLICY, "--dry-run"], "--dry-run moves nothing"),
-        (["--controller", "vla"], "names no policy server"),
+        (["--controller", "vla"], "this session names no policy server"),
         (["--controller", "vla", *POLICY, "--llm", "fake"], "--llm would do nothing"),
         (["--controller", "vla", *POLICY, "--play"], "--play would do nothing"),
         (["--controller", "vla", *POLICY, "--effort", "low"], "--effort says how hard"),
@@ -532,6 +532,14 @@ async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_non
         keyboard=False,
     )
     assert "policy" not in start_of(bare), "a record from before reads as it did"
+    monkeypatch.setattr(drive_run, "_served", lambda transport: {})
+    quiet = await run_drive(
+        DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path / "quiet")),
+        say=lambda _line: None,
+        stream=io.StringIO("quit\n"),
+        keyboard=False,
+    )
+    assert "policy" not in start_of(quiet), "a policy that says nothing writes no block"
     served = {"server": "http://127.0.0.1:9", "async_chunks": False}
     monkeypatch.setattr(drive_run, "_served", lambda transport: served)
     armed = await run_drive(
@@ -541,3 +549,64 @@ async def test_the_sessions_run_start_names_its_policy_server_and_a_bare_one_non
         keyboard=False,
     )
     assert start_of(armed)["policy"] == served
+
+
+def test_the_no_policy_refusal_names_drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import quackd.cli as cli
+
+    monkeypatch.setattr(cli, "_can_prompt", lambda: True)
+    monkeypatch.setattr(cli, "_can_draw_a_prompt", lambda: True)
+    result = runner.invoke(
+        app, ["--no-color", "drive", "--robot", "lerobot:mock", "--controller", "vla"]
+    )
+    said = " ".join(result.output.split())
+    assert "give quackd drive its address with --policy-url" in said, said
+
+
+async def test_a_vla_session_whose_duck_does_not_allow_manipulate_is_refused_first(
+    tmp_path: Path,
+) -> None:
+    """It started, put every line's doubt to the person, and then failed on the allowlist."""
+    from quackd.drive.run import DriveError
+
+    duck = tmp_path / "look.duck"
+    duck.write_text(
+        "---\nduck: 0\nname: look\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
+        "success: [x]\n---\n# Task\nx\n",
+        encoding="utf-8",
+    )
+    runs = tmp_path / "runs"
+    args = DriveArgs(robot="lerobot:mock", controller="vla", duckfile=str(duck), runs_dir=str(runs))
+    with pytest.raises(DriveError, match="look does not allow it"):
+        await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
+    assert not runs.exists(), "refused before anything was made"
+
+
+async def test_fov_reaches_a_simulators_detector_and_outlasts_a_goal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The simulators' detector learns no lens at connect, so it measured through 90 degrees
+    whatever --fov-deg said."""
+    kept = _kept_sessions(monkeypatch)
+    args = DriveArgs(robot="microduck:sim2d", llm="fake", fov_deg=62, runs_dir=str(tmp_path))
+    await run_drive(
+        args, say=lambda _line: None, stream=io.StringIO("look around\nquit\n"), keyboard=False
+    )
+    (session,) = kept
+    assert getattr(session.robot.detector, "fov_deg", None) == 62.0
+
+
+async def test_decision_frames_are_read_from_the_command_line_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`QUACKD_DECISION_FRAMES=1` in a `.env` written for `quackd run` would refuse a session
+    whose decision LLM may not be shown a frame, or send one where none was asked for."""
+    _decider, kept = _decision_stubs(monkeypatch)
+    monkeypatch.setenv("QUACKD_DECISION_FRAMES", "1")
+    args = DriveArgs(
+        robot="microduck:mock", llm="fake", decision_llm="scripted", runs_dir=str(tmp_path)
+    )
+    await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
+    (session,) = kept
+    assert session.settings.decision_frames is False
+    assert "watch" not in session.goal_verbs

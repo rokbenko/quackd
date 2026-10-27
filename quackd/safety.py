@@ -845,6 +845,19 @@ class Executor:
                 raise VerbNotAllowed(reason)
             try:
                 answer = await answered(self.confirm, name, parsed.model_dump(), abort=self.abort)
+            except asyncio.CancelledError:
+                # cancelled while the question waited, by the composite that called this verb
+                # running out of time or by a cancel from outside: nobody answered, the gate says
+                # so, and the cancellation goes on up
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="confirm",
+                    outcome="denied",
+                    answer=None,
+                    reason="the prompt raised CancelledError",
+                )
+                raise
             except Exception as e:
                 # typer's y/N prompt raises click's `Abort` (a RuntimeError) on Ctrl-C or
                 # EOF. An asker that raised has not said yes, and the run deserves to be told
