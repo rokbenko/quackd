@@ -1,0 +1,1172 @@
+[
+ {
+  "room": "arena",
+  "seed": 0,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     0.536017,
+     -0.107214,
+     -1.32612,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.310252,
+    0.243031
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "7fd18ee19d74310e357defca95d554cc5f0a9fde87ae036f2919e1ed7ed1d6f0",
+  "top0": "9b0dde1a3103ee4da823d935cc4bcbbba326dc39421f2da6e5a68615985faebc",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.911648,
+     -0.871388,
+     0.27221,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.310252,
+    0.243031
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 138,
+  "cam14": "0df8d49fcffa4061ff963ba6b28e901f7c8b814c737d43c1813793ed3499b988",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 137291841396810182123383342619941753455,
+    "inc": 87136372517582989555478159403783844777
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "arena",
+  "seed": 1,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     0.448391,
+     0.208255,
+     0.157753,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.638864,
+    -0.470316
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "ddf2683c833f8e604293b8889ce708c4e5696a5986007e5a12cb7f4c1a1d23f4",
+  "top0": "0bd25b620e867740fc8906ea4a7149cf9b81d25a937a5f825f995bce41dc40db",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.797185,
+     0.912919,
+     1.752302,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.638864,
+    -0.470316
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 129,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 258774068904876645864003740157437044604,
+    "inc": 194290289479364712180083596243593368443
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "arena",
+  "seed": 2,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     0.81316,
+     0.047985,
+     -2.875726,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.250021,
+    -0.86985
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "033dc816b943d3d698e064a78089d55da22b3e257047b138425e6682061a0e50",
+  "top0": "5dbff1bce4cd2548211f83ca2181471ccb424a05324660b95c13058c74b92022",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.152469,
+     -0.918008,
+     -1.285001,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.250021,
+    -0.86985
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 52,
+  "cam14": "4f3b1f9de4de2661f0f956b463d6f8c74f9c1a0db7b0c57139616fdeb795556f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 875973309548676842231160309507658661,
+    "inc": 121863417007658695389390353187995180015
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "arena",
+  "seed": 3,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -0.074292,
+     -0.040317,
+     3.099934,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.562372,
+    -0.908608
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "799ebce394612ab377d4457186a0033783826e15787f412fcc28e62fdee1889f",
+  "top0": "01325c5657ca26ae4234d0b08908b2751f913f8df7b0f29cbc0f50ce5aec6447",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.919982,
+     -0.416723,
+     -1.588423,
+     "standing"
+    ]
+   ],
+   "ball": [
+    -0.562372,
+    -0.908608
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 115,
+  "cam14": "051ec89ce181ccc910bd43e2f8767a141ad794cd20f5c7d22723d4d0e76051ce",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 146371466027671436750875012327546315094,
+    "inc": 222003063171874261427395693950637096479
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "arena",
+  "seed": 4,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     0.672264,
+     -0.336941,
+     -1.712135,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.550477,
+    0.285111
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "d62b75130b48fe0c529a60914abf7caa6f117ff7e7bc8cf8c847bdf9906b3056",
+  "top0": "395064c72822b3b4096f7ca42f1f784f500e09668767e4b8a17e86e3f556fda0",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.649521,
+     -0.919661,
+     -0.125655,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.550477,
+    0.285111
+   ],
+   "people": [],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 176,
+  "cam14": "646d1fd1facc2028a8483b0ee3e977410c931120d759380997a7b1371489d18c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 167069990810861475945628479448595506650,
+    "inc": 278272906083703887290699702293328866393
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "two-rooms",
+  "seed": 0,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.0,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.357508,
+    -0.741165
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "6384235644f41d9f96a1c1c78142e7fc18eeaaa0a9d296edb8f4a45e6a9bee9d",
+  "top0": "b890b33a2122f6d0d31d0f65b712fd3d7b273dbe4e81f620e4e4fb8fb6422a24",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.17317,
+     0.916797,
+     1.59833,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.357508,
+    -0.741165
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 28,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 137291841396810182123383342619941753455,
+    "inc": 87136372517582989555478159403783844777
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "two-rooms",
+  "seed": 1,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.0,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.875107,
+    -0.586244
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "6384235644f41d9f96a1c1c78142e7fc18eeaaa0a9d296edb8f4a45e6a9bee9d",
+  "top0": "e85d88f7ea4ab59f82c4bc66d52b704dd94f0e249cbd31d9ccbdbc9135a9b34b",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.178652,
+     0.919994,
+     1.594549,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.875107,
+    -0.586244
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 28,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 258774068904876645864003740157437044604,
+    "inc": 194290289479364712180083596243593368443
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "two-rooms",
+  "seed": 2,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.0,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.578195,
+    -0.527564
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "6384235644f41d9f96a1c1c78142e7fc18eeaaa0a9d296edb8f4a45e6a9bee9d",
+  "top0": "54a009cd590f910ed2ed39cf9894a3da56da4b0f9d45e268f2af69d7d4b1ba73",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.180883,
+     0.910594,
+     1.590725,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.578195,
+    -0.527564
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 29,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 875973309548676842231160309507658661,
+    "inc": 121863417007658695389390353187995180015
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "two-rooms",
+  "seed": 3,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.0,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.541534,
+    -0.588899
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "6384235644f41d9f96a1c1c78142e7fc18eeaaa0a9d296edb8f4a45e6a9bee9d",
+  "top0": "b3b08993a99bc1cbe4ed773b9096bc2de54ce84e74e0e1b00cbddfc14947314b",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.178389,
+     0.919975,
+     1.594828,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.541534,
+    -0.588899
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 28,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 146371466027671436750875012327546315094,
+    "inc": 222003063171874261427395693950637096479
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "two-rooms",
+  "seed": 4,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.0,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.39179,
+    -0.570016
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "6384235644f41d9f96a1c1c78142e7fc18eeaaa0a9d296edb8f4a45e6a9bee9d",
+  "top0": "eefda420b0e27e51b59d840c5d316e67e76b05db409bba69dc8707d677808f02",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.190479,
+     0.919643,
+     1.58648,
+     "standing"
+    ]
+   ],
+   "ball": [
+    0.39179,
+    -0.570016
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 28,
+  "cam14": "bce04f7064ac31f390440068775239a9c7df68eb36943a57826fd541e92ce71c",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 167069990810861475945628479448595506650,
+    "inc": 278272906083703887290699702293328866393
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "hall",
+  "seed": 0,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.6,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "a6f544a6d0f42058e9ad40aad6d66b891cac908883f3113e24b17d4948e95e58",
+  "top0": "ec0e4faa6277897b9d158c25f9e5eaf0b8979687b8bee8a19a16dbe8b7423645",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.407628,
+     0.219585,
+     1.59833,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 98,
+  "cam14": "d3ea5f1ee832f49bcf8f5ec6241b54a556c69ab784acb8fe34ada42578f7814a",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 137291841396810182123383342619941753455,
+    "inc": 87136372517582989555478159403783844777
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "hall",
+  "seed": 1,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.6,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "a6f544a6d0f42058e9ad40aad6d66b891cac908883f3113e24b17d4948e95e58",
+  "top0": "ec0e4faa6277897b9d158c25f9e5eaf0b8979687b8bee8a19a16dbe8b7423645",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.404498,
+     0.210749,
+     1.594549,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 99,
+  "cam14": "a5a96f8bad61e4e7a4e40acf356b6475cb9baede4345d0ba48fd72932edac9b2",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 258774068904876645864003740157437044604,
+    "inc": 194290289479364712180083596243593368443
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "hall",
+  "seed": 2,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.6,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "a6f544a6d0f42058e9ad40aad6d66b891cac908883f3113e24b17d4948e95e58",
+  "top0": "ec0e4faa6277897b9d158c25f9e5eaf0b8979687b8bee8a19a16dbe8b7423645",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.405337,
+     0.219202,
+     1.590725,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 98,
+  "cam14": "efa4dae1ff57de8b45e8f67184f5578850fcd67d30778609d2312640356a5b88",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 875973309548676842231160309507658661,
+    "inc": 121863417007658695389390353187995180015
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "hall",
+  "seed": 3,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.6,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "a6f544a6d0f42058e9ad40aad6d66b891cac908883f3113e24b17d4948e95e58",
+  "top0": "ec0e4faa6277897b9d158c25f9e5eaf0b8979687b8bee8a19a16dbe8b7423645",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.404563,
+     0.210715,
+     1.594828,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 99,
+  "cam14": "757f753c5038e8135fce5a5efdc17c14fc6031ff070897bef5a97f628cef3d18",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 146371466027671436750875012327546315094,
+    "inc": 222003063171874261427395693950637096479
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "hall",
+  "seed": 4,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.6,
+     0.0,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "a6f544a6d0f42058e9ad40aad6d66b891cac908883f3113e24b17d4948e95e58",
+  "top0": "ec0e4faa6277897b9d158c25f9e5eaf0b8979687b8bee8a19a16dbe8b7423645",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     -0.398548,
+     0.219992,
+     1.58648,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.7,
+    0.2
+   ],
+   "people": [
+    [
+     1.7,
+     -0.3
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 98,
+  "cam14": "ed0a64e7558f4b00902f1135e0b6aab5ae6ae1267057fd3666d9617046a3b1a1",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 167069990810861475945628479448595506650,
+    "inc": 278272906083703887290699702293328866393
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "sofa-gap",
+  "seed": 0,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.1,
+     -0.6,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.408263,
+    -0.373307
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "38cf17c4a36cbeb0e1c33cb2b2939b53f8e3fdef61442b369bea5fe95fcecab8",
+  "top0": "b37d36a1f49d7ee6a64219d6922011b45abba3c56191297e684bb8e37fc53cbf",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.067683,
+     0.516034,
+     1.59833,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.408263,
+    -0.373307
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 8,
+  "cam14": "828919d2e06f0bfddd3ee66dfcd6fe43458ee2519f04c67ce451aba596f2784f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 137291841396810182123383342619941753455,
+    "inc": 87136372517582989555478159403783844777
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "sofa-gap",
+  "seed": 1,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.1,
+     -0.6,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.398738,
+    -0.304727
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "38cf17c4a36cbeb0e1c33cb2b2939b53f8e3fdef61442b369bea5fe95fcecab8",
+  "top0": "29521fc9ca6863a1dcba732d12c793bc2e7c611221d780d141ba29fa9d69baa1",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.073907,
+     0.519694,
+     1.594549,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.398738,
+    -0.304727
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 8,
+  "cam14": "828919d2e06f0bfddd3ee66dfcd6fe43458ee2519f04c67ce451aba596f2784f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 258774068904876645864003740157437044604,
+    "inc": 194290289479364712180083596243593368443
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "sofa-gap",
+  "seed": 2,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.1,
+     -0.6,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.438387,
+    -0.339569
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "38cf17c4a36cbeb0e1c33cb2b2939b53f8e3fdef61442b369bea5fe95fcecab8",
+  "top0": "02843d106f3e8e72a9aa5303cb819c2b73b4d2c3bd9a66a45b43f7e67959dc74",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.076711,
+     0.519909,
+     1.590725,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.438387,
+    -0.339569
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 8,
+  "cam14": "828919d2e06f0bfddd3ee66dfcd6fe43458ee2519f04c67ce451aba596f2784f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 875973309548676842231160309507658661,
+    "inc": 121863417007658695389390353187995180015
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "sofa-gap",
+  "seed": 3,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.1,
+     -0.6,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.341925,
+    -0.358765
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "38cf17c4a36cbeb0e1c33cb2b2939b53f8e3fdef61442b369bea5fe95fcecab8",
+  "top0": "35b7e262a816f30d16b00ed17c7ceac80f29426ca847e266e7cd69b6fb119d01",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.073621,
+     0.518335,
+     1.594828,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.341925,
+    -0.358765
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 8,
+  "cam14": "828919d2e06f0bfddd3ee66dfcd6fe43458ee2519f04c67ce451aba596f2784f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 146371466027671436750875012327546315094,
+    "inc": 222003063171874261427395693950637096479
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ },
+ {
+  "room": "sofa-gap",
+  "seed": 4,
+  "t0": {
+   "t": 0.0,
+   "ducks": [
+    [
+     -1.1,
+     -0.6,
+     0.0,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.423072,
+    -0.423248
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "cam0": "38cf17c4a36cbeb0e1c33cb2b2939b53f8e3fdef61442b369bea5fe95fcecab8",
+  "top0": "6e99eb57b492eaf65403132d89211fe4f3b218796559c7e90a9955caf8e01a2c",
+  "t14": {
+   "t": 13.6,
+   "ducks": [
+    [
+     0.087337,
+     0.519928,
+     1.58648,
+     "standing"
+    ]
+   ],
+   "ball": [
+    1.423072,
+    -0.423248
+   ],
+   "people": [
+    [
+     -1.2,
+     0.7
+    ]
+   ],
+   "ball_displacement_m": 0.0
+  },
+  "bumps": 8,
+  "cam14": "828919d2e06f0bfddd3ee66dfcd6fe43458ee2519f04c67ce451aba596f2784f",
+  "rng": {
+   "bit_generator": "PCG64",
+   "state": {
+    "state": 167069990810861475945628479448595506650,
+    "inc": 278272906083703887290699702293328866393
+   },
+   "has_uint32": 0,
+   "uinteger": 0
+  }
+ }
+]

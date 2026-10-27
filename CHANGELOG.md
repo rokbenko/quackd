@@ -36,15 +36,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
 - **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
   `--room` on `run`, `record`, `drive` and `serve-mcp` lays out walls and furniture in
-  `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, or a file of your own. A
-  wall holds a walking duck where it is and counts the bump, the ball rolls back off it, and the
-  duck's camera sees the walls and nothing behind them. On `mujoco` they are solid, and the
-  walking duck meets them with its own feet. The duck keeps a map of the room, a stand-in for
-  `mapd`, its own mapper, kept to the numbers quackd read of that: it looks only from a stop,
-  after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the start and after
-  a bump or a fall until two stops agree. `map` draws it, the place verbs mark places in it, and a
-  recorded GIF of the cartoon shades the floor it has not seen. Without `--room` each simulator is
-  what it was, to the bit
+  `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, `sofa-gap`, or a file of
+  your own. A room may hide the ball where the duck cannot see it from where it starts, as
+  `two-rooms` and `sofa-gap` do. A wall holds a walking duck where it is and counts the bump, the
+  ball rolls back off it, and the duck's camera sees the walls and nothing behind them. On `mujoco`
+  they are solid, and the walking duck meets them with its own feet. The duck keeps a map of the
+  room, a stand-in for `mapd`, its own mapper, kept to the numbers quackd read of that: it looks
+  only from a stop, after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the
+  start and after a bump or a fall until two stops agree. `map` draws it, the place verbs mark
+  places in it, and a recorded GIF of the cartoon shades the floor it has not seen. Without `--room`
+  each simulator is what it was, to the bit
   ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
 - **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
   camera: round what its map has seen to be solid when it keeps a map and its size is known,

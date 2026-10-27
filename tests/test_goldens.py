@@ -4,7 +4,8 @@ duck hashes regenerated in 0.6 when the solo starters gained a `remember` step.
 They turn three promises into machine checks: seeded single- and multi-duck worlds are
 byte-identical (poses, camera and top-down renders, RNG state), the six v0 starter ducks
 are unchanged, and a `flock-kick` run on seed 3 still produces the same summary and the
-same bus conversation. Regenerate ONLY on purpose:
+same bus conversation. `sim2d_rooms.json`, recorded when explore came, holds a world laid out
+in each built-in room to the same promise. Regenerate ONLY on purpose:
 `uv run python -m tests.golden.generate` (and say why in the commit).
 """
 
@@ -18,6 +19,7 @@ from typing import Any
 
 from quackd.sim2d.render import render_duckcam, render_topdown
 from quackd.sim2d.world import DT, World
+from quackd.space.room import BUILT_IN, load_room
 
 REPO = Path(__file__).resolve().parents[1]
 GOLDEN = REPO / "tests" / "golden"
@@ -62,6 +64,32 @@ def sim_case(seed: int, n_ducks: int) -> dict[str, Any]:
     rec["t7"] = _poses(w)
     rec["cam7"] = [_sha(render_duckcam(w, 256, duck_index=i).tobytes()) for i in range(n_ducks)]
     rec["top7"] = _sha(render_topdown(w, 256).tobytes())
+    rec["rng"] = json.loads(json.dumps(w.rng.bit_generator.state))
+    return rec
+
+
+def room_case(room: str, seed: int) -> dict[str, Any]:
+    """A world laid out in `room` for `seed`: where it puts the duck and the ball, what the
+    duck's camera and the view from above show of it, and where 6 s of walking, a left turn and
+    6 s more leave the duck, with the bumps it counted against the room's walls on the way, which
+    every built-in room makes it meet."""
+    w = World(seed=seed, room=load_room(room))
+    rec: dict[str, Any] = {
+        "room": room,
+        "seed": seed,
+        "t0": _poses(w),
+        "cam0": _sha(render_duckcam(w, 256).tobytes()),
+        "top0": _sha(render_topdown(w, 256).tobytes()),
+    }
+    for vx, wz, seconds in ((0.2, 0.0, 6.0), (0.0, 1.0, 1.6), (0.2, 0.0, 6.0)):
+        for k in range(round(seconds / DT)):
+            if k % 4 == 0:  # re-issue inside the deadman window, like the walk verb does
+                w.set_velocity(vx, 0.0, wz)
+            w.step(DT)
+    w.stop()
+    rec["t14"] = _poses(w)
+    rec["bumps"] = w.ducks[0].bumps
+    rec["cam14"] = _sha(render_duckcam(w, 256).tobytes())
     rec["rng"] = json.loads(json.dumps(w.rng.bit_generator.state))
     return rec
 
@@ -115,6 +143,13 @@ def test_sim2d_worlds_are_byte_identical() -> None:
     for want in _load("sim2d_worlds.json"):
         got = sim_case(want["seed"], want["n_ducks"])
         assert got == want, f"seed {want['seed']} n_ducks {want['n_ducks']} drifted"
+
+
+def test_worlds_laid_out_in_each_room_are_byte_identical() -> None:
+    recorded = _load("sim2d_rooms.json")
+    assert sorted({case["room"] for case in recorded}) == sorted(BUILT_IN)
+    for want in recorded:
+        assert room_case(want["room"], want["seed"]) == want, (want["room"], want["seed"])
 
 
 def test_v0_starter_ducks_are_unchanged() -> None:

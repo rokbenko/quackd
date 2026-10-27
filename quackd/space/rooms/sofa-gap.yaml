@@ -1,0 +1,11 @@
+# A sitting room: a sofa against the far wall with a gap behind it narrower than the duck, so a
+# map sees into the gap only from its ends and a walk never goes there, an armchair, and the
+# ball somewhere behind the armchair the duck cannot see from where it starts.
+name: sofa-gap
+size: [3.0, 2.0]
+boxes:
+  - [0.0, 0.75, 1.2, 0.3]
+  - [0.95, -0.35, 0.4, 0.4]
+start: [-1.1, -0.6, 0.0]
+ball: {region: [1.2, -0.6, 1.5, -0.1], hidden: true}
+person: [-1.2, 0.7]

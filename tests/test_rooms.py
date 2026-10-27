@@ -26,15 +26,20 @@ from quackd.mcp_server import fleet_from_flags
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.sim2d.recorder import CAPTION_H, FrameRecorder
 from quackd.sim2d.render import render_duckcam, render_topdown
-from quackd.sim2d.world import DT, Ball, World
+from quackd.sim2d.world import DT, DUCK_R, Ball, World
+from quackd.space.grid import UNKNOWN
 from quackd.space.places import PlaceBook, PlaceStore
-from quackd.space.room import load_room
-from quackd.space.simmap import STAND_IN, SimulatedMap
+from quackd.space.room import RoomError, load_room
+from quackd.space.simmap import STAND_IN, BodyNow, SimulatedMap
 from quackd.transport.base import spatial_of
 from quackd.transport.sim2d import Sim2DTransport
 from quackd.verbs.places import PLACE_VERBS, MapParams, MarkPlaceParams
 from quackd.verbs.registry import VerbContext
 from quackd_microduck.transports.mapd import sim_map_params
+from tests.test_simmap import PARAMS, Body
+from tests.test_simmap import _still as _map_still
+from tests.test_simmap import _turn as _map_turn
+from tests.test_simmap import _walk as _map_walk
 
 PLACE_NAMES = set(PLACE_VERBS)
 TWO_ROOMS = load_room("two-rooms")
@@ -125,6 +130,79 @@ def test_a_wall_hides_the_ball_and_shows_the_detector_nothing_of_its_own() -> No
     for heading in np.linspace(-math.pi, math.pi, 12, endpoint=False):
         empty.ducks[0].theta = float(heading)
         assert _labels(empty) == [], f"a wall or a box seen as something, facing {heading:.2f}"
+
+
+def test_a_room_can_hide_the_ball_from_where_the_duck_starts_whichever_way_it_turns() -> None:
+    """two-rooms and sofa-gap draw the ball only where no straight line from the start reaches
+    it, so the duck's camera, turned round where it starts, never sees it: a robot sent to find it
+    has to go and look. In two-rooms it is always in the room the duck is not in."""
+    for name in ("two-rooms", "sofa-gap"):
+        room = load_room(name)
+        assert room.ball_hidden and room.start is not None
+        x0, y0, _ = room.start
+        for seed in range(10):
+            world = World(seed=seed, room=room, person=False)
+            ball = (world.ball.x, world.ball.y)
+            assert room.hides(x0, y0, *ball, world.ball.r), (name, seed, ball)
+            if name == "two-rooms":
+                assert ball[0] > 0 > x0, "the other room"
+            for heading in np.linspace(-math.pi, math.pi, 12, endpoint=False):
+                world.ducks[0].theta = float(heading)
+                assert "ball" not in _labels(world), (name, seed, round(float(heading), 2))
+
+
+def test_a_spot_any_straight_line_reaches_is_not_hidden() -> None:
+    assert not TWO_ROOMS.hides(-1.0, 0.0, 0.9, -0.15, 0.05), "seen through the doorway"
+    assert TWO_ROOMS.hides(-1.0, 0.0, 0.5, -0.8, 0.05), "behind the wall below it"
+    assert not TWO_ROOMS.hides(-1.0, 0.0, 0.0, -0.33, 0.05), "its edge shows past the wall's end"
+
+
+def test_a_hidden_ball_needs_a_region_with_floor_out_of_sight(tmp_path: Path) -> None:
+    def room(ball: str) -> Path:
+        path = tmp_path / "r.yaml"
+        path.write_text(f"name: r\nsize: [2.0, 2.0]\nstart: [0, 0, 0]\nball: {ball}\n")
+        return path
+
+    with pytest.raises(RoomError, match="out of sight of where the duck starts"):
+        World(seed=0, room=load_room(room("{region: [0.3, -0.8, 0.9, 0.8], hidden: true}")))
+    with pytest.raises(RoomError, match=r"ball\.hidden is true or false"):
+        load_room(room("{region: [0.3, -0.8, 0.9, 0.8], hidden: yes please}"))
+    with pytest.raises(RoomError, match="unknown keys"):
+        load_room(room("{region: [0.3, -0.8, 0.9, 0.8], hide: true}"))
+    with pytest.raises(RoomError, match=r"ball\.region is 4 numbers"):
+        load_room(room("{hidden: true}"))
+
+
+def test_the_gap_behind_the_sofa_is_narrower_than_the_duck_and_seen_only_from_its_ends() -> None:
+    """Open floor a ray can cross, too narrow for the duck to stand in, and looked into from
+    its two ends alone: from beside the sofa at either end, the floor in the middle of the gap is
+    never seen, and each end borders floor nobody has seen."""
+    sofa = load_room("sofa-gap")
+    gap_y = 0.95
+    assert all(sofa.blocked(x / 10, gap_y, DUCK_R) for x in range(-5, 6))
+    assert not sofa.blocked(0.0, gap_y, 0.0)
+    body = Body(BodyNow(0.0, -1.0, -0.2, math.pi / 2, 0.0, standing=True, fallen=False, bumps=0))
+    seen = SimulatedMap(sofa, PARAMS, body=body, frame_key="sim:sofa")
+    _map_still(seen, body, PARAMS.still_s)
+    # up beside the sofa's left end, looking along the gap, then across to its right end
+    _map_walk(seen, body, 0.7)
+    _map_turn(seen, body, math.atan2(0.45, 0.4) - math.pi / 2)
+    _map_still(seen, body, PARAMS.still_s)
+    _map_turn(seen, body, -math.atan2(0.45, 0.4))
+    _map_walk(seen, body, 2.0)
+    _map_turn(seen, body, math.pi - math.atan2(0.45, 0.4))
+    _map_still(seen, body, PARAMS.still_s)
+    grid = seen.grid_now()
+    assert len(grid.keyframes) == 3
+    assert grid.state_at(0.0, gap_y) == UNKNOWN, "the middle of the gap is never seen"
+    inside = {grid.cell_of(x / 100, y) for x in range(-55, 56, 5) for y in (0.92, 0.97)}
+    ends = {
+        side
+        for col, row in grid.frontiers()
+        for side, near in (("left", (col + 1, row)), ("right", (col - 1, row)))
+        if near in inside
+    }
+    assert ends == {"left", "right"}, "each end borders the gap's unseen floor"
 
 
 async def test_a_recorded_run_in_a_room_shades_what_the_map_has_not_seen() -> None:
