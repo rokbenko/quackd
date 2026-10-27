@@ -86,7 +86,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   nowhere, and the pilot: an LLM with its key's status, a VLA policy for the arm, and a decision
   LLM, with every other option of the two commands under the panels their `--help` shows. Goal
   runs one goal or task file to its end, and Chat gives the robot a goal, then the next, with the
-  robot kept connected. Runs, Robots, Memory and Policies are the run folders, the registry, each
+  robot kept connected and every goal flown with what a goal takes, a VLA pilot and memory among
+  them. Runs, Robots, Memory and Policies are the run folders, the registry, each
   robot's memory and the policy servers. Each goal and chat is the CLI's own command in a process
   of its own, driven over `--front jsonl`, and Setup shows the command to type at a terminal for
   the same run. The page listens on `127.0.0.1` unless `--bind` names another address, and asks
@@ -120,7 +121,40 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   names leaves `--front` out. `--by-hand`, `--flock`, `--robots` and a task file with a `flock:`
   block are refused under it
   ([ADR-0069](docs/adr/0069-a-page-drives-quackds-own-commands-over-json-lines.md)).
+- **`quackd drive` flies its goals as `quackd run` flies one.** It takes run's flags for them,
+  given once for the whole session. `--base-url`, `--api-key`, `--vision`, `--extra-body`,
+  `--effort` and `--price` reach the pilot's model, so `--llm local` can name its server.
+  `--max-steps` is each goal's, within what the session has left, and `--play`, `--memory` and
+  `--memory-dir` reach every goal, memory staying off in drive unless asked for, where `quackd run`
+  keeps it on. `--fov-deg` is told to the body once, as the session connects. `--policy-url`,
+  `--policy-token`, `--accept-other-frame` and `--async-chunks` give the arm its policy server,
+  whose `manipulate` a goal may then use behind the confirm gate, and the session's `run_start`
+  names it. `--controller vla` flies each line that reaches the pilot as one instruction to the
+  arm's learned policy, and only the person driving can say the arm did it. `--decision-mode` and
+  `--decision-frames` give a goal a stepper, which asks the fast lane's own decision LLM, while
+  `--decision-llm` alone is still the fast lane and nothing more: drive reads neither
+  `QUACKD_DECISION_MODE` nor `QUACKD_DECISION_FRAMES`, so a session started as before flies its
+  goals as before. Each is refused in run's words where run refuses it. A session's goals read
+  its places, keeping what they mark only under `--memory`, hold `manipulate` to its `.duck`'s
+  policy section, and spend its policy seconds, an hour of them for a session without a `.duck`
+  ([docs/guides/drive.md](docs/guides/drive.md#a-goal-flies-as-a-run-does),
+  [ADR-0071](docs/adr/0071-a-drive-sessions-goals-fly-as-a-run-does-and-ask-the-person-driving.md)).
 - **`python -m quackd` runs the same command as `quackd`.**
+
+### Changed
+
+- **A goal in `quackd drive` asks the person driving.** Its confirm gate was answered by the
+  standing rule, a no without `--yes`, and the pilot's doubt was left to the pilot, while the
+  person who typed the goal sat at the keyboard. Both are now put to that person, at the keyboard
+  or in the page, in a run's words, and the goal waits for the answer while the session goes on
+  reading lines. The keyboard shows one question at a time, and a `y` answers the one on the
+  screen. A brake, or a newer line that moves the body, takes the question back, and the goal's
+  record says nobody answered it. Under `--yes` the pilot's doubt is answered go, as
+  `quackd run --yes` answers it, where the pilot used to be told to decide for itself. A pipe's
+  goal asks nobody, as before.
+- **A goal's local pilot in `quackd drive` asks the board `--host` names**, or the robot's own
+  host, as a run's does: `--llm ollama` on a robot with a host reaches the board's Ollama, where it
+  reached this computer's.
 
 ### Fixed
 
@@ -177,6 +211,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `scripts/connect_docs.py`, and a test holds it there.
 - The README has a section on the page and a row for `quackd ui`, `architecture.md` describes
   `quackd/webui/`, and `writing-an-adapter.md` says how an adapter declares `CONNECT`.
+- `docs/guides/drive.md` says what each of run's flags does in a session, how a goal's questions
+  come to you and how a VLA pilot flies a line, and drops the two limits this release lifts.
+  `docs/guides/web-ui.md` no longer marks the model's settings *goal only*, and says a chat takes
+  a VLA pilot and keeps a memory as the one switch on Setup says.
 
 ## [0.27.0] — 2026-10-26
 

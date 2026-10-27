@@ -96,15 +96,20 @@ Every line goes through the lanes in this order, and the first that takes it win
    At a pipe every such question is answered no. Nothing moves on a guess.
 5. **The pilot**, for anything else. The line is a goal, flown as a whole run of its own on the
    body the session holds. The pilot is the one `--llm` names, or the robot's own where it is
-   registered with one, or `QUACKD_LLM`'s. A goal has its own executor, its own verdict and its
-   own run directory under the session's `goals/`, and runs inside the session's contract:
+   registered with one, or `QUACKD_LLM`'s, and with `--controller vla` the scripted pilot of
+   [a VLA pilot](#a-vla-pilot-a-line-at-a-time). A goal has its own executor, its own verdict and
+   its own run directory under the session's `goals/`, and runs inside the session's contract:
    - it gets the body's safe verbs, as `quackd run --goal` gives one, behind any confirm the
-     session's `.duck` asks for them;
+     session's `.duck` asks for them, and with a policy server the arm's `manipulate`, behind a
+     confirm of its own;
    - its budgets are no more than the session has left, and its steps count toward the
      session's;
    - the session's abort rules are its own;
    - a session started with `--dry-run` sends nothing for a goal either;
-   - the session's heartbeat failing ends it.
+   - the session's heartbeat failing ends it;
+   - its questions come to you ([below](#a-goals-questions-come-to-you)), and it flies with the
+     flags `quackd run` takes for a goal, given once for the session
+     ([A goal flies as a run does](#a-goal-flies-as-a-run-does)).
 
 A dangerous verb is never run by drive, however it is named, and not inside another call
 either: only a person answering at a terminal in `quackd run` may clear one.
@@ -202,10 +207,99 @@ Without one, the session drives under a contract of its own:
 - every verb the body has that is not dangerous;
 - the battery rule a goal is held to: once the battery reads below 15%, every call after it is
   refused for the rest of the session but `stop`, which still goes out;
-- a task's highest budgets, `max_steps: 1000` and `max_minutes: 180`.
+- a task's highest budgets, `max_steps: 1000` and `max_minutes: 180`, and an hour of an arm's
+  policy segments, the most `policy.total_s` may be.
 
 It leaves out the rule that ends a goal on the same verb failing three times in a row, since a
 person who kicks and misses three times has not asked for the session to end.
+
+## A goal flies as a run does
+
+A goal takes the flags `quackd run` takes for one, given once on drive's command line for every
+goal of the session:
+
+| Flag | What it does in a session |
+| --- | --- |
+| `--base-url`, `--api-key`, `--vision`, `--extra-body`, `--effort`, `--price` | The pilot's model, as for a run, so `--llm local` can name its server. |
+| `--max-steps` | Each goal's steps, within what the session has left of its own. |
+| `--play` | A goal may give its pilot a part to play. |
+| `--memory`, `--memory-dir` | Each goal recalls what earlier runs of the robot learned, keeps one fact for the next, and keeps the places it marks. Off unless given, where `quackd run` keeps it on. |
+| `--fov-deg` | The camera's field of view, told to the body once, as the session connects. |
+| `--policy-url`, `--policy-token`, `--accept-other-frame`, `--async-chunks` | The arm's policy server, whose `manipulate` a goal may then hand a subtask to. |
+| `--controller vla` | Each goal is one instruction to the arm's policy ([below](#a-vla-pilot-a-line-at-a-time)). |
+| `--decision-mode`, `--decision-frames` | A goal's stepper, which asks the fast lane's own decision LLM. |
+
+`--decision-llm` on its own is the fast lane and nothing more, as it always was: a goal gets a
+stepper only with `--decision-mode` on the command line. drive reads neither
+`QUACKD_DECISION_MODE` nor `QUACKD_DECISION_FRAMES`, so a `.env` written for `quackd run` changes
+no session.
+
+Each goal reads the session's places, so a place you mark between two goals is there for the
+second. What a goal marks or forgets is kept only under `--memory`: without it a goal changes a
+copy that lasts as long as the goal, as `quackd run --no-memory` keeps its own places.
+
+### A goal's questions come to you
+
+A goal asks what a run asks at its terminal, and asks you, at the keyboard or in the page: whether
+to run a verb its contract gates, whether to go ahead when the pilot is not sure the body can do
+the task, and, after a VLA pilot's segment, whether the arm did it. Here the `.duck` gated `move`,
+so the scripted patrol asked before each of its three walks, and was answered y, n and n:
+
+```
+drive    microduck: type a command, a goal, or help; Enter brakes
+ask      goal 1: run walk(vx=0.12, vy=0, wz=0, duration_s=2)? [y/N]
+ask      goal 1: run walk(vx=0.12, vy=0, wz=0, duration_s=2)? [y/N]
+ask      goal 1: run walk(vx=0.12, vy=0, wz=0, duration_s=2)? [y/N]
+pilot    goal 1 (3.778 ms)
+result   success: patrol lap complete
+```
+
+The goal waits for your answer, and the session goes on reading lines. The keyboard shows one
+question at a time, and a `y` or an `n` answers the one on the screen, the last `ask` line. A
+goal's question is named after its goal and waits behind any question showing, while a question
+about a line you have just typed, a gated call's, is shown at once, since it is the one you are
+about to answer. An empty Enter brakes, and a newer line that moves the body ends the goal:
+either takes the question back, and the goal's record says nobody answered it, never that you said
+no. A line that only reads, `report state` say, runs beside the goal and leaves its question
+waiting. In the page the same questions come with their buttons. The goal's own record has each
+question and your answer, as `quackd log` replays it:
+
+```
+-  asked   confirm: run walk(vx=0.12, vy=0, wz=0, duration_s=2)? -> yes
+!  gate    confirm: allowed a human said yes
+!  asked   confirm: run walk(vx=0.12, vy=0, wz=0, duration_s=2)? -> no
+x  gate    confirm: denied a human said no
+```
+
+`--yes` answers yes to the gate and go to the doubt, as it does for a run. A pipe asks nobody: a
+gated verb is answered no, and the doubt is left to the pilot.
+
+### A VLA pilot, a line at a time
+
+`--controller vla`, with `--policy-url`, flies each goal with the scripted pilot
+`quackd run --controller vla` flies a run with. The line you typed is its one instruction, so it
+has to be one: one line of plain text of at most 200 characters, and under a `.duck` that lists
+what its policy may be told, one of those, or it is refused before the arm moves. Every goal holds
+`manipulate` to that list, a model's as well, and a `.duck` that does not allow `manipulate` at
+all is refused before the session starts. You are asked before the segment whether the arm should
+try, about the segment itself, and after it whether the arm did it, and only your yes makes the
+goal a success.
+
+It needs somebody to ask and something real for them to judge, so it is refused with `--yes`,
+with `--dry-run`, through a pipe, and beside a model's flag, `--play`, `--effort` or a goal's
+stepper, as a run refuses it:
+
+```
+$ printf 'pick up the red cube\nquit\n' | quackd --no-color drive --robot lerobot:mock --controller vla --policy-url http://127.0.0.1:8080
+x error: --controller vla asks a person whether the arm did the task, and there
+is no terminal to ask on
+  run it from a terminal, not through a pipe or a script
+```
+
+`--decision-llm` alone is let through, as the fast lane. The seconds the policy drives the arm are
+the session's: each goal is held to what the session has left, under its own total, the
+`.duck`'s or else two minutes, and a session without a `.duck` has an hour of them, as it has a
+task's highest budgets.
 
 ## The record
 
@@ -224,7 +318,9 @@ lines:
 - `prompt` for a question about watching a body that cannot see a fall;
 - the executor's own records of every verb, gate and intent.
 
-An answer to a question is no `command`: it is in the row of the call it answered.
+An answer to a question is no `command`: it is in the row of the call it answered, and a goal's
+questions and your answers are in that goal's own record, with `channel: web` where the page
+asked. A session whose arm has a policy server names it in `run_start`, as a run does.
 
 Its `summary.json` has a `drive` block, this one from the session above:
 
@@ -254,15 +350,15 @@ Each goal the pilot flew is under `goals/NN-what-you-typed/`, a whole run `quack
 > **Nothing here has driven a real robot yet.** Drive has run against the mock Microduck and
 > the scripted pilot, and its keyboard against prompt_toolkit's own pipe input. Its prompt has
 > not been tried in PowerShell under conhost, in Windows Terminal or in VS Code's terminal, and
-> how long a real robot takes from a line to its first motion is unmeasured.
+> how long a real robot takes from a line to its first motion is unmeasured. A VLA pilot's
+> segments have run on the LeRobot mock's scripted policy alone.
 
 ## Known limits
 
-- A goal's own confirm gates are answered by `--yes` alone. Nobody is asked mid-goal.
 - `quackd log` replays the verbs and their results and does not yet draw drive's own lines.
-- The pilot takes `--llm` alone, without `--base-url`, `--api-key`, `--vision`, `--extra-body`,
-  `--price` or `--effort`, so `--llm local` cannot name its server, and a session keeps no
-  memory.
+- A question a goal puts from inside a composite, a gated `kick` as `approach_and`'s `then`, waits
+  inside the composite's own time, 90 seconds for `approach_and`, and is taken back when that runs
+  out, recorded as unanswered.
 - A session whose link has failed refuses every call but `stop`, as a run's executor does once
   its heartbeat has failed, and ends any goal it is flying. Quit, and start again once the robot
   answers.
