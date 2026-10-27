@@ -414,8 +414,8 @@ def doorstep_run(
     print_logs: bool = typer.Option(
         False,
         "--print-logs",
-        help="With --role both, print each run's log once the act ends, for a place where "
-        "nobody reads the files, such as a Serverless Job's log.",
+        help="With --role both, print each run's log once the act ends, so one terminal shows "
+        "both runs.",
     ),
     state: Path = STATE_OPTION,
     base_url: str | None = BASE_URL_OPTION,

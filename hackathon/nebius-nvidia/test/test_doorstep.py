@@ -324,8 +324,8 @@ needs_ports = pytest.mark.skipif(not _ports_free(), reason="ports 8790 and 8791 
 def test_appointment_words_and_the_beaks_limit_reach_each_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Played as the job plays it: the postman thinking onboard, and both keys in this
-    process's environment, since it starts both robots."""
+    """Played with the postman thinking onboard, and both keys in this process's environment,
+    as when one command starts both robots."""
     monkeypatch.setenv("NEBIUS_API_KEY", "stand-in-key")
     monkeypatch.setenv("ONBOARD_API_KEY", ONBOARD_KEY)
     stand_in, own, pilots, codes, braked = _play(
@@ -512,4 +512,21 @@ def test_each_pilot_is_named_with_the_server_it_thinks_on(
         app, ["doorstep", "run", "--role", "postman", "--onboard", onboard.base_url]
     )
     assert alone.exit_code == 0, alone.output
-    assert "records this run at $0" not in alone.output, "an onboard model costs its GPU's hours"
+    assert "records this run at $0" not in alone.output, "an onboard model has no price per token"
+
+
+def test_both_runs_logs_are_printed_the_postman_first(tmp_path: Path) -> None:
+    (tmp_path / "duck-01.log").write_text("the duck heard it\n", encoding="utf-8")
+    (tmp_path / "postman-01.log").write_text("the postman told it\n", encoding="utf-8")
+    assert doorstep.logged(tmp_path) == [
+        ("postman-01", "the postman told it\n"),
+        ("duck-01", "the duck heard it\n"),
+    ]
+    assert doorstep.logged(tmp_path / "nothing-here") == []
+
+
+def test_print_logs_needs_the_logs_only_role_both_writes(tokenfactory: FakeTokenFactory) -> None:
+    args = ["doorstep", "run", "--role", "duck", "--print-logs", "--model", TEXT_MODEL]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1
+    assert "--print-logs prints the log files that only --role both writes" in result.output

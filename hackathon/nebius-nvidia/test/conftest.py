@@ -46,7 +46,7 @@ def tokenfactory(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeTokenFactory]:
 
 @pytest.fixture
 def onboard(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeTokenFactory]:
-    """A robot's own model server, running, with its key set the way the job sets it."""
+    """A robot's own model server, running, with its key set the way a person would set it."""
     with FakeTokenFactory(key=ONBOARD_KEY, models=[served(ONBOARD_MODEL)]) as stand_in:
         monkeypatch.setenv("ONBOARD_API_KEY", ONBOARD_KEY)
         yield stand_in

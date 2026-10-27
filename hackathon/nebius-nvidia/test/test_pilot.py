@@ -162,7 +162,7 @@ def test_neither_a_repr_nor_a_childs_environment_carries_the_nebius_key(
 def test_a_run_gets_its_own_pilots_key_and_neither_key_by_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The job holds both keys, since it plays both robots: each run is handed only the one its
+    """A command that plays both robots holds both keys: each run is handed only the one its
     pilot's server takes, so the duck's quackd cannot send the onboard key anywhere, nor the
     postman's the Token Factory key."""
     monkeypatch.setenv("NEBIUS_API_KEY", "token-factory-key")

@@ -1,4 +1,4 @@
-"""quackd Passport with NVIDIA Nemotron on Nebius.
+"""quackd Passport with NVIDIA Nemotron on Nebius Token Factory.
 
 quackd's entry to the Nebius x NVIDIA Global AI Hackathon 2026, kept whole in this one folder
 so that it can leave the repository in one commit. It changes nothing in quackd: it runs
