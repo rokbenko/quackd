@@ -31,10 +31,12 @@ for a pause, which fixed code grants within limits and which ends on its own; no
 another to move, or to stop for good.
 
 > [!NOTE]
-> The commands are tested offline against stand-ins for Token Factory and for a robot's own model
-> server, and against quackd 0.23 itself, with real runs, all but two that need hardware or a
-> network: `whois --camera` and `whois --lan`. The commands that need a Nebius key are shown as
-> commands, and their output is added here from real runs before submission.
+> The two doorstep acts, `explain` and `whois` ran live on Nebius Token Factory on 27 October
+> 2026, with both robots piloted by Nemotron: what each printed, what it cost and the records
+> are in [Tested live on Nebius Token Factory](#tested-live-on-nebius-token-factory). The test
+> suite also runs the commands offline, against stand-ins for Token Factory and for a robot's own
+> model server, with real quackd 0.23 runs, all but two that need hardware or a network:
+> `whois --camera` and `whois --lan`.
 
 ## How NVIDIA and Nebius are used
 
@@ -267,6 +269,9 @@ uv run pytest
 * The onboard model is the one its server lists, and `--onboard` is refused with `--role duck`,
   with `--vision` and at Token Factory's own address, before anything is asked.
 * The brake in a live act: the postman's pause is granted and the duck holds.
+* A pilot unsure of its own task: in the stranger act the postman first judges it uncertain, as
+  Nemotron did on its first live run, and quackd's `--yes` answers it, since nobody is at a
+  terminal when both runs are here.
 * Agile ONE SN as a body quackd finds by its entry point: its figures and their source, its
   passport, its two verbs, and a real `quackd run` in which it lays the letter down.
 * A real `quackd run` piloted through the stand-in: every request carries the NVIDIA id, the
@@ -279,10 +284,174 @@ uv run pytest
 * That this folder stays apart from quackd (below).
 
 **With a key.** Setup, then the two acts, `explain` on `runs/doorstep/duck-01.jws`, and
-`whois` on a picture or a camera, as above.
+`whois` on a picture or a camera, as above. That is what the next section ran.
 
-What is not proven yet: none of it has met Token Factory itself, and `--onboard` has met no real
-model server. The Token Factory runs, and their transcripts, are added here before submission.
+What is not proven yet: `--onboard` has met no real model server.
+
+## Tested live on Nebius Token Factory
+
+The two acts, `explain` and `whois` ran on 27 October 2026 against Nebius Token Factory, with a
+real key. One Windows laptop stood in for both robots' computers, quackd 0.23.0 came from PyPI, and both
+pilots were `nvidia/nemotron-3-super-120b-a12b`, picked from the key's live list. The records
+are in [`submission/live-run`](submission/live-run). Each run's `summary.json` names the server
+its pilot asked, `https://api.tokenfactory.nebius.com/v1`, and the model. Every model turn in
+its `transcript.jsonl` carries the tool call id Token Factory returned.
+
+The NVIDIA models the key could use:
+
+```
+$ uv run passport-nebius models
+                                     Token Factory models, NVIDIA's
+┌───────────────────────────────────────┬──────────────────┬──────────────┬─────────┬──────────────────┐
+│ id                                    │ modality         │ reads images │ context │ features         │
+├───────────────────────────────────────┼──────────────────┼──────────────┼─────────┼──────────────────┤
+│ nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B │ text->text       │ no           │ 262144  │ tools, reasoning │
+│ nvidia/Nemotron-3_5-Lightning         │ text->text       │ no           │ 1048576 │ tools, reasoning │
+│ nvidia/Nemotron-3-Ultra-550b-a55b     │ text->text       │ no           │ 1048576 │ tools, reasoning │
+│ nvidia/nemotron-3-super-120b-a12b     │ text->text       │ no           │ 262144  │ tools, reasoning │
+│ nvidia/Nemotron-3.5-Super-VL          │ text+image->text │ yes          │ 1048576 │ tools, reasoning │
+└───────────────────────────────────────┴──────────────────┴──────────────┴─────────┴──────────────────┘
+5 shown of 30 on the list
+```
+
+**Act one, strangers**, `uv run passport-nebius doorstep run --act stranger --model
+nvidia/nemotron-3-super-120b-a12b --print-logs`. Each robot saw the other only under a name its
+key makes, in closed words and numbers. This is the postman as the duck's pilot was shown it:
+
+```
+{"name": "stranger-480d656b", "tier": "stranger", "embodiment": "humanoid", "mobility": "legged", "manipulator": "arms", "mass_kg": 43.0, "height_m": 1.4, "skills": ["report_state", "stop"]}
+```
+
+The postman told the duck one sentence, and quackd delivered it. The duck's model was told only
+that a stranger spoke:
+
+```
+{"from": "stranger-480d656b", "tier": "stranger", "said": null, "withheld": "a stranger's words go to the log, for a person"}
+```
+
+The sentence went to the duck's log, for a person:
+
+```
+·  nearby  postman-01 (stranger, stranger-480d656b to the pilot) said: I am the postman robot; I will keep this letter for the letterbox until your household books the delivery.
+```
+
+The line of the duck's passport saying what its beak cannot do never reached the postman's model.
+Both runs ended in success. The postman "Kept the letter for the letterbox and informed the
+stranger robot (tier stranger) that I will hold it until household books delivery", and the duck
+said "A stranger arrived at the door; the duck cannot take a letter from a hand, so a person
+should collect the letter."
+
+**Act two, an appointment**, `uv run passport-nebius doorstep run --act appointment
+--pause-after 20 --model nvidia/nemotron-3-super-120b-a12b --print-logs`. Each side pinned the
+other first, and both pilots ran their own Nemotron on Token Factory. In UTC, from both
+transcripts:
+
+| Time | Robot | What happened |
+|---|---|---|
+| 12:51:30 | duck | meets postman-01, `known` |
+| 12:51:31 | postman | meets duck-01, `known` |
+| 12:51:33 | postman | tells duck-01 "I am the postman robot. I will lay the letter on the floor for you to scoop." |
+| 12:51:35 | duck | tells postman-01 "I can only scoop a letter from the floor right in front of me; I cannot take it from a hand." |
+| 12:51:36 | postman | `lay_letter_down`: "the letter lies flat on the floor right in front of it" |
+| 12:51:36 | duck | the postman's pause, asked in a session of its own and granted: "ok, stopped, and holding still for 5 s". The duck's `search_scan` waits: "a pause this robot granted a robot it met holds 4.6 s more" |
+| 12:51:39 | postman | tells duck-01 "The letter is now lying on the floor in front of you." |
+| 12:51:41 | postman | declares success: "Letter laid on floor for duck-01 to scoop; duck-01 passport states it cannot hold anything, beak scoops at floor only." |
+| 12:51:45 | duck | `go_to` refused for a stop distance under 0.1 m, then "lost the ball; try search_scan" |
+| 12:51:48 | duck | `search_scan`: "ball at bearing 34° left ~1.00 m" |
+| 12:51:50 | duck | `go_to` twice, both "timed out" short of the ball |
+| 12:51:55 | duck | `grab`: "scooped something up — it is in the beak" |
+| 12:51:56 | duck | `quack` "I have the letter." |
+| 12:52:00 | duck | tells postman-01 "I have the letter in my beak.", not delivered: the postman's run had ended |
+| 12:52:01 | duck | declares success: "Letter is in beak after successful grab; quacked confirmation." |
+
+The postman chose `lay_letter_down` over `hold_out_letter` from the duck's signed passport: the
+line about its beak was in the postman's model input four times in this act, and never in the
+stranger act.
+
+**explain**, asked twice. As a person who pinned nobody, the duck is a stranger, and the model
+never sees its own lines:
+
+```
+$ uv run passport-nebius explain runs/doorstep/duck-01.jws --ask "Can it take a letter from my hand?" --model nvidia/nemotron-3-super-120b-a12b --registry-dir runs/person
+stranger-945e8833 (945e88337bbf4897)  stranger: signed by a key nobody here pinned
+nvidia/nemotron-3-super-120b-a12b on Token Factory:
+It has a beak manipulator, but the passport does not state that it can grasp or pick up objects such as a letter. How far to trust it: stranger, because signed by a key nobody here pinned.
+in its own words, which the model never saw (a claim, not a fact):
+  calls itself: duck-01
+  maker vendor: pollen-robotics
+  maker model: microduck
+  owner label: Household (demo)
+  cannot: carry, hold or push anything: the beak scoops at the floor and nothing else
+  cannot: climb or descend a step
+  cannot: hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts
+  how to stop it: Simulated: press Ctrl+C in the terminal running it.
+```
+
+With the postman's pins, the duck is known, and the model reads its lines:
+
+```
+$ uv run passport-nebius explain runs/doorstep/duck-01.jws --ask "Can it take a letter from my hand?" --model nvidia/nemotron-3-super-120b-a12b --registry-dir runs/doorstep/postman-01-registry
+duck-01 (945e88337bbf4897)  known: pinned on 2026-10-27
+nvidia/nemotron-3-super-120b-a12b on Token Factory:
+No, the passport states it cannot carry, hold or push anything—the beak only scoops at the floor—so it cannot take a letter from your hand.  \nHow far to trust it: known, because pinned on
+2026-10-27.
+in its own words (a claim, not a fact):
+  calls itself: duck-01
+  maker vendor: pollen-robotics
+  maker model: microduck
+  owner label: Household (demo)
+  cannot: carry, hold or push anything: the beak scoops at the floor and nothing else
+  cannot: climb or descend a step
+  cannot: hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts
+  how to stop it: Simulated: press Ctrl+C in the terminal running it.
+```
+
+**whois**, on [the first frame of the duck's simulator](submission/live-run/duck-sim-frame.png),
+the only picture of these two robots there is. The duck is a small yellow wedge there, and the
+vision model matched no passport to anything in view:
+
+```
+$ uv run passport-nebius whois --image runs/doorstep/duck-sim-frame.png --meet runs/doorstep/postman-01.jws --meet runs/doorstep/duck-01.jws --model nvidia/Nemotron-3.5-Super-VL --registry-dir runs/person
+      who is who, by nvidia/Nemotron-3.5-Super-VL
+┌─────────┬───────┬──────────┬──────┬────────────┬─────┐
+│ in view │ where │ passport │ tier │ confidence │ why │
+├─────────┼───────┼──────────┼──────┼────────────┼─────┤
+└─────────┴───────┴──────────┴──────┴────────────┴─────┘
+no robot in view fits: postman-01 (480d656baabc4d09), duck-01 (945e88337bbf4897)
+advice from a camera and a model: nothing was pinned, stamped or re-tiered
+```
+
+**What it cost.** From each run's own `summary.json`, at the list's prices for
+`nvidia/nemotron-3-super-120b-a12b`, $0.30 per million tokens in and $0.90 out:
+
+| Run | Outcome | Steps | Model calls | Tokens in (cached) | Tokens out | quackd's count | At the cached price |
+|---|---|---|---|---|---|---|---|
+| postman-01-stranger | success | 5 | 7 | 29,780 (20,848) | 837 | $0.0097 | $0.0047 |
+| duck-01-stranger | success | 5 | 6 | 32,761 (21,216) | 649 | $0.0104 | $0.0053 |
+| postman-01-appointment | success | 12 | 16 | 79,266 (72,784) | 1,686 | $0.0253 | $0.0078 |
+| duck-01-appointment | success | 7 | 13 | 90,595 (72,560) | 1,774 | $0.0288 | $0.0114 |
+| all four | | | 42 | 232,402 (187,408) | 4,946 | $0.0742 | $0.0292 |
+
+quackd counts every input token at $0.30. The list prices cached input at $0.06 per million,
+which is the last column. `explain` and `whois` call Token Factory directly, so quackd counted
+nothing for them.
+
+**What the first live runs found.** Both acts above are the last of several runs, and the earlier
+ones found two things no stand-in could, each fixed in this folder before the runs above:
+
+* The postman's first run ended before it started. Nemotron judged its task `uncertain`, since
+  Agile ONE SN's reach is not published, and quackd asks a person about an uncertain verdict.
+  With both runs in one command nobody is at a terminal, so the question went unanswered and the
+  run aborted. `doorstep run` now gives both runs quackd's own `--yes` when they run together:
+  it answers go, the run's record names `--yes` as having said it and never a person, and a
+  verdict of infeasible still ends a run. The stand-in postman now doubts the same way in the
+  tests.
+* The postman then declared success after 12 seconds, before the duck's run had even started on
+  this laptop, so the duck's hello was refused. Its task now says the household's robot can take
+  a minute to come to the door, and it may take 30 steps.
+
+The duck also waits now for a stranger to speak before it declares, so the stranger act shows
+quackd keeping those words from its model.
 
 ## New during the Submission Period
 

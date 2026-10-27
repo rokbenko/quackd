@@ -1,0 +1,8 @@
+$ uv run passport-nebius whois --image runs/doorstep/duck-sim-frame.png --meet runs/doorstep/postman-01.jws --meet runs/doorstep/duck-01.jws --model nvidia/Nemotron-3.5-Super-VL --registry-dir runs/person
+      who is who, by nvidia/Nemotron-3.5-Super-VL       
+┌─────────┬───────┬──────────┬──────┬────────────┬─────┐
+│ in view │ where │ passport │ tier │ confidence │ why │
+├─────────┼───────┼──────────┼──────┼────────────┼─────┤
+└─────────┴───────┴──────────┴──────┴────────────┴─────┘
+no robot in view fits: postman-01 (480d656baabc4d09), duck-01 (945e88337bbf4897)
+advice from a camera and a model: nothing was pinned, stamped or re-tiered

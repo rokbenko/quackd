@@ -1,0 +1,13 @@
+$ uv run passport-nebius explain runs/doorstep/duck-01.jws --ask "Can it take a letter from my hand?" --model nvidia/nemotron-3-super-120b-a12b --registry-dir runs/person
+stranger-945e8833 (945e88337bbf4897)  stranger: signed by a key nobody here pinned
+nvidia/nemotron-3-super-120b-a12b on Token Factory:
+It has a beak manipulator, but the passport does not state that it can grasp or pick up objects such as a letter. How far to trust it: stranger, because signed by a key nobody here pinned.
+in its own words, which the model never saw (a claim, not a fact):
+  calls itself: duck-01
+  maker vendor: pollen-robotics
+  maker model: microduck
+  owner label: Household (demo)
+  cannot: carry, hold or push anything: the beak scoops at the floor and nothing else
+  cannot: climb or descend a step
+  cannot: hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts
+  how to stop it: Simulated: press Ctrl+C in the terminal running it.

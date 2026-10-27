@@ -47,6 +47,9 @@ Nemotron answer a question about it, with how far to trust the robot decided by 
 * The tests replay both acts with a real quackd run per robot, against stand-ins for Token
   Factory and for a robot's own model server. They check what reaches each model, the postman's
   words and the duck's limit, and that each robot's key reaches only its own server.
+* Then I ran it all live on Token Factory: both acts with Nemotron 3 Super piloting both robots,
+  `explain` and `whois`. That took 42 model calls in the two acts and cost under ten cents. The
+  README shows what each command printed, and the folder keeps every run's record.
 
 ## Challenges
 
@@ -56,6 +59,13 @@ person instead. That is also why, as strangers, the postman never learns what th
 cannot do: the line saying so is the duck's own words. While testing I also found that the
 OpenAI SDK reads gateway credentials from its own environment variables and would send them to
 Token Factory; the client is now built so only the Nebius key goes out.
+
+The live runs found what no stand-in could. On the first one the postman never started: Nemotron
+judged its task uncertain, because Agile ONE SN's reach is not published, and quackd asks a
+person about that, but nobody sat at the terminal. Now the doorstep answers with quackd's own
+`--yes`, which the record names as itself and never as a person, and an infeasible verdict still
+stops a robot. On the next run the postman gave up after 12 seconds, before the duck had even
+started, so its task now tells it the household's robot can take a minute.
 
 ## What's next
 
