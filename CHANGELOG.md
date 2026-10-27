@@ -88,6 +88,15 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   by `quackd run`, `quackd validate` and MCP alike
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
   [ADR-0071](docs/adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
+- **`find`: a Microduck explores until it sees what it was asked for.** `find(target,
+  minutes)` explores as `explore` does, with a camera frame at every look and a whole turn of
+  looks at every stop, faces what the detector takes for the target and sees it again before it
+  believes it, and marks the place named after it where it then stands, facing it. A frame the
+  detector misreads once is passed by, and a search that ends before it has faced what it took
+  for the target says so rather than that it saw none. A label the detector never gives is
+  refused before anything moves, now that detectors say which labels they give. It is offered
+  where `explore` is and the duck has a camera, and asks first
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#find-looking-for-something-by-exploring)).
 - **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
   every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`

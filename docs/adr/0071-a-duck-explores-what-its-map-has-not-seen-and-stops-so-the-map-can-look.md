@@ -54,6 +54,15 @@ unowned.
    room keeps the body's radius from everything solid. A duck on odometry alone, and a real duck
    beside `mapd`, whose radius nothing publishes, are not offered it, and say why beside the body,
    where the pilot judges a task, and in a run's refusal.
+9. **`find` is the same walk with a camera frame at every look.** Every stop looks all the way
+   round, since what it seeks may stand on floor the map has seen from elsewhere, and a frame's
+   way is the body's heading and the head's yaw the body says the frame was taken through. What
+   the detector takes for the target is believed only once the duck has turned to face it and
+   seen it again in the middle half of the view, and a frame misread once is passed by. It marks
+   the place named after the target where the duck stands, facing it: floor it stood on, where
+   the thing's own spot is not. A search that ends before it has faced what it took for the
+   target says so, not that the target was not seen. A label the detector never gives is
+   refused before anything moves.
 
 ## Why not
 
@@ -69,6 +78,8 @@ unowned.
   standing still never gives it a second stop.
 - **`dangerous`.** It would run only from a terminal, and a duck exploring is what a pilot over
   MCP is for, the deadman under it.
+- **`find` walking up to the thing.** That is `go_to`'s, from the place `find` marks, and a walk
+  up to something seen in one frame would be a walk on the detector's word alone.
 
 ## Consequences
 

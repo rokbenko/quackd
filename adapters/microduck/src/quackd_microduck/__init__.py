@@ -118,20 +118,23 @@ the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers t
 real duck's room is the one it stands in, and the mock scripts its own."""
 
 NO_MAP_WHY = (
-    "it says where it is by odometry alone and keeps no map on this connection, and explore "
+    "it says where it is by odometry alone and keeps no map on this connection, and exploring "
     "walks by a map: a simulator given --room keeps one"
 )
-"""Why `explore` is not offered on a duck with places and no map, in `extras.not_offered`, which
-the pilot reads beside its body and a run quotes: `explore` walks to what a map has not seen, and
-odometry sees nothing."""
+"""Why `explore` and `find` are not offered on a duck with places and no map, in
+`extras.not_offered`, which the pilot reads beside its body and a refusal quotes: both walk to
+what a map has not seen, and odometry sees nothing."""
 
 NO_SIZE_WHY = (
-    "nothing publishes the real duck's body radius, which explore plans its way round a room "
+    "nothing publishes the real duck's body radius, which exploring plans its way round a room "
     "by: a simulator given --room knows its own"
 )
-"""Why `explore` is not offered on a real duck whatever answers beside its robotd: a way through a
-room keeps the body's radius from everything solid, and the real duck's is published nowhere,
-where each simulator's is its own body's (`transports.mapd.sim_map_params`)."""
+"""Why `explore` and `find` are not offered on a real duck whatever answers beside its robotd: a
+way through a room keeps the body's radius from everything solid, and the real duck's is
+published nowhere, where each simulator's is its own body's (`transports.mapd.sim_map_params`)."""
+
+NO_CAMERA_WHY = "it has no camera on this connection, and find looks for things with one"
+"""Why `find` is not offered on a duck that explores but has no frame to look in."""
 
 
 def microduck_manifest(
@@ -154,12 +157,13 @@ def microduck_manifest(
     connection whose transport carries no reading (`spatial_of`) leaves them out whatever was
     declared, as one with no frame leaves out the camera's verbs.
 
-    `mapped` is whether that reading keeps a map, which `explore` walks by, and `sized` whether
-    it knows how big the body is, which `explore` plans its way round a room by. None is what the
-    backend may have before anything connects: a robotd may have `mapd` beside it and a
+    `mapped` is whether that reading keeps a map, which `explore` and `find` walk by, and `sized`
+    whether it knows how big the body is, which they plan their way round a room by. None is what
+    the backend may have before anything connects: a robotd may have `mapd` beside it and a
     simulator given a room keeps a map, but only a simulator knows how big its duck is, the real
-    duck's radius being published nowhere. A duck with places that cannot explore says why, in
-    `extras.not_offered`, which the pilot reads beside its body.
+    duck's radius being published nowhere. `find` also looks through the camera. A duck with
+    places that cannot explore or find says why, in `extras.not_offered`, which the pilot reads
+    beside its body.
 
     `camera` is the one thing a description of the robot cannot settle on its own. robotd's
     socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
@@ -197,17 +201,20 @@ def microduck_manifest(
     keeps_map = mapped if mapped is not None else backend in MAP_BACKENDS or places is True
     knows_size = sized if sized is not None else backend in ROOM_BACKENDS
     offers_explore = offers_places and keeps_map and knows_size
-    # `watch` looks through the camera and `explore` walks by a map, so each is a verb of a duck
-    # that has one, declared below
+    offers_find = offers_explore and camera
+    # `watch` looks through the camera, `explore` walks by a map and `find` does both, so each is
+    # a verb of a duck that has what it needs, declared below
     extensions = [
         verb_spec(v, core=False)
         for n, v in MICRODUCK_VERBS.items()
-        if n not in ("say", "watch", "explore")
+        if n not in ("say", "watch", "explore", "find")
     ]
     if camera:
         extensions.append(verb_spec(MICRODUCK_VERBS["watch"], core=False))
     if offers_explore:
         extensions.append(verb_spec(MICRODUCK_VERBS["explore"], core=False))
+    if offers_find:
+        extensions.append(verb_spec(MICRODUCK_VERBS["find"], core=False))
     sensors: list[Sensor] = ["battery", "odometry", "imu", "tof"]
     if camera:
         sensors.insert(0, "camera")
@@ -234,15 +241,20 @@ def microduck_manifest(
         preconditions["go_to_place"] = ["standing"]  # it walks; where it is the verb checks
     if offers_explore:
         preconditions["explore"] = ["standing"]
+    if offers_find:
+        preconditions["find"] = ["standing"]
     # quackd's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
     # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
     # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.
     limits = {"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.0}
     extras: dict[str, Any] = {}
+    # what this duck lacks here, said beside its body where the pilot judges a task; the
+    # datasheet is the body's own, the same on every backend
     if offers_places and not offers_explore:
-        # what this duck lacks here, said beside its body where the pilot judges a task; the
-        # datasheet is the body's own, the same on every backend
-        extras["not_offered"] = {"explore": NO_SIZE_WHY if keeps_map else NO_MAP_WHY}
+        why = NO_SIZE_WHY if keeps_map else NO_MAP_WHY
+        extras["not_offered"] = {"explore": why, "find": why}
+    elif offers_explore and not offers_find:
+        extras["not_offered"] = {"find": NO_CAMERA_WHY}
     if camera and camera_fov_deg is not None:
         limits["camera_fov_deg"] = float(camera_fov_deg)
         if camera_fov_assumed:

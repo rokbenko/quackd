@@ -735,14 +735,23 @@ def body_lines(manifest: RobotManifest) -> list[str]:
     if ds.cannot:
         lines.append("Whatever the task says, this body cannot:")
         lines += [f"- {s}" for s in ds.cannot]
-    if lacks := manifest.not_offered():
+    if lacks := _not_offered(manifest):
         # what it lacks here, beside what the body cannot do anywhere
         lines.append("Here, on this connection, it does not offer:")
-        lines += [f"- {verb}: {why}" for verb, why in lacks.items()]
+        lines += [f"- {', '.join(verbs)}: {why}" for verbs, why in lacks]
     if ds.notes:
         lines.append("Worth knowing:")
         lines += [f"- {s}" for s in ds.notes]
     return lines
+
+
+def _not_offered(manifest: RobotManifest) -> list[tuple[list[str], str]]:
+    """The verbs this body leaves out here (`RobotManifest.not_offered`), those left out for one
+    reason together, so a reason is said once."""
+    together: dict[str, list[str]] = {}
+    for verb, why in manifest.not_offered().items():
+        together.setdefault(why, []).append(verb)
+    return [(verbs, why) for why, verbs in together.items()]
 
 
 def body_section(manifest: RobotManifest) -> str:
@@ -769,9 +778,11 @@ def body_summary(manifest: RobotManifest) -> str:
         text += f" Not published: {', '.join(unknown)}."
     if ds.cannot:
         text += " Cannot: " + "; ".join(ds.cannot) + "."
-    if lacks := manifest.not_offered():
+    if lacks := _not_offered(manifest):
         text += (
-            " Not offered here: " + "; ".join(f"{verb}, {why}" for verb, why in lacks.items()) + "."
+            " Not offered here: "
+            + "; ".join(f"{' and '.join(verbs)}, {why}" for verbs, why in lacks)
+            + "."
         )
     if clamps := _clamp_words(manifest.limits):
         text += f" Clamps: {clamps}."

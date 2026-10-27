@@ -753,12 +753,12 @@ async def test_a_duck_whose_reading_keeps_no_map_is_not_offered_explore_and_says
     adapter = make_adapter("microduck:mock")
     manifest = await adapter.connect()
     try:
-        assert "explore" not in manifest.verb_names()
-        assert manifest.not_offered() == {"explore": NO_MAP_WHY}
+        assert not {"explore", "find"} & set(manifest.verb_names())
+        assert manifest.not_offered() == {"explore": NO_MAP_WHY, "find": NO_MAP_WHY}
         assert "odometry" in NO_MAP_WHY and "no map" in NO_MAP_WHY
         lines = body_lines(manifest)
-        assert any(line == f"- explore: {NO_MAP_WHY}" for line in lines), lines
-        assert f"Not offered here: explore, {NO_MAP_WHY}." in body_summary(manifest)
+        assert f"- explore, find: {NO_MAP_WHY}" in lines, lines  # one reason, said once
+        assert f"Not offered here: explore and find, {NO_MAP_WHY}." in body_summary(manifest)
     finally:
         await adapter.close()
     needs = parse_duck_text(
@@ -784,8 +784,8 @@ async def test_a_real_duck_is_not_offered_explore_with_mapd_or_without_and_says_
     with none while the real duck's is published nowhere: before anything connects, and after,
     with mapd answering beside robotd or not, the duck says why it does not explore."""
     static = describe("jsonrpc")
-    assert "explore" not in static.verb_names()
-    assert static.extras["not_offered"] == {"explore": NO_SIZE_WHY}
+    assert not {"explore", "find"} & set(static.verb_names())
+    assert static.not_offered() == {"explore": NO_SIZE_WHY, "find": NO_SIZE_WHY}
     robotd, mapd = FakeRobotd(), FakeMapd()
     await robotd.start()
     await mapd.start()
@@ -798,8 +798,8 @@ async def test_a_real_duck_is_not_offered_explore_with_mapd_or_without_and_says_
                 source = spatial_of(adapter)
                 assert source is not None and isinstance(source, MapdSource) == (beside is not None)
                 assert not source.footprint_m
-                assert "explore" not in manifest.verb_names()
-                assert manifest.extras["not_offered"] == {"explore": why}
+                assert not {"explore", "find"} & set(manifest.verb_names())
+                assert manifest.not_offered() == {"explore": why, "find": why}
             finally:
                 await adapter.close()
     finally:

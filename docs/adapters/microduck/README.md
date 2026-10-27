@@ -390,9 +390,10 @@ judges a task, and a run that requires it is refused in those words
   and out to the 2 m `mapd` places returns at. The first stop looks all the way round, in views
   40° apart, the step `search_scan` turns a camera by for a lens that wide, and every later stop
   only the ways a look would see as many cells nobody has seen as the duck is wide. Each look
-  waits for the map's keyframe. The simulators' stand-in takes its keyframe from where the head
-  looks, so there the head turns, 45° either way as `watch` holds it, and the body past that.
-  Whether `mapd` does is UNVERIFIED, so a real duck would turn its body for every view.
+  waits for the map's keyframe, and the head is straightened before the first, wherever another
+  verb left it. The simulators' stand-in takes its keyframe from where the head looks, so there
+  the head turns, 45° either way as `watch` holds it, and the body past that. Whether `mapd`
+  does is UNVERIFIED, so a real duck would turn its body for every view.
 - **What it gives up.** A stretch it walked to and looked at without seeing past, under a sofa or
   behind glass, is not walked to again in that map while the duck stays connected. A spot it
   could not get to, lost, stalled or refused on the way, it tries once more after the rest, and
@@ -410,6 +411,32 @@ judges a task, and a run that requires it is refused in those words
 
 It asks first (`confirm`): it walks into rooms nobody has looked at, and the ToF faces forward and
 cannot see a step down, so keep it to one flat floor.
+
+## `find`: looking for something by exploring
+
+`find(target="ball", minutes=1)` explores as `explore` does, with a camera frame at every look,
+the stop's own view among them, and every stop looks all the way round, since what it seeks may
+stand on floor the map has already seen from elsewhere, in views no further apart than the
+narrower of a look of the map's and the camera's lens. A frame's way is the body's heading and
+the head's yaw it was taken through, as the body reports it. What the detector takes for the
+target, once in frames that overlap, is faced once the stop's looks are done, the head finishing
+the turn, and seen again in the middle half of the view, or it is passed by, as a frame the
+detector misread is. Seen again, it marks the place named after the target where the duck
+stands, facing it, which is floor it stood on where the thing's own spot is not, and it ends
+there. It marks `start` where it begins, as `explore` does.
+
+- **What it looks for.** A label the detector gives. The simulators' colour detector gives
+  `ball`, `person`, `pet` and `duck`, and a YOLO model `ball`, `person` and `pet`. Any other is
+  refused before anything moves, and so is a run with no detector.
+- **How it ends.** `found` succeeds. Nothing seen anywhere it can reach, its minutes running out,
+  a camera that gives no frame and a detector that cannot read one fail, each saying so, as do the
+  ways `explore` fails, and every way stops the duck. A search that ends before it has faced
+  something it took for the target says so, and from where and which way, rather than that the
+  target was not seen.
+- **What it leaves to the pilot.** It does not walk up to what it found, which `go_to` does, and
+  writes no memory: `remember`, said where the duck stands, keeps a note with where that is.
+
+It is offered where `explore` is and the duck has a camera, and it asks first (`confirm`).
 
 ## The duck's physics upstreams
 

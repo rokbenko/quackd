@@ -44,6 +44,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from quackd.perception.base import Detection, labels_of
 from quackd.safety import SafetyStop
 from quackd.space.frontier import (
     Cluster,
@@ -59,14 +60,16 @@ from quackd.space.frontier import (
 )
 from quackd.space.grid import FREE, OccupancyGrid
 from quackd.space.places import PlaceBook
-from quackd.space.pose import Fix, Pose2D, wrap_angle
+from quackd.space.pose import Fix, Pose2D, where_record, wrap_angle
 from quackd.space.source import SpatialError, SpatialSource
-from quackd.transport.base import DuckState, Intent, TransportError
+from quackd.transport.base import DuckState, Intent, TransportError, frame_head_yaw_of
 from quackd.verbs.core import (
     TICK_S,
     _clamped,
     _Interrupted,
+    _lens_deg,
     _Refused,
+    _see,
     _twist,
 )
 from quackd.verbs.navigate import Gait, Walked, navigate
@@ -85,8 +88,22 @@ MINUTES_UP = "its minutes ran out"
 """What an exploration's own clock says when it ends a walk or a look, through the context the
 walk is given (`VerbContext.interrupted`), as a stop from beside it would."""
 
-Exit = Literal["done", "minutes", "stopped", "budget", "lost", "held", "fallen", "sitting", "blind"]
+Exit = Literal[
+    "done",
+    "minutes",
+    "found",
+    "stopped",
+    "budget",
+    "lost",
+    "held",
+    "fallen",
+    "sitting",
+    "blind",
+    "camera",
+]
 ENDS_WELL: frozenset[Exit] = frozenset({"done", "minutes"})
+"""How an exploration may end well. A search ends well only by finding (`FOUND`)."""
+FOUND: frozenset[Exit] = frozenset({"found"})
 _BODY_EXITS: dict[str, Exit] = {"held": "held", "fallen": "fallen", "blind": "blind"}
 
 EXPLORE_MARGIN_S = 60.0
@@ -145,12 +162,46 @@ class ExploreParams(BaseModel):
     )
 
 
+class FindParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(
+        default="ball",
+        min_length=1,
+        description="What to look for, as the detector names it (e.g. ball, person).",
+    )
+    minutes: float = Field(
+        default=1.0,
+        gt=0,
+        le=EXPLORE_MAX_MIN,
+        description="How long to look, in minutes, at most 8. It ends sooner once it has found "
+        "it, or nothing is left that it can reach, and always with a stop.",
+    )
+
+
 class _Ended(Exception):
     """An exploration that ends here, for the reason it carries."""
 
     def __init__(self, exit: Exit, said: str, **data: Any) -> None:
         super().__init__(said)
         self.exit, self.said, self.data = exit, said, data
+
+
+@dataclass(frozen=True)
+class _Sighting:
+    """Something the detector took for what is sought: which way it was across the map's frame,
+    from where the robot stood, and what the detector made of it."""
+
+    heading: float
+    at: tuple[float, float]
+    detection: Detection
+
+    def record(self) -> dict[str, Any]:
+        return {
+            "from": [round(self.at[0], 2), round(self.at[1], 2)],
+            "heading": round(self.heading, 3),
+            "confidence": round(self.detection.confidence, 2),
+        }
 
 
 @dataclass
@@ -188,6 +239,12 @@ class _Explore:
     """Whether a `SafetyStop` leaving now comes with the body stopped already: the run's rule read
     at a stop stops it before it raises, and a walk stops it before it lets one go. A stop awaited
     after that would let the run's abort cancel the verb before its words are read."""
+    seek: str | None = None
+    """The detector's label a search looks for in a camera frame at every look, or None."""
+    sightings: list[_Sighting] = field(default_factory=list)
+    """What this stop's looks took for it, to be faced and seen again once they are done."""
+    passed_by: int = 0
+    """How many sightings it faced and did not see again."""
 
     # ── reading ─────────────────────────────────────────────────────────────────────
 
@@ -305,8 +362,12 @@ class _Explore:
         pose = self.pose(fix)
         assert self.source.view is not None
         fov, reach = self.source.view
-        step_deg, count = views_round(math.degrees(fov))
-        overlap = (fov - math.radians(step_deg)) / 2
+        width = math.degrees(fov)
+        if self.seek is not None and (lens := _lens_deg(self.ctx)) is not None:
+            # a camera narrower than the map's view needs its views at least as close
+            width = min(width, lens)
+        step_deg, count = views_round(width)
+        overlap = (math.radians(width) - math.radians(step_deg)) / 2
         if every_way:
             headings = [wrap_angle(pose.yaw + math.radians(step_deg) * k) for k in range(count)]
         else:
@@ -319,6 +380,8 @@ class _Explore:
         reach_rad = math.radians(self.spec.head_yaw_deg)
         # the stop's own keyframe looked where the head points, once the map has taken it
         looked = [] if fix.collecting else [wrap_angle(pose.yaw + self.head)]
+        if looked:
+            await self.glance()  # and a search looks at that view as at every other
 
         def covered(heading: float) -> bool:
             return any(abs(wrap_angle(heading - view)) <= overlap for view in looked)
@@ -334,6 +397,7 @@ class _Explore:
             if left:
                 heading = min(left, key=lambda h: (abs(wrap_angle(h - pose.yaw)), h))
                 fix, facing = await self.face(heading)
+                await self.glance()
                 looked.append(facing)
                 miss = wrap_angle(heading - facing)
                 if not covered(heading) and head and abs(miss) <= reach_rad:
@@ -370,7 +434,121 @@ class _Explore:
     async def look_with_head(self, yaw: float) -> Fix:
         fix = await self.head_to(yaw)
         self.looks.append(fix.keyframes or 0)
+        await self.glance()
         return fix
+
+    # ── seeking ─────────────────────────────────────────────────────────────────────
+
+    async def glance(self) -> None:
+        """Where it seeks something, a camera frame of the view it looks at now, the head settled:
+        what the detector takes for it there is a sighting, faced and seen again once the stop's
+        looks are done (`confirm`). A view it cannot say the way of is no sighting."""
+        if self.seek is None:
+            return
+        fix = self.source.fix()
+        if not fix.localized or fix.pose is None:
+            return
+        head, hits = await self.frame_hits(f"find {self.seek}")
+        camera = fix.pose.yaw + head
+        lens = _lens_deg(self.ctx)
+        same = math.radians(lens) / 4 if lens is not None else 0.0
+        for hit in hits:
+            bearing = math.radians(hit.bearing_deg) if hit.bearing_deg is not None else 0.0
+            seen = _Sighting(wrap_angle(camera + bearing), (fix.pose.x, fix.pose.y), hit)
+            # one thing in two frames that overlap is one sighting, the surer kept
+            twin = next(
+                (s for s in self.sightings if abs(wrap_angle(s.heading - seen.heading)) <= same),
+                None,
+            )
+            if twin is None:
+                self.sightings.append(seen)
+            elif hit.confidence > twin.detection.confidence:
+                self.sightings[self.sightings.index(twin)] = seen
+
+    async def frame_hits(self, caption: str) -> tuple[float, list[Detection]]:
+        """What the detector finds of the thing sought in a frame taken from now on, and the yaw
+        of the head the frame was taken through, or the end a camera with no frame, or a detector
+        that could not read it, makes of the search. The yaw is the one the body says it reached,
+        on the frame (`frame_head_yaw_of`) or in its state, since a head can lag the look it was
+        sent, and the one last sent only from a body that says neither."""
+        assert self.seek is not None
+        self.check_told()
+        img, hits = await _see(self.ctx, self.seek, caption, since=self.now())
+        self.check_told()  # a stop while the frame was fetched and read ends it there
+        if img is None:
+            why = getattr(self.ctx.transport, "camera_error", None)
+            raise _Ended("camera", str(why) if why else "its camera gave no frame")
+        why = getattr(self.ctx.detector, "error", None)
+        if isinstance(why, str) and why:
+            name = getattr(self.ctx.detector, "name", "the detector")
+            raise _Ended("camera", f"{name} could not read a frame: {why}")
+        head = frame_head_yaw_of(img)
+        if head is None:
+            state = await self.ctx.transport.get_state()
+            said = state.extras.get("head_yaw_deg") if isinstance(state.extras, dict) else None
+            if isinstance(said, int | float) and not isinstance(said, bool):
+                head = float(said) if math.isfinite(said) else None
+        return (math.radians(head) if head is not None else self.head), hits
+
+    async def confirm(self) -> None:
+        """Face what this stop's looks took for the thing sought, the surest first, and look
+        again: one seen again in the middle half of the view is found, and ends the search there;
+        one not seen again is passed by, as a frame the detector misread is. What a search that
+        ends here had not faced yet stays in `sightings`, to be said."""
+        if self.seek is None or not self.sightings:
+            return
+        self.sightings.sort(key=lambda s: -s.detection.confidence)
+        lens = _lens_deg(self.ctx)
+        reach = math.radians(self.spec.head_yaw_deg)
+        while self.sightings:
+            sighting = self.sightings[0]
+            fix, facing = await self.face(sighting.heading)
+            # the turn stops within its own tolerance of the way, which can be more than the
+            # middle of a narrow lens: the head finishes it, as it finishes a look's
+            miss = wrap_angle(sighting.heading - facing)
+            if abs(miss) <= reach:
+                await self.send_head(miss)
+                await self.hold(self.spec.head_settle_s)
+            head, hits = await self.frame_hits(f"find {self.seek}, facing it")
+            ahead = [
+                hit
+                for hit in hits
+                if lens is None or hit.bearing_deg is None or abs(hit.bearing_deg) <= lens / 4
+            ]
+            if ahead:
+                raise self.found_it(fix, ahead[0], toward=head)
+            self.sightings.pop(0)
+            self.passed_by += 1
+        if self.head != 0.0:
+            await self.send_head(0.0)  # straight again, as after a stop's looks
+
+    async def hold(self, seconds: float) -> None:
+        """Stand for `seconds`, a tick at a time, ended as every wait here is."""
+        end = self.now() + seconds
+        while self.now() < end:
+            self.check_told()
+            await self.ctx.transport.sleep(TICK_S)
+
+    def found_it(self, fix: Fix, hit: Detection, *, toward: float) -> _Ended:
+        """The search's end: the place named after what it sought, marked where the robot stands
+        and facing it, the head's yaw `toward` it was seen through and the detection's bearing
+        added to the body's, floor it stood on, where the thing's own spot is not."""
+        assert self.seek is not None
+        bearing = math.radians(hit.bearing_deg) if hit.bearing_deg is not None else 0.0
+        far = f", about {hit.est_distance_m:.1f} m ahead" if hit.est_distance_m is not None else ""
+        data: dict[str, Any] = {"where": where_record(fix), "detection": hit.model_dump()}
+        try:
+            place, old = self.book.mark(
+                self.seek,
+                f"where it saw the {self.seek}{far}, facing it",
+                turned=wrap_angle(toward + bearing),
+            )
+            data["place"] = place.name
+            if old is not None:
+                data["was_at"] = [round(old.x, 2), round(old.y, 2)]
+        except ValueError as e:
+            data["place_not_marked"] = str(e)
+        return _Ended("found", f"found the {self.seek}: {hit.summary()}", **data)
 
     async def face(self, heading: float) -> tuple[Fix, float]:
         """Turn the body in place to `heading` and look there: a walk that goes nowhere and ends
@@ -458,10 +636,13 @@ class _Explore:
         return self.tries.get(world_cell(grid, grid.cell_of(*target.goal)), 0)
 
     async def explore(self) -> _Ended:
+        # where a head another verb turned is, nothing here says: straight before the first look,
+        # and looked from where the map takes its keyframes from the head
         if self.source.keyframes_follow_head:
-            # where a head another verb turned is, nothing here says: straight, and looked from
             fix = await self.found(await self.head_to(0.0))
         else:
+            await self.send_head(0.0)
+            await self.hold(self.spec.head_settle_s)
             fix = await self.found(await self.settle())
         try:
             self.book.mark(START, reserved_ok=True)
@@ -470,6 +651,7 @@ class _Explore:
             # it knows where it is by now, and a place it could not keep is no reason to stop
             self.unmarked = str(e)
         fix = await self.look(every_way=True)
+        await self.confirm()
         while True:
             fix = await self.found(self.source.fix())
             frame = await self.frame()
@@ -485,7 +667,7 @@ class _Explore:
                     return _Ended(
                         "done",
                         "no gap in its map is left that it can reach, but for floor it could not "
-                        f"get to in {TRIES} tries, which another explore tries again",
+                        f"get to in {TRIES} tries, which the next call tries again",
                     )
                 return _Ended("done", "no gap in its map is left that it can reach")
             # the nearest stretch not tried yet, and one tried once only when none is left: a
@@ -513,7 +695,10 @@ class _Explore:
                 self.missed_once(frame, grid, target)
                 await self.found(await self.settle())
                 continue
-            await self.look(every_way=False)
+            # a search looks all the way round at every stop, since what it seeks may stand in
+            # floor the map has seen from elsewhere, where no look of the map's would turn to
+            await self.look(every_way=self.seek is not None)
+            await self.confirm()
             after = await self.grid()
             self.given_up.in_frame(frame).update(still_unseen_beside(after, cells))
 
@@ -541,51 +726,106 @@ class _Explore:
             "given_up": len(self.given_up.cells),
             "missed": missed,
             "marked_start": self.marked,
-            **ended.data,
         }
+        if self.seek is not None:
+            data.update(target=self.seek, passed_by=self.passed_by)
+            if ended.exit != "found" and self.sightings:
+                # taken for it and not faced yet when the search ended: not "not seen"
+                data["unchecked"] = [sighting.record() for sighting in self.sightings]
+        data.update(ended.data)
         return ended, data
 
 
-def _words(ended: _Ended, data: dict[str, Any], minutes: float, run: _Explore) -> str:
-    how = (
-        f"{len(data['stops'])} stop{'s' if len(data['stops']) != 1 else ''}, "
-        f"{data['looks']} look{'s' if data['looks'] != 1 else ''}, "
+def _how(data: dict[str, Any]) -> str:
+    """What a call did, in the words its result ends with."""
+    stops, looks = len(data["stops"]), data["looks"]
+    return (
+        f"{stops} stop{'s' if stops != 1 else ''}, "
+        f"{looks} look{'s' if looks != 1 else ''}, "
         f"walked {data['walked_m']:.1f} m, "
         f"{data['seen_m2']:.1f} m² of floor seen"
     )
+
+
+def _back(run: _Explore) -> str:
+    """Where it began, as the words of a call that ends well say it."""
     if run.marked:
-        back = f"; '{START}' is where it began"
-    elif run.unmarked is not None:
-        back = f"; '{START}' was not marked where it began: {run.unmarked}"
-    else:
-        back = ""  # its minutes, or a stop, came before it knew where it began
+        return f"; '{START}' is where it began"
+    if run.unmarked is not None:
+        return f"; '{START}' was not marked where it began: {run.unmarked}"
+    return ""  # its minutes, or a stop, came before it knew where it began
+
+
+def _ran_out(ended: _Ended, minutes: float) -> str:
+    if ended.said == MINUTES_UP:
+        return f"its {minutes:g} minute{'s' if minutes != 1 else ''} ran out"
+    return ended.said
+
+
+def _words(ended: _Ended, data: dict[str, Any], minutes: float, run: _Explore) -> str:
+    how, back = _how(data), _back(run)
     if ended.exit == "done":
         return f"explore: done, {ended.said}: {how}{back}"
     if ended.exit == "minutes":
-        if ended.said == MINUTES_UP:
-            said = f"its {minutes:g} minute{'s' if minutes != 1 else ''} ran out"
-        else:
-            said = ended.said
-        return f"explore: {said}: {how}{back}"
+        return f"explore: {_ran_out(ended, minutes)}: {how}{back}"
     return f"explore: {ended.said}, so the robot stopped: {how}"
 
 
-async def explore(ctx: VerbContext, p: ExploreParams, spec: ExploreSpec) -> VerbResult:
+def _find_words(ended: _Ended, data: dict[str, Any], p: FindParams, run: _Explore) -> str:
+    how, back = _how(data), _back(run)
+    passed = run.passed_by
+    faced = (
+        f"; {passed} time{'s' if passed != 1 else ''} it took something for one, faced it and "
+        "did not see it again"
+        if passed
+        else ""
+    )
+    unchecked = len(data.get("unchecked") or [])
+    pending = (
+        f"; {unchecked} time{'s' if unchecked != 1 else ''} it took something for one and had "
+        "not faced it yet"
+        if unchecked
+        else ""
+    )
+    if ended.exit == "found":
+        if "place" in data:
+            marked = f"; marked '{data['place']}' where it stands, facing it"
+            if "was_at" in data:
+                x, y = data["was_at"]
+                marked += f", where the '{data['place']}' it had marked was at ({x:.2f}, {y:.2f})"
+        else:
+            marked = f"; it could not mark where it stands: {data['place_not_marked']}"
+        return f"find: {ended.said}{marked}: {how}{back}"
+    if ended.exit == "done":
+        return f"find: no {p.target} seen, and {ended.said}{faced}: {how}{back}"
+    if ended.exit == "minutes":
+        # sightings it had no time to face are not a target that is not there
+        seen = f"no {p.target} seen for sure" if unchecked else f"no {p.target} seen"
+        ran_out = _ran_out(ended, p.minutes)
+        return f"find: {seen}, and {ran_out}{faced}{pending}: {how}{back}"
+    return f"find: {ended.said}, so the robot stopped{pending}: {how}"
+
+
+async def _run(
+    ctx: VerbContext, verb: str, minutes: float, spec: ExploreSpec, *, seek: str | None = None
+) -> tuple[_Explore, _Ended, dict[str, Any]] | VerbResult:
+    """One exploration, or a search for `seek`: refused before anything moves where the robot's
+    reading keeps no map or nothing says how big the body is, and stopped whatever ends it."""
     book = ctx.places
     if book is None:
-        return VerbResult.fail(f"explore: {NO_POSE}")
+        return VerbResult.fail(f"{verb}: {NO_POSE}")
     source = book.source
     if not source.has_grid or source.view is None:
         return VerbResult.fail(
-            f"explore: {source.describe()} keeps no map to explore by, only a position"
+            f"{verb}: {source.describe()} keeps no map to explore by, only a position"
         )
     footprint = source.footprint_m
     if footprint is None or footprint <= 0:
         return VerbResult.fail(
-            "explore: nothing says how big the body is, so no way through a room can be planned"
+            f"{verb}: nothing says how big the body is, so no way through a room can be planned"
         )
     t0 = ctx.transport.now()
-    deadline = t0 + p.minutes * 60.0
+    deadline = t0 + minutes * 60.0
 
     def interrupted() -> str | None:
         if (why := ctx.interrupted()) is not None:
@@ -600,12 +840,13 @@ async def explore(ctx: VerbContext, p: ExploreParams, spec: ExploreSpec) -> Verb
         source=source,
         book=book,
         spec=spec,
-        minutes=p.minutes,
+        minutes=minutes,
         t0=t0,
         deadline=deadline,
         gait=Gait.of(ctx, source, extras),
         footprint=footprint,
         given_up=given_up_of(source),
+        seek=seek,
     )
     try:
         ended, data = await run.result()
@@ -619,13 +860,44 @@ async def explore(ctx: VerbContext, p: ExploreParams, spec: ExploreSpec) -> Verb
         await ctx.transport.stop()
         raise
     await ctx.transport.stop()
-    said = _words(ended, data, p.minutes, run)
-    if ended.exit in ENDS_WELL:
+    return run, ended, data
+
+
+def _result(ended: _Ended, data: dict[str, Any], said: str, well: frozenset[Exit]) -> VerbResult:
+    if ended.exit in well:
         return VerbResult.success(said, **data)
     if ended.exit in ("stopped", "budget"):
         # told to end from beside it, as `_ended_by` marks a verb a stop or the budget ended
         data["interrupted"] = ended.said
     return VerbResult.fail(said, **data)
+
+
+async def explore(ctx: VerbContext, p: ExploreParams, spec: ExploreSpec) -> VerbResult:
+    ran = await _run(ctx, "explore", p.minutes, spec)
+    if isinstance(ran, VerbResult):
+        return ran
+    run, ended, data = ran
+    return _result(ended, data, _words(ended, data, p.minutes, run), ENDS_WELL)
+
+
+async def find(ctx: VerbContext, p: FindParams, spec: ExploreSpec) -> VerbResult:
+    """Explore with a camera frame at every look, until what the detector takes for `p.target`
+    is faced and seen again (`_Explore.confirm`). A target the detector never gives is refused
+    before anything moves."""
+    if ctx.detector is None:
+        return VerbResult.fail("find needs a detector (none configured)")
+    known = labels_of(ctx.detector)
+    if known is not None and p.target not in known:
+        name = getattr(ctx.detector, "name", "the detector")
+        return VerbResult.fail(
+            f"find: {name} finds {', '.join(sorted(known))}, and never a {p.target!r}: ask for "
+            "one of those"
+        )
+    ran = await _run(ctx, "find", p.minutes, spec, seek=p.target)
+    if isinstance(ran, VerbResult):
+        return ran
+    run, ended, data = ran
+    return _result(ended, data, _find_words(ended, data, p, run), FOUND)
 
 
 def explore_verb(spec: ExploreSpec) -> Verb:
@@ -647,4 +919,29 @@ def explore_verb(spec: ExploreSpec) -> Verb:
         safety_class="confirm",
         done_condition="no gap left in its map that it can reach, or its minutes ran out, or "
         "stopped saying why: a stop, lost, or a body it may move no more.",
+    )
+
+
+def find_verb(spec: ExploreSpec) -> Verb:
+    """`find` for a body with these numbers, on the same walks and looks as `explore`."""
+
+    async def run(ctx: VerbContext, p: FindParams) -> VerbResult:
+        return await find(ctx, p, spec)
+
+    return Verb(
+        "find",
+        "Look for something the detector knows, a ball or a person, by exploring: walk to what "
+        "the robot's own map has not seen yet and look there, a camera frame at every look, "
+        "until it sees it, faces it and sees it again, for at most 8 minutes. It marks where it "
+        "then stands, facing it, as a place named after it, and where it began as 'start'. It "
+        "does not walk up to it: go_to does. It walks into floor its map has not seen, and its "
+        "sensor cannot see a step down, so keep it to one flat floor.",
+        run,
+        FindParams,
+        timeout_s=EXPLORE_TIMEOUT_S,
+        kind="composite",
+        safety_class="confirm",
+        done_condition="it saw the target, faced it and saw it again, and marked where it "
+        "stands; or it did not, saying why: nothing left it can reach, its minutes, a stop, "
+        "lost, or a body it may move no more.",
     )

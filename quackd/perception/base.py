@@ -55,6 +55,16 @@ class Detector(Protocol):
     def detect(self, image: Image.Image) -> list[Detection]: ...
 
 
+def labels_of(detector: object) -> frozenset[str] | None:
+    """The labels `detector` can find, when it says (`labels`), or None for one that does not:
+    a verb that looks for one thing refuses a label the detector never gives before anything
+    moves, rather than search a room for it."""
+    labels = getattr(detector, "labels", None)
+    if isinstance(labels, frozenset | set | tuple | list) and labels:
+        return frozenset(str(label) for label in labels)
+    return None
+
+
 async def detect_off_loop(detector: Detector, image: Image.Image) -> list[Detection]:
     """`detector.detect(image)`, in a worker thread when the detector says it waits on
     something outside this process.

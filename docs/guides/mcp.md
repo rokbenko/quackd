@@ -374,9 +374,9 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   nothing to fold it to and it would be left holding itself up wherever it stopped, and a mock
   or a simulator with none ends the way it always did. Recording
   one is `quackd robot rest-pose NAME` ([guides/registry.md](registry.md)).
-- `explore` runs for minutes, and a client may wait less than that for one tool call: ask for
-  fewer minutes than your client waits, and `stop` from beside it ends it at once. It is
-  confirm-gated, so a server reaches it only with `--yes`.
+- `explore` and `find` run for minutes, and a client may wait less than that for one tool
+  call: ask for fewer minutes than your client waits, and `stop` from beside it ends either at
+  once. Both are confirm-gated, so a server reaches them only with `--yes`.
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
   there is no terminal to ask on. The refusal text tells the model why. A `dangerous` verb is
   refused even then, since `--yes` is nobody being asked: it runs only from a terminal, where a
