@@ -19,6 +19,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -54,6 +55,9 @@ class MemoryEntry:
     outcome: str | None = None
     highlights: list[str] = field(default_factory=list)
     run_dir: str | None = None
+    where: dict[str, Any] | None = None
+    """Where the robot stood when the note was saved, as `quackd.space.pose.where_record` says
+    it, on a robot that knew; None on every other, and on every note older than places."""
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"kind": self.kind, "text": self.text, "ts": round(self.ts, 3)}
@@ -67,10 +71,13 @@ class MemoryEntry:
             out["highlights"] = self.highlights
         if self.run_dir:
             out["run_dir"] = self.run_dir
+        if self.where:
+            out["where"] = self.where
         return out
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> MemoryEntry:
+        where = d.get("where")
         return cls(
             kind=d.get("kind", "note"),
             text=str(d.get("text", "")),
@@ -80,6 +87,7 @@ class MemoryEntry:
             outcome=d.get("outcome"),
             highlights=list(d.get("highlights", [])),
             run_dir=d.get("run_dir"),
+            where=where if isinstance(where, dict) else None,
         )
 
     @property
@@ -166,9 +174,12 @@ class RobotMemory:
         duck: str | None = None,
         run_dir: str | Path | None = None,
         now: float | None = None,
+        where: dict[str, Any] | None = None,
     ) -> MemoryEntry:
         """Save one short fact. The same sentence twice refreshes the old entry instead of
-        duplicating it, so a model that repeats itself does not fill the file."""
+        duplicating it, so a model that repeats itself does not fill the file. `where` is where
+        the robot stood, read off the robot by the caller and never taken from the model, and a
+        refreshed note takes the newer one, since that is where it was last true."""
         clean = " ".join(str(text).split())[:NOTE_MAX_CHARS]
         if not clean:
             raise ValueError("nothing to remember")
@@ -180,6 +191,8 @@ class RobotMemory:
                 e.tags = sorted(set(e.tags) | set(tags or []))
                 if duck:
                     e.duck = duck
+                if where:
+                    e.where = where
                 # a refreshed note is the newest note, so it has to move to the end: file
                 # order *is* the order, for `recall`'s newest-first window and for the cap
                 entries.append(entries.pop(i))
@@ -192,6 +205,7 @@ class RobotMemory:
             duck=duck,
             tags=sorted(set(tags or [])),
             run_dir=str(run_dir) if run_dir else None,
+            where=where or None,
         )
         self._append(entry)
         return entry
@@ -224,8 +238,18 @@ class RobotMemory:
 
     # ── reading ─────────────────────────────────────────────────────────────────────
 
-    def recall(self, *, max_notes: int = 20, max_episodes: int = 5) -> str:
-        """The block the system prompt carries. Empty string when there is nothing yet."""
+    def recall(
+        self,
+        *,
+        max_notes: int = 20,
+        max_episodes: int = 5,
+        where_said: Callable[[dict[str, Any]], str | None] | None = None,
+    ) -> str:
+        """The block the system prompt carries. Empty string when there is nothing yet.
+
+        `where_said` turns a note's `where` into a few words, such as `saved 0.3 m from sofa,
+        2.1 m from here`, or None to say nothing: a robot's places are read against where it is
+        now, which this file knows nothing of (`quackd.space.places.PlaceBook.where_words`)."""
         notes = self.notes()[-max_notes:]
         episodes = self.episodes()[-max_episodes:]
         if not notes and not episodes:
@@ -233,7 +257,9 @@ class RobotMemory:
         lines: list[str] = []
         if notes:
             lines.append("Notes you saved earlier:")
-            lines.extend(f"- [{e.date}] {e.text}" for e in reversed(notes))
+            for e in reversed(notes):
+                said = where_said(e.where) if where_said is not None and e.where else None
+                lines.append(f"- [{e.date}] {e.text}" + (f" ({said})" if said else ""))
         if episodes:
             if lines:
                 lines.append("")

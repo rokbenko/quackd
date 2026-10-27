@@ -19,6 +19,7 @@ from quackd_lerobot import upstream_api as lerobot_api
 from quackd_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
 from quackd_lerobot.policy import upstream_api as lerobot_policy_api
 from quackd_lerobot.sim import upstream_api as so_arm100_api
+from quackd_microduck import mapd_upstream_api as mapd_api
 from quackd_microduck import upstream_api
 from quackd_microduck.sim3d import upstream_api as microduck_rl_api
 from quackd_moss import upstream_api as moss_api
@@ -174,6 +175,15 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
         ),
     ),
     (
+        mapd_api,
+        {
+            "adapters/microduck/mapd_upstream_api.py",
+            # the client that speaks to it, which also hands the simulated map its numbers
+            "adapters/microduck/transports/mapd.py",
+        },
+        ("https://github.com/pollen-robotics/microduck",),
+    ),
+    (
         so_arm100_api,
         {
             "adapters/lerobot/sim/upstream_api.py",
@@ -204,6 +214,7 @@ IDS = [
     "huebot",
     "moss",
     "microduck_rl",
+    "mapd",
     "so_arm100",
 ]
 
@@ -287,6 +298,42 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
     for ref in upstream_api.all_refs():
         assert "/blob/main/" not in ref.source, ref
         assert upstream_api.PIN in ref.source, ref
+
+
+def test_the_mapd_refs_are_assumptions_read_at_one_branch_commit() -> None:
+    """`mapd` is on an upstream branch and in no release, so every name quackd spells for it is
+    an assumption until a release carries it, and every one cites the one commit it was read at:
+    the re-read at that release starts from one place, as robotd's does."""
+    assert len(mapd_api.PIN) == 40 and mapd_api.PIN.isalnum() and mapd_api.BRANCH == "maploc-v2"
+    assert mapd_api.refs_by_status("VERIFIED") == [], "no release carries it to verify against"
+    assert len(mapd_api.all_refs()) == len(mapd_api.refs_by_status("UNVERIFIED")) > 0
+    for ref in mapd_api.all_refs():
+        assert mapd_api.PIN in ref.source, ref
+
+
+@pytest.mark.parametrize(
+    ("ref", "quoted"),
+    [
+        (mapd_api.MAPD_SETTLE, f"settle_s {mapd_api.SETTLE_S:g}"),
+        (mapd_api.MAPD_SETTLE, f"{mapd_api.STILL_SPEED_MPS:g} m/s"),
+        (mapd_api.MAPD_SETTLE, f"{mapd_api.STILL_TURN_RPS:g} rad/s"),
+        (mapd_api.MAPD_STREAM, f"every {mapd_api.STREAM_PERIOD_S * 1000:g} ms"),
+        (mapd_api.MAPD_AGREE, {2: "two consecutive stops"}.get(mapd_api.AGREE_STOPS, "?")),
+        (mapd_api.MAPD_CORRECTION_GATE, f"track_max_correction_m {mapd_api.CORRECTION_M:.2f}"),
+        (mapd_api.MAPD_CORRECTION_GATE, f"{mapd_api.CORRECTION_DEG:g} degrees"),
+        (mapd_api.MAPD_GRID, f"res_m is {mapd_api.GRID_RES_M:g} when not given"),
+        (mapd_api.MAPD_TOF_RANGE, f"min_range_m {mapd_api.TOF_MIN_M:g}"),
+        (mapd_api.MAPD_TOF_RANGE, f"max_range_m {mapd_api.TOF_MAX_M:.1f}"),
+        (upstream_api.TOF_FOV, f"is {upstream_api.TOF_FOV_DEG:g} by {upstream_api.TOF_FOV_DEG:g}"),
+    ],
+)
+def test_each_number_the_simulated_map_keeps_to_is_the_one_its_ref_quotes(
+    ref: object, quoted: str
+) -> None:
+    """The numbers are typed once, beside the refs, for the code that keeps to them, and each has
+    to be the figure its ref quotes from upstream: a number changed on one side alone is a stand-in
+    that no longer stands in for what quackd read."""
+    assert quoted in str(getattr(ref, "note", "")), (ref, quoted)
 
 
 def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:

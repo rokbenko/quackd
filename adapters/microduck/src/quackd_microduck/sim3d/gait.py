@@ -19,15 +19,30 @@ import math
 #: all: it stands and shifts its weight. The ceilings are the ranges upstream trains on.
 #:
 #: The forward floor is a property of the physics as much as of the policy, so it moves when
-#: MuJoCo does. It was 0.22 on 3.12 and is 0.23 on 3.13: at 0.225 the duck now stands and
-#: shifts its weight for ten seconds and covers thirteen millimetres, and at 0.230 it walks
-#: 0.81 to 0.89 m in the same ten on every one of the ten sweep seeds. That difference is the
-#: whole of `go_to` on this body, which asks for 0.2 and is raised to exactly the floor: a
-#: floor one hundredth too low is a duck that reports walking to a ball dead ahead and never
-#: arrives. `upstream_api.GAIT_THRESHOLD` records both measurements and the versions.
-GAIT_FLOOR_VX = 0.23
+#: MuJoCo does. It was 0.22 on 3.12 and 0.23 on 3.13: at 0.225 the duck stood and shifted its
+#: weight for ten seconds and covered thirteen millimetres, and at 0.230 it walked 0.81 to
+#: 0.89 m in the same ten on every one of the ten sweep seeds. That difference is the whole of
+#: `go_to` on this body, which asks for 0.2 and is raised to exactly the floor: a floor one
+#: hundredth too low is a duck that reports walking to a ball dead ahead and never arrives.
+#:
+#: Those were taken from a reset, and most walks start from a stand: after any stop, and after
+#: any verb that ended. On 3.16, once the stand policy has held the duck still for two seconds,
+#: 0.23 steps on none of six seeds in six seconds, so a `move` at its default speed said it walked
+#: and covered nothing. 0.235 starts in about two seconds and 0.24 in 0.9 to 1.5 s, whether the
+#: duck stood one, five or ten.
+#:
+#: The turning floor moved on 3.16 too, and further. Turning in place at 1.0, quackd's own turn
+#: clamp, the duck turns right thirteen to sixteen degrees in five seconds and no further, from a
+#: stand on three seeds and from a reset, and from a stand it turns left nine degrees and stalls
+#: for two seconds before it turns; so a `turn` right barely turned. At 1.2 it turns both ways at
+#: once, from a reset and after standing one, five or ten seconds, on all three seeds. That is
+#: above the 1.0 the walking task trains on and inside the 1.5 of upstream's own rehearsal
+#: keyboard, and quackd's clamp still holds what it sends: the body raises a spin to its floor as
+#: it raises every slow twist.
+#: `upstream_api.GAIT_THRESHOLD` records the measurements and the versions.
+GAIT_FLOOR_VX = 0.24
 GAIT_FLOOR_VY = 0.30
-GAIT_FLOOR_WZ = 1.00
+GAIT_FLOOR_WZ = 1.20
 CMD_MAX_VX = 0.40
 CMD_MAX_VY = 0.30
 CMD_MAX_WZ = 1.50
@@ -38,7 +53,8 @@ DEAD_FRACTION = 1 / 3
 
 #: Roughly what fraction of a command the body achieves, for the honest line in the state.
 #: Re-measured with the floor on 2026-09-17: 0.88 m in ten seconds at a commanded 0.23 is
-#: 0.38, where MuJoCo 3.12 gave 0.42.
+#: 0.38, where MuJoCo 3.12 gave 0.42. At 0.24 from a stand on 3.16 it is 0.38 on two seeds of
+#: three and 0.28 on the third.
 ACHIEVED_FRACTION = 0.38
 
 FLOORS = (GAIT_FLOOR_VX, GAIT_FLOOR_VY, GAIT_FLOOR_WZ)

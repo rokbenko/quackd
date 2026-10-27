@@ -69,12 +69,16 @@ from quackd.safety import (
     allow_all,
     deny_all,
 )
+from quackd.space.places import PlaceStore
+from quackd.space.pose import where_record
+from quackd.space.room import RoomError, load_room
 from quackd.transport.base import (
     CameraFrame,
     DuckTransport,
     TransportError,
     camera_names_of,
 )
+from quackd.verbs.places import view_record
 from quackd.verbs.registry import (
     Verb,
     VerbRegistry,
@@ -143,10 +147,17 @@ needs a new verdict. Every action is a *verb*; the executor enforces an allowlis
 and confirmation gates, so a refused call is a rule, not a bug. Prefer composite verbs
 (search_scan, go_to) over micro-managing velocities. Load a .duck file with
 robot_load_duckfile(path) to adopt a task contract; then follow its body as your
-instructions.{memory} Call robot_run_verb(verb="stop") if anything looks wrong."""
+instructions.{memory}{places} Call robot_run_verb(verb="stop") if anything looks wrong."""
 
 SOLO_MEMORY = """ Call robot_recall early: it is what this robot learned in earlier
 sessions, and robot_remember(text) keeps one short fact for the next one."""
+
+PLACES_NOTE = """ If robot_list_verbs lists map, the body says where it is: map tells you where
+and by what, and lists its places with how far and which way, mark_place names the spot it
+stands on, and go_to_place walks back to one. Trust a position as far as map says: odometry
+drifts as the body walks."""
+"""Said when a body's static manifest declares `map`. Conditional on the live list, since a
+connection whose transport says nothing of where the body is leaves the place verbs out."""
 
 FLEET_INSTRUCTIONS = """You are piloting {n} robot(s) through quackd: {names}.
 Call robot_list first, then robot_list_verbs(robot) for each body you will use: verbs come
@@ -154,8 +165,8 @@ from each robot's own manifest, so they differ per robot. Every action is a *ver
 robot's executor enforces its own allowlist, budgets and confirmation gates, so a refused
 call is a rule, not a bug. Prefer composite verbs (search_scan, go_to) over micro-managing
 velocities. Load a .duck file with robot_load_duckfile(path, robot) to adopt a task
-contract on one robot; then follow its body as your instructions.{memory} Without a robot
-argument a tool acts on the default, {default}.
+contract on one robot; then follow its body as your instructions.{memory}{places} Without a
+robot argument a tool acts on the default, {default}.
 Before the first verb that moves a body, call robot_assess_task(robot=...) with your verdict
 on whether that body can do the task, judged against its datasheet below: feasible,
 infeasible or uncertain. robot_run_verb refuses anything that moves that body until you
@@ -663,8 +674,9 @@ class RobotSession:
     def recall(self) -> dict[str, Any]:
         if self.memory is None:
             return {"ok": False, "robot": self.name, "summary": "memory is off for this server"}
-        text = self.memory.recall()
-        return {
+        book = self.executor.place_book()
+        text = self.memory.recall(where_said=book.where_words if book else None)
+        out: dict[str, Any] = {
             "ok": True,
             "robot": self.name,
             "summary": text or "nothing remembered yet: this is the first session on this robot",
@@ -672,13 +684,23 @@ class RobotSession:
             "episodes": [e.text for e in self.memory.episodes()[-5:]],
             "path": str(self.memory.path),
         }
+        if book is not None:
+            # the places this robot knows, read against where it is now, on a body that says
+            out["places"] = [view_record(v) for v in book.views()]
+        return out
 
     def remember(self, text: str, tags: list[str] | None = None) -> dict[str, Any]:
         if self.memory is None:
             return {"ok": False, "robot": self.name, "summary": "memory is off for this server"}
+        # where the robot stands, read off the robot and never from the pilot's arguments
+        book = self.executor.place_book()
+        fix = book.source.fix() if book is not None else None
         try:
             entry = self.memory.remember(
-                text, tags=tags, duck=self.duck.name if self.duck else None
+                text,
+                tags=tags,
+                duck=self.duck.name if self.duck else None,
+                where=where_record(fix) if fix is not None and fix.localized else None,
             )
         except (ValueError, OSError) as e:
             return {"ok": False, "robot": self.name, "summary": f"could not remember: {e}"}
@@ -853,26 +875,44 @@ def _instructions(fleet: Fleet) -> str:
     # with --no-memory both tools answer "memory is off", so telling the pilot to call
     # them early is an instruction to waste a turn
     on = any(s.memory is not None for s in fleet.sessions.values())
+    described = {name: fleet.described(name) for name in fleet.sessions}
+    places = (
+        PLACES_NOTE
+        if any(m is not None and "map" in {v.name for v in m.verbs} for m in described.values())
+        else ""
+    )
     if len(fleet.sessions) == 1:
-        manifest = fleet.described(fleet.default)
+        manifest = described[fleet.default]
         blurb = manifest.blurb if manifest and manifest.blurb else "a small robot"
         return INSTRUCTIONS.format(
             names=fleet.default,
             blurb=blurb,
             datasheet=body_summary(manifest) if manifest else "no datasheet until it connects.",
             memory=SOLO_MEMORY if on else "",
+            places=places,
         )
-    described = {name: fleet.described(name) for name in fleet.sessions}
     newline = "\n"
     return FLEET_INSTRUCTIONS.format(
         n=len(fleet.sessions),
         names=", ".join(fleet.sessions),
         default=fleet.default,
         memory=FLEET_MEMORY if on else "",
+        places=places,
         datasheets=newline.join(
             f"- {name}: {body_summary(m) if m else 'no datasheet until it connects.'}"
             for name, m in described.items()
         ),
+    )
+
+
+def session_memory_key(
+    name: str, transport: DuckTransport, memory_keys: Mapping[str, str] | None = None
+) -> str:
+    """The key a session keeps a robot's memory and places under: its registered name where
+    `memory_keys` gives one, so two registered robots of one kind keep their own, and
+    adapter:backend otherwise, so a simulated body never inherits a real one's."""
+    return (memory_keys or {}).get(name) or (
+        f"{adapter_name(transport) or name}:{backend_name(transport)}"
     )
 
 
@@ -933,6 +973,7 @@ def build_fleet_server(
         # Its clock starts again at the connect, on the clock the robot keeps once connected.
         budget = Budget(Budgets(), now=transport.now)
         budget.start()
+        memory_key = session_memory_key(name, transport, memory_keys)
         executor = Executor(
             registry=reg,
             transport=transport,
@@ -945,6 +986,9 @@ def build_fleet_server(
             # same verb twice on stderr); those drop to DEBUG rather than vanish
             log=_prefixed(logger.debug if log else logger.info, name),
             event_log=event_log,
+            # beside the memory file and keyed as it is; with memory off, places last as long
+            # as the session, and a dry run marks none and writes nothing
+            places=PlaceStore(memory_key, memory_dir, persist=memory and not dry_run),
         )
         # the pilot is offered `robot_assess_task`, so the executor holds it to the answer
         executor.require_verdict = True
@@ -963,15 +1007,7 @@ def build_fleet_server(
             heartbeat=heartbeat,
             detector=det,
             explicit_registry=registry is not None,
-            memory=(
-                RobotMemory(
-                    (memory_keys or {}).get(name)
-                    or f"{adapter_name(transport) or name}:{backend_name(transport)}",
-                    memory_dir,
-                )
-                if memory
-                else None
-            ),
+            memory=RobotMemory(memory_key, memory_dir) if memory else None,
             event_log=event_log,
             passport=(passports or {}).get(name),
         )
@@ -1285,6 +1321,8 @@ def fleet_from_flags(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    room: str | None = None,
+    map_address: str | None = None,
 ) -> FleetPlan:
     """Which robots this server fronts, from the flags that name them.
 
@@ -1297,11 +1335,12 @@ def fleet_from_flags(
     The board is asked what it is before any body is built, and a board that does not answer
     refuses the server, as it refuses a run. `--detector` is for one robot too.
 
-    So is `--policy-url`, the policy server an arm hands its `pick` and `manipulate` segments
-    to, by the same rule and in `quackd run`'s words. The server is asked what it serves once
-    the arm is built, and one that does not answer refuses the server, as the board does. Both
-    verbs are confirm gated, so an MCP client reaches them only on a server started with
-    `--yes`.
+    So is `--room`, the room a simulator lays out, `--map-address`, where one robot's own map
+    answers, and `--policy-url`, the policy server an arm hands its `pick` and `manipulate`
+    segments to, by the same rule and in `quackd run`'s words.
+    The server is asked what it serves once the arm is built, and one that does not answer
+    refuses the server, as the board does. Both verbs are confirm gated, so an MCP client
+    reaches them only on a server started with `--yes`.
 
     Nothing here connects, so nothing here says whether a robot is on a backend its adapter is
     retiring: the plan carries each robot's spec, and `serve` says it just before the server's
@@ -1330,11 +1369,18 @@ def fleet_from_flags(
         )
     except ValueError as e:
         raise SystemExit(str(e)) from e
-    policy_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
-    if flock and (address or camera_url or token):
+    if room is not None:
+        try:
+            load_room(room)
+        except RoomError as e:
+            raise SystemExit(str(e)) from e
+    body_kw: dict[str, Any] = {} if policy is None else {"policy": policy}
+    if room is not None:
+        body_kw["room"] = room
+    if flock and (address or camera_url or token or map_address):
         raise SystemExit(
-            "--flock takes every member's address, token and camera from the registry: "
-            "quackd robot edit NAME to change one"
+            "--flock takes every member's address, map address, token and camera from the "
+            "registry: quackd robot edit NAME to change one"
         )
     probe: DuckFile | None = None
     default = None
@@ -1403,6 +1449,17 @@ def fleet_from_flags(
             "--policy-url is one arm's policy server, and a fleet has several bodies: drop "
             "--policy-url, or serve one arm"
         )
+    if fleet and room is not None:
+        raise SystemExit(
+            "--room lays out one simulator's room, and a fleet has several bodies: drop --room, "
+            "or serve one duck"
+        )
+    if fleet and map_address is not None:
+        raise SystemExit(
+            "--map-address is where one robot's map answers, and a fleet has several bodies: "
+            "drop --map-address, or keep each robot's own with quackd robot edit NAME "
+            "--map-address ..."
+        )
     # The one place this server's board is settled, carried on the plan so everything that
     # uses the board reads this value rather than deriving its own.
     host_choice = HostChoice()
@@ -1433,7 +1490,7 @@ def fleet_from_flags(
     if reached is not None:
         board, hello = reached
     manifests = {
-        spec.name or describe(spec, **policy_kw).id: describe(spec, **policy_kw) for spec in specs
+        spec.name or describe(spec, **body_kw).id: describe(spec, **body_kw) for spec in specs
     }
     chosen: Detector | None = None
     if not fleet:
@@ -1484,13 +1541,16 @@ def fleet_from_flags(
             )
     adapters = {}
     for (name, spec), one in zip(zip(manifests, specs, strict=True), resolved, strict=True):
-        where = one.adapter_kwargs(address=address, camera_url=camera_url, token=token)
+        where = one.adapter_kwargs(
+            address=address, camera_url=camera_url, token=token, map_address=map_address
+        )
         adapters[name] = make_adapter(
             spec,
             seed=seed if seed is not None else 0,
             address=where["address"],
             camera_url=where["camera_url"],
             token=where["token"],
+            map_address=where["map_address"],
             # the recorded pose, without which `RobotSession.connect`'s rest gate and the
             # torque hold in `close` are both dead code: the transport's `rest_pose` would be
             # None, every guard reading it would be False, and an arm served over MCP would be
@@ -1498,7 +1558,7 @@ def fleet_from_flags(
             rest_pose=where["rest_pose"],
             # the board's camera joins the one body here; it answered its hello above
             host=board,
-            **policy_kw,
+            **body_kw,
         )
         if policy is not None:
             # asked now, as the board was, so a server that is not there refuses this one in
@@ -1549,6 +1609,8 @@ def serve(
     policy_token: str | None = None,
     accept_other_frame: bool = False,
     async_chunks: bool = True,
+    room: str | None = None,
+    map_address: str | None = None,
     talk: bool = False,
     talk_port: int = 8790,
 ) -> None:
@@ -1569,6 +1631,8 @@ def serve(
         policy_token=policy_token,
         accept_other_frame=accept_other_frame,
         async_chunks=async_chunks,
+        room=room,
+        map_address=map_address,
     )
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="quackd-mcp %(levelname)s %(message)s"

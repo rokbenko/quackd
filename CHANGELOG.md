@@ -9,6 +9,116 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+### Added
+
+- **A Microduck says where it is by its own odometry.** robotd has sent contact odometry on
+  every state frame since before the release quackd reads, and quackd passed it through raw and
+  read none of it. The state now carries it as a reading, `extras.where`, and the line a pilot
+  reads says `where=odometry(x, y, yaw rad, walked N m)`. Its frame lasts one connection and
+  begins again whenever the duck is picked up, falls or rides a fall down, its clock goes back,
+  or it makes a step longer than its walking policy could, since contact odometry follows feet on
+  the floor and nothing else. A robotd from before the estimator, and one whose odometry stays at
+  zero through a walk, give no reading. `x`, `y` and `theta` stay empty on the real duck, as the
+  flock reads them as one arena every member shares
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+- **Places: a robot that says where it is can name the spots it stood on.** Three core verbs that
+  move nothing: `mark_place` names the spot the robot stands on now, from its own reading and never
+  from coordinates, `map` says where it is, by what, and every place with how far and which way,
+  and `forget_place` drops a name. A place belongs to the frame it was marked in: one marked before
+  a Microduck was picked up is orphaned, listed with the reason and never walked to, and no
+  position is converted between frames. Every observation lists the nearest places as `places:`,
+  the system prompt says how far to trust each kind of reading, and a note saved with `remember`
+  keeps where the robot stood, which `robot_recall` and the next run's prompt read back as how far
+  it was from the places and from here. Places live beside the memory file, keyed as it is, and
+  nothing is written with `--no-memory` or on a dry run. A Microduck on `jsonrpc` or `mock` has
+  them, and so do its simulator in a room, MOSS and a rosbridge base (below)
+  ([docs/concepts/places.md](docs/concepts/places.md),
+  [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
+- **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
+  `--room` on `run`, `record`, `drive` and `serve-mcp` lays out walls and furniture in
+  `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, or a file of your own. A
+  wall holds a walking duck where it is and counts the bump, the ball rolls back off it, and the
+  duck's camera sees the walls and nothing behind them. On `mujoco` they are solid, and the
+  walking duck meets them with its own feet. The duck keeps a map of the room, a stand-in for
+  `mapd`, its own mapper, kept to the numbers quackd read of that: it looks only from a stop,
+  after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the start and after
+  a bump or a fall until two stops agree. `map` draws it, the place verbs mark places in it, and a
+  recorded GIF of the cartoon shades the floor it has not seen. Without `--room` each simulator is
+  what it was, to the bit
+  ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
+- **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
+  camera: round what its map has seen to be solid when it keeps a map and its size is known,
+  crossing unseen floor only where no seen way goes, and straight otherwise, never further blind
+  than one `move` could walk. It stops where its map runs out and once a leg its map can follow,
+  waits there for the map to look, and plans again on what it saw. Every number is the body's
+  or its source's. Whatever ends it stops the body and says what it was, and an orphaned place, a
+  robot that does not know where it is, no way there or a way longer than its time is refused
+  before anything moves ([docs/concepts/places.md](docs/concepts/places.md#walking-to-a-place)).
+- **A real Microduck walks by its own map, where `mapd` answers beside its robotd
+  (UNVERIFIED).** `mapd`, the duck's onboard mapper, is on an upstream branch and in no robotd
+  release yet. quackd reaches it at `--map-address`, which `run`, `drive`, `serve-mcp`, `doctor`
+  and `robot add` and `edit` take, or at its own socket beside robotd's, and its places are then
+  in the map, known again in a later session by the map's first stops that stand apart, where
+  they were in one connection's odometry; a map replaced or wiped is never taken for the one it
+  replaced. The reading a walk steers by is `mapd`'s newest pose carried on by
+  robotd's odometry since, so it moves at robot.state's rate; a stream gone quiet, a word for not
+  knowing or the link gone makes the duck lost, never odometry, and the link is tried again in the
+  background. `mapd` is asked on links of its own and never said `hello` to, and nothing answering
+  leaves the odometry as before, with a warning when you named the address. `quackd doctor
+  --map-address` adds a `mapd` row, and fails when nothing answers at an address you named
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+- **MOSS and a rosbridge base keep places too.** MOSS reads its cockpit's pose as where the
+  rover is, in a frame that lasts its stack's run, so a place outlives a connection to the same
+  run; its own `go_to_place` drives there by MOSS's planner, in goals of at most 2 m, never
+  sends a twist while a goal is out, since any would cancel it, and reads the run's rules and the
+  planner's gates again before each goal. A rosbridge base reads `/odom`, every message as it
+  arrives, and since it has no deadman, a walk whose reading stops moving on holds the base still
+  with a zero Twist and then ends ([docs/concepts/places.md](docs/concepts/places.md)).
+- **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
+  far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
+  every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`
+  read and change the place file with nothing connected. `quackd map --wipe` forgets a robot's
+  map, the only way quackd ever wipes one: it asks the person at the terminal, naming the places it
+  orphans, and refuses without one. A simulator's map wiped in one session stays wiped in every
+  session after ([docs/guides/places.md](docs/guides/places.md)).
+
+### Fixed
+
+- **A stop sent while a composite runs keeps its next move from starting.** Each call a
+  composite made took its own count of stops when it was admitted, so a stop sent between two of
+  them was already counted when the second began, and the second walked or kicked as if nobody
+  had braked, unless the composite checked between its calls, as `approach_and` does. A nested
+  call answers to the stops its composite answers to now. One that would move the body and that a
+  stop overtook is not started, nobody is asked to confirm it first, and the log records a
+  `stopped` gate; one that only looks or speaks still runs. `approach_and` carries its `then`
+  verb's `ended_by`, so a kick the brake kept from starting is not a failure in a row
+  ([docs/concepts/safety.md](docs/concepts/safety.md)).
+- **`quackd drive` runs `approach_and kick` as the call it spells.** The words after a verb's name
+  were counted at the spaces, while the name itself was read with its `_` as a space, so a verb
+  spelled with an underscore and given words to take was handed to the pilot as a goal, and only
+  `approach and kick` ran. Both spellings are the call now, as they are for `mark_place` and
+  `forget_place`, whose name can be several words.
+- **The physics duck walks and turns after it has stood still.** `microduck:mujoco` raises a slow
+  twist to its walking policy's floor, and both floors were measured on an earlier MuJoCo. On the
+  3.16 the lock now carries, once the stand policy had held the duck still for two seconds, as it
+  does after a stop, it stepped at the forward floor, 0.23 m/s, on none of six seeds, so a `move`
+  at its default speed said it walked for six seconds and covered nothing; and turning in place
+  at the turning floor, 1.0 rad/s, which is also quackd's turn clamp, it turned right no more
+  than sixteen degrees in five seconds, from a stand or a reset, so a `turn` right barely turned.
+  The floors are 0.24 m/s and 1.2 rad/s now, where a duck that stood one, five or ten seconds
+  starts walking within 1.5 s and turns both ways at once. The browser's simulator takes the
+  same two numbers, as it always has.
+
+### Documentation
+
+- **The Microduck's page says what quackd read of `mapd`, the duck's own map.** `mapd` is on the
+  upstream branch `maploc-v2`, read at `7e0be18`, and in no robotd release, so its socket, its
+  five calls and the numbers it keeps to are listed as assumptions, in their own file
+  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. Nothing in quackd speaks
+  to it yet. One of them differs from Pollen's post: a keyframe is taken after 0.4 s of
+  stillness in the code, where the post says half a second
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
+
 ## [0.27.0] — 2026-10-26
 
 0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`

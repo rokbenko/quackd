@@ -1,0 +1,12 @@
+# Two rooms with a doorway between them, a box in the far one, and the ball somewhere in it:
+# what a walk has to plan through and a map has to be taken of from more than one stop.
+name: two-rooms
+size: [3.0, 2.0]
+walls:
+  - [0.0, -1.0, 0.0, -0.3]
+  - [0.0, 0.3, 0.0, 1.0]
+boxes:
+  - [1.0, 0.6, 0.4, 0.3]
+start: [-1.0, 0.0, 0.0]
+ball: {region: [0.3, -0.8, 1.4, 0.3]}
+person: [-1.2, 0.7]

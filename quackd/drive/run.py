@@ -82,6 +82,8 @@ class DriveArgs:
     decision_llm: str | None = None
     decision_url: str | None = None
     duckfile: str | None = None
+    room: str | None = None
+    map_address: str | None = None
     yes: bool = False
     dry_run: bool = False
     runs_dir: str = "runs"
@@ -111,9 +113,10 @@ async def run_drive(
     from quackd.duckfile.parser import load_duck
     from quackd.duckfile.schema import Budgets
     from quackd.log import EventLog, LogEvent
-    from quackd.mcp_server import RobotSession, fleet_from_flags
+    from quackd.mcp_server import RobotSession, fleet_from_flags, session_memory_key
     from quackd.registry import Registry, resolve_robot_ref
     from quackd.safety import Budget, Executor, Heartbeat
+    from quackd.space.places import PlaceStore
     from quackd.verbs.registry import default_registry
 
     plan = fleet_from_flags(
@@ -127,6 +130,8 @@ async def run_drive(
         host=args.host,
         host_token=args.host_token,
         detector=args.detector,
+        room=args.room,
+        map_address=args.map_address,
     )
     if len(plan.adapters) != 1:
         raise DriveError("drive drives one robot at a time: name it with --robot")
@@ -175,6 +180,12 @@ async def run_drive(
         dry_run=args.dry_run,
         confirm=Answered(yes=args.yes),
         event_log=event_log,
+        # the places a person marks, kept beside the robot's memory and keyed as it is, as a run
+        # and an MCP session keep them, for the next session and the next run to walk to; a dry
+        # session marks none and writes nothing
+        places=PlaceStore(
+            session_memory_key(name, adapter, plan.memory_keys), persist=not args.dry_run
+        ),
     )
     executor.require_verdict = True
     heartbeat = Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log)

@@ -341,6 +341,46 @@ subtask was done, so never declare success on its word alone.
 """
 
 
+PLACE_VERB_NAMES = ("map", "mark_place", "forget_place", "go_to_place")
+"""The verbs that read where the robot is or name it (`quackd.verbs.places`)."""
+
+
+def places_section(allow: Sequence[str]) -> str:
+    """The `## Places` block, for a run whose verbs include one that reads or names places, and
+    empty for every other run, whose prompt is what it was.
+
+    What it has to say is how far to trust a position, since that differs by body and the pilot
+    cannot tell from a number: a map's can be lost and found again, an odometry pose drifts and
+    begins again, and a place belongs to the frame it was marked in. Every verb named is in
+    `allow`, as in `executor_section`."""
+    names = set(allow)
+    if not names & set(PLACE_VERB_NAMES):
+        return ""
+    said = []
+    if "mark_place" in names:
+        said.append("`mark_place` names the spot the robot stands on now")
+    if "map" in names:
+        said.append("`map` says where it is, by what, and every place with how far and which way")
+    if "forget_place" in names:
+        said.append("`forget_place` drops a name")
+    if "go_to_place" in names:
+        said.append(
+            "`go_to_place` walks there on the robot's own reading of where it is, and says how "
+            "close it got by what, or why it stopped"
+        )
+    return f"""
+## Places
+A place is a spot this robot stood on, kept under a name: {"; ".join(said)}. Every observation
+lists the nearest places as `places:`, each with how far it is and which way, in degrees from
+where the robot faces, positive to its left. Your state line says where the robot is and how it
+knows. `where=map(...)` is a map the robot keeps, which it can be lost in until a stop or two show
+it something it knows. `where=odometry(...)` is its own sense of how far it has gone, which
+drifts a little with every metre walked and begins again whenever it is picked up or falls. A
+place belongs to the frame it was marked in: one marked before that frame began again is
+orphaned, listed but never walked to, so mark it again once you are back there.
+"""
+
+
 PLAY_HEADING = "## Playing a part"
 
 PLAY_VOICES = ("say", "quack")
@@ -788,6 +828,7 @@ def build_system_prompt(
     executor = executor_section(
         sorted(names), frames=sees and manifest is not None and "camera" in manifest.sensors
     )
+    places = places_section(sorted(names))
     cameras = list(manifest.extras.get("cameras") or []) if manifest is not None else []
     if len(cameras) > 1:
         # more than one, not merely present. `extras["cameras"]` is the adapter's own list and
@@ -948,7 +989,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 
 ## Verbs
 {verb_lines}
-{body}{executor}{placed}{pictures}{stand_ins}{persona}{memory}{flock}{sim_note}{played}
+{body}{executor}{places}{placed}{pictures}{stand_ins}{persona}{memory}{flock}{sim_note}{played}
 ## Task file: {fm.name} — {fm.description}
 
 {duck.body}
@@ -1002,6 +1043,7 @@ def build_observation_text(
     cameras: Sequence[str] | None = None,
     stepped: Sequence[str] | None = None,
     nearby: Sequence[str] | None = None,
+    places: str | None = None,
 ) -> str:
     head = f"step {step}/{max_steps}"
     # the budget's own line starts with the same step (`Budget.status`), and every observation
@@ -1016,6 +1058,10 @@ def build_observation_text(
         # they are, and the `camera:` line above is the primary's and says nothing of the rest
         rest = ", ".join(cameras[1:])
         lines.append(f"cameras: {cameras[0]} (detections above), {rest}")
+    if places:
+        # the nearest places, how far and which way, on a body that says where it is
+        # (`quackd.space.places.places_line`); absent on every other, whose text is unchanged
+        lines.append(places)
     if last_verb is not None and last_result is not None:
         lines.append(
             f"last verb `{last_verb}`: {'ok' if last_result.ok else 'FAILED'} — {last_result.summary}"
@@ -1049,10 +1095,11 @@ def observation_features(
     inbox: Sequence[Mapping[str, Any]] | None = None,
     flock: Mapping[str, Any] | None = None,
     nearby: Sequence[str] | None = None,
+    places: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    # `inbox`, `flock` and `nearby` are absent rather than empty on a run without them, so every
-    # existing reader of these features (the scripted strategies, the goldens) sees exactly what
-    # it always did
+    # `inbox`, `flock`, `nearby` and `places` are absent rather than empty on a run without
+    # them, so every existing reader of these features (the scripted strategies, the goldens)
+    # sees exactly what it always did
     extra: dict[str, Any] = {}
     if inbox is not None:
         extra["inbox"] = [dict(m) for m in inbox]
@@ -1060,6 +1107,8 @@ def observation_features(
         extra["flock"] = dict(flock)
     if nearby is not None:
         extra["nearby"] = list(nearby)
+    if places is not None:
+        extra["places"] = [dict(p) for p in places]
     return {
         **extra,
         "state": state.model_dump(),

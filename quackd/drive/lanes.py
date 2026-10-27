@@ -35,6 +35,8 @@ PRESET_VERBS = ("walk", "go", "move")
 """What may stand before `forward` or `back`: "walk forward" is the preset `forward`."""
 
 _WORD = re.compile(r"[a-z0-9_'.\-]+")
+_WORD_ANY_CASE = re.compile(_WORD.pattern, re.IGNORECASE)
+"""`_WORD` on a line as typed, for finding where its words end in it."""
 
 
 def words(line: str) -> list[str]:
@@ -187,9 +189,17 @@ class ExactLane:
 
     @staticmethod
     def _rest(line: str, size: int) -> str:
-        """The line after its first `size` words, as typed."""
-        parts = line.strip().split(None, size)
-        return parts[size].strip() if len(parts) > size else ""
+        """The line after its first `size` words as `words` counts them, as typed. Counted as
+        `words` counts, `_` a space among them, or "mark_place front door" was the name "door"."""
+        spaced = line.replace("_", " ").replace(",", " ")  # the same length as the line
+        count = 0
+        for match in _WORD_ANY_CASE.finditer(spaced):
+            if not match.group().strip("'").rstrip("."):
+                continue
+            count += 1
+            if count == size:
+                return line[match.end() :].strip()
+        return ""
 
     def _written(self, line: str) -> Matched | None:
         """A call written out as `name(key=value, ...)`, its values read as literals: numbers,

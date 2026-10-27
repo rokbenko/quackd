@@ -10,10 +10,15 @@ from __future__ import annotations
 import math
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
+
+from quackd.space.pose import where_summary
+
+if TYPE_CHECKING:
+    from quackd.space.source import SpatialSource
 
 Posture = Literal["standing", "sitting", "fallen", "unknown"]
 IntentKind = Literal["move", "stop", "do", "look", "sound", "enable", "pose", "joint", "gripper"]
@@ -112,7 +117,12 @@ class DuckState(BaseModel):
             parts.append(f"battery={self.battery_percent:.0f}%")
         if self.holding:
             parts.append("holding=object-in-beak")
-        if self.x is not None and self.y is not None and self.theta is not None:
+        # A reading of where the robot is says which kind it is, since an odometry pose drifts
+        # and a map's can be lost; `pose=` is the simulators' plain truth, kept for a state with
+        # no reading, which every recorded run before places was.
+        if isinstance(where := self.extras.get("where"), dict):
+            parts.append(f"where={where_summary(where)}")
+        elif self.x is not None and self.y is not None and self.theta is not None:
             parts.append(f"pose=({self.x:.2f}, {self.y:.2f}, {self.theta:.2f} rad)")
         return " ".join(parts)
 
@@ -288,6 +298,18 @@ def frame_period_of(transport: Any) -> float | None:
     `frame_period_s`, which `go_to` reads to tell whether its steering law keeps up."""
     period = _finite(getattr(transport, "frame_period_s", None))
     return period if period is not None and period > 0 else None
+
+
+def spatial_of(transport: Any) -> SpatialSource | None:
+    """The robot's reading of where it is, or None when its body does not say.
+
+    A transport that knows where its robot is carries a `spatial` attribute, the source for this
+    connection (`quackd.space.source`): odometry, a robot's own map, a simulator's. A transport
+    without one is a body quackd has no pose for, and the place verbs are not offered on it. An
+    adapter that wraps a transport has to pass the attribute on, as it passes every other one a
+    caller asks for by name."""
+    source = getattr(transport, "spatial", None)
+    return source if source is not None and callable(getattr(source, "fix", None)) else None
 
 
 def frame_fetch_of(transport: Any) -> float | None:

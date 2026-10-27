@@ -344,16 +344,25 @@ HEAD_RANGE = UpstreamRef(
 # ── what quackd measured, and assumes ───────────────────────────────────────────────────
 
 GAIT_THRESHOLD = UpstreamRef(
-    "no gait below vx 0.23 m/s or wz 1.0 rad/s; above it about 0.38x the commanded speed",
+    "no gait below vx 0.24 m/s or wz 1.2 rad/s; above it about 0.38x the commanded speed",
     "UNVERIFIED",
     src(_INFER),
-    "re-measured 2026-09-17 with the XML's PD actuators on MuJoCo 3.13: vx 0.225 walks 1.3 cm "
-    "in 10 s and 0.23 walks 0.81 to 0.89 m on all ten sweep seeds; wz 1.0 turns 2.2 rad in "
-    "5 s. On MuJoCo 3.12 on 2026-09-07 the same measurement put the floor at 0.22 and the "
-    "turn at 3.83 rad in 5 s, so this threshold is a property of the physics build and not "
-    "only of the policy, and it is why the nightly asset job re-runs the sweep. Upstream "
-    "trains and deploys with the BAM actuator model, so the real robot may track commands "
-    "directly. quackd scales a non-zero twist up so the gait starts, and says so in the state",
+    "re-measured 2026-10-26 on MuJoCo 3.16.0 from a stand, where most walks start: once the "
+    "stand policy has held the duck still for 2 s, vx 0.23 steps on none of six seeds in 6 s, "
+    "where a duck just reset walks at 0.23 in 1.1 s, while 0.235 starts in about 2 s and 0.24 in "
+    "0.9 to 1.5 s after standing one, five or ten seconds, and covers 0.38 of the command in "
+    "10 s on two seeds of three and 0.28 on the third. Turning in place at wz 1.0 it turns right "
+    "13 to 16 degrees in 5 s and no further, from a stand on three seeds and from a reset, and "
+    "from a stand turns left 9 degrees and stalls for 2 s before it turns; at 1.1 left turns at "
+    "once and right still not, and at 1.2 both turn at once, 2.9 to 4.1 rad in 5 s, from a reset "
+    "and after one, five or ten seconds standing, on three seeds. On 2026-09-17, from a reset, "
+    "with the XML's PD actuators on MuJoCo 3.13: vx 0.225 walks 1.3 cm in 10 s and 0.23 walks "
+    "0.81 to 0.89 m on all ten sweep seeds; wz 1.0 turns 2.2 rad in 5 s. On MuJoCo 3.12 on "
+    "2026-09-07 the same measurement put the floor at 0.22 and the turn at 3.83 rad in 5 s, so "
+    "this threshold is a property of the physics build and not only of the policy, and it is why "
+    "the nightly asset job re-runs the sweep. Upstream trains and deploys with the BAM actuator "
+    "model, so the real robot may track commands directly. quackd scales a non-zero twist up so "
+    "the gait starts, and says so in the state",
 )
 HEAD_PITCH_SIGN = UpstreamRef(
     "a positive head_pitch in the command vector tilts the camera down",

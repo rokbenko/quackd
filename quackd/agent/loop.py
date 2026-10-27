@@ -97,6 +97,8 @@ from quackd.safety import (
     VerdictRequired,
     deny_all,
 )
+from quackd.space.places import PlaceStore, places_line
+from quackd.space.pose import where_record
 from quackd.transport.base import (
     Ack,
     CameraFrame,
@@ -107,6 +109,7 @@ from quackd.transport.base import (
     frames_of,
     primary_of,
 )
+from quackd.verbs.places import view_record
 from quackd.verbs.registry import (
     VerbRegistry,
     VerbResult,
@@ -623,6 +626,7 @@ class AgentLoop:
             # writes exactly the frame and the record `on_frame` wrote before there were two
             on_frames=self._on_frames,
             event_log=self.event_log,
+            places=_place_store(cfg.memory, dry_run=cfg.dry_run),
         )
         self.stop_reason: str | None = None
         """Why the run is being stopped from outside, in the words it ends with, by whoever sets
@@ -1756,6 +1760,9 @@ class AgentLoop:
         link = self.cfg.link
         inbox = link.drain() if link is not None else None
         near = self._nearby_lines()
+        # the robot's places read against where it is now, on a body that says where it is
+        book = self.executor.place_book()
+        views = book.views() if book is not None else None
         text = build_observation_text(
             step=self.budget.steps,
             max_steps=self.fm.budgets.max_steps,
@@ -1769,6 +1776,7 @@ class AgentLoop:
             cameras=cameras if len(cameras) > 1 else None,
             stepped=stepped,
             nearby=near,
+            places=places_line(views) if views else None,
         )
         no_verdict_yet = self.executor.require_verdict and self.executor.verdict is None
         if looked and not detections and no_verdict_yet:
@@ -1787,6 +1795,7 @@ class AgentLoop:
             inbox=inbox,
             flock=link.describe() if link is not None else None,
             nearby=near,
+            places=[view_record(v) for v in views] if views is not None else None,
         )
         # The file's own bytes, not a second encoding of the same pixels (`SavedFrame`), in the
         # order the save was handed the frames, which is the order they were read.
@@ -2147,8 +2156,14 @@ class AgentLoop:
         text = str(arguments.get("text", "")).strip()
         tags_raw = arguments.get("tags") or []
         tags = [str(t) for t in tags_raw] if isinstance(tags_raw, list) else []
+        # where the robot stands, read off the robot and never from the model's arguments
+        book = self.executor.place_book()
+        fix = book.source.fix() if book is not None else None
+        where = where_record(fix) if fix is not None and fix.localized else None
         try:
-            entry = memory.remember(text, tags=tags, duck=self.fm.name, run_dir=self.run_dir)
+            entry = memory.remember(
+                text, tags=tags, duck=self.fm.name, run_dir=self.run_dir, where=where
+            )
         except (ValueError, OSError) as e:
             return VerbResult.fail(f"could not remember: {e}")
         self._note(f"remembered: {entry.text}")
@@ -2548,7 +2563,10 @@ class AgentLoop:
             memory_text: str | None = None
             if cfg.memory is not None:
                 tools = [*tools, REMEMBER]
-                memory_text = cfg.memory.recall()
+                # a note saved where the robot knew where it was says how far that is from its
+                # places and from here, read now that the robot is connected
+                book = self.executor.place_book()
+                memory_text = cfg.memory.recall(where_said=book.where_words if book else None)
             # The stepper, or None, which is every run that does not ask for one and the only
             # path below that existed before there was a flag. Built here because its whole
             # vocabulary is the allowlist's discrete calls, and `allow` is not final until the
@@ -3210,6 +3228,16 @@ class AgentLoop:
             decision_calls=self.budget.stepper_calls,
             summary=summary,
         )
+
+
+def _place_store(memory: RobotMemory | None, *, dry_run: bool) -> PlaceStore:
+    """A run's places: beside the robot's memory file, keyed as it is, when memory is on, and
+    written to only by a run that sends things. A dry run reads the places a robot has and marks
+    none, since it runs no verb that is not read-only, and its store writes nothing besides. A run
+    with no memory keeps its places as long as it lasts."""
+    if memory is None:
+        return PlaceStore("session", persist=False)
+    return PlaceStore(memory.robot_key, memory.path.parent, persist=not dry_run)
 
 
 def _joints_line(joints: Mapping[str, float]) -> str:

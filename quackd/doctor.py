@@ -734,6 +734,7 @@ def probe(
     name: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
     host: HostClient | None = None,
+    map_address: str | None = None,
     park: Callable[[Any], Awaitable[RestResult]] | None = None,
     before_close: Callable[[Any], Awaitable[None]] | None = None,
     after_close: Callable[[], None] | None = None,
@@ -794,6 +795,7 @@ def probe(
             token=token,
             rest_pose=rest_pose,
             host=host,
+            map_address=map_address or None,
         )
         if before_connect is not None:
             before_connect(adapter)
@@ -807,9 +809,19 @@ def probe(
         # description claims on its behalf. This is the checklist's go/no-go gate, so a
         # deadman window or an absent token has to be visible here.
         told: dict[str, Any] = dict(getattr(transport, "safety", None) or {})
-        for key in ("auth_warning", "runtime_warning"):
+        for key in ("auth_warning", "runtime_warning", "map_warning"):
             if warning := getattr(transport, key, None):
                 told[key] = warning
+        # what became of the robot's own map, read before the disconnect ends it
+        if callable(report := getattr(transport, "mapd_report", None)):
+            told["mapd"] = report()
+            told["places_by"] = (
+                "mapd"
+                if told["mapd"].get("state") == "answered"
+                else "odometry"
+                if getattr(transport, "spatial", None) is not None
+                else None
+            )
         if commit := getattr(transport, "runtime_commit", None):
             told["runtime_commit"] = commit
         closed = False
@@ -1013,9 +1025,19 @@ def probe(
         # arrived and the disconnect's own re-read still find the arm away, which is a green
         # verdict walking somebody away from an energised arm.
         report.advisories.append(note)
-    for key in ("auth_warning", "runtime_warning"):
+    for key in ("auth_warning", "runtime_warning", "map_warning"):
         if warning := told.get(key):
             report.advisories.append(str(warning))
+    if told.get("places_by") == "mapd":
+        report.advisories.append(
+            "places are by mapd's map, and what quackd reads of mapd was read from a branch in "
+            "no release (UNVERIFIED): watch a walk to a place before you trust one"
+        )
+    elif told.get("places_by") == "odometry":
+        report.advisories.append(
+            "places are by contact odometry, with no map: they drift as the duck walks, and "
+            "are lost when it is picked up or quackd connects again"
+        )
     if told.get("fall_detection") is False:
         report.advisories.append(
             "nothing on this robot detects a fall, so posture never becomes 'fallen' and no "
@@ -1034,8 +1056,39 @@ def probe(
     # disconnect's own re-read still find the arm away, or fail to read it at all. That is the
     # case where the arm is left energised after a command somebody ran to be reassured, so it
     # cannot also be the case where the panel is green and the exit code is 0.
-    report.ok = bool(health.ok) and camera_ok and rest_ok and not note
+    # a map somebody named that did not answer as one fails the probe; one nobody named is
+    # only reported, since mapd is in no release yet
+    mapd = told.get("mapd")
+    mapd_ok = not isinstance(mapd, dict) or mapd.get("state") == "answered" or not mapd.get("given")
+    if isinstance(mapd, dict):
+        report.rows.append(ProbeRow("mapd", mapd_words(mapd), _mapd_state(mapd)))
+    report.ok = bool(health.ok) and camera_ok and rest_ok and not note and mapd_ok
     return report
+
+
+def mapd_words(mapd: dict[str, Any]) -> str:
+    """One line for what became of the robot's own map (`JsonRpcUnixTransport.mapd_report`)."""
+    state = str(mapd.get("state") or "not probed")
+    where = f" at {mapd['address']}" if mapd.get("address") else ""
+    if state != "answered":
+        return f"{state}{where}: {mapd['why']}" if mapd.get("why") else f"{state}{where}"
+    parts = [f"answered{where}"]
+    if mapd.get("keyframes") is not None:
+        parts.append(f"{mapd['keyframes']} keyframes")
+    parts.append(
+        "knows where the robot is" if mapd.get("localized") else f"lost: {mapd.get('lost')}"
+    )
+    if isinstance(behind := mapd.get("behind_robotd_s"), int | float):
+        parts.append(f"{behind:.2f} s behind robotd")
+    return ", ".join(parts)
+
+
+def _mapd_state(mapd: dict[str, Any]) -> str:
+    if mapd.get("state") == "answered":
+        return "ok" if mapd.get("localized") else "warn"
+    if mapd.get("given"):
+        return "fail"
+    return "plain" if mapd.get("state") in ("absent", "not probed") else "warn"
 
 
 def _microduck_api_version() -> str:
@@ -1293,6 +1346,7 @@ def collect(
     rest_pose: dict[str, float] | None = None,
     host: str | None = None,
     host_token: str | None = None,
+    map_address: str | None = None,
     progress: Progress = None,
     robot_name: str | None = None,
     before_connect: Callable[[Any], None] | None = None,
@@ -1533,6 +1587,7 @@ def collect(
                     name=robot_name,
                     before_connect=before_connect,
                     host=host_camera_from,
+                    map_address=map_address,
                     park=park,
                     before_close=before_close,
                     after_close=after_close,

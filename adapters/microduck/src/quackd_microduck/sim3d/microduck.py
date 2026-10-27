@@ -9,7 +9,7 @@ exactly what a gamepad supplies on the real robot.
 Two things a reader should know before trusting a run.
 
 **The gait has a floor.** Under the model's own PD actuators the walking policy does not step
-below about 0.23 m/s or 1.0 rad/s: it stands and shifts its weight. quackd's `move` defaults
+below about 0.24 m/s or 1.2 rad/s: it stands and shifts its weight. quackd's `move` defaults
 to 0.15 m/s and `go_to` creeps at 0.05, so passing those through unchanged would give a duck
 that reports walking and does not move — the worst kind of failure. A non-zero twist is
 therefore raised to the floor, a very small one is dropped to zero rather than amplified into

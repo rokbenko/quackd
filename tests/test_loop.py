@@ -6103,3 +6103,34 @@ async def test_a_flock_stopping_its_members_does_not_stop_a_members_fold(
     assert FOLD_STOPPED not in notes, notes
     assert mock.sequence[-2:] == ["rest", "close"], mock.sequence
     assert mock.torque is False and mock.close_note is None, "let go of at its pose"
+
+
+async def test_a_run_shows_the_pilot_the_places_its_body_knows(
+    hello_duck: DuckFile, tmp_path: Path
+) -> None:
+    """A body that says where it is lists the places it knows in every observation, read
+    against where it stands, and the features carry them for the stepper; a body that does not
+    say reads exactly as before (`test_hello_world_golden`)."""
+    from quackd.memory import RobotMemory
+    from quackd.space.places import Place, PlaceStore
+
+    home = tmp_path / "memory"
+    PlaceStore("microduck:mock", home).mark(
+        Place("dock", 0.0, 0.0, 0.0, "odom:mock", "odometry", 1.0)
+    )
+    result = await run_duck(
+        RunConfig(
+            duck=hello_duck,
+            provider=FakeProvider.for_duck(hello_duck.name),
+            transport=MicroduckAdapter(MockTransport(spatial=True)),
+            runs_dir=tmp_path,
+            memory=RobotMemory("microduck:mock", home),
+        )
+    )
+    assert result.outcome == "success", result.reason
+    texts = _observed(result.run_dir)
+    assert texts and all("places: dock here" in text.splitlines() for text in texts)
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    first = next(e for e in events if e["kind"] == "observation")
+    assert [p["name"] for p in first["features"]["places"]] == ["dock"]
+    assert "where=odometry(0.00, 0.00, 0.00 rad, walked 0.0 m)" in texts[0]

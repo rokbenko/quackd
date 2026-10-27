@@ -199,11 +199,14 @@ def moss_manifest(
     fov_deg: float | None = None,
     extras: dict[str, Any] | None = None,
     arm_seen: bool | None = None,
+    places: bool = True,
 ) -> RobotManifest:
     """The rover as data. `stack` None is every stack's verbs together, which is what
     `describe()` declares and `connect()` narrows from. `arm` is whether the arm verbs can
     run, the coordinator and the maker's cycle both, and `arm_seen` whether the coordinator
-    answers at all, which is what lets a precondition see the arm (None: the same as arm)."""
+    answers at all, which is what lets a precondition see the arm (None: the same as arm).
+    `places` is whether the rover's pose is read as where it is, which the place verbs keep
+    places in; its own `go_to_place` drives there by the planner, so it needs one."""
     own = moss_verbs()
     stacks = STACKS if stack is None else (stack,)
     on_base = any(s in BASE_STACKS for s in stacks)
@@ -258,6 +261,13 @@ def moss_manifest(
         timeout = float(CORE["go_to"].timeout_s) + ARM_GIVE_UP_S + 2 * VERB_MARGIN_S
         verbs.append(verb_spec(CORE["approach_and"], core=True, timeout_s=timeout))
         preconditions["approach_and"] = list(drive_gates)
+    if places:
+        verbs += [
+            verb_spec(CORE[name], core=True) for name in ("map", "mark_place", "forget_place")
+        ]
+        if planner and twists:
+            verbs.append(verb_spec(own["go_to_place"], core=True))
+            preconditions["go_to_place"] = list(plan_gates)
     if collect:
         verbs.append(verb_spec(own["collect_litter"], core=False))
         preconditions["collect_litter"] = [
@@ -363,8 +373,15 @@ class MossAdapter:
             fov_deg=getattr(t, "fov_deg", None),
             extras=dict(getattr(t, "manifest_extras", {}) or {}),
             arm_seen=getattr(t, "arm_seen", None),
+            places=self.spatial is not None,
         )
         return self.manifest
+
+    @property
+    def spatial(self) -> Any:
+        """Where the rover is by its odometry, passed on from the transport by name, as every
+        wrapper passes it (`quackd.transport.base.spatial_of`)."""
+        return getattr(self.transport, "spatial", None)
 
     async def disconnect(self) -> None:
         await self.transport.close()

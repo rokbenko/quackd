@@ -21,6 +21,7 @@ from quackd.verbs.aliases import ALIASES
 
 if TYPE_CHECKING:
     from quackd.adapters.manifest import RobotManifest
+    from quackd.space.places import PlaceBook
     from quackd.verbs.watch import Eyes
 
 SafetyClass = Literal["safe", "confirm", "dangerous"]
@@ -57,6 +58,10 @@ class NoParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+async def _no_abort_rule(_state: DuckState) -> None:
+    """`VerbContext.abort_when` where no executor reads a run's rules: nothing fires."""
+
+
 @dataclass
 class VerbContext:
     """Everything a verb may touch. Deliberately not the executor and not the LLM."""
@@ -86,6 +91,15 @@ class VerbContext:
     that move the body for a while, `move`, `go_to`, `search_scan` and `approach_and`, before
     each twist and between steps: a `stop` asked for beside one of them used to send its stop and
     then watch the verb's next twist undo it, over MCP and anywhere else two calls overlap."""
+    places: PlaceBook | None = None
+    """This robot's places read against where it is now (`quackd.space.places`), on a body whose
+    transport says where it is; None on every other."""
+    abort_when: Callable[[DuckState], Awaitable[None]] = _no_abort_rule
+    """The run's `abort_when` rules, read against a state the verb has just taken. A verb that
+    runs for a while and stops along the way awaits it at each stop: once a rule fires it sends a
+    stop and raises the executor's `Aborted`, as an admission does. The executor reads the rules
+    when it admits a verb and not again until the next one, so without this a verb that walked
+    for minutes never heard that the battery had fallen below the line a task drew."""
 
 
 Precondition = Callable[[DuckState], str | None]

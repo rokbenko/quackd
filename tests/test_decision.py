@@ -57,10 +57,17 @@ from tests import fake_systemone
 TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
     "core": {
         "approach_and": (None, "motion"),
+        # a free-string name, so a value and never a choice: the stepper can never take it
+        "forget_place": (None, "motion"),
         "gaze": (5, "motion"),
         "go_to": (None, "motion"),
+        # a place's name, free text like forget_place's
+        "go_to_place": (None, "motion"),
         "grab": (1, "motion"),
         "kick": (2, "motion"),
+        # an integer width, which is a value as well
+        "map": (None, "read"),
+        "mark_place": (None, "motion"),
         "move": (None, "motion"),
         "observe": (1, "read"),
         "quack": (1, "motion"),
@@ -132,6 +139,8 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "collect_litter": (None, "never"),
         "drive_to": (None, "motion"),
         "explore": (None, "confirm"),
+        # its own go_to_place, by the planner: the core one's class
+        "go_to_place": (None, "motion"),
         "pick_and_drop": (2, "confirm"),
         "stow_arm": (1, "confirm"),
     },
@@ -139,9 +148,13 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
 
 
 def _verbs(body: str) -> dict[str, Verb]:
-    """The verb templates one body registers, named as that body spells them."""
+    """The verb templates one body registers, named as that body spells them. `core` is the
+    default vocabulary and every core template beside it, since a core verb a body offers only on
+    some connections, the place verbs, is in no static default and still reaches the stepper."""
     if body == "core":
-        return {v.name: v for v in default_registry().verbs()}
+        from quackd.verbs.core import CORE
+
+        return {**CORE, **{v.name: v for v in default_registry().verbs()}}
     return dict(_module(body).implementations())
 
 

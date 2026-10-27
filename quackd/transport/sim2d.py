@@ -4,6 +4,10 @@ Its job is to make the north-star demo need no hardware and no GPU. Time is simu
 shared: a `FlockClock` advances the world only while every attached duck is asleep, so a
 single duck behaves exactly as before and a flock of N stays deterministic. One transport
 is one duck's view of a (possibly shared) world.
+
+Given a room and the numbers of the map a real body keeps, it keeps a simulated one
+(`quackd.space.simmap`), which says where the duck is the way that map would: only after a stop,
+and not after a bump. Without them, everything is as it was before rooms.
 """
 
 from __future__ import annotations
@@ -17,6 +21,9 @@ from PIL import Image
 from quackd.sim2d.clock import FlockClock, HookInterrupt
 from quackd.sim2d.render import render_duckcam
 from quackd.sim2d.world import DT, World
+from quackd.space.pose import where_record
+from quackd.space.room import Room
+from quackd.space.simmap import STAND_IN, BodyNow, SimMapParams, SimulatedMap
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
 
 BATTERY_DRAIN_PER_S = 0.02  # percent per sim second: a 5-minute run costs ~6 %
@@ -43,9 +50,13 @@ class Sim2DTransport:
         world: World | None = None,
         clock: FlockClock | None = None,
         duck_index: int = 0,
+        room: Room | None = None,
+        map_params: SimMapParams | None = None,
     ) -> None:
+        if room is not None and world is not None:
+            raise ValueError("a shared world was laid out already: give the room to the World")
         self.realtime = live if realtime is None else realtime
-        self.world = world if world is not None else World(seed=seed, person=person)
+        self.world = world if world is not None else World(seed=seed, person=person, room=room)
         self.clock = clock if clock is not None else FlockClock(self.world, realtime=self.realtime)
         self.duck_index = duck_index
         self.pid = f"duck-{duck_index}"
@@ -57,11 +68,43 @@ class Sim2DTransport:
         self._window: Any = None
         self.post_sleep: Callable[[], None] | None = None
         """Called after every sim sleep. The flock uses it to preempt an in-flight verb."""
+        self.spatial: SimulatedMap | None = None
+        """Where the duck is, by a simulated map of the world's room, kept to the real map's
+        numbers (`map_params`), or None with no room or no numbers, and then the duck says
+        nothing of where it is, as before rooms (`quackd.transport.base.spatial_of`)."""
+        room = self.world.room
+        if room is not None and map_params is not None:
+            self.spatial = SimulatedMap(
+                room,
+                map_params,
+                body=self._body_now,
+                frame_key=f"sim:sim2d:{room.digest()[:12]}",
+            )
+            self.add_tick_hook(self._tick_map)
 
     # ── hooks (recorder, live window) ───────────────────────────────────────────────
 
     def add_tick_hook(self, hook: Callable[[World], None]) -> None:
         self.clock.add_tick_hook(hook)
+
+    def _tick_map(self, _world: World) -> None:
+        if self.spatial is not None:
+            self.spatial.tick()
+
+    def _body_now(self) -> BodyNow:
+        """The truth about this duck now, which only the simulated map is told."""
+        d = self.world.ducks[self.duck_index]
+        return BodyNow(
+            t=self.world.t,
+            x=d.x,
+            y=d.y,
+            theta=d.theta,
+            head_yaw=d.head_yaw,
+            standing=d.posture == "standing",
+            fallen=d.posture == "fallen",
+            bumps=d.bumps,
+            moving=d.moving,
+        )
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
@@ -93,6 +136,10 @@ class Sim2DTransport:
         d = w.ducks[self.duck_index]
         battery = max(0.0, self.battery_start - BATTERY_DRAIN_PER_S * w.t)
         policy = "sit" if d.posture == "sitting" else ("walk" if d.moving else "stand")
+        extras = w.snapshot(self.duck_index)
+        if self.spatial is not None:
+            extras["where"] = where_record(self.spatial.fix())
+            extras["assumptions"] = [STAND_IN]
         return DuckState(
             t=w.t,
             x=d.x,
@@ -103,7 +150,7 @@ class Sim2DTransport:
             fallen=d.posture == "fallen",
             battery_percent=battery,
             holding=d.holding,
-            extras=w.snapshot(self.duck_index),
+            extras=extras,
         )
 
     async def send_intent(self, intent: Intent) -> Ack:

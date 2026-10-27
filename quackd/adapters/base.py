@@ -307,6 +307,16 @@ the refusal every other body gives `--policy-url` (`quackd.adapters.factory`), a
 `MULTI_CAMERA_SPECS` is for a second camera: an adapter whose `make()` takes no `policy` is
 refused rather than handed one it would drop."""
 
+MAP_SPECS = ("microduck:jsonrpc",)
+"""The bodies that read a map the robot keeps of its own (`--map-address`): the Microduck's
+`mapd`, beside its robotd. Named here for the refusal every other body gives the flag
+(`quackd.adapters.factory`), as `ROOM_SPECS` is for `--room`."""
+
+ROOM_SPECS = ("microduck:sim2d", "microduck:mujoco")
+"""The bodies that lay out a room (`--room`) and keep a simulated map of it
+(`quackd.space.simmap`). Named here for the refusal every other body gives the flag
+(`quackd.adapters.factory`), as `POLICY_SPECS` is for `--policy-url`."""
+
 
 class PolicyChoice:
     """The policy server a run's arm hands its segments to: `--policy-url`, and `--policy-token`

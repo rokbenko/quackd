@@ -14,6 +14,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from quackd.sim2d.render import render_duckcam, render_topdown
+from quackd.transport.base import spatial_of
 
 CAPTION_H = 22
 MAX_FRAMES = 400
@@ -77,7 +78,10 @@ class FrameRecorder:
         if panes is not None:
             top, cam, label = panes(self.size)
         else:
-            top = render_topdown(world, self.size)
+            # a simulated map of the world's room, when the duck keeps one, shades what it has
+            # not seen yet
+            seen = getattr(spatial_of(self.transport), "grid_now", None)
+            top = render_topdown(world, self.size, seen=seen() if callable(seen) else None)
             cam = render_duckcam(world, self.size, duck_index=self.focus_duck)
             label = self._cam_label()
         frame = Image.new("RGB", (self.size * 2 + 4, self.size + CAPTION_H), (30, 30, 30))

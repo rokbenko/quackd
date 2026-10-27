@@ -11,10 +11,15 @@ ball's hue band and would forge ball detections).
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
-from PIL import Image, ImageDraw
+import numpy as np
+import numpy.typing as npt
+from PIL import Image, ImageChops, ImageDraw
 
 from quackd.sim2d.world import ARENA_HALF, World
+from quackd.space.grid import UNKNOWN, OccupancyGrid
+from quackd.space.room import HEIGHT_M, Room
 
 # Colours are part of the contract: the detector's HSV ranges are tuned to these.
 FLOOR = (236, 229, 212)
@@ -42,20 +47,91 @@ CAM_FOV_DEG = 90.0
 CAM_HEIGHT_M = 0.20
 HORIZON = 0.45  # fraction of frame height
 
+# A room's walls and furniture, in greys far below the saturation every detector band starts at
+# (`quackd.perception.color_blob`), so nothing solid is ever taken for a ball, a person or a duck.
+ROOM_WALL = (150, 144, 136)
+FURNITURE = (118, 110, 102)
+BEYOND = (128, 122, 114)  # the top-down view outside a room's walls
+UNSEEN = (96, 96, 104)  # laid over floor the simulated map has not seen yet
+UNSEEN_ALPHA = 110  # of 255
+KEYFRAME = (40, 120, 140)  # where the simulated map stopped and looked
+
 
 def focal_px(width: int, fov_deg: float = CAM_FOV_DEG) -> float:
     return (width / 2) / math.tan(math.radians(fov_deg) / 2)
 
 
-def render_topdown(world: World, size: int = 256) -> Image.Image:
-    img = Image.new("RGB", (size, size), FLOOR)
-    draw = ImageDraw.Draw(img)
-    scale = size / (2 * ARENA_HALF)
+def render_topdown(
+    world: World, size: int = 256, *, seen: OccupancyGrid | None = None
+) -> Image.Image:
+    """The world from above. A room's walls and furniture are drawn to its own scale, and
+    `seen`, a simulated map's grid, shades the floor it has not seen and dots where it stopped.
+    With no room, the arena exactly as it always was."""
+    px: Callable[[float, float], tuple[float, float]]
+    if world.room is None:
+        img = Image.new("RGB", (size, size), FLOOR)
+        draw = ImageDraw.Draw(img)
+        scale = size / (2 * ARENA_HALF)
+
+        def arena(x: float, y: float) -> tuple[float, float]:
+            return (x + ARENA_HALF) * scale, (ARENA_HALF - y) * scale
+
+        px = arena
+        draw.rectangle([0, 0, size - 1, size - 1], outline=WALL, width=3)
+    else:
+        img, scale, px = _room_canvas(world.room, size, seen)
+        draw = ImageDraw.Draw(img)
+    _draw_world(draw, world, scale, px)
+    return img
+
+
+def _room_canvas(
+    room: Room, size: int, seen: OccupancyGrid | None
+) -> tuple[Image.Image, float, Callable[[float, float], tuple[float, float]]]:
+    """A square canvas with `room` centred in it at the largest scale that fits, its walls and
+    furniture drawn, and what `seen` has not seen shaded."""
+    xmin, ymin, xmax, ymax = room.bounds
+    scale = (size - 8) / max(xmax - xmin, ymax - ymin)
+    left = (size - (xmax - xmin) * scale) / 2
+    top = (size - (ymax - ymin) * scale) / 2
 
     def px(x: float, y: float) -> tuple[float, float]:
-        return (x + ARENA_HALF) * scale, (ARENA_HALF - y) * scale
+        return left + (x - xmin) * scale, top + (ymax - y) * scale
 
-    draw.rectangle([0, 0, size - 1, size - 1], outline=WALL, width=3)
+    img = Image.new("RGB", (size, size), BEYOND)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([*px(xmin, ymax), *px(xmax, ymin)], fill=FLOOR, outline=WALL, width=3)
+    for box in room.boxes:
+        corner0 = px(box.cx - box.w / 2, box.cy + box.d / 2)
+        corner1 = px(box.cx + box.w / 2, box.cy - box.d / 2)
+        draw.rectangle([*corner0, *corner1], fill=FURNITURE, outline=WALL)
+    for wall in room.walls:
+        width = max(2, round(wall.thickness * scale))
+        draw.line([px(wall.x0, wall.y0), px(wall.x1, wall.y1)], fill=WALL, width=width)
+    if seen is not None:
+        rows, cols = seen.cells.shape
+        ox, oy = seen.origin
+        x0, y0 = px(ox, oy + rows * seen.res_m)
+        x1, y1 = px(ox + cols * seen.res_m, oy)
+        unseen = np.flipud(seen.cells == UNKNOWN).astype(np.uint8) * UNSEEN_ALPHA
+        mask = Image.fromarray(unseen, mode="L").resize(
+            (max(1, round(x1 - x0)), max(1, round(y1 - y0))), Image.Resampling.NEAREST
+        )
+        shade = Image.new("RGB", mask.size, UNSEEN)
+        img.paste(shade, (round(x0), round(y0)), mask)
+        for pose in seen.keyframes:
+            kx, ky = px(pose.x, pose.y)
+            draw.ellipse([kx - 2, ky - 2, kx + 2, ky + 2], fill=KEYFRAME)
+    return img, scale, px
+
+
+def _draw_world(
+    draw: ImageDraw.ImageDraw,
+    world: World,
+    scale: float,
+    px: Callable[[float, float], tuple[float, float]],
+) -> None:
+    """The ball, the people and the ducks, from above."""
     b = world.ball
     if b.present:
         sx, sy = px(b.start_x, b.start_y)
@@ -96,7 +172,6 @@ def render_topdown(world: World, size: int = 256) -> Image.Image:
             draw.text((cx - 10, cy + rr), d.posture, fill=TEXT)
         if d.holding:
             draw.ellipse([cx - 4, cy - 4, cx + 4, cy + 4], fill=BALL)
-    return img
 
 
 def _render_cam(
@@ -111,7 +186,8 @@ def _render_cam(
 ) -> Image.Image:
     """A first-person view from (ox, oy) facing `heading`. Floor objects project below the
     horizon by f·h/d, size ∝ 1/d. Peers are body-colour boxes (no beak — hue collision with
-    the ball)."""
+    the ball). A room's walls and furniture stand as columns cast one to a pixel, and hide
+    whatever is behind them."""
     w = h = size
     img = Image.new("RGB", (w, h), SKY)
     draw = ImageDraw.Draw(img)
@@ -119,6 +195,9 @@ def _render_cam(
     draw.rectangle([0, horizon, w, h], fill=FLOOR)
     f = focal_px(w)
     half_fov = math.radians(CAM_FOV_DEG) / 2
+    depth = None
+    if world.room is not None:
+        depth = _draw_room(draw, world.room, w, f, horizon, (ox, oy, heading), cam_height)
 
     objects: list[tuple[float, float, float, float, tuple[int, int, int], bool]] = []
     for p in world.people:
@@ -143,11 +222,54 @@ def _render_cam(
         rpx = f * radius / dist
         if round_:
             cy = ground_y - rpx
-            draw.ellipse([cx - rpx, cy - rpx, cx + rpx, cy + rpx], fill=colour)
+            shape = [cx - rpx, cy - rpx, cx + rpx, cy + rpx]
         else:
             hpx = f * height / dist
-            draw.rectangle([cx - rpx, ground_y - hpx, cx + rpx, ground_y], fill=colour)
+            shape = [cx - rpx, ground_y - hpx, cx + rpx, ground_y]
+        if depth is None:
+            if round_:
+                draw.ellipse(shape, fill=colour)
+            else:
+                draw.rectangle(shape, fill=colour)
+            continue
+        # drawn only in the columns where it stands nearer than the room's walls
+        layer = Image.new("L", (w, h), 0)
+        if round_:
+            ImageDraw.Draw(layer).ellipse(shape, fill=255)
+        else:
+            ImageDraw.Draw(layer).rectangle(shape, fill=255)
+        nearer = (depth > dist * math.cos(bearing)).astype(np.uint8) * 255
+        columns = Image.fromarray(np.ascontiguousarray(np.broadcast_to(nearer, (h, w))), mode="L")
+        img.paste(colour, None, ImageChops.multiply(layer, columns))
     return img
+
+
+def _draw_room(
+    draw: ImageDraw.ImageDraw,
+    room: Room,
+    w: int,
+    f: float,
+    horizon: int,
+    view: tuple[float, float, float],
+    cam_height: float,
+) -> npt.NDArray[np.float64]:
+    """The room's walls and furniture seen from `view` (x, y, heading), one column to a pixel,
+    and how deep each column's is along the view, so a straight wall is drawn straight and what
+    stands behind it can be hidden."""
+    ox, oy, heading = view
+    reach = 2 * math.hypot(room.half_w, room.half_h) + 1.0
+    depth = np.full(w, np.inf)
+    for col in range(w):
+        bearing = math.atan((w / 2 - (col + 0.5)) / f)
+        hit = room.cast(ox, oy, heading + bearing, reach)
+        if hit is None:
+            continue
+        along = max(hit[0] * math.cos(bearing), 0.01)
+        depth[col] = along
+        top = horizon - f * (HEIGHT_M - cam_height) / along
+        bottom = horizon + f * cam_height / along
+        draw.line([(col, top), (col, bottom)], fill=FURNITURE if hit[1] == "box" else ROOM_WALL)
+    return depth
 
 
 def render_duckcam(world: World, size: int = 256, *, duck_index: int = 0) -> Image.Image:

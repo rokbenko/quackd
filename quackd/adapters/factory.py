@@ -18,7 +18,9 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from quackd.adapters.base import (
+    MAP_SPECS,
     POLICY_SPECS,
+    ROOM_SPECS,
     AdapterError,
     AdapterNotInstalled,
     PolicyChoice,
@@ -257,34 +259,69 @@ def _same_release(adapter: str, module: Any) -> None:
     )
 
 
-def describe(spec: RobotSpec, *, policy: PolicyChoice | None = None) -> RobotManifest:
+def describe(
+    spec: RobotSpec, *, policy: PolicyChoice | None = None, room: str | None = None
+) -> RobotManifest:
     """The static manifest: no SDK import, no socket. What `validate` and `announce` use.
 
     `policy` is the server a run hands the arm's segments to (`--policy-url`), passed only when
     one was given, so a body described without one is described exactly as it always was. With
     one, the arm's static manifest carries `manipulate` and `pick`, which its connect would
     otherwise be the first to claim, so a task that allows them is judged before anything
-    connects. A body that runs no policy is refused (`_takes_policy`)."""
+    connects. A body that runs no policy is refused (`_takes_policy`).
+
+    `room` is the room a simulator lays out (`--room`), passed by the same rule: a simulator
+    given one keeps a map of it, and its static manifest carries the place verbs. A body whose
+    adapter takes no room is refused (`_takes_room`)."""
     module = _module(spec.adapter)
-    if policy is None:
-        return module.describe(spec.backend, spec.robot_id)
-    _takes_policy(spec, module.describe)
-    return module.describe(spec.backend, spec.robot_id, policy=policy)
+    extra: dict[str, Any] = {}
+    if policy is not None:
+        _takes_policy(spec, module.describe)
+        extra["policy"] = policy
+    if room is not None:
+        _takes_room(spec, module.describe)
+        extra["room"] = room
+    return module.describe(spec.backend, spec.robot_id, **extra)
+
+
+def _takes(fn: Any, keyword: str) -> bool:
+    """Whether `fn` names `keyword` among its parameters. By name, never through `**kwargs`: an
+    adapter that swallows every keyword would take what it was given and drop it."""
+    try:
+        return keyword in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _takes_policy(spec: RobotSpec, fn: Any) -> None:
     """Refuse a policy for a body whose adapter has no `policy` parameter where it is asked for
-    one, rather than calling it with a keyword it does not know. By name, never through
-    `**kwargs`: an adapter that swallows every keyword would take a policy and drop it, and a
-    run told a policy drives the arm would then be driving it with nothing but the pilot."""
-    try:
-        takes = "policy" in inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        takes = False
-    if not takes:
+    one, rather than calling it with a keyword it does not know: a run told a policy drives the
+    arm would otherwise be driving it with nothing but the pilot."""
+    if not _takes(fn, "policy"):
         raise AdapterError(
             f"{spec.key} runs no policy, so --policy-url has nothing to hand it: only the "
             f"LeRobot arm does ({' and '.join(POLICY_SPECS)})"
+        )
+
+
+def _takes_map_address(spec: RobotSpec, fn: Any) -> None:
+    """Refuse a map's address for a body whose adapter has no `map_address` parameter where it
+    is asked for one: a run told where the robot keeps its map would otherwise walk by odometry
+    and say nothing."""
+    if not _takes(fn, "map_address"):
+        raise AdapterError(
+            f"{spec.key} reads no map the robot keeps, so --map-address has nothing to reach: "
+            f"it is for the Microduck's mapd ({' and '.join(MAP_SPECS)})"
+        )
+
+
+def _takes_room(spec: RobotSpec, fn: Any) -> None:
+    """Refuse a room for a body whose adapter has no `room` parameter where it is asked for one:
+    a run told it walks a room would otherwise walk the adapter's own world and say nothing."""
+    if not _takes(fn, "room"):
+        raise AdapterError(
+            f"{spec.key} has no simulator that lays out a room, so --room has nothing to give: "
+            f"a room is for the Microduck's simulator ({' and '.join(ROOM_SPECS)})"
         )
 
 
@@ -401,6 +438,8 @@ def make_adapter(
     faults: str | None = None,
     scene: Sequence[Mapping[str, Any]] | None = None,
     policy: PolicyChoice | None = None,
+    room: str | None = None,
+    map_address: str | None = None,
 ) -> RobotAdapter:
     """Build a robot. `camera_url` may name several cameras; every `make()` is handed the
     tuple and decides whether this body reads more than one (`MULTI_CAMERA_SPECS`), and a
@@ -419,7 +458,9 @@ def make_adapter(
     `policy` is the policy server `--policy-url` names, passed by the same rule, and refused for
     a body whose `make()` has no `policy` parameter (`_takes_policy`): only the LeRobot arm
     hands a segment to one, and a third party's adapter built without the flag is called as it
-    always was."""
+    always was. `room`, the room a simulator lays out (`--room`), is passed by the same rule and
+    refused for a body whose `make()` has no `room` parameter (`_takes_room`), and so is
+    `map_address`, where a robot keeps its own map (`--map-address`, `_takes_map_address`)."""
     if isinstance(spec, str):
         spec = parse_robot_spec(spec)
     module = _module(spec.adapter)
@@ -429,6 +470,12 @@ def make_adapter(
     if policy is not None:
         _takes_policy(spec, module.make)
         extra["policy"] = policy
+    if room is not None:
+        _takes_room(spec, module.make)
+        extra["room"] = room
+    if map_address is not None:
+        _takes_map_address(spec, module.make)
+        extra["map_address"] = map_address
     adapter: RobotAdapter = module.make(
         spec.backend,
         robot_id=spec.robot_id,

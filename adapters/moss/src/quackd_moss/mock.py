@@ -37,6 +37,8 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, ImageDraw
 
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.pose import Fix, where_record
 from quackd.transport.base import Ack, CameraFrame, DuckState, HeartbeatError, Intent
 from quackd_moss import upstream_api as up
 from quackd_moss.verbs import (
@@ -301,6 +303,8 @@ class MossMock:
         self.connected = False
         self.stack_running = True
         self.run_id = "mock-run-1"
+        self.spatial: OdometrySource | None = None
+        """Where the mock rover is by its odometry, in its run's frame, from connect."""
         # the rover, true and as its odometry reports it
         self.x = self.y = self.yaw = 0.0
         self.ox = self.oy = self.oyaw = 0.0
@@ -914,6 +918,7 @@ class MossMock:
             raise TransportError(f"moss: {refusal}")
         self.connected = True
         self._activity = self._t
+        self.spatial = _MockOdometry(self)
         if self.bridge_up:
             self._beat()  # the session is open before anything can be started in it
 
@@ -1057,6 +1062,7 @@ class MossMock:
                 "goal_reached": self.goal_reached,
             },
             "idle": {"enabled": self.idle_limit_s > 0, "limit_s": self.idle_limit_s},
+            **({"where": where_record(self.spatial.fix())} if self.spatial else {}),
             "arm": arm,
             "mission": mission,
             "started": self.started,
@@ -1250,3 +1256,32 @@ class MossMock:
 
     def true_pose(self) -> tuple[float, float, float]:
         return self.x, self.y, self.yaw
+
+
+class _MockOdometry(OdometrySource):
+    """The mock rover's odometry as where it is, read off the mock when the reading is read, in
+    its run's frame, which begins again only with the run, as the cockpit's does; a pose older
+    than the cockpit's limit is taken into nothing, and says so."""
+
+    def __init__(self, mock: MossMock) -> None:
+        super().__init__(
+            OdometryTrack(f"odom:moss:{mock.run_id}", persistent=True, restarts_with_clock=False),
+            stale=self._staleness,
+            label="the mock rover's odometry",
+        )
+        self._mock = mock
+
+    def _staleness(self) -> str | None:
+        age = self._mock.pose_age_s
+        if age is not None and age > MIN_STALE_S:
+            return (
+                f"the rover's odometry is {age:.1f} s old, past the {MIN_STALE_S:g} s it is good "
+                "for"
+            )
+        return None
+
+    def fix(self) -> Fix:
+        m = self._mock
+        if m.pose_age_s is not None and m.pose_age_s <= MIN_STALE_S:
+            self.track.update(m.ox, m.oy, m.oyaw, round(m.now() - m.pose_age_s, 3))
+        return super().fix()

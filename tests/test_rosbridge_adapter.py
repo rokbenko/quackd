@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import importlib.util
 import io
@@ -17,9 +18,12 @@ from quackd.adapters.base import AdapterNotInstalled
 from quackd.adapters.factory import describe, make_adapter, parse_robot_spec
 from quackd.perception.color_blob import ColorBlobDetector
 from quackd.safety import Executor
+from quackd.space.places import Place, PlaceBook, PlaceStore
 from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.core import speed_limits
-from quackd.verbs.registry import registry_from_manifest
+from quackd.verbs.core import TICK_S, speed_limits
+from quackd.verbs.navigate import Gait
+from quackd.verbs.places import PLACE_VERBS, GoToPlaceParams
+from quackd.verbs.registry import VerbContext, VerbResult, registry_from_manifest
 from quackd_microduck import microduck_manifest
 from quackd_rosbridge import DATASHEET, RosbridgeAdapter, rosbridge_manifest
 from quackd_rosbridge.introspection import datasheet_from_introspection, parse_urdf
@@ -32,6 +36,7 @@ from quackd_rosbridge.ws import (
     yaw_from_quaternion,
 )
 
+PLACES = {"map", "mark_place", "forget_place", "go_to_place"}
 MOCK_VERBS = {
     "observe",
     "report_state",
@@ -41,6 +46,7 @@ MOCK_VERBS = {
     "search_scan",
     "approach_and",
     "introspect",
+    *PLACES,
 }
 NO_ROSLIBPY = importlib.util.find_spec("roslibpy") is None
 
@@ -74,7 +80,7 @@ def test_manifest_is_a_wheeled_base_with_twist_only() -> None:
     assert described.datasheet.mass_kg.value == 11.0
 
     blind = describe(parse_robot_spec("rosbridge:ws"))
-    assert set(blind.verb_names()) == {"report_state", "stop", "move", "introspect"}
+    assert set(blind.verb_names()) == {"report_state", "stop", "move", "introspect", *PLACES}
     assert blind.sensors == ["odometry"] and blind.extras["image"] is None
     # a name says nothing about a body: the ws backend knows nothing until it has asked
     assert blind.datasheet is not None and blind.datasheet.mass_kg is None
@@ -547,3 +553,231 @@ async def test_the_verb_refreshes_a_datasheet_that_was_empty_at_connect() -> Non
     assert (await ex.run_verb("introspect")).ok
     assert manifest.datasheet.mass_kg is not None
     assert manifest.datasheet.mass_kg.value == 11.0
+
+
+# ── where the base is, by its /odom ─────────────────────────────────────────────────────
+
+
+def _odom(x: float, y: float = 0.0, *, stamp: float | None = None) -> dict[str, Any]:
+    message: dict[str, Any] = {
+        "pose": {
+            "pose": {
+                "position": {"x": x, "y": y, "z": 0.0},
+                "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+            }
+        }
+    }
+    if stamp is not None:
+        sec = int(stamp)
+        message["header"] = {"stamp": {"sec": sec, "nanosec": int((stamp - sec) * 1e9)}}
+    return message
+
+
+class _TimedTopic(FakeTopic):
+    """A topic that writes down when each message went out, on this machine's clock."""
+
+    def __init__(self, ros: Any, name: str, message_type: str) -> None:
+        super().__init__(ros, name, message_type)
+        self.times: list[float] = []
+
+    def publish(self, message: Any) -> None:
+        self.times.append(time.monotonic())
+        super().publish(message)
+
+
+async def _ws() -> tuple[RosbridgeWs, RosbridgeAdapter, dict[str, _TimedTopic]]:
+    topics: dict[str, _TimedTopic] = {}
+
+    def factory(client: Any, name: str, message_type: str) -> _TimedTopic:
+        return topics.setdefault(name, _TimedTopic(client, name, message_type))
+
+    ws = RosbridgeWs("ws://robot.local:9090", ros=FakeRos(), topic_factory=factory)
+    adapter = RosbridgeAdapter(ws)
+    await adapter.connect()
+    return ws, adapter, topics
+
+
+async def test_odom_is_where_the_base_is_dated_by_its_stamp_and_the_place_verbs_are_offered() -> (
+    None
+):
+    ws, adapter, topics = await _ws()
+    assert adapter.manifest is not None and set(adapter.manifest.verb_names()) >= PLACES
+    assert ws.spatial is not None and ws.spatial.fix().lost == "no odometry reading yet"
+    topics["/odom"].callback(_odom(1.5, -0.5, stamp=1234.25))
+    fix = ws.spatial.fix()
+    assert fix.pose is not None and (fix.pose.x, fix.pose.y) == (1.5, -0.5)
+    assert fix.t == pytest.approx(1234.25) and fix.kind == "odometry"
+    where = (await adapter.get_state()).extras["where"]
+    assert where["kind"] == "odometry" and where["frame"].startswith("odom:")
+
+
+async def test_an_odom_the_stack_does_not_stamp_is_dated_by_its_arrival() -> None:
+    ws, _adapter, topics = await _ws()
+    before = time.monotonic()
+    topics["/odom"].callback(_odom(0.2))
+    fix = ws.spatial.fix() if ws.spatial is not None else None
+    assert fix is not None and fix.t is not None and before <= fix.t <= time.monotonic()
+
+
+async def _go(adapter: RosbridgeAdapter, book: PlaceBook, timeout_s: float) -> VerbResult:
+    assert adapter.manifest is not None
+    ctx = VerbContext(transport=adapter, manifest=adapter.manifest, places=book)
+    return await PLACE_VERBS["go_to_place"].execute(
+        ctx, GoToPlaceParams(name="dock", face=False, timeout_s=timeout_s)
+    )
+
+
+async def test_odom_gone_quiet_holds_the_base_still_and_then_ends_the_walk() -> None:
+    """rosbridge has no deadman, so a twist left standing drives the base on: a walk on a reading
+    that stopped moving on holds the base still within a reading's freshness, and ends."""
+    ws, adapter, topics = await _ws()
+    assert ws.spatial is not None and adapter.manifest is not None
+    t0 = 100.0
+    topics["/odom"].callback(_odom(0.0, stamp=t0))
+    book = PlaceBook(PlaceStore("base", persist=False), ws.spatial)
+    frame = book.frame()
+    assert frame is not None
+    book.store.mark(Place("dock", 2.0, 0.0, 0.0, frame.id, "odometry", 0.0))
+    ctx = VerbContext(transport=adapter, manifest=adapter.manifest, places=book)
+    stopped: list[float] = []
+
+    async def odometry_then_quiet() -> None:
+        x, t = 0.0, t0
+        for _ in range(15):  # a second and a half of a base that drives as told, then nothing
+            await asyncio.sleep(0.1)
+            x, t = x + 0.015, t + 0.1
+            topics["/odom"].callback(_odom(x, stamp=t))
+        stopped.append(time.monotonic())
+
+    feed = asyncio.create_task(odometry_then_quiet())
+    result = await PLACE_VERBS["go_to_place"].execute(
+        ctx, GoToPlaceParams(name="dock", face=False, timeout_s=30.0)
+    )
+    await feed
+    assert not result.ok and result.data["outcome"] in ("stale", "lost"), result.summary
+    gait = Gait.of(ctx, ws.spatial, {})
+    cmd = topics["/cmd_vel"]
+    sent = list(zip(cmd.times, cmd.published, strict=True))
+    moving = [m for _, m in sent if m["linear"]["x"] or m["angular"]["z"]]
+    assert moving, "it never drove"
+    held = [m for at, m in sent if at > stopped[0] + gait.fresh_s + 0.2]
+    assert held, "nothing went out after the reading stopped"
+    assert all(not m["linear"]["x"] and not m["angular"]["z"] for m in held), held
+    assert sent[-1][1] == twist_message(0.0, 0.0, 0.0)
+
+
+async def test_the_period_is_the_streams_own_however_seldom_quackd_reads_it() -> None:
+    """quackd reads where the base is at each verb, seconds apart while a pilot thinks, and
+    /odom streams all the while. Taken only when read, the track measured how often quackd
+    looked, and a walk sized its tolerance from that: a base its own joystick had driven three
+    metres off in half a minute was said to be at its place already."""
+    ws, adapter, topics = await _ws()
+    assert ws.spatial is not None
+    odom, period, t0 = topics["/odom"], 0.02, 100.0
+    odom.callback(_odom(0.0, stamp=t0))
+    book = PlaceBook(PlaceStore("base", persist=False), ws.spatial)
+    assert book.mark("dock")[0].x == 0.0
+    steps = 1500  # half a minute of /odom, none of it read
+    for i in range(1, steps + 1):
+        odom.callback(_odom(3.0 * i / steps, stamp=t0 + period * i))
+    assert ws.spatial.period_s == pytest.approx(period)
+    result = await _go(adapter, book, timeout_s=5.0)
+    assert not result.ok and "already at" not in result.summary, result.summary
+
+
+async def test_a_pause_in_odom_before_a_walk_does_not_stretch_how_long_it_drives_blind() -> None:
+    """rosbridge has no deadman. The walk holds a twist for a reading's freshness and then
+    zeroes it, and that freshness is sized from the period: a pause before the walk began read
+    as the stream's period, and the base drove on long after /odom stopped."""
+    ws, adapter, topics = await _ws()
+    assert ws.spatial is not None and adapter.manifest is not None
+    odom = topics["/odom"]
+    odom.callback(_odom(0.0, stamp=100.0))
+    book = PlaceBook(PlaceStore("base", persist=False), ws.spatial)
+    book.mark("dock")
+    odom.callback(_odom(-3.0, stamp=106.0))  # pushed off by hand while /odom was quiet
+    last: list[float] = []
+
+    async def drives_then_dies() -> None:
+        x, t = -3.0, 106.0
+        for _ in range(20):  # a second of a base that drives as told, then nothing
+            await asyncio.sleep(0.05)
+            x, t = x + 0.0075, t + 0.05
+            odom.callback(_odom(x, stamp=t))
+        last.append(time.monotonic())
+
+    feed = asyncio.create_task(drives_then_dies())
+    result = await _go(adapter, book, timeout_s=30.0)
+    await feed
+    assert not result.ok, result.summary
+    gait = Gait.of(
+        VerbContext(transport=adapter, manifest=adapter.manifest, places=book), ws.spatial, {}
+    )
+    cmd = topics["/cmd_vel"]
+    moving = [at for at, m in zip(cmd.times, cmd.published, strict=True) if m["linear"]["x"]]
+    assert moving, "it never drove"
+    assert moving[-1] - last[0] <= gait.fresh_s + 2 * TICK_S, (moving[-1] - last[0], gait)
+
+
+async def test_an_unstamped_odom_on_a_stamped_stream_is_no_reading() -> None:
+    """A stamp of nothing on a stream the stack stamps (sim time before /clock, a second
+    publisher) is another clock's: dated by its arrival in the same track, it sent the frame
+    back and forth between two clocks and orphaned every place."""
+    ws, _adapter, topics = await _ws()
+    assert ws.spatial is not None
+    odom, t0 = topics["/odom"], 1_761_000_000.0  # ROS time, in epoch seconds
+    odom.callback(_odom(0.0, stamp=t0))
+    book = PlaceBook(PlaceStore("base", persist=False), ws.spatial)
+    place, _ = book.mark("dock")
+    odom.callback(_odom(0.01))
+    odom.callback(_odom(0.02, stamp=t0 + 0.1))
+    odom.callback(_odom(0.03))
+    fix = ws.spatial.fix()
+    assert fix.pose is not None and fix.pose.x == 0.02 and fix.t == pytest.approx(t0 + 0.1)
+    assert book.view(place).status == "here"
+
+
+async def test_odom_stamped_after_some_that_were_not_goes_on_in_the_same_frame() -> None:
+    """A stack whose first messages go unstamped, sim time before /clock: from its first stamp
+    on the readings are dated by the stack's clock, far behind this machine's, in one frame."""
+    ws, _adapter, topics = await _ws()
+    assert ws.spatial is not None
+    odom = topics["/odom"]
+    odom.callback(_odom(0.0))
+    book = PlaceBook(PlaceStore("base", persist=False), ws.spatial)
+    place, _ = book.mark("dock")
+    odom.callback(_odom(0.01))
+    for i in range(1, 4):
+        odom.callback(_odom(0.01 + 0.01 * i, stamp=3.0 + 0.1 * i))
+    assert book.view(place).status == "here"
+    assert ws.spatial.fix().t == pytest.approx(3.3)
+    assert ws.spatial.period_s == pytest.approx(0.1)
+
+
+async def test_the_same_stamp_again_is_no_new_reading_and_the_stream_goes_stale() -> None:
+    """A stack that has frozen sends its last /odom again, stamped as before. That says nothing
+    of where the base is now, so the reading goes stale as if nothing came at all."""
+    ws, _adapter, topics = await _ws()
+    assert ws.spatial is not None
+    odom = topics["/odom"]
+    odom.callback(_odom(0.0, stamp=100.0))
+    assert ws.spatial.fix().localized
+    deadline = time.monotonic() + 3.0
+    while ws.spatial.fix().localized and time.monotonic() < deadline:
+        await asyncio.sleep(TICK_S)
+        odom.callback(_odom(0.0, stamp=100.0))
+    fix = ws.spatial.fix()
+    assert not fix.localized and "no new /odom" in (fix.lost or ""), fix.lost
+
+
+async def test_the_mocks_places_last_one_connection_as_the_ws_backends_do(tmp_path: Any) -> None:
+    first = RosbridgeMock()
+    await first.connect()
+    assert first.spatial is not None
+    PlaceBook(PlaceStore("base", base_dir=tmp_path), first.spatial).mark("dock")
+    await first.close()
+    second = RosbridgeMock()
+    await second.connect()
+    assert second.spatial is not None
+    book = PlaceBook(PlaceStore("base", base_dir=tmp_path), second.spatial)
+    assert {v.place.name: v.status for v in book.views()} == {"dock": "orphaned"}

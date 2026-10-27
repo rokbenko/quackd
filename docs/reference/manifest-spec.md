@@ -56,6 +56,16 @@ that has it), `description` (LLM-facing; empty means the implementation's defaul
 | `go_to` (alias `walk_to`) | `twist`, mobility and a camera |
 | `search_scan` | a camera and either `twist` or `gaze` (it turns in place or sweeps the head) |
 | `approach_and` | `twist`, mobility and a camera |
+| `map` | the `odometry` sensor |
+| `mark_place` | the `odometry` sensor |
+| `forget_place` | the `odometry` sensor |
+| `go_to_place` | `twist`, mobility and the `odometry` sensor |
+
+The four place verbs need more than a manifest can promise: a transport that says where the
+robot is on this connection (`quackd.transport.base.spatial_of`). An adapter declares them in its
+static manifest for a backend that says where the robot is, and leaves them out at `connect()`
+when the transport carries no reading after all, as it leaves out a camera's verbs when no frame
+arrives ([concepts/places.md](../concepts/places.md)).
 
 - Every verb in `preconditions` is declared; every condition name has a predicate in the
   adapter's `conditions()` (checked when the registry is built).

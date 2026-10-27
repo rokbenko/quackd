@@ -19,6 +19,7 @@ import json
 import math
 import threading
 import time
+import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -28,6 +29,8 @@ from PIL import Image
 
 from quackd.adapters.base import AdapterNotInstalled
 from quackd.passport.beacon import ROS_TOPIC
+from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.pose import Fix, where_record
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
 from quackd_rosbridge import upstream_api as up
 from quackd_rosbridge.introspection import (
@@ -154,6 +157,22 @@ def yaw_from_quaternion(q: dict[str, Any]) -> float:
     return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
 
+def odom_stamp(message: dict[str, Any]) -> float | None:
+    """When the stack took an /odom message, by its header's stamp, in seconds: ROS 2's `sec`
+    and `nanosec`, or ROS 1's `secs` and `nsecs`. None for a stamp of nothing, which a stack
+    that stamps nothing sends."""
+    header = message.get("header")
+    stamp = header.get("stamp") if isinstance(header, dict) else None
+    if not isinstance(stamp, dict):
+        return None
+    sec, nsec = stamp.get("sec", stamp.get("secs")), stamp.get("nanosec", stamp.get("nsecs", 0))
+    parts = (sec, nsec)
+    if not all(isinstance(v, int | float) and not isinstance(v, bool) for v in parts):
+        return None
+    t = float(sec) + float(nsec) * 1e-9  # type: ignore[arg-type]
+    return t if t > 0 and math.isfinite(t) else None
+
+
 def decode_compressed_image(message: dict[str, Any]) -> Image.Image:
     """A `sensor_msgs/msg/CompressedImage` (data base64 over rosbridge) to RGB."""
     fmt = str(message.get("format", "")).lower()
@@ -194,8 +213,17 @@ class RosbridgeWs:
         self._cmd: TopicLike | None = None
         self._odom: TopicLike | None = None
         self._image: TopicLike | None = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        """Guards what roslibpy's thread hands over, the odometry track included. Re-entrant,
+        since a reading read under it asks how stale the stream is, which takes it again."""
         self._latest_odom: dict[str, Any] | None = None
+        self._track: OdometryTrack | None = None
+        self._odom_stamped = False
+        self._odom_stamp: float | None = None
+        self._odom_fresh_at: float | None = None
+        self.spatial: OdometrySource | None = None
+        """Where the base is by its /odom (`_OdomReading`): set at connect, a reading from the
+        first message on, and the place verbs walk by it."""
         self._latest_image: dict[str, Any] | None = None
         self._closed = False
         self._t0 = time.monotonic()
@@ -236,8 +264,56 @@ class RosbridgeWs:
         return ros, factory, services
 
     def _on_odom(self, message: dict[str, Any]) -> None:  # roslibpy's thread
+        at = time.monotonic()
         with self._lock:
             self._latest_odom = dict(message)
+            self._feed_odom(self._latest_odom, at)
+
+    def _feed_odom(self, message: dict[str, Any], at: float) -> None:
+        """One /odom into the track as it arrives, under the lock, so the track measures the
+        stream's own period rather than how often quackd reads it, which can be seconds apart
+        while a pilot thinks. It is dated by its header's stamp, the stack's own clock, or by its
+        arrival here while the stack has stamped none. Once one is stamped the stream is: an
+        unstamped message after that is another clock's and no reading, and the same stamp
+        again is the same reading, which says nothing of whether the stream still runs."""
+        track = self._track
+        if track is None:
+            return
+        try:
+            pose = dict(message.get("pose", {})).get("pose", {})
+            position = dict(pose.get("position", {}))
+            x, y = float(position.get("x", 0.0)), float(position.get("y", 0.0))
+            yaw = yaw_from_quaternion(dict(pose.get("orientation", {})))
+        except (AttributeError, TypeError, ValueError):
+            return  # a pose that is not one moves nothing
+        stamp = odom_stamp(message)
+        if stamp is None:
+            if self._odom_stamped:
+                return
+            t = at
+        else:
+            if stamp == self._odom_stamp:
+                return
+            if not self._odom_stamped:
+                self._odom_stamped = True
+                track.reclock()  # from its arrival here to the stack's clock, in one frame
+            self._odom_stamp = t = stamp
+        track.update(x, y, yaw, t)
+        self._odom_fresh_at = at
+
+    def _odom_staleness(self) -> str | None:
+        """Why the newest /odom cannot be trusted now, or None: no new reading has come for five
+        of the stream's own periods, a second at least, as a stream's stale window is reckoned.
+        rosbridge has no deadman, so a walk on a reading that stopped is ended by this or by its
+        own clock."""
+        with self._lock:
+            at = self._odom_fresh_at
+            period = self._track.period_s if self._track is not None else None
+        if at is None:
+            return None  # none yet, which the track says itself
+        window = max(1.0, 5 * period) if period else 1.0
+        age = time.monotonic() - at
+        return f"no new {self.endpoint.odom} for {age:.1f} s" if age > window else None
 
     def _on_image(self, message: dict[str, Any]) -> None:  # roslibpy's thread
         with self._lock:
@@ -264,6 +340,11 @@ class RosbridgeWs:
         make = self._topic_factory
         self._cmd = make(self._ros, self.endpoint.cmd_vel, up.MSG_TWIST.name)
         self._odom = make(self._ros, self.endpoint.odom, up.MSG_ODOMETRY.name)
+        with self._lock:
+            # a frame for this connection, before the first message can arrive
+            self._track = OdometryTrack(f"odom:{uuid.uuid4().hex[:12]}")
+            self._odom_stamped, self._odom_stamp, self._odom_fresh_at = False, None, None
+        self.spatial = _OdomReading(self, self._track)
         self._odom.subscribe(self._on_odom)
         if self.endpoint.image is not None:
             self._image = make(self._ros, self.endpoint.image, up.MSG_COMPRESSED_IMAGE.name)
@@ -445,6 +526,7 @@ class RosbridgeWs:
             y=y,
             theta=theta,
             extras={
+                **({"where": where_record(self.spatial.fix())} if self.spatial else {}),
                 "odom_seen": odom is not None,
                 "twist": {"vx": vx, "vy": vy, "wz": wz},
                 "assumptions": self._assumptions(),
@@ -544,3 +626,26 @@ async def read_passport(
     if text is None:
         raise TransportError("; ".join(errors) or f"no passport on {topic}")
     return text
+
+
+class _OdomReading(OdometrySource):
+    """The base's /odom as where it is. roslibpy hands each message over on a thread of its own,
+    which feeds the track as it arrives (`RosbridgeWs._feed_odom`), so the reading and its period
+    are read under the same lock."""
+
+    def __init__(self, transport: RosbridgeWs, track: OdometryTrack) -> None:
+        super().__init__(
+            track,
+            stale=transport._odom_staleness,
+            label=f"{transport.endpoint.odom} over rosbridge",
+        )
+        self._lock = transport._lock
+
+    @property
+    def period_s(self) -> float | None:
+        with self._lock:
+            return self.track.period_s
+
+    def fix(self) -> Fix:
+        with self._lock:
+            return super().fix()

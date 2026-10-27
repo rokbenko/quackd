@@ -15,6 +15,9 @@ from typing import Any
 
 from PIL import Image
 
+from quackd.space.pose import where_record
+from quackd.space.room import Room
+from quackd.space.simmap import STAND_IN, BodyNow, SimMapParams, SimulatedMap
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
 
 BATTERY_DRAIN_PER_S = 0.02  # percent per sim second, as in sim2d
@@ -48,8 +51,16 @@ class MujocoTransport:
         frame_size: int = 256,
         battery_start: float = 100.0,
         body: str = DEFAULT_BODY,
+        room: Room | None = None,
+        map_params: SimMapParams | None = None,
     ) -> None:
         self.recorder_every_s = RECORDER_EVERY_S
+        self.room = room
+        self.map_params = map_params
+        self.spatial: SimulatedMap | None = None
+        """Where the duck is, by a simulated map of its room kept to the real map's numbers,
+        from the connect on; None with no room or no numbers, and then the duck says nothing of
+        where it is (`quackd.transport.base.spatial_of`)."""
         if body not in BODIES:
             raise TransportError(f"unknown mujoco body {body!r}; choose one of {', '.join(BODIES)}")
         self.seed = seed
@@ -110,8 +121,18 @@ class MujocoTransport:
         self._closed = False
         # Building a MicroduckBody loads two ONNX sessions and may download ten megabytes
         # of upstream model on first use. Off the event loop, so the heartbeat keeps beating.
-        self.world = await asyncio.to_thread(MujocoWorld, seed=self.seed, body=self.body)
+        self.world = await asyncio.to_thread(
+            MujocoWorld, seed=self.seed, body=self.body, room=self.room
+        )
         self.clock = FlockClock(self.world, dt=CONTROL_DT, realtime=self.realtime)
+        if self.room is not None and self.map_params is not None:
+            self.spatial = SimulatedMap(
+                self.room,
+                self.map_params,
+                body=self._body_now,
+                frame_key=f"sim:mujoco:{self.room.digest()[:12]}",
+            )
+            self.clock.add_tick_hook(self._tick_map)
         if self.live:
             # fail BEFORE registering with the clock, as sim2d does: a dead registration
             # would freeze time for everyone
@@ -137,6 +158,25 @@ class MujocoTransport:
         if self.world is not None:
             self.world.close()
 
+    def _tick_map(self, _world: Any) -> None:
+        if self.spatial is not None:
+            self.spatial.tick()
+
+    def _body_now(self) -> BodyNow:
+        """The truth about the duck now, which only the simulated map is told."""
+        w = self._connected()
+        return BodyNow(
+            t=float(w.t),
+            x=w.x,
+            y=w.y,
+            theta=w.theta,
+            head_yaw=w.head_yaw,
+            standing=w.posture == "standing",
+            fallen=w.posture == "fallen",
+            bumps=w.bumps,
+            moving=w.moving,
+        )
+
     async def get_frame(self) -> Image.Image | None:
         from quackd_microduck.sim3d.render import render_headcam
 
@@ -145,6 +185,10 @@ class MujocoTransport:
     async def get_state(self) -> DuckState:
         w = self._connected()
         battery = max(0.0, self.battery_start - BATTERY_DRAIN_PER_S * w.t)
+        extras = w.snapshot()
+        if self.spatial is not None:
+            extras["where"] = where_record(self.spatial.fix())
+            extras["assumptions"] = [*extras.get("assumptions", []), STAND_IN]
         return DuckState(
             t=w.t,
             x=w.x,
@@ -155,7 +199,7 @@ class MujocoTransport:
             fallen=w.posture == "fallen",
             battery_percent=battery,
             holding=w.holding,
-            extras=w.snapshot(),
+            extras=extras,
         )
 
     async def send_intent(self, intent: Intent) -> Ack:

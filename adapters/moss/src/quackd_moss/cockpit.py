@@ -51,6 +51,8 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
+from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.pose import where_record
 from quackd.transport.base import (
     Ack,
     CameraFrame,
@@ -576,6 +578,15 @@ class MossCockpit:
         self.connected = False
         self.stack: str | None = None
         self.run_id: str | None = None
+        self.spatial: OdometrySource | None = None
+        """Where the rover is by the cockpit's pose, the stack's odometry, in a frame that lasts
+        the stack's run (`odom:moss:<run_id>`), so its places outlive a connection to the same
+        run and no other. Set at connect."""
+        self._track: OdometryTrack | None = None
+        self._pose_fed: tuple[float, float, float] | None = None
+        self._pose_age: float | None = None
+        self._pose_seen_at: float | None = None
+        self._pose_limit: float | None = None
         self.bridge_up = False
         self.bridge_error: str | None = None
         self.hello: dict[str, Any] | None = None
@@ -689,6 +700,21 @@ class MossCockpit:
             raise TransportError(f"moss: {refusal}")
         run = stack.get("run_id")
         self.stack, self.run_id = blueprint, (str(run) if run is not None else None)
+        # the run is the frame: the stack's odometry starts over only with a new run, which the
+        # heartbeat sees by its run_id, so a date going back is the cockpit's clock and never
+        # the odometry beginning again
+        self._track = OdometryTrack(
+            f"odom:moss:{self.run_id or self.session_id}",
+            persistent=self.run_id is not None,
+            restarts_with_clock=False,
+        )
+        self._pose_fed = None
+        self.spatial = OdometrySource(
+            self._track,
+            stale=self._pose_staleness,
+            label="the rover's odometry, through its cockpit",
+        )
+        self._feed_pose(state)
         # the arm verbs need the coordinator answering and the maker's cycle there to play
         arm = hello.get("arm") or {}
         self.arm_seen = self.bridge_up and bool(arm.get("answering"))
@@ -884,6 +910,7 @@ class MossCockpit:
         except LinkDown as e:
             extras |= {"state_stale": True, "cockpit_error": str(e)}
             return DuckState(t=time.monotonic(), policy="unknown", extras=extras)
+        self._feed_pose(state)
         pose = state.get("pose") or None
         base = state.get("base") or {}
         topics = state.get("topics") or {}
@@ -903,6 +930,8 @@ class MossCockpit:
             "nav": state.get("nav") or {},
             "idle": state.get("idle") or {},
         }
+        if self.spatial is not None:
+            extras["where"] = where_record(self.spatial.fix())
         if self.bridge_up:
             try:
                 arm = await self._call(self.bridge.arm)
@@ -927,6 +956,40 @@ class MossCockpit:
             theta=theta,
             extras=extras,
         )
+
+    def _feed_pose(self, state: dict[str, Any]) -> None:
+        """The cockpit's pose into the track, dated on the rover's clock: the state's own `ts`
+        less the pose's age. That date wanders, since the cockpit rounds the age to a hundredth
+        and reads its wall clock after other work (`up.STATE_POSE`), so the same pose read again
+        is the same reading and keeps the date it came with. A cockpit that sends no `ts` is
+        dated by this machine's clock."""
+        pose, track = state.get("pose"), self._track
+        if track is None or not isinstance(pose, dict):
+            return
+        x, y, yaw = _number(pose.get("x")), _number(pose.get("y")), _number(pose.get("yaw"))
+        if x is None or y is None or yaw is None:
+            return
+        age = _number(pose.get("age_s")) or 0.0
+        topics = state.get("topics") or {}
+        hz = _number((topics.get("odom") or {}).get("hz"))
+        self._pose_age, self._pose_seen_at = age, time.monotonic()
+        self._pose_limit = stale_after_s(1.0 / hz) if hz else MIN_STALE_S
+        if (x, y, yaw) == self._pose_fed:
+            return
+        self._pose_fed = (x, y, yaw)
+        ts = _number(state.get("ts"))
+        track.update(x, y, yaw, ts - age if ts is not None else time.monotonic() - age)
+
+    def _pose_staleness(self) -> str | None:
+        """Why the newest pose cannot be trusted now, or None: older than the rover's own odom
+        rate allows (`pose_limit_s`), counting the time since the cockpit was last asked."""
+        if self._pose_seen_at is None:
+            return None
+        age = (self._pose_age or 0.0) + time.monotonic() - self._pose_seen_at
+        limit = self._pose_limit or MIN_STALE_S
+        if age > limit:
+            return f"the rover's odometry is {age:.1f} s old, past the {limit:g} s it is good for"
+        return None
 
     # ── intents ─────────────────────────────────────────────────────────────────────
 
@@ -1202,6 +1265,7 @@ class MossCockpit:
                 f"state: {e}"
             ) from e
         self._idle = state.get("idle") or {}
+        self._feed_pose(state)
         await self._while_beating(self._idle_keepalive())
         if not self.bridge_up:
             stack = state.get("stack") or {}

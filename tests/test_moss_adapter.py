@@ -25,8 +25,8 @@ from quackd.duckfile.parser import load_duck, parse_duck_text
 from quackd.duckfile.schema import POLICY_VERBS
 from quackd.duckfile.validate import validate_duck
 from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import HeartbeatError, Intent, TransportError
+from quackd.safety import Aborted, ConfirmDenied, Executor, VerbNotAllowed, allow_all
+from quackd.transport.base import Ack, HeartbeatError, Intent, TransportError
 from quackd.verbs.core import CORE
 from quackd.verbs.core import MAX_VX as SCHEMA_VX
 from quackd.verbs.core import MAX_VY as SCHEMA_VY
@@ -59,8 +59,11 @@ from quackd_moss.mock import (
 )
 from quackd_moss.verbs import (
     BATTERY_FLOOR_V,
+    DRIVE_TO_GIVE_UP_S,
     DRIVE_TO_MAX_M,
+    DRIVE_TO_POLL_S,
     MAX_WZ,
+    MIN_STALE_S,
     PICK_POSE_NAMES,
     DriveToParams,
     PickAndDropParams,
@@ -79,6 +82,10 @@ TWISTS = {"move", "go_to", "search_scan", "approach_and"}
 PLANNER = {"drive_to", "explore"}
 ARM = {"pick_and_drop", "stow_arm"}
 OWN = {"drive_to", "explore", "collect_litter", "pick_and_drop", "stow_arm"}
+MARKS = {"map", "mark_place", "forget_place"}
+"""The place verbs that keep places in the rover's odometry, on every stack quackd drives."""
+GO = {"go_to_place"}
+"""Its own, by the planner, where the planner and the bridge both are."""
 
 
 def _contract(allow: str) -> Any:
@@ -131,20 +138,20 @@ LITTER_ALLOW = "observe, report_state, stop, collect_litter"
 def test_describe_declares_every_stacks_verbs_together() -> None:
     """A task is validated against this before anything connects, so it is the union."""
     m = describe("cockpit")
-    assert set(m.verb_names()) == BASE | TWISTS | PLANNER | ARM | {"collect_litter"}
+    assert set(m.verb_names()) == BASE | TWISTS | PLANNER | ARM | {"collect_litter"} | MARKS | GO
     assert describe("mock").digest() == m.digest()
 
 
 @pytest.mark.parametrize(
     ("stack", "bridge", "arm", "mission", "expected"),
     [
-        ("moss-nav", True, True, True, BASE | TWISTS | ARM),
-        ("moss-nav", True, False, True, BASE | TWISTS),
-        ("moss-nav", False, True, True, BASE),
-        ("moss-explore", True, True, True, BASE | TWISTS | PLANNER | ARM),
-        ("moss-explore", False, False, False, BASE | PLANNER),
-        ("moss-litter", True, True, True, BASE | {"collect_litter"}),
-        ("moss-litter", True, True, False, BASE),
+        ("moss-nav", True, True, True, BASE | TWISTS | ARM | MARKS),
+        ("moss-nav", True, False, True, BASE | TWISTS | MARKS),
+        ("moss-nav", False, True, True, BASE | MARKS),
+        ("moss-explore", True, True, True, BASE | TWISTS | PLANNER | ARM | MARKS | GO),
+        ("moss-explore", False, False, False, BASE | PLANNER | MARKS),
+        ("moss-litter", True, True, True, BASE | {"collect_litter"} | MARKS),
+        ("moss-litter", True, True, False, BASE | MARKS),
     ],
 )
 def test_each_stack_narrows_the_manifest_to_what_answered(
@@ -371,7 +378,7 @@ async def test_a_read_only_verb_sends_nothing() -> None:
     mock, adapter, ex = await _connected()
     registry = registry_from_manifest(adapter.manifest, adapter)  # type: ignore[arg-type]
     read_only = [v.name for v in registry.verbs() if v.read_only]
-    assert set(read_only) == {"observe", "report_state"}
+    assert set(read_only) == {"observe", "report_state", "map"}
     for name in read_only:
         assert (await ex.run_verb(name)).ok
     assert mock.intents == []
@@ -1236,7 +1243,7 @@ def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:
     m = describe("cockpit")
     named = {c for gates in m.preconditions.values() for c in gates}
     assert named <= set(conditions())
-    assert set(implementations()) == OWN
+    assert set(implementations()) == OWN | GO
 
 
 async def test_a_stop_once_drive_tos_goal_is_out_ends_it_marked_as_the_brake() -> None:
@@ -1321,3 +1328,239 @@ async def test_three_stops_beside_drive_to_are_three_brakes_and_no_abort() -> No
         adapter.sleep = sleep  # type: ignore[method-assign]
         assert not result.ok and result.data.get("ended_by") == STOP_ENDED, result.summary
     assert not ex.abort.is_set(), "three brakes ended the session as three failures"
+
+
+# ── places ──────────────────────────────────────────────────────────────────────────────
+
+
+class _Recorder(MossMock):
+    """The mock, writing down each goal it is sent with where the rover then was, and each
+    message on the pad's topic sent while a goal was out, which cancels the goal."""
+
+    def __init__(self, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.goals_sent: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        self.under_a_goal: list[tuple[float, float]] = []
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind == "pose":
+            goal = (float(intent.params["x"]), float(intent.params["y"]))
+            self.goals_sent.append((goal, (self.ox, self.oy)))
+        return await super().send_intent(intent)
+
+    def _publish(self, twist: tuple[float, float]) -> None:
+        if self.goal is not None or self._pending_goal is not None:
+            self.under_a_goal.append(twist)
+        super()._publish(twist)
+
+
+async def _rover(store: Any = None, **kw: Any) -> tuple[_Recorder, MossAdapter, Executor]:
+    from quackd.space.places import PlaceStore
+
+    mock = _Recorder(stack=up.EXPLORE_STACK, **kw)
+    adapter = MossAdapter(mock)
+    manifest = await adapter.connect()
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        detector=ColorBlobDetector(),
+        confirm=allow_all,
+        manifest=manifest,
+        places=store if store is not None else PlaceStore("rover", persist=False),
+    )
+    return mock, adapter, ex
+
+
+async def test_a_place_marked_where_the_rover_stood_is_driven_back_to_in_short_goals() -> None:
+    mock, adapter, ex = await _rover()
+    assert adapter.spatial is not None and (await adapter.get_state()).extras["where"]["frame"] == (
+        f"odom:moss:{mock.run_id}"
+    )
+    marked = await ex.run_verb("mark_place", {"name": "dock"})
+    assert marked.ok, marked.summary
+    for _ in range(2):  # four metres off, in two goals of its own
+        assert (await ex.run_verb("drive_to", {"x_m": DRIVE_TO_MAX_M, "y_m": 0.0})).ok
+    mock.goals_sent.clear()
+    back = await ex.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert back.ok, back.summary
+    assert "the planner said it reached 'dock'" in back.summary
+    assert back.data["goals"] == len(mock.goals_sent) >= 2
+    for goal, rover in mock.goals_sent:
+        assert math.dist(goal, rover) <= DRIVE_TO_MAX_M + mock.goal_tol_m, (goal, rover)
+
+
+async def test_no_message_goes_on_the_pads_topic_while_a_goal_of_go_to_place_is_out() -> None:
+    """Every message on the pad's topic, a zero among them, cancels the planner's goal, so a
+    twist under one ends the walk to a place in the planner's word for a goal given up."""
+    mock, _adapter, ex = await _rover()
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    for _ in range(2):
+        assert (await ex.run_verb("drive_to", {"x_m": DRIVE_TO_MAX_M, "y_m": 0.0})).ok
+    mock.under_a_goal.clear()
+    back = await ex.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert back.ok, back.summary
+    assert mock.under_a_goal == [], mock.under_a_goal
+
+
+async def test_go_to_place_says_it_does_not_turn_to_face_the_way() -> None:
+    _mock, _adapter, ex = await _rover()
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    assert (await ex.run_verb("drive_to", {"x_m": 1.0, "y_m": 0.0})).ok
+    back = await ex.run_verb("go_to_place", {"name": "dock"})
+    assert back.ok and "does not turn to face the way the place faced" in back.summary
+
+
+async def test_a_place_marked_in_another_run_of_the_stack_is_refused(tmp_path: Any) -> None:
+    from quackd.space.places import PlaceStore
+
+    _mock, _adapter, ex = await _rover(PlaceStore("rover", base_dir=tmp_path))
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    mock2 = _Recorder(stack=up.EXPLORE_STACK)
+    mock2.run_id = "mock-run-2"  # the stack started again: its odometry began again
+    adapter2 = MossAdapter(mock2)
+    manifest2 = await adapter2.connect()
+    ex2 = Executor(
+        registry_from_manifest(manifest2, adapter2),
+        adapter2,
+        detector=ColorBlobDetector(),
+        confirm=allow_all,
+        manifest=manifest2,
+        places=PlaceStore("rover", base_dir=tmp_path),
+    )
+    refused = await ex2.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert not refused.ok and "orphaned" in refused.summary
+    assert mock2.goals_sent == []
+
+
+async def test_the_same_run_keeps_its_places_from_one_connection_to_the_next(tmp_path: Any) -> None:
+    from quackd.space.places import PlaceStore
+
+    _mock, _adapter, ex = await _rover(PlaceStore("rover", base_dir=tmp_path))
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    _mock2, _adapter2, ex2 = await _rover(PlaceStore("rover", base_dir=tmp_path))
+    back = await ex2.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert back.ok, back.summary
+
+
+class _Sagging(_Recorder):
+    """The pack sags to the launcher's floor once go_to_place's first goal is out: the planner's
+    own gate still passes it, and a run's line above it does not."""
+
+    sag_on_goal: int | None = None
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        ack = await super().send_intent(intent)
+        if intent.kind == "pose" and self.sag_on_goal is not None:
+            self.sag_on_goal -= 1
+            if self.sag_on_goal == 0:
+                self.battery_v = BATTERY_FLOOR_V
+        return ack
+
+
+async def test_the_runs_battery_rule_is_read_before_each_goal_of_go_to_place() -> None:
+    """go_to_place chains goals for up to two minutes, and the executor reads a run's rules when
+    it admits a verb and not again until the next one: the walk reads them before each goal."""
+    from quackd.space.places import PlaceStore
+
+    mock = _Sagging(stack=up.EXPLORE_STACK)
+    adapter = MossAdapter(mock)
+    manifest = await adapter.connect()
+    line = (await adapter.get_state()).battery_percent  # where the pack stands as it begins
+    contract = parse_duck_text(
+        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+        "  allow: [report_state, stop, mark_place, drive_to, go_to_place]\n  confirm: []\n"
+        f"success: [x]\nabort_when: [battery below {line}%]\n---\n# Task\nx\n"
+    ).frontmatter
+    ex = Executor(
+        registry_from_manifest(manifest, adapter),
+        adapter,
+        contract=contract,
+        detector=ColorBlobDetector(),
+        confirm=allow_all,
+        manifest=manifest,
+        places=PlaceStore("rover", persist=False),
+    )
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    for _ in range(3):  # six metres off, three goals back
+        assert (await ex.run_verb("drive_to", {"x_m": DRIVE_TO_MAX_M, "y_m": 0.0})).ok
+    mock.goals_sent.clear()
+    mock.sag_on_goal = 1
+    with pytest.raises(Aborted, match="battery"):
+        await ex.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert len(mock.goals_sent) == 1, "a goal went out after the pack sagged under the line"
+
+
+async def test_a_pose_gone_stale_between_goals_sends_no_further_goal() -> None:
+    """The lidar odometry stops once the first goal is out, and the cockpit goes on reporting
+    its last pose: the next goal would be measured from where the rover was, not where it is."""
+    mock, _adapter, ex = await _rover()
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    for _ in range(3):
+        assert (await ex.run_verb("drive_to", {"x_m": DRIVE_TO_MAX_M, "y_m": 0.0})).ok
+    mock.goals_sent.clear()
+    real = mock.send_intent
+
+    async def freezing(intent: Intent) -> Ack:
+        ack = await real(intent)
+        if intent.kind == "pose":
+            mock.pose_age_s = 2 * MIN_STALE_S
+        return ack
+
+    mock.send_intent = freezing  # type: ignore[method-assign]
+    result = await ex.run_verb("go_to_place", {"name": "dock", "face": False})
+    assert not result.ok and "the lidar odometry has stopped" in result.summary, result.summary
+    assert len(mock.goals_sent) == 1 and result.data["goals"] == 1
+
+
+async def test_go_to_place_ends_on_its_own_clock_inside_a_goal() -> None:
+    """Each goal waits up to drive_to's own give up, so a walk that read its timeout only
+    between goals ran a whole goal past it: each goal is given only the time left."""
+    mock, _adapter, ex = await _rover()
+    assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
+    assert (await ex.run_verb("drive_to", {"x_m": DRIVE_TO_MAX_M, "y_m": 0.0})).ok
+    mock.goal_tol_m = -1.0  # the planner never says reached
+    timeout = DRIVE_TO_GIVE_UP_S / 8
+    t0 = mock.now()
+    result = await ex.run_verb("go_to_place", {"name": "dock", "face": False, "timeout_s": timeout})
+    assert not result.ok and f"its {timeout:g} s ran out" in result.summary, result.summary
+    assert mock.now() - t0 <= timeout + DRIVE_TO_POLL_S
+    assert result.data["goals"] == 1
+
+
+@pytest.mark.parametrize("heard", ["as the next leg begins", "as the next goal would go out"])
+async def test_a_stop_between_goals_ends_go_to_place_in_its_own_words(heard: str) -> None:
+    """A stop that landed between two goals came back in drive_to's words, saying no goal was
+    sent and counting one that never went out, whether the walk heard it before it read the
+    rover again or only as its next goal was about to go out."""
+    from quackd.space.places import PlaceBook, PlaceStore
+    from quackd.verbs.places import GoToPlaceParams
+    from quackd.verbs.registry import VerbContext
+    from quackd_moss.verbs import drive_to, go_to_place
+
+    mock = _Recorder(stack=up.EXPLORE_STACK)
+    adapter = MossAdapter(mock)
+    await adapter.connect()
+    assert adapter.spatial is not None
+    book = PlaceBook(PlaceStore("rover", persist=False), adapter.spatial)
+    book.mark("dock")
+    plain = VerbContext(transport=adapter, places=book)
+    for _ in range(2):
+        assert (await drive_to(plain, DriveToParams(x_m=DRIVE_TO_MAX_M, y_m=0.0))).ok
+    mock.goals_sent.clear()
+
+    asked: list[None] = []
+
+    def interrupted() -> str | None:
+        # the stop lands once the first goal was reached and before the next goes out
+        if not mock.goals_sent or mock.goal is not None:
+            return None
+        asked.append(None)
+        late = heard == "as the next goal would go out"
+        return STOPPED if len(asked) > int(late) else None
+
+    ctx = VerbContext(transport=adapter, places=book, interrupted=interrupted)
+    result = await go_to_place(ctx, GoToPlaceParams(name="dock", face=False))
+    assert not result.ok and result.summary.startswith(f"go_to_place: {STOPPED}"), result.summary
+    assert "'dock'" in result.summary and "after 1 goal" in result.summary, result.summary
+    assert result.data["goals"] == len(mock.goals_sent) == 1
+    assert result.data["interrupted"] == STOPPED and result.data["ended_by"] == STOP_ENDED

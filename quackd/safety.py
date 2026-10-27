@@ -19,7 +19,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
@@ -42,7 +42,8 @@ from quackd.log import (
     fmt_params,
 )
 from quackd.perception.base import Detector, detect_times
-from quackd.transport.base import CameraFrame, DuckState, DuckTransport
+from quackd.space.places import PlaceBook, PlaceStore
+from quackd.transport.base import CameraFrame, DuckState, DuckTransport, spatial_of
 from quackd.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -94,7 +95,19 @@ PEER_VERBS = ("stop", "say")
 which a body identifies itself by sound with. A peer never asks for either by name; the handler
 runs them for it, and the `peer` gate refuses anything else a peer might reach."""
 
-WHILE_PAUSED = frozenset({"stop", "observe", "report_state", "say", "quack", "introspect"})
+WHILE_PAUSED = frozenset(
+    {
+        "stop",
+        "observe",
+        "report_state",
+        "say",
+        "quack",
+        "introspect",
+        "map",
+        "mark_place",
+        "forget_place",
+    }
+)
 """What still runs while a pause this robot granted holds: the brake, and the verbs quackd knows
 move no part of the body. It is not `BEFORE_VERDICT`, which is what a pilot needs before it
 judges: `gaze`, `look` and `watch` turn a head and `express` moves antennas, and a robot that
@@ -330,6 +343,17 @@ class Executor:
     segment: str | None = field(default=None, init=False)
     """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check
     against `policy_total_s` and its charge, or None. Another is refused meanwhile."""
+    places: PlaceStore = field(default_factory=lambda: PlaceStore("session", persist=False))
+    """This robot's places (`quackd.space.places`). A run or an MCP session with memory on hands
+    in the store beside its memory file; every other keeps one that writes nothing, so places
+    marked where nothing is remembered last as long as the executor does. Verbs read them against
+    where the robot is now through `place_book`."""
+
+    def place_book(self) -> PlaceBook | None:
+        """The robot's places read against where it is now, or None on a body that does not say
+        where it is (`quackd.transport.base.spatial_of`)."""
+        source = spatial_of(self.transport)
+        return PlaceBook(self.places, source) if source is not None else None
 
     # ── narration ───────────────────────────────────────────────────────────────────
 
@@ -495,11 +519,22 @@ class Executor:
                 ended += 1
         return ended
 
-    def context(self, source: Source = "agent", *, stops: int | None = None) -> VerbContext:
+    def context(
+        self, source: Source = "agent", *, stops: int | None = None, name: str | None = None
+    ) -> VerbContext:
         """`source` is the outer call's, so a composite's nested verbs are narrated as coming
         from the same pilot (an MCP session's `approach_and` runs an MCP `go_to`). `stops` is
         the count of stops the verb answers to, the one taken when it was asked for, so a stop
-        that came while it was still being admitted ends it; now, by default."""
+        that came while it was still being admitted ends it; now, by default. `name` is the verb
+        the context is for, which a rule that fires mid-verb names in its gate record.
+
+        A composite's nested calls answer to that same count. Each used to take a count of its
+        own when it was admitted, so a stop sent between two of a composite's calls was already
+        in the count the second one started from: it walked, or kicked, as if nobody had braked,
+        unless the composite happened to check between its calls. A `stop` the composite sends
+        through `run_verb` itself counts as well, as it always did for `interrupted`: a call that
+        would move the body after it is not started (`_overtaken`)."""
+        stops_then = self.stops if stops is None else stops
         return VerbContext(
             transport=self.logged_transport(),
             detector=self.detector,
@@ -509,12 +544,48 @@ class Executor:
             log=self._note,
             on_frame=self.on_frame,
             on_frames=self.on_frames,
-            run_verb=lambda name, params: self.run_verb(name, params, source=source, nested=True),
+            run_verb=lambda verb, params: self.run_verb(
+                verb, params, source=source, nested=True, outer_stops=stops_then
+            ),
             # an adapter carries its manifest after connect; a bare transport has none
             manifest=self.manifest or getattr(self.transport, "manifest", None),
             eyes=self.eyes,
-            interrupted=self._interruption(self.stops if stops is None else stops),
+            interrupted=self._interruption(stops_then),
+            abort_when=self._abort_rule_reader(name),
+            places=self.place_book(),
         )
+
+    def _abort_rule_reader(self, name: str | None) -> Callable[[DuckState], Awaitable[None]]:
+        """`VerbContext.abort_when` for a verb beginning now: the rules an admission reads
+        (`_check_abort_conditions`), read against a state the verb took mid-way. One that fires
+        is recorded as the admission's `abort_when` gate is, the body is stopped, and only then is
+        the run aborted, so the verb that read the rule leaves with its own `Aborted` rather than
+        the abort racing it and cancelling the stop half sent. The abort is set however the stop
+        ends, a timeout, a pause or a newer command landing in it included: the rule fired, and
+        the run is over whatever else ends the verb. A composite whose nested call read the rule
+        is ended by that abort in its turn, with a stop of its own after it."""
+
+        async def abort_when(state: DuckState) -> None:
+            reason = self._abort_rule_fired(state)
+            if reason is None:
+                return
+            self._emit(
+                "gate",
+                name=name or "verb",
+                gate="abort_when",
+                outcome="fired",
+                reason=reason,
+                state=state.summary(),
+            )
+            try:
+                unstopped = await self._stop_after()
+            finally:
+                self.abort.set()
+            if unstopped is not None:
+                raise Aborted(f"{reason}; the stop sent mid-verb failed: {unstopped}")
+            raise Aborted(f"{reason}; the verb stopped where it stood")
+
+        return abort_when
 
     def _interruption(self, stops_then: int) -> Callable[[], str | None]:
         """`VerbContext.interrupted` for a verb beginning now: `STOPPED` once a `stop` has been
@@ -544,6 +615,7 @@ class Executor:
         source: Source = "agent",
         nested: bool = False,
         picked_by: str | None = None,
+        outer_stops: int | None = None,
     ) -> VerbResult:
         """Every verb call, from the agent loop, an MCP client or a composite.
 
@@ -554,7 +626,8 @@ class Executor:
 
         `picked_by` names the decision LLM that read a person's own words as this call, where
         one did (`quackd drive`'s fast lane): the call is still theirs for the verdict gate,
-        and the record says who chose it."""
+        and the record says who chose it. `outer_stops` is a composite's count of stops, which
+        its nested call answers to in place of one of its own (`context`)."""
         params = params or {}
         canonical = self.registry.canonical(name)
         started = time.perf_counter()
@@ -574,7 +647,13 @@ class Executor:
                     **({"picked_by": picked_by} if picked_by else {}),
                 )
                 result = await self._run_verb(
-                    name, canonical, params, source=source, nested=nested, picked_by=picked_by
+                    name,
+                    canonical,
+                    params,
+                    source=source,
+                    nested=nested,
+                    picked_by=picked_by,
+                    outer_stops=outer_stops,
                 )
             except VerbNotAllowed as e:
                 outcome, summary = "refused", str(e)
@@ -641,6 +720,7 @@ class Executor:
         source: Source,
         nested: bool,
         picked_by: str | None = None,
+        outer_stops: int | None = None,
     ) -> VerbResult:
         # before any gate, so a newer command that comes while this one is still being admitted
         # stops it starting after that command has (`_run_admitted`)
@@ -651,8 +731,9 @@ class Executor:
             self.stops += 1
         # and the stops this verb has to answer to are counted from here, not from when it
         # starts: one asked for while it was still reading the body's state used to land in
-        # the count it started from, so it walked the whole walk the stop was meant to end
-        stops = self.stops
+        # the count it started from, so it walked the whole walk the stop was meant to end. A
+        # composite's nested call counts from where the composite did (`context`).
+        stops = self.stops if outer_stops is None else outer_stops
         # `stop` is the one verb an aborted session must still be able to run. The abort is
         # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
         # which is the moment the pilot reaches for the brake, and refusing it here closed
@@ -738,6 +819,11 @@ class Executor:
             )
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
             return VerbResult.fail(f"invalid params for {name}: {msgs}")
+
+        # before a person is asked anything: a composite's call a stop has overtaken is not going
+        # to start, and a question about it would be answered for nothing
+        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+            return overtaken
 
         if self.needs_confirm(verb):
             # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
@@ -827,7 +913,15 @@ class Executor:
                 raise
         if not timed:
             return await self._run_admitted(
-                name, canonical, params, verb, parsed, source=source, preempts=preempts, stops=stops
+                name,
+                canonical,
+                params,
+                verb,
+                parsed,
+                source=source,
+                preempts=preempts,
+                stops=stops,
+                nested=nested,
             )
         # held from the check above, with nothing awaited since it, to the segment's charge
         self.segment = name
@@ -842,6 +936,7 @@ class Executor:
                 timed=True,
                 preempts=preempts,
                 stops=stops,
+                nested=nested,
             )
         finally:
             self.segment = None
@@ -858,13 +953,15 @@ class Executor:
         timed: bool = False,
         preempts: int | None = None,
         stops: int | None = None,
+        nested: bool = False,
     ) -> VerbResult:
         """A verb every gate has let through: its state, its abort conditions and its
         preconditions, then the verb itself, or the dry run's word for it. `timed` is a policy
         segment's, whose seconds are charged on every way out. `preempts` is the executor's count
         of newer commands from before the gates, which a verb that may move the body is refused
         on once it has changed (`preempt`), and `stops` its count of stops from then, which the
-        verb ends on once that has changed (`_interruption`)."""
+        verb ends on once that has changed (`_interruption`). A `nested` call's `stops` is its
+        composite's, and one that has changed by the time it is admitted is not started."""
         try:
             state = await self.transport.get_state()
         except Exception:
@@ -890,6 +987,10 @@ class Executor:
         if self.abort.is_set() and canonical != "stop":
             self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
             raise Aborted("run aborted")
+        # and a composite's call that a stop sent while it read the body's state has overtaken,
+        # for the reason the gate before the confirm gives (`_overtaken`)
+        if nested and (overtaken := self._overtaken(name, canonical, params, verb, stops)):
+            return overtaken
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
@@ -1000,7 +1101,7 @@ class Executor:
         `stop` is never interruptible: it is what the abort is trying to achieve."""
         called = name or verb.name
         verb_task: asyncio.Task[VerbResult] = asyncio.ensure_future(
-            verb.execute(self.context(source, stops=stops), parsed)
+            verb.execute(self.context(source, stops=stops, name=called), parsed)
         )
         abort_task: asyncio.Task[bool] | None = None
         waiting: set[asyncio.Future[Any]] = {verb_task}
@@ -1146,17 +1247,48 @@ class Executor:
                 raise Aborted(f"abort_when: {name} failed {n} times in a row")
         return result
 
+    def _overtaken(
+        self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
+    ) -> VerbResult | None:
+        """The result of a composite's call that would move the body and that a stop has
+        overtaken, or None. It answers to the stops its composite answers to (`context`), so a
+        stop sent between two of the composite's calls, or while this one waited on its gates or
+        read the body's state, is the brake pulled on the whole of it. A verb that polls for it
+        would end at its first check, but a kick or a scoop sends its one intent without looking,
+        so it is ended here, before it sends anything. A call that only looks or speaks runs, as
+        it runs beside a pause or a newer command."""
+        if (
+            stops is None
+            or self.stops == stops
+            or canonical == "stop"
+            or not self._may_move(canonical, verb)
+        ):
+            return None
+        reason = f"{name} did not start: {STOPPED}"
+        self._emit("gate", name=name, gate="stopped", outcome="refused", reason=reason)
+        return self._record(
+            name, params, VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED)
+        )
+
     def _check_abort_conditions(self, state: DuckState) -> None:
+        if (reason := self._abort_rule_fired(state)) is not None:
+            self.abort.set()
+            raise Aborted(reason)
+
+    def _abort_rule_fired(self, state: DuckState) -> str | None:
+        """The `abort_when` rule `state` fires, in the words an abort says, or None. A reading
+        and nothing else: the admission's gate and a verb's own reading mid-way
+        (`_abort_rule_reader`) each decide when to set the abort."""
         if self.contract is None:
-            return
+            return None
         threshold = self.contract.battery_abort_percent
         if (
             threshold is not None
             and state.battery_percent is not None
             and state.battery_percent < threshold
         ):
-            self.abort.set()
-            raise Aborted(f"abort_when: battery {state.battery_percent:.0f}% below {threshold:g}%")
+            return f"abort_when: battery {state.battery_percent:.0f}% below {threshold:g}%"
+        return None
 
 
 class Heartbeat:

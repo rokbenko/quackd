@@ -42,6 +42,9 @@ BEFORE_VERDICT = frozenset(
         "look",
         "introspect",
         "watch",
+        "map",
+        "mark_place",
+        "forget_place",
     }
 )
 """What runs before a verdict: the verbs that speak, look, or read, and the brake.
@@ -59,7 +62,10 @@ as far as `gaze`'s own `left`, `right` and `up` turn it, and down as far as robo
 glances tilt it. Whether its frames may go to a decision LLM is not the pilot's verdict to give
 but the run's, and only `--decision-frames` gives it (ADR-0054).
 
-This half is matched by name, which makes the ten a vocabulary rather than a list: a body
+`map`, `mark_place` and `forget_place` are here because they move nothing: they read where the
+robot already is, and name it or forget a name (`quackd.verbs.places`).
+
+This half is matched by name, which makes these a vocabulary rather than a list: a body
 that ships a verb called `gaze` which walks has said the wrong word about itself, the way a
 verb that carries `read_only` and sends an intent has."""
 
@@ -88,6 +94,7 @@ MOVES_THE_BODY = frozenset(
         "collect_litter",
         "pick_and_drop",
         "stow_arm",
+        "go_to_place",
     }
 )
 """The other half. The gate never reads this; it exists so a test can say every verb every

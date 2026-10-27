@@ -78,7 +78,7 @@ map is in [web/README.md](../web/README.md).
 
 **Why does the duck in the physics simulator not go the speed I asked for?** Because the walking
 policy has a floor and quackd will not hide it. Under the model's own actuators the gait does
-not start below about 0.23 m/s or 1.0 rad/s, and above that it achieves roughly 0.38 of what it
+not start below about 0.24 m/s or 1.2 rad/s, and above that it achieves roughly 0.38 of what it
 is asked. Both were measured here on one machine and are tagged UNVERIFIED in
 `adapters/microduck/src/quackd_microduck/sim3d/upstream_api.py`. `move` defaults to 0.15 m/s,
 so a non-zero twist below the floor is scaled up bodily, keeping the ratio between its axes
@@ -311,14 +311,17 @@ laptop and uses the board from there: `--host` reaches the model server on its G
 it, YOLO detections computed on that GPU, and the board's health in `quackd doctor`, all
 through one small daemon quackd ships for the board ([guides/jetson.md](guides/jetson.md)).
 
-**Does quackd use TOF or another depth sensor for obstacle avoidance?** Not yet. The only
-sensing input today is a single colour camera: an HSV threshold (or optionally YOLO) gives
-a bearing and an apparent-size distance to one named target, and `go_to` steers toward it —
-there's no depth data, no occupancy grid and no general obstacle avoidance. The manifest
-schema has a generic `tof` sensor slot for future adapters
-([reference/manifest-spec.md](reference/manifest-spec.md)), and the Microduck's own `tofd` depth
-stream isn't read yet either ([adapters/microduck/README.md](adapters/microduck/README.md)); the
-Open Duck Mini's official build has no depth sensor at all.
+**Does quackd use TOF or another depth sensor for obstacle avoidance?** Partly. It reads no
+depth sensor itself: `go_to` steers on the colour camera, an HSV threshold (or optionally YOLO)
+giving a bearing and an apparent-size distance to one named target. A map built from depth is
+read where the robot keeps one: `go_to_place` plans round what that map has seen to be solid,
+and the Microduck's own `mapd`, which builds its map from `tofd`'s depth frames, is read where
+it answers beside robotd, though no robotd release carries it yet and quackd's client is
+UNVERIFIED ([concepts/places.md](concepts/places.md),
+[adapters/microduck/README.md](adapters/microduck/README.md)). The duck's simulators keep the same
+kind of map of a room given with `--room`. The manifest schema has a generic `tof` sensor slot
+for future adapters ([reference/manifest-spec.md](reference/manifest-spec.md)); the Open Duck
+Mini's official build has no depth sensor at all.
 
 **How do I tune the detector for a real orange ball?** `ColorBlobDetector` takes
 `targets=(Target("ball", HSVRange(h_lo, h_hi, s_lo, v_lo), size_m=radius, round=True), …)`

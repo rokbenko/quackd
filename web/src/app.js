@@ -19,9 +19,9 @@ import { Recorder, shareUrl } from "./record.js";
 
 const $ = (id) => document.getElementById(id);
 
-// The hand's numbers. MANUAL_TURN sits above GAIT_FLOOR.wz (1.0) so a turn actually steps,
-// and below MAX_WZ (1.5) so it is not clipped. HEAD_RATE is integrated per frame rather than
-// stepped per keydown: auto-repeat used to slam the head to its 60 degree limit in ~200 ms.
+// The hand's numbers. MANUAL_TURN is GAIT_FLOOR.wz (1.2), where a turn steps both ways from a
+// stand, and below MAX_WZ (1.5) so it is not clipped. HEAD_RATE is integrated per frame rather
+// than stepped per keydown: auto-repeat used to slam the head to its 60 degree limit in ~200 ms.
 const MANUAL_TURN = 1.2, HEAD_RATE = 1.2;
 const SPEED = { vx: MAX_VX, vy: MAX_VY, wz: MANUAL_TURN };
 

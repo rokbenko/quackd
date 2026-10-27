@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import math
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
 from PIL import Image, ImageDraw
 
 from quackd.sim2d.render import BALL, FLOOR, HORIZON, SKY, focal_px
+from quackd.space.odometry import OdometrySource, OdometryTrack
+from quackd.space.pose import where_record
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
 from quackd_rosbridge import upstream_api as up
 from quackd_rosbridge.introspection import Introspection, parse_urdf
@@ -104,6 +107,10 @@ class RosbridgeMock:
         self.heartbeats = 0
         self.connected = False
         self.distance_m = 0.0
+        self._track: OdometryTrack | None = None
+        self.spatial: OdometrySource | None = None
+        """Where the mock base is by its own integration, as /odom would say, in a frame that
+        lasts the connection, as the ws backend's does. Set at connect."""
 
     # ── physics ─────────────────────────────────────────────────────────────────────
 
@@ -135,6 +142,9 @@ class RosbridgeMock:
     async def connect(self) -> None:
         self.connected = True
         self.introspection = mock_introspection(self.urdf, camera=self.camera_available)
+        self._track = OdometryTrack(f"odom:mock:{uuid.uuid4().hex[:12]}")
+        self._track.update(self.x, self.y, self.theta, self._t)
+        self.spatial = OdometrySource(self._track, label="the mock base's odometry")
 
     async def introspect(self) -> Introspection:
         self.introspections += 1
@@ -176,6 +186,7 @@ class RosbridgeMock:
             y=self.y,
             theta=self.theta,
             extras={
+                **({"where": where_record(self.spatial.fix())} if self.spatial else {}),
                 "odom": {
                     "x": round(self.x, 3),
                     "y": round(self.y, 3),
@@ -229,5 +240,7 @@ class RosbridgeMock:
             dt = min(TICK_S, remaining)
             self._t += dt
             self._integrate(dt)
+            if self._track is not None:
+                self._track.update(self.x, self.y, self.theta, self._t)
             remaining -= dt
         await asyncio.sleep(0)  # yield so the heartbeat task gets a turn

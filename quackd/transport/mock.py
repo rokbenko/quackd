@@ -13,7 +13,27 @@ from typing import Any
 
 from PIL import Image
 
+from quackd.space.pose import Fix, FrameRef, Pose2D, where_record
+from quackd.space.source import SpatialSourceBase
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent
+
+
+class MockPose(SpatialSourceBase):
+    """Where a scripted mock is: the `x`, `y` and `theta` of the state it last handed out, or the
+    origin of its frame where that state says none. Odometry in one frame for the life of the
+    transport, which nothing moves but the script."""
+
+    def __init__(self, transport: MockTransport) -> None:
+        self._transport = transport
+
+    def fix(self) -> Fix:
+        state = self._transport.current_state()
+        pose = Pose2D(state.x or 0.0, state.y or 0.0, state.theta or 0.0)
+        frame = FrameRef("odometry", "odom:mock", persistent=False)
+        return Fix(pose, "odometry", frame, t=self._transport.now())
+
+    def describe(self) -> str:
+        return "the mock's scripted pose"
 
 
 class MockTransport:
@@ -29,7 +49,11 @@ class MockTransport:
         fail_heartbeat_after: int | None = None,
         refuse_kinds: set[str] | None = None,
         frame_size: tuple[int, int] = (64, 64),
+        spatial: bool = False,
     ) -> None:
+        self.spatial: MockPose | None = MockPose(self) if spatial else None
+        """Where the mock is (`MockPose`), for a body whose mock stands in for one that says where
+        it is, the Microduck's; None, a body with no pose, for every other."""
         self._frames = frames or []
         self._states = states or [DuckState(policy="mock", posture="standing", battery_percent=88)]
         self._fail_after = fail_heartbeat_after
@@ -60,7 +84,15 @@ class MockTransport:
     async def get_state(self) -> DuckState:
         state = self._states[min(self._state_i, len(self._states) - 1)]
         self._state_i += 1
-        return state.model_copy(update={"t": self._t})
+        copied = state.model_copy(update={"t": self._t})
+        if self.spatial is not None:
+            # where it is, as every transport with a reading says it (`where_record`)
+            copied.extras = {**copied.extras, "where": where_record(self.spatial.fix())}
+        return copied
+
+    def current_state(self) -> DuckState:
+        """The state last handed out, or the first one before any was, without moving on."""
+        return self._states[min(max(0, self._state_i - 1), len(self._states) - 1)]
 
     async def send_intent(self, intent: Intent) -> Ack:
         self.intents.append(intent)

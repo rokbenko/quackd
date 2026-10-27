@@ -72,6 +72,19 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     assert not unverified, f"the Microduck's page is missing microduck_rl assumptions: {unverified}"
 
 
+def test_the_microduck_page_lists_every_mapd_ref() -> None:
+    """`mapd`, the duck's onboard map, is a third upstream on the same page: a branch quackd read
+    and no release carries, every row of it an assumption, so every row is said."""
+    from quackd_microduck import mapd_upstream_api as mapd
+
+    doc = _as_rendered(
+        (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
+    )
+    missing = [ref.name for ref in mapd.all_refs() if ref.name not in doc]
+    assert not missing, f"docs/adapters/microduck/README.md is missing mapd's: {missing}"
+    assert mapd.PIN[:7] in doc and mapd.BRANCH in doc
+
+
 def test_the_microduck_page_says_which_read_it_is() -> None:
     """The page names the commit it read, the release that commit is and the day, and links the
     robot's repository at that commit and no other.
@@ -1019,6 +1032,62 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
             assert needle in text, f"{path} does not mention {needle!r}"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     assert "QUACKD_POLICY_URL" not in env_example, "the policy server's address has no variable"
+
+
+def test_the_room_is_documented_where_it_is_configured() -> None:
+    """`--room` lays out a room for the duck's simulator on `run`, `record`, `drive` and
+    `serve-mcp`, and a flag nobody can find is a room nobody maps. The front page names it in all
+    four commands' rows, and the places page names every room quackd ships, says what a room file
+    holds, and quotes `two-rooms` as it ships, so the example is one a person can copy."""
+    from quackd.cli import app
+    from quackd.space.room import BUILT_IN
+
+    callbacks = {
+        (c.name or c.callback.__name__).replace("_", "-"): c.callback
+        for c in app.registered_commands
+        if c.callback is not None
+    }
+    commands = ("run", "record", "drive", "serve-mcp")
+    for name in commands:
+        assert "room" in callbacks[name].__code__.co_varnames, name
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for name in commands:
+        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        assert "--room" in row, f"the README's {name} row does not name --room"
+    places = (REPO / "docs" / "concepts" / "places.md").read_text(encoding="utf-8")
+    for room in BUILT_IN:
+        assert f"`{room}`" in places, f"docs/concepts/places.md does not name the room {room}"
+    shipped = (REPO / "quackd" / "space" / "rooms" / "two-rooms.yaml").read_text(encoding="utf-8")
+    body = "\n".join(line for line in shipped.splitlines() if not line.startswith("#"))
+    assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one quackd ships"
+
+
+def test_the_map_address_is_documented_where_it_is_configured() -> None:
+    """`--map-address` says where a real Microduck's own map answers, on `run`, `drive`,
+    `serve-mcp`, `doctor` and `robot add` and `edit`, and a flag nobody can find is a map nobody
+    walks by. The front page names it in each command's row, the registry guide among the flags
+    `add` takes, and the hardware checklist forwards the socket it names and asks doctor with it."""
+    from quackd.cli import app
+    from quackd_microduck import mapd_upstream_api as mapd
+
+    callbacks = {
+        (c.name or c.callback.__name__).replace("_", "-"): c.callback
+        for c in app.registered_commands
+        if c.callback is not None
+    }
+    for name in ("run", "drive", "serve-mcp", "doctor"):
+        assert "map_address" in callbacks[name].__code__.co_varnames, name
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for name in ("run", "drive", "serve-mcp", "doctor", "robot add"):
+        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        assert "--map-address" in row, f"the README's {name} row does not name --map-address"
+    registry = (REPO / "docs" / "guides" / "registry.md").read_text(encoding="utf-8")
+    assert "`--map-address`" in registry and "--clear map-address" in registry
+    checklist = (REPO / "docs" / "adapters" / "microduck" / "hardware-checklist.md").read_text(
+        encoding="utf-8"
+    )
+    assert f"-L 9871:{mapd.MAPD_SOCKET.name}" in checklist
+    assert "--map-address tcp://127.0.0.1:9871" in checklist
 
 
 def test_play_is_documented_where_it_is_configured() -> None:
@@ -2160,6 +2229,8 @@ _VERB_TABLE_ROWS = {
 
 _CORE_VERBS = frozenset(
     {"observe", "report_state", "stop", "say", "move", "go_to", "search_scan", "approach_and"}
+    # the place verbs, core verbs a body offers once it says where it is, in the Core row
+    | {"map", "mark_place", "forget_place", "go_to_place"}
 )
 
 
@@ -4322,3 +4393,41 @@ def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -
         row = next((r for r in rows if f"--llm {name}`" in r), None)
         assert row is not None, f"the pilots' table has no row that runs --llm {name}"
         assert f"`quackd[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row
+
+
+def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> None:
+    """`quackd map` and `quackd places` take a robot as `drive` does and a memory directory as
+    `quackd memory` does, and what each takes beyond those is its own: named in the front page's
+    rows for the two commands and in the places guide, with the commands themselves, so a flag
+    added to either is documented where it is used."""
+    from typing import Any
+
+    import typer.main
+
+    from quackd.cli import app
+
+    root: Any = typer.main.get_command(app)
+
+    def flags(command: Any) -> set[str]:
+        return {
+            name
+            for param in command.params
+            for name in getattr(param, "opts", [])
+            if name.startswith("--")
+        }
+
+    shared = flags(root.commands["drive"]) | flags(root.commands["memory"].commands["show"])
+    places = root.commands["places"].commands
+    own_map = flags(root.commands["map"]) - shared
+    own_places = set().union(*(flags(places[name]) for name in ("list", "add", "rm"))) - shared
+    assert own_map and own_places
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    map_row = next(line for line in rows if line.startswith("| `quackd map`"))
+    places_row = next(line for line in rows if line.startswith(r"| `quackd places list\|add\|rm`"))
+    guide = (REPO / "docs" / "guides" / "places.md").read_text(encoding="utf-8")
+    for row, own in ((map_row, own_map), (places_row, own_places)):
+        for flag in sorted(own):
+            assert flag in row, f"the README's row does not name {flag}: {row[:40]}"
+            assert flag in guide, f"docs/guides/places.md does not name {flag}"
+    for command in ("quackd map", "quackd places add", "quackd places list", "quackd places rm"):
+        assert command in guide, f"docs/guides/places.md does not show {command}"
