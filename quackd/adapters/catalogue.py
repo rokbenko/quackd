@@ -13,7 +13,8 @@ print them are order sensitive and `tests/test_adapters.py` pins it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 
 ENTRY_POINT_GROUP = "quackd.adapters"
 """Where an installed adapter announces itself. One entry per adapter, its name to its
@@ -35,6 +36,38 @@ class AdapterInfo:
     """The pip extra that makes the SDK backends work, where one is needed."""
     sdk: str | None = None
     """The import name that says whether that extra is installed here."""
+    connect: Mapping[str, Connect] = field(default_factory=dict)
+    """What connecting each real backend takes, by backend: the page `quackd ui` shows it beside
+    the address field. A simulator or a mock needs nothing, and has no entry."""
+
+
+@dataclass(frozen=True)
+class Connect:
+    """What connecting one real backend takes, said without importing it, in plain words.
+
+    `default` and `token_env` are the transport's own, which a test reads back from it, so this
+    can never say a default the code does not use. A third party's adapter may declare a
+    `CONNECT` mapping of these, by backend, beside its `BACKENDS`."""
+
+    address: str
+    """What `--address` is for this backend, and the shapes it takes."""
+    default: str | None
+    """The address used when none is given, or None where one must be."""
+    example: str
+    """A real one, as the adapter's own docs give it."""
+    token_env: str | None = None
+    """The variable its token is read from where `--token` is not given, or None for none."""
+    camera: str = ""
+    """What a camera URL is for it, or where its frames come from instead."""
+    on_robot: str = ""
+    """What has to be running on the robot for a connect to succeed."""
+    first: str = ""
+    """What to do once, before the first connect."""
+    docs: str = ""
+    """The adapter's page, from the repository's root."""
+    caution: str = ""
+    """What a connect does to the body that somebody near it has to know first, said before the
+    page offers to check the connection, or nothing."""
 
 
 OFFICIAL: tuple[AdapterInfo, ...] = (
@@ -154,5 +187,140 @@ OFFICIAL: tuple[AdapterInfo, ...] = (
         extra="quackd[moss]",
     ),
 )
+
+_CONNECT: dict[str, dict[str, Connect]] = {
+    "microduck": {
+        "jsonrpc": Connect(
+            address="robotd's socket: `unix:///PATH` with quackd on the duck itself, or "
+            "`tcp://HOST:PORT` for the socket forwarded over ssh",
+            default="unix:///run/robotd.sock",
+            example="tcp://127.0.0.1:9870",
+            camera="One camera URL: mediad's `http://HOST:8080/frame`, `webrtc://HOST:8443` with "
+            "`quackd[microduck-camera]`, or any HTTP snapshot. Without one the duck runs blind.",
+            on_robot="Pollen's robotd, at API 23 or later, and mediad for the camera. quackd "
+            "installs nothing on the duck.",
+            first="Forward the socket with `ssh -L 9870:/run/robotd.sock microduck@DUCK` and use "
+            "`tcp://127.0.0.1:9870`, always on Windows, which refuses a unix socket. The ssh "
+            "account must be in the group `robot`.",
+            docs="docs/adapters/microduck/README.md",
+        ),
+    },
+    "lerobot": {
+        "real": Connect(
+            address="the arm's USB serial port on this computer: `COM5` or the like on Windows, "
+            "`/dev/ttyACM0` elsewhere",
+            default=None,
+            example="COM5",
+            camera="Any number of cameras, as `opencv://N?name=front`, each with a name of its "
+            "own.",
+            on_robot="Nothing: the SO-101 is on USB, and LeRobot runs inside quackd.",
+            first="Python 3.12 and `quackd[lerobot]`. LeRobot's calibration, `lerobot-calibrate "
+            "--robot.type=so101_follower --robot.port=COM5 --robot.id=arm-01`, with the id the "
+            "robot's registered name. Then `quackd robot add arm-01 lerobot:real --address COM5` "
+            "and `quackd robot rest-pose arm-01`.",
+            docs="docs/adapters/lerobot/README.md",
+            caution="Connecting takes torque off every motor for a moment, as any connect does, "
+            "a check included: hold an arm that is holding itself up before you connect it.",
+        ),
+    },
+    "rosbridge": {
+        "ws": Connect(
+            address="rosbridge_server's WebSocket, which carries the topics too: "
+            "`ws://HOST:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed`",
+            default="ws://localhost:9090",
+            example="ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed",
+            camera="An image topic in the address, as `?image=`. A camera URL is not read.",
+            on_robot="ROS 2 with rosbridge_server and rosapi, on a base that takes "
+            "`geometry_msgs/msg/Twist` and publishes odometry.",
+            docs="docs/adapters/rosbridge/README.md",
+        ),
+    },
+    "open_duck": {
+        "bridge": Connect(
+            address="quackd's bridge daemon on the duck's Pi, `tcp://HOST:PORT`",
+            default="tcp://open-duck.local:9871",
+            example="tcp://127.0.0.1:9871",
+            token_env="QUACKD_DUCK_TOKEN",
+            camera="The snapshot the bridge names, `http://HOST:9872/snapshot.jpg`, unless a "
+            "camera URL is given.",
+            on_robot="quackd's bridge and camera daemons, installed by "
+            "`bridge/open_duck/install.sh` and started from their systemd units.",
+            first="`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 PI`, and the token from "
+            "`/etc/quackd/duck-bridge.token` on the Pi.",
+            docs="docs/adapters/open_duck/README.md",
+        ),
+    },
+    "xlerobot": {
+        "zmq": Connect(
+            address="the robot's ZeroMQ host, `tcp://HOST:5555`, with `?variant=omni3`, `diff2` "
+            "or `mecanum`",
+            default="tcp://127.0.0.1:5555",
+            example="tcp://192.168.1.42:5555",
+            camera="From the host's observations. A camera URL is not read.",
+            on_robot="Upstream's XLerobotHost, uncommented from its package, on the machine wired "
+            "to both buses. It exits after an hour.",
+            first="Start the host, restart it each hour, and reach it through an ssh tunnel.",
+            docs="docs/adapters/xlerobot/README.md",
+        ),
+    },
+    "alohamini": {
+        "zmq": Connect(
+            address="the robot's ZeroMQ host, `tcp://HOST:5555`, with `?model=alohamini1`, "
+            "`alohamini2` or `alohamini2pro`",
+            default="tcp://127.0.0.1:5555",
+            example="tcp://192.168.1.50:5555",
+            camera="From the host's replies. A camera URL is not read.",
+            on_robot="quackd's host wrapper from `bridge/alohamini`, or upstream's host.",
+            first="Calibrate the robot, install upstream on it, start the host, and reach it "
+            "through an ssh tunnel.",
+            docs="docs/adapters/alohamini/README.md",
+        ),
+    },
+    "toddlerbot": {
+        "bridge": Connect(
+            address="quackd's daemon on the robot's Jetson, `tcp://HOST:PORT`",
+            default="tcp://toddlerbot.local:9873",
+            example="tcp://127.0.0.1:9873",
+            token_env="QUACKD_TODDLERBOT_TOKEN",
+            camera="From the daemon, started with `--camera left` or `right`. A camera URL is not "
+            "read.",
+            on_robot="quackd's daemon from `bridge/toddlerbot`, in upstream's environment.",
+            first="Upstream's `calibrate_zero`, the robot on its stand, an ssh tunnel to 9873, "
+            "and the same token on both sides.",
+            docs="docs/adapters/toddlerbot/README.md",
+        ),
+    },
+    "huebot": {
+        "jsonrpc": Connect(
+            address="the maker's shim, which speaks robotd's protocol: `tcp://HOST:PORT`, or "
+            "`unix:///PATH` with quackd on the robot itself",
+            default=None,
+            example="tcp://127.0.0.1:9870",
+            camera="Any HTTP URL that answers each request with one still image.",
+            on_robot="The maker's shim.",
+            first="Forward the shim with `ssh -L 9870:SOCKET HUEBOT` and use "
+            "`tcp://127.0.0.1:9870`.",
+            docs="docs/adapters/huebot/README.md",
+        ),
+    },
+    "moss": {
+        "cockpit": Connect(
+            address="MOSS's cockpit on the rover, `http://HOST:8904`, with quackd's bridge port "
+            "as `?bridge=9876`",
+            default="http://127.0.0.1:8904?bridge=9876",
+            example="http://127.0.0.1:8904",
+            token_env="QUACKD_MOSS_TOKEN",
+            camera="None to give: the nose and wrist cameras come from the rover.",
+            on_robot="The MOSS stack with its cockpit, and quackd's bridge from `bridge/moss` as "
+            "the `quackd-moss-bridge` service.",
+            first="`ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 ROVER`, and the token from "
+            "`/etc/quackd/moss-bridge.token` on the rover.",
+            docs="docs/adapters/moss/README.md",
+        ),
+    },
+}
+"""What connecting each real backend of the nine takes (`AdapterInfo.connect`)."""
+
+OFFICIAL = tuple(replace(info, connect=_CONNECT.get(info.name, {})) for info in OFFICIAL)
 
 BY_NAME: dict[str, AdapterInfo] = {info.name: info for info in OFFICIAL}

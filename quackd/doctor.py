@@ -90,6 +90,7 @@ EXTRAS = {
     "microduck camera (webrtc)": ("aiortc", "quackd[microduck-camera]"),
     "xlerobot": ("zmq", "quackd[xlerobot]"),
     "alohamini": ("zmq", "quackd[alohamini]"),
+    "ui (the page quackd ui serves)": ("streamlit", "quackd[ui]"),
 }
 # Packages looked up by distribution metadata only, never imported: importing lerobot pulls
 # torch into a diagnostics command, which is exactly what doctor is not. The Feetech SDK is the
@@ -105,6 +106,7 @@ _METADATA_ONLY = {
     "scservo_sdk": "feetech-servo-sdk",
     "laya": "laya",
     "transformers": "transformers",
+    "streamlit": "streamlit",
 }
 
 CORE_MODULES = (

@@ -5106,6 +5106,74 @@ def doctor(
         raise typer.Exit(code=1)
 
 
+@app.command("ui", rich_help_panel="Serve")
+def ui_cmd(
+    bind: str = typer.Option(
+        "127.0.0.1",
+        "--bind",
+        help="The address the page listens on. 127.0.0.1, the default, is this computer alone. "
+        "0.0.0.0 is every network it is on, for a phone on the same Wi-Fi, and then the page asks "
+        "for its token, which the printed address carries.",
+    ),
+    port: int = typer.Option(8501, "--port", help="The port the page listens on."),
+    browser: bool = typer.Option(
+        True, "--browser/--no-browser", help="Open the page in this computer's browser."
+    ),
+    new_token: bool = typer.Option(
+        False,
+        "--new-token",
+        help="Make the page a new token, so an address saved with the old one, on a phone, "
+        "stops working.",
+    ),
+) -> None:
+    """Serve the page: choose a robot and its pilot, then give it a goal or chat with it, from a
+    browser or a phone."""
+    from quackd.registry import DEFAULT_DIR as REGISTRY_DEFAULT_DIR
+    from quackd.registry import ENV_DIR as REGISTRY_ENV
+    from quackd.registry import registry_dir
+    from quackd.webui import launch
+    from quackd.webui.catalog import installed
+
+    if not installed("streamlit"):
+        _fail(
+            "quackd ui needs Streamlit, which comes with the ui extra",
+            hint='uv pip install "quackd[ui]", or run uvx --from "quackd[ui]" quackd ui',
+        )
+        return
+    if launch.port_taken(bind, port):
+        _fail(
+            f"port {port} is already in use: another quackd ui, or another program, listens there",
+            hint=f"quackd ui --port {port + 1}",
+        )
+        return
+    # The page's token and its saved setup live in the home the shell names, never one a `.env`
+    # names: a cloned project's `.env` must not choose the token, nor a setup with a policy
+    # server of its own in it. Streamlit's settings come from its command line, and none from a
+    # `.env` either. The runs the page starts get the shell's environment alone and load the
+    # working folder's `.env` themselves (`jobs._child_environment`).
+    home = (
+        Path(REGISTRY_DEFAULT_DIR).expanduser()
+        if dotenv_names.from_dotenv(REGISTRY_ENV)
+        else registry_dir()
+    )
+    for name in dotenv_names.loaded():
+        if name.startswith("STREAMLIT_"):
+            os.environ.pop(name, None)
+
+    def say(line: str) -> None:
+        ui.console.print(line, markup=False, highlight=False, soft_wrap=True)
+
+    launch.serve(
+        folder=Path.cwd(),
+        bind=bind,
+        port=port,
+        browser=browser,
+        token_dir=home,
+        new_token=new_token,
+        say=say,
+    )
+
+
 @app.command("serve-mcp", rich_help_panel="Serve")
 def serve_mcp(
     robot: str | None = _ROBOT,
@@ -6366,6 +6434,45 @@ _PROBE_TIMEOUT = typer.Option(
 )
 
 
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+"""A variable's name, as `--token-env` and `--host-token-env` take one."""
+
+_TOKEN_ENV = typer.Option(
+    None,
+    "--token-env",
+    help="The name of a variable holding the bridge token, instead of --token: how a program, "
+    "the page quackd ui among them, hands one over without putting it on a command line. Only "
+    "the name is ever printed, never what it holds.",
+)
+_HOST_TOKEN_ENV = typer.Option(
+    None,
+    "--host-token-env",
+    help="The name of a variable holding the board's token, instead of --host-token, as "
+    "--token-env is for the robot's.",
+)
+
+
+def _token_from(flag: str, name: str | None, given: str | None, *, instead_of: str) -> str | None:
+    """The token the variable `flag` names holds, or `given` where `flag` is not used.
+
+    No refusal quotes what `flag` was given, nor what the variable holds: what was typed there
+    may be the token itself, put in the wrong place."""
+    if name is None:
+        return given
+    if given is not None:
+        _fail(f"{instead_of} and {flag} both give the token: give it one way")
+    if not _ENV_NAME.match(name):
+        _fail(
+            f"{flag} takes the name of the variable that holds the token, and what it was "
+            "given is not a variable's name"
+        )
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        _fail(f"the variable {flag} names {'is not set' if value is None else 'is empty'}")
+        return None
+    return value.strip()
+
+
 @robot_app.command("add")
 def robot_add(
     name: str = _ROBOT_NAME,
@@ -6376,8 +6483,10 @@ def robot_add(
     map_address: str | None = _MAP_ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
+    token_env: str | None = _TOKEN_ENV,
     host: str | None = _ROBOT_HOST,
     host_token: str | None = _ROBOT_HOST_TOKEN,
+    host_token_env: str | None = _HOST_TOKEN_ENV,
     llm: str | None = typer.Option(
         None,
         "--llm",
@@ -6397,6 +6506,10 @@ def robot_add(
     from quackd.host import parse_host
     from quackd.registry import RegistryError, RobotEntry
 
+    token = _token_from("--token-env", token_env, token, instead_of="--token")
+    host_token = _token_from(
+        "--host-token-env", host_token_env, host_token, instead_of="--host-token"
+    )
     try:
         # Checked against the catalogue here and nowhere else. The shelf is deliberately
         # lenient -- an id a later catalogue retires must not make every `quackd robot`
@@ -6837,8 +6950,10 @@ def robot_edit(
     map_address: str | None = _MAP_ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
+    token_env: str | None = _TOKEN_ENV,
     host: str | None = _ROBOT_HOST,
     host_token: str | None = _ROBOT_HOST_TOKEN,
+    host_token_env: str | None = _HOST_TOKEN_ENV,
     llm: str | None = typer.Option(
         None,
         "--llm",
@@ -6862,6 +6977,10 @@ def robot_edit(
     from quackd.agent.providers.factory import parse_llm
     from quackd.registry import RegistryError
 
+    token = _token_from("--token-env", token_env, token, instead_of="--token")
+    host_token = _token_from(
+        "--host-token-env", host_token_env, host_token, instead_of="--host-token"
+    )
     given: dict[str, Any] = {
         "spec": spec,
         "address": address,

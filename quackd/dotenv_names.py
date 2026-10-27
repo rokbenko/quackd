@@ -29,10 +29,22 @@ def remember(before: Collection[str]) -> None:
     _LOADED.update({name: value for name, value in os.environ.items() if name not in before})
 
 
+def loaded() -> dict[str, str]:
+    """Every variable that still has the value a `.env` file gave it, with that value."""
+    return {name: value for name, value in _LOADED.items() if os.environ.get(name) == value}
+
+
+def shell_environment() -> dict[str, str]:
+    """The environment as the shell gave it: every variable but those still holding what a
+    `.env` file gave them. What a process started from here inherits, when it loads the `.env`
+    itself and must still tell a file's values from the shell's (`quackd ui`'s runs)."""
+    return {name: value for name, value in os.environ.items() if not from_dotenv(name)}
+
+
 def from_dotenv(name: str) -> bool:
     """Whether the value `name` has in the environment now is the one a `.env` file gave it."""
     value = os.environ.get(name)
     return value is not None and _LOADED.get(name) == value
 
 
-__all__ = ["from_dotenv", "remember"]
+__all__ = ["from_dotenv", "loaded", "remember", "shell_environment"]

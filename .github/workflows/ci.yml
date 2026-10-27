@@ -144,6 +144,39 @@ jobs:
         # nightly `lerobot-sim-assets` job runs them the same way.
         run: uv run pytest tests/test_sim3d.py tests/test_acceptance_mujoco.py tests/test_lerobot_sim.py tests/test_lerobot_sim_parity.py tests/test_preflight.py -m "not real_duck and not so101_model"
 
+  ui:
+    name: ui · the page quackd ui serves
+    runs-on: ubuntu-latest
+    # The files that need Streamlit, with it installed: the page's screens, its token, and a
+    # goal, a chat and a Stop run through it end to end. The page's plain modules and the JSON
+    # front end it drives run in `test`, on all six cells, without Streamlit, which is how a core
+    # install stays free of it.
+    #
+    # Not a matrix: the page reaches its runs through pipes, which `test` covers on every OS, and
+    # what this job adds is Streamlit itself, which is the same on each.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync (dev + the ui extra, Streamlit and what it brings)
+        run: uv sync --python 3.12 --extra dev --extra ui
+      - name: Types, with Streamlit's own present
+        run: uv run mypy quackd/webui
+      - name: The page, and a goal, a chat and a Stop run through it
+        run: uv run pytest tests/test_webui_app.py tests/test_webui_options.py tests/test_webui_jobs.py tests/test_webui_catalog.py
+      - name: quackd ui starts and answers
+        run: |
+          uv run quackd ui --port 8599 --no-browser > ui.log 2>&1 &
+          page=$!
+          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8599/_stcore/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8599/_stcore/health
+          # said once the page answers, from a thread of its own, so it may trail the health check
+          for _ in $(seq 1 20); do grep -q "quackd ui: http://127.0.0.1:8599" ui.log && break; sleep 1; done
+          grep "quackd ui: http://127.0.0.1:8599" ui.log
+          kill "$page"
+
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which
   # the server has to build without, and both processors saved, put in a Hub cache of its own
