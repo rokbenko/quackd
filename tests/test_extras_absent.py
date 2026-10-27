@@ -32,6 +32,9 @@ HEAVY = (
     "typesafe_sdk",
     "laya",
     "openai",
+    # The page `quackd ui` serves: the CLI, and every plain module the page is built on, import
+    # without it, and only `quackd ui` itself asks for it, naming the extra.
+    "streamlit",
 )
 
 SCRIPT = f"""
@@ -50,6 +53,12 @@ import quackd.agent.decision
 import quackd.agent.decision.stepper
 import quackd.agent.decision.factory
 import quackd.agent.loop
+import quackd.webui
+import quackd.webui.catalog
+import quackd.webui.jobs
+import quackd.webui.launch
+import quackd.webui.options
+import quackd.webui.probe
 from quackd.agent.decision.catalogue import PRESETS
 from quackd.agent.decision.factory import decision_llm_is_available, resolve_decision_mode
 assert resolve_decision_mode(None, named=False) == "off"

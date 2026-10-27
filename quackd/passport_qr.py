@@ -13,7 +13,7 @@ is read back before it is saved, so quackd never prints a sticker its own `meet`
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from quackd.passport.errors import PassportError
 
@@ -32,6 +32,25 @@ def _decode(image: Any) -> str:
         if text:
             return str(text)
     return ""
+
+
+def qr_modules(text: str) -> list[list[bool]]:
+    """`text` as a QR code's modules, True where a module is dark, with the quiet zone a scanner
+    needs round it. For a code drawn in a terminal (`quackd ui`), where there is no PNG to read
+    back; error correction is level M, as on a sticker."""
+    import cv2
+
+    params = cv2.QRCodeEncoder.Params()
+    params.correction_level = cv2.QRCodeEncoder_CORRECT_LEVEL_M
+    code = cv2.QRCodeEncoder.create(params).encode(text)
+    if code is None or code.size == 0:
+        raise PassportError("5.2", f"{len(text)} characters are more than one QR code holds")
+    margin = QUIET_ZONE - OPENCV_BORDER
+    width = int(code.shape[1]) + 2 * margin
+    light = [[False] * width for _ in range(margin)]
+    grid = cast("list[list[int]]", code.tolist())  # a code is always two-dimensional
+    rows = [[False] * margin + [int(p) == 0 for p in row] + [False] * margin for row in grid]
+    return [*light, *rows, *[list(r) for r in light]]
 
 
 def write_qr(text: str, path: Path, *, scale: int = SCALE) -> tuple[int, int]:

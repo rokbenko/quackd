@@ -113,6 +113,11 @@ robots = [
 ]
 # LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
+# The page `quackd ui` serves, in a browser or on a phone (docs/guides/web-ui.md). Streamlit
+# brings pyarrow and pandas, so it is never core. 1.61 is the floor because the page polls its
+# runs through `st.fragment(run_every=...)`, which raised TypeError until 1.59 and 1.61 and
+# reran twice per tick until 1.60.
+ui = ["streamlit>=1.61,<2"]
 # LeRobot needs Python 3.12 and pulls torch; the marker keeps the lock solvable on 3.11.
 # `[feetech]` is where the serial SDK lives (feetech-servo-sdk and pyserial, neither of them a
 # base dependency of lerobot). Without it `import lerobot` succeeds and opening the arm's port

@@ -5026,6 +5026,74 @@ def doctor(
         raise typer.Exit(code=1)
 
 
+@app.command("ui", rich_help_panel="Serve")
+def ui_cmd(
+    bind: str = typer.Option(
+        "127.0.0.1",
+        "--bind",
+        help="The address the page listens on. 127.0.0.1, the default, is this computer alone. "
+        "0.0.0.0 is every network it is on, for a phone on the same Wi-Fi, and then the page asks "
+        "for its token, which the printed address carries.",
+    ),
+    port: int = typer.Option(8501, "--port", help="The port the page listens on."),
+    browser: bool = typer.Option(
+        True, "--browser/--no-browser", help="Open the page in this computer's browser."
+    ),
+    new_token: bool = typer.Option(
+        False,
+        "--new-token",
+        help="Make the page a new token, so an address saved with the old one, on a phone, "
+        "stops working.",
+    ),
+) -> None:
+    """Serve the page: choose a robot and its pilot, then give it a goal or chat with it, from a
+    browser or a phone."""
+    from quackd.registry import DEFAULT_DIR as REGISTRY_DEFAULT_DIR
+    from quackd.registry import ENV_DIR as REGISTRY_ENV
+    from quackd.registry import registry_dir
+    from quackd.webui import launch
+    from quackd.webui.catalog import installed
+
+    if not installed("streamlit"):
+        _fail(
+            "quackd ui needs Streamlit, which comes with the ui extra",
+            hint='uv pip install "quackd[ui]", or run uvx --from "quackd[ui]" quackd ui',
+        )
+        return
+    if launch.port_taken(bind, port):
+        _fail(
+            f"port {port} is already in use: another quackd ui, or another program, listens there",
+            hint=f"quackd ui --port {port + 1}",
+        )
+        return
+    # The page's token and its saved setup live in the home the shell names, never one a `.env`
+    # names: a cloned project's `.env` must not choose the token, nor a setup with a policy
+    # server of its own in it. Streamlit's settings come from its command line, and none from a
+    # `.env` either. The runs the page starts get the shell's environment alone and load the
+    # working folder's `.env` themselves (`jobs._child_environment`).
+    home = (
+        Path(REGISTRY_DEFAULT_DIR).expanduser()
+        if dotenv_names.from_dotenv(REGISTRY_ENV)
+        else registry_dir()
+    )
+    for name in dotenv_names.loaded():
+        if name.startswith("STREAMLIT_"):
+            os.environ.pop(name, None)
+
+    def say(line: str) -> None:
+        ui.console.print(line, markup=False, highlight=False, soft_wrap=True)
+
+    launch.serve(
+        folder=Path.cwd(),
+        bind=bind,
+        port=port,
+        browser=browser,
+        token_dir=home,
+        new_token=new_token,
+        say=say,
+    )
+
+
 @app.command("serve-mcp", rich_help_panel="Serve")
 def serve_mcp(
     robot: str | None = _ROBOT,
