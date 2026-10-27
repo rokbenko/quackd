@@ -293,9 +293,9 @@ What is not proven yet: `--onboard` has met no real model server.
 The two acts, `explain` and `whois` ran on 27 October 2026 against Nebius Token Factory, with a
 real key. One Windows laptop stood in for both robots' computers, quackd 0.23.0 came from PyPI, and both
 pilots were `nvidia/nemotron-3-super-120b-a12b`, picked from the key's live list. The records
-are in [`submission/live-run`](submission/live-run). Each run's `summary.json` names the server
-its pilot asked, `https://api.tokenfactory.nebius.com/v1`, and the model. Every model turn in
-its `transcript.jsonl` carries the tool call id Token Factory returned.
+are in [`live-runs`](live-runs). Each run's `summary.json` names the server its pilot asked,
+`https://api.tokenfactory.nebius.com/v1`, and the model. Every model turn in its
+`transcript.jsonl` carries the tool call id Token Factory returned.
 
 The NVIDIA models the key could use:
 
@@ -406,7 +406,7 @@ in its own words (a claim, not a fact):
   how to stop it: Simulated: press Ctrl+C in the terminal running it.
 ```
 
-**whois**, on [the first frame of the duck's simulator](submission/live-run/duck-sim-frame.png),
+**whois**, on [the first frame of the duck's simulator](live-runs/duck-sim-frame.png),
 the only picture of these two robots there is. The duck is a small yellow wedge there, and the
 vision model matched no passport to anything in view:
 
