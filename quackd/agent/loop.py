@@ -2550,6 +2550,10 @@ class AgentLoop:
                     try:
                         watching = bool(cfg.acknowledge(warning))
                     except Exception as e:
+                        # A question taken back because the run was stopped ends it for the
+                        # stop, which is what happened, and not for a question nobody answered
+                        if self.executor.abort.is_set():
+                            raise Aborted(self._abort_reason()) from e
                         # A question taken back, or a prompt that raised on Ctrl-C or EOF, has
                         # not said anybody is watching, and nobody said they were not: it ends
                         # the run as a no does, and leaves no `prompt` row, as a decide or a

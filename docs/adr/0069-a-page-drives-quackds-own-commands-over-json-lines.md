@@ -37,16 +37,20 @@ questions, and for drive its lines and their results. stdin carries the page's o
 and a write meant for stdout lands there too, so nothing breaks a line. `end` names the outcome,
 including `refused` and `error`, and the exit code the process is about to leave with.
 
-**A stop is a message.** The page's Stop sets the run's abort on its own loop, as the kill
-switch's first press does, so the full teardown runs on every operating system: the verb moving
-is ended, a stop is sent, the arm folds and the record closes. The run ends `aborted` for the
-`stop button`, a person's stop like the kill switch, so it also ends a fold the run began by
-itself (`PERSON_STOPS`). A second Stop, asked for as such, quits at once as a second Ctrl-C does.
-In drive, a Stop brakes, and a second one ends the session in order. A Stop that comes before
-there is a robot to stop means none connects: the run ends `aborted` with no run directory, and a
-drive session ends before its connect. A run already stopped puts no new question to the page,
-and every Stop takes back a question put since the first, since a run waiting on one holds its
-loop, where no second press reaches.
+**A stop is a message.** The page's Stop sets the run's abort on its own loop, as the kill switch's
+first press does, so the full teardown runs on every operating system: the verb moving is ended, a
+stop is sent, the arm folds and the record closes. The run ends `aborted` for the `stop button`, a
+person's stop like the kill switch, so it also ends a fold the run began by itself
+(`PERSON_STOPS`). A second Stop, asked for as such, quits at once as a second Ctrl-C does. In
+drive, a Stop brakes, and a second one ends the session in order. A Stop that comes before the run
+begins means the robot never connects, and the run ends `aborted` with no run directory. One that
+comes while the robot connects is read once it has, so the run ends before the pilot's first step,
+and the arm folds as it does for any stop; a fall-blind body's question whether anybody is
+watching, taken back by that Stop, ends the run for the Stop rather than for a question nobody
+answered. A drive session halted while it is set up never connects: a Stop ends it `aborted`, and a
+quit or the page's input ending ends it as asked, as either ends a connected session. A Stop also
+closes the run's questions, under the lock that puts them, so none is put after it and one waiting
+is taken back: a run waiting on one holds its loop, where no second press reaches.
 
 **The page going away is a stop nobody pressed.** When the page's input ends, or its pipe
 breaks, every question is taken back and the run stops with `the page went away`, which is no

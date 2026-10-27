@@ -17,11 +17,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   and the page's `stop`, `answer`, `line` and `quit` on stdin. Everything a terminal would show
   still goes to stderr. A stop is a message, so it reaches a run on Windows too, where no signal a
   parent can send stops a child before it folds, and a page that goes away is a stop nobody
-  pressed. A stop sent before the robot connects means it never connects. A page's answer is
-  recorded as a person's, with `channel: web` beside it in the `prompt` row, and a question taken
-  back is recorded as unanswered, never as a no. `run_start` gains `front: jsonl` on such a run, and
-  the command it names leaves `--front` out. `--by-hand`, `--flock`, `--robots` and a task file with
-  a `flock:` block are refused under it
+  pressed. A stop sent before the run begins means the robot never connects, and one sent while it
+  connects ends the run before the pilot's first step. A page's answer is recorded as a person's,
+  with `channel: web` beside it in the `prompt` row, and a question taken back is recorded as
+  unanswered, never as a no. `run_start` gains `front: jsonl` on such a run, and the command it
+  names leaves `--front` out. `--by-hand`, `--flock`, `--robots` and a task file with a `flock:`
+  block are refused under it
   ([ADR-0069](docs/adr/0069-a-page-drives-quackds-own-commands-over-json-lines.md)).
 - **`python -m quackd` runs the same command as `quackd`.**
 

@@ -6125,6 +6125,30 @@ async def test_a_fall_warning_nobody_answers_ends_the_run_as_a_no_and_records_no
     assert _prompts(Transcript.read(run_dir / "transcript.jsonl")) == [], "nobody said no"
 
 
+async def test_a_fall_warning_a_stop_takes_back_ends_the_run_for_the_stop(
+    tmp_path: Path,
+) -> None:
+    """The page's Stop pressed while the run asks whether anybody is watching: the question is
+    taken back, and the run ends for the Stop, which is what happened, rather than for a
+    question nobody answered."""
+    from quackd.front import QuestionWithdrawn
+
+    loops: list[AgentLoop] = []
+
+    def stopped(_why: str) -> bool:
+        loops[0].stop_reason = STOP_BUTTON  # as `quackd.front` names its stop, then sets the flag
+        loops[0].executor.abort.set()
+        raise QuestionWithdrawn("the run was stopped")
+
+    stopped.asks_a_person = True  # type: ignore[attr-defined]
+    run_dir = tmp_path / "stopped"
+    run_dir.mkdir()
+    loops.append(AgentLoop(_fall_blind(tmp_path / "stopped", stopped, run_dir=run_dir)))
+    with pytest.raises(Aborted, match=rf"^{STOP_BUTTON}$"):
+        await loops[0].run()
+    assert _prompts(Transcript.read(run_dir / "transcript.jsonl")) == [], "nobody said no"
+
+
 @pytest.mark.parametrize(
     ("reason", "stops_the_fold"),
     [(STOP_BUTTON, True), (PAGE_GONE, False)],

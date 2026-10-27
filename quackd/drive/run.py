@@ -70,6 +70,18 @@ def session_duck(allow: Sequence[str]) -> DuckFile:
 class Halted(Exception):
     """The page sent a Stop, a quit or its going away while the session was being set up."""
 
+    def __init__(self, reason: str, *, as_asked: bool) -> None:
+        super().__init__(reason)
+        self.as_asked = as_asked
+        """A quit, or the page's input ending, which end a connected session as asked too."""
+
+
+_HALTED = {
+    "stop": "the page's Stop came before the robot connected",
+    "quit": "the session ended before the robot connected",
+    "end": "the page went away before the robot connected",
+}
+
 
 class DriveError(Exception):
     """A session refused before anything connected, in a sentence of its own."""
@@ -227,9 +239,11 @@ async def run_drive(
     started = time.perf_counter()
     outcome, reason = "success", "the session ended"
     try:
-        if front is not None and front.halted():
-            # nothing connects, as nothing does when a Ctrl-C at a terminal comes that early
-            raise Halted("the page stopped the session before the robot connected")
+        halted = front.halted() if front is not None else None
+        if halted is not None:
+            # nothing connects. A quit or the page's input ending ends a connected session as
+            # asked, and so ends this one; a Stop pressed while it was set up is a run stopped
+            raise Halted(_HALTED[halted], as_asked=halted != "stop")
         await robot.connect()
         registry = executor.registry
         if robot.duck is None:
@@ -320,8 +334,11 @@ async def run_drive(
         else:
             await drive_from_pipe(drive, stream, say=say)
     except Halted as e:
-        outcome, reason = "aborted", str(e)
-        raise DriveError(str(e)) from None
+        reason = str(e)
+        if not e.as_asked:
+            outcome = "aborted"
+            raise DriveError(reason) from None
+        say(f"{'ended':<8} {reason}")
     except Exception as e:
         outcome, reason = "error", f"{type(e).__name__}: {e}"
         raise

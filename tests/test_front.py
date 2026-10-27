@@ -193,6 +193,9 @@ def test_stderr_behind_the_page_drops_a_write_the_pipe_refuses_and_every_one_aft
     assert pipe.getvalue() == "said\n", "once dead, nothing more is written"
     with pytest.raises(TypeError):
         err.write(b"bytes")  # type: ignore[arg-type]
+    assert not err.closed, "dead is its own word: the stream itself is open"
+    pipe.close()
+    assert err.closed
 
 
 # ── the ops in ──
@@ -532,12 +535,58 @@ def test_a_run_already_stopped_puts_no_new_question() -> None:
     assert not [line for line in _lines(out) if line["ev"] == "ask"]
 
 
-def test_a_second_stop_takes_back_a_question_put_since_the_first(
+def test_a_stop_that_comes_while_a_question_is_being_put_is_never_outwaited(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A question that got in after the first stop, as one being put at that moment can, holds
-    the loop's thread, where no second press reaches. Every stop takes such a question back, and
-    the one that quits at once does it before quitting."""
+    """The Stop can land after the run looked for one and before its question is registered,
+    where taking back what is waiting finds nothing, and the run would hold its loop on the
+    question with the Stop already pressed. The question is refused there instead."""
+    front, out = _front()
+    said = front._say
+
+    def stop_while_saying(text: str, *, warn: bool = False) -> None:
+        if not front._stops:
+            front.stop()
+        said(text, warn=warn)
+
+    monkeypatch.setattr(front, "_say", stop_while_saying)
+    caught: dict[str, str] = {}
+
+    def ask() -> None:
+        try:
+            front.confirm("kick", {"leg": "left"})
+        except QuestionWithdrawn as e:
+            caught["why"] = str(e)
+
+    asking = threading.Thread(target=ask)
+    asking.start()
+    asking.join(10)
+    waited = asking.is_alive()
+    front.questions.withdraw_all("the test is over")  # a question wrongly put is let go
+    asking.join(10)
+    assert not waited, "the question was put after the Stop, and waited for an answer"
+    assert caught == {"why": "the run was stopped"}
+    front.end(1)
+    assert not [line for line in _lines(out) if line["ev"] == "ask"]
+
+
+def test_the_quit_at_once_comes_before_its_word(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A word on stderr can wait on a page that has stopped reading it, and the quit, and every
+    op behind it, would wait too."""
+    order: list[str] = []
+    monkeypatch.setattr(front_mod._thread, "interrupt_main", lambda: order.append("quit"))
+    front, _out = _front()
+    monkeypatch.setattr(front, "_say", lambda text, *, warn=False: order.append("said"))
+    front.stop()
+    order.clear()
+    front.stop(now=True)
+    assert order == ["quit", "said"]
+
+
+def test_after_a_stop_no_question_is_put_even_past_the_fronts_own_check() -> None:
+    """The questions are closed under the lock that puts them, so one asked of them directly,
+    past the check `Front.ask` makes, is refused once a Stop has come, rather than put and
+    waited on with the loop's thread, where no second press reaches."""
     front, out = _front()
     front.stop()
     caught: dict[str, str] = {}
@@ -550,18 +599,14 @@ def test_a_second_stop_takes_back_a_question_put_since_the_first(
 
     asking = threading.Thread(target=ask)
     asking.start()
-    _until(_asked(out))
-    released_before_the_quit: list[bool] = []
-
-    def quit_at_once() -> None:
-        asking.join(10)
-        released_before_the_quit.append(not asking.is_alive())
-
-    monkeypatch.setattr(front_mod._thread, "interrupt_main", quit_at_once)
-    front.stop(now=True)
     asking.join(10)
+    waited = asking.is_alive()
+    front.questions.withdraw_all("the test is over")  # a question wrongly put is let go
+    asking.join(10)
+    assert not waited, "the question was put after the Stop, and waited for an answer"
     assert caught == {"why": "the run was stopped"}
-    assert released_before_the_quit == [True]
+    front.end(1)
+    assert not [line for line in _lines(out) if line["ev"] == "ask"]
 
 
 async def test_a_question_the_page_takes_back_by_going_away_never_names_the_stop_button() -> None:
@@ -653,15 +698,16 @@ def test_a_run_stopped_before_it_began_says_by_which_stop() -> None:
 
 def test_drive_is_halted_by_a_stop_a_quit_or_the_page_going_away_and_never_by_a_line() -> None:
     """Read just before drive's robot connects, which it then never does."""
-    for op in ({"op": "stop"}, {"op": "quit"}):
+    for op in ("stop", "quit"):
         front, _out = _front("drive")
-        front.on_op(op)
-        assert front.halted(), op
+        front.on_op({"op": op})
+        front.on_op({"op": "quit" if op == "stop" else "stop"})
+        assert front.halted() == op, "the first to come is the one named"
     front, _out = _front("drive")
     front.on_op({"op": "line", "text": "walk forward"})
-    assert not front.halted(), "a line is what the session is for"
+    assert front.halted() is None, "a line is what the session is for"
     front.on_end()
-    assert front.halted()
+    assert front.halted() == "end"
     run, _out = _front("run")
     run.on_op({"op": "stop"})
-    assert not run.halted(), "a run's stop is its own (`stopped_before_start`)"
+    assert run.halted() is None, "a run's stop is its own (`stopped_before_start`)"

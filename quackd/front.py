@@ -197,6 +197,12 @@ class Forgiving:
     def writable(self) -> bool:
         return True
 
+    @property
+    def closed(self) -> bool:
+        """The stream's own word, never `dead`: the CLI reads a closed stdout as a page that went
+        away and leaves with 0, while the end line it already sent says how the run ended."""
+        return bool(getattr(self._stream, "closed", False))
+
 
 def _frame_line(image: Image.Image, caption: str | None) -> dict[str, Any]:
     picture = image if image.mode == "RGB" else image.convert("RGB")
@@ -455,9 +461,20 @@ class Questions:
         self._ids = itertools.count(1)
         self.gone = False
         """The page's input has ended, so nobody is there to answer anything."""
+        self._closed: str | None = None
 
     def someone_there(self) -> bool:
         return not self.gone
+
+    def close(self, why: str) -> None:
+        """The run was stopped: no question is put from now on, and every one waiting is taken
+        back with `why`. Under the lock `_put` takes, so a question being put as the stop comes
+        is either refused there or registered in time to be taken back here, and the loop never
+        waits on one with the Stop already pressed."""
+        with self._lock:
+            if self._closed is None:
+                self._closed = why
+        self.withdraw_all(why)
 
     def end(self) -> bool:
         """Nobody is at the page any more: no question is put from now on. False where that was
@@ -474,12 +491,16 @@ class Questions:
         with self._lock:
             if self.gone:
                 raise QuestionWithdrawn("nobody is at the page to answer it")
+            if self._closed is not None:
+                raise QuestionWithdrawn(self._closed)
             asked = _Question(next(self._ids), kind, question)
             if loop is not None:
                 asked.loop, asked.future = loop, loop.create_future()
             self._pending[asked.id] = asked
-        extra = {"detail": detail} if detail else {}
-        self._channel.send("ask", id=asked.id, kind=kind, question=question, **extra)
+            # under the lock, as its withdrawal is sent, so the page never reads a question's
+            # withdrawal before the question
+            extra = {"detail": detail} if detail else {}
+            self._channel.send("ask", id=asked.id, kind=kind, question=question, **extra)
         return asked
 
     def ask(
@@ -534,7 +555,7 @@ class Questions:
             if asked.answer is not None or asked.withdrawn is not None:
                 return
             asked.withdrawn = why
-        self._channel.send("asked", id=asked.id, withdrawn=why)
+            self._channel.send("asked", id=asked.id, withdrawn=why)
         self._wake(asked)
 
     def _wake(self, asked: _Question) -> None:
@@ -625,7 +646,7 @@ class Front:
         self._gone_stop = False
         self._finished = False
         self._drive: Callable[[Mapping[str, Any]], None] | None = None
-        self._halted = False
+        self._halted: str | None = None
         self._early: list[dict[str, Any]] = []
         """Drive's ops that arrived before its session took them (`attach_drive`)."""
         self.outcome: dict[str, Any] | None = None
@@ -828,10 +849,10 @@ class Front:
         with self._lock:
             if self.command != "drive":
                 return False
-            if op.get("op") in ("stop", "quit", "end"):
+            if op.get("op") in ("stop", "quit", "end") and self._halted is None:
                 # read once, before the robot connects: any of these sent by then means it never
                 # should (`halted`)
-                self._halted = True
+                self._halted = str(op.get("op"))
             drive = self._drive
             if drive is None:
                 # drive's session is still being set up: a line or a Stop sent now waits for it
@@ -873,9 +894,10 @@ class Front:
                 return None
             return PAGE_GONE if self._gone_stop else STOP_BUTTON
 
-    def halted(self) -> bool:
-        """Drive's: a Stop, a quit or the page's going away has come since the session began to
-        be set up. Read just before the robot connects, which it then never does."""
+    def halted(self) -> str | None:
+        """Drive's: the first of a Stop, a quit or the page's going away to come since the
+        session began to be set up, as its op (`stop`, `quit`, `end`), or None. Read just before
+        the robot connects, which it then never does."""
         with self._lock:
             return self._halted
 
@@ -906,12 +928,14 @@ class Front:
         if first and aio is not None:
             with contextlib.suppress(RuntimeError):  # the loop has already closed
                 aio.call_soon_threadsafe(self._stop_on_loop)
-        # Every stop, a repeat and `now` among them: a question put since the first is taken
-        # back too, since a run waiting on one holds its loop, where no second press reaches.
-        self.questions.withdraw_all(self._withdrawal())
+        # Every stop, a repeat and `now` among them, closes the questions: none is put from now
+        # on, and one waiting is taken back, since a run waiting on one holds its loop, where no
+        # second press reaches.
+        self.questions.close(self._withdrawal())
         if now and not first:
-            self._say("stop: quitting at once", warn=True)
+            # the quit first: a word can wait on a page that has stopped reading stderr
             _thread.interrupt_main()
+            self._say("stop: quitting at once", warn=True)
             return
         if not first:
             return
