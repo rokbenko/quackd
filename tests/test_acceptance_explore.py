@@ -122,3 +122,31 @@ async def test_favourite_spot_acceptance(tmp_path: Path) -> None:
         )
         assert wall < 60, report[-1]
     assert successes >= MIN_SUCCESSES, "\n".join(report)
+
+
+async def test_a_recorder_is_told_each_verb_as_it_starts(tmp_path: Path) -> None:
+    """A frame's caption names the verb before it, and `find` runs for most of a minute: the
+    recorder hears each verb as it starts, so the film says `find` while the duck explores."""
+    captions: list[str] = []
+    adapter = make_adapter("microduck:sim2d", seed=3, room=ROOM)
+    try:
+        result = await run_duck(
+            RunConfig(
+                duck=load_duck("find-the-ball"),
+                provider=FakeProvider.for_duck("find-the-ball"),
+                transport=adapter,
+                detector=ColorBlobDetector(),
+                runs_dir=tmp_path,
+                confirm=allow_all,
+                on_caption=captions.append,
+            )
+        )
+    finally:
+        await adapter.close()
+    assert result.outcome == "success", result.reason
+    assert [caption.split(": ", 1)[1] for caption in captions] == [
+        "find",
+        "go_to",
+        "say",
+        "go_to_place",
+    ], captions

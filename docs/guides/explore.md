@@ -6,6 +6,12 @@ starter tasks show both: `find-the-ball` and `favourite-spot`. Their rules are o
 [the Microduck's page](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
 and why they stop to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md).
 
+![A Microduck in its simulator finding the ball in the room it did not start in](../assets/explore.gif)
+
+*The scripted pilot, not a model:
+`quackd record find-the-ball --room two-rooms --llm fake --seed 3 --gif-size 320`. Left, the room
+from above, with the floor its map has not seen yet shaded. Right, the duck's camera.*
+
 > [!NOTE]
 > A real Microduck is offered neither yet. On odometry alone it keeps no map, and beside `mapd`
 > nothing publishes the radius of its body, which a way round a room is planned by. The duck says

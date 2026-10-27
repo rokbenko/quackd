@@ -103,6 +103,10 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Both run in the duck's simulator given a room, `quackd run find-the-ball --room two-rooms --yes`,
   and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
   ([docs/guides/explore.md](docs/guides/explore.md)).
+- **A recording names the verb that is running.** A frame's caption named the verb that ran
+  before it, so a verb that runs for most of a minute, as `find` does, was drawn all along under
+  the name of the one before. The run now tells the recorder each verb as it starts
+  (`RunConfig.on_caption`), and `docs/assets/explore.gif` is `find-the-ball` recorded with it.
 - **`quackd validate --room`.** Checks a task against the robot's simulator laid out in a room,
   which offers the place verbs, `explore` and `find`. A task that names no robot is checked
   against every verb something installed here offers, now a simulator in a room among them.

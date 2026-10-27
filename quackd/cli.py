@@ -2708,6 +2708,7 @@ def _run_impl(
         max_steps=max_steps,
         log=log,
         on_frame=_frame_hook(recorder, front),
+        on_caption=recorder.set_caption if recorder is not None else None,
         memory=robot_memory,
         fov_deg=fov_deg,
         acknowledge=None
