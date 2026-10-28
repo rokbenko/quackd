@@ -36,7 +36,6 @@ URL_FLAGS = (
     "--camera-url",
     "--decision-url",
     "--policy-url",
-    "--url",
 )
 """Flags that take a URL, which is a second way to type a password.
 

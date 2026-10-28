@@ -11,30 +11,26 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from quackd.lan.passport_mqtt import PassportPublisher, key_for, read_passport, topics
 from quackd.lan.passports import (
     announce_passport,
     beacon_from_info,
     discover_passports,
     passport_record,
 )
-from quackd.passport import PassportError, SigningKey, document, strict
+from quackd.passport import SigningKey, document, strict
 from quackd.passport.beacon import (
     SERVICE_TYPE,
     WELL_KNOWN_JSON,
     WELL_KNOWN_JWS,
     Beacon,
     beacon_from_txt,
-    sticker_url,
     txt_record,
 )
 from quackd.passport.serve import INBOX_PATH, PassportServer, Served, robot_paths
-from quackd.passport_qr import read_qr, write_qr
 
 KEY = SigningKey(bytes(range(32)))
 OTHER = SigningKey(bytes(range(64, 96)))
@@ -70,15 +66,6 @@ def test_a_beacon_of_another_version_on_no_port_or_with_a_relative_path_is_ignor
     assert beacon({"v": "1", "sha": "x" * 16, "path": "elsewhere"}) is None
     found = beacon({"v": "1", "sha": "x" * 16})
     assert found is not None and found.url() == f"http://1.2.3.4:8790{WELL_KNOWN_JSON}"
-
-
-def test_a_sticker_url_carries_the_short_id_in_its_fragment() -> None:
-    assert sticker_url("https://example.org/r.json", KEY.short_id) == (
-        f"https://example.org/r.json#rp={KEY.short_id}"
-    )
-    assert sticker_url("https://example.org/r.json#old", None) == "https://example.org/r.json"
-    with pytest.raises(PassportError):
-        sticker_url("ftp://example.org/r.json", KEY.short_id)
 
 
 # ── the HTTP server ─────────────────────────────────────────────────────────────────────
@@ -270,53 +257,7 @@ class FakeClient:
             self.on_message(self, None, FakeMessage(topic, self.broker.retained[topic]))
 
 
-def test_a_published_passport_is_retained_with_a_last_will_set_before_connecting() -> None:
-    broker = FakeBroker()
-    client = FakeClient(broker)
-    raw = _passport(KEY, "duck-01")
-    publisher = PassportPublisher(KEY.short_id, raw, host="broker.local", client=client).start()
-    passport_topic, status_topic, _inbox = topics(KEY.short_id)
-    assert client.calls.index("will_set") < client.calls.index("connect")
-    assert client.will == (status_topic, b"offline", 1, True)
-    assert broker.retained == {passport_topic: raw, status_topic: b"online"}
-    publisher.close()
-    assert broker.retained[status_topic] == b"offline"
-    assert read_passport("broker.local", KEY.short_id, client=FakeClient(broker)) == raw
-
-
-def test_nothing_retained_is_a_refusal_not_a_hang() -> None:
-    with pytest.raises(PassportError) as refused:
-        read_passport("broker.local", "0" * 16, client=FakeClient(FakeBroker()), timeout_s=0.05)
-    assert refused.value.rule == "5.4"
-
-
-def test_a_robot_with_no_key_is_keyed_by_its_uuid() -> None:
-    uuid = "urn:uuid:4F1C2A1E-9D4B-4C8E-8F3A-2B6D5E7A9C10"
-    assert key_for(uuid, None) == "4f1c2a1e9d4b4c8e8f3a2b6d5e7a9c10"
-    assert key_for(KEY.did, KEY.short_id) == KEY.short_id
-
-
 # ── a QR sticker ────────────────────────────────────────────────────────────────────────
-
-
-def test_a_sticker_round_trips_through_opencv(tmp_path: Path) -> None:
-    text = sticker_url("https://example.org/robots/duck-01/robot-passport.json", KEY.short_id)
-    modules, pixels = write_qr(text, tmp_path / "sticker.png")
-    assert modules == 37, "a sticker URL this long fits a version 5 code, as discovery.md says"
-    assert pixels == (37 + 8) * 10
-    assert read_qr(tmp_path / "sticker.png") == text
-
-
-def test_a_picture_with_no_code_is_refused(tmp_path: Path) -> None:
-    import cv2
-    import numpy as np
-
-    blank = tmp_path / "blank.png"
-    cv2.imwrite(str(blank), np.full((200, 200), 255, dtype=np.uint8))
-    with pytest.raises(PassportError, match="no QR code"):
-        read_qr(blank)
-    with pytest.raises(PassportError):
-        read_qr(tmp_path / "missing.png")
 
 
 # ── ROS 2, through rosbridge ────────────────────────────────────────────────────────────
@@ -352,35 +293,6 @@ class FakeTopic:
 
     def unadvertise(self) -> None:
         pass
-
-
-async def test_a_ros_robots_passport_is_read_without_publishing_a_thing() -> None:
-    from quackd_rosbridge.ws import read_passport as read_ros
-
-    ros = FakeRos()
-    made: list[FakeTopic] = []
-
-    def factory(_client: Any, name: str, message_type: str) -> FakeTopic:
-        made.append(FakeTopic(name, message_type, '{"passport":"0.1"}'))
-        return made[-1]
-
-    text = await read_ros("ws://cart.local:9090", ros=ros, topic_factory=factory, timeout_s=0.5)
-    assert text == '{"passport":"0.1"}'
-    assert [(t.name, t.message_type) for t in made] == [("/robot_passport", "std_msgs/msg/String")]
-    assert not made[0].published and made[0].unsubscribed and ros.terminated
-
-
-async def test_a_ros_robot_with_no_passport_says_so() -> None:
-    from quackd.transport.base import TransportError
-    from quackd_rosbridge.ws import read_passport as read_ros
-
-    with pytest.raises(TransportError, match="robot_passport"):
-        await read_ros(
-            "ws://cart.local:9090",
-            ros=FakeRos(),
-            topic_factory=lambda _c, n, t: FakeTopic(n, t, None),
-            timeout_s=0.2,
-        )
 
 
 def test_a_beacons_url_prefers_ipv4_and_brackets_ipv6() -> None:

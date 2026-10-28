@@ -12,13 +12,11 @@ import asyncio
 import contextlib
 import errno
 import glob
-import hashlib
 import json
 import os
 import re
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -637,7 +635,6 @@ def _header_rows(
     sees: bool = True,
     policy: Mapping[str, Any] | None = None,
     play: str | None = None,
-    talk: str | None = None,
     effort: str | None = None,
 ) -> list[tuple[str, Any]]:
     """The things worth knowing before a run starts, and nothing else: who pilots, which body,
@@ -662,8 +659,6 @@ def _header_rows(
         rows.append(("policy", policy_row(policy)))
     if play is not None:
         rows.append(("play", play))
-    if talk is not None:
-        rows.append(("talk", f"robots that meet this one say hello at {talk}"))
     if dry_run:
         rows.append(
             (
@@ -1817,9 +1812,6 @@ def _run_impl(
     map_address: str | None = None,
     controller: str | None = None,
     play: bool | None = None,
-    talk: bool = False,
-    meet: Sequence[str] = (),
-    talk_port: int = 8790,
     effort: str | None = None,
 ) -> None:
     from quackd.adapters.base import AdapterError as _AdapterError
@@ -2027,12 +2019,6 @@ def _run_impl(
         or (duck is not None and duck.frontmatter.flock is not None)
         or len(specs) > 1
     )
-    if several and (talk or meet):
-        _fail(
-            "--talk speaks for one robot, and a flock's members meet nobody outside it yet",
-            hint="run one robot with --talk",
-        )
-        return
     # A host is one machine: one camera, one detector, the health of one board. A fleet is
     # several bodies, and one --host would have to be every member's camera at once, so it is
     # refused here with --image and --by-hand, before anything connects. `--robots` counts even
@@ -2703,11 +2689,6 @@ def _run_impl(
         # keyed by adapter:backend, so a simulated duck never inherits a real one's notes,
         # or by the registered name, so two ducks of one kind keep separate notes
         robot_memory = RobotMemory(here.memory_key, memory_dir)
-    nearby = None
-    talk_server = None
-    if talk or meet:
-        ref = here.entry.name if here.entry is not None else f"{spec.adapter}:{spec.backend}"
-        nearby, talk_server = _talk_for_run(ref, meet, registry_dir, port=talk_port)
     front = _FRONT
     cfg = RunConfig(
         duck=duck,
@@ -2741,7 +2722,6 @@ def _run_impl(
         host=hello.record(board.address) if board is not None and hello is not None else None,
         play=play,
         decision_frames=frames,
-        nearby=nearby,
         front="jsonl" if front is not None else None,
     )
     # Nothing is left that can refuse the run, and the body is connected next, so this is
@@ -2768,7 +2748,6 @@ def _run_impl(
                 play=play_row(
                     *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
                 ),
-                talk=nearby.inbox if nearby is not None else None,
                 effort=effort,
             ),
             hint="Ctrl-C or q stops the duck. Press it twice to quit at once."
@@ -2796,8 +2775,6 @@ def _run_impl(
             return None
         loop = AgentLoop(cfg)
         ran.append(loop)
-        if nearby is not None:
-            _grant_courtesies(nearby, loop.executor, registry_dir)
         # The first moment there is a directory to write into. Everything printed before
         # now went into the capture's buffer and is carried across by `attach`.
         ui.attach_capture(loop.run_dir)
@@ -2850,9 +2827,6 @@ def _run_impl(
             raise typer.Exit(code=1) from None
         _fail(str(e))
         return
-    finally:
-        if talk_server is not None:
-            talk_server.close()
     if result is None and front is not None:
         stopped = front.stopped_before_start() or "stopped"
         front.finished("aborted", stopped)
@@ -3758,28 +3732,6 @@ _DRIVE_MAXSTEPS = typer.Option(
 )
 # No variable, as `--policy-url` has none: a `.env` line or a robots.json field would make every
 # run of one robot play, and the default prompt is the one this flag must never change.
-_TALK = typer.Option(
-    False,
-    "--talk",
-    help="Serve this robot's passport with a talk inbox while it runs, on port 8790, so robots "
-    "that meet it can say hello. The pilot sees them under Robots nearby and can tell them "
-    "things (docs/passport/quackd.md).",
-    rich_help_panel="Robot",
-)
-_MEET: list[str] = typer.Option(
-    [],
-    "--meet",
-    help="Say hello, as the run starts, to the robot whose passport is at this URL or "
-    "HOST[:PORT]. Repeat it for several. Implies --talk.",
-    rich_help_panel="Robot",
-)
-_TALK_PORT = typer.Option(
-    8790,
-    "--talk-port",
-    help="The port --talk serves the robot's passport and inbox on, for a second robot on the "
-    "same machine.",
-    rich_help_panel="Robot",
-)
 _PLAY = typer.Option(
     None,
     "--play/--no-play",
@@ -4030,9 +3982,6 @@ def run(
     decision_frames: bool | None = _DECISION_FRAMES,
     controller: str | None = _CONTROLLER,
     flock: str | None = _FLOCK,
-    talk: bool = _TALK,
-    meet: list[str] = _MEET,
-    talk_port: int = _TALK_PORT,
     run_name: str | None = _RUN_NAME,
     price: str | None = _PRICE,
     memory: bool = _MEMORY,
@@ -4088,9 +4037,6 @@ def run(
             decision_frames=decision_frames,
             controller=controller,
             flock=flock,
-            talk=talk,
-            meet=meet,
-            talk_port=talk_port,
             run_name=run_name,
             price=price,
             memory=memory,
@@ -4145,9 +4091,6 @@ def _run_command(
     decision_frames: bool | None,
     controller: str | None,
     flock: str | None,
-    talk: bool,
-    meet: list[str],
-    talk_port: int,
     run_name: str | None,
     price: str | None,
     memory: bool,
@@ -4206,9 +4149,6 @@ def _run_command(
             map_address=map_address,
             controller=controller,
             play=play,
-            talk=talk,
-            meet=meet,
-            talk_port=talk_port,
             effort=effort,
         )
 
@@ -5447,14 +5387,6 @@ def serve_mcp(
     memory: bool = _MEMORY,
     memory_dir: str | None = _MEMORY_DIR,
     log: bool | None = _LOG_MCP,
-    talk: bool = typer.Option(
-        False,
-        "--talk",
-        help="Serve each robot's passport with a talk inbox, on port 8790, and add robot_nearby: "
-        "the robots that met these, as much of each as its tier allows.",
-        rich_help_panel="Robot",
-    ),
-    talk_port: int = _TALK_PORT,
     controller: str | None = typer.Option(
         None,
         "--controller",
@@ -5502,8 +5434,6 @@ def serve_mcp(
             async_chunks=async_chunks,
             room=room,
             map_address=map_address,
-            talk=talk,
-            talk_port=talk_port,
             # the robots are connected in there, so a retiring backend is said from there,
             # just before the server's start connects a robot on it, in the line `run` and
             # `doctor` print for it
@@ -8903,50 +8833,15 @@ def places_rm(
 
 passport_app = typer.Typer(
     name="passport",
-    help="Robot Passport: what a robot tells a robot it has never met. Build a robot's "
-    "passport from its manifest, check anybody's, and say who owns your robots and how to "
-    "stop them. docs/passport/ has the protocol.",
+    help="Robot Passport: what a robot tells a robot it has never met. Check anybody's "
+    "passport the way a robot reads it. docs/passport/ has the protocol.",
     no_args_is_help=True,
 )
 app.add_typer(passport_app, name="passport", rich_help_panel="Robots")
 
-#: Where `quackd passport serve` listens, and where `quackd meet HOST` looks, unless told.
+#: Where a robot's onboard service listens for talk unless its robot.yaml says otherwise, and
+#: where `quackd passport check HOST:PORT` looks when it is given no port.
 PASSPORT_PORT = 8790
-
-_PASSPORT_ROBOT = typer.Option(
-    ..., "--robot", "-r", help="A registered name, or <adapter>:<backend>."
-)
-
-
-def _passport_for(
-    robot: str, registry_dir: str | None, *, talk: list[dict[str, Any]] | None = None
-) -> tuple[dict[str, Any], Any, bool]:
-    """The passport quackd builds for `robot`, its key file's record, and whether that key
-    was made just now. A robot gets its key the first time anything asks for its passport."""
-    from quackd import __version__
-    from quackd.adapters.base import AdapterError
-    from quackd.adapters.factory import describe
-    from quackd.adapters.passport import built_passport
-    from quackd.memory import robot_slug
-    from quackd.passport import PassportError
-    from quackd.passport_store import PassportStore, StoreError
-    from quackd.registry import Registry, RegistryError, resolve_robot_ref
-
-    try:
-        resolved = resolve_robot_ref(robot, Registry(registry_dir))
-        manifest = describe(resolved.spec)
-        store = PassportStore(registry_dir)
-        name = robot_slug(resolved.memory_key)
-        doc, record, created = built_passport(
-            manifest, store, name, software_version=__version__, talk=talk
-        )
-    except (AdapterError, RegistryError, StoreError) as e:
-        _fail(str(e), hint=_ADAPTER_HINT)
-        raise  # unreachable: _fail exits
-    except PassportError as e:
-        _fail(f"the passport quackd built for {name} breaks {e.rule}: {e}")
-        raise  # unreachable: _fail exits
-    return doc, (store, name, record), created
 
 
 def _shown(value: Any) -> Any:
@@ -9041,221 +8936,34 @@ def _print_reading(view: dict[str, Any], *, title: str) -> None:
         ui.console.print(Text(f"  {note}", style=ui.STYLES["muted"]), soft_wrap=True)
 
 
-def _grant_courtesies(talker: Any, executor: Any, registry_dir: str | None) -> None:
-    """Let `talker` grant the courtesies its owner allows, through the run's executor, on the
-    loop that executor runs on (`quackd.passport_courtesy`)."""
-    from quackd.passport_courtesy import Courtesy
-    from quackd.passport_store import PassportStore
-
-    owner = PassportStore(registry_dir).owner()
-    talker.courtesy = Courtesy(
-        executor,
-        asyncio.get_running_loop(),
-        stranger_pauses=owner.stranger_pauses,
-        same_owner=owner.courtesy,
-    )
-
-
-def _talk_for_run(
-    ref: str, meet: Sequence[str], registry_dir: str | None, *, port: int = PASSPORT_PORT
-) -> tuple[Any, Any]:
-    """The talk end a run's robot speaks through (`quackd run --talk`): its passport served with
-    an inbox, on port 8790 unless `--talk-port` says otherwise, for as long as the run lasts, and
-    a hello said to every robot `--meet` names before the pilot's first turn. Refused, the run
-    never starts."""
-    from quackd.lan.announce import local_ip
-    from quackd.passport import PassportError, document, strict
-    from quackd.passport.serve import INBOX_PATH, PassportServer, Served
-    from quackd.passport.talk import MAX_HELLO_BYTES
-    from quackd.passport_talk import Talker, Talkers, route_to
-
-    try:
-        server = PassportServer([], port=port, inbox_limit=MAX_HELLO_BYTES).start()
-    except OSError as e:
-        _fail(
-            f"cannot listen for talk on port {port}: {e}",
-            hint="is something else serving on it? --talk-port picks another",
-        )
-        raise  # unreachable: _fail exits
-    inbox = f"http://{local_ip()}:{server.port}{INBOX_PATH}"
-    doc, (store, name, record), _created = _passport_for(
-        ref, registry_dir, talk=[{"via": "http", "url": inbox}]
-    )
-    token = document.sign(doc, record.key)
-    talker = Talker(name, record.key, token, store)
-    talker.inbox = inbox
-    server.update([Served(name, strict.dumps(doc), token)])
-    server.listen(Talkers([talker]).inbox)
-    for source in meet:
-        try:
-            found = _meet_source(source)
-            reading = document.read(found.data)
-            if isinstance(reading, list):
-                raise PassportError("2.7", f"{source} serves several robots: meet one by its URL")
-            if found.url is None:
-                raise PassportError("5.7", f"{source} is no web host, and talk goes to one")
-            talker.meet(reading, route_to(reading, found.url))
-            ui.console.print(Text(f"{name} met {ui.printable(reading.name)} at {source}"))
-        except PassportError as e:
-            server.close()
-            _fail(f"--meet {ui.printable(source)}: refused under {e.rule}: {ui.printable(str(e))}")
-    return talker, server
-
-
-def _heard_line(robot: str) -> Any:
-    """What a person at this host is told as robots talk to `robot`: who, in which tier, and the
-    words themselves, a stranger's included, since a person is who they go to."""
-
-    def said(heard: Any) -> None:
-        who = f"{ui.printable(heard.passport_name)} ({heard.tier})"
-        lines = {
-            "met": f"{robot} met {who}, which proved it holds its key",
-            "said": f"{who} to {robot}: {ui.printable(heard.text or '')}",
-            "left": f"{who} said bye to {robot}",
-            "quiet": f"{who} went quiet, and {robot}'s session with it is over",
-            "asked": f"{who} asked {robot} for {_asked_text(heard.details)}",
-            "share": f"{who} told {robot} something it saw: {_shared_text(heard.details)}",
-            "answer": f"{who} answered {robot}: {_answer_text(heard.details)}",
-        }
-        ui.console.print(Text(lines.get(heard.kind, f"{who}: {heard.kind}")), soft_wrap=True)
-
-    return said
-
-
-def _asked_text(details: dict[str, Any] | None) -> str:
-    d = details or {}
-    args = d.get("args") or {}
-    what = f"{d.get('skill')} {ui.printable(json.dumps(args))}" if args else str(d.get("skill"))
-    return f"{what}: {d.get('result')}, {ui.printable(str(d.get('reason', '')))}"
-
-
-def _shared_text(details: dict[str, Any] | None) -> str:
-    d = details or {}
-    where = f", at {ui.printable(str(d['place']))}" if d.get("place") else ""
-    when = f", {d['age_s']} s ago" if d.get("age_s") is not None else ""
-    return f"{ui.printable(str(d.get('about')))}: {ui.printable(str(d.get('fact')))}{where}{when}"
-
-
-def _answer_text(details: dict[str, Any] | None) -> str:
-    d = details or {}
-    reason = f", {ui.printable(str(d['reason']))}" if d.get("reason") else ""
-    return f"{d.get('result')}{reason}"
-
-
-def _judged_view(reading: Any, registry_dir: str | None) -> dict[str, Any]:
-    """A reading's view, with the tier this quackd places it in and why
-    (docs/passport/trust.md#the-four-tiers)."""
-    from quackd.passport_store import PassportStore, StoreError
-    from quackd.passport_trust import issuer_names, judge
-
-    view: dict[str, Any] = reading.view()
-    store = PassportStore(registry_dir)
-    try:
-        judgement = judge(reading, store)
-        names = issuer_names(store)
-    except StoreError as e:
-        _fail(str(e))
-        raise  # unreachable: _fail exits
-    view["tier"] = judgement.tier
-    view["tier_why"] = judgement.why
-    view["warnings"] = list(judgement.warnings)
-    for stamp in view["stamps"]:
-        stamp["known_as"] = names.get(stamp["iss"] or "")
-    return view
-
-
-@passport_app.command("show")
-def passport_show(
-    robot: str = _PASSPORT_ROBOT,
-    registry_dir: str | None = _REGISTRY_DIR,
-    as_json: bool = typer.Option(
-        False,
-        "--json",
-        help="The passport itself, as one line of compact JSON on stdout, for a script.",
-        rich_help_panel="Output",
-    ),
-    as_jws: bool = typer.Option(
-        False,
-        "--jws",
-        help="The signed passport, as its compact JWS on stdout, for a script.",
-        rich_help_panel="Output",
-    ),
-    out: Path | None = typer.Option(
-        None,
-        "--out",
-        help="Write the passport to this file as exactly the bytes quackd serves, so it has the "
-        "same digest: the signed JWS for a name ending .jws, the JSON otherwise. A static host "
-        "serves both, under robot-passport.json and robot-passport.jws.",
-        rich_help_panel="Output",
-    ),
-) -> None:
-    """Show the passport quackd builds for a robot, signed with the robot's own key."""
-    from quackd.passport import document, strict
-
-    doc, (store, name, record), created = _passport_for(robot, registry_dir)
-    if created:
-        ui.err_console.print(
-            Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
-        )
-    raw = strict.dumps(doc)
-    token = document.sign(doc, record.key)
-    if out is not None:
-        body = token.encode("ascii") if out.suffix == ".jws" else raw
-        try:
-            out.write_bytes(body)
-        except OSError as e:
-            _fail(f"could not write {out}: {e}")
-        ui.err_console.print(
-            Text(
-                f"wrote {out}: {len(body)} bytes, digest {hashlib.sha256(raw).hexdigest()[:16]}",
-                style=ui.STYLES["muted"],
-            )
-        )
-    if as_json:
-        print(raw.decode("utf-8"))
-        return
-    if as_jws:
-        print(token)
-        return
-    if out is not None:
-        return
-    reading = document.read_jws(token)
-    _print_reading(_judged_view(reading, registry_dir), title="passport")
-    if len(raw) > document.WRITER_BYTES:
-        ui.console.print(
-            _warn_line(
-                f"{len(raw)} bytes, over the {document.WRITER_BYTES} a writer should keep to"
-            )
-        )
-
-
 @passport_app.command("check")
 def passport_check(
     source: str = typer.Argument(
-        ..., help="A passport to check: a file, - for stdin, or an http(s) URL."
+        ...,
+        help="A passport to check: a file, - for stdin, an http(s) URL, or a robot's "
+        "address as HOST:PORT or an IP address.",
     ),
     as_json: bool = _JSON,
-    registry_dir: str | None = _REGISTRY_DIR,
 ) -> None:
-    """Check a passport the way a reader would, and show what it proves and what it claims.
+    """Check a passport the way a robot does, and show what it proves and what it claims.
 
-    Works on anybody's: a file, a URL a person typed or a sticker holds, or stdin. A refusal
-    names the rule of the specification it broke, and exits 1."""
+    Works on anybody's: a file, stdin, a URL, or a robot on this network by its address. A
+    refusal names the rule of the specification it broke, and exits 1."""
     from quackd.passport import PassportError, document, fetch
 
     try:
-        if source.startswith(("http://", "https://")):
-            aim = fetch.target(source)
-            found = _Found(fetch.fetch_passport(aim.url), aim.url, aim.short_id)
+        url = _passport_url(source)
+        if url is not None:
+            data = fetch.fetch_passport(url)
         elif source == "-":
-            found = _Found(sys.stdin.buffer.read(fetch.MAX_WIRE_BYTES + 1))
+            data = sys.stdin.buffer.read(fetch.MAX_WIRE_BYTES + 1)
         else:
             path = Path(source)
             if not path.is_file():
                 _fail(f"{ui.printable(source)}: no such file")
             with path.open("rb") as f:
-                found = _Found(f.read(fetch.MAX_WIRE_BYTES + 1))
-        reading = document.read(found.data)
+                data = f.read(fetch.MAX_WIRE_BYTES + 1)
+        reading = document.read(data)
     except PassportError as e:
         _fail(
             f"refused under {e.rule}: {ui.printable(str(e))}",
@@ -9263,866 +8971,33 @@ def passport_check(
         )
         return
     if isinstance(reading, list):
-        if as_json:
-            for entry in reading:
-                print(json.dumps({"url": entry.url, "name": entry.name, "id": entry.id}))
-            return
-        t = ui.table(f"an index of {len(reading)} passports")
-        for column in ("name", "url", "id", ""):
-            t.add_column(column)
-        for entry, (_name, url, note) in zip(reading, _index_rows(reading, found.url), strict=True):
-            t.add_row(
-                Text(ui.printable(entry.name or "")),
-                Text(ui.printable(url)),
-                Text(entry.id or "", style=ui.STYLES["muted"]),
-                Text(note, style=ui.STYLES["warn"]),
-            )
-        ui.console.print(t)
+        _fail(f"an index of {len(reading)} passports: check one robot's passport at a time")
         return
-    _kept(found, reading, source)
-    view = _judged_view(reading, registry_dir)
+    view = reading.view()
     if as_json:
         print(json.dumps(view))
         return
     _print_reading(view, title="checked")
 
 
-@passport_app.command("set")
-def passport_set(
-    robot: str = _PASSPORT_ROBOT,
-    estop: str | None = typer.Option(
-        None, "--estop", help="What kind of e-stop it has: button, remote, power or none."
-    ),
-    how_to_stop: str | None = typer.Option(
-        None, "--how-to-stop", help="One sentence for a person next to it, 120 characters at most."
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Say how a person stops this robot, which no manifest can know.
-
-    Left unsaid, a passport reads as the worst case: no e-stop, and nobody said how."""
-    from quackd.passport.document import ESTOPS
-    from quackd.passport_store import StoreError
-
-    if estop is not None and estop not in ESTOPS:
-        _fail(f"--estop {estop!r} is not one of {', '.join(ESTOPS)}")
-    if how_to_stop is not None and not 0 < len(how_to_stop) <= 120:
-        _fail("--how-to-stop is one sentence of 1 to 120 characters")
-    _doc, (store, name, record), created = _passport_for(robot, registry_dir)
-    if created:
-        ui.err_console.print(
-            Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
-        )
-    if estop is not None:
-        record.estop = estop
-    if how_to_stop is not None:
-        record.how_to_stop = how_to_stop
-    try:
-        store.save_robot(name, record)
-    except StoreError as e:
-        _fail(str(e))
-    said = f"e-stop: {record.estop or 'none said'}, {record.how_to_stop or 'how to stop: not said'}"
-    ui.console.print(Text(f"{name}: {said}"))
+#: A robot's address as `passport check` takes it: an IPv4 or bracketed IPv6 address, with or
+#: without a port, or any host name with one. A bare name is read as a file.
+_ROBOT_ADDRESS = re.compile(
+    r"(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?|[A-Za-z0-9.-]+:\d{1,5}"
+)
 
 
-@passport_app.command("owner")
-def passport_owner(
-    label: str | None = typer.Option(
-        None, "--label", help="How your robots' passports name you, 64 characters at most."
-    ),
-    contact: str | None = typer.Option(
-        None,
-        "--contact",
-        help="A URL, a mailto: address or a role address, 200 characters at most. Not a "
-        "personal phone number or a home address: docs/passport/privacy.md says why.",
-    ),
-    stranger_pauses: bool | None = typer.Option(
-        None,
-        "--stranger-pauses/--no-stranger-pauses",
-        help="Whether a robot nobody here knows may ask your robots for a pause at all.",
-    ),
-    courtesy: str | None = typer.Option(
-        None,
-        "--courtesy",
-        help="What a robot stamped by your owner key or by an owner you pinned, or one this "
-        "quackd drives, may ask your robots for: pause, identify, both comma separated, or none.",
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Say who owns the robots this quackd drives, or show what you said.
-
-    An empty value removes it. Both are optional, and a passport without an owner is still read.
-    --no-stranger-pauses and --courtesy set what robots your robots meet may ask them for
-    (docs/passport/trust.md#the-four-tiers)."""
-    from dataclasses import replace
-
-    from quackd.passport_store import PassportStore, StoreError
-
-    store = PassportStore(registry_dir)
-    listed: tuple[str, ...] | None = None
-    if courtesy is not None:
-        listed = tuple(c.strip() for c in courtesy.split(",") if c.strip() and c.strip() != "none")
-        if any(c not in ("pause", "identify") for c in listed):
-            _fail("--courtesy lists pause and identify, or none")
-    try:
-        owner = store.owner()
-        changes: dict[str, Any] = {}
-        if label is not None:
-            if len(label) > 64:
-                _fail("--label is 64 characters at most")
-            changes["label"] = label or None
-        if contact is not None:
-            if len(contact) > 200:
-                _fail("--contact is 200 characters at most")
-            changes["contact"] = contact or None
-        if stranger_pauses is not None:
-            changes["stranger_pauses"] = stranger_pauses
-        if listed is not None:
-            changes["courtesy"] = listed
-        if changes:
-            # every other field, the owner key among them, as it was
-            owner = replace(owner, **changes)
-            store.save_owner(owner)
-    except StoreError as e:
-        _fail(str(e))
-        return
-    rows: list[tuple[str, Any]] = [
-        ("label", owner.label or "not said"),
-        ("contact", owner.contact or "not said"),
-        (
-            "strangers",
-            "may ask for a pause" if owner.stranger_pauses else "may not ask for a pause",
-        ),
-        ("same owner", "may ask for " + (", ".join(owner.courtesy) or "nothing")),
-    ]
-    if owner.key is not None:
-        rows.append(("key", Text(f"{owner.key.did}  (short id {owner.key.short_id})")))
-    else:
-        rows.append(("key", "none yet: quackd passport stamp makes one"))
-    ui.console.print(ui.run_header("owner", rows, hint=str(store.owner_path)))
-
-
-@passport_app.command("stamp")
-def passport_stamp(
-    robot: str | None = typer.Option(
-        None, "--robot", "-r", help="A robot this quackd drives: its stamp goes in its passport."
-    ),
-    did: str | None = typer.Option(
-        None,
-        "--did",
-        help="Stamp another robot's key instead, one that lives on the robot itself, and print "
-        "the stamp for it to carry.",
-    ),
-    days: int = typer.Option(
-        365, "--days", min=1, max=365, help="How long the stamp holds, a year at most."
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Stamp a robot's key with your owner key: this robot is mine.
-
-    A stamp vouches for the key, never for the passport's contents, so the robot can change
-    its passport without a new one. Two robots that carry your stamp know each other on sight.
-    Your owner key is made the first time you stamp anything: back it up."""
-    from quackd.passport import PassportError, stamps
-    from quackd.passport.document import MAX_STAMPS
-    from quackd.passport.keys import public_from_did
-    from quackd.passport_store import PassportStore, StoreError
-
-    if (robot is None) == (did is None):
-        _fail("stamp one robot: --robot NAME for one this quackd drives, or --did for another")
-    # what is to be stamped first, so a typo never leaves an owner key made for nothing
-    if did is not None:
-        try:
-            public_from_did(did)
-        except PassportError as e:
-            _fail(f"refused under {e.rule}: {ui.printable(str(e))}")
-    else:
-        assert robot is not None
-        _doc, (store, name, record), created = _passport_for(robot, registry_dir)
-        if created:
-            ui.err_console.print(
-                Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
-            )
-    store = PassportStore(registry_dir)
-    try:
-        owner_key, made = store.owner_key_or_new()
-    except StoreError as e:
-        _fail(str(e))
-        raise  # unreachable: _fail exits
-    if made:
-        ui.err_console.print(
-            Text(
-                f"made your owner key in {store.owner_path}: back it up, since losing it means "
-                "stamping every robot again",
-                style=ui.STYLES["warn"],
-            )
-        )
-    subject = did if did is not None else record.key.did
-    try:
-        token = stamps.make(owner_key, subject, days=days)
-    except (PassportError, ValueError) as e:
-        _fail(ui.printable(str(e)))
-        raise  # unreachable: _fail exits
-    if did is not None:
-        print(token)
-        return
-    # a fresh stamp replaces this owner key's old one, and stamps that no longer count, an
-    # earlier owner key's expired one, go, so a passport never fills up with dead stamps
-    kept = []
-    for s in record.stamps:
-        held = stamps.check(s, subject=record.key.did)
-        if held.counts and held.iss != owner_key.did:
-            kept.append(s)
-    record.stamps = [*kept, token][-MAX_STAMPS:]
-    try:
-        store.save_robot(name, record)
-    except StoreError as e:
-        _fail(str(e))
-    ui.console.print(
-        Text(f"stamped {name} with your owner key {owner_key.short_id}, for {days} days")
-    )
-
-
-@passport_app.command("known")
-def passport_known(
-    as_json: bool = _JSON,
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """List the robots and owners you pinned."""
-    from quackd.passport.keys import short_id_of
-    from quackd.passport_store import PassportStore, StoreError
-
-    store = PassportStore(registry_dir)
-    try:
-        pins = store.known()
-    except StoreError as e:
-        _fail(str(e))
-        return
-    if as_json:
-        for p in pins:
-            print(json.dumps({"id": p.id, "name": p.name, "kind": p.kind, "pinned": p.pinned}))
-        return
-    if not pins:
-        ui.console.print(
-            Text("nothing pinned: quackd meet SOURCE --pin pins a robot", style=ui.STYLES["muted"])
-        )
-        return
-    t = ui.table(f"pinned ({len(pins)})")
-    for column in ("name", "kind", "short id", "pinned"):
-        t.add_column(column)
-    for p in pins:
-        t.add_row(Text(ui.printable(p.name)), p.kind, short_id_of(p.id) or "", p.pinned[:10])
-    ui.console.print(t)
-
-
-@passport_app.command("forget")
-def passport_forget(
-    which: str = typer.Argument(..., help="A pinned robot's or owner's name, short id or id."),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Forget a pin: the next meeting with that robot, or that owner's robots, starts again as
-    a stranger's."""
-    from quackd.passport_store import PassportStore, StoreError
-
-    store = PassportStore(registry_dir)
-    try:
-        gone = store.forget(which)
-    except StoreError as e:
-        _fail(ui.printable(str(e)), hint="quackd passport known lists the pins and their ids")
-        return
-    if not gone:
-        _fail(
-            f"nothing pinned is called {ui.printable(which)}",
-            hint="quackd passport known lists the pins",
-        )
-    for p in gone:
-        ui.console.print(Text(f"forgot {p.kind} {ui.printable(p.name)} ({p.id})"))
-
-
-@passport_app.command("serve")
-def passport_serve(
-    robots: list[str] = typer.Option(
-        ...,
-        "--robot",
-        "-r",
-        help="A registered name or <adapter>:<backend>. Repeat it to serve several robots, "
-        "each under /robots/<name>/ with an index at the well-known URL.",
-    ),
-    bind: str = typer.Option("0.0.0.0", "--bind", help="The address to listen on."),
-    port: int = typer.Option(PASSPORT_PORT, "--port", help="The port to serve on."),
-    announce: bool = typer.Option(
-        False,
-        "--announce",
-        help=r"Advertise each passport over DNS-SD as _robot-passport._tcp (needs quackd\[lan]).",
-    ),
-    mqtt: str | None = typer.Option(
-        None,
-        "--mqtt",
-        help=r"HOST[:PORT] of an MQTT broker to keep each passport retained on (needs "
-        r"quackd\[lan]).",
-    ),
-    talk: bool = typer.Option(
-        False,
-        "--talk",
-        help="Also listen for talk on an inbox each passport names, and say what is heard: "
-        "hello, say and bye from robots that met these.",
-    ),
-    for_s: float | None = typer.Option(
-        None, "--for", help="Seconds to serve (default: until Ctrl-C)."
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Serve robots' passports at the well-known URL, for any robot or person to read.
-
-    Nothing but the passports is served, and nothing is fetched. --announce adds a DNS-SD
-    beacon per robot beside quackd's own, --mqtt keeps each passport retained on a broker with
-    an online status whose last will is offline, and --talk listens for robots that say hello."""
-    import time
-
-    from quackd.lan import LanNotInstalled
-    from quackd.lan.announce import local_ip
-    from quackd.passport import document, strict
-    from quackd.passport.beacon import WELL_KNOWN_JSON
-    from quackd.passport.serve import INBOX_PATH, PassportServer, Served, robot_paths
-    from quackd.passport.talk import MAX_HELLO_BYTES
-    from quackd.passport_talk import Talker, Talkers
-
-    if len(set(robots)) != len(robots):
-        _fail("each --robot once")
-    try:
-        server = PassportServer([], host=bind, port=port, inbox_limit=MAX_HELLO_BYTES).start()
-    except OSError as e:
-        _fail(f"cannot serve on {bind}:{port}: {e}", hint="--port picks another")
-        return
-    address = local_ip() if bind in ("0.0.0.0", "") else bind
-    inbox = f"http://{address}:{server.port}{INBOX_PATH}"
-    if mqtt and not (mqtt.partition(":")[2] or "1883").isdigit():
-        server.close()
-        _fail(f"--mqtt {mqtt!r} is not BROKER[:PORT]")
-    broker, _, broker_port_text = (mqtt or "").partition(":")
-    broker_port = int(broker_port_text or 1883)
-    built = []
-    talkers: dict[str, Any] = {}
-    for robot in robots:
-        doc, (store, name, record), created = _passport_for(robot, registry_dir)
-        if talk:
-            from quackd.lan.passport_mqtt import inbox_url
-
-            channels = [{"via": "http", "url": inbox}]
-            if mqtt:
-                channels.append(
-                    {"via": "mqtt", "url": inbox_url(broker, broker_port, record.key.did)}
-                )
-            doc, (store, name, record), _made = _passport_for(robot, registry_dir, talk=channels)
-        if created:
-            ui.err_console.print(
-                Text(f"made a key for {name} in {store.robot_path(name)}", style=ui.STYLES["muted"])
-            )
-        token = document.sign(doc, record.key)
-        built.append((name, record, strict.dumps(doc), token))
-        if talk:
-            talkers[name] = Talker(name, record.key, token, store, on_heard=_heard_line(name))
-    server.update([Served(name, raw, token) for name, _record, raw, token in built])
-    if talkers:
-        server.listen(Talkers(list(talkers.values())).inbox)
-    if announce and (address.startswith("127.") or address == "::1"):
-        server.close()
-        _fail(
-            f"a passport served on {bind} can be read on this machine only, so there is nothing "
-            "to announce",
-            hint="--bind 0.0.0.0, or an address on the network, serves it to others",
-        )
-    closers: list[Any] = [server]
-    rows: list[tuple[str, Any]] = []
-    try:
-        for name, record, raw, token in built:
-            path = WELL_KNOWN_JSON if len(built) == 1 else robot_paths(name)[0]
-            digest = hashlib.sha256(raw).hexdigest()
-            rows.append((name, f"http://{address}:{server.port}{path}"))
-            if announce:
-                from quackd.lan.passports import announce_passport, passport_record
-
-                closers.append(
-                    announce_passport(
-                        passport_record(
-                            instance=name,
-                            port=server.port,
-                            short_id=record.key.short_id,
-                            digest=digest,
-                            path=path,
-                            addresses=(address,),
-                        )
-                    )
-                )
-            if mqtt:
-                from quackd.lan.passport_mqtt import PassportPublisher
-
-                talker = talkers.get(name)
-                publisher = PassportPublisher(
-                    record.key.short_id,
-                    token.encode("ascii"),
-                    host=broker,
-                    port=broker_port,
-                    on_inbox=talker.inbox_mqtt if talker is not None else None,
-                )
-                if talker is not None:
-                    talker.mqtt = publisher
-                closers.append(publisher.start())
-    except (LanNotInstalled, OSError, ValueError) as e:
-        for closer in reversed(closers):
-            with contextlib.suppress(Exception):
-                closer.close()
-        _fail(str(e))
-        return
-    if len(built) > 1:
-        rows.append(("index", f"http://{address}:{server.port}{WELL_KNOWN_JSON}"))
-    rows.append(("dns-sd", "announced as _robot-passport._tcp" if announce else "off"))
-    rows.append(("mqtt", f"retained on {mqtt}" if mqtt else "off"))
-    rows.append(("talk", inbox if talk else "off"))
-    if talk and mqtt:
-        rows.append(("", f"and each robot's inbox on {mqtt}, robot-passport/<short id>/inbox"))
-    ui.console.print(
-        ui.run_header(
-            f"serving {len(built)} passport{'s' if len(built) > 1 else ''}",
-            rows,
-            hint="Ctrl-C to stop" if for_s is None else f"stopping in {for_s:g} s",
-        )
-    )
-    try:
-        with ui.spinner("serving passports"):
-            if for_s is None:
-                while True:
-                    time.sleep(1.0)
-            else:
-                time.sleep(for_s)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        for closer in reversed(closers):
-            with contextlib.suppress(Exception):
-                closer.close()
-        ui.console.print(Text("stopped", style=ui.STYLES["muted"]))
-
-
-@passport_app.command("qr")
-def passport_qr(
-    robot: str = _PASSPORT_ROBOT,
-    url: str = typer.Option(
-        ..., "--url", help="Where the passport is served, the http(s) URL the sticker leads to."
-    ),
-    out: Path | None = typer.Option(
-        None, "--out", help="The PNG to write (default: <name>-passport.png here)."
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Write a QR sticker for a robot: its passport's URL, with #rp= and its short id.
-
-    A reader that scans it checks the passport it finds has that short id, so a sticker moved
-    to another robot, or a passport moved under a sticker, is noticed."""
-    from quackd.passport import PassportError
-    from quackd.passport.beacon import sticker_url
-    from quackd.passport_qr import write_qr
-
-    _doc, (_store, name, record), _created = _passport_for(robot, registry_dir)
-    try:
-        text = sticker_url(url, record.key.short_id)
-        target = out if out is not None else Path(f"{name}-passport.png")
-        modules, pixels = write_qr(text, target)
-    except (PassportError, OSError) as e:
-        _fail(str(e))
-        return
-    ui.console.print(
-        Text(f"wrote {target}: a {modules}x{modules} QR code, {pixels} px a side, holding {text}")
-    )
-
-
-@dataclass(frozen=True)
-class _Found:
-    """A passport as `quackd meet` or `check` read it: its bytes, the URL it came from, and
-    what that place promised it would be, a sticker's short id (spec 5.2) or the key an MQTT
-    topic is named for (5.4)."""
-
-    data: bytes
-    url: str | None = None
-    promise: str | None = None
-    rule: str = "5.2"
-    broker: tuple[str, int] | None = None
-
-
-_PICTURES = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
-_ROS_NAMESPACE = re.compile(r"[A-Za-z][A-Za-z0-9_]*(/[A-Za-z][A-Za-z0-9_]*)*")
-
-
-def _meet_source(source: str) -> _Found:
-    """What `quackd meet` was pointed at, read."""
+def _passport_url(source: str) -> str | None:
+    """The URL `passport check` fetches for `source`: a URL as typed, a robot's address as its
+    well-known URL, and None for stdin or a file on this computer."""
     from quackd.passport import fetch
-    from quackd.passport.errors import PassportError
 
     if source.startswith(("http://", "https://")):
-        aim = fetch.target(source)
-        return _Found(fetch.fetch_passport(aim.url), aim.url, aim.short_id)
-    if source.startswith("mqtt://"):
-        from quackd.lan.passport_mqtt import read_passport
-
-        broker, _, key = source.removeprefix("mqtt://").partition("/")
-        host, _, mqtt_port = broker.partition(":")
-        if not key:
-            raise PassportError("5.4", "an mqtt:// source ends with the robot's key")
-        if not host or not (mqtt_port or "1883").isdigit():
-            raise PassportError("5.4", f"{source!r} is not mqtt://BROKER[:PORT]/KEY")
-        port = int(mqtt_port or 1883)
-        return _Found(read_passport(host, key, port=port), None, key, "5.4", (host, port))
-    if source.startswith("ros://"):
-        try:
-            from quackd_rosbridge.ws import read_passport as read_ros
-        except ImportError as e:
-            raise PassportError("5.5", "reading ROS needs quackd[rosbridge]") from e
-        from quackd.passport.beacon import ROS_TOPIC
-        from quackd.transport.base import TransportError
-
-        # ros://HOST[:PORT]/NAMESPACE reads the topic in that robot's namespace (spec 5.5)
-        address, _, namespace = source.removeprefix("ros://").partition("/")
-        namespace = namespace.strip("/")
-        if namespace and not _ROS_NAMESPACE.fullmatch(namespace):
-            raise PassportError("5.5", f"{namespace!r} is not a ROS namespace")
-        topic = f"/{namespace}{ROS_TOPIC}" if namespace else ROS_TOPIC
-        try:
-            text = asyncio.run(read_ros("ws://" + address, topic=topic))
-        except TransportError as e:
-            raise PassportError("5.5", str(e)) from e
-        return _Found(text.encode("utf-8"))
-    path = Path(source)
-    if path.suffix.lower() in _PICTURES:
-        if not path.is_file():
-            raise PassportError("5.2", f"{source}: no such picture")
-        from quackd.passport_qr import read_qr
-
-        aim = fetch.target(read_qr(path))
-        return _Found(fetch.fetch_passport(aim.url), aim.url, aim.short_id)
-    if path.is_file():
-        # a passport somebody handed over, read the way passport check reads one
-        with path.open("rb") as f:
-            return _Found(f.read(fetch.MAX_WIRE_BYTES + 1))
-    host, _, host_port = source.partition(":")
-    if not host or not (host_port or "0").isdigit() or any(c in source for c in "/\\ "):
-        raise PassportError(
-            "5.7", f"{source!r} is not a URL, a HOST[:PORT], a picture, a file or a broker"
-        )
-    aim = fetch.target(f"http://{host}:{host_port or PASSPORT_PORT}")
-    return _Found(fetch.fetch_passport(aim.url), aim.url, aim.short_id)
-
-
-def _kept(found: _Found, reading: Any, source: str) -> None:
-    """Refuse a passport that is not the one the place it came from promised.
-
-    A sticker's `#rp=` promises a key, so an unsigned passport cannot keep that promise however
-    its id reads: anybody can copy an id, and only a signature says who wrote it."""
-    from quackd.lan.passport_mqtt import key_for
-
-    if found.promise is None:
-        return
-    if found.rule == "5.4":
-        actual = key_for(reading.id, reading.short_id)
-        if actual != found.promise:
-            _fail(
-                f"refused under 5.4: the topic is the robot {ui.printable(found.promise)}'s, "
-                f"and this passport is {actual}'s"
-            )
-    elif found.promise != reading.short_id:
-        _fail(
-            f"refused under 5.2: {ui.printable(source)} promised short id "
-            f"{ui.printable(found.promise)}, and this passport's is {reading.short_id or 'none'}"
-        )
-    if reading.short_id is not None and not reading.signed:
-        _fail(
-            f"refused under {found.rule}: {ui.printable(source)} promised the key "
-            f"{ui.printable(found.promise)}, and this passport is unsigned, so nothing shows "
-            "that key wrote it"
-        )
-
-
-def _index_rows(entries: list[Any], base: str | None) -> list[tuple[str, str, str]]:
-    """An index's entries as name, URL and a note, each URL resolved against the URL that served
-    the index. An entry on any other host is shown but not offered: an index lists robots on its
-    own host (spec 2.7), and a reader never fetches anywhere else on an index's word."""
-    from urllib.parse import urljoin, urlsplit
-
-    rows = []
-    for entry in entries:
-        url, note = entry.url, ""
-        if base is not None:
-            url = urljoin(base, entry.url)
-            here, there = urlsplit(base), urlsplit(url)
-            if (here.scheme, here.netloc) != (there.scheme, there.netloc):
-                note = "on another host, so not offered (2.7)"
-        rows.append((entry.name or "", url, note))
-    return rows
-
-
-@app.command(rich_help_panel="Robots")
-def meet(
-    source: str = typer.Argument(
-        ...,
-        help="Where the robot's passport is: a URL, a HOST[:PORT], a picture of its QR "
-        "sticker, mqtt://BROKER[:PORT]/KEY, or ros://HOST[:PORT] for a robot on rosbridge.",
-    ),
-    as_json: bool = _JSON,
-    pin: bool = typer.Option(
-        False, "--pin", help="Pin this robot's key once you have read it, so next time it is known."
-    ),
-    pin_owner: bool = typer.Option(
-        False,
-        "--pin-owner",
-        help="Pin the owner key that stamped this robot, so every robot it stamps is trusted as "
-        "the same owner's.",
-    ),
-    yes: bool = typer.Option(False, "--yes", help="Pin without asking first."),
-    as_robot: str | None = typer.Option(
-        None,
-        "--as",
-        help="Say hello as one of your robots, a registered name or <adapter>:<backend>, so "
-        "each proves it holds its key, then say bye.",
-    ),
-    say: str | None = typer.Option(
-        None, "--say", help="One thing to say once the hello is done, 400 characters at most."
-    ),
-    ask: str | None = typer.Option(
-        None,
-        "--ask",
-        help="Ask for a courtesy once the hello is done: pause:SECONDS, or identify, or "
-        "identify:light|sound|motion. The robot's own policy decides.",
-    ),
-    share: str | None = typer.Option(
-        None,
-        "--share",
-        help="Tell the robot something your robot saw once the hello is done, as ABOUT: FACT, "
-        "say 'the kitchen door: open'. 64 and 200 characters at most.",
-    ),
-    place: str | None = typer.Option(
-        None,
-        "--place",
-        help="Where what --share tells was seen: somewhere both robots can recognise, never a "
-        "coordinate. 64 characters at most.",
-    ),
-    registry_dir: str | None = _REGISTRY_DIR,
-) -> None:
-    """Meet a robot: find its passport, read it the way a reader would, and show it.
-
-    The passport is fetched only from where you pointed, with no redirects and nothing past
-    12 KB, and every claim is labelled with what it proves. Nothing about the robot is kept unless
-    you pin it, and only a signed passport can be pinned."""
-    from quackd.lan import LanNotInstalled
-    from quackd.passport import PassportError, document
-
-    if (say is not None or ask is not None or share is not None) and as_robot is None:
-        _fail("--say, --ask and --share speak as one of your robots: --as NAME says which")
-    if place is not None and share is None:
-        _fail("--place says where what --share tells was seen")
-    asked = _parse_ask(ask) if ask is not None else None
-    shared = _parse_share(share, place) if share is not None else None
-    if say is not None and not 0 < len(say) <= 400:
-        _fail("--say is 1 to 400 characters")
-    try:
-        found = _meet_source(source)
-        reading = document.read(found.data)
-    except (PassportError, LanNotInstalled) as e:
-        rule = f" under {e.rule}" if isinstance(e, PassportError) else ""
-        _fail(
-            f"refused{rule}: {ui.printable(str(e))}",
-            hint="docs/passport/discovery.md says where a passport is found",
-        )
-        return
-    if isinstance(reading, list):
-        t = ui.table(f"{ui.printable(source)} serves {len(reading)} passports")
-        for column in ("name", "url", ""):
-            t.add_column(column)
-        for name, url, note in _index_rows(reading, found.url):
-            t.add_row(
-                Text(ui.printable(name)),
-                Text(ui.printable(url)),
-                Text(note, style=ui.STYLES["warn"]),
-            )
-        t.caption = Text("quackd meet <url> for one of them", style=ui.STYLES["muted"])
-        t.caption_justify = "left"
-        ui.console.print(t)
-        return
-    _kept(found, reading, source)
-    view = _judged_view(reading, registry_dir)
-    if as_json:
-        print(json.dumps(view))
-    else:
-        _print_reading(view, title="met")
-    if pin or pin_owner:
-        _pin_after_meeting(
-            reading,
-            pin=pin,
-            pin_owner=pin_owner,
-            yes=yes,
-            registry_dir=registry_dir,
-            as_json=as_json,
-        )
-    if as_robot is not None:
-        _talk_to(
-            reading,
-            found,
-            as_robot,
-            say=say,
-            ask=asked,
-            share=shared,
-            registry_dir=registry_dir,
-            as_json=as_json,
-        )
-
-
-def _parse_share(text: str, place: str | None) -> dict[str, Any]:
-    """`--share` as the members of a `share`: `ABOUT: FACT`, and where, when `--place` says."""
-    about, separator, fact = (part.strip() for part in text.partition(": "))
-    if not separator or not 0 < len(about) <= 64 or not 0 < len(fact) <= 200:
-        _fail(
-            f"--share {text!r} is not ABOUT: FACT, 64 and 200 characters at most, "
-            "say 'the kitchen door: open'"
-        )
-    if place is not None and not 0 < len(place) <= 64:
-        _fail("--place is 1 to 64 characters")
-    return {"about": about, "fact": fact, "place": place}
-
-
-def _parse_ask(text: str) -> tuple[str, dict[str, Any]]:
-    """`--ask` as a skill and its arguments: `pause:5`, `identify`, `identify:sound`."""
-    skill, _, arg = text.partition(":")
-    if skill == "pause" and arg.isdigit() and 1 <= int(arg) <= 10:
-        return "pause", {"seconds": int(arg)}
-    if skill == "identify" and arg in ("", "light", "sound", "motion"):
-        return "identify", {"how": arg} if arg else {}
-    _fail(f"--ask {text!r} is not pause:SECONDS (1 to 10) or identify[:light|sound|motion]")
-    raise AssertionError  # unreachable: _fail exits
-
-
-def _talk_to(
-    reading: Any,
-    found: Any,
-    as_robot: str,
-    *,
-    say: str | None,
-    registry_dir: str | None,
-    as_json: bool,
-    ask: tuple[str, dict[str, Any]] | None = None,
-    share: dict[str, Any] | None = None,
-) -> None:
-    """Say hello to the robot `meet` read, as `as_robot`, perhaps say one thing, ask for a
-    courtesy or tell it something seen, and say bye.
-
-    The hello goes only to a talk channel the passport names on the host or broker it came
-    from, since a passport is no reason to contact any other (spec 5.7), so a passport read
-    from a file or a ROS robot cannot be talked to this way. Over a broker this robot visits
-    with an inbox of its own for as long as the talk lasts, and retains nothing there."""
-    from quackd.passport import PassportError, document
-    from quackd.passport_talk import Talker, route_on_broker, route_to
-
-    if not reading.signed:
-        _fail("an unsigned passport cannot be talked to: nothing would show who answers")
-    if found.url is None and found.broker is None:
-        _fail(
-            "talk goes to the host or broker a passport came from, and this one came from neither",
-            hint="meet the robot at its URL, HOST[:PORT] or mqtt://BROKER/KEY",
-        )
-    told = ui.err_console if as_json else ui.console
-    doc, (store, name, record), _created = _passport_for(as_robot, registry_dir)
-    talker = Talker(name, record.key, document.sign(doc, record.key), store)
-    visit = None
-    try:
-        if found.broker is not None:
-            from quackd.lan.passport_mqtt import PassportPublisher
-
-            host, port = found.broker
-            route = route_on_broker(reading, host, port)
-            visit = PassportPublisher(
-                record.key.short_id, None, host=host, port=port, on_inbox=talker.inbox_mqtt
-            ).start()
-            talker.mqtt = visit
-        else:
-            route = route_to(reading, found.url)
-        session = talker.meet(reading, route)
-        shown = ui.printable(reading.name)
-        told.print(Text(f"hello: {shown} proved it holds its key, and so did {name}"))
-        if say is not None:
-            talker.say(session.peer, say)
-            told.print(Text(f"{name} to {shown}: {say}"), soft_wrap=True)
-        if ask is not None:
-            skill, args = ask
-            result, reason = talker.ask(session.peer, skill, args)
-            what = f"{skill} {json.dumps(args)}" if args else skill
-            told.print(
-                Text(f"{name} asked {shown} for {what}: {result}, {ui.printable(reason)}"),
-                soft_wrap=True,
-            )
-        if share is not None:
-            talker.share(session.peer, share["about"], share["fact"], place=share["place"])
-            where = f", at {share['place']}" if share["place"] else ""
-            told.print(
-                Text(f"{name} told {shown} {share['about']}: {share['fact']}{where}"),
-                soft_wrap=True,
-            )
-        talker.bye(session.peer)
-        told.print(Text(f"bye: {name} ended the session"))
-    except PassportError as e:
-        _fail(f"refused under {e.rule}: {ui.printable(str(e))}", hint="docs/passport/talk.md")
-    finally:
-        if visit is not None:
-            visit.close()
-
-
-def _pin_after_meeting(
-    reading: Any,
-    *,
-    pin: bool,
-    pin_owner: bool,
-    yes: bool,
-    registry_dir: str | None,
-    as_json: bool = False,
-) -> None:
-    """Pin what `meet` was asked to, after a person said yes: a robot's own key, the owner key
-    that stamped it, or both. A pin is the one thing in Robot Passport only a person makes.
-
-    An owner's label is the robot's word, not the owner's, since no owner signs it, so a
-    person is shown the owner key's short id and the label only as what the robot calls it.
-    Under `--json` the questions and what was pinned go to stderr, leaving stdout the JSON."""
-    from quackd.passport.keys import short_id_of
-    from quackd.passport_store import PassportStore, Pin, StoreError
-
-    if not reading.signed:
-        _fail(
-            "an unsigned passport cannot be pinned: anybody can copy an id, and only a signature "
-            "says who wrote it"
-        )
-    store = PassportStore(registry_dir)
-    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    wanted: list[Pin] = []
-    if pin:
-        wanted.append(Pin(reading.id, reading.name, "robot", now))
-    if pin_owner:
-        owners = [s for s in reading.counted_stamps() if s.rel == "owner" and s.iss]
-        if not owners:
-            _fail(f"{reading.name} carries no owner stamp that counts, so there is no owner to pin")
-        label = reading.document.get("owner", {}).get("label") or f"the owner of {reading.name}"
-        wanted.append(Pin(owners[0].iss, label, "owner", now))
-    said = ui.err_console if as_json else ui.console
-    for item in wanted:
-        if item.kind == "owner":
-            what = (
-                f"owner key {short_id_of(item.id)}, which {ui.printable(reading.name)} calls "
-                f"{ui.printable(item.name)}"
-            )
-        else:
-            what = f"robot {ui.printable(item.name)} ({item.id})"
-        if not yes and not typer.confirm(f"pin {what}?", default=False, err=as_json):
-            said.print(Text(f"not pinned: {what}", style=ui.STYLES["muted"]))
-            continue
-        try:
-            store.pin(item)
-        except StoreError as e:
-            _fail(str(e))
-        said.print(Text(f"pinned {what}, kept in {store.known_path}"))
+        return fetch.target(source)
+    if source != "-" and not Path(source).exists() and _ROBOT_ADDRESS.fullmatch(source):
+        has_port = source.rsplit("]", 1)[-1].count(":") == 1
+        return fetch.target(f"http://{source}" if has_port else f"http://{source}:{PASSPORT_PORT}")
+    return None
 
 
 @app.command(rich_help_panel="LAN")

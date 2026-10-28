@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from quackd.passport.errors import PassportError
 
@@ -22,7 +21,6 @@ WELL_KNOWN_JSON = "/.well-known/robot-passport.json"
 WELL_KNOWN_JWS = "/.well-known/robot-passport.jws"
 DIGEST_CHARS = 16
 #: The ROS 2 topic a robot publishes its passport on, latched, in its own namespace (spec 5.5).
-ROS_TOPIC = "/robot_passport"
 
 
 def txt_record(*, short_id: str | None, digest: str, path: str = WELL_KNOWN_JSON) -> dict[str, str]:
@@ -96,15 +94,3 @@ def beacon_from_txt(
         port=port,
         addresses=addresses,
     )
-
-
-def sticker_url(url: str, short_id: str | None) -> str:
-    """The URL a QR sticker holds: the passport's, with `#rp=` and the short id (spec 5.2).
-
-    The fragment never travels to the server, so a static host needs nothing configured, and a
-    reader that finds it checks the passport it fetched has that short id."""
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise PassportError("5.2", f"{url!r} is not an http or https URL")
-    fragment = f"rp={short_id}" if short_id else ""
-    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, fragment))

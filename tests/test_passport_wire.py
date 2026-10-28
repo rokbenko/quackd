@@ -107,7 +107,7 @@ def test_an_answer_that_is_not_http_is_a_refusal_and_not_a_traceback() -> None:
     with host(lambda conn: conn.sendall(b"SSH-2.0-OpenSSH_9.6\r\n")) as url:
         with pytest.raises(PassportError, match="did not answer in HTTP"):
             fetch.fetch(url)
-        met = runner.invoke(app, ["meet", url])
+        met = runner.invoke(app, ["passport", "check", url])
     assert met.exit_code == 1
     assert met.exception is None or isinstance(met.exception, SystemExit), met.exception
     assert "did not answer in HTTP" in " ".join(met.output.split())
@@ -269,12 +269,8 @@ def test_what_a_passport_says_cannot_move_the_cursor_or_redraw_a_line(tmp_path: 
 
 
 def test_markup_in_a_name_is_shown_as_the_text_it_is(tmp_path: Path) -> None:
-    path = tmp_path / "index.json"
-    path.write_text(
-        json.dumps(
-            {"passport": "0.1", "robots": [{"name": "[/]", "url": "/robots/a/robot-passport.json"}]}
-        )
-    )
+    path = tmp_path / "passport.json"
+    path.write_text(json.dumps({"passport": "0.1", "id": KEY.did, "name": "[/]"}))
     checked = runner.invoke(app, ["passport", "check", str(path)])
     assert checked.exit_code == 0, checked.output
     assert "[/]" in checked.output
