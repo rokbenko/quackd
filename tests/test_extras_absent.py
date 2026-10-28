@@ -202,6 +202,8 @@ assert capped == {{"a": 1.0}}, capped
 import quackd.radio
 import quackd.radio.links
 import quackd.radio.loop
+import quackd.radio.proximity
+import quackd.radio.rotation
 import quackd.radio.sim
 try:
     quackd.radio.open_radio("bluez")
