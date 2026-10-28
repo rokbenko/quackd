@@ -142,9 +142,9 @@ for, so this page stops at 6. JetPack 7 brought the Orin family onto Ubuntu 24.0
 this page is written for.
 
 `quackd onboard` is the exception to all of this, because it is quackd itself. It needs Python
-3.11 or newer, which JetPack 6 does not ship, so it runs on a Python uv installs for it and
-leaves JetPack's own `python3` to the host daemon. It takes an Orin or a Thor on JetPack 6 or 7,
-L4T 36, 38 or 39, and refuses a Xavier and JetPack 5 with the reason
+3.11 or newer, which JetPack 6 does not ship, so there it runs on a Python uv fetches for it,
+with `--python 3.12`, and leaves JetPack's own `python3` to the host daemon. It takes an Orin or
+a Thor on JetPack 6 or 7, L4T 36, 38 or 39, and refuses a Xavier and JetPack 5 with the reason
 ([Robot Passport on the board](#robot-passport-on-the-board)).
 
 ## Find out what you have
@@ -554,8 +554,9 @@ What the board needs for them:
   tree and `/etc/nv_tegra_release`, and refuses a Xavier and JetPack 5 with the reason. On any
   other computer it refuses and names `--board sim`, which stands in for a robot's computer on a
   laptop and says so in the passport it signs.
-- **Python 3.11 or newer.** JetPack 6 ships 3.10, so the tool runs on a Python uv installs for
-  it, and JetPack's own `python3` is left to the host daemon.
+- **Python 3.11 or newer.** JetPack 6 ships 3.10, so there the second command is
+  `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the
+  tool. JetPack's own `python3` is left to the host daemon.
 - **A Bluetooth adapter BlueZ can drive,** advertising and accepting a link at once.
   `quackd onboard preflight` says what the adapter, `bluetoothd` and your permissions allow
   before anything is installed.
