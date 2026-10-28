@@ -15,7 +15,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import struct
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -337,10 +339,107 @@ def vectors() -> dict[str, str]:
     return files
 
 
+# ── Bluetooth LE (spec 5.6): an advert, and the frames of a link ────────────────────────────
+
+SPEC_URL = "https://github.com/rokbenko/quackd/blob/main/docs/passport/spec.md"
+#: Beacon ids are 8 random bytes in a real advert, and these are fixed so the vectors are too.
+#: Robot B's is the lower, so it is B that dials A once it hears A's advert.
+BEACON_A = bytes(range(8, 16))
+BEACON_B = bytes(range(8))
+LINK_TAG = 0x5EED0001
+FLAG_LAN, FLAG_LINK = 0x01, 0x02
+
+
+def ble_uuid(name: str) -> uuid.UUID:
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"{SPEC_URL}#{name}")
+
+
+def frame(kind: int, body: bytes) -> str:
+    """A link frame: framing 1 and its kind in one byte, the link's tag, then its body."""
+    return (struct.pack(">BI", 0x10 | kind, LINK_TAG) + body).hex()
+
+
+def ble_vectors() -> dict[str, str]:
+    """Robot A's advert as the 31 bytes it puts on the air, and a link from B to A: one frame of
+    each kind, and a request split into the 20-byte datagrams every link can carry."""
+    service_data = bytes((1, FLAG_LAN | FLAG_LINK)) + BEACON_A
+    service_ad = ble_uuid("ble-service").bytes[::-1] + service_data  # a UUID goes little-endian
+    advert = bytes((2, 0x01, 0x06, 1 + len(service_ad), 0x21)) + service_ad
+    hello = struct.pack(">HI", 182, 16_384)
+    frames = [
+        {
+            "name": "open",
+            "kind": "OPEN",
+            "beacon_id": BEACON_B.hex(),
+            "datagram_size": 182,
+            "max_message": 16_384,
+            "hex": frame(1, BEACON_B + hello),
+        },
+        {
+            "name": "accept",
+            "kind": "ACCEPT",
+            "beacon_id": BEACON_A.hex(),
+            "datagram_size": 182,
+            "max_message": 16_384,
+            "hex": frame(2, BEACON_A + hello),
+        },
+        {"name": "refuse-busy", "kind": "REFUSE", "reason": 1, "hex": frame(3, bytes((1,)))},
+        {
+            "name": "data-response-204",
+            "kind": "DATA",
+            "msg_id": 1,
+            "seq": 0,
+            "role": 1,
+            "status": 204,
+            "media": 0,
+            "total": 0,
+            "chunk_hex": "",
+            "hex": frame(4, struct.pack(">HHBHBI", 1, 0, 1, 204, 0, 0)),
+        },
+        {
+            "name": "abort-out-of-order",
+            "kind": "ABORT",
+            "msg_id": 0x8002,
+            "reason": 2,
+            "hex": frame(5, struct.pack(">HB", 0x8002, 2)),
+        },
+        {"name": "close-far", "kind": "CLOSE", "reason": 1, "hex": frame(6, bytes((1,)))},
+    ]
+    body = b"a hello, split into frames"
+    first, later = 20 - 5 - 4 - 8, 20 - 5 - 4
+    datagrams = [frame(4, struct.pack(">HHBHBI", 1, 0, 0, 0, 1, len(body)) + body[:first])]
+    for seq, at in enumerate(range(first, len(body), later), start=1):
+        datagrams.append(frame(4, struct.pack(">HH", 1, seq) + body[at : at + later]))
+    link = {
+        "warning": "TEST VALUES. A real beacon id is random and a real tag is drawn per link.",
+        "uuids": {name: str(ble_uuid(name)) for name in ("ble-service", "ble-rx", "ble-tx")},
+        "advert": {
+            "file": "ble-advert.hex",
+            "beacon_id": BEACON_A.hex(),
+            "flags": ["LAN", "LINK"],
+        },
+        "tag": LINK_TAG,
+        "frames": frames,
+        "message": {
+            "datagram_size": 20,
+            "msg_id": 1,
+            "role": 0,
+            "status": 0,
+            "media": 1,
+            "body": body.decode("ascii"),
+            "datagrams": datagrams,
+        },
+    }
+    return {
+        "ble-advert.hex": advert.hex() + "\n",
+        "ble-link.json": json.dumps(link, indent=2) + "\n",
+    }
+
+
 def main(argv: list[str]) -> int:
     check = "--check" in argv
     stale = []
-    for name, text in vectors().items():
+    for name, text in {**vectors(), **ble_vectors()}.items():
         path = OUT / name
         if check:
             if not path.exists() or path.read_text(encoding="utf-8") != text:
