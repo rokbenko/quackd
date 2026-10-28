@@ -1,14 +1,15 @@
 """Talk, step one: messages, and the hello that opens a session (spec 6.1 to 6.4).
 
-A message is a small JSON object, signed as a compact JWS when its sender holds a key. Two robots
-open a session with a three-step hello in which each signs a nonce the other has just made up,
-and every later message carries both nonces, so one replayed from another session matches
-nothing and is refused. Nothing here needs a clock that agrees with anybody else's, only one that
-counts the seconds a session has been quiet.
+A message is a small JSON object, signed as a compact JWS by its sender's robot key: an unsigned
+one is refused. Two robots open a session with a three-step hello in which each carries its
+owner-signed passport and signs a nonce the other has just made up, so each proves it holds the
+key its passport names, and every later message carries both nonces, so one replayed from
+another session matches nothing and is refused. A session needs a clock that counts the seconds
+it has been quiet, and reading a passport needs one that knows the date (spec 4.5).
 
 The transport is the caller's. An endpoint takes what arrived and returns what to send back, so
-the same session runs over an HTTP inbox, an MQTT topic or a test, and quackd's glue decides what
-a person and a pilot get to see of it.
+the same session runs over an HTTP inbox, a Bluetooth link or a test, and quackd's glue decides
+what a person and a pilot get to see of it.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from quackd.passport import jws, strict
-from quackd.passport.document import MAJOR, VERSION, Reading, check_id, read_json, read_jws
+from quackd.passport.document import MAJOR, VERSION, Reading, check_id, read_jws
 from quackd.passport.errors import PassportError
 from quackd.passport.keys import SigningKey
 
@@ -52,6 +53,11 @@ _VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 _NONCE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")
 _SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+#: The beacon id a robot's radio advertises now: eight random bytes, which rotate (spec 5.3).
+_BEACON = re.compile(r"^[0-9a-f]{16}$")
+#: The runtime members a hello may carry beside its passport, which change without the owner
+#: signing anything: the software that wrote it, its beacon id and how to reach it (6.3).
+RUNTIME = ("software", "beacon", "reach")
 
 
 @dataclass(frozen=True)
@@ -105,13 +111,9 @@ def envelope(
     return doc
 
 
-def seal(doc: dict[str, Any], key: SigningKey | None) -> str:
-    """A message as it goes on the wire: a compact JWS when its sender holds a key, and the JSON
-    text of it when not, which only a robot whose id is a `urn:uuid` may send."""
-    if key is None:
-        if str(doc.get("from", "")).startswith("did:key:"):
-            raise ValueError("a robot with a key signs everything it sends")
-        return strict.dumps(doc).decode("utf-8")
+def seal(doc: dict[str, Any], key: SigningKey) -> str:
+    """A message as it goes on the wire: a compact JWS signed by the robot key its `from` holds,
+    since every message is signed (spec 6.1)."""
     if doc.get("from") != key.did:
         raise ValueError("a message is signed by the key its from holds")
     return jws.sign(strict.dumps(doc), key, MESSAGE_TYP)
@@ -122,30 +124,27 @@ def media_type(wire: str) -> str:
 
 
 def read_message(data: bytes | str, *, limit: int = MAX_HELLO_BYTES) -> Message:
-    """A message as it arrived, signed or not, checked against spec 6.1 and its type's body.
+    """A message as it arrived, checked against spec 6.1 and its type's body.
 
-    A signature is verified before anything in the message is believed, a signed message must be
-    signed by the key its `from` holds, and a robot with a key signs everything it sends: an
-    unsigned message naming a `did:key` is refused, since anybody can write that id."""
+    Every message is signed by its sender's robot key, and the signature is verified before
+    anything in the message is believed: an unsigned one is refused, and a signed one must be
+    signed by the key its `from` holds."""
     raw = data.encode("utf-8") if isinstance(data, str) else data
     if len(raw) > limit:
         raise PassportError("6.1", f"{len(raw)} bytes, over the {limit} a message may be")
     text = raw.decode("utf-8", errors="replace")
-    kid: str | None = None
-    if jws.looks_like_jws(text):
-        verified = jws.verify_compact(text, MESSAGE_TYP, rule="6.1", payload_limit=limit)
-        doc = strict.loads(verified.payload, limit=limit)
-        kid = verified.kid
-    else:
-        doc = strict.loads(raw, limit=limit)
+    if not jws.looks_like_jws(text):
+        raise PassportError("6.1", "an unsigned message: every one is signed by its robot key")
+    verified = jws.verify_compact(text, MESSAGE_TYP, rule="6.1", payload_limit=limit)
+    doc = strict.loads(verified.payload, limit=limit)
+    kid = verified.kid
     if not isinstance(doc, dict):
         raise PassportError("6.1", "a message is a JSON object")
     sender, msg, version = doc.get("from"), doc.get("msg"), doc.get("passport")
     if not isinstance(version, str) or not _VERSION.match(version):
         raise PassportError("6.1", f"passport is {version!r:.40}, not a MAJOR.MINOR version")
     if int(version.split(".")[0]) != MAJOR:
-        # answered only at an id: the sender becomes a topic on a broker, and a made-up one
-        # (`x+y`, `victim/passport#`) named a topic that was not its inbox, or none at all
+        # answered only at an id, never at whatever text a message wrote in its `from`
         try:
             answer_to: str | None = _id(sender, "from")
         except PassportError:
@@ -157,10 +156,8 @@ def read_message(data: bytes | str, *, limit: int = MAX_HELLO_BYTES) -> Message:
     if not isinstance(kind, str) or not 0 < len(kind) <= 16:
         raise PassportError("6.1", "type is not a short string")
     sender = _id(sender, "from")
-    if kid is not None and kid != sender:
+    if kid != sender:
         raise PassportError("6.1", "it was signed by a key other than the one its from holds")
-    if kid is None and sender.startswith("did:key:"):
-        raise PassportError("6.1", "it names a did:key and is unsigned, and anybody can write that")
     to = doc.get("to")
     if to is not None and to != "*":
         to = _id(to, "to")
@@ -186,7 +183,7 @@ def read_message(data: bytes | str, *, limit: int = MAX_HELLO_BYTES) -> Message:
         raise PassportError(
             "6.1", f"{len(raw)} bytes, over the {MAX_MESSAGE_BYTES} any message but a hello may be"
         )
-    message = Message(kind, sender, msg, body, kid is not None, to, answers, pair, version)
+    message = Message(kind, sender, msg, body, True, to, answers, pair, version)
     if kind in _BODIES:
         _BODIES[kind](message)
     return message
@@ -226,6 +223,37 @@ def _hello(m: Message) -> None:
             raise PassportError("6.3", "the first hello carries a nonce of 16 random bytes")
     else:
         _in_session(m, "6.3")
+    _runtime(m.body)
+
+
+def _runtime(body: dict[str, Any]) -> None:
+    """A hello's runtime members (6.3): which software wrote it, the beacon id its radio
+    advertises now, and how to reach it, a few short scalars that no owner signs."""
+    software = body.get("software")
+    if software is not None and (not isinstance(software, str) or not 0 < len(software) <= 64):
+        raise PassportError("6.3", "software is not text of 1 to 64 characters")
+    beacon = body.get("beacon")
+    if beacon is not None and (not isinstance(beacon, str) or not _BEACON.match(beacon)):
+        raise PassportError("6.3", "beacon is not 16 lower-case hexadecimal characters")
+    reach = body.get("reach")
+    if reach is None:
+        return
+    if not isinstance(reach, dict) or len(reach) > 4:
+        raise PassportError("6.3", "reach is not an object of at most four members")
+    for key, value in reach.items():
+        short = isinstance(value, int | bool) or (isinstance(value, str) and len(value) <= 64)
+        if not isinstance(key, str) or len(key) > 16 or not short:
+            raise PassportError("6.3", "reach holds something other than a few short scalars")
+    port = reach.get("http_port")
+    if port is not None and not (
+        isinstance(port, int) and not isinstance(port, bool) and 0 < port < 65_536
+    ):
+        raise PassportError("6.3", "reach.http_port is not a port")
+
+
+def runtime_of(body: dict[str, Any]) -> dict[str, Any]:
+    """The runtime members of a hello's body, already checked by `read_message`."""
+    return {k: body[k] for k in RUNTIME if k in body}
 
 
 def _say(m: Message) -> None:
@@ -238,8 +266,6 @@ def _bye(m: Message) -> None:
 
 
 def _ask(m: Message) -> None:
-    if not m.signed:
-        raise PassportError("6.1", "an ask must be signed")
     _in_session(m, "6.5")
     skill = m.body.get("skill")
     if not isinstance(skill, str) or not _SKILL.match(skill):
@@ -291,15 +317,16 @@ _BODIES: dict[str, Callable[[Message], None]] = {
 @dataclass
 class Session:
     """Two robots that finished a hello: who the other is, the session's nonces, its passport,
-    and when it last spoke. `route` is the caller's, for where to reach the other robot."""
+    and when it last spoke. `route` is the caller's, for where to reach the other robot, and
+    `runtime` what its hello said about itself that no owner signs (6.3)."""
 
     peer: str
     nonces: tuple[str, str]
     started_here: bool
-    authenticated: bool
     passport: Reading
     last: float
     route: Any = None
+    runtime: dict[str, Any] = field(default_factory=dict)
     #: the caller's too: what it made of the other robot, its tier, kept for the session's life
     judged: Any = None
     #: the messages seen in this session, so a repeat is dropped, which no other peer's
@@ -347,6 +374,7 @@ class _Answered:
     first: str
     wire: str
     at: float
+    runtime: dict[str, Any] = field(default_factory=dict)
 
 
 class Endpoint:
@@ -357,18 +385,21 @@ class Endpoint:
         self,
         me: str,
         passport: str,
-        key: SigningKey | None = None,
+        key: SigningKey,
         *,
         clock: Callable[[], float] = time.monotonic,
+        wall: Callable[[], float] = time.time,
         token: Callable[[], str] = new_token,
         idle_s: float = IDLE_S,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
-        if key is not None and key.did != me:
+        if key.did != me:
             raise ValueError("an endpoint signs with the key its robot's id holds")
-        if key is None and me.startswith("did:key:"):
-            raise ValueError("a robot whose id is a did:key holds that key to talk")
         self.me, self.passport, self.key = me, passport, key
-        self.clock, self.token, self.idle_s = clock, token, idle_s
+        self.clock, self.wall, self.token, self.idle_s = clock, wall, token, idle_s
+        #: what this robot's hellos say beside its passport, which the caller keeps current:
+        #: the beacon id rotates, and the port is known only once the server listens (6.3)
+        self.runtime: dict[str, Any] = dict(runtime or {})
         self.sessions: dict[tuple[str, str], Session] = {}
         self._started: dict[str, _Started] = {}
         self._answered: dict[str, _Answered] = {}
@@ -388,7 +419,7 @@ class Endpoint:
             doc = envelope(
                 "hello",
                 self.me,
-                {"passport": self.passport, "nonce": nonce},
+                {"passport": self.passport, "nonce": nonce, **self.runtime},
                 to=peer or "*",
                 msg=self.token(),
             )
@@ -538,7 +569,7 @@ class Endpoint:
         doc = envelope(
             "hello",
             self.me,
-            {"passport": self.passport},
+            {"passport": self.passport, **self.runtime},
             to=m.sender,
             re=m.msg,
             nonces=nonces,
@@ -546,7 +577,7 @@ class Endpoint:
         )
         wire = seal(doc, self.key)
         self._answered[doc["msg"]] = _Answered(
-            m.sender, nonces, passport, m.msg, wire, self.clock()
+            m.sender, nonces, passport, m.msg, wire, self.clock(), runtime_of(m.body)
         )
         return Reply(200, wire, reason="hello answered")
 
@@ -560,7 +591,7 @@ class Endpoint:
             raise PassportError("6.3", "the second hello carries its sender's passport")
         passport = self._passport_of(m)
         del self._started[str(m.re)]
-        session = self._open(m, passport, started_here=True)
+        session = self._open(m, passport, started_here=True, runtime=runtime_of(m.body))
         doc = envelope(
             "hello", self.me, {}, to=m.sender, re=m.msg, nonces=m.nonces, msg=self.token()
         )
@@ -573,36 +604,34 @@ class Endpoint:
         if m.nonces != answered.nonces:
             return Reply(403, reason="its nonces are not this session's")
         del self._answered[str(m.re)]
-        session = self._open(m, answered.passport, started_here=False)
+        session = self._open(m, answered.passport, started_here=False, runtime=answered.runtime)
         return Reply(204, event=Event("met", session), reason="session open")
 
-    def _open(self, m: Message, passport: Reading, *, started_here: bool) -> Session:
+    def _open(
+        self, m: Message, passport: Reading, *, started_here: bool, runtime: dict[str, Any]
+    ) -> Session:
         assert m.nonces is not None
         session = Session(
-            m.sender,
-            m.nonces,
-            started_here,
-            m.signed and self.key is not None,
-            passport,
-            self.clock(),
+            m.sender, m.nonces, started_here, passport, self.clock(), runtime=dict(runtime)
         )
         self.sessions[m.nonces] = session
         return session
 
     def _passport_of(self, m: Message) -> Reading:
-        """The passport a hello carries, read: a robot with a key sends it signed, and it must be
-        the passport of the robot that sent the hello."""
+        """The passport a hello carries, read the way a robot reads one: signed by its owner,
+        inside its dates (spec 4.4 and 4.5), the passport of the robot that signed the hello, and
+        not this robot's own. A passport that needs an extension this robot does not understand
+        means no talk (2.6)."""
         carried = m.body.get("passport")
-        if not isinstance(carried, str):
-            raise PassportError("6.3", "a hello carries its sender's passport as text")
-        if m.signed:
-            if not jws.looks_like_jws(carried):
-                raise PassportError("6.3", "a robot with a key sends its passport signed")
-            reading = read_jws(carried)
-        else:
-            reading = read_json(carried.encode("utf-8"))
+        if not isinstance(carried, str) or not jws.looks_like_jws(carried):
+            raise PassportError("6.3", "a hello carries its sender's passport, signed by its owner")
+        reading = read_jws(carried, now=int(self.wall()))
         if reading.id != m.sender:
             raise PassportError("6.3", "the passport it carries is another robot's")
+        if reading.id == self.me:
+            raise PassportError("6.3", "it carries this robot's own passport")
+        if not reading.talk_allowed:
+            raise PassportError("2.6", "its passport needs an extension this robot cannot read")
         return reading
 
     def _spoken(self, m: Message) -> Reply:
@@ -616,8 +645,6 @@ class Endpoint:
         if self._quiet(session):
             del self.sessions[m.nonces]
             return Reply(403, reason="that session went quiet and ended")
-        if session.authenticated and not m.signed:
-            return Reply(403, reason="this session's messages are signed, and this one is not")
         session.last = self.clock()
         if m.type == "say":
             return Reply(204, event=Event("said", session, str(m.body["text"]), m), reason="said")
@@ -632,15 +659,13 @@ class Endpoint:
 
 
 def json_payload(wire: str) -> dict[str, Any]:
-    """The members of a message this robot just wrote, signed or not, without checking it again."""
-    if jws.looks_like_jws(wire):
-        return dict(
-            strict.loads(jws.b64url_decode(wire.split(".")[1], rule="6.1"), limit=MAX_HELLO_BYTES)
-        )
-    return dict(strict.loads(wire.encode("utf-8"), limit=MAX_HELLO_BYTES))
+    """The members of a message this robot just wrote, without checking it again."""
+    return dict(
+        strict.loads(jws.b64url_decode(wire.split(".")[1], rule="6.1"), limit=MAX_HELLO_BYTES)
+    )
 
 
-def version_answer(error: VersionUnknown, me: str, key: SigningKey | None) -> str:
+def version_answer(error: VersionUnknown, me: str, key: SigningKey) -> str:
     """The answer to a message in a version this robot does not read (spec 6.7)."""
     doc = envelope(
         "answer",
@@ -691,6 +716,7 @@ __all__ = [
     "new_token",
     "open_session",
     "read_message",
+    "runtime_of",
     "seal",
     "version_answer",
 ]

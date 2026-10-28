@@ -38,7 +38,7 @@ bounded rule its owner chose.
 | [compatibility.md](compatibility.md) | the ladder from a sticker to a talking robot, recipes, translators, and A2A |
 | [quackd.md](quackd.md) | Robot Passport in quackd: commands, files, what a pilot sees, safety |
 | [spec.md](spec.md) | the normative specification, version 0.1 |
-| [schema/](schema/passport.schema.json) | the JSON Schemas: [passport](schema/passport.schema.json), [index](schema/index.schema.json), [stamp](schema/stamp.schema.json), [message](schema/message.schema.json) |
+| [schema/](schema/passport.schema.json) | the JSON Schemas: [passport](schema/passport.schema.json), [message](schema/message.schema.json) |
 | [vectors/](vectors/README.md) | the conformance vectors, each with the result a reader must reach |
 | [naming.md](naming.md) | what the name means, why it is not the Robot Context Protocol, and every identifier |
 | [prior-art.md](prior-art.md) | every system it was measured against, what it borrowed and what it avoided |

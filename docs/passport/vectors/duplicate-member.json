@@ -1,6 +1,9 @@
 {
-  "passport": "0.1",
+  "passport": "1.0",
   "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
-  "name": "duck-01",
-  "name": "somebody-else"
+  "name": "g1-edu-01",
+  "name": "somebody-else",
+  "owner": {"id": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2"},
+  "issued": "2026-10-28T00:00:00Z",
+  "expires": "2027-10-28T00:00:00Z"
 }

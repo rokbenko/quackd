@@ -16,8 +16,7 @@ import re
 import socket
 import ssl
 import time
-from dataclasses import dataclass
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from quackd.passport import jws
 from quackd.passport.errors import PassportError
@@ -50,25 +49,14 @@ class HttpStatus(PassportError):
         self.status = status
 
 
-@dataclass(frozen=True)
-class Target:
-    """A URL to fetch, and the short id its `#rp=` fragment promised, if it had one."""
-
-    url: str
-    short_id: str | None
-
-
-def target(text: str) -> Target:
-    """A URL as a person typed it or a camera read it (spec 5.2).
-
-    A bare host, `http://10.0.0.5:8790`, means its well-known URL. The fragment never travels
-    to the server; `#rp=` in it is the short id the passport must turn out to have."""
+def target(text: str) -> str:
+    """The URL to fetch for one a person typed (spec 5.1). A bare host, `http://10.0.0.5:8790`,
+    means its well-known URL, and a fragment, which never travels to a server, is dropped."""
     parts = urlsplit(text.strip())
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise PassportError("5.7", f"{text!r} is not an http or https URL")
-    promised = parse_qs(parts.fragment).get("rp", [None])[0]
     path = parts.path if parts.path not in ("", "/") else WELL_KNOWN_JSON
-    return Target(urlunsplit((parts.scheme, parts.netloc, path, parts.query, "")), promised)
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, ""))
 
 
 def fetch(url: str, *, limit: int = MAX_WIRE_BYTES, timeout: float = FETCH_TIMEOUT_S) -> bytes:

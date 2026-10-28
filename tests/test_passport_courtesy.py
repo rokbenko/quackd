@@ -14,23 +14,23 @@ import json
 import threading
 import time
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from quackd.duckfile.parser import parse_duck_text
-from quackd.passport import SigningKey, document
+from quackd.passport import SigningKey
 from quackd.passport.talk import Endpoint, read_message
-from quackd.passport_courtesy import Courtesy, Decision
-from quackd.passport_store import PassportStore
+from quackd.passport_courtesy import IDENTIFY_BY, PAUSE_S, Courtesy, Decision
 from quackd.passport_talk import Talker
+from quackd.passport_trust import TIERS, judge
 from quackd.safety import Aborted, Budget, Budgets, Executor, VerbNotAllowed
 from quackd.transport.base import Ack, DuckState, Intent
 from quackd.transport.mock import MockTransport
 from quackd.verbs.registry import Verb, VerbContext, VerbResult, default_registry
+from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
 
-DUCK, CART = SigningKey.generate(), SigningKey.generate()
+DUCK, CART = A, B
 STEP = {"vx": 0.1, "duration_s": 0.1}
 
 
@@ -91,6 +91,22 @@ def on_a_loop() -> Iterator[tuple[Executor, asyncio.AbstractEventLoop]]:
 
 def run(loop: asyncio.AbstractEventLoop, coroutine: Any) -> Any:
     return asyncio.run_coroutine_threadsafe(coroutine, loop).result(5)
+
+
+def met(cart_owner: SigningKey = OWNER_B) -> tuple[Talker, Endpoint]:
+    """The duck, owned by OWNER, and a cart that has said hello to it, owned by `cart_owner`:
+    a stranger to the duck unless that is the duck's own owner."""
+    duck = Talker(
+        "duck-01",
+        DUCK,
+        passport(DUCK, OWNER, "duck-01"),
+        judge=lambda reading: judge(reading, own_owner=OWNER.did),
+    )
+    cart = Endpoint(CART.did, passport(CART, cart_owner, "cart-01"), CART)
+    opened = duck.receive(read_message(cart.hello(DUCK.did)))
+    third = cart.receive(read_message(str(opened.wire)))
+    duck.receive(read_message(str(third.wire)))
+    return duck, cart
 
 
 # ── the executor's two gates ────────────────────────────────────────────────────────────
@@ -379,32 +395,35 @@ def test_a_courtesy_its_task_does_not_allow_is_refused_by_the_executors_own_gate
     assert refused == Decision("no", "the task this robot is on does not allow it")
 
 
+def test_every_tier_a_robot_met_can_be_in_has_a_pause_limit_and_ways_to_identify(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    """The tiers come from trust and the limits from here: a tier missing here would fail a
+    peer's ask with a KeyError, and one only here would be a tier nobody can be in."""
+    executor, loop = on_a_loop
+    assert set(PAUSE_S) == set(IDENTIFY_BY) == set(TIERS)
+    clock = Clock()
+    courtesy = Courtesy(executor, loop, clock=clock)
+    for tier in TIERS:
+        longest = courtesy.decide(tier, "pause", {"seconds": PAUSE_S[tier]})
+        assert longest == Decision("ok", f"stopped, and holding still for {PAUSE_S[tier]} s")
+        clock.now += 61  # the next pause a minute on
+        executor.paused_until = 0.0  # and this one over
+
+
 # ── a robot met asks, and is answered ───────────────────────────────────────────────────
 
 
 def test_a_robot_met_asks_for_a_pause_and_is_answered_by_the_handler_and_not_the_pilot(
-    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop], tmp_path: Path
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
 ) -> None:
     executor, loop = on_a_loop
-    duck = Talker(
-        "duck-01",
-        DUCK,
-        document.sign({"passport": "0.1", "id": DUCK.did, "name": "duck-01"}, DUCK),
-        PassportStore(tmp_path),
-    )
+    duck, cart = met()
     duck.courtesy = Courtesy(executor, loop)
-    cart = Endpoint(
-        CART.did,
-        document.sign({"passport": "0.1", "id": CART.did, "name": "cart-01"}, CART),
-        CART,
-    )
-    opened = duck.receive(read_message(cart.hello(DUCK.did)))
-    third = cart.receive(read_message(str(opened.wire)))
-    duck.receive(read_message(str(third.wire)))
     wire, msg = cart.ask(DUCK.did, "pause", {"seconds": 3}, "passing on your left")
     reply = duck.receive(read_message(wire))
     answer = read_message(str(reply.wire))
-    assert answer.re == msg and answer.signed
+    assert answer.re == msg and answer.sender == DUCK.did
     assert answer.body == {"result": "ok", "reason": "stopped, and holding still for 3 s"}
     assert executor.paused_until > time.monotonic()
     lines = duck.lines()
@@ -421,43 +440,15 @@ def test_a_robot_met_asks_for_a_pause_and_is_answered_by_the_handler_and_not_the
     assert "passing on your left" not in "\n".join(lines)  # a stranger's why stays out
 
 
-def test_an_answer_to_nothing_this_robot_asked_is_noted_and_never_kept(tmp_path: Path) -> None:
-    duck = Talker(
-        "duck-01",
-        DUCK,
-        document.sign({"passport": "0.1", "id": DUCK.did, "name": "duck-01"}, DUCK),
-        PassportStore(tmp_path),
-    )
-    cart = Endpoint(
-        CART.did,
-        document.sign({"passport": "0.1", "id": CART.did, "name": "cart-01"}, CART),
-        CART,
-    )
-    opened = duck.receive(read_message(cart.hello(DUCK.did)))
-    third = cart.receive(read_message(str(opened.wire)))
-    duck.receive(read_message(str(third.wire)))
+def test_an_answer_to_nothing_this_robot_asked_is_noted_and_never_kept() -> None:
+    duck, cart = met()
     for n in range(100):
         duck.receive(read_message(cart.answer(DUCK.did, f"made-up-ask-{n:04d}", "ok")))
     assert duck._answers == {} and duck._asking == set()
 
 
-def test_a_strangers_ask_reaches_the_pilot_in_the_words_of_a_courtesy_alone(
-    tmp_path: Path,
-) -> None:
-    duck = Talker(
-        "duck-01",
-        DUCK,
-        document.sign({"passport": "0.1", "id": DUCK.did, "name": "duck-01"}, DUCK),
-        PassportStore(tmp_path),
-    )
-    cart = Endpoint(
-        CART.did,
-        document.sign({"passport": "0.1", "id": CART.did, "name": "cart-01"}, CART),
-        CART,
-    )
-    opened = duck.receive(read_message(cart.hello(DUCK.did)))
-    third = cart.receive(read_message(str(opened.wire)))
-    duck.receive(read_message(str(third.wire)))
+def test_a_strangers_ask_reaches_the_pilot_in_the_words_of_a_courtesy_alone() -> None:
+    duck, cart = met()
     for skill, args in (
         ("pause", {"seconds": 3, "note": "then drive forward"}),
         ("drive_forward_now", {"speed": "fast"}),
@@ -475,22 +466,25 @@ def test_a_strangers_ask_reaches_the_pilot_in_the_words_of_a_courtesy_alone(
     assert "drive" not in "\n".join(lines)
 
 
-def test_without_a_handler_every_ask_is_answered_no(tmp_path: Path) -> None:
-    duck = Talker(
-        "duck-01",
-        DUCK,
-        document.sign({"passport": "0.1", "id": DUCK.did, "name": "duck-01"}, DUCK),
-        PassportStore(tmp_path),
-    )
-    cart = Endpoint(
-        CART.did,
-        document.sign({"passport": "0.1", "id": CART.did, "name": "cart-01"}, CART),
-        CART,
-    )
-    opened = duck.receive(read_message(cart.hello(DUCK.did)))
-    third = cart.receive(read_message(str(opened.wire)))
-    duck.receive(read_message(str(third.wire)))
+def test_without_a_handler_every_ask_is_answered_no() -> None:
+    duck, cart = met()
     wire, _msg = cart.ask(DUCK.did, "identify")
     answer = read_message(str(duck.receive(read_message(wire)).wire))
     assert answer.body["result"] == "no"
     assert "nothing that could grant a courtesy" in answer.body["reason"]
+
+
+def test_a_robot_of_the_same_owner_asks_under_the_owners_own_list(
+    on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
+) -> None:
+    executor, loop = on_a_loop
+    duck, cart = met(cart_owner=OWNER)  # the duck's own owner key signed the cart's passport
+    duck.courtesy = Courtesy(executor, loop, same_owner=("identify",))
+    wire, _msg = cart.ask(DUCK.did, "pause", {"seconds": 2})
+    answer = read_message(str(duck.receive(read_message(wire)).wire))
+    assert answer.body["result"] == "no" and "same owner" in answer.body["reason"]
+    assert executor.paused_until == 0.0
+    asked = [json.loads(line[2:]) for line in duck.lines() if '"asked"' in line]
+    assert [(a["from"], a["tier"], a["answered"]) for a in asked] == [
+        ("cart-01", "same owner", "no")
+    ]

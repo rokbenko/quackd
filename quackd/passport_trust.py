@@ -1,14 +1,15 @@
-"""How this quackd knows a robot it read: its tier (docs/passport/trust.md#the-four-tiers).
+"""How a robot knows a robot it met: its tier (docs/passport/trust.md#the-tiers).
 
-A passport says what a robot claims and a signature says who wrote it; neither says whether to
-believe them. That comes from here, from what a person decided: the keys they pinned, the owner
-key that stamps their own robots, and the robots this quackd drives itself. Nothing in a
-passport can raise its own tier, and an unsigned passport is always a stranger's, whatever id it
-names, because anybody can copy an id.
+A passport says what a robot claims and its owner's signature says who vouches for that; neither
+says whether to believe the owner, since anybody can make an owner key. That comes from here,
+from what this robot's own owner decided: the robots and owners they pinned in robot.yaml, and
+their own owner key, which signs this robot's passport. Nothing in a passport can raise its own
+tier, and an unsigned passport is always a stranger's, whatever it says.
 
-Names are another matter. A robot names itself, so a name proves nothing, and the warnings here
-are for a person about to trust one: a robot that calls itself what a pinned robot, one of this
-quackd's own, or a pinned owner is called, with a key that is not theirs.
+Names are another matter. A robot names itself and its owner, so a name proves nothing, and the
+warnings here are for a person about to trust one: a robot that calls itself what a pinned robot
+or this robot is called, or names an owner this robot's owner pinned, with a key that is not
+theirs.
 """
 
 from __future__ import annotations
@@ -18,10 +19,20 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from quackd.passport.document import Reading
-from quackd.passport_store import PassportStore, Pin
 
-#: Lowest first. `flock` is a robot this quackd drives itself.
-TIERS = ("stranger", "known", "same owner", "flock")
+#: Lowest first. `same owner` is a robot this robot's own owner key signed.
+TIERS = ("stranger", "known", "same owner")
+
+
+@dataclass(frozen=True)
+class Pin:
+    """A robot or an owner a person said to trust, by its key: `kind` is robot or owner."""
+
+    kind: str
+    id: str
+    name: str
+    pinned: str
+
 
 #: Letters of other scripts drawn like Latin ones, and the digits drawn like letters, read as
 #: the letter they look like, so a name spelled with them warns like the name it imitates. The
@@ -54,50 +65,44 @@ def fold(name: str) -> str:
     return " ".join(shown.split()).translate(_LOOKALIKES)
 
 
-def issuer_names(store: PassportStore) -> dict[str, str]:
-    """What this quackd knows each key it trusts as, so a stamp can say who made it."""
-    names = {pin.id: f"pinned as {pin.name}" for pin in store.known()}
-    own = store.owner().key
-    if own is not None:
-        names[own.did] = "your own owner key"
-    return names
-
-
-def judge(reading: Reading, store: PassportStore) -> Judgement:
-    pins = store.known()
+def judge(
+    reading: Reading,
+    *,
+    own_owner: str | None,
+    pins: Iterable[Pin] = (),
+    own_name: str | None = None,
+    own_label: str | None = None,
+) -> Judgement:
+    """The tier this robot places `reading` in: `same owner` when its own owner key signed it,
+    `known` when a person pinned the robot or the owner that signed it, and `stranger` for
+    anything else, an unsigned passport above all."""
+    pins = list(pins)
     robots = {pin.id: pin for pin in pins if pin.kind == "robot"}
     owners = {pin.id: pin for pin in pins if pin.kind == "owner"}
-    owner = store.owner()
-    own_owner = owner.key
-    own_robots = {name: record.key.did for name, record in store.robots().items()}
     warnings = _lookalikes(
         reading,
         robots=robots.values(),
         owners=owners.values(),
-        own_robots=own_robots,
-        own_label=owner.label,
-        own_key=own_owner.did if own_owner is not None else None,
+        own_name=own_name,
+        own_label=own_label,
+        own_owner=own_owner,
     )
     if not reading.signed:
-        if reading.id in robots or reading.id in own_robots.values():
+        trusted = {*robots, *owners, *([own_owner] if own_owner else [])}
+        if reading.id in trusted or reading.owner_id in trusted:
             warnings.append(
-                "this id is pinned or one of yours, but the passport is unsigned, so it is read as "
-                "a stranger's claim: anybody can copy an id"
+                "it names a key you trust, but nobody signed it, so it is read as a stranger's "
+                "claim: anybody can copy an id"
             )
         return Judgement("stranger", "unsigned, so a claim", tuple(warnings))
-    if reading.id in own_robots.values():
-        return Judgement("flock", "one of the robots this quackd drives", tuple(warnings))
-    for stamp in reading.counted_stamps():
-        if own_owner is not None and stamp.iss == own_owner.did:
-            return Judgement("same owner", "stamped by your own owner key", tuple(warnings))
-        if stamp.iss in owners:
-            pinned = owners[stamp.iss]
-            return Judgement(
-                "same owner", f"stamped by {pinned.name}, an owner you pinned", tuple(warnings)
-            )
+    if own_owner is not None and reading.owner_id == own_owner:
+        return Judgement("same owner", "signed by your own owner key", tuple(warnings))
+    if reading.owner_id in owners:
+        pinned = owners[reading.owner_id]
+        return Judgement("known", f"signed by {pinned.name}, an owner you pinned", tuple(warnings))
     if reading.id in robots:
         return Judgement("known", f"pinned on {robots[reading.id].pinned[:10]}", tuple(warnings))
-    return Judgement("stranger", "signed by a key nobody here pinned", tuple(warnings))
+    return Judgement("stranger", "signed by an owner nobody here pinned", tuple(warnings))
 
 
 def _lookalikes(
@@ -105,12 +110,12 @@ def _lookalikes(
     *,
     robots: Iterable[Pin],
     owners: Iterable[Pin],
-    own_robots: dict[str, str],
+    own_name: str | None,
     own_label: str | None,
-    own_key: str | None,
+    own_owner: str | None,
 ) -> list[str]:
     """What a person should be told before trusting a name: SSH's "the key changed", for a
-    name that looks like one this quackd already knows under another key."""
+    name that looks like one this robot already knows under another key."""
     warnings: list[str] = []
     name = fold(reading.name)
     for pin in robots:
@@ -119,22 +124,21 @@ def _lookalikes(
                 f"a robot named {pin.name} was pinned with another key on {pin.pinned[:10]}: "
                 "this is not that key, so nothing is trusted automatically"
             )
-    for own_name, did in own_robots.items():
-        if fold(own_name) == name and did != reading.id:
-            warnings.append(f"this quackd drives a robot named {own_name}, and this is not its key")
+    if own_name and fold(own_name) == name:
+        warnings.append(f"it calls itself {own_name}, which is what this robot is called")
     label = reading.document.get("owner", {}).get("label")
     if isinstance(label, str) and label:
-        stamped_by = {s.iss for s in reading.counted_stamps()}
-        # an unsigned passport's stamps never count, which is a different thing to tell a person
-        # from an owner who did not stamp it at all
-        unsigned = "it is unsigned, so no stamp on it counts"
         for pin in owners:
-            if fold(pin.name) == fold(label) and pin.id not in stamped_by:
-                why = unsigned if not reading.signed else f"{pin.name}'s key did not stamp it"
-                warnings.append(f"it says its owner is {label}, an owner you pinned, and {why}")
-        if own_label and fold(own_label) == fold(label) and own_key not in stamped_by:
-            why = unsigned if not reading.signed else "your owner key did not stamp it"
+            if fold(pin.name) == fold(label) and pin.id != reading.owner_id:
+                warnings.append(
+                    f"it says its owner is {label}, an owner you pinned, and another key signed it"
+                )
+        if own_label and fold(own_label) == fold(label) and reading.owner_id != own_owner:
             warnings.append(
-                f"it says its owner is {label}, which is what you call yourself, and {why}"
+                f"it says its owner is {label}, which is what your owner calls itself, and "
+                "another key signed it"
             )
     return warnings
+
+
+__all__ = ["TIERS", "Judgement", "Pin", "fold", "judge"]

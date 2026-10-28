@@ -1,6 +1,11 @@
 # The passport, member by member
 
 > [!NOTE]
+> Version 1.0 (quackd 0.29.0) adds three members: `owner` gains `id`, the key that signs the
+> passport; `board` says the computer the robot runs it on, as `jetson`, `sim` or `other`; and
+> `expires` says until when the owner's signature holds, at most 400 days after `issued`.
+
+> [!NOTE]
 > Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
 > of it is built and what has run.
 
@@ -26,7 +31,7 @@ is optional, and a robot adds what it can say honestly.
 
 This is a Microduck, exactly as quackd builds it from its manifest, with an owner, an e-stop and
 an inbox added. It is 1,218 bytes of compact JSON, about a sixth of the 7,703 bytes the manifest
-itself takes, and it is [vectors/microduck.json](vectors/microduck.json):
+itself takes. In 1.0 the full example is [vectors/humanoid.json](vectors/humanoid.json):
 
 ```json
 {
