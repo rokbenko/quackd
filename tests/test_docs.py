@@ -2370,9 +2370,9 @@ _JETSON_IMAGE_SPELLINGS = (
 
 
 def test_no_living_document_still_describes_the_jetson_image() -> None:
-    """The quackd that drives a robot no longer runs on a Jetson, and the one command that does,
-    `quackd onboard`, is installed with uv and needs no image, so nothing a reader follows today
-    may still build the image or start quackd inside it.
+    """Every quackd command but one left the Jetson in 0.15.0, and the one that runs there since
+    0.29.0, `quackd onboard`, is installed with uv and needs no image, so nothing a reader follows
+    today may still build the image or start quackd inside it.
 
     The whole text is read, fenced blocks included, which is where every one of these lived: a
     reader copies a command out of a fence before reading the paragraph around it. The history
@@ -2387,15 +2387,16 @@ def test_no_living_document_still_describes_the_jetson_image() -> None:
         for spelling in _JETSON_IMAGE_SPELLINGS:
             assert spelling not in text, (
                 f"{path.relative_to(REPO).as_posix()} still describes the Jetson image "
-                f"({spelling!r}), which went when the quackd that drives a robot left the board "
-                "(ADR-0046)"
+                f"({spelling!r}), which went when quackd left the board in 0.15.0 (ADR-0046)"
             )
 
 
 #: What the pages said about quackd and a Jetson while nothing of quackd ran on one. Since 0.29.0
 #: one command does, `quackd onboard`, so a sentence that says quackd never runs on the board
-#: without saying which quackd is false the day it is read (ADR-0073). "The quackd that drives a
-#: robot never runs on the board" is the true spelling, and none of these is inside it.
+#: without saying which commands is false the day it is read (ADR-0073). Nor is it only a matter
+#: of passports: with an adapter named in its file, that command drives the robot from the board,
+#: so "the quackd that drives a robot" is no exception to carve out either. "Every quackd command
+#: but `quackd onboard` stays off the board" is a true spelling, and none of these is inside it.
 _RETIRED_JETSON_CLAIMS = (
     "quackd never runs on an nvidia jetson",
     "quackd never runs on the jetson",
@@ -2404,22 +2405,54 @@ _RETIRED_JETSON_CLAIMS = (
     "quackd never runs on it",
     "quackd no longer runs on the board",
     "quackd does not run on it either",
+    "quackd that drives a robot never runs on",
+    "quackd that drives a robot does not run on",
+    "quackd that drives the robot never runs on",
 )
 
 
 def test_no_living_document_says_quackd_never_runs_on_a_jetson() -> None:
     """ADR-0046 kept quackd off the board, and ADR-0073 put one command back on it, Robot
-    Passport's service, on the robot's own Jetson. Every page that said quackd never runs there
-    says which quackd now, the one that drives a robot, and this keeps the old sentence from
-    coming back unqualified. The bridge READMEs are read too, since the person on the board reads
-    those. The history files keep the old sentence, dated, as they keep every other."""
+    Passport's service, on the robot's own Jetson, which drives the robot from there when the
+    robot's file names an adapter. Every page that said quackd never runs there says which
+    commands stay off it now, and this keeps the old sentence from coming back unqualified. The
+    bridge READMEs are read too, since the person on the board reads those. The history files keep
+    the old sentence, dated, as they keep every other."""
     for path in [*_living_docs(), *sorted((REPO / "bridge").rglob("README.md"))]:
         text = " ".join(_prose(path.read_text(encoding="utf-8")).split()).lower()
         for claim in _RETIRED_JETSON_CLAIMS:
             assert claim not in text, (
                 f"{path.relative_to(REPO).as_posix()} says {claim!r}: since 0.29.0 quackd onboard "
-                "runs on a robot's own Jetson, so say which quackd never runs there (ADR-0073)"
+                "runs on a robot's own Jetson, so say which commands stay off it (ADR-0073)"
             )
+
+
+def test_every_onboard_subcommand_a_page_names_is_one_quackd_has() -> None:
+    """The plan for 0.29.0 let `met` and `forget` fold into `status` and `pin`, and `uninstall`
+    become two systemctl lines, if time ran short, and the pages were written before any of them
+    existed. The README's row is held to `quackd onboard --help` by the guard below, and this
+    holds every living page: a `quackd onboard WORD` in a code span, or at the start of a line in
+    a fenced block, names a subcommand the group has."""
+    from quackd.cli import app
+
+    groups = {g.name: g.typer_instance for g in app.registered_groups}
+    instance = groups.get("onboard")
+    assert instance is not None, "quackd has no onboard group, and the pages describe one"
+    offered = {
+        (c.name or (c.callback.__name__ if c.callback else "")).replace("_", "-")
+        for c in instance.registered_commands
+    } | {g.name or "" for g in instance.registered_groups}
+    named = re.compile(
+        r"`quackd onboard ([a-z][a-z-]*)|^\s*(?:\$ )?quackd onboard ([a-z][a-z-]*)", re.M
+    )
+    unknown = sorted(
+        f"{path.relative_to(REPO).as_posix()}: quackd onboard {word}"
+        for path in _living_docs()
+        for match in named.finditer(path.read_text(encoding="utf-8"))
+        for word in [match.group(1) or match.group(2)]
+        if word not in offered
+    )
+    assert not unknown, "pages name onboard subcommands quackd does not have: " + ", ".join(unknown)
 
 
 # ── Robot Passport on the robot's own computer (0.29.0) ─────────────────────────────────
