@@ -230,6 +230,6 @@ wrote and the owner signs ([quackd.md](quackd.md#robotyaml-the-one-file)):
 | the board quackd found | `board` |
 | the moment of signing, and `--days` | `issued`, `expires` |
 
-When `robot.adapter` names a body quackd drives, its manifest supplies the skills, as quackd has
-built passports from manifests since 0.23.0. A body with no adapter, which only talks, offers no
-courtesy.
+When `robot.adapter` names a body quackd drives, its manifest supplies the body, the skills and
+the courtesies, as quackd has built passports from manifests since 0.23.0, and the file the rest. A
+body with no adapter, which only talks, offers no courtesy.
