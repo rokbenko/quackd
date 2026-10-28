@@ -414,6 +414,7 @@ class Service:
             model=model,
             source="robot.yaml brain.llm",
             duck_name=duck.name,
+            goal=duck.body if kind == "goal" else None,
             base_url=brain.base_url,
         )
         cfg = RunConfig(

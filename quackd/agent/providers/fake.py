@@ -849,6 +849,9 @@ class FakeProvider:
                 strategy, label = square_strategy(), "goal:square"
             elif "circle" in text or "circuit" in text:
                 strategy, label = circle_strategy(), "goal:circle"
+            elif "greet" in text or "say hello" in text:
+                # the meeting's rule: a robot on its own computer greeting the robot near it
+                strategy, label = meeting_strategy, "goal:greet"
         return cls(strategy=strategy or generic_strategy, model=f"scripted:{label}", vision=vision)
 
     async def step(

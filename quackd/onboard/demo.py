@@ -268,7 +268,7 @@ def stop(robot: Robot) -> None:
     robot.process = None
 
 
-def met(robot: Robot) -> list[dict[str, Any]]:
+def met_rows(robot: Robot) -> list[dict[str, Any]]:
     rows = []
     try:
         lines = (robot.home / "met.jsonl").read_text(encoding="utf-8").splitlines()
@@ -383,10 +383,20 @@ def _intruder(
 
 
 def judge_act(
-    act: str, robots: dict[str, Robot], before: dict[str, set[Path]], intruder: Any
+    act: str,
+    robots: dict[str, Robot],
+    before: dict[str, set[Path]],
+    intruder: Any,
+    marks: dict[str, int] | None = None,
 ) -> tuple[bool, str]:
-    """Whether what was observed is what the act expects, and what was observed, in words."""
+    """Whether what was observed is what the act expects, and what was observed, in words.
+    `marks` is how many rows each robot's met.jsonl held when the act began: the rest are its."""
     household, courier = robots[HOUSEHOLD], robots[COURIER]
+    marks = marks or {}
+
+    def met(robot: Robot) -> list[dict[str, Any]]:
+        return met_rows(robot)[marks.get(robot.name, 0) :]
+
     if act == "injection":
         rows = [r for r in met(household) if "id" in r]
         if not rows:
@@ -460,6 +470,7 @@ def run_act(
     air.mkdir(parents=True, exist_ok=True)
     write_scene(air, t0=time.time(), speed=speed)
     before = {name: runs(robot) for name, robot in robots.items()}
+    marks = {name: len(met_rows(robot)) for name, robot in robots.items()}
     network = "home" if act == "office" else "none"
     started = time.monotonic()
     walking = [] if act in ("tampered", "injection") else [COURIER]
@@ -492,14 +503,11 @@ def run_act(
                         said = f"{ROLES[name]:>9} | {line}"
                         result.events.append(said)
                         tell(said)
-            result.ok, result.observed = judge_act(act, robots, before, intruder)
+            result.ok, result.observed = judge_act(act, robots, before, intruder, marks)
             if result.ok or time.monotonic() - started > deadline_s:
                 break
             time.sleep(0.5)
     result.seconds = time.monotonic() - started
-    for robot in robots.values():
-        with contextlib.suppress(OSError):
-            os.replace(robot.home / "met.jsonl", robot.home / f"met-{act}.jsonl")
     return result
 
 

@@ -38,4 +38,7 @@ def test_every_act_of_the_offline_demo_happens_as_it_says(tmp_path: Path) -> Non
     # every robot's records stay where --keep said, a meeting's run among them
     for name in (demo.COURIER, demo.HOUSEHOLD):
         assert list((kept / name / "runs").glob("*/summary.json"))
-        assert (kept / name / "met-strangers.jsonl").exists()
+    # and the household's met.jsonl holds every act's meeting and the refusal, in order
+    rows = demo.met_rows(demo.Robot(demo.HOUSEHOLD, kept / demo.HOUSEHOLD))
+    assert [r["tier"] for r in rows if "id" in r] == ["stranger", "known", "stranger", "stranger"]
+    assert sum("refused" in r for r in rows) == 1
