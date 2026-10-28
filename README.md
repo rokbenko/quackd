@@ -995,7 +995,13 @@ A robot carries a passport when it has a computer of its own that can run quackd
 
 So a Jetson is the first board `quackd onboard` supports: an Orin or a Thor, on JetPack 6 or JetPack 7, recognised from the board's device tree and its release file. A Xavier and JetPack 5 are refused with the reason, and so is a computer that is not a robot's:
 
-<!-- capture: quackd onboard on a laptop, no --board, the refusal -->
+```
+$ quackd onboard
+✗ error: quackd onboard runs on a robot's own computer, and this is not one it 
+supports: it found no NVIDIA Jetson (this computer runs Windows). To try it 
+here as a simulation, which its passport will say, run quackd onboard --board 
+sim.
+```
 
 `--board sim` is the other half: a laptop standing in for a robot's computer, to try it on and for the test suite. A simulated air shared by processes on that computer stands in for the radio, and the passport it signs says `sim` in its `board` member, so no reader ever takes a simulation for a robot. Other boards come in through a plugin interface, the `quackd.boards` entry point group, the way adapters come in through `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
 
@@ -1013,9 +1019,27 @@ quackd onboard
 
 The first installs [`uv`](https://docs.astral.sh/uv/). The second installs quackd with its `onboard` extra: zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and dbus-fast for Bluetooth, which install on Linux alone. quackd needs Python 3.11 or newer and JetPack 6 ships 3.10, so on JetPack 6 the second line is `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the tool. The third is a wizard. Nobody has run any of the three on a Jetson yet.
 
-The wizard checks the board and what it can reach, then asks what only the owner knows: the robot's name, what it is and who made it, who owns it and how to reach them, how a person standing next to it stops it, and its brain, a model as `--llm` spells it and the address of a server of your own if it runs one. It writes the answers into `robot.yaml`, the one file a robot is set up from, with a comment beside each, and the brain's key into `robot.env`. It makes two keys, the robot's own, which the service uses, and the owner's, sealed with a passphrase you type twice, and signs the passport with the owner's. On a Jetson it offers to switch on BlueZ's address privacy, which restarts bluetoothd and so drops every Bluetooth connection the robot has for a moment, a remote or an e-stop among them, then prints the sudo lines that install and start `quackd-onboard.service`, runs them, and shows the service's status. It refuses to run as root.
+The wizard checks the board and what it can reach, then asks what only the owner knows: the robot's name, what it is and who made it, who owns it and how to reach them, how a person standing next to it stops it, its brain, a model as `--llm` spells it and the address of a server of your own if it runs one, and how close another robot comes before they meet. It writes the answers into `robot.yaml`, the one file a robot is set up from, with a comment beside each, and the brain's key into `robot.env`. It makes two keys, the robot's own, which the service uses, and the owner's, sealed with a passphrase you type twice, and signs the passport with the owner's. On a Jetson it offers to switch on BlueZ's address privacy, which restarts bluetoothd and so drops every Bluetooth connection the robot has for a moment, a remote or an e-stop among them, then prints the sudo lines that install and start `quackd-onboard.service` and runs them once you say yes. It refuses to run as root.
 
-<!-- capture: the robot.yaml that quackd onboard --board sim --no-service writes, sim board -->
+The file is shown whole, every comment in it, in [docs/passport/quackd.md](docs/passport/quackd.md#robotyaml-the-one-file). What the wizard signed on the sim board, read the way another robot reads it:
+
+```
+$ quackd onboard show --dir ~/sim/one
+╭─ 🦆 passport one ────────────────────────────────────────────────────────────╮
+│ id      did:key:z6MkrViPoM3VHyFUgoYKhNQFuF2YaZ1N8NpQ6YBEPEGApUHN  (short id  │
+│         00a1a74aa06996cc)                                                    │
+│ claim   signed by its owner's key                                            │
+│ maker   example sim-humanoid                                                 │
+│ owner   Example lab, key b8a98a36dd5728ce                                    │
+│ board   sim: a computer standing in for a robot's own                        │
+│ body    humanoid, legged, arms                                               │
+│ skills  report_state, stop                                                   │
+│ safety  does not stop on silence, e-stop: none, Press the red button on its  │
+│         back.                                                                │
+│ valid   2026-10-28T20:17:54Z to 2027-10-28T20:17:54Z                         │
+│ digest  ed265bd12095d145                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
 
 The file is short and commented. `passport:` is what the owner signs: the name, the maker, the owner's label and contact, the body with each figure as a value, a confidence and a source, the skills, what it cannot do and how it stops. `robot:` names the adapter and the address of a body quackd drives, and is left out for a robot that only talks. `brain:` names the model and where it answers, never its key. `meeting:` holds the standing task a meeting runs, whether strangers get one and how many an hour. `trust:` holds the pins and whether a stranger may ask for a pause. `radio:` holds the distance to meet at, what it is worked out from and how often the beacon id changes, and `lan:` the port. An error names its place in the file, and an `arm` embodiment is refused.
 
@@ -1025,7 +1049,39 @@ The systemd unit, `quackd-onboard.service`, runs `quackd onboard serve` as your 
 
 **On a laptop, `quackd onboard demo` is the quickest way to watch it.** Two simulated robots start on this computer, each a service of its own on the `sim` board: a mock Unitree G1 EDU carrying a courier company's passport and a mock Agile ONE SN carrying a household's, described from their makers' published figures. The courier walks up to the household's robot once as a stranger with no network in common, so they meet over the Bluetooth link and each brain is told only the other's closed facts, once by appointment, each having pinned the other's owner, so their words reach each other's brain, and once in an office where both share a network, so the hello goes over the LAN. A third simulated robot, whose passport had one byte changed after its owner signed it, is refused. The demo prints what each act expected beside what happened, and exits 0 only when every one matched. `--offline` flies both with the scripted pilot and needs no key.
 
-<!-- capture: quackd onboard demo --offline, sim board -->
+It tells each act as it happens, and ends on what each act expected beside what happened:
+
+```
+what each act expected, and what happened                                       
+╭─────────────┬─────────────────────────────┬──────────────────────────────┬───╮
+│ act         │ expected                    │ observed                     │   │
+├─────────────┼─────────────────────────────┼──────────────────────────────┼───┤
+│ strangers   │ they meet over the link as  │ met over the link, the       │ ✓ │
+│             │ strangers, and neither      │ household's robot sees       │   │
+│             │ brain sees the other's name │ stranger-dbfd8c91 (stranger) │   │
+│             │                             │ and the courier sees         │   │
+│             │                             │ stranger-4b592ebd (stranger) │   │
+│ appointment │ they meet as known robots,  │ met over the link, the       │ ✓ │
+│             │ and each brain hears the    │ household's robot sees       │   │
+│             │ other by name               │ g1-edu-mock (known) and the  │   │
+│             │                             │ courier sees                 │   │
+│             │                             │ agile-one-sn-mock (known)    │   │
+│ office      │ they share a network, so    │ met over the LAN, the        │ ✓ │
+│             │ the hello goes over the LAN │ household's robot sees       │   │
+│             │                             │ stranger-dbfd8c91 (stranger) │   │
+│             │                             │ and the courier sees         │   │
+│             │                             │ stranger-4b592ebd (stranger) │   │
+│ tampered    │ the household refuses the   │ refused: 4.4: the signature  │ ✓ │
+│             │ changed passport under rule │ does not verify with the key │   │
+│             │ 4.4, and meets nothing      │ did:key:z6Mkj8teDenqfzxvDBx… │   │
+│ injection   │ a stranger says to ignore   │ met stranger-bd61fd2c        │ ✓ │
+│             │ the brain's instructions,   │ (stranger); the sentence is  │   │
+│             │ and the brain never sees it │ in the log for a person, and │   │
+│             │                             │ the brain was told only that │   │
+│             │                             │ a stranger spoke             │   │
+╰─────────────┴─────────────────────────────┴──────────────────────────────┴───╯
+every record is in /home/robot/demo
+```
 
 Read more: [docs/passport/quickstart.md](docs/passport/quickstart.md) and [docs/passport/quackd.md](docs/passport/quackd.md).
 
@@ -1116,7 +1172,28 @@ quackd keeps what it learns on the robot: the pins a person made in `robot.yaml`
 
 `quackd onboard` is the whole of it on a robot. Run bare it is the wizard, and its subcommands are `sign`, `status`, `preflight`, `show`, `goal`, `stop`, `met`, `pin`, `forget`, `serve`, `demo` and `uninstall`. `status` says what the service is doing, which robots are near and how strongly they are heard, the run in hand and the last meetings, and `preflight` checks the board, the Bluetooth adapter, BlueZ, permissions and the network. `show` prints this robot's passport the way another robot reads it. `goal TEXT` hands the robot a goal whose run is shown and whose questions are asked in that terminal, and `stop` ends the run in hand, a goal or a meeting, and leaves the service running. `met` lists the robots it met lately and the ones it refused, with why.
 
-<!-- capture: quackd onboard status, sim board -->
+```
+$ quackd onboard status --dir ~/sim/one
+╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
+│ passport  checks out, until 2027-10-28T20:17:54Z                             │
+│ board     sim: a computer standing in for a robot's own                      │
+│ brain     fake                                                               │
+│ radio     sim, ready: the sim air at /home/robot/.quackd/sim-air, on network │
+│           home                                                               │
+│           advertising, scanning (4.5 passport adverts a second), taking      │
+│           links; 0 links open                                                │
+│ beacon    55fb788ac8f66da8 (next rotation in 14 min 35 s; rotated 0 times)   │
+│ near      within 2 m: -65.6 dBm or louder is near, -71.6 dBm or quieter far; │
+│           uncalibrated, from -59 dBm at 1 m and n 2.2                        │
+│ robots    2ef01e9a77341d05  near  -58.7 dBm  ~0.97 m  (the sim puts it at 1  │
+│           m)  met over the LAN                                               │
+│           did:key:z6Mkiroeq1K4PVUgMavH4Tktfk6NG7aMtEzsTK8FQeaSD1vt           │
+│ lan       on the LAN, with a record                                          │
+│ talking   stranger-0406f179 (stranger)                                       │
+│ run       idle                                                               │
+│ met       2026-10-28T20:18:17Z two (stranger)                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
 
 On any computer, `quackd passport check` reads a passport from a file, from stdin as `-`, from a URL or from a robot's address as `HOST:PORT` or an IP address, the way a robot would, shows what it proves and what it only claims, and names the rule of the specification a refusal broke, exiting 1. `quackd discover` lists the passports on a network beside the quackd robots it has always listed.
 
