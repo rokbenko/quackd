@@ -1011,7 +1011,7 @@ uv tool install "quackd[onboard]"
 quackd onboard
 ```
 
-The first installs [`uv`](https://docs.astral.sh/uv/). The second installs quackd with its `onboard` extra: zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and dbus-fast for Bluetooth, which install on Linux alone. JetPack 6 ships Python 3.10 and quackd needs 3.11 or newer, so the tool runs on a Python uv installs for it. The third is a wizard. Nobody has run any of the three on a Jetson yet.
+The first installs [`uv`](https://docs.astral.sh/uv/). The second installs quackd with its `onboard` extra: zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and dbus-fast for Bluetooth, which install on Linux alone. quackd needs Python 3.11 or newer and JetPack 6 ships 3.10, so on JetPack 6 the second line is `uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for the tool. The third is a wizard. Nobody has run any of the three on a Jetson yet.
 
 The wizard checks the board and what it can reach, then asks about six questions: the robot's name, what it is, who owns it and how to reach them, how a person stops it, its brain, as a provider and a model with the key typed hidden or the address of a model server of your own, and how close another robot must come to meet it, 2 m unless you say otherwise. It writes the answers into `robot.yaml`, the one file a robot is set up from, and the brain's key into `robot.env`. It makes two keys, the robot's own, which the service uses, and the owner's, sealed with a passphrase you type twice, and signs the passport with the owner's. On a Jetson it offers to switch on BlueZ's address privacy, prints the sudo lines that install and start `quackd-onboard.service`, runs them, and shows the service's status. It refuses to run as root.
 
@@ -1041,9 +1041,20 @@ When a step fails, a robot fails safe and says why. A passport that does not ver
 
 ### What a passport says
 
-A passport is one JSON document, and since 1.0 it is always signed: a compact JWS over its exact bytes, with Ed25519, by the owner's key. Six members are required. `passport` names the document and its version, the way `openapi` does at the top of an OpenAPI file. `id` is the robot, as a key rather than a name: its own Ed25519 public key written as a `did:key`, 56 characters, which nobody issues and anybody can check offline. `name` is for people and need not be unique. `owner` says who vouches for it: the owner key's own `did:key` as its `id`, which is the key the JWS is signed with, a label, and a contact, a web page or a role address and never personal data. `issued` and `expires` say when the owner signed it and until when it holds, at most 400 days later.
+A passport is one JSON document, and since 1.0 it is always signed: a compact JWS over its exact bytes, with Ed25519, by the owner's key. Six members are required. `passport` names the document and its version, the way `openapi` does at the top of an OpenAPI file. `id` is the robot, as a key rather than a name: its own Ed25519 public key written as a `did:key`, 56 characters, which nobody issues and anybody can check offline. `name` is for people and need not be unique. `owner` says who vouches for it: the owner key's own `did:key` as its `id`, which is the key the JWS is signed with, and optionally a label and a contact, a web page or a role address and never personal data. `issued` and `expires` say when the owner signed it and until when it holds, at most 400 days later.
 
-<!-- capture: docs/passport/vectors/minimal.json as uv run python scripts/passport_vectors.py writes it -->
+```json
+{
+  "passport": "1.0",
+  "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+  "name": "g1-edu-01",
+  "owner": {
+    "id": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2"
+  },
+  "issued": "2026-10-28T00:00:00Z",
+  "expires": "2027-10-28T00:00:00Z"
+}
+```
 
 Everything else is optional, and a robot adds only what it can say honestly. `board` says what computer the passport was signed on, `jetson`, `sim` or `other`, with its model, and quackd writes it and the robot's file never does, so a simulated robot always says so. `maker` says who made the robot and which model it is. `body` says what it is made of: its embodiment, how it moves, what it can hold, its sensors, and its numbers, mass, height, footprint, payload, reach, endurance and top speed. Each number is a figure with the confidence quackd's datasheets have always carried, `official`, `estimate` or `measured`, with its source, and a figure that is absent is not published, never zero. `skills` lists what it can do, and eight names (`stop`, `observe`, `report_state`, `move`, `go_to`, `search_scan`, `approach_and`, `say`) mean the same on every robot. `courtesy` lists what a peer may ask of it, `pause` and `identify`, kept apart from `skills` because whether it agrees is its owner's decision. `cannot` lists what it cannot do whatever a task says. `safety` says whether its motion stops by itself when its controller goes quiet, what kind of e-stop it has and how a person stops it, and a reader always reads it as the worst case, so a garbled value never makes a robot look safer. `ext` holds extensions keyed by reverse DNS.
 
@@ -1069,7 +1080,7 @@ Trust in any key comes from a person, never from a passport. The first time a ro
 |---|---|---|
 | stranger | its passport verified, and nobody pinned it | pause for up to 5 seconds, unless your robot's file refuses strangers a pause, and identify itself by light or sound |
 | known | a person pinned it, or pinned an owner who signed it | pause for up to 10 seconds, and identify itself by light, sound or motion |
-| same owner | this robot's own owner key signed it | what its owner listed, at a known robot's limits |
+| same owner | this robot's own owner key signed it | what a known robot can |
 
 Every peer draws from one global budget, at most one pause a minute across all of them, because a stranger can make a thousand keys and a limit per peer would stop nobody. Two robots of one owner know each other the moment they meet, because one key signed both passports. A robot with a new key in a passport the same owner signed is known to everybody who pinned that owner, and one pinned by its own key whose key changes is a stranger until a person decides again. A lost passphrase means a new owner key and every robot signed again, so keep it safe. A stolen robot carries its sealed owner key: a thief can guess the passphrase offline, and the robot's own key speaks until its passport expires, since there is no revocation yet, so a shorter `--days` is the lever. Read more: [docs/passport/trust.md](docs/passport/trust.md).
 
@@ -1199,7 +1210,7 @@ browser test.
 | Dry run | `--dry-run` sends nothing, and the log shows every verb it would have run, with its parameters |
 | Log | on by default, on stderr: the prompt, what the model thought and chose, every executor decision, every intent sent to the robot, every result, tokens and timings, a rule per step and a glyph per outcome. `--no-log` or `QUACKD_LOG=0` turns off what you watch rather than what is kept, and leaves the one line status that says what the run is waiting on, `--no-log-prompt` or `QUACKD_LOG_PROMPT=0` drops just the system prompt, `QUACKD_LOG_THINKING` caps the reasoning shown per turn (default 2000 characters, `all` for everything). The transcript keeps all of it either way. The spellings all of this had until 0.11, with TRACE where LOG is now, are gone after their one release of grace: an old flag is refused the way any unknown one is, and an old variable name still set is ignored and says so, once, above the header. See [docs/concepts/architecture.md](docs/concepts/architecture.md#log) |
 | Colour | on when the output is a terminal. `quackd --no-color <command>` or `NO_COLOR=1` turns it off, `FORCE_COLOR=1` keeps it in a pipe. `--no-color` belongs to `quackd` itself, so it goes before the command rather than after it. Glyphs fall back to ASCII on a codepage that cannot carry them |
-| Machine readable | `--json` on `validate`, `list-verbs`, `list-adapters`, `list-models`, `doctor` and `discover`. One object per line on stdout, nothing else, and the exit code is unchanged |
+| Machine readable | `--json` on `validate`, `list-verbs`, `list-adapters`, `list-models`, `doctor`, `discover` and `passport check`. One object per line on stdout, nothing else, and the exit code is unchanged |
 | Memory | on by default, under `~/.quackd/memory/`. `--no-memory` runs fresh, `--memory-dir` or `QUACKD_MEMORY_DIR` moves it |
 | Registered robots | `~/.quackd/robots.json` and `~/.quackd/flocks.json`, written by `quackd robot` and `quackd flock`. `--registry-dir` or `QUACKD_REGISTRY_DIR` moves both. Tokens, a board's `--host-token` included, are stored in plain text there. See [docs/guides/registry.md](docs/guides/registry.md) |
 
