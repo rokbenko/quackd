@@ -25,7 +25,7 @@ A robot sends a legacy advertisement, which holds 31 bytes, and fills it exactly
 | 10 | the beacon: a version byte, `0x01`, then a byte of flags, then the 8-byte beacon id |
 
 The flags say how to reach the robot: `LAN`, look it up on the local network; `LINK`, it accepts a
-Bluetooth link now; `BUSY`, it is at a limit on links or sessions and should be tried later. There
+Bluetooth link now; `BUSY`, it is at a limit on links or sessions. There
 is no name in the advert, no transmit power, no owner and no part of any key. The UUID is not one
 the Bluetooth SIG assigned: it is a version 5 UUID made from the specification's URL, which anybody
 can recompute and which sits outside the range the SIG reserves ([naming.md](naming.md)).
@@ -65,7 +65,8 @@ log-distance model: -59 dBm at 1 m, which is `rssi_at_1m`, falling off with a pa
   another, and a median shrugs a dip off.
 - **Near** once that median holds at or above the threshold for 1 second.
 - **Far** once it holds 6 dB below the threshold, -71.6 dBm for 2 m, for 5 seconds, or once nothing
-  has been heard for 8 seconds. An open Bluetooth link keeps a robot near until the link drops.
+  has been heard for 8 seconds. An open Bluetooth link keeps a quiet robot from going stale, and
+  makes it far at once when the link drops.
 
 Near starts the `hello`, and far ends the session: the robot says `bye` and closes the link.
 
@@ -87,7 +88,7 @@ Once a robot is near, the one that dials picks the way in this order:
 1. **The LAN**, when the advert's `LAN` flag is set, a DNS-SD record on the local network carries
    the same beacon id, and the HTTP inbox it names answers.
 2. **A Bluetooth link**, when the advert's `LINK` flag is set.
-3. Otherwise neither, and it tries again later, waiting longer each time, up to a minute.
+3. Otherwise neither, and it tries again later, waiting longer each time, up to about a minute.
 
 ### DNS-SD on a local network
 
@@ -113,7 +114,8 @@ In quackd a Jetson announces this record, and on the sim board a folder stands i
 ### The Bluetooth link
 
 With no shared network, the robot that dials connects to the other's GATT service, and the messages
-that would go over HTTP go in frames of 20 to 512 bytes, as large as the connection allows. The link
+that would go over HTTP go in frames, in datagrams of 20 to 512 bytes as the connection allows. The
+link
 closes if the answer names another beacon id than the advert did. A message is at most 16,384 bytes,
 carried strictly in order, and a robot accepts at most 4 links, closes one that brings no `hello`
 within 30 seconds, and takes at most 20 requests every 10 seconds on each. The frames and every

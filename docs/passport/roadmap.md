@@ -6,20 +6,21 @@ what is built and what has run.
 ## Status
 
 Nothing in this folder has run on a Jetson or over a real Bluetooth radio.
-Everything below that says "yes" ran on the sim board: a laptop standing in for a robot's computer,
-a folder standing in for the air, and two simulated robots as two processes on one machine. No part
-of it has run between two machines either.
+"Tested on the sim board" means the suite runs it on a laptop, mostly in one process against fakes,
+the sim board standing in for a robot's computer and a folder for the air. One test runs two
+processes that hear each other and pass a request over a simulated link. No part of it has run
+between two machines.
 
 | Part | Specified | Built in quackd | Tested on the sim board | Run on a Jetson | Run over a real radio |
 |---|---|---|---|---|---|
-| the passport, signed by its owner | 1.0 | yes: the wizard, `sign`, `show`, `quackd passport check` | yes | no | does not apply |
+| the passport, signed by its owner | 1.0 | yes: the wizard, `sign`, `show`, `quackd passport check` | yes, against the vectors | no | does not apply |
 | the robot key, and the owner key sealed by a passphrase | quackd's own | yes | yes | no | does not apply |
 | boards: the Jetson, the sim board, plugins | quackd's own | yes | the sim board; Jetson detection against fakes of a board's files | no | does not apply |
-| the Bluetooth LE advert and its rotating id | 1.0 | yes, through BlueZ | yes, and against a fake BlueZ | no | no |
+| the Bluetooth LE advert and its rotating id | 1.0 | yes, through BlueZ | the advert's bytes and the rotation's clock | no | no |
 | near and far by signal strength | quackd's own | yes | yes, with a threshold nobody has measured | no | no |
-| the Bluetooth link | 1.0 | yes, through BlueZ | yes, between two processes | no | no |
-| DNS-SD and the inbox on the LAN | 1.0 | yes | yes, with the sim board's LAN standing in for DNS-SD | no | does not apply |
-| `hello` with both robots checked, `say`, `bye` | 1.0 | yes | yes, between two processes | no | no |
+| the Bluetooth link | 1.0 | yes, through BlueZ | its frames, and one request between two processes | no | no |
+| DNS-SD and the inbox on the LAN | 1.0 | yes | the inbox over loopback HTTP, with the sim board's LAN standing in for DNS-SD | no | does not apply |
+| `hello` with both robots checked, `say`, `bye` | 1.0 | yes | yes, in one process | no | no |
 | `ask`, `answer`, `share`, the courtesy handler | 1.0 | yes | yes | no | no |
 | pins and the three tiers | quackd's own | yes: `pin`, `forget`, `met` | yes | no | does not apply |
 | the meeting task, goals, robots nearby in a run | quackd's own | yes: the service, `goal`, `stop` | yes, with a scripted pilot | no | no |
@@ -94,7 +95,7 @@ These were open questions, and the answers are the defaults 1.0 ships with.
 ## Leaving quackd
 
 The protocol starts inside quackd and is written to leave. Its module imports nothing else from
-quackd, and its spec uses none of quackd's words. When a second implementation exists, on another
+quackd, and its spec uses none of quackd's vocabulary. When a second implementation exists, on another
 board or in another language, or when another maker wants to adopt it, whichever comes first, the
 spec, the schemas, the vectors and the module move to a repository of their own, with their
 history. The Python package there is `robot-passport`, on the spec's own version line rather than

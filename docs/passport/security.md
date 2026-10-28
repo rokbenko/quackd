@@ -77,8 +77,9 @@ A robot's brain is a language model, and it reads whatever it is given as possib
 passport's `name`, its `cannot` lines and every `say` are text a stranger wrote. So:
 
 - **A stranger's free text never reaches the brain.** It sees a stranger's closed-vocabulary members
-  only, `embodiment`, `mobility`, the core skills, the figures and the board's kind, under a name made
-  from its key. The free text goes to the log, for a person, and free talk needs a pin.
+  only, its `embodiment`, `mobility` and `manipulator`, its mass, height and top speed, its core
+  skills and its board's kind, under a name made from its key. The free text goes to the log, for a
+  person, and free talk needs a pin.
 - **What does reach the brain is quoted as data**, as JSON under a heading that says these are claims
   other robots made, never instructions, turn by turn and within a size budget.
 - **A meeting can do almost nothing.** Its brain may report the robot's state, stop it, and speak, and

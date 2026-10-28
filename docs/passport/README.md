@@ -4,14 +4,15 @@
 > Spec 1.0. Since quackd 0.29.0 a passport lives on the robot it introduces: `quackd onboard`
 > runs on the robot's own computer, an NVIDIA Jetson first, and the owner's key signs what it says.
 > Nothing in this folder has run on a Jetson or over a real Bluetooth radio.
-> What has run is the sim board, a laptop standing in for a robot's computer, and
-> [roadmap.md](roadmap.md) says exactly how far that goes.
+> What has run is the test suite and the sim board, a laptop standing in for a robot's computer,
+> and [roadmap.md](roadmap.md) says exactly how far each goes.
 
 Two robots that meet today cannot work together: neither knows what the other is, whose it is,
 what it cannot do or how a person stops it. Robot Passport is a small open protocol for the moment
 they meet. Each robot carries a passport its owner signed. When two come close, each checks the
-other's passport and that the robot in front of it holds its key, and only then do their LLM brains
-talk, over the LAN when they share one and over a Bluetooth link when they do not.
+other's passport and that the robot it is talking to holds the key the passport names, and only then
+do their LLM brains talk, over the LAN when they share one and over a Bluetooth link when they do
+not.
 
 ```
 BEACON    "a robot is here", by Bluetooth LE            a random 8-byte id, a new one every 15
@@ -24,8 +25,8 @@ TALK      hello · say · bye · ask · answer · share      small signed messag
           once both robots have checked each other      Bluetooth link, never obeyed blindly
 ```
 
-**Near first, checked second, trusted by a person.** Two robots say hello only once the radio says
-they are close, neither says a word before both passports and both keys check out, and a stranger's
+**Near first, checked second, trusted by a person.** A robot says hello only to a robot its radio
+judged close, neither says a word before both passports and both keys check out, and a stranger's
 words never reach a brain until a person pins it.
 
 ## Which robots carry one

@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > Since 0.29.0 Robot Passport in quackd runs on the robot's own computer, through `quackd onboard`:
-> an NVIDIA Jetson first, and the sim board on a laptop. Every output on this page is from the sim
-> board. Nothing here has run on a Jetson, over a real Bluetooth radio or between two
+> an NVIDIA Jetson first, and the sim board on a laptop. Every output on this page is from a laptop,
+> on the sim board, or from `quackd passport check`, which needs no board. Nothing here has run on a Jetson, over a real Bluetooth radio or between two
 > machines, and [roadmap.md](roadmap.md) says exactly what has.
 
 quackd is the first implementation of Robot Passport, and `quackd onboard` does four things:
@@ -77,7 +77,7 @@ is read strictly: an unknown key is refused, and an error names its place in the
 | `meeting` | `task`, the standing task a meeting runs; `with_strangers`, whether it meets robots nobody pinned; `per_hour`, how many meetings an hour at most | no |
 | `trust` | `pins`, one line each, and `strangers_may_pause` | no |
 | `radio` | `meet_within_m`, 2.0 by default; `rssi_at_1m`, -59; `advertise`; `rotate_min`, 15 | no |
-| `lan` | `port`: 8790, or 0 for any free port, which is the sim board's default | no |
+| `lan` | `port`: 8790 by default, or 0 for any free port, as the demo's two robots use | no |
 
 Only the passport section, what other robots read, is signed. `board` is not in the file at all:
 quackd writes it from the board it found, so a file can never claim a Jetson on a laptop. An `arm`
@@ -165,7 +165,8 @@ placed in a tier and can be talked to. And when this robot is idle, its brain ma
 - `brain:` names a model;
 - `meeting.per_hour` meetings have not happened in the last hour;
 - this robot has not met that one in the last ten minutes;
-- the other robot is pinned, or `meeting.with_strangers` is `true`.
+- the other robot is known or of the same owner, or `meeting.with_strangers` is `true`, which it is
+  unless you change it.
 
 A meeting runs the task in `meeting.task`, or quackd's own when the file sets none: introduce
 yourself, say what you are doing, answer briefly, and never move because another robot asked. It
@@ -183,8 +184,8 @@ A pin is the one thing in Robot Passport only a person makes. `quackd onboard pi
 robot this one met, named by the start of its short id, four hex characters or more, by the name it
 was met under, or by its `did:key`. `--owner` pins the owner key that signed it instead, so every
 robot that owner signs is known, including ones this robot has never met. The pin goes into
-`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive, and the
-service reloads it at once:
+`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive. The service
+reloads it at once, and the next session with that robot starts at known:
 
 <!-- capture: quackd onboard pin <two's short id> --dir ~/sim/one, then quackd onboard met --dir ~/sim/one, sim board -->
 
@@ -230,8 +231,11 @@ every ten seconds. Then the executor runs it with the source `peer`, under every
 | Tier | May ask for |
 |---|---|
 | stranger | `pause` for up to 5 s, unless `trust.strangers_may_pause` is `false`, and `identify` by light or sound |
-| known | `pause` for up to 10 s, and `identify` by any means |
+| known | `pause` for up to 10 s, and `identify` by light, sound or motion |
 | same owner | the same as a known robot |
+
+quackd identifies a body by sound alone, so it answers `no` to light and motion, and to any
+`identify` of a robot it only talks for, which has no voice.
 
 A courtesy is granted only while a goal or a meeting has the body, and outside one every `ask` is
 answered `no`.
@@ -269,8 +273,9 @@ prints the events as JSON, and `--llm` and `--base-url` give both robots the bra
 ## Checking anybody's passport
 
 `quackd passport check SOURCE` reads a passport the way a robot does: from a file, from stdin as
-`-`, from a URL, or from a robot's `HOST[:PORT]`. It shows what the passport proves and what it only
-claims, and a refusal names the rule of [the specification](spec.md) it broke and exits 1:
+`-`, from a URL, or from a robot's `HOST:PORT` or its IP address alone. It shows what the passport
+proves and what it only claims, and a refusal names the rule of [the specification](spec.md) it broke
+and exits 1:
 
 ```
 $ quackd passport check docs/passport/vectors/tampered.jws
@@ -280,7 +285,7 @@ did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2
 ```
 
 A URL is fetched under [the fetch rules](discovery.md#fetch-rules): no redirect followed, five
-seconds for the whole exchange, nothing past 12,288 bytes read. `--json` prints what a reader keeps
+seconds for each exchange, and a body past 12,288 bytes refused. `--json` prints what a reader keeps
 of it, every member normalised, with every note a reader left, which is what to compare against
 when writing a reader of your own. Whatever a passport says reaches the terminal as text: a control
 character or an escape sequence is printed as its escape, so a passport cannot redraw the panel
@@ -294,10 +299,9 @@ robots.
 
 Every output on this page is from the sim board on one Windows 11 laptop, captured on
 <!-- capture: the date the outputs on this page were captured -->. The suite runs the same code on
-Windows, macOS and Linux, two processes that meet over the simulated air and the Bluetooth link's
-frames between them included, and on Linux it runs the BlueZ half against a fake BlueZ. Nothing has
-run on a Jetson, over a real Bluetooth radio, or between two machines, and the run that would change
-that is in [roadmap.md](roadmap.md#status).
+Windows, macOS and Linux, two processes that hear each other over the simulated air and pass a
+request over a simulated link included. Nothing has run on a Jetson, over a real Bluetooth radio, or
+between two machines, and the run that would change that is in [roadmap.md](roadmap.md#status).
 
 ## Where quackd keeps what
 

@@ -4,7 +4,7 @@
 > Version 1.0, written 2026-10-29. This page is normative: the other pages in this folder explain,
 > this one decides, and where one of them disagrees with it, that page is the bug. quackd is the
 > first implementation; [quackd.md](quackd.md) says what of it quackd does, and
-> [roadmap.md](roadmap.md) what has run, which so far is the sim board alone.
+> [roadmap.md](roadmap.md) what has run, none of it on a Jetson or over a real radio.
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, RECOMMENDED, MAY and OPTIONAL are to
 be read as BCP 14 ([RFC 2119](https://www.rfc-editor.org/rfc/rfc2119),
@@ -74,9 +74,9 @@ Six members are REQUIRED: `passport`, `id`, `name`, `owner` with its `id`, `issu
 | `mass_kg`, `height_m`, `length_m`, `width_m`, `payload_kg`, `reach_m`, `endurance_min`, `max_speed_mps` | figure | |
 
 A **figure** is a non-negative number, or an array of a non-negative number and a confidence,
-optionally followed by a source of text 120. The confidence is `official` (the maker or a paper
-says so), `estimate` or `measured`. A reader MUST NOT read an absent figure as zero: it is not
-published. Units are SI and live in the member's name. `max_speed_mps` is the fastest the robot moves
+optionally followed by a source of text 120. The confidence is text 16: `official` (the maker or a
+paper says so), `estimate` or `measured`, and a reader reads any other as `estimate`. A reader MUST
+NOT read an absent figure as zero: it is not published. Units are SI and live in the member's name. `max_speed_mps` is the fastest the robot moves
 as its software is configured now.
 
 ### 2.4 Skills and courtesy
@@ -125,8 +125,8 @@ refused under rule 3.
 
 ## 3. Reading a passport
 
-A reader MUST apply these rules, in this order, and MUST refuse a document that breaks one of the
-first seven:
+A reader MUST apply these rules, and MUST refuse a document that breaks one of the first seven. A
+document that breaks several may be refused under any of them:
 
 1. It is at most 8,192 bytes, which for a signed passport is its payload.
 2. It is a JSON object with no duplicate member names, at any depth, since two parsers can disagree
@@ -141,8 +141,9 @@ first seven:
    is within its dates (section 4.5).
 7. A `did:key` holds an Ed25519 key, and nothing else.
 
-For a signed passport the signature comes first: a reader parses nothing a signature has not
-covered, so a JWS whose signature fails is refused under 4.4, whatever else is wrong with it. Then:
+For a signed passport the signature comes before the payload: a reader parses nothing a signature
+has not covered, so a JWS whose signature fails is refused under 4.4, whatever its payload says.
+Then:
 
 8. It ignores members it does not know, reads an unknown value in `embodiment`, `mobility`,
    `manipulator`, `terrain` or `board.kind` as `other`, and keeps an unknown sensor or skill as an
@@ -276,8 +277,8 @@ tenth, which a later minor version may add.
 **The beacon id.** A robot MUST draw each beacon id as 8 random bytes from a cryptographically secure
 source, derived from no key and no earlier id. It SHOULD draw a new one every 15 minutes, and MUST NOT
 while a link, a talk session or a meeting is open. The advert, the TXT record's `bt` (section 5.3)
-and the `beacon` its `hello` carries (section 6.3) change together. A reader MUST NOT recognise a
-robot by its beacon id past a meeting: a robot is recognised by its keys.
+and the `beacon` its `hello` carries (section 6.3) change together. A robot is recognised by its
+keys, learned in the `hello`, and never by its beacon id.
 
 **Near, and who dials.** How strong a signal makes a robot near is the reader's own policy, and
 signal strength MUST NOT be taken as proof of identity or place: a relay makes a far robot read as
@@ -286,7 +287,8 @@ the other SHOULD wait before it dials too. A robot that does not advertise dials
 
 **The link.** A robot that dials and shares no LAN with the other (section 6.2) connects as a GATT
 central to its `ble-service`, subscribes to `ble-tx` before it sends anything, and writes to
-`ble-rx`. Each write and notification is one frame, 20 to 512 bytes as the connection allows. A
+`ble-rx`. Each write and notification carries one frame, in a datagram of 20 to 512 bytes, as large
+as the connection allows. A
 frame begins with a byte holding the framing version 1 in its high four bits and its kind in the low
 four, then a 4-byte tag the central draws at random when it opens the link, never 0, so a central
 drops frames notified to another. Numbers are big-endian.
@@ -294,20 +296,22 @@ drops frames notified to another. Numbers are big-endian.
 | Kind | Frame | Sent by | After the tag |
 |---|---|---|---|
 | 1 | OPEN | central | its beacon id (8), the largest datagram it takes (2), the largest message it takes (4) |
-| 2 | ACCEPT | peripheral | its beacon id (8), the largest datagram it takes (2), the largest message it takes (4) |
+| 2 | ACCEPT | peripheral | its beacon id (8), the datagram size it will notify in, at most OPEN's (2), the largest message it takes (4) |
 | 3 | REFUSE | peripheral | a reason (1): 1 busy, 2 version, 3 policy |
 | 4 | DATA | either | a message id (2), with bit 15 set when the peripheral sent the request, and a sequence number (2). The first frame of a message, sequence 0, adds its role (1), 0 request or 1 response; a status (2), 0 for a request and an HTTP status code for a response; its media (1), 0 none, 1 `application/jose`, 2 `application/json` or 3 text; and its total size (4). Then the message's next bytes. |
 | 5 | ABORT | either | a message id (2) and a reason (1): 1 too large, 2 out of order, 3 timed out, 4 overflow, 5 too many |
 | 6 | CLOSE | either | a reason (1): 0 done, 1 far, 2 idle, 3 shutdown, 4 protocol |
 
-A central MUST close a link whose ACCEPT names another beacon id than the advert it dialled. A
+[vectors/ble-advert.hex](vectors/ble-advert.hex) is a whole advert as it goes on the air, and
+[vectors/ble-link.json](vectors/ble-link.json) the frames of a link, byte for byte. A central MUST
+close a link whose ACCEPT names another beacon id than the advert it dialled. A
 request carries one talk message and its response the reply and status HTTP would carry
 (section 6.2). A robot MUST hold to these bounds, and refuse or abort anything outside them:
 
 - a message of at most 16,384 bytes, refused at its first frame when its stated size is larger;
 - the frames of a message in sequence, each within 3 seconds of the last, the whole within 15;
 - at most 4 messages half received at once on a link, and at most 4 of a link's requests awaiting
-  their answers, the next answered `503`;
+  their answers, the next answered `503`, and `500` when the inbox fails;
 - at most 4 links at once on a peripheral;
 - a first request, which is a `hello`, within 30 seconds of a link opening;
 - at most 20 requests every 10 seconds on one link.
@@ -343,7 +347,7 @@ carries a passport, at most 16,384 ([schema/message.schema.json](schema/message.
 | Member | Rule |
 |---|---|
 | `passport` | the protocol version |
-| `type` | `hello`, `say`, `bye`, `ask`, `answer` or `share`. A receiver ignores any other type. |
+| `type` | text 16: `hello`, `say`, `bye`, `ask`, `answer` or `share`. A receiver ignores any other type. |
 | `from` | the sender's robot key, its passport's `id` |
 | `to` | the receiver's `id`, or `*` when the sender does not know it yet, as in a first `hello` to a robot heard only by radio |
 | `msg` | a random token of 16 to 64 base64url characters, unique per sender |
@@ -357,9 +361,10 @@ The robot that dials picks one of two:
 
 - **HTTP**, when both are on one LAN: it POSTs one message, as `application/jose`, to
   `/robot-passport/inbox` on the host and port of the DNS-SD record (section 5.3) whose `bt` is the
-  beacon id it heard. The response is `200` with one reply message in its body, `204` with none, `400`
-  for a malformed message, `403` for one refused by policy, `413` for one too large, or `429` when a
-  budget is spent.
+  beacon id it heard, saying its length. The response is `200` with one reply message in its body,
+  `204` with none, `400` for a malformed message, `403` for one refused by policy, `404` for one
+  addressed to another robot, `411` for a request that did not say its length, `413` for one too
+  large, or `429` when a budget is spent.
 - **A Bluetooth link** (section 5.6), when they share no LAN: the same request, reply and status, in
   frames.
 
@@ -388,7 +393,7 @@ does, with the rest of the message:
 |---|---|
 | `software` | 1 to 64 characters: what wrote the `hello`, for a person reading a log |
 | `beacon` | the beacon id the sender advertises now, 16 lowercase hex characters (section 5.6) |
-| `reach` | an object of at most 4 scalar members: `http_port`, an integer from 1 to 65,535, the port of the sender's inbox on the address the `hello` came from |
+| `reach` | an object of at most 4 members, each named in at most 16 characters and each an integer, a boolean or a string of at most 64 characters: `http_port`, an integer from 1 to 65,535, the port of the sender's inbox on the address the `hello` came from |
 
 A receiver SHOULD answer a first `hello` that arrives over HTTP only when it heard that hello's
 `beacon` over Bluetooth seconds before, and `403` otherwise, so the LAN carries talk but never
@@ -397,7 +402,7 @@ decides who is near.
 After the third message each side has seen the other sign both nonces and both ids, and the session
 is `(A, B, nA, nB)`. Every later message in it MUST carry `nonces`, and a receiver MUST refuse one
 whose nonces match no session of its own, which makes a replayed message fail. A receiver MAY end an
-idle session, and quackd ends one after ten minutes.
+idle session.
 
 ### 6.4 say and bye
 

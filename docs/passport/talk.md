@@ -2,8 +2,9 @@
 
 > [!NOTE]
 > Spec 1.0. quackd speaks all six messages over an HTTP inbox on a LAN and over a Bluetooth link,
-> and decides every `ask` with its courtesy handler. Both channels are tested on the sim board, and
-> neither has run on a Jetson or over a real Bluetooth radio ([roadmap.md](roadmap.md)).
+> and decides every `ask` with its courtesy handler. The suite runs talk over loopback HTTP and the
+> link's frames on their own, and neither has run on a Jetson or over a real Bluetooth radio
+> ([roadmap.md](roadmap.md)).
 
 Two robots that are near each other and have each checked the other's passport can talk: six small
 messages to prove who they are, say something, share what they saw, or ask each other for a
@@ -55,6 +56,8 @@ the robot's DNS-SD record names, and reads the reply in the response:
 | `204` | received, no reply |
 | `400` | malformed |
 | `403` | refused by the receiver's policy, or a first `hello` from a robot its radio has not heard |
+| `404` | addressed to another robot, or sent to a path that is not the inbox |
+| `411` | a request that did not say its length |
 | `413` | too large |
 | `429` | a budget is spent |
 

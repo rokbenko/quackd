@@ -28,8 +28,8 @@ BlueZ. quackd needs Python 3.11 or later and JetPack 6 ships 3.10, so on JetPack
 2. **About six questions**: the robot's name, what it is, its owner's label and contact, how a
    person stops it, its brain, a provider and model with its key typed hidden or a model server's
    URL, and how close another robot must come before the two meet.
-3. **One file**, `robot.yaml`, every answer with a comment beside it, and `robot.env` beside it with
-   the brain's key, both readable by you alone.
+3. **One file**, `robot.yaml`, every section with a comment that says what it does, and `robot.env`
+   beside it with the brain's key, both readable by you alone.
 4. **Two keys**: the robot's own, and your owner key, sealed with a passphrase of at least 12
    characters that you type twice.
 5. **The signature.** Your owner key signs the passport section of `robot.yaml`: that is the
@@ -115,4 +115,5 @@ quackd onboard met --dir ~/sim/one
 <!-- capture: quackd onboard status --dir ~/sim/one, then quackd onboard met --dir ~/sim/one, sim board -->
 
 They are strangers to each other, so neither brain hears what the other says. `quackd onboard pin`
-with the other's name changes that, and [quackd.md](quackd.md#pinning) shows it.
+with the other's name changes that from their next session, and [quackd.md](quackd.md#pinning) shows
+it.

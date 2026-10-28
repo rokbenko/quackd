@@ -19,8 +19,8 @@ the passport, from what a person decided.
 | that, after a `hello` | the robot it is talking to holds R right now, and the other side knows the same of it | which physical body that is ([below](#which-body-holds-the-key)) |
 
 No row makes a mass or a `cannot` true: those stay figures with a confidence and a source. A reader
-labels every passport it shows with its row ([spec rule 11](spec.md#3-reading-a-passport)), and talk
-never accepts the first.
+labels every passport it shows as signed by its owner's key or as unsigned, a claim
+([spec rule 11](spec.md#3-reading-a-passport)), and talk never accepts an unsigned one.
 
 ## The id is a key
 
@@ -60,8 +60,8 @@ drops stamps, and the robot key alone cannot change a word of the passport.
 A reader refuses a passport under [rule 4.4](spec.md#44-signed-passports) when its robot's own key
 signed it, the 0.1 shape, when any key but the one `owner.id` names signed it, or when its owner key
 is its robot key. Under [rule 4.5](spec.md#45-validity) it refuses one whose dates the reader's clock
-is outside, with five minutes of grace for a clock a little ahead. quackd signs for 365 days unless
-`--days` says otherwise, and never past the 400 a reader accepts.
+is outside, with five minutes of grace for an `issued` a little ahead of it. quackd signs for 365
+days unless `--days` says otherwise, and never past the 400 a reader accepts.
 
 The signature is over the passport's exact bytes, a compact JWS
 ([RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)) with `alg` `Ed25519` and `typ`
@@ -81,8 +81,9 @@ derives from your passphrase, at a cost of 128 MiB of memory for every guess, wi
   and once each time a passport is signed. A wrong one signs nothing.
 - **The service never needs it.** It serves the passport the owner last signed and signs talk with
   the robot key, so a robot that restarts at three in the morning asks nobody for anything.
-- **No environment variable carries it.** A script passes `--passphrase-file`, and quackd refuses a
-  file that anybody but its owner can open, the way SSH refuses a private key others can read.
+- **No environment variable carries it.** A script passes `--passphrase-file`, and where files have
+  modes quackd refuses one that anybody but its owner can open, the way SSH refuses a private key
+  others can read. Windows has no such modes, and the check is skipped there.
 
 A second robot of the same owner starts from the same sealed key, with `--owner-key`
 ([quackd.md](quackd.md#a-second-robot-of-the-same-owner)).
@@ -122,11 +123,13 @@ bounded ([spec section 6.5](spec.md#65-ask-and-answer)).
 | Tier | How a robot gets there | What it can make your robot do | What your robot's brain hears |
 |---|---|---|---|
 | stranger | its passport checked out, and nothing about it is pinned | `pause` for up to 5 s, and `identify` by light or sound | its closed-vocabulary facts, under a name made from its key. Its free text, its name and its sentences included, goes to the log, for a person. |
-| known | a person pinned its robot key, or the owner key that signed it | `pause` for up to 10 s, and `identify` by any means | its passport and what it says, JSON-quoted |
+| known | a person pinned its robot key, or the owner key that signed it | `pause` for up to 10 s, and `identify` by light, sound or motion | its name, skills, what it cannot do and its safety, and what it says, JSON-quoted |
 | same owner | it is signed by this robot's own owner key | what a known robot can | the same |
 
-A robot meets strangers only when `robot.yaml` says `with_strangers: true` under `meeting:`, and
-even then a stranger's words stay in the log. Free talk needs a pin.
+quackd identifies a body by sound alone, so an `identify` by light or motion is answered `no`, and
+so is any `identify` of a robot quackd only talks for, which has no voice. A robot meets strangers
+unless `robot.yaml` says `with_strangers: false` under `meeting:`, and a stranger's words stay in
+the log either way. Free talk needs a pin.
 
 **One global budget.** New keys cost nothing, so a limit per peer stops nobody. Every peer draws from
 one budget, one pause a minute and one `identify` every ten seconds across all of them, and an owner
@@ -167,8 +170,9 @@ even with nothing changed, and a robot whose own passport has expired stops talk
 ### A name that looks like another
 
 quackd compares names the way a person sees them: case, spaces, characters that show nothing and
-letters from other scripts drawn like Latin ones are folded away, so `G1-EDU-01 `, a `g1-edu-01` with
-a zero-width space in it and one spelled with a Cyrillic letter all read as `g1-edu-01`. A robot whose
+letters from other scripts or digits drawn like Latin letters are folded away, so `G1-EDU-01 `, a
+`g1-edu-01` with a zero-width space in it and one spelled with a Cyrillic letter all fold to one
+name. A robot whose
 name reads like a pinned robot's under another key is warned about, and so is one whose owner label
 reads like a pinned owner's, or yours, under another owner key. Only keys decide a tier.
 
