@@ -40,19 +40,16 @@ Wi-Fi is not the courier's.
      │  7  far: the signal falls away, bye, the link closes           │
 ```
 
-1. **Hear.** `home-01` advertises a beacon: a random id that changes every 15 minutes and three
-   flags, and nothing that says which robot it is ([discovery.md](discovery.md)). `courier-01` hears
-   it, with its signal strength.
+1. **Hear.** `home-01` advertises a beacon, a random id that changes every 15 minutes and three
+   flags ([discovery.md](discovery.md)), and `courier-01` hears it with its signal strength.
 2. **Near.** The median signal over the last 3 seconds holds above the threshold `meet_within_m`
    makes, -65.6 dBm for 2 m, for a second. Near is a hint, not proof: a relay can make a far robot
    read as near ([discovery.md](discovery.md#near-is-a-hint-not-proof)).
 3. **Dial.** The lower beacon id dials, and here that is `courier-01`. No LAN record carries
    `home-01`'s beacon id, so it opens a Bluetooth link instead.
-4. **Check both.** Three `hello` messages. Each carries its robot's passport, signed by its owner,
-   and each signs a nonce the other made up a moment before. Each robot reads the other's passport:
-   the owner's signature, its validity, and that it names the robot key that signed the `hello`.
-   Either robot that fails any of it is refused, and nothing it said goes further
-   ([talk.md](talk.md#hello-proving-who-you-are-in-three-steps)).
+4. **Check both.** Three `hello` messages, each carrying its robot's owner-signed passport, and each
+   signing a nonce the other made up. Each robot checks the other's signature, validity and key, and
+   a robot that fails is refused ([talk.md](talk.md#hello-proving-who-you-are-in-three-steps)).
 5. **Place.** Neither robot pinned the other, or its owner, so each is a stranger to the other
    ([trust.md](trust.md#the-tiers)).
 6. **Meet.** Both robots are idle, and both owners let their robots meet strangers, so each brain
@@ -78,11 +75,10 @@ would go over the LAN instead, and nothing else would change.
 
 ## What a person sees
 
-- **On the robot**, over ssh or at its own screen: `quackd onboard status` shows the robots near
-  now, with their tier and signal, and the last meetings, and `quackd onboard met` the robots met
-  and the ones refused, and why ([quackd.md](quackd.md#status-preflight-and-show)).
-- **In a meeting's record**, kept with the robot's runs: each robot met, each word that passed and
-  each `ask`, with what the handler decided, the stranger's own words included, for a person.
+- **On the robot**: `quackd onboard status` shows the robots near now, with tier and signal, and
+  `quackd onboard met` the robots met and refused, and why
+  ([quackd.md](quackd.md#status-preflight-and-show)).
+- **In a meeting's record**: each robot met, each word and each `ask`, a stranger's words included.
 - **In the service's journal**: every refusal, with the rule it broke.
 
 ## The life of a passport

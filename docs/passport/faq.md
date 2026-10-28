@@ -22,9 +22,8 @@ on board that can run quackd. Robot Passport is for the robots that will meet st
 and quadrupeds, which nearly all carry a Jetson ([compatibility.md](compatibility.md)).
 
 **Do I need quackd?**
-Not to read a passport or to implement the protocol: it is a specification, with schemas and
-conformance vectors, and any robot can carry one ([spec.md](spec.md)). quackd is the first
-implementation, and the one that does it all for you.
+Not to implement the protocol: it is a specification, with schemas and conformance vectors
+([spec.md](spec.md)). quackd is its first implementation.
 
 **Does my robot need the internet?**
 No. Two robots find each other by Bluetooth and talk over the LAN or a Bluetooth link, and a
@@ -66,10 +65,6 @@ Make a new owner key, sign every robot again, and ask whoever pinned the old one
 **Is it encrypted?**
 No. Messages are signed, so nobody can forge them, and anybody in range can read them. Say nothing
 secret over talk ([security.md](security.md#what-nothing-here-stops)).
-
-**Why JSON and not something smaller?**
-Because every language reads it, people can read it, and it fits easily in a `hello`. A binary
-profile, CBOR with COSE signatures, is planned for a microcontroller that needs it.
 
 **Is "Robot Passport" the same as the Robot Context Protocol?**
 No. The protocol started under that name and was renamed because three projects already use it

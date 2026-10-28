@@ -6,13 +6,11 @@
 > BlueZ, and [roadmap.md](roadmap.md) says what that proves.
 
 Before two robots can check each other's passports, each has to know the other is there, and
-close. That is the **beacon**'s whole job. In 1.0 the beacon is a Bluetooth LE advert: a few bytes,
-sent a few times a second, that say a robot is here and nothing about which. Its signal strength
-says how near it is. The passports themselves cross over the LAN when the two robots share one, and
-over a Bluetooth link when they do not, inside the `hello` that checks both
-([talk.md](talk.md#hello-proving-who-you-are-in-three-steps)).
-
-The specification's own words are in [section 5](spec.md#5-beacons-and-bindings).
+close. That is the **beacon**'s whole job: a Bluetooth LE advert, a few bytes sent a few times a
+second, that says a robot is here and nothing about which, while its signal strength says how near.
+The passports cross later, over the LAN or a Bluetooth link, inside the `hello` that checks both
+([talk.md](talk.md#hello-proving-who-you-are-in-three-steps)). The specification's own words are in
+[section 5](spec.md#5-beacons-and-bindings).
 
 ## The Bluetooth LE beacon
 
@@ -39,23 +37,21 @@ The **beacon id** is 8 random bytes, drawn fresh and derived from no key. Every 
 link, a talk session or a meeting is open: then it tries again every 30 seconds until nothing is.
 The advert, the robot's LAN record and the beacon its `hello` carries all change together.
 
-A listener who wrote an id down an hour ago cannot match it to the robot by the id alone, which is
-the point ([privacy.md](privacy.md#tracking)). Two robots that meet again recognise each other by
-the keys in their passports, learned in the `hello`, and quackd remembers its cooldowns and
-refusals by a robot's `did:key`, never by its beacon id, so a rotation costs at most one more
-`hello`.
+A listener who wrote an id down an hour ago cannot match it to the robot by the id alone
+([privacy.md](privacy.md#tracking)). Robots that meet again know each other by the keys in their
+passports, and quackd keeps its cooldowns and refusals by `did:key`, never by beacon id, so a
+rotation costs at most one more `hello`.
 
 > [!WARNING]
 > The beacon id is designed to rotate, and the rotation is tested on the sim board and against a fake
-> BlueZ. Nobody has run it over a real radio, and nobody has watched a Jetson's adapter send it.
-> The radio's own address is a separate matter, which [privacy.md](privacy.md#tracking) covers.
+> BlueZ. Nobody has run it over a real radio, or watched a Jetson's adapter send it. The radio's own
+> address is a separate matter, which [privacy.md](privacy.md#tracking) covers.
 
 ### Who says hello first
 
-Two robots that come close hear each other at about the same moment. The one with the lower beacon
-id dials at once, and the other waits 15 seconds, then dials only if nobody has. A robot that does
-not advertise dials at once. Either way both robots end up checking each other, and if both dial at
-once, talk keeps the newer session and the older goes quiet.
+The robot with the lower beacon id dials at once, and the other waits 15 seconds, then dials only if
+nobody has. A robot that does not advertise dials at once. If both dial, talk keeps the newer session
+and the older goes quiet.
 
 ## Near: signal strength
 
@@ -75,15 +71,14 @@ Near starts the `hello`, and far ends the session: the robot says `bye` and clos
 
 ### Near is a hint, not proof
 
-- **Nobody has calibrated it.** The -59 dBm at 1 m is a default nobody has measured on a Jetson,
-  and an antenna, a body or a wall moves a reading by more than the 6 dB between near and far. The
-  first real run will write the readings at 1, 3 and 10 m down ([roadmap.md](roadmap.md#status)).
-- **A relay reads as near.** Somebody can repeat a far robot's advert next to yours. Nothing in an
-  advert can stop that, and the `hello` that follows proves who holds a key, never where it is.
-- **Near is not trusted.** A robot that is near is still checked in full before a word, and still a
-  stranger unless a person pinned it. Being near only starts the `hello`.
-- **What near can cost is bounded.** A stranger at arm's length can ask for a pause of 5 seconds,
-  out of one budget every peer shares ([trust.md](trust.md#the-tiers)).
+- **Nobody has calibrated it.** The -59 dBm at 1 m is a default nobody has measured on a Jetson, and
+  an antenna, a body or a wall moves a reading by more than the 6 dB between near and far. The first
+  real run writes the readings at 1, 3 and 10 m down ([roadmap.md](roadmap.md#status)).
+- **A relay reads as near.** Somebody can repeat a far robot's advert next to yours, and the `hello`
+  that follows proves who holds a key, never where it is.
+- **Near is not trusted.** It only starts the `hello`. A robot near is still checked in full, and a
+  stranger unless a person pinned it, which bounds what it can ask for
+  ([trust.md](trust.md#the-tiers)).
 
 ## Reaching each other
 
@@ -106,30 +101,21 @@ on the port its passport and its inbox answer on. Its TXT record:
 | `id` | the robot key's short id, which never changes |
 | `bt` | the current beacon id, which changes with the advert |
 
-Every pair stays under 200 bytes, and a reader never trusts the instance name, which is just a label
-the advertiser chose. A record with `v=1`, the 0.1 shape, is ignored. The record puts the robot's
-fixed short id beside its current beacon id, so anybody on the same LAN can tie the two together:
-[privacy.md](privacy.md#tracking) says what that means.
-
-A `hello` that arrives over the LAN is answered `403`, "this robot has not heard you by radio",
-unless the beacon it carries was heard over the radio in the last 8 seconds. The LAN carries the
-talk, and the radio still decides who is near. In quackd a Jetson announces this record; on the
-sim board the LAN is a folder that stands in for it.
+Every pair stays under 200 bytes, a reader never trusts the instance name, and a `v=1` record, the
+0.1 shape, is ignored. The record puts the fixed short id beside the current beacon id, so anybody
+on the LAN can tie the two together ([privacy.md](privacy.md#tracking)). A `hello` that arrives over
+the LAN is answered `403`, "this robot has not heard you by radio", unless the beacon it carries was
+heard over the radio in the last 8 seconds: the LAN carries talk, and the radio decides who is near.
+In quackd a Jetson announces this record, and on the sim board a folder stands in for it.
 
 ### The Bluetooth link
 
-When there is no shared network, the two robots talk over a Bluetooth LE connection: the one that
-dials connects to the other's GATT service, and the same messages that would go over HTTP go in
-small frames, from 20 bytes up to 512 each, as large as the connection allows.
-
-- The link opens with the dialler's beacon id and closes if the answer names another beacon id
-  than the advert did.
-- One message is at most 16,384 bytes, the largest `hello`, carried in order, piece by piece. A
-  piece out of order, a repeat, or more bytes than the message announced ends that message.
-- A robot accepts at most 4 links, closes one that brings no `hello` within 30 seconds, and takes
-  at most 20 requests every 10 seconds on each.
-
-The frames and every limit, byte by byte, are in [spec section 5.3](spec.md#5-beacons-and-bindings).
+With no shared network, the robot that dials connects to the other's GATT service, and the messages
+that would go over HTTP go in frames of 20 to 512 bytes, as large as the connection allows. The link
+closes if the answer names another beacon id than the advert did. A message is at most 16,384 bytes,
+carried strictly in order, and a robot accepts at most 4 links, closes one that brings no `hello`
+within 30 seconds, and takes at most 20 requests every 10 seconds on each. The frames and every
+limit are in [spec section 5.6](spec.md#5-beacons-and-bindings).
 
 ## The well-known URL
 
@@ -141,16 +127,14 @@ GET /.well-known/robot-passport.jws     the passport as its owner signed it, as 
 ```
 
 Robots never need it to meet, since a `hello` carries the passport, but a person or a tool can read
-it: `quackd passport check HOST` does. `/.well-known/` is the place
-[RFC 8615](https://www.rfc-editor.org/rfc/rfc8615) reserves for exactly this, the same place A2A
-puts an agent's card. Plain HTTP is acceptable on a local network, because a passport is proved by
-its owner's signature rather than by its transport.
+it, as `quackd passport check HOST` does. `/.well-known/` is where
+[RFC 8615](https://www.rfc-editor.org/rfc/rfc8615) puts such things, and plain HTTP is acceptable on
+a LAN, because the owner's signature proves a passport, not its transport.
 
 ## Fetch rules
 
-A robot that fetched wherever it was told would turn every robot on a network into a way to probe
-that network. So a reader that fetches on its own initiative follows four rules
-([spec section 5.4](spec.md#5-beacons-and-bindings)):
+A robot that fetched wherever it was told would be a way to probe its network. So a reader that
+fetches on its own initiative follows four rules ([spec section 5.7](spec.md#57-fetch-rules)):
 
 - It fetches only from the host and port that advertised the passport, or from a URL a person typed.
 - It follows no redirects.
@@ -162,9 +146,8 @@ that network. So a reader that fetches on its own initiative follows four rules
 ## Caching
 
 A reader caches a passport only once it has verified it, keyed by its `id` and its digest, and
-never past its `expires`. An unsigned passport is never cached by its `id`: anybody can claim any
-`id`, so a cache that took an unsigned passport at its word would let one robot overwrite what a
-reader knows about another.
+never past its `expires`. An unsigned one is never cached by its `id`, since anybody can claim any
+`id`, and a cache that believed it would let one robot overwrite what a reader knows of another.
 
 ## Removed in 0.29.0
 
@@ -172,10 +155,8 @@ reader knows about another.
 <a id="mqtt"></a>
 <a id="ros-2"></a>
 
-Version 0.1 carried a beacon five ways: the well-known URL, a QR sticker or NFC tag, DNS-SD, an
-MQTT broker and a ROS 2 topic, with Bluetooth reserved until its ids could rotate. 1.0 keeps
-DNS-SD and the well-known URL and adds Bluetooth LE, now that its ids rotate. The sticker, the
-broker and the ROS 2 topic went: none of them can say whether a robot is near, a sticker proves
-nothing about the robot it is stuck to, and nothing ran on them between two machines. The pages as
-they were are at the
+Version 0.1 carried a beacon five ways: the well-known URL, a QR sticker or NFC tag, DNS-SD, an MQTT
+broker and a ROS 2 topic, with Bluetooth reserved until its ids could rotate. 1.0 keeps DNS-SD and
+the well-known URL and adds Bluetooth LE, now that its ids rotate. The sticker, the broker and the
+ROS 2 topic went, since none of them can say whether a robot is near. The page as it was is at the
 [v0.28.0 tag](https://github.com/rokbenko/quackd/blob/v0.28.0/docs/passport/discovery.md).

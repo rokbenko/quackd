@@ -5,11 +5,9 @@
 > wizard offers BlueZ address privacy, and neither has been tested on a real radio
 > ([roadmap.md](roadmap.md)).
 
-A robot that carries a passport announces itself by radio, which reaches through walls and needs
-nobody to see it. That makes it worth being careful about what it announces, because a robot usually
-belongs to a person, works in their home or their workplace, and goes where they go. This page says
-what each layer reveals, what to leave out, and how to take part while revealing as little as
-possible.
+A robot that carries a passport announces itself by radio, which reaches through walls. A robot
+usually belongs to a person and goes where they go, so this page says what each layer reveals, what
+to leave out, and how to take part while revealing as little as possible.
 
 ## What each layer reveals
 
@@ -37,9 +35,8 @@ it should reach whoever looks after the robot without saying who they are or whe
 - **Not:** a home address, a personal phone number, a person's full name, unless that person really
   wants strangers to have them.
 
-The point of `owner` is the point of a name tag on a dog's collar: a lost robot gets home, and a
-robot doing something wrong has somebody to tell. A contact page does both without giving a
-stranger more than that.
+The point of `owner` is a name tag on a collar: a lost robot gets home, and a robot doing something
+wrong has somebody to tell.
 
 ## Serial numbers
 
@@ -49,8 +46,7 @@ it out.
 
 ## Tracking
 
-Anything stable that a robot broadcasts can be used to follow it, and a radio broadcast reaches
-anybody in range, in the street and through walls. So:
+Anything stable that a robot broadcasts can be used to follow it. So:
 
 - **The beacon id changes every 15 minutes**, and never in the middle of a meeting. It is 8 random
   bytes tied to no key, so a listener cannot tell from the id alone that the robot it hears now is
@@ -89,8 +85,7 @@ Nothing is sent anywhere else, with one exception you choose: whatever the brain
 the model `brain:` names. With a cloud model, its provider sees the facts of the robots met and what
 known robots said. A model server you run yourself keeps all of it on your own network.
 
-quackd never sends a camera frame over talk. A `share` carries a sentence about what a robot saw,
-never the picture.
+quackd never sends a camera frame over talk: a `share` is a sentence, never a picture.
 
 ## Taking part without being discoverable
 

@@ -12,13 +12,9 @@ maker's protocol to its maker's software, and neither has any way to say who it 
 to, what it can do, what it cannot, or how a person stops it.
 
 quackd lets robots from different makers work together as a flock, but a flock is a list a person
-wrote: every member was registered by hand, and each peer's manifest is built from its own adapter
-([guides/flock.md](../guides/flock.md)). A robot that nobody put on the list is invisible, and the
-robots that will meet strangers, humanoids and quadrupeds walking where other robots walk, meet
-nothing but robots nobody put on a list.
-
-What they lack is the smallest thing two strangers need: a way to introduce themselves, and to know
-whether to believe the introduction. Robot Passport is that, and nothing more.
+wrote ([guides/flock.md](../guides/flock.md)), and a robot nobody put on the list is invisible. What
+two strangers lack is the smallest thing: a way to introduce themselves, and to know whether to
+believe the introduction. Robot Passport is that, and nothing more.
 
 ## Meetings it is for
 
@@ -31,9 +27,8 @@ whether to believe the introduction. Robot Passport is that, and nothing more.
   of a few seconds, out of a budget every stranger shares.
 - **One owner, several robots.** Robots signed by the same owner key recognise each other the moment
   they meet, with no setup at all.
-- **A lost robot.** A robot ends up where it should not be. The first robot that meets it learns
-  whose it is and how to reach them, the way a tag on a collar works, without its owner publishing
-  their address.
+- **A lost robot.** The first robot that meets it learns whose it is and how to reach them, the way
+  a tag on a collar works.
 
 ## Why identity belongs to the body
 
@@ -42,11 +37,11 @@ served its passport and talked for it, so a robot without its laptop could not i
 its passport really meant "the computer that drives this robot". A robot that walks out of the room
 leaves that laptop behind.
 
-So the passport moved onto the robot. Its key lives on its own computer, its owner signs what its
-passport says, and it introduces itself wherever it goes. The robots that meet strangers can carry
-that: humanoids and quadrupeds nearly all have an NVIDIA Jetson on board that runs quackd. An arm is
-fixed in place and will rarely meet another robot, and a toy-sized robot has no computer on board
-that can run quackd, so neither carries one ([compatibility.md](compatibility.md)).
+So the passport moved onto the robot: its key on its own computer, its owner's signature on what it
+says, and an introduction wherever it goes. Humanoids and quadrupeds nearly all have an NVIDIA Jetson
+on board that runs quackd. An arm is fixed in place and will rarely meet another robot, and a
+toy-sized robot has no computer on board that can run quackd, so neither carries one
+([compatibility.md](compatibility.md)).
 
 ## Principles
 
@@ -58,9 +53,8 @@ that can run quackd, so neither carries one ([compatibility.md](compatibility.md
   anything.
 - **A stranger's words never reach a model.** A brain hears a robot nobody pinned as the closed
   facts of its passport, and free talk needs a person's pin.
-- **A passport is a claim.** A signature proves who made it, never that it is true, and a reader
-  labels every claim with where it came from. This is quackd's datasheet rule, a number without a
-  source is a rumour, carried to strangers.
+- **A passport is a claim.** A signature proves who made it, never that it is true, and every
+  figure carries its source: quackd's datasheet rule, carried to strangers.
 - **Never grant authority.** Nothing in a passport, and nothing a peer says, moves a robot except
   through a short, bounded rule its owner chose. A peer can ask; only the owner's policy decides.
 - **Borrow, do not invent.** Every mechanism here already works somewhere else, and
@@ -72,14 +66,10 @@ that can run quackd, so neither carries one ([compatibility.md](compatibility.md
 ## What it is not
 
 - **Not remote control.** A peer can ask for a pause or for a robot to identify itself, and nothing
-  else reaches its body. Driving a robot stays with its owner and its own software.
-- **Not a coordinator.** It does not assign tasks or divide work. A quackd flock does that, among
-  robots a person put in it; a passport only lets robots outside it be known.
-- **Not a benchmark,** or a ranking of robots.
-- **Not a replacement** for ROS 2, A2A, VDA 5050 or Matter. Robots keep speaking what they speak.
-- **Not navigation.** It carries no maps and no coordinates.
-- **Not encryption.** Messages are signed so they cannot be forged, and anybody in range can read
-  them.
+  else reaches its body.
+- **Not a coordinator.** A quackd flock divides work among robots a person put in it; a passport
+  only lets robots outside it be known.
+- **Not a benchmark,** a replacement for ROS 2, A2A, VDA 5050 or Matter, navigation, or encryption.
 
 ## Why not use something that exists?
 
@@ -104,11 +94,8 @@ The strongest case against a new format is a fair one, and it deserves an answer
   machine is and who operates it. It is built for aircraft, by regulation, and is a model to follow
   rather than a format to reuse.
 
-So the passport stays small and new, and borrows from each: a document at a well-known path and
-extensions marked `required` from A2A, an introduction that only points from WoT, a description kept
-apart from live state from VDA 5050, and a short broadcast to strangers from Remote ID
-([prior-art.md](prior-art.md)). A new format is a real cost, and it is paid once, by a format small
-enough to fit in a `hello`.
+So the passport stays small and new, and borrows from each ([prior-art.md](prior-art.md)). A new
+format is a real cost, paid once, by a format small enough to fit in a `hello`.
 
 ## Why it lives in quackd for now
 

@@ -52,31 +52,27 @@ quackd 0.23.0 shipped phases 1 to 6, 0.29.0 phase 8, and phase 7 was dropped.
 7. **Reach, dropped.** A single-file server for any Linux robot, an ESP32 library, a ROS 2 node, a
    phone page and translators. ADR-0073 dropped it on 2026-10-29 and nothing of it was built;
    [its note](../design/robot-passport-phase-7.md) is kept as the record.
-8. **Onboard, 0.29.0.** A passport moves onto the robot it introduces: `quackd onboard` on the
-   robot's own computer, a Jetson first and the sim board for laptops and CI, the owner's signature
-   in place of stamps, the owner key sealed on the robot, Bluetooth LE with a rotating id to find
-   robots that are close, the LAN or a Bluetooth link to talk, both robots checked before a word,
+8. **Onboard, 0.29.0.** The passport moves onto the robot it introduces, `quackd onboard` on a
+   Jetson first and the sim board for laptops and CI: the owner's signature in place of stamps,
+   Bluetooth LE with a rotating id, the LAN or a Bluetooth link, both robots checked before a word,
    and a brain that meets robots by itself. Passports served from a laptop, stickers, stamps and the
-   MQTT and ROS 2 bindings went with it ([quackd.md](quackd.md#removed-in-0290)).
+   MQTT and ROS 2 bindings went ([quackd.md](quackd.md#removed-in-0290)).
 
 ## Decisions taken
 
 These were open questions, and the answers are the defaults 1.0 ships with.
 
 - **The owner signs the passport,** and the owner key lives on the robot, sealed by a passphrase
-  asked only when signing. A stamp from a key that stayed on a laptop vouched for nothing the
-  passport said.
+  asked only when signing. A stamp vouched for a key, never for what the passport said.
 - **Arms and toys carry none.** An arm is fixed in place and will rarely meet another robot, and a
   toy-sized robot has no computer on board that can run quackd. Humanoids and quadrupeds nearly all
   carry a Jetson that can.
 - **Close is Bluetooth LE signal strength,** and the beacon's id is random and changes every 15
   minutes, never in the middle of a meeting, because a fixed id broadcast by radio would let anybody
   follow a robot ([privacy.md](privacy.md#tracking)).
-- **A stranger's words never reach a brain.** A brain hears a robot nobody pinned as the closed facts
-  of its passport, and free talk needs a pin.
-- **A stranger may ask for a pause**, of up to five seconds, out of one global budget of one pause a
-  minute shared by every peer, and an owner can switch stranger pauses off. A known robot may ask for
-  up to ten seconds. No peer can ever `stop` a robot.
+- **A stranger's words never reach a brain,** and free talk needs a pin. A stranger may ask for a
+  pause of up to five seconds, out of one budget of a pause a minute shared by every peer, and an
+  owner can switch that off. A known robot may ask for ten. No peer can ever `stop` a robot.
 - **JSON only.** A CBOR and COSE profile, with the Ed25519 algorithm value `-19`, comes when the first
   implementation on a microcontroller needs it.
 - **A stranger cannot join a flock.** Letting one join as a guest, a peer quackd talks to but does

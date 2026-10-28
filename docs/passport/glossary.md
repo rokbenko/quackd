@@ -78,8 +78,8 @@ a hint that it is close, never proof. [discovery.md](discovery.md#near-is-a-hint
 **Nonce.** 16 random bytes each side contributes to a `hello`. A session's two nonces are what make a
 replayed message fail. [talk.md](talk.md#hello-proving-who-you-are-in-three-steps)
 
-**Onboard service.** `quackd onboard serve`, run by systemd as `quackd-onboard.service`: the radio,
-talk, meetings and goals, in one process on the robot. [quackd.md](quackd.md#the-service)
+**Onboard service.** `quackd onboard serve`, run by systemd as `quackd-onboard.service`, on the
+robot. [quackd.md](quackd.md#the-service)
 
 **Owner.** Whoever looks after a robot, named in its passport by the owner key, with a label and a
 contact that need no personal data. [privacy.md](privacy.md#what-to-put-in-owner)
@@ -87,21 +87,18 @@ contact that need no personal data. [privacy.md](privacy.md#what-to-put-in-owner
 **Owner key.** The key that signs an owner's passports, kept on each robot sealed by a passphrase.
 Back it up. [trust.md](trust.md#the-owner-key-sealed-on-the-robot)
 
-**Owner signature.** The owner key's signature over every byte of a passport, without which nothing
-talks to it. [trust.md](trust.md#the-owner-signs-the-passport)
+**Owner signature.** The owner key's signature over every byte of a passport.
+[trust.md](trust.md#the-owner-signs-the-passport)
 
 **Passphrase.** What seals the owner key: at least 12 characters, typed when the key is made and each
 time a passport is signed, never needed by the service. [trust.md](trust.md#the-owner-key-sealed-on-the-robot)
 
 **Passport.** One small JSON document about a robot, signed by its owner. [passport.md](passport.md)
 
-**Peer.** A robot that talks to another one, whatever its tier.
-
 **Pin.** A robot key or an owner key a person decided to trust, kept in `robot.yaml`, so the next
 meeting starts at known. [trust.md](trust.md#pinning-trust-on-first-use)
 
-**Reader.** Whoever reads and interprets a passport: a robot, or a tool such as
-`quackd passport check`.
+**Reader.** Whoever reads a passport: a robot, or a tool such as `quackd passport check`.
 
 **Robot key.** The key a robot signs its talk with, which its passport's `id` names. It lives on the
 robot, readable by the robot's user alone. [trust.md](trust.md#two-keys-on-every-robot)
@@ -142,4 +139,4 @@ treats a server. [trust.md](trust.md#pinning-trust-on-first-use)
 **Well-known URL.** `/.well-known/robot-passport.json` and `.jws`, where a robot on a LAN serves its
 passport. [discovery.md](discovery.md#the-well-known-url)
 
-**Writer.** Whoever produces a passport: its owner, through the wizard and `quackd onboard sign`.
+**Writer.** Whoever produces a passport: its owner.

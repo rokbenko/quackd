@@ -7,12 +7,11 @@
 > What has run is the sim board, a laptop standing in for a robot's computer, and
 > [roadmap.md](roadmap.md) says exactly how far that goes.
 
-Two robots that meet today cannot work together. Neither knows what the other is, whose it is,
-what it cannot do or how a person stops it, and a robot from another maker speaks another maker's
-protocol. Robot Passport is a small open protocol for the moment they meet. Each robot carries a
-passport its owner signed. When two of them come close, each reads the other's passport, checks
-the owner's signature and that the robot in front of it holds its own key, and only then do their
-LLM brains talk: over the LAN when they share one, and over a Bluetooth link when they do not.
+Two robots that meet today cannot work together: neither knows what the other is, whose it is,
+what it cannot do or how a person stops it. Robot Passport is a small open protocol for the moment
+they meet. Each robot carries a passport its owner signed. When two come close, each checks the
+other's passport and that the robot in front of it holds its key, and only then do their LLM brains
+talk, over the LAN when they share one and over a Bluetooth link when they do not.
 
 ```
 BEACON    "a robot is here", by Bluetooth LE            a random 8-byte id, a new one every 15
@@ -26,17 +25,15 @@ TALK      hello · say · bye · ask · answer · share      small signed messag
 ```
 
 **Near first, checked second, trusted by a person.** Two robots say hello only once the radio says
-they are close. Neither says a word before both passports and both keys check out. And a stranger's
-words never reach a brain: a robot nobody pinned is shown to it as the closed facts of its passport,
-and a person's pin is what lets its sentences through.
+they are close, neither says a word before both passports and both keys check out, and a stranger's
+words never reach a brain until a person pins it.
 
 ## Which robots carry one
 
-The robots that will meet strangers: humanoids and quadrupeds that walk the same aisles, doorways
-and pavements, and nearly all of them carry an NVIDIA Jetson that can run quackd. An arm carries no
-passport, because it is fixed in place and will rarely meet another robot. Neither does a toy-sized
-robot, because it has no computer on board that can run quackd. [compatibility.md](compatibility.md)
-says which boards `quackd onboard` runs on, and how another board joins.
+The robots that will meet strangers: humanoids and quadrupeds, and nearly all of them carry an
+NVIDIA Jetson that can run quackd. An arm carries none, because it is fixed in place and will rarely
+meet another robot, and neither does a toy-sized robot, because it has no computer on board that can
+run quackd ([compatibility.md](compatibility.md)).
 
 ## Read in this order
 
