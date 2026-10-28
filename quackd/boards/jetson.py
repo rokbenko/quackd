@@ -7,10 +7,13 @@ names the L4T release, which names the JetPack (`l4t.py`). `facts` is pure, over
 reads a path, so every case is a test that needs no board; `JetsonBoard` hands it the real files
 by default, and nothing else in this module reads one.
 
-quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7. The chip and the release are
-asked separately, so a Xavier is refused for its chip whatever it runs, and an Orin for a JetPack 5
-it can be upgraded from. This project has run none of it on a Jetson: the device tree strings a
-Thor or an Orin NX carries were not read off one, which is why detection keys on the chip alone.
+quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7, and nothing else (`SUPPORTED`).
+The chip is asked first, so a Xavier is refused for its chip whatever it runs, and then the release
+on that chip: an Orin on JetPack 5 is refused for a release it can be upgraded from, and a Thor
+that reads as JetPack 6, which no Thor runs, is refused as well, its release file a container's
+or wrong.
+This project has run none of it on a Jetson: the device tree strings a Thor or an Orin NX carries
+were not read off one, which is why detection keys on the chip alone.
 """
 
 from __future__ import annotations
@@ -42,9 +45,10 @@ CHIPS = {
 }
 """The chip a Jetson's device tree names, by the name of the modules NVIDIA builds on it."""
 
-SUPPORTED_CHIPS = ("tegra234", "tegra264")
-SUPPORTED_L4T = ("36", "38", "39")
-"""L4T majors: 36 is JetPack 6, and 38 and 39 are JetPack 7 (`l4t.JETPACK_MAJOR`)."""
+SUPPORTED = {"tegra234": ("36",), "tegra264": ("38", "39")}
+"""The L4T majors quackd onboard takes on each chip: 36, JetPack 6, on Orin, and 38 and 39,
+JetPack 7, on Thor (`l4t.JETPACK_MAJOR`). NVIDIA's JetPack 7.2 page says 7.2 (L4T 39.2) runs on
+Orin as well; quackd onboard does not take that pair, and the sentence below says what it takes."""
 SUPPORTS = "quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7"
 
 _CHIP = re.compile(r"nvidia,(tegra\d+)")
@@ -84,7 +88,9 @@ def facts(read: Reader) -> BoardFacts | None:
     if chip is None:
         raise Unsupported(
             f"{RELEASE} is here, and {COMPATIBLE} names no NVIDIA Tegra chip, which a container "
-            f"hides unless it runs privileged: {SUPPORTS}, and reads the chip from there"
+            "on a Jetson hides unless it runs privileged or with --security-opt "
+            "systempaths=unconfined (on any other computer, this is an L4T image and no Jetson): "
+            f"{SUPPORTS}, and reads the chip from there"
         )
     family = CHIPS.get(chip)
     what = (
@@ -92,7 +98,7 @@ def facts(read: Reader) -> BoardFacts | None:
         if family
         else f"a Tegra quackd does not know ({chip})"
     )
-    if chip not in SUPPORTED_CHIPS:
+    if chip not in SUPPORTED:
         raise Unsupported(f"{what}: {SUPPORTS}")
     if release_text is None:
         raise Unsupported(f"{what} with no {RELEASE} to say which JetPack it runs: {SUPPORTS}")
@@ -103,7 +109,7 @@ def facts(read: Reader) -> BoardFacts | None:
         )
     jetpack = jetpack_for(l4t)
     release = f"L4T {l4t} (JetPack {jetpack})" if jetpack else f"L4T {l4t}"
-    if l4t.split(".")[0] not in SUPPORTED_L4T:
+    if l4t.split(".")[0] not in SUPPORTED[chip]:
         raise Unsupported(f"{what} on {release}: {SUPPORTS}")
     model = (read(MODEL) or "").replace(_NUL, "").strip()
     return BoardFacts(
