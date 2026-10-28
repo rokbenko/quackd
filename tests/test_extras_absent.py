@@ -197,8 +197,12 @@ quackd_lerobot.sim.faults.FaultPlan.parse(quackd_lerobot.sim.faults.EXAMPLE, see
 capped = quackd_lerobot.sim.follower.ensure_safe_goal_position({{"a": (9.0, 0.0)}}, 1.0)
 assert capped == {{"a": 1.0}}, capped
 # the radio: with no onboard extra, asking for Bluetooth says which extra, or which platform it
-# would take, and the module that talks to BlueZ is never imported to find that out
+# would take, and the module that talks to BlueZ is never imported to find that out. The sim air,
+# the links and the loop they run on are plain Python and import with none of it.
 import quackd.radio
+import quackd.radio.links
+import quackd.radio.loop
+import quackd.radio.sim
 try:
     quackd.radio.open_radio("bluez")
 except quackd.radio.RadioUnavailable as e:

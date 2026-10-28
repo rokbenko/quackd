@@ -16,6 +16,7 @@ from typing import Any
 from quackd.lan import require_zeroconf
 from quackd.lan.announce import Announcement, ServiceRecord, _service_info, local_ip
 from quackd.lan.discover import Browse, _browse_zeroconf
+from quackd.lan.lookup import LanDirectory, LanRecord
 from quackd.passport.beacon import (
     SERVICE_TYPE,
     WELL_KNOWN_JSON,
@@ -112,4 +113,11 @@ def discover_passports(
     return sorted(beacons, key=lambda b: b.instance)
 
 
-__all__ = ["announce_passport", "beacon_from_info", "discover_passports", "passport_record"]
+__all__ = [
+    "LanDirectory",
+    "LanRecord",
+    "announce_passport",
+    "beacon_from_info",
+    "discover_passports",
+    "passport_record",
+]

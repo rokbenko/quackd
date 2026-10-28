@@ -208,11 +208,16 @@ def open_radio(kind: RadioKind, **options: Any) -> Radio:
 
     `off` is a `NoRadio`. `bluez` is the real one, and a machine that cannot have it is told so
     by a `RadioUnavailable` before anything Bluetooth is imported: not Linux, or no `onboard`
-    extra. `options` go to the radio's constructor."""
+    extra. `sim` is the sim air on this machine (`quackd.radio.sim.SimOptions`, as `options=`
+    or as keywords). `options` go to the radio's constructor."""
     if kind == "off":
         return NoRadio()
     if kind == "bluez":
         return _bluez(**options)
+    if kind == "sim":
+        from quackd.radio.sim import SimRadio
+
+        return SimRadio(**options)
     raise ValueError(f"there is no radio called {kind!r}: bluez, sim, fake or off")
 
 
