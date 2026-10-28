@@ -9743,7 +9743,8 @@ def onboard_demo(
     act: list[str] | None = typer.Option(
         None,
         "--act",
-        help="Only this act: strangers, appointment, office or tampered. Again for another.",
+        help="Only this act: strangers, appointment, office, tampered or injection. Again for "
+        "another.",
     ),
     fast: bool = typer.Option(False, "--fast", help="Each scene runs four times faster."),
     keep: Path | None = typer.Option(

@@ -34,6 +34,7 @@ def test_every_act_of_the_offline_demo_happens_as_it_says(tmp_path: Path) -> Non
     assert "(known)" in by_act["appointment"]
     assert "over the LAN" in by_act["office"]
     assert "4.4" in by_act["tampered"]
+    assert "the brain was told only that a stranger spoke" in by_act["injection"]
     # every robot's records stay where --keep said, a meeting's run among them
     for name in (demo.COURIER, demo.HOUSEHOLD):
         assert list((kept / name / "runs").glob("*/summary.json"))
