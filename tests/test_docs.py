@@ -2556,7 +2556,9 @@ def test_robot_passport_says_nothing_of_it_has_met_a_jetson_or_a_radio() -> None
     reworded on a day somebody runs it on two Jetsons is the day this test should change."""
     for name in ("README.md", "roadmap.md"):
         page = (REPO / "docs" / "passport" / name).read_text(encoding="utf-8")
-        assert _PASSPORT_HONESTY in " ".join(page.split()), (
+        # a NOTE wrapped over several lines puts a `>` in front of each, so they go first
+        unquoted = re.sub(r"(?m)^\s*>\s?", "", page)
+        assert _PASSPORT_HONESTY in " ".join(unquoted.split()), (
             f"docs/passport/{name} no longer says: {_PASSPORT_HONESTY}"
         )
     start = README.index("\n## Robot Passport\n")

@@ -975,7 +975,7 @@ TALK      hello · say · bye · ask · answer · share         small signed mes
                                                            Bluetooth link, never obeyed blindly
 ```
 
-The rule underneath all of it fits in one line: **near first, then proof, then words**. A robot talks only to one it heard close by over Bluetooth, only after each has checked that the other's passport was signed by its owner and that it holds the key that passport names, and nothing a peer says ever moves a robot except through a short, bounded rule its owner chose. A stranger's sentences never reach a language model at all.
+The rule underneath all of it fits in one line: **near first, checked second, trusted by a person**. A robot says hello only to one it heard close by over Bluetooth, neither says a word before each has checked that the other's passport was signed by its owner and that the robot holds the key that passport names, and a stranger's sentences never reach a language model until a person pins it. Nothing a peer says ever moves a robot except through a short, bounded rule its owner chose.
 
 None of it has run on a Jetson or over a real Bluetooth radio yet, only on a `sim` board that stands in for a robot's computer, as the end of this section says. The whole of it is in [docs/passport/](docs/passport/README.md): the specification, every member, the radio, the trust model, the threat model, privacy, which robots carry one, naming, prior art, a glossary and the questions people ask. What follows is every part of it, briefly, with a link to the page that says it in full.
 
