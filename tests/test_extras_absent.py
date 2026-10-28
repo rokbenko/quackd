@@ -200,6 +200,9 @@ assert capped == {{"a": 1.0}}, capped
 # would take, and the module that talks to BlueZ is never imported to find that out. The sim air,
 # the links, proximity, meeting and the loop they run on are plain Python and import without it.
 import quackd.radio
+import quackd.radio.bluez
+import quackd.radio.bluez.core
+import quackd.radio.bluez.privacy
 import quackd.radio.fake
 import quackd.radio.links
 import quackd.radio.loop

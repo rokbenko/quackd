@@ -445,3 +445,46 @@ async def test_closing_tells_the_other_end_why() -> None:
     await central.close(CloseReason.FAR)
     await until(lambda: peripheral.closed is not None)
     assert peripheral.closed == "closed by the other robot (far)"
+
+
+async def test_a_request_sent_the_moment_accept_arrives_finds_the_link_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A radio may carry the ACCEPT, and the central's first request after it, while this end
+    is still in the send that put the ACCEPT on the air: BlueZ's notification goes out, and the
+    peripheral paces before its next one. The link has its inbox and its place in the table by
+    then, or that first request is answered 404 by a link that has no inbox yet."""
+    table = LinkTable(policy=FAST)
+    c_pipe, p_pipe = MemoryPipe.pair(182)
+    tag = new_tag()
+    first = split(
+        b"hello",
+        tag=tag,
+        msg_id=1,
+        role=Role.REQUEST,
+        status=0,
+        media=Media.JOSE,
+        datagram_size=182,
+    )
+    in_table: list[bool] = []
+    send = p_pipe.send
+
+    async def accept_then_hear(datagram: bytes, *, barrier: bool = True) -> None:
+        await send(datagram, barrier=barrier)
+        if isinstance(decode(datagram), Accept):
+            in_table.append(len(table) == 1)
+            for d in first:
+                p_pipe._received(d)
+
+    monkeypatch.setattr(p_pipe, "send", accept_then_hear)
+    heard: list[bytes] = []
+    c_pipe.on_datagram(heard.append)
+    accepting = asyncio.create_task(table.accept(p_pipe, me=B, inbox_for=lambda route: echo))
+    await c_pipe.send(encode(Open(tag, A, 182, Limits().max_message)))
+    assert await accepting is not None
+    await until(lambda: len(heard) > 1)
+    answer = decode(heard[1])
+    assert isinstance(answer, Data) and answer.head is not None
+    assert answer.head.status == 200 and answer.chunk == b"echo:hello"
+    assert in_table == [True]
+    table.shutdown()
