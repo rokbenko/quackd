@@ -248,10 +248,9 @@ def _bluez(**options: Any) -> Radio:
             f"the Bluetooth half needs {' and '.join(missing)}, which the onboard extra installs",
             ONBOARD_INSTALL,
         )
-    raise RadioUnavailable(
-        "unsupported",
-        "this build of quackd has no BlueZ radio yet: it meets other robots over its LAN only",
-    )
+    from quackd.radio.bluez.radio import BlueZRadio
+
+    return BlueZRadio(**options)
 
 
 __all__ = [

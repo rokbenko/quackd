@@ -100,3 +100,16 @@ def test_what_a_radio_reports_is_plain_frozen_data() -> None:
     degraded = RadioStatus("degraded", "bluez", scanning=True, detail="advertising refused")
     assert degraded.hears and not degraded.ready
     assert not RadioStatus("degraded", "bluez").hears
+
+
+def test_on_linux_with_the_extra_bluez_is_the_real_radio_built_and_not_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in radio.BLUEZ_PACKAGES:
+        pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    from quackd.radio.bluez.radio import BlueZRadio
+
+    built = open_radio("bluez", adapter="hci1", bus="session")
+    assert isinstance(built, BlueZRadio) and built.kind == "bluez" and built.adapter == "hci1"
+    assert built.status().state == "off" and built.status().detail == "not started"

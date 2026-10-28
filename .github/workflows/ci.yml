@@ -185,8 +185,10 @@ jobs:
     # so bleak and dbus-fast install on Linux only and only with the onboard extra. Everything of
     # the radio that is plain Python (the advert, the link frames, proximity, rotation, the sim
     # air) runs in `test`, on all six cells, without them. What this job adds is the two packages
-    # themselves: mypy against their own types, and the radio's tests with them installed, on a
-    # private bus that dbus-run-session starts and stops.
+    # themselves: mypy against their own types, the D-Bus objects held to BlueZ's documented
+    # interfaces, and the BlueZ radio registering its advert and GATT service with a fake BlueZ
+    # and carrying a central's link frames, on a private bus that dbus-run-session starts and
+    # stops. bleak's scanner and client never run here: they talk to a real bluetoothd.
     #
     # A matrix of two, as `test` is on Linux, because dbus-fast has a wheel per Python and a
     # Jetson's JetPack 6 runs 3.10 or a uv-managed 3.12, and 3.11 is the floor quackd keeps.
@@ -195,6 +197,10 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12"]
+    env:
+      # without it a runner where dbus-fast or the bus went missing would skip the D-Bus tests
+      # and go green having proved nothing, as QUACKD_REQUIRE_GL is for the physics job
+      QUACKD_REQUIRE_DBUS: "1"
     steps:
       - uses: actions/checkout@v7
       - name: A D-Bus daemon, for the private bus the tests run on
@@ -210,8 +216,8 @@ jobs:
         run: uv run python -c "import bleak, dbus_fast, zeroconf; print('bleak and dbus-fast import')"
       - name: Types, with bleak's and dbus-fast's own present
         run: uv run mypy
-      - name: The radio, with the extra installed
-        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py
+      - name: The radio with the extra installed, the BlueZ half against a fake BlueZ, and the LAN browse on loopback
+        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py
 
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which

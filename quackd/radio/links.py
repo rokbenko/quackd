@@ -242,15 +242,18 @@ class Link:
         pipe: Pipe,
         *,
         me: str,
-        inbox: LinkInbox | None,
+        inbox: LinkInbox | None = None,
         admit: Callable[[Open], int | None] = lambda _open: None,
+        inbox_for: Callable[[str], LinkInbox | None] | None = None,
+        on_open: Callable[[Link], None] | None = None,
         limits: Limits | None = None,
         policy: LinkPolicy | None = None,
         executor: Executor | None = None,
     ) -> Link | None:
         """Take a link as the peripheral over a `pipe` a central opened, once its OPEN arrives
         and `admit` lets it in (None) rather than naming a `Refusal`. None when it was refused
-        or never sent an OPEN."""
+        or never sent an OPEN. `inbox_for(route)` names the inbox once the route is known, and
+        `on_open(link)` hears of the link, both before its ACCEPT goes out."""
         link = cls(
             pipe,
             central=False,
@@ -278,9 +281,14 @@ class Link:
             await link._shut(f"refused ({_named(Refusal, refusal)})", None)
             return None
         size = min(opened.datagram_size, pipe.datagram_size)
-        # open before ACCEPT goes, so a request the central sends the moment it reads ACCEPT
-        # finds a link ready for it
+        # open, with its inbox and in its table, before ACCEPT goes: a central may send its
+        # first request the moment it reads ACCEPT, and a notification may reach it while this
+        # end is still pacing the next one
+        if inbox_for is not None:
+            link.inbox = inbox_for(link.route)
         link._begin(opened.beacon_id, size, opened.max_message)
+        if on_open is not None:
+            on_open(link)
         try:
             await link._send(encode(Accept(opened.tag, me, size, link.limits.max_message)))
         except LinkDown:
@@ -615,28 +623,16 @@ class LinkTable:
     ) -> Link | None:
         """Take a link a central opened over `pipe`, or refuse it when this robot is busy.
         `inbox_for(route)` is the inbox for requests that arrive on it."""
-        holder: dict[str, LinkInbox | None] = {}
-
-        def admit(opened: Open) -> int | None:
-            refusal = self._admit(opened)
-            if refusal is None:
-                holder["inbox"] = inbox_for(ROUTE_PREFIX + f"{opened.tag:08x}")
-            return refusal
-
-        link = await Link.accept(
+        return await Link.accept(
             pipe,
             me=me,
-            inbox=None,
-            admit=admit,
+            admit=self._admit,
+            inbox_for=inbox_for,
+            on_open=lambda link: self._add(link, inbound=True),
             limits=self.limits,
             policy=self.policy,
             executor=self.executor,
         )
-        if link is None:
-            return None
-        link.inbox = holder.get("inbox")
-        self._add(link, inbound=True)
-        return link
 
     async def dial(
         self,
