@@ -274,7 +274,7 @@ answers every `ask` `no`, since nothing is there to grant it through.
   its model says it is a computer standing in for a robot's own.
 - **A plugin**, from the `quackd.boards` entry-point group, the way adapters come from
   `quackd.adapters`. A plugin may not call itself `jetson` or `sim`
-  ([compatibility.md](compatibility.md)).
+  ([compatibility.md](compatibility.md#another-board)).
 
 On any other computer it stops before it writes anything. On this laptop:
 
