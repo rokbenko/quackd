@@ -1,8 +1,9 @@
 # Prior art: what was borrowed, and what was avoided
 
 > [!NOTE]
-> Checked on 2026-10-20. Standards move: each entry links the source it was checked against, and a
-> version or a status here is only as current as that date.
+> Checked on 2026-10-20, and the two radio privacy entries on 2026-10-28. Standards move: each entry
+> links the source it was checked against, and a version or a status here is only as current as that
+> date.
 
 Nothing in Robot Passport is new on its own. This page names every system it was measured against,
 what it took from each, and what it deliberately did not.
@@ -22,8 +23,8 @@ hosted by the Linux Foundation's Agentic AI Foundation.
 
 - **Borrowed:** a document at a well-known path; extensions by URI, with `required`; room for more
   than one signature.
-- **Avoided:** a required endpoint, which a robot with only a sticker cannot have; signing over
-  canonical JSON, which is where signature bugs live.
+- **Avoided:** a card about software, with nowhere for a body; signing over canonical JSON, which is
+  where signature bugs live.
 
 ### MCP
 
@@ -69,8 +70,7 @@ off. The factsheet's `protocolLimits` says the longest strings and arrays the ve
 Version 3.0.0 was tagged in 2026.
 ([repository](https://github.com/VDA5050/VDA5050))
 
-- **Borrowed:** a description kept apart from live state; presence by retained message and last
-  will; a robot publishing its own parser limits.
+- **Borrowed:** a description kept apart from live state; a robot publishing its own parser limits.
 - **Avoided:** a design built around one operator's management software and broker, rather than
   two strangers.
 
@@ -91,7 +91,8 @@ maker's system, with graded levels of participation down to a robot that only re
 and path. It has no exchange between robots that have never met.
 ([project](https://github.com/open-rmf/rmf))
 
-- **Borrowed:** graded participation, so a robot that can do very little still takes part.
+- **Not borrowed:** graded participation down to a robot that only reports where it is. A passport
+  is for a robot that can run quackd itself, and a robot that cannot carries none.
 
 ### ROS 2
 
@@ -99,7 +100,8 @@ DDS discovery tells a stranger a participant's GUID, its DDS vendor, its node na
 types. SROS2 adds DDS-Security, with certificates from one keystore's authority.
 ([ROS 2 security design](https://design.ros2.org/articles/ros2_dds_security.html))
 
-- **Borrowed:** a latched topic (`TRANSIENT_LOCAL`) as a binding, so a ROS robot needs nothing new.
+- **Borrowed, then dropped:** 0.1 carried a passport on a latched topic; 1.0 removed it, since a ROS
+  graph says nothing about which robots are near each other.
 - **Avoided:** trust that works only inside one certificate authority.
 
 ### OPC UA for Robotics, IEEE 1872, ISO 22166
@@ -119,7 +121,7 @@ seconds with an index URL and a nonce that changes when its services do, and a s
 `DeviceInfo` type carries a maker, model and serial number. Its TLS certificates are issued by one
 company. ([standards](https://github.com/robotraconteur/robotraconteur_standards))
 
-- **Borrowed:** a fingerprint in the announcement, so a reader refetches only when something changed.
+- **Borrowed:** a fingerprint of the document, the digest a reader caches a passport by.
 - **Avoided:** one company as the root of trust.
 
 ### MAVLink
@@ -127,7 +129,7 @@ company. ([standards](https://github.com/robotraconteur/robotraconteur_standards
 The drone protocol's components announce a heartbeat, and `COMPONENT_METADATA` points to a JSON
 description by URI with a CRC of the file. ([messages](https://mavlink.io/en/messages/common.html))
 
-- **Borrowed:** a pointer plus a checksum, so a description is fetched once and recognised after.
+- **Borrowed:** a checksum of a description, so it is read once and recognised after.
 
 ## Identity broadcast to strangers
 
@@ -139,9 +141,10 @@ advertisement or several packed into one on bigger radios. The open-source
 [opendroneid](https://github.com/opendroneid/opendroneid-core-c) library implements it. The IETF's
 DRIP work adds identifiers built on Ed25519 ([RFC 9374](https://www.rfc-editor.org/rfc/rfc9374)).
 
-- **Borrowed:** a tiny broadcast that names a machine and its operator to strangers, and an operator
-  id that need not be a person's name.
-- **Avoided:** a stable identifier broadcast by radio before ids can rotate.
+- **Borrowed:** a tiny Bluetooth broadcast that strangers nearby hear without connecting, and an
+  operator id that need not be a person's name.
+- **Avoided:** a stable identifier: a passport's beacon id is random, names nobody, and changes every
+  15 minutes.
 
 ### AIS
 
@@ -153,6 +156,36 @@ every few minutes, with no authentication at all.
   identity.
 - **Avoided:** having no way to check a claim.
 
+## Radio privacy
+
+### Exposure Notification
+
+Apple's and Google's Bluetooth protocol of 2020 for COVID-19 exposure notification. A phone
+broadcast a Rolling Proximity Identifier, derived from a key that changed daily, under the 16-bit
+service UUID `0xFD6F`. The specification says the identifier "changes about every 15 minutes to
+prevent wireless tracking of the device", that the advertiser address rotates every 10 to 20
+minutes, and that the address and the identifier "shall be changed synchronously so that they
+cannot be linked". Each advert also carried the phone's transmit power, encrypted, for a better
+guess at distance from the signal strength.
+([Bluetooth specification v1.2](https://covid19-static.cdn-apple.com/applications/covid19/current/static/contact-tracing/pdf/ExposureNotification-BluetoothSpecificationv1.2.pdf))
+
+- **Borrowed:** an identifier that changes about every 15 minutes so nobody can follow the device by
+  it; distance guessed from signal strength, with a calibration.
+- **Not yet matched:** changing the radio address and the identifier at the same moment. quackd
+  rotates its beacon id on its own clock and leaves the address to BlueZ, so a listener who hears one
+  change while the other holds can tie the two together ([privacy.md](privacy.md#tracking)).
+
+### Bluetooth LE address privacy
+
+Bluetooth LE lets a device advertise from a resolvable private address that changes periodically,
+every 15 minutes by the specification's recommendation, which only a device holding its Identity
+Resolving Key can link back to it. That key is exchanged when two devices bond.
+([Novel Bits](https://novelbits.io/bluetooth-address-privacy-ble/))
+
+- **Borrowed:** the radio's own address changing, which the wizard offers to switch on in BlueZ.
+- **Avoided:** depending on bonding. Two robots that meet are strangers and never bond, so the beacon
+  id rotates with no shared key at all, and a robot recognises another by the keys in its passport.
+
 ## Proving a maker's claim
 
 ### Matter
@@ -162,8 +195,8 @@ a public ledger lists the roots. It has an Identify cluster, so a person can tel
 are setting up. ([certificates](https://developers.home.google.com/matter/test/certificates),
 [ledger](https://github.com/zigbee-alliance/distributed-compliance-ledger))
 
-- **Borrowed:** `identify`; trusting a maker's claim only when a maker's key signs it, which is
-  what the reserved `maker` stamp is for.
+- **Borrowed:** `identify`; trusting a maker's claim only when a maker's key signs it, which a
+  maker's signature could do in a later version.
 - **Avoided:** a certification body that every maker must join before its robot can be described.
 
 ### IETF MUD
@@ -198,9 +231,9 @@ robots introducing themselves to each other. [naming.md](naming.md) says why the
 | | Robot Passport | A2A Agent Card | WoT TD | VDA 5050 factsheet | MassRobotics identity | Remote ID |
 |---|---|---|---|---|---|---|
 | for | robots meeting robots | agents | devices | a vehicle and its master control | a robot and its operator's software | a drone and anybody nearby |
-| transport | any: a URL, mDNS, MQTT, ROS 2 | HTTP | any, by binding | MQTT | WebSocket | Bluetooth, Wi-Fi |
-| smallest useful document | under 100 bytes | larger, eight required members | larger, JSON-LD | larger | larger | 25 bytes a message |
-| needs a server | no | yes | depends | a broker | a socket | no |
-| signed | optional, Ed25519 | optional | no | no | no | optional |
-| owner or operator | optional | provider | no | no | emergency contact | operator id |
+| transport | a Bluetooth LE beacon, then the LAN or a Bluetooth link | HTTP | any, by binding | MQTT | WebSocket | Bluetooth, Wi-Fi |
+| needs a server | the robot's own computer | yes | depends | a broker | a socket | no |
+| signed | always, by its owner, Ed25519 | optional | no | no | no | optional |
+| owner or operator | required, as a key | provider | no | no | emergency contact | operator id |
+| identifier on the air | random, changes every 15 minutes | not broadcast | not broadcast | not broadcast | not broadcast | usually a serial number |
 | body and safety facts | yes | no | no | dimensions, speeds | envelope, speed | position |

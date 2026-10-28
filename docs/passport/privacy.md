@@ -63,6 +63,11 @@ anybody in range, in the street and through walls. So:
   set it: it asks first, backs the file up and restarts bluetoothd. Whether the adapter then really
   changes its address cannot be seen without root, and nobody has watched one do it on a Jetson.
   `quackd onboard status` says plainly when the address is still public.
+- **The two change on separate clocks.** Exposure Notification changed a phone's address and its
+  identifier at the same moment, so that a listener could not link the old pair to the new
+  ([prior-art.md](prior-art.md#exposure-notification)). quackd does not yet: the beacon id rotates
+  on quackd's clock and the address on BlueZ's, so a listener who hears one change while the other
+  holds can tie the two together.
 - **On a LAN**, the DNS-SD record puts the robot's short id, which never changes, beside its current
   beacon id, so anybody on that LAN can tie each new beacon id to the same robot. They are the same
   people who could see the robot's network traffic anyway.
