@@ -34,7 +34,7 @@ Every message has the same envelope:
 | `passport` | the protocol version |
 | `type` | one of the six |
 | `from` | the sender's `id`, its robot key |
-| `to` | the receiver's `id` |
+| `to` | the receiver's `id`, or `*` when the sender does not know it yet, as in a first `hello` to a robot heard only by radio |
 | `msg` | a random token, unique per sender, so a repeat is recognised and dropped |
 | `re` | the `msg` this one replies to |
 | `nonces` | the session's two nonces, after a `hello` |

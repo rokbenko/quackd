@@ -53,7 +53,7 @@ Every identifier below was free when it was chosen, on 2026-10-20, except the Bl
 |---|---|---|
 | `/.well-known/robot-passport.json`, `.jws` | the passport's URL | [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615) reserves `/.well-known/` for this. The pair sits beside A2A's `agent-card.json`. Registering the suffixes takes a written specification and an expert's review. |
 | `_robot-passport._tcp` | DNS-SD | [RFC 6335](https://www.rfc-editor.org/rfc/rfc6335) allows 15 characters for a service name, letters, digits and hyphens. This is 14. |
-| `v`, `id`, `bt` | the keys of the DNS-SD TXT record | short, because a key is wire protocol forever once shipped |
+| `v`, `id`, `sha`, `bt`, `path` | the keys of the DNS-SD TXT record | short, because a key is wire protocol forever once shipped |
 | three 128-bit UUIDs | the Bluetooth service, and its two characteristics | version 5 UUIDs made from the specification's own URL with `#ble-service`, `#ble-rx` and `#ble-tx` after it, which anybody can recompute. The Bluetooth SIG assigns 16-bit UUIDs, which would save 14 bytes of the advert, for a fee, which is not worth paying before anybody else uses the protocol. |
 | `robot-passport+jws`, `robot-passport-msg+jws` | the `typ` of each kind of signature | one per purpose, so an owner's signature on a passport can never pass as a robot's on a message, or the other way round |
 | `robot-passport` | a PyPI distribution, when the module leaves quackd | the same name everywhere |

@@ -38,8 +38,8 @@ owner's policy decides. [talk.md](talk.md#ask-and-answer)
 **did:key.** An identifier that is a public key, written as text, resolved with no network. A
 passport's `id` and its `owner.id` are each one. [trust.md](trust.md#the-id-is-a-key)
 
-**Digest.** The SHA-256 of a passport's exact bytes, which a reader caches it by.
-[spec section 4.3](spec.md#43-the-digest)
+**Digest.** The SHA-256 of a passport's exact bytes, which a reader caches it by. A LAN record
+carries its first 16 hex characters. [spec section 4.3](spec.md#43-the-digest)
 
 **Ed25519.** The signature algorithm every key in the protocol uses: 32-byte keys, 64-byte
 signatures, fast on small machines. [trust.md](trust.md#the-id-is-a-key)

@@ -99,7 +99,9 @@ on the port its passport and its inbox answer on. Its TXT record:
 |---|---|
 | `v` | `2`, the version of this TXT record |
 | `id` | the robot key's short id, which never changes |
+| `sha` | the first 16 characters of the passport's digest |
 | `bt` | the current beacon id, which changes with the advert |
+| `path` | the passport's path, `/.well-known/robot-passport.json` when absent |
 
 Every pair stays under 200 bytes, a reader never trusts the instance name, and a `v=1` record, the
 0.1 shape, is ignored. The record puts the fixed short id beside the current beacon id, so anybody

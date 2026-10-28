@@ -15,7 +15,7 @@ to leave out, and how to take part while revealing as little as possible.
 |---|---|---|
 | the Bluetooth advert | anybody within radio range, unseen | that a robot speaking Robot Passport is here, a beacon id that changes every 15 minutes, and how to reach it. Never a name, an owner or a key |
 | the radio's own address | the same | an address that stays the same unless address privacy is on in BlueZ |
-| the LAN record | anybody on the same LAN | the robot key's short id, which never changes, beside the current beacon id |
+| the LAN record | anybody on the same LAN | the robot key's short id, which never changes, beside the current beacon id and its passport's digest |
 | the passport | anybody near enough to say hello, with any passport at all, and anybody on its LAN | whatever its owner put in it, and the owner key that signed it |
 | talk | the robot it talks to, and anybody who can read the LAN or listen to the link | what it says |
 | the robot's brain | the provider of the model `brain:` names | what the brain is shown of the robots it meets |
