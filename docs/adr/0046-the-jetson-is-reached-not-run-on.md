@@ -1,6 +1,15 @@
 # ADR-0046: The Jetson is reached, not run on
 
-**Status:** accepted · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the model's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
+**Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local model is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the model's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
+
+**Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
+one quackd command runs on a robot's own Jetson now, `quackd onboard`, Robot Passport's service,
+which drives the robot from there when the robot's file names an adapter, installed with
+`uv tool install "quackd[onboard]"` and run by systemd. Everything below still holds for every
+other command: `run`, `serve-mcp` and `doctor` stay on the laptop and reach the board with
+`--host`, `bridge/jetson/` is unchanged, and doctor reads nothing of the machine it runs on. The
+contention caveat now covers quackd's own service as well, a Bluetooth scanner, a pilot's requests
+and a run driving the body, beside a robot's control loop, which nobody here has measured.
 
 ## Context
 

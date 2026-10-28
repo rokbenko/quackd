@@ -117,7 +117,7 @@ Everything a line can be is in [Driving a robot](drive.md).
 > whether to run a gated verb, whether to go ahead when the pilot is not sure, and whether the arm
 > did it. Under a VLA pilot each line is its one instruction to the arm's policy
 > ([Driving a robot](drive.md#a-vla-pilot-a-line-at-a-time)). The few options still marked *goal
-> only*, a GIF, a picture and talking with robots nearby, do not reach a chat.
+> only*, a GIF and a picture, do not reach a chat.
 
 ## The pilot
 
@@ -358,8 +358,7 @@ the same command under **Same as** reproduces it at a terminal.
 - `--by-hand`, and the questions at the end of a run about an arm that missed its rest pose: both
   wait for somebody at the arm to press Enter, and stay at the terminal.
 - Flocks: `--flock`, `--robots` and task files with a `flock:` block.
-- A GIF of a chat, and a chat that talks with robots nearby: `quackd drive` takes neither `--gif`
-  nor `--talk`.
+- A GIF of a chat: `quackd drive` takes no `--gif`.
 - `--live`, and a picture sent with a chat line.
 - HTTPS. Streamlit can serve it through its own settings, and quackd has no flag for it yet.
 - An app to install on the phone.

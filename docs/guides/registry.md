@@ -151,8 +151,8 @@ one camera is nine.
 
 ## A board it uses
 
-`--host` and `--host-token` keep the board this robot's runs reach: a machine quackd uses and
-never runs on, such as an NVIDIA Jetson running quackd's host daemon, for the model server,
+`--host` and `--host-token` keep the board this robot's runs reach: a machine they use and do
+not run on, such as an NVIDIA Jetson running quackd's host daemon, for the model server,
 the camera and the detector on it ([guides/jetson.md](jetson.md)).
 
 ```

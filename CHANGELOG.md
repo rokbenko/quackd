@@ -9,6 +9,209 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+0.29.0 moves Robot Passport onto the robot it introduces. `quackd onboard` runs on the robot's own
+computer, an NVIDIA Jetson first, and sets the robot up once: a wizard asks what only the owner
+knows, writes `robot.yaml`, the one file a robot is set up from, makes the robot's keys, has its
+owner sign its passport and installs a systemd unit that keeps the service running. Robots that come
+close find each other by Bluetooth LE, judged by signal strength, under a beacon id that rotates
+every 15 minutes. They check each other's owner-signed passports, and only then do their brains
+talk, over the LAN when the two share one and over a Bluetooth link when they do not.
+
+A passport is signed by its owner's key now. 0.23 signed it with the robot's own key and let an
+owner stamp that key, so whoever held the robot key could change what the passport said and keep
+the stamp. The owner key stays on the robot, sealed with a passphrase that is asked for only when
+the owner signs. Trust is still a person's pin: a stranger's sentences never reach a model, and
+free talk needs a pin. An idle robot meets a robot that comes close by running a standing meeting
+task from its file, and a robot busy with a goal sees the newcomer under Robots nearby.
+
+Passports served from a laptop are gone, and with them QR stickers, owner stamps, the MQTT and
+ROS 2 bindings, `quackd meet`, and talk in `quackd run` and `quackd serve-mcp`. Arms and toys carry
+no passport now: an arm is fixed in place and will rarely meet another robot, and a toy-sized
+robot has no computer on board that can run quackd. The robots that will meet strangers are bigger
+mobile ones, humanoids and robots on four legs, and nearly all of them carry an NVIDIA Jetson that
+can.
+
+Nothing of it has run on a Jetson, over a real Bluetooth radio, between two machines or on a
+robot. Two simulated robots on one laptop, portraying a Unitree G1 EDU and an Agile ONE SN from
+their makers' published figures, are what has run.
+
+### Added
+
+- **`quackd onboard`, Robot Passport on the robot itself.** Run bare, it is the wizard: it checks
+  the board and what the robot can reach, asks what only the owner knows (the robot's name, what it
+  is and who made it, who owns it and how to reach them, how a person stops it, and its brain),
+  then writes `robot.yaml` and `robot.env`, makes the keys, asks for the owner's passphrase twice
+  and signs. On a Jetson it then offers to switch on BlueZ's address privacy, which restarts
+  bluetoothd, and prints the sudo lines that install and start `quackd-onboard.service` before it
+  runs them. `--board jetson|sim`, `--dir`, `--file` (a robot file that answers the questions),
+  `--owner-key`, `--passphrase-file`, `--days`, `--no-service` and `--yes` shape it, and it refuses
+  to run as root. Its subcommands: `sign` signs the passport section again after an edit or before
+  it expires, `status` and `preflight` say what the service and the radio are doing and what this
+  computer has, `show` prints the passport the way another robot reads it, `goal TEXT` gives the
+  robot a goal whose run is shown and whose questions are asked in that terminal, `stop` ends the
+  run in hand, `met` lists the robots it met and the ones it refused and why, `pin WHICH` and
+  `forget WHICH` trust a robot or stop trusting it (`--owner` trusts every robot its owner signed),
+  `serve` runs the service in the terminal the way systemd runs it, `demo` runs two simulated
+  robots, and `uninstall` takes the service away
+  ([docs/passport/quackd.md](docs/passport/quackd.md),
+  [ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
+- **`quackd[onboard]`, the extra that goes on the robot:** `uv tool install "quackd[onboard]"`.
+  It brings zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and
+  dbus-fast for Bluetooth, which install on Linux alone. It is in neither `dev` nor `all`, and CI
+  runs it in a job of its own.
+- **Boards.** `quackd onboard` recognises an NVIDIA Jetson from its device tree and its release
+  file, an Orin or a Thor on JetPack 6 or 7, and refuses a Xavier and JetPack 5 with the reason.
+  On any other computer it refuses and names `--board sim`, which stands in for a robot's computer
+  on a laptop, and a passport signed there says so in its new `board` member. Other boards come in
+  through the `quackd.boards` entry point group, the way adapters come in through
+  `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
+- **One file for a robot.** `robot.yaml` holds the passport section the owner signs, the body
+  quackd drives if there is one (`robot:` with an adapter and an address, and without it the
+  robot only talks), its brain, its meeting task, the robots and owners it trusts, its radio and
+  its LAN port. It is checked field by field, an error names the line's path in the file, and an
+  `arm` embodiment is refused. The brain's key goes in `robot.env`, never in `robot.yaml`. Both
+  sit in the robot's directory, `--dir`, then `QUACKD_ONBOARD_DIR`, then `~/.quackd/onboard/`,
+  beside the keys, the signed `passport.jws`, what it met, its status, its runs (the newest 200),
+  its memory and its cache.
+- **The owner key, sealed on the robot.** It is sealed with a passphrase of at least 12 characters,
+  by scrypt and AES-256-GCM, typed twice where it is made and hidden every time, and
+  `--passphrase-file` gives it to a script, refused on Linux and macOS when anybody but its owner
+  can read the file. No environment variable carries a passphrase, and the service never needs one.
+  A second robot of the same owner is signed by the same key, given with `--owner-key`. The robot's
+  own key is a plain file readable by its owner alone, because the service reads it when the robot
+  boots and nobody is there to type.
+- **Bluetooth LE, judged by signal strength.** The advert quackd builds is 31 bytes with no name in
+  it: a version, three flags and an 8-byte beacon id drawn at random, derived from no key, and
+  replaced every 15 minutes, never while a link, a session or a meeting is open, which is designed
+  and untested on a radio. A robot is near when the median of what was heard of it over three
+  seconds stays at or above the threshold for a second, and far when it stays 6 dB under it for
+  five seconds or is not heard for eight. The threshold is `meet_within_m` in the robot's file, 2 m
+  by default, from `rssi_at_1m`, -59 dBm, and a path loss exponent of 2.2: about -65.6 dBm, none of
+  it measured.
+- **Talk over the LAN or over a Bluetooth link.** A robot's DNS-SD record now carries its current
+  beacon id beside its short id, so a robot heard by radio is found on the network when the two
+  share one. When they do not, the robot with the lower beacon id opens a link to the other and
+  the same signed messages travel over it in frames, at most four links a robot. A first hello
+  over the LAN is answered `403` unless its sender was heard by radio in the last eight seconds.
+- **Meetings.** A verified robot near an idle one starts a run of the meeting task in the robot's
+  file, at most twelve steps, with `report_state` and `stop` allowed and `tell` to speak to the
+  robots nearby. It starts only with a brain configured, under `per_hour`, not with a robot met in
+  the last ten minutes, and with a stranger only while `with_strangers` allows it, and it ends 20
+  seconds after its robots leave. A goal stops a meeting and takes its place. A robot that comes
+  close during a goal joins that run's Robots nearby, and a run is told that robots nearby may
+  speak to it and that it never moves because one asked.
+- **`quackd onboard demo`.** Two simulated robots on this computer, a mock Unitree G1 EDU with a
+  courier company's passport and a mock Agile ONE SN with a household's, each its own service on
+  the `sim` board. The courier walks up to the household's robot as a stranger with no network in
+  common, so they meet over the Bluetooth link and each brain is told only the other's closed
+  facts, by appointment, each having pinned the other's owner, so their words reach each other's
+  brain, and in an office on one network, so the hello goes over the LAN. A third simulated robot,
+  whose passport had one byte changed after its owner signed it, is refused. The demo prints what
+  each act expected beside what happened, and exits 0 only when every one matched. `--offline`
+  flies both with the scripted pilot, which is how CI runs it, and needs no key.
+- **Robot Passport 1.0.** The specification, its two schemas and its vectors are rewritten for the
+  owner's signature, with vectors for the refusals it adds and for the Bluetooth advert and the
+  link's frames, still written by a script that signs with `cryptography` directly.
+
+### Changed
+
+- **Breaking. A passport is signed by its owner's key.** The JWS's `kid` is `owner.id`, and `id`
+  is the robot's own key. `owner` is required, with an `id`, and so are `issued` and `expires`,
+  at most 400 days apart and 365 unless `--days` says otherwise. `board` is new and quackd writes
+  it, never the robot's file. `stamps`, `talk`, `software` and `ttl_s` are gone, quackd writes no
+  `ext.org.quackd`, and a host serves one robot's passport and no index of several. A reader
+  refuses a passport signed by its own robot, by a key `owner.id` does not name, or by an owner
+  key that is its robot key, and one read outside its `issued` and `expires`. The specification is
+  1.0, so a 0.x reader refuses these passports at its version rule, and quackd refuses a 0.1
+  passport, naming the releases that wrote one, 0.23 to 0.28. A 0.1 talk message is answered `no`
+  with `versions: ["1.0"]`, and a DNS-SD record at `v=1` is passed over.
+- **Breaking. Both robots verify each other before any talk.** Every message is signed by its
+  sender's robot key, and an unsigned one is refused. The first `hello` carries the sender's
+  owner-signed passport and a runtime block its robot key signs: its software, the beacon id it
+  advertises and the port it answers on. A receiver checks, in order, the size, the signature, the
+  JSON, the version, that the sender is the key it claims, that it was heard by radio, that its
+  passport passes every reading rule and is its own, and that it is not this robot, and refuses at
+  the first that fails, keeping why among what `quackd onboard met` lists. A reply goes back only
+  the way the hello came.
+- **Three tiers: a stranger, known and the same owner.** A robot is known when a person pinned it,
+  or pinned an owner who signed it, and the same owner when this robot's own owner key signed it.
+  The flock tier is gone, since one quackd is one robot here. What a pilot is shown of a robot
+  nearby names its board's kind, so a brain knows when the robot it meets is simulated.
+- **`quackd passport check` also takes a robot's address,** as `HOST:PORT` or an IP address, as
+  `quackd meet` did, beside a passport file, `-` for stdin and a URL, and reads what it finds the
+  way a robot does.
+- **`quackd discover` reads the new DNS-SD record,** `v=2`, and passes over the `v=1` ones.
+- **`robot_list` no longer carries a `passport` field**, since `quackd serve-mcp` keeps no robot's
+  passport.
+
+### Removed
+
+- **Breaking. Passports served from a laptop.** `quackd passport show`, `set`, `owner`, `stamp`,
+  `known`, `forget` and `serve`, `quackd meet`, `quackd run --talk`, `--talk-port` and `--meet`,
+  `quackd serve-mcp --talk` and `--talk-port`, the `robot_nearby` tool, and the `nearby-hello`
+  starter, whose part the meeting task plays now. Where each one went: `passport show` is
+  `quackd onboard show`, `passport set` and `owner` are an edit of `robot.yaml` and then
+  `quackd onboard sign`, `passport stamp` is `--owner-key` on a second robot, `meet` is
+  `quackd passport check`, `meet --pin` and `--pin-owner` are `quackd onboard pin` and its
+  `--owner`, and `run --talk` is `quackd onboard goal`. `meet --as`, `--say`, `--ask` and `--share`
+  have no successor, because robots talk by themselves now. The keys 0.23 to 0.28 made under
+  `~/.quackd/keys/` and the pins in `~/.quackd/known_robots.json` stay on disk and nothing reads
+  them. They hold private keys, so delete them yourself once you are done with them, with
+  `rm -r ~/.quackd/keys ~/.quackd/known_robots.json` or the same paths under the folder
+  `--registry-dir` or `QUACKD_REGISTRY_DIR` named. The commands and what they wrote are at
+  [docs/passport/quackd.md as of v0.28.0](https://github.com/rokbenko/quackd/blob/v0.28.0/docs/passport/quackd.md).
+- **Breaking. QR stickers.** `quackd passport qr`, `quackd meet` on a picture, and the `#rp=` short
+  id after a passport's URL. `quackd ui` still prints a QR code for a phone to open the page.
+- **Breaking. The MQTT and ROS 2 bindings.** A passport retained on a broker, `meet mqtt://`, the
+  latched `robot_passport` topic, `meet ros://` and the rosbridge adapter's passport reader. The
+  flock's MQTT bus is a different thing and stays.
+- **Breaking. Owner stamps,** with `quackd passport stamp`, the stamp schema, the stamp vectors and
+  the `robot-passport-stamp+jwt` type, and the index of several passports behind one host, with
+  its schema. The owner's signature on the passport itself does what a stamp was for.
+
+### Documentation
+
+- **[docs/passport/](docs/passport/README.md) is rewritten for 1.0 and the robot's own computer:**
+  three layers (a Bluetooth beacon judged by signal strength, a passport its owner signs, talk
+  over the LAN or a Bluetooth link), a quickstart in three commands and then the demo on a laptop,
+  the robot's file, the service and meetings, the normative specification, and a roadmap that
+  says part by part what is built, what has run on the `sim` board, what has run on a Jetson and
+  what has run over a real radio. `compatibility.md` is now which robots carry a passport. Every
+  page stays, and every anchor another file links lands, on a short note where a section went.
+- The README's Robot Passport section is rewritten, with two new parts, which robots carry one
+  and putting a passport on a robot, and `docs/guides/jetson.md` gains Robot Passport on the board.
+  [ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md) records the
+  decision and amends ADR-0057 and ADR-0046, and the Phase 7 note is marked dropped, with nothing
+  of it built.
+- SECURITY.md describes the onboard service as a surface of its own: the radio, the link and the
+  LAN port, the sealed owner key, the robot key's file, the systemd user, the brain's key in
+  `robot.env`, and what would be a security issue in each. CONTRIBUTING.md says how to work on
+  `quackd/onboard/`, `quackd/boards/` and `quackd/radio/`, and docs/guides/mcp.md,
+  docs/guides/lan.md, docs/concepts/architecture.md and docs/faq.md follow the removals.
+
+### Known limitations
+
+- **Nothing of it has run on a Jetson, over a real Bluetooth radio, between two machines or on a
+  robot.** It ran on the `sim` board, two simulated robots on one computer sharing a simulated air
+  and a simulated network, portraying a Unitree G1 EDU and an Agile ONE SN from their makers'
+  published figures. The radio's code ran against fakes and a simulated air, and its BlueZ half has
+  never met bluetoothd. The roadmap's status table keeps it part by part
+  ([docs/passport/roadmap.md](docs/passport/roadmap.md)).
+- **The distance to meet at is unmeasured.** -59 dBm at one metre and a path loss exponent of 2.2
+  are starting values, RSSI is weak evidence, and an advert relayed from elsewhere reads as near.
+- **Beacon rotation and address privacy are designed and untested on a radio.** Whether the
+  controller rotates its address once BlueZ is told to cannot be seen without root, and a rotating
+  beacon id does not stop tracking while the radio's address stays public.
+- **The systemd install has never run on a board,** nor has a reboot bringing the service back,
+  and no combination of JetPack, BlueZ and the Python uv installs on the board has been tried.
+- **A board with no clock that survives a reboot and no network time refuses every passport,** its
+  own included, and `quackd onboard status` names it.
+- **There is no revocation.** A stolen robot's key speaks until its passport expires, and a thief
+  can guess the owner's passphrase offline against scrypt, so a shorter `--days` is the lever.
+- **Talk is signed and not encrypted,** over the LAN and over a Bluetooth link alike.
+- **On Windows and macOS `quackd onboard` runs the `sim` board alone,** with no service and no
+  Bluetooth, which needs Linux.
+
 ## [0.28.0] — 2026-10-28
 
 0.28.0 adds `quackd ui`, a page in the browser for what `quackd run` and `quackd drive` do, and
