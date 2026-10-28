@@ -10,9 +10,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 ## [Unreleased]
 
 0.29.0 moves Robot Passport onto the robot it introduces. `quackd onboard` runs on the robot's own
-computer, an NVIDIA Jetson first, and sets the robot up once: a wizard asks about six questions,
-writes `robot.yaml`, the one file a robot is set up from, makes the robot's keys, has its owner
-sign its passport and installs a systemd unit that keeps the service running. Robots that come
+computer, an NVIDIA Jetson first, and sets the robot up once: a wizard asks what only the owner
+knows, writes `robot.yaml`, the one file a robot is set up from, makes the robot's keys, has its
+owner sign its passport and installs a systemd unit that keeps the service running. Robots that come
 close find each other by Bluetooth LE, judged by signal strength, under a beacon id that rotates
 every 15 minutes. They check each other's owner-signed passports, and only then do their brains
 talk, over the LAN when the two share one and over a Bluetooth link when they do not.
