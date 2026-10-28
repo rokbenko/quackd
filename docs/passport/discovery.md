@@ -117,7 +117,7 @@ that would go over HTTP go in frames of 20 to 512 bytes, as large as the connect
 closes if the answer names another beacon id than the advert did. A message is at most 16,384 bytes,
 carried strictly in order, and a robot accepts at most 4 links, closes one that brings no `hello`
 within 30 seconds, and takes at most 20 requests every 10 seconds on each. The frames and every
-limit are in [spec section 5.6](spec.md#5-beacons-and-bindings).
+limit are in [spec section 5.6](spec.md#56-bluetooth-le).
 
 ## The well-known URL
 

@@ -64,9 +64,9 @@ run quackd ([compatibility.md](compatibility.md)).
 | What | Size |
 |---|---|
 | the Bluetooth advert, flags included | 31 bytes, 10 of them the beacon's own |
-| the minimal passport in passport.md | <!-- capture: wc -c docs/passport/vectors/minimal.json, after C3 --> |
-| a mock Unitree G1 EDU's full passport | <!-- capture: wc -c docs/passport/vectors/humanoid.json, after C3 --> |
-| that, signed by its owner, as a `.jws` | <!-- capture: wc -c docs/passport/vectors/humanoid.jws, after C3 --> |
+| the minimal passport in passport.md | 240 bytes |
+| a mock Unitree G1 EDU's full passport | 920 bytes |
+| that, signed by its owner, as a `.jws` | 1,461 characters |
 | the most a reader must accept | 8,192 bytes |
 | the most a reader reads of one off the network, signed | 12,288 bytes |
 | a talk message, at most | 4,096 bytes |

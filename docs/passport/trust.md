@@ -60,7 +60,7 @@ drops stamps. Whoever holds only the robot key cannot change a word of the passp
 
 A reader refuses a passport under [rule 4.4](spec.md#44-signed-passports) when its robot's own key
 signed it, the 0.1 shape, when any key but the one `owner.id` names signed it, or when its owner key
-is its robot key. Under [rule 4.5](spec.md#4-identity-signatures-and-fingerprints) it refuses one
+is its robot key. Under [rule 4.5](spec.md#45-validity) it refuses one
 whose `issued` and `expires` the reader's clock is outside, with five minutes of grace for a clock a
 little ahead. quackd signs for 365 days unless `--days` says otherwise, and never for more than the
 400 a reader accepts.

@@ -264,7 +264,12 @@ prints the events as JSON, and `--llm` and `--base-url` give both robots the bra
 `-`, from a URL, or from a robot's `HOST[:PORT]`. It shows what the passport proves and what it only
 claims, and a refusal names the rule of [the specification](spec.md) it broke and exits 1:
 
-<!-- capture: quackd passport check docs/passport/vectors/tampered.jws, after C3 -->
+```
+$ quackd passport check docs/passport/vectors/tampered.jws
+✗ error: refused under 4.4: the signature does not verify with the key
+did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2
+  docs/passport/spec.md says what each rule asks
+```
 
 A URL is fetched under [the fetch rules](discovery.md#fetch-rules): no redirect followed, five
 seconds for the whole exchange, nothing past 12,288 bytes read. `--json` prints what a reader keeps
