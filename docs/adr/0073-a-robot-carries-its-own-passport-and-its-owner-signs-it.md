@@ -43,15 +43,15 @@ thing that is there when two robots meet.
 
 ## Decision
 
-**A passport lives on the robot it describes.** `quackd onboard` runs on the robot's own computer
-and nowhere else. It sets the robot up once, serves its passport, listens for robots that come
-close, checks theirs, and runs the robot's brain when they talk. An NVIDIA Jetson is the first
-computer it supports, an Orin or a Thor on JetPack 6 or 7, recognised from its device tree and
-its release file, and a Xavier or JetPack 5 is refused with the reason. A `sim` board stands in
-for one on a laptop and in the test suite, only when it is named, and the passport it signs says
-`"kind": "sim"` under `board`, so no reader takes a simulation for a robot. Other boards come in
-through a plugin interface, the `quackd.boards` entry point group, the way adapters come in
-through `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
+**A passport lives on the robot it describes.** `quackd onboard` runs on the robot's own computer,
+and on a laptop only as a stand-in for one. It sets the robot up once, serves its passport, listens
+for robots that come close, checks theirs, and runs the robot's brain when they talk. An NVIDIA
+Jetson is the first computer it supports, an Orin or a Thor on JetPack 6 or 7, recognised from its
+device tree and its release file, and a Xavier or JetPack 5 is refused with the reason. A `sim`
+board stands in for one on a laptop and in the test suite, only when it is named, and the passport
+it signs says `"kind": "sim"` under `board`, so no reader takes a simulation for a robot. Other
+boards come in through a plugin interface, the `quackd.boards` entry point group, the way adapters
+come in through `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
 
 **Arms and toys carry none.** An arm is fixed in place and will rarely meet another robot, and a
 toy-sized robot has no computer on board that can run quackd. The robot's file refuses an `arm`
@@ -107,9 +107,10 @@ Free talk needs a pin. The courtesy handler stands as ADR-0057 made it.
 **An idle robot meets, and a busy one notices.** A verified robot near an idle one starts a
 meeting: a run of the standing meeting task in the robot's file, at most twelve steps, with
 `report_state` and `stop` allowed and `tell` to speak, started only when a brain is configured,
-under an hourly cap, and with a stranger only when the file allows it. A robot already running a goal does not stop
-for a meeting, and the newcomer appears in that run's Robots nearby. A goal reaches the service
-from `quackd onboard goal`, whose terminal shows the run and asks its questions.
+under an hourly cap, and with a stranger only when the file allows it. A robot already running a
+goal does not stop for a meeting, and the newcomer appears in that run's Robots nearby. A goal
+reaches the service from `quackd onboard goal`, whose terminal shows the run and asks its
+questions.
 
 **One file, written by a wizard, and a systemd unit.** `robot.yaml` holds what the passport says,
 the body quackd drives if there is one, the brain, the meeting task, the pins and the radio's

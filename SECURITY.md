@@ -339,8 +339,8 @@ Also in scope:
   acting on the terminal it is shown on.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
-  the quackd driving a robot reaches with `--host`. It serves a live view from a camera on the board,
-  runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
+  the quackd driving a robot reaches with `--host`. It serves a live view from a camera on the
+  board, runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
   `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default and warns when it is
   bound wider with no token. A token, once one is configured, is required on every path, read
   from the `X-Quackd-Token` header and never from the query string, and compared with
