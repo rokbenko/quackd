@@ -68,12 +68,10 @@ Unitree publishes, read on 2026-10-28, an owner, and the `board` a laptop writes
 }
 ```
 
-Read top to bottom: this is `g1-edu-mock`, a Unitree G1 EDU by its maker's model name, owned by
-Example lab, reachable at that page. It runs on a computer standing in for a robot's own, so it is a
-simulation, and every robot that reads it knows. It is a legged humanoid with arms, rated for
-indoors, 35 kg and 1.32 m tall by Unitree's own page. It can report its state and stop, and nothing
-else, because it is a mock, and it says so in `cannot`. Its owner signed it on 28 October 2026 for a
-year.
+Read top to bottom: `g1-edu-mock`, a Unitree G1 EDU owned by Example lab, running on a computer
+that stands in for a robot's own, so every robot that reads it knows it is a simulation. A legged
+humanoid with arms, 35 kg and 1.32 m by Unitree's own page, that can report its state and stop and
+nothing else, as its `cannot` says, signed on 28 October 2026 for a year.
 
 ## Every member
 
@@ -97,26 +95,24 @@ of anything, or as an instruction.
 
 ### `owner`
 
-Required, with its `id`: the owner key, the one that signs the passport, never the robot's own. A
+Required, with its `id`: the owner key, which signs the passport and is never the robot's own. A
 `label` of up to 64 characters and a `contact` of up to 200, a URL, a `mailto:` address or a role
-address, say who looks after the robot without needing personal data
-([privacy.md](privacy.md#what-to-put-in-owner)). A label is the owner's own word, which is why a
-robot that pins an owner pins its key.
+address, say who looks after the robot without personal data
+([privacy.md](privacy.md#what-to-put-in-owner)). A robot that pins an owner pins its key, not its
+label.
 
 ### `board`
 
-The computer the robot runs its passport on. `kind` is `jetson`, `sim` or `other`, read as `other`
-when a reader does not know it; `model` names the board, up to 64 characters; `soc` names its chip,
-up to 32. The robot's software writes it from the board it found, and no owner types it, so a
-passport written on a laptop says `sim` and never `jetson`, and a brain that meets a simulated robot
-is shown that it is one.
+The computer the robot runs on: `kind`, `jetson`, `sim` or `other`, with an unknown kind read as
+`other`; `model`, up to 64 characters; `soc`, its chip, up to 32. The robot's software writes it from
+the board it found and no owner types it, so a passport written on a laptop says `sim`, and a brain
+that meets a simulated robot is shown that it is one.
 
 ### `maker`
 
-`vendor`, `model` and an optional `serial`, each up to 64 characters. They are the owner's claims
-about the robot until a maker signs its own ([roadmap.md](roadmap.md)). A serial number identifies
-one physical robot for as long as it exists, so [privacy.md](privacy.md) says to leave it out unless
-somebody needs it.
+`vendor`, `model` and an optional `serial`, each up to 64 characters: the owner's claims until a
+maker signs its own ([roadmap.md](roadmap.md)). A serial identifies one physical robot for life, so
+[privacy.md](privacy.md) says to leave it out unless somebody needs it.
 
 ### `body`
 
@@ -135,13 +131,11 @@ A value a reader does not know reads as `other`, and an unknown sensor stays a n
 without interpreting it, so a robot from next year never makes a passport unreadable.
 
 Then the numbers: `mass_kg`, `height_m`, `length_m`, `width_m`, `payload_kg`, `reach_m`,
-`endurance_min` and `max_speed_mps`. Each is a **figure**: a plain number, or a number with how sure
-the writer is of it, or that and a source, `[35, "official", "unitree.com/g1, read 2026-10-28"]`.
-The confidence is `official` (the maker or a paper says so), `estimate` or `measured`, the three
-words quackd's datasheet has used since [ADR-0032](../adr/0032-datasheets-and-the-verdict.md), for
-the same reason: a number without a source is a rumour. An absent figure is **not published**, never
-zero. Units are SI and live in the member's name, and `max_speed_mps` is the fastest the robot moves
-as its software is set up now.
+`endurance_min` and `max_speed_mps`. Each is a **figure**: a number, or a number with how sure the
+writer is, `official`, `estimate` or `measured`, and optionally a source, the words quackd's datasheet
+has used since [ADR-0032](../adr/0032-datasheets-and-the-verdict.md), because a number without a
+source is a rumour. An absent figure is **not published**, never zero. Units are SI and live in the
+name, and `max_speed_mps` is the fastest the robot moves as its software is set up now.
 
 ### `skills`
 
@@ -153,16 +147,13 @@ never interprets. A robot whose software can stop it should list `stop`.
 ### `courtesy`
 
 What another robot may ask this one to do: `pause` (stop moving for a few seconds, then carry on)
-and `identify` (blink, beep or wiggle, so the people and cameras nearby can tell which robot this
-is). It is apart from `skills` on purpose: `skills` says what the robot can do, `courtesy` what it
-will consider doing because a peer asked, and its owner's policy decides
-([talk.md](talk.md#ask-and-answer)). The mock above offers none.
+and `identify` (blink, beep or wiggle, so people and cameras can tell which robot this is). `skills`
+says what the robot can do, `courtesy` what it will consider because a peer asked, and its owner's
+policy decides ([talk.md](talk.md#ask-and-answer)). The mock above offers none.
 
 ### `cannot`
 
-Up to eight sentences of up to 120 characters: what the robot cannot do, whatever a task asks. They
-stop another robot asking for what this body cannot do, the way quackd's datasheet stops a pilot
-accepting it.
+Up to eight sentences of up to 120 characters: what the robot cannot do, whatever a task asks.
 
 ### `safety`
 
@@ -172,32 +163,29 @@ accepting it.
 | `estop` | `button` (a stop button on the body), `remote` (a separate stop device), `power` (only by cutting the power), or `none` |
 | `how_to_stop` | one sentence for a person standing next to it |
 
-This is the one place a reader reads the worst case. A missing, unknown or garbled value reads as
-"does not stop on silence", "no e-stop" and "nobody said how", so a mistake never makes a robot look
-safer than its owner said, and the passport is still read rather than refused, because hiding a
-robot is not safer either.
+This is the one place a reader reads the worst case: a missing, unknown or garbled value reads as
+"does not stop on silence", "no e-stop" and "nobody said how", and the passport is still read, since
+hiding a robot is not safer either.
 
 ### `ext`
 
-Extensions, keyed by a reverse-DNS name so two makers' extensions never collide, `com.example.lift`
-say. A reader ignores one it does not know, unless it is marked `"required": true`, and then it may
-still show the passport but must not talk to the robot.
+Extensions, keyed by a reverse-DNS name, `com.example.lift` say. A reader ignores one it does not
+know, unless it is marked `"required": true`, and then it may show the passport but must not talk
+to the robot.
 
 ### `issued` and `expires`
 
-When the owner signed the passport, and until when the signature holds: RFC 3339 date-times, both
-required, `expires` after `issued` and at most 400 days later. quackd signs for 365 days unless
-`--days` says otherwise. A reader refuses a passport whose `expires` has passed, or whose `issued` is
-more than five minutes ahead of its own clock, so a robot needs a clock that is roughly right
-([trust.md](trust.md#the-owner-signs-the-passport)). With no revocation in 1.0, `expires` is also
-what limits a stolen robot key.
+When the owner signed the passport, and until when the signature holds: both required, `expires`
+at most 400 days after `issued`, and 365 days when quackd signs unless `--days` says otherwise. A
+reader refuses a passport past its `expires`, or with an `issued` more than five minutes ahead of its
+own clock, so a robot needs a roughly right clock ([trust.md](trust.md#the-owner-signs-the-passport)).
 
 ### Members 1.0 removed
 
-`software`, which changes with every upgrade, moved into the `hello`, where the robot key signs it
-([talk.md](talk.md#what-a-hello-carries-beside-the-passport)). `talk` went, since a robot is reached
-the way its beacon says. `stamps` went, since the owner signs the passport itself. `ttl_s` went, since
-a reader caches a passport until it `expires`. A 1.0 reader ignores all four as unknown members.
+`software` moved into the `hello` ([talk.md](talk.md#what-a-hello-carries-beside-the-passport)),
+`talk` went since a robot is reached the way its beacon says, `stamps` since the owner signs the
+passport itself, and `ttl_s` since a reader caches a passport until it `expires`. A 1.0 reader
+ignores all four as unknown members.
 
 ## Sizes at a glance
 
@@ -214,17 +202,14 @@ Measured from [the vectors](vectors/README.md).
 
 ## What a passport leaves out on purpose
 
-- **Live state.** Where the robot is, its battery, what it is doing now. A passport describes the
-  robot and changes when the robot does. What changes while it runs, its software and its beacon id,
-  travels in the `hello`.
-- **Coordinates.** Two robots that have just met share no frame of reference
+- **Live state**, where the robot is or what it is doing: what changes while it runs travels in the
+  `hello`.
+- **Coordinates**, since two robots that have just met share no frame of reference
   ([ADR-0020](../adr/0020-heterogeneous-flocks.md)).
-- **Personal data.** Nothing about a person is required, and [privacy.md](privacy.md) says what to
-  leave out.
-- **Secrets.** No token, no password, no private key, ever. A passport is shown to any robot that
-  says hello.
-- **Free-form descriptions.** There is no "about" paragraph: text a stranger wrote is text another
-  robot's language model might read, so every member is short and bounded.
+- **Personal data**, of which nothing is required ([privacy.md](privacy.md)).
+- **Secrets**, ever: a passport is shown to any robot that says hello.
+- **Free-form descriptions**, since text a stranger wrote is text another robot's language model
+  might read, so every member is short and bounded.
 
 ## From the robot's file
 
@@ -245,7 +230,6 @@ wrote and the owner signs ([quackd.md](quackd.md#robotyaml-the-one-file)):
 | the board quackd found | `board` |
 | the moment of signing, and `--days` | `issued`, `expires` |
 
-When `robot.adapter` names a body quackd drives, the adapter's manifest supplies the skills, the way
-quackd built passports from manifests since 0.23.0, and a `cannot` line longer than 120 characters
-keeps its claim, the part before its explanation. A body with no adapter, which only talks, offers
-no courtesy.
+When `robot.adapter` names a body quackd drives, its manifest supplies the skills, as quackd has
+built passports from manifests since 0.23.0. A body with no adapter, which only talks, offers no
+courtesy.

@@ -12,19 +12,17 @@ be read as BCP 14 ([RFC 2119](https://www.rfc-editor.org/rfc/rfc2119),
 capitals.
 
 Beside this page: the JSON Schemas in [schema/](schema/), and the conformance vectors in
-[vectors/](vectors/README.md), each with the result a reader must reach. [Appendix A](#appendix-a-changes-from-01)
-lists what changed from 0.1.
+[vectors/](vectors/README.md), each with the result a reader must reach.
+[Appendix A](#appendix-a-changes-from-01) lists what changed from 0.1.
 
 ## 1. Terms
 
-- **Robot**: a machine that moves, or that can be moved by software, whatever its maker.
 - **Passport**: one JSON document about a robot, signed by its owner (sections 2 and 4.4).
 - **Robot key**, **owner key**: the two Ed25519 keys a passport names, in `id` and `owner.id`.
-- **Reader**: whoever reads a passport: another robot, a tool. **Peer**: a robot that talks to
-  another (section 6).
+- **Reader**: whoever reads a passport. **Peer**: a robot that talks to another (section 6).
 - **Beacon**, **beacon id**: the Bluetooth LE advert that says a robot is near, and the random id
   in it (section 5.6).
-- **Short id**, **digest**: two fingerprints, of a key and of a document (sections 4.2, 4.3).
+- **Short id**, **digest**: fingerprints of a key and of a document (sections 4.2, 4.3).
 
 [glossary.md](glossary.md) has every term the folder uses.
 
@@ -44,24 +42,24 @@ belongs, the way JSON Schema reads it.
 ### 2.2 Members
 
 Six members are REQUIRED: `passport`, `id`, `name`, `owner` with its `id`, `issued` and `expires`.
-Every other one is OPTIONAL. "Text N" means a JSON string of at most N characters.
+"Text N" means a JSON string of at most N characters.
 
 | Member | Type | Rule |
 |---|---|---|
-| `passport` | string `MAJOR.MINOR` | REQUIRED. The protocol version, `"1.0"` for this one. |
+| `passport` | string `MAJOR.MINOR` | REQUIRED. `"1.0"` for this version. |
 | `id` | string | REQUIRED. The robot key, a `did:key` (section 4.1). |
 | `name` | text 64, at least 1 | REQUIRED. For people. Need not be unique. |
-| `owner` | object | REQUIRED. `id` REQUIRED: the owner key, which signs the passport and is never the robot's `id` (section 4.4). `label` text 64; `contact` text 200, a URL, a `mailto:` address or a role address. |
-| `board` | object | The computer the robot runs on, as its software found it and never as a person typed it: `kind` text 32, `jetson`, `sim` (a computer standing in for a robot's own) or `other`; `model` text 64; `soc` text 32. |
+| `owner` | object | REQUIRED. `id`, REQUIRED, the owner key, which signs the passport and is not `id` (section 4.4); `label` text 64; `contact` text 200, a URL, a `mailto:` address or a role address. |
+| `board` | object | The computer the robot runs on, as its software found it, never as a person typed it: `kind` text 32, `jetson`, `sim` (a computer standing in for a robot's own) or `other`; `model` text 64; `soc` text 32. |
 | `maker` | object | `vendor`, `model`, `serial`: each text 64. |
-| `body` | object | The body, section 2.3. |
-| `skills` | array of names | At most 64. Each matches `[a-z][a-z0-9_]{0,31}`. Section 2.4. |
-| `courtesy` | array of names | What a peer may ask for, section 2.4. At most 8. |
+| `body` | object | Section 2.3. |
+| `skills` | array of names | At most 64, each matching `[a-z][a-z0-9_]{0,31}`. Section 2.4. |
+| `courtesy` | array of names | At most 8. Section 2.4. |
 | `cannot` | array of text 120 | What it cannot do, whatever a task says. At most 8, none empty. |
 | `safety` | object | Section 2.5. |
-| `ext` | object | Extensions, section 2.6. |
+| `ext` | object | Section 2.6. |
 | `issued` | string | REQUIRED. An [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) date-time with a time zone: when the owner signed it. |
-| `expires` | string | REQUIRED. An RFC 3339 date-time after `issued`, and at most 400 days after it. Section 4.5. |
+| `expires` | string | REQUIRED. An RFC 3339 date-time after `issued`, at most 400 days after it. Section 4.5. |
 
 ### 2.3 The body
 
@@ -77,11 +75,9 @@ Every other one is OPTIONAL. "Text N" means a JSON string of at most N character
 
 A **figure** is a non-negative number, or an array of a non-negative number and a confidence,
 optionally followed by a source of text 120. The confidence is `official` (the maker or a paper
-says so), `estimate` or `measured`. A figure that is absent is not published, and a reader MUST
-NOT read an absent figure as zero. Units are SI and live in the member's name.
-
-`max_speed_mps` is the fastest the robot will move as its software is configured now, which is
-what another body sharing the floor needs to know.
+says so), `estimate` or `measured`. A reader MUST NOT read an absent figure as zero: it is not
+published. Units are SI and live in the member's name. `max_speed_mps` is the fastest the robot moves
+as its software is configured now.
 
 ### 2.4 Skills and courtesy
 
@@ -99,15 +95,10 @@ name is an opaque label a reader MAY show and MUST NOT interpret.
 | `approach_and` | it goes to something and acts on it |
 | `say` | it makes a sound or speech a person can hear |
 
-A writer whose robot can be stopped by its software SHOULD list `stop`.
-
-`courtesy` lists what a peer may ask for (section 6.5). Two names are defined:
-
-- `pause`: it stops moving for at most the number of seconds asked, then resumes its own plan.
-- `identify`: it makes itself known to the people and cameras nearby, by light, sound or a small
-  motion.
-
-A reader MUST ignore a courtesy name it does not know.
+A writer whose robot can be stopped by its software SHOULD list `stop`. `courtesy` lists what a peer
+may ask for (section 6.5): `pause`, to stop moving for at most the seconds asked and then resume its
+own plan, and `identify`, to make itself known to the people and cameras nearby by light, sound or a
+small motion. A reader MUST ignore a courtesy name it does not know.
 
 ### 2.5 Safety
 
@@ -118,16 +109,14 @@ A reader MUST ignore a courtesy name it does not know.
 | `how_to_stop` | text 120 | For a person, in a sentence. Anything that is not such a string reads as absent. |
 
 A reader MUST read `safety` as the worst case wherever a value is missing, unknown or of the wrong
-type, and MUST NOT refuse a passport for a bad value in `safety` alone. A garbled value never makes
-a robot look safer, and never hides one either.
+type, and MUST NOT refuse a passport for a bad value in `safety` alone.
 
 ### 2.6 Extensions
 
 `ext` maps a reverse-DNS name (`org.example.lift`) to an object. A reader MUST ignore an extension
-it does not know, unless the object has `"required": true`. A reader that does not understand a
-required extension MAY show the passport and MUST NOT talk to the robot on the strength of it. A
-`required` that is anything but `true` is read as not required. `org.quackd` is reserved for
-quackd's own.
+it does not know, unless the object has `"required": true`; then it MAY show the passport and MUST
+NOT talk to the robot on the strength of it. A `required` that is anything but `true` is read as not
+required. `org.quackd` is reserved for quackd.
 
 ### 2.7 The index
 
@@ -139,36 +128,32 @@ refused under rule 3.
 A reader MUST apply these rules, in this order, and MUST refuse a document that breaks one of the
 first seven:
 
-1. It is at most 8,192 bytes. For a signed passport that is its payload, and its JWS may be a third
-   longer (section 5.7).
-2. It is a JSON object with no duplicate member names, at any depth. Two parsers can disagree about
-   which duplicate wins, and a signature checked by one must not be read by the other.
+1. It is at most 8,192 bytes, which for a signed passport is its payload.
+2. It is a JSON object with no duplicate member names, at any depth, since two parsers can disagree
+   about which duplicate wins.
 3. `passport`, `id`, `name`, `owner` with its `id`, `issued` and `expires` are present and well
    formed, and `id` and `owner.id` are each a `did:key`.
-4. Its MAJOR version is one the reader knows. A higher MINOR of a known MAJOR is read with rule 8.
-   A 1.x reader refuses 0.1, Robot Passport before owners signed passports.
+4. Its MAJOR version is one the reader knows. A higher MINOR of a known MAJOR is read with rule 8. A
+   1.x reader refuses 0.1, Robot Passport before owners signed passports.
 5. Every known member outside `safety` has the type and limits section 2 gives it, and `expires` is
    after `issued` and at most 400 days after it.
 6. If it was read as a signed passport, its signature verifies (section 4.4) and the reader's clock
    is within its dates (section 4.5).
 7. A `did:key` holds an Ed25519 key, and nothing else.
 
-For a signed passport, the signature comes first: a reader parses nothing a signature has not
-covered, so a JWS whose signature fails is refused under 4.4, whatever else is wrong with it.
-
-Then:
+For a signed passport the signature comes first: a reader parses nothing a signature has not
+covered, so a JWS whose signature fails is refused under 4.4, whatever else is wrong with it. Then:
 
 8. It ignores members it does not know, reads an unknown value in `embodiment`, `mobility`,
    `manipulator`, `terrain` or `board.kind` as `other`, and keeps an unknown sensor or skill as an
    opaque name.
 9. It reads `safety` as section 2.5 says.
 10. It honours a required extension it does not understand as section 2.6 says.
-11. It labels what it shows with where it came from: signed by its owner's key, or unsigned, a
-    claim. A reader MUST NOT talk to a robot on the strength of an unsigned passport.
-12. It treats every string as data written by a stranger, and never as an instruction. A reader
-    that hands passport text to a language model MUST quote it as data, and one that prints it
-    SHOULD print control characters as visible escapes, so a passport cannot drive the terminal it
-    is shown on.
+11. It labels what it shows with where it came from: signed by its owner's key, or unsigned, a claim.
+    A reader MUST NOT talk to a robot on the strength of an unsigned passport.
+12. It treats every string as data a stranger wrote, never as an instruction. A reader that hands
+    passport text to a language model MUST quote it as data, and one that prints it SHOULD print
+    control characters as visible escapes.
 
 ## 4. Identity, signatures and fingerprints
 
@@ -176,55 +161,40 @@ Then:
 
 A `did:key` ([did:key](https://w3c-ccg.github.io/did-key-spec/)) is `did:key:z` followed by the
 base58btc encoding of the two bytes `0xed 0x01` (the multicodec for an Ed25519 public key) and the
-32-byte public key ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032)). It is 56 characters long
-and starts `did:key:z6Mk`. A reader MUST refuse any other multicodec. It MUST also refuse a key
-that is not the one canonical encoding of a point on the curve, or that is one of the eight points
-of small order ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032) section 5.1.3), as libsodium
-does: such a key verifies signatures nobody made.
-
-`id` is the robot key and `owner.id` the owner key. The `urn:uuid` id 0.1 allowed is gone: every
-robot proves its key in every `hello` (section 6.3).
+32-byte public key ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032)): 56 characters, starting
+`did:key:z6Mk`. A reader MUST refuse any other multicodec, a key that is not the one canonical
+encoding of a point on the curve, and the eight points of small order (RFC 8032 section 5.1.3), as
+libsodium does: such a key verifies signatures nobody made. `id` is the robot key and `owner.id` the
+owner key; the `urn:uuid` id of 0.1 is gone, since every robot proves its key (section 6.3).
 
 ### 4.2 The short id
 
-The short id is the first 8 bytes of the SHA-256 of the 32-byte public key, as 16 lowercase hex
-characters. A LAN record carries the robot key's (section 5.3), and a person names a robot or an
-owner by it. It is a lookup hint and never proof: anybody can claim any short id, and only a
-signature settles which robot holds the key. The Bluetooth beacon carries no short id
-(section 5.6).
+The first 8 bytes of the SHA-256 of the 32-byte public key, as 16 lowercase hex characters. A LAN
+record carries the robot key's (section 5.3), and a person names a robot or an owner by it. It is a
+lookup hint and never proof. The Bluetooth beacon carries none (section 5.6).
 
 ### 4.3 The digest
 
-The digest of a passport is the SHA-256 of its exact bytes, as lowercase hex: the JWS payload for a
-signed passport, the bytes served for an unsigned one. A LAN record carries its first 16
-characters, and a reader caches by it (section 5.8).
+The SHA-256 of a passport's exact bytes, as lowercase hex: the JWS payload for a signed passport. A
+LAN record carries its first 16 characters, and a reader caches by it (section 5.8).
 
 ### 4.4 Signed passports
 
-A signed passport is a compact JWS ([RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)), signed by
-its owner:
+A signed passport is a compact JWS ([RFC 7515](https://www.rfc-editor.org/rfc/rfc7515)) whose
+payload is the passport's exact bytes, nothing canonicalised, and whose protected header has `alg`
+`"Ed25519"` ([RFC 9864](https://www.rfc-editor.org/rfc/rfc9864)), `kid` equal to the payload's
+`owner.id`, `typ` `"robot-passport+jws"` and no `crit`. It is signed with the key `owner.id` holds,
+and a writer MUST NOT sign with any other.
 
-- Its payload is the exact bytes of the passport. Nothing is canonicalised.
-- Its protected header has `alg` `"Ed25519"` ([RFC 9864](https://www.rfc-editor.org/rfc/rfc9864)),
-  `kid` equal to the payload's `owner.id`, and `typ` `"robot-passport+jws"`. It has no `crit`.
-- It is signed with the key `owner.id` holds.
-
-A reader MUST verify all three, and MUST also accept `alg` `"EdDSA"`, the older label RFC 9864
-deprecates, when the key is Ed25519. A reader MUST refuse a passport:
-
-- whose `kid` is its `id`: one signed by its robot's own key, the way 0.1 signed passports;
-- whose `kid` is not its `owner.id`;
-- whose `owner.id` is its `id`, since then nothing but the robot vouches for it.
-
-A writer MUST NOT sign a passport with any key but the one its `owner.id` names.
+A reader MUST verify all three and the signature, and MUST also accept `alg` `"EdDSA"`, the older
+label RFC 9864 deprecates. It MUST refuse a passport whose `kid` is its `id`, one signed by its
+robot's own key the way 0.1 signed passports; one whose `kid` is not its `owner.id`; and one whose
+`owner.id` is its `id`, since then nothing but the robot vouches for it.
 
 Each part is base64url with no padding and with the spare bits of its last character zero, so one
 signature has one spelling, and `typ` is compared as RFC 7515 section 4.1.9 says, ignoring case and
-an `application/` prefix. A reader that fetched a `.jws` URL MUST refuse a body that is not a JWS,
-or a host could talk it down from a signed passport to a claim without its noticing.
-
-Wherever a signed passport travels, in a file, a cache or a `hello`, the JWS string travels
-unchanged.
+an `application/` prefix. A reader that fetched a `.jws` URL MUST refuse a body that is not a JWS. A
+signed passport travels as its JWS string, unchanged.
 
 ### 4.5 Validity
 
@@ -237,11 +207,10 @@ with no revocation in 1.0, `expires` is what limits a stolen robot key.
 
 ### 5.1 The well-known URL
 
-Over HTTP a robot MAY serve its passport at `/.well-known/robot-passport.json` (the payload of its
-signed passport) with media type `application/json`, and the signed passport at
-`/.well-known/robot-passport.jws` with media type `application/jose`. HTTPS is RECOMMENDED on the
-internet. Plain HTTP is acceptable on a local network, because what proves a passport is its
-owner's signature and not its transport.
+A robot MAY serve its passport over HTTP at `/.well-known/robot-passport.json`, the payload of its
+signed passport as `application/json`, and the signed passport at `/.well-known/robot-passport.jws`
+as `application/jose`. HTTPS is RECOMMENDED on the internet, and plain HTTP is acceptable on a local
+network, because the owner's signature proves a passport, not its transport.
 
 ### 5.2 QR codes and NFC tags
 
@@ -251,9 +220,8 @@ stuck to.
 ### 5.3 DNS-SD
 
 On a local network a robot MAY advertise the DNS-SD ([RFC 6763](https://www.rfc-editor.org/rfc/rfc6763))
-service type `_robot-passport._tcp` over mDNS ([RFC 6762](https://www.rfc-editor.org/rfc/rfc6762)).
-The port is one that serves the passport (section 5.1) and the talk inbox (section 6.2) over HTTP.
-The TXT record holds:
+service type `_robot-passport._tcp` over mDNS ([RFC 6762](https://www.rfc-editor.org/rfc/rfc6762)),
+on a port that serves its passport (section 5.1) and its talk inbox (section 6.2). The TXT record:
 
 | Key | Value |
 |---|---|
@@ -281,8 +249,9 @@ Removed in 1.0, for the same reason.
 <a id="ble-tx"></a>
 
 **The UUIDs.** Three 128-bit UUIDs, each the version 5 UUID
-([RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), in the URL namespace, of this page's URL with
-a fragment: `https://github.com/rokbenko/quackd/blob/main/docs/passport/spec.md#` and the name.
+([RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), in the URL namespace, of this page's URL,
+`https://github.com/rokbenko/quackd/blob/main/docs/passport/spec.md#`, and the name. A version 5 UUID
+cannot fall in the Bluetooth Base UUID range, so they need no registration.
 
 | Name | UUID | What it is |
 |---|---|---|
@@ -290,11 +259,10 @@ a fragment: `https://github.com/rokbenko/quackd/blob/main/docs/passport/spec.md#
 | `ble-rx` | `ba6288b5-e97c-51d2-a7b4-9cd04f5ad64c` | the characteristic a central writes frames to, with write and write without response |
 | `ble-tx` | `f5d0526f-21e9-599f-8454-cda57ec39c1b` | the characteristic a peripheral notifies frames on |
 
-A version 5 UUID cannot fall in the Bluetooth Base UUID range, so they need no registration.
-
 **The advert.** A robot that takes part in meetings advertises a legacy advert of exactly 31 bytes:
-the Flags structure (3 bytes) and a Service Data structure with a 128-bit UUID (AD type `0x21`):
-its length and type (2 bytes), `ble-service` little-endian (16 bytes) and 10 bytes of service data:
+the Flags structure (3 bytes), then a Service Data structure with a 128-bit UUID, AD type `0x21`:
+its length and type (2 bytes), `ble-service` little-endian (16 bytes) and 10 bytes of service data.
+It MUST carry no name, no transmit power and nothing else.
 
 | Offset | Size | Field |
 |---|---|---|
@@ -302,16 +270,14 @@ its length and type (2 bytes), `ble-service` little-endian (16 bytes) and 10 byt
 | 1 | 1 | flags: bit 0 `LAN`, look this robot up by DNS-SD; bit 1 `LINK`, it accepts a link now; bit 2 `BUSY`, it is at a link or session limit. Other bits are sent as 0 and ignored. |
 | 2 | 8 | the beacon id |
 
-The advert MUST carry no name, no transmit power and nothing else. A reader MUST ignore service data
-shorter than 10 bytes or of another version, and MUST ignore bytes past the tenth, so a later minor
-version can add them.
+A reader MUST ignore service data shorter than 10 bytes or of another version, and bytes past the
+tenth, which a later minor version may add.
 
 **The beacon id.** A robot MUST draw each beacon id as 8 random bytes from a cryptographically secure
-source, derived from no key and from no earlier beacon id. It SHOULD draw a new one every 15 minutes
-and MUST NOT replace it while a link, a talk session or a meeting with another robot is open. The
-advert, the TXT record's `bt` (section 5.3) and the `beacon` its `hello` carries (section 6.3)
-change together. A reader MUST NOT remember a robot by its beacon id past a meeting: a robot is
-recognised by its keys, learned in the `hello`.
+source, derived from no key and no earlier id. It SHOULD draw a new one every 15 minutes, and MUST NOT
+while a link, a talk session or a meeting is open. The advert, the TXT record's `bt` (section 5.3)
+and the `beacon` its `hello` carries (section 6.3) change together. A reader MUST NOT recognise a
+robot by its beacon id past a meeting: a robot is recognised by its keys.
 
 **Near, and who dials.** How strong a signal makes a robot near is the reader's own policy, and
 signal strength MUST NOT be taken as proof of identity or place: a relay makes a far robot read as
@@ -330,7 +296,7 @@ drops frames notified to another. Numbers are big-endian.
 | 1 | OPEN | central | its beacon id (8), the largest datagram it takes (2), the largest message it takes (4) |
 | 2 | ACCEPT | peripheral | its beacon id (8), the largest datagram it takes (2), the largest message it takes (4) |
 | 3 | REFUSE | peripheral | a reason (1): 1 busy, 2 version, 3 policy |
-| 4 | DATA | either | a message id (2), whose bit 15 is set when the peripheral sent the request, and a sequence number (2). The first frame of a message, sequence 0, adds its role (1): 0 request, 1 response; a status (2): 0 for a request, an HTTP status code for a response; its media (1): 0 none, 1 `application/jose`, 2 `application/json`, 3 text; and its total size (4). Then the message's next bytes. |
+| 4 | DATA | either | a message id (2), with bit 15 set when the peripheral sent the request, and a sequence number (2). The first frame of a message, sequence 0, adds its role (1), 0 request or 1 response; a status (2), 0 for a request and an HTTP status code for a response; its media (1), 0 none, 1 `application/jose`, 2 `application/json` or 3 text; and its total size (4). Then the message's next bytes. |
 | 5 | ABORT | either | a message id (2) and a reason (1): 1 too large, 2 out of order, 3 timed out, 4 overflow, 5 too many |
 | 6 | CLOSE | either | a reason (1): 0 done, 1 far, 2 idle, 3 shutdown, 4 protocol |
 
@@ -339,9 +305,8 @@ request carries one talk message and its response the reply and status HTTP woul
 (section 6.2). A robot MUST hold to these bounds, and refuse or abort anything outside them:
 
 - a message of at most 16,384 bytes, refused at its first frame when its stated size is larger;
-- every frame of a message in sequence, each within 3 seconds of the last, and the whole message
-  within 15 seconds;
-- at most 4 messages half received at once on a link, and at most 4 of its requests waiting for
+- the frames of a message in sequence, each within 3 seconds of the last, the whole within 15;
+- at most 4 messages half received at once on a link, and at most 4 of a link's requests awaiting
   their answers, the next answered `503`;
 - at most 4 links at once on a peripheral;
 - a first request, which is a `hello`, within 30 seconds of a link opening;
@@ -354,11 +319,11 @@ person asked for that URL:
 
 - MUST fetch only from the host and port that advertised it, or from a URL a person typed.
 - MUST NOT follow redirects, MUST stop reading a body at 12,288 bytes, which holds the JWS of the
-  largest passport, and SHOULD give up after 5 seconds for the whole exchange, headers and all,
-  however slowly the bytes arrive.
+  largest passport, and SHOULD give up after 5 seconds for the whole exchange, however slowly the
+  bytes arrive.
 - MUST NOT contact any address a passport or a message names. A reply goes back only the way its
-  message came: in the HTTP response, to the address a `hello` came from at the port its
-  `reach.http_port` names, or over the same Bluetooth link.
+  message came: in the HTTP response, to the address a `hello` came from at its `reach.http_port`,
+  or over the same Bluetooth link.
 
 ### 5.8 Caching
 
@@ -369,12 +334,11 @@ cache a verified signed passport, keyed by `id` and digest, and MUST NOT use it 
 
 ### 6.1 Messages
 
-Every message is a compact JWS whose payload is a JSON object, signed by the sender's robot key: its
-protected header has `alg` as section 4.4 gives it, `kid` equal to `from`, and `typ`
-`"robot-passport-msg+jws"`. A receiver MUST check `typ`, so a signature made for one purpose is never
-accepted for another, and MUST refuse a message that is not signed. A message is at most 4,096 bytes,
-and a `hello`, which carries a passport, at most 16,384. Its members are
-([schema/message.schema.json](schema/message.schema.json)):
+Every message is a compact JWS of a JSON object, signed by the sender's robot key, whose protected
+header has `alg` as section 4.4 gives it, `kid` equal to `from`, and `typ` `"robot-passport-msg+jws"`.
+A receiver MUST check `typ`, so a signature made for one purpose is never accepted for another, and
+MUST refuse a message that is not signed. A message is at most 4,096 bytes, and a `hello`, which
+carries a passport, at most 16,384 ([schema/message.schema.json](schema/message.schema.json)):
 
 | Member | Rule |
 |---|---|
@@ -389,36 +353,36 @@ and a `hello`, which carries a passport, at most 16,384. Its members are
 
 ### 6.2 Channels
 
-Two robots talk over one of two channels, chosen by the one that dials:
+The robot that dials picks one of two:
 
-- **HTTP**, when both are on one LAN: the sender POSTs one message to `/robot-passport/inbox` on the
-  host and port of the receiver's DNS-SD record (section 5.3), whose `bt` is the beacon id it heard,
-  as `application/jose`. The response is `200` with one reply message in its body, `204` with none,
-  `400` for a malformed message, `403` for one refused by policy, `413` for one too large, or `429`
-  when a budget is spent.
-- **A Bluetooth link** (section 5.6), when they share no LAN: the same request, and the same reply
-  and status, in frames.
+- **HTTP**, when both are on one LAN: it POSTs one message, as `application/jose`, to
+  `/robot-passport/inbox` on the host and port of the DNS-SD record (section 5.3) whose `bt` is the
+  beacon id it heard. The response is `200` with one reply message in its body, `204` with none, `400`
+  for a malformed message, `403` for one refused by policy, `413` for one too large, or `429` when a
+  budget is spent.
+- **A Bluetooth link** (section 5.6), when they share no LAN: the same request, reply and status, in
+  frames.
 
 ### 6.3 hello
 
-A hello takes three messages, so that each side proves it holds its robot key, each checks the
-other's passport, and neither proof can be replayed. Nonces are 16 random bytes in base64url.
+Three messages, so that each side checks the other's passport, proves it holds its robot key, and
+cannot have that proof replayed. Nonces are 16 random bytes in base64url.
 
-1. A sends `hello` with `body` `{passport, nonce}` and its runtime members: its passport, as the
-   JWS its owner signed, and its nonce `nA`. The passport travels in the hello itself, since a
-   receiver fetches nothing a message names (section 5.7).
+1. A sends `hello` with `body` `{passport, nonce}` and its runtime members: its passport as the JWS
+   its owner signed, which travels in the hello since a receiver fetches nothing a message names
+   (section 5.7), and its nonce `nA`.
 2. B checks A's passport, then replies `hello` with `re` the first `msg`, `nonces` `[nA, nB]` and
    `body` `{passport}` with its own runtime members, signed by B.
 3. A checks B's passport, then sends `hello` with `re` the second `msg`, `nonces` `[nA, nB]` and an
    empty `body`, signed by A.
 
-A receiver MUST refuse a `hello` whose passport does not pass section 3, 4.4 and 4.5, whose
-passport's `id` is not the `hello`'s `from`, whose passport is the receiver's own, or whose passport
-carries a required extension the receiver does not understand. It MUST NOT send anything else to a
-robot before the third message.
+A receiver MUST refuse a `hello` whose passport does not pass section 3, 4.4 and 4.5, is not the
+passport of the robot that sent it (`id` equal to `from`), is the receiver's own, or carries a
+required extension the receiver does not understand. It MUST NOT send anything else to a robot
+before the third message.
 
 The **runtime members** change while a robot runs, so its owner never signs them; the robot key
-does, with the rest of the message.
+does, with the rest of the message:
 
 | Member | Rule |
 |---|---|
@@ -427,13 +391,13 @@ does, with the rest of the message.
 | `reach` | an object of at most 4 scalar members: `http_port`, an integer from 1 to 65,535, the port of the sender's inbox on the address the `hello` came from |
 
 A receiver SHOULD answer a first `hello` that arrives over HTTP only when it heard that hello's
-`beacon` over Bluetooth seconds before, and `403` otherwise, so the LAN carries talk but never decides
-who is near.
+`beacon` over Bluetooth seconds before, and `403` otherwise, so the LAN carries talk but never
+decides who is near.
 
 After the third message each side has seen the other sign both nonces and both ids, and the session
-is `(A, B, nA, nB)`. Every later message in it MUST carry `nonces`, and a receiver MUST refuse a
-message whose nonces match no session of its own, which is what makes an old message replayed into a
-new session fail. A receiver MAY end an idle session, and quackd ends one after ten minutes.
+is `(A, B, nA, nB)`. Every later message in it MUST carry `nonces`, and a receiver MUST refuse one
+whose nonces match no session of its own, which makes a replayed message fail. A receiver MAY end an
+idle session, and quackd ends one after ten minutes.
 
 ### 6.4 say and bye
 
@@ -443,22 +407,17 @@ an instruction. `bye` carries an empty `body` and ends the session.
 ### 6.5 ask and answer
 
 `ask` carries `{skill, args?, why?}`: a name, an object, and text 120. It MUST belong to a session.
-
-`answer` carries `{result, reason?, versions?}`, with `re` the message it answers: `result` is
-`ok`, `no` or `later`, `reason` is text 120, and `versions` lists the versions a receiver accepts
-when it could not read the one it was sent.
-
-For the courtesy skills, `pause` takes `{seconds}`, an integer from 1 to 10, and `identify` takes an
-OPTIONAL `{how}`, one of `light`, `sound` or `motion`.
+`answer` carries `{result, reason?, versions?}`, with `re` the message it answers: `result` is `ok`,
+`no` or `later`, `reason` text 120, and `versions` the versions a receiver accepts when it could not
+read the one it was sent. `pause` takes `{seconds}`, an integer from 1 to 10, and `identify` an
+OPTIONAL `{how}`: `light`, `sound` or `motion`.
 
 A receiver:
 
 - MUST decide every `ask` by its own local policy, and MUST NOT let an `ask` reach anything that
-  moves its robot except through a rule that bounds the action in time and in how often it may
-  happen.
+  moves its robot except through a rule that bounds the action in time and in how often it happens.
 - MUST NOT hand an `ask` to a language model as an instruction.
-- MUST keep its own means of stopping above any peer's request: no `ask` can keep a robot from
-  stopping.
+- MUST keep its own means of stopping above any peer's request.
 - SHOULD answer within 5 seconds, or not at all.
 
 ### 6.6 share
@@ -471,15 +430,15 @@ coordinates.
 ### 6.7 Versions
 
 A receiver that cannot read a message's version answers `answer` with `result` `no`, `reason`
-`version` and `versions` listing what it does read. A 1.0 robot answers a 0.1 message `no` with
-`versions` `["1.0"]`.
+`version` and `versions` listing what it reads: a 1.0 robot answers a 0.1 message with `versions`
+`["1.0"]`.
 
 ## 7. Versions of this specification
 
 The version is `MAJOR.MINOR`. A new MINOR only adds: OPTIONAL members, values, runtime members,
 message types, advert flags. A reader of one MINOR therefore reads every later MINOR of its MAJOR,
-ignoring what it does not know. A change that would make an existing reader misread a document
-takes a new MAJOR.
+ignoring what it does not know. A change that would make an existing reader misread a document takes
+a new MAJOR.
 
 Version 0 was the draft line, and 0.1, which quackd 0.23.0 to 0.28.0 implemented, its only version.
 A 0.1 robot signed its own passport, so a 0.1 reader would misread one its owner signed, and 1.0 is a
@@ -487,39 +446,34 @@ new MAJOR: each refuses the other under rule 4.
 
 ## 8. Conformance
 
-A conforming robot:
-
-- carries a passport its owner signed (section 4.4), within its dates (section 4.5);
-- advertises a beacon (section 5.6), and on a LAN MAY also announce a DNS-SD record (section 5.3);
-- answers a `hello` (section 6.3), checks the other robot's passport before it sends anything else,
-  and signs every message it sends (section 6.1);
-- decides every `ask` by a bounded rule (section 6.5).
-
-A conforming reader applies section 3, verifies signatures and dates as section 4 says, follows the
-fetch rules of section 5.7 and caches as section 5.8 allows.
+A conforming robot carries a passport its owner signed, within its dates (sections 4.4, 4.5);
+advertises a beacon (section 5.6), and MAY announce a DNS-SD record on a LAN (section 5.3); answers a
+`hello`, checks the other robot's passport before it sends anything else, and signs every message
+(sections 6.1, 6.3); and decides every `ask` by a bounded rule (section 6.5). A conforming reader
+applies section 3, verifies signatures and dates as section 4 says, follows the fetch rules of
+section 5.7 and caches as section 5.8 allows.
 
 ## 9. IANA considerations
 
 The suffixes `robot-passport.json` and `robot-passport.jws` are to be registered in the Well-Known
 URIs registry ([RFC 8615](https://www.rfc-editor.org/rfc/rfc8615)), and the service name
 `robot-passport` in the Service Name and Transport Protocol Port Number Registry
-([RFC 6335](https://www.rfc-editor.org/rfc/rfc6335)). Neither request has been made yet. The three
-Bluetooth UUIDs are version 5 UUIDs and need no registration (section 5.6). This specification
-defines no media type of its own.
+([RFC 6335](https://www.rfc-editor.org/rfc/rfc6335)). Neither request has been made yet. The
+Bluetooth UUIDs need no registration (section 5.6), and this specification defines no media type of
+its own.
 
 ## 10. Security and privacy considerations
 
 The whole threat model is in [security.md](security.md) and the privacy analysis in
 [privacy.md](privacy.md). What this specification requires, in one place:
 
-- A passport is a claim its owner signed, never by its robot's own key, and proves who said it,
-  never that it is true (rule 11, section 4.4). It holds only between its dates (section 4.5).
+- A passport is a claim its owner signed, never its robot, and proves who said it, not that it is
+  true (rule 11, section 4.4). It holds only between its dates (section 4.5).
 - Text in a passport or a message is data, never an instruction (rule 12, section 6.4).
 - Every message is signed (section 6.1), both robots check each other first, and a session's nonces
-  make replays fail (section 6.3).
-- A reader fetches only what it was pointed at and replies only the way a message came (section 5.7).
-- A key nobody could hold is refused (section 4.1), and so are duplicate members (rule 2).
-- Signatures are domain-separated by `typ` (sections 4.4, 6.1).
+  make replays fail (section 6.3). Signatures are domain-separated by `typ`.
+- A reader fetches only what it was pointed at, and replies only the way a message came
+  (section 5.7). A key nobody could hold (section 4.1) and duplicate members (rule 2) are refused.
 - No `ask` moves a robot except through a bounded rule, or keeps it from stopping (section 6.5).
 - The beacon carries a rotating random id and no name, owner or key, signal strength is never proof,
   and a link holds to fixed bounds (section 5.6).
@@ -543,15 +497,13 @@ The whole threat model is in [security.md](security.md) and the privacy analysis
 ## Appendix A: changes from 0.1
 
 - **The owner signs.** `owner` and its `id` are REQUIRED, and the JWS's `kid` is `owner.id`, never
-  the robot's `id` (section 4.4). Stamps, which vouched for a robot's key and never for its passport,
-  are removed, with their schema and `typ`.
-- **Dates.** `issued` is REQUIRED and `expires` is new, at most 400 days later (section 4.5).
-- **`board`** is new (section 2.2).
-- **Removed members:** `software`, which moved into the `hello` (section 6.3), `talk`, `stamps` and
-  `ttl_s`. A 1.0 reader ignores them as unknown members.
+  the robot's `id` (section 4.4). Stamps, which vouched for a key and never for a passport, are
+  gone, with their schema and `typ`.
+- **Dates and the board.** `issued` is REQUIRED, `expires` is new (section 4.5), and so is `board`.
+- **Removed members:** `software`, now a runtime member of the `hello` (section 6.3), `talk`,
+  `stamps` and `ttl_s`, which a 1.0 reader ignores as unknown.
 - **Removed:** the index (2.7), `urn:uuid` ids (4.1), QR codes and NFC tags with `#rp=` (5.2), the
   MQTT binding (5.4), the ROS 2 binding (5.5), and unsigned messages (6.1).
-- **Bluetooth LE** is normative (section 5.6): the advert, the rotating beacon id and the link.
-- **DNS-SD** moves to TXT version `2`, with `bt` (section 5.3).
-- **The `hello`** carries runtime members, and both robots check each other's passport before
-  anything else (section 6.3). Replies go back only the way a message came (section 5.7).
+- **New:** Bluetooth LE, normative (5.6); DNS-SD TXT version `2`, with `bt` (5.3); both robots
+  checking each other in the `hello`, with runtime members (6.3); replies only the way a message
+  came (5.7).
