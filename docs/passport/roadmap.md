@@ -42,7 +42,7 @@ quackd 0.23.0 shipped phases 1 to 6, 0.29.0 phase 8, and phase 7 was dropped.
    ([ADR-0057](../adr/0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md)).
 2. **The passport itself.** quackd built a passport from any robot's manifest, printed it, and
    checked anybody's.
-3. **Finding and reading.** Passports served from the laptop that drove a robot, over DNS-SD, MQTT,
+3. **Finding and reading.** Passports the laptop that drove a robot handed out, over DNS-SD, MQTT,
    QR stickers and a ROS 2 topic.
 4. **Trust.** Keys, passports signed by the robot's key, owner stamps and pinning.
 5. **Talk, first step.** `hello`, `say` and `bye`, robots nearby in a pilot's observation, and the
@@ -55,7 +55,7 @@ quackd 0.23.0 shipped phases 1 to 6, 0.29.0 phase 8, and phase 7 was dropped.
 8. **Onboard, 0.29.0.** The passport moves onto the robot it introduces, `quackd onboard` on a
    Jetson first and the sim board for laptops and CI: the owner's signature in place of stamps,
    Bluetooth LE with a rotating id, the LAN or a Bluetooth link, both robots checked before a word,
-   and a brain that meets robots by itself. Passports served from a laptop, stickers, stamps and the
+   and a brain that meets robots by itself. Passports kept on a laptop, stickers, stamps and the
    MQTT and ROS 2 bindings went ([quackd.md](quackd.md#removed-in-0290)).
 
 ## Decisions taken

@@ -502,8 +502,8 @@ The whole threat model is in [security.md](security.md) and the privacy analysis
 - **Dates and the board.** `issued` is REQUIRED, `expires` is new (section 4.5), and so is `board`.
 - **Removed members:** `software`, now a runtime member of the `hello` (section 6.3), `talk`,
   `stamps` and `ttl_s`, which a 1.0 reader ignores as unknown.
-- **Removed:** the index (2.7), `urn:uuid` ids (4.1), QR codes and NFC tags with `#rp=` (5.2), the
-  MQTT binding (5.4), the ROS 2 binding (5.5), and unsigned messages (6.1).
+- **Removed:** the index (2.7), `urn:uuid` ids (4.1), QR codes and NFC tags (5.2), the MQTT binding
+  (5.4), the ROS 2 binding (5.5), and unsigned messages (6.1).
 - **New:** Bluetooth LE, normative (5.6); DNS-SD TXT version `2`, with `bt` (5.3); both robots
   checking each other in the `hello`, with runtime members (6.3); replies only the way a message
   came (5.7).

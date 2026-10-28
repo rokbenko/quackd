@@ -11,7 +11,7 @@ tested against a fake BlueZ. [roadmap.md](roadmap.md#status) says what the first
 has to write down.
 
 **Why does it not run on my laptop any more?**
-A passport served from the laptop that drives a robot vouches for the laptop. The robot could not
+A passport that the laptop driving a robot hands out vouches for the laptop. The robot could not
 introduce itself without it, and could not tell which robots were near it. Since 0.29.0 the passport
 lives on the robot's own computer, and quackd on a laptop still drives robots the way it always has
 ([why.md](why.md#why-identity-belongs-to-the-body)).

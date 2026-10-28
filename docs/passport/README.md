@@ -54,7 +54,7 @@ run quackd ([compatibility.md](compatibility.md)).
 | [schema/](schema/passport.schema.json) | the JSON Schemas: [passport](schema/passport.schema.json) and [message](schema/message.schema.json) |
 | [vectors/](vectors/README.md) | the conformance vectors, each with the result a reader must reach |
 | [naming.md](naming.md) | what the name means, why it is not the Robot Context Protocol, and every identifier |
-| [prior-art.md](prior-art.md) | every system it was measured against, what it borrowed and what it avoided |
+| [prior-art.md](prior-art.md) | the systems it was measured against, what it borrowed and what it avoided |
 | [glossary.md](glossary.md) | every term, in a sentence or two |
 | [faq.md](faq.md) | the questions people ask |
 | [roadmap.md](roadmap.md) | the status, the phases, the decisions taken, and leaving quackd |
