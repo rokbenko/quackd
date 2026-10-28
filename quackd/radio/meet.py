@@ -481,7 +481,13 @@ class Meeter:
         except PassportError as e:
             self._close(link.peer_beacon)
             return self._refused_or_busy(e, link.route, "link")
+        # met over it: a link the other robot opened has its beacon id borne out now as well
+        with contextlib.suppress(Exception):
+            self.loop.call(self._confirm(link.id), 5.0)
         return Outcome("met", did, link.route, "link")
+
+    async def _confirm(self, link_id: str) -> None:
+        self.links.confirm(link_id)
 
     async def _open_link_to(self, beacon_id: str) -> Link | None:
         return next((link for link in self.links.by_beacon(beacon_id) if link.closed is None), None)

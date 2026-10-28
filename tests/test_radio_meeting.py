@@ -431,6 +431,7 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
         def __init__(self, name: str, at: tuple[float, float], key: Any, owner: Any, beacon: str):
             self.beacon = beacon
             self.events: list[MeetEvent] = []
+            self.changes: list[LinkChange] = []
             self.radio = air.radio(name, at, datagram_size=MIN_DATAGRAM)
             self.tracker = Tracker(ProximityPolicy(), me=beacon)
             self.planner = Planner(lambda: self.beacon, MeetPolicy(), rng=random.Random(0))
@@ -480,6 +481,7 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
             self.accepting.add(task)
 
         def _link_changed(self, change: LinkChange) -> None:
+            self.changes.append(change)
             if change.opened:
                 self.tracker.hold(change.beacon_id, air.clock)
             else:
@@ -535,6 +537,9 @@ def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_a
         )
         [link] = a.links.links()
         assert link.send_size == MIN_DATAGRAM
+        # the link the courier opened is the household's to report once the courier's hello,
+        # signed and naming the beacon id its OPEN claimed, has been accepted over it
+        assert [(c.opened, c.inbound, c.beacon_id) for c in b.changes] == [(True, True, low)]
         # the two hellos with a passport in each, a few kilobytes cut into 20-byte datagrams
         assert link.pipe.sent > 2 * 3000 // MIN_DATAGRAM  # type: ignore[attr-defined]
         # a word in the session, over the same link, read on the other side
