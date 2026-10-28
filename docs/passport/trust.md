@@ -35,7 +35,7 @@ The short id, the first 8 bytes of the SHA-256 of a key, as 16 hex characters, i
 names a robot or an owner they met, and what a robot's record on the LAN carries. It is a hint for
 recognising one, and two records can claim the same, so only a signature decides. The Bluetooth
 beacon carries no short id at all, but a random id that changes every 15 minutes
-([discovery.md](discovery.md#bluetooth-le-later)).
+([discovery.md](discovery.md#the-bluetooth-le-beacon)).
 
 A key is 32 bytes and a signature 64 ([RFC 8032](https://www.rfc-editor.org/rfc/rfc8032)). Ed25519
 runs anywhere a robot does: Python's `cryptography` has it, so does every JOSE library, and C
@@ -114,7 +114,7 @@ hungry for memory on purpose, so every guess at a passphrase costs time and memo
 
 A second robot of the same owner starts from the same key: `quackd onboard --owner-key FILE` takes
 the sealed `keys/owner.json` of a robot you already have, and typing its passphrase proves it opens
-([quackd.md](quackd.md)).
+([quackd.md](quackd.md#a-second-robot-of-the-same-owner)).
 
 > [!WARNING]
 > Keep a copy of the sealed owner key off the robot, and the passphrase somewhere else again, the way
@@ -254,7 +254,7 @@ is. Two robots in one room, both answering, and the signatures cannot tell you w
 
 Bluetooth helps, and only a little. The radio says how strong a robot's signal is, and a strong one
 is probably close, but signal strength is weak evidence: a wall, a body or a relay that repeats a far
-robot's advert all change it ([discovery.md](discovery.md#bluetooth-le-later)). The one sure
+robot's advert all change it ([discovery.md](discovery.md#near-is-a-hint-not-proof)). The one sure
 way is still to **ask it to identify itself** and watch which one blinks, beeps or wiggles. That
 needs a camera or a person, and it is exactly what the courtesy is for. This is unsolved in general,
 and the specification says so rather than pretending otherwise.

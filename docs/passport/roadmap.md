@@ -57,7 +57,7 @@ quackd 0.23.0 shipped phases 1 to 6, 0.29.0 phase 8, and phase 7 was dropped.
    in place of stamps, the owner key sealed on the robot, Bluetooth LE with a rotating id to find
    robots that are close, the LAN or a Bluetooth link to talk, both robots checked before a word,
    and a brain that meets robots by itself. Passports served from a laptop, stickers, stamps and the
-   MQTT and ROS 2 bindings went with it ([quackd.md](quackd.md)).
+   MQTT and ROS 2 bindings went with it ([quackd.md](quackd.md#removed-in-0290)).
 
 ## Decisions taken
 
