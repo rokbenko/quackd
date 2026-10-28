@@ -2,9 +2,8 @@
 
 > [!NOTE]
 > Spec 1.0. quackd speaks all six messages over an HTTP inbox on a LAN and over a Bluetooth link,
-> and decides every `ask` with its courtesy handler. Both channels have run between two processes
-> on the sim board, and neither has run on a Jetson or over a real Bluetooth radio
-> ([roadmap.md](roadmap.md)).
+> and decides every `ask` with its courtesy handler. Both channels are tested on the sim board, and
+> neither has run on a Jetson or over a real Bluetooth radio ([roadmap.md](roadmap.md)).
 
 Two robots that are near each other and have each checked the other's passport can talk: six small
 messages to prove who they are, say something, share what they saw, or ask each other for a
