@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
-> is built and what has run. Every Bluetooth row below is designed and tested on the sim board and
-> against a fake BlueZ, and none of it has run over a real radio.
+> is built and what has run. Every Bluetooth row below is designed and tested in the suite and on
+> the sim board, and none of it has run over a real radio.
 
 Robot Passport lets a robot meet, and talk to, robots it has never met and has no reason to trust.
 That is the point of it, and it is also the risk. This page says what is worth protecting, from

@@ -2,8 +2,8 @@
 
 > [!NOTE]
 > Spec 1.0. quackd 0.29.0 is its first implementation. Nothing on this page has run over a real
-> Bluetooth radio: the advert, the rotation and the link run on the sim board and against a fake
-> BlueZ, and [roadmap.md](roadmap.md) says what that proves.
+> Bluetooth radio: the advert, the rotation and the link are tested in the suite and on the sim
+> board, and [roadmap.md](roadmap.md) says what that proves.
 
 Before two robots can check each other's passports, each has to know the other is there, and
 close. That is the **beacon**'s whole job: a Bluetooth LE advert, a few bytes sent a few times a
@@ -43,9 +43,9 @@ passports, and quackd keeps its cooldowns and refusals by `did:key`, never by be
 rotation costs at most one more `hello`.
 
 > [!WARNING]
-> The beacon id is designed to rotate, and the rotation is tested on the sim board and against a fake
-> BlueZ. Nobody has run it over a real radio, or watched a Jetson's adapter send it. The radio's own
-> address is a separate matter, which [privacy.md](privacy.md#tracking) covers.
+> The beacon id is designed to rotate, and the rotation is tested against a clock in the suite.
+> Nobody has run it over a real radio, or watched a Jetson's adapter send it. The radio's own address
+> is a separate matter, which [privacy.md](privacy.md#tracking) covers.
 
 ### Who says hello first
 

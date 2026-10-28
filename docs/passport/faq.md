@@ -6,9 +6,8 @@
 
 **Has it run on a Jetson?**
 No, and not over a real Bluetooth radio either. It runs on the sim board, a laptop standing in for a
-robot's computer, where two simulated robots meet, check each other and talk. The Bluetooth half is
-tested against a fake BlueZ. [roadmap.md](roadmap.md#status) says what the first run on two Jetsons
-has to write down.
+robot's computer, and in the test suite. [roadmap.md](roadmap.md#status) says what has run there,
+and what the first run on two Jetsons has to write down.
 
 **Why does it not run on my laptop any more?**
 A passport that the laptop driving a robot hands out vouches for the laptop. The robot could not
