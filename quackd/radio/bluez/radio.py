@@ -319,8 +319,11 @@ class BlueZRadio:
     def _device_gone(self, device: str) -> None:
         if self._core is not None:
             self._core.device_gone(device)
+        # bleak's own disconnect callback closes a link this robot dialled too; this catches the
+        # one it might miss, matched by the device's address and never by an empty one
         for pipe in list(self._pipes):
-            if device.endswith(str(getattr(pipe.client, "address", "")).replace(":", "_")):
+            address = str(getattr(pipe.client, "address", "") or "").upper()
+            if address and device.endswith("/dev_" + address.replace(":", "_")):
                 pipe.lost()
 
     def _lost(self, state: RadioState, detail: str, hint: str | None) -> None:

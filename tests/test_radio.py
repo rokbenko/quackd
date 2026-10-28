@@ -113,3 +113,22 @@ def test_on_linux_with_the_extra_bluez_is_the_real_radio_built_and_not_started(
     built = open_radio("bluez", adapter="hci1", bus="session")
     assert isinstance(built, BlueZRadio) and built.kind == "bluez" and built.adapter == "hci1"
     assert built.status().state == "off" and built.status().detail == "not started"
+
+
+def test_a_central_gone_closes_only_the_links_this_robot_dialled_to_it() -> None:
+    for name in radio.BLUEZ_PACKAGES:
+        pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
+    from quackd.radio.bluez.core import ClientPipe
+    from quackd.radio.bluez.radio import BlueZRadio
+
+    class Client:
+        def __init__(self, address: str) -> None:
+            self.address = address
+
+    built = BlueZRadio(bus="session")
+    to_it = ClientPipe(Client("11:22:33:44:55:66"), "rx", "tx", 20)  # type: ignore[arg-type]
+    elsewhere = ClientPipe(Client("AA:BB:CC:DD:EE:FF"), "rx", "tx", 20)  # type: ignore[arg-type]
+    nameless = ClientPipe(Client(""), "rx", "tx", 20)  # type: ignore[arg-type]
+    built._pipes = {to_it, elsewhere, nameless}
+    built._device_gone("/org/bluez/hci0/dev_11_22_33_44_55_66")
+    assert to_it.closed and not elsewhere.closed and not nameless.closed

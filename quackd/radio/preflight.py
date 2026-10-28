@@ -33,9 +33,10 @@ from quackd.radio.bluez.privacy import MAIN_CONF, privacy_setting, privacy_words
 Level = Literal["ok", "warn", "fail", "info"]
 RadioChoice = Literal["bluez", "sim", "off"]
 
-#: BlueZ releases that matter here: 5.55 is the oldest bluez-on-a-Jetson this was written
-#: against, and 5.62 the first that reports a link's MTU to a GATT server, without which every
-#: link runs at 20-byte datagrams.
+#: BlueZ releases that matter here: 5.55 is the oldest this is written to work with (JetPack 6's
+#: Ubuntu 22.04 ships 5.64 and JetPack 7's 24.04 ships 5.72, and neither has been tried), and
+#: 5.62 the first whose characteristics tell a central the link's MTU; before it bleak reports
+#: 20, and every link this robot dials writes 20-byte datagrams.
 BLUEZ_FLOOR = (5, 55)
 BLUEZ_MTU = (5, 62)
 PACKAGES = ("zeroconf", "openai", "bleak", "dbus-fast")
@@ -145,8 +146,8 @@ def _bluez(facts: Facts) -> list[Row]:
             Row(
                 "bluetoothd",
                 "warn",
-                f"BlueZ {facts.bluez_version}: it reports no link MTU before 5.62, so links "
-                "run at 20 bytes a datagram",
+                f"BlueZ {facts.bluez_version}: before 5.62 it tells a central no link MTU, so "
+                "links this robot dials write 20 bytes a datagram",
             )
         )
     else:
