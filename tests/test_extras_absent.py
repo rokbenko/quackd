@@ -207,9 +207,11 @@ import quackd.radio.fake
 import quackd.radio.links
 import quackd.radio.loop
 import quackd.radio.meet
+import quackd.radio.preflight
 import quackd.radio.proximity
 import quackd.radio.rotation
 import quackd.radio.sim
+import quackd.radio.statusview
 import quackd.radio.transport
 try:
     quackd.radio.open_radio("bluez")

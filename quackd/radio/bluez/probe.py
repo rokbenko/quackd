@@ -75,6 +75,8 @@ class Probe:
     hint: str | None
     adapter: AdapterFacts | None
     rfkill: bool | None
+    #: whether bluetoothd owns its name on the bus; None when the bus would not say
+    running: bool | None = None
 
 
 async def probe(bus: MessageBus, adapter: str, *, rfkill_root: Path = RFKILL) -> Probe:
@@ -94,18 +96,19 @@ async def probe(bus: MessageBus, adapter: str, *, rfkill_root: Path = RFKILL) ->
             "sudo systemctl enable --now bluetooth",
             None,
             None,
+            running=False,
         )
     try:
         [objects] = await call(bus, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
     except BlueZError as e:
         state: RadioState = "denied" if e.denied else "missing"
-        return Probe(state, f"BlueZ did not list its adapters: {e}", None, None, None)
+        return Probe(state, f"BlueZ did not list its adapters: {e}", None, None, None, True)
     facts = pick_adapter(adapters_from(objects), adapter)
     blocked = rfkill_blocked(read_rfkill(rfkill_root))
     state, detail, hint = adapter_state(facts, adapter)
     if blocked:
         state, detail, hint = "off", "Bluetooth is blocked by rfkill", "rfkill unblock bluetooth"
-    return Probe(state, detail, hint, facts, blocked)
+    return Probe(state, detail, hint, facts, blocked, True)
 
 
 __all__ = ["Probe", "connect_bus", "probe", "read_rfkill"]
