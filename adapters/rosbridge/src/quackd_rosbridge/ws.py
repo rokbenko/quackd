@@ -28,7 +28,6 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image
 
 from quackd.adapters.base import AdapterNotInstalled
-from quackd.passport.beacon import ROS_TOPIC
 from quackd.space.odometry import OdometrySource, OdometryTrack
 from quackd.space.pose import Fix, where_record
 from quackd.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
@@ -591,41 +590,6 @@ class RosbridgeWs:
         await asyncio.sleep(seconds)
         if self.post_sleep is not None:
             self.post_sleep()
-
-
-async def read_passport(
-    address: str,
-    *,
-    topic: str = ROS_TOPIC,
-    timeout_s: float = 5.0,
-    ros: RosLike | None = None,
-    topic_factory: TopicFactory | None = None,
-) -> str:
-    """A ROS robot's own Robot Passport, read once from its latched topic.
-
-    It opens the bridge, reads one message and closes it again, and nothing else: no `cmd_vel`
-    is advertised, no twist is ever published, no odometry is subscribed, because quackd is only
-    meeting this robot and drives nothing it was not given (docs/passport/discovery.md#ros-2)."""
-    reader = RosbridgeWs(address, ros=ros, topic_factory=topic_factory, timeout_s=timeout_s)
-    if reader._ros is None or reader._topic_factory is None:
-        built, factory, _services = await asyncio.to_thread(reader._build)
-        reader._ros = reader._ros or built
-        reader._topic_factory = reader._topic_factory or factory
-    try:
-        await asyncio.wait_for(
-            asyncio.to_thread(reader._ros.run, timeout_s), timeout=timeout_s + 1.0
-        )
-    except Exception as e:
-        raise TransportError(f"rosbridge ws: cannot reach {reader.endpoint.url}: {e}") from e
-    errors: list[str] = []
-    try:
-        text = await reader._read_latched(topic, timeout_s, errors)
-    finally:
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(reader._ros.terminate)
-    if text is None:
-        raise TransportError("; ".join(errors) or f"no passport on {topic}")
-    return text
 
 
 class _OdomReading(OdometrySource):

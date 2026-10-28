@@ -104,9 +104,6 @@ class Talker:
         self.name = name
         #: where this robot listens for talk, when it does: its passport names it
         self.inbox: str | None = None
-        #: this robot's end of a broker when it talks over one, a `PassportPublisher` from
-        #: `quackd.lan.passport_mqtt` with its inbox subscribed to `inbox_mqtt`
-        self.mqtt: Any = None
         #: what decides a peer's `ask`, a `quackd.passport_courtesy.Courtesy` over the run's
         #: executor; None, and every ask is answered no, since nothing here could grant one
         self.courtesy: Any = None
@@ -128,13 +125,10 @@ class Talker:
 
     # ── what arrives ────────────────────────────────────────────────────────────────────
 
-    def receive(
-        self, message: Message, *, address: str | None = None, broker: bool = False
-    ) -> Reply:
+    def receive(self, message: Message, *, address: str | None = None) -> Reply:
         """A message for this robot, already read: handled, and what a person or a pilot should
         know of it kept. `address` is where it came from over HTTP, the only host a reply may
-        later go to when the robot that sent it opened the session; `broker` says it came over
-        this robot's broker, where a reply goes to the inbox the sender's id names."""
+        later go to when the robot that sent it opened the session."""
         if message.type == "hello" and message.re is None:
             # the endpoint ends quiet sessions before it weighs a new one against its limit;
             # ended here first, so a person is told each went quiet
@@ -146,9 +140,7 @@ class Talker:
             return reply
         session = reply.event.session
         if reply.event.kind == "met" and session.route is None:
-            session.route = (
-                self._mqtt_route(session.peer) if broker else _route_back(session.passport, address)
-            )
+            session.route = _route_back(session.passport, address)
         if reply.event.kind == "asked":
             # decided here, outside the endpoint's lock, by fixed code: never by a pilot
             result, reason = self._decide(session, message)
@@ -172,87 +164,18 @@ class Talker:
         decision = self.courtesy.decide(self.tier_of(session).tier, skill, dict(args))
         return str(decision.result), str(decision.reason)
 
-    def inbox_mqtt(self, payload: bytes) -> None:
-        """A message that came to this robot's inbox on its broker: handled, and any reply sent
-        back over the same broker, to the inbox of the robot that sent it, the topic its id
-        names (spec 5.4). A message nobody could read is dropped: over a broker there is no
-        status code to refuse it with. So is one whose handling failed in any way at all,
-        since an exception here would end the broker client's thread, and the inbox with it."""
-        try:
-            self._inbox_mqtt(payload)
-        except Exception:  # anybody on the broker can publish anything here
-            return
-
-    def _inbox_mqtt(self, payload: bytes) -> None:
-        try:
-            message = read_message(payload)
-        except VersionUnknown as e:
-            if e.sender:
-                self._publish(e.sender, version_answer(e, self.id, self.endpoint.key))
-            return
-        except PassportError:
-            return
-        reply = self.receive(message, broker=True)
-        if reply.wire is not None:
-            self._publish(message.sender, reply.wire)
-
-    def _mqtt_route(self, peer: str) -> Route | None:
-        if self.mqtt is None:
-            return None
-        from quackd.lan.passport_mqtt import inbox_url
-
-        return inbox_url(self.mqtt.host, self.mqtt.port, peer)
-
-    def _publish(self, peer: str, wire: str) -> None:
-        route = self._mqtt_route(peer)
-        if route is not None:
-            self._deliver(route, wire)
-
     def _deliver(self, route: Route, wire: str) -> tuple[int, str | None]:
-        """A message on its way: posted to an HTTP inbox, whose reply rides back on the
-        response, or published to an inbox on this robot's own broker, and never to a topic on
-        any other broker, which a passport is no reason to connect to (spec 5.7)."""
-        if not route.startswith("mqtt://"):
-            return self._send(route, wire)
-        if self.mqtt is None:
-            raise PassportError("6.2", "that robot listens on a broker, and this one is on none")
-        from quackd.lan.passport_mqtt import inbox_topic
-
-        parts = urlsplit(route)
-        if ((parts.hostname or "").lower(), parts.port or 1883) != (
-            str(self.mqtt.host).lower(),
-            int(self.mqtt.port),
-        ):
-            raise PassportError("5.7", "that robot listens on another broker than this one's")
-        self.mqtt.send(inbox_topic(route), wire.encode("utf-8"))
-        return 204, None
+        """A message on its way, posted to an HTTP inbox, whose reply rides back on the
+        response."""
+        return self._send(route, wire)
 
     # ── what this robot says ────────────────────────────────────────────────────────────
 
     def meet(self, reading: Reading, route: Route) -> Session:
         """Say hello to the robot whose passport is `reading`, at its inbox `route`."""
-        if route.startswith("mqtt://"):
-            return self.meet_mqtt(reading, route)
         session = open_session(self.endpoint, reading.id, lambda wire: self._send(route, wire))
         session.route = route
         self._note(Event("met", session))
-        return session
-
-    def meet_mqtt(self, reading: Reading, route: Route, *, timeout: float = 5.0) -> Session:
-        """Say hello over a broker, where the second step comes to this robot's own inbox rather
-        than in a reply: send the first, and wait for the session `inbox_mqtt` opens with it,
-        sending the third step on its way."""
-        self._deliver(route, self.endpoint.hello(reading.id))
-        with self._met:
-            opened = self._met.wait_for(
-                lambda: self.endpoint.session_with(reading.id) is not None, timeout
-            )
-            session = self.endpoint.session_with(reading.id)
-        if not opened or session is None:
-            raise PassportError(
-                "6.3", f"{reading.name} did not answer the hello within {timeout:g} s"
-            )
-        session.route = route
         return session
 
     def say(self, who: str, text: str) -> None:
@@ -576,30 +499,12 @@ def route_to(passport: Reading, came_from: str) -> Route:
     )
 
 
-def route_on_broker(passport: Reading, host: str, port: int) -> Route:
-    """The inbox to say hello to, for a passport read off the broker at `host`: an MQTT channel
-    it names on that same broker, for the same reason as `route_to`."""
-    for channel in passport.channels():
-        parts = urlsplit(str(channel["url"]))
-        if channel["via"] == "mqtt" and ((parts.hostname or "").lower(), parts.port or 1883) == (
-            host.lower(),
-            port,
-        ):
-            return str(channel["url"])
-    raise PassportError(
-        "5.7",
-        f"{passport.name} names no talk channel on {host}:{port}, the broker its passport came "
-        "from, and a reader contacts no other",
-    )
-
-
 __all__ = [
     "HEADING",
     "Heard",
     "Talker",
     "Talkers",
     "post_wire",
-    "route_on_broker",
     "route_to",
     "stranger_name",
 ]
