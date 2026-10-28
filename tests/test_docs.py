@@ -2592,6 +2592,20 @@ def test_the_readme_counts_the_passport_schemas_the_folder_holds() -> None:
             )
 
 
+def test_no_living_document_ships_a_capture_placeholder() -> None:
+    """0.29.0's pages were written before the commands they describe existed, so where output
+    belongs they held `<!-- capture: COMMAND -->`, to be replaced with what that command printed
+    on the sim board. A page shipped with one shows a reader nothing where the proof should be,
+    and the comment hides it from the rendered page, so it is read for here."""
+    left = [
+        f"{path.relative_to(REPO).as_posix()}:{number}"
+        for path in _living_docs()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if "<!-- capture:" in line
+    ]
+    assert not left, "pages still waiting for real output from the sim board: " + ", ".join(left)
+
+
 def test_the_registry_is_documented_where_it_is_configured() -> None:
     """Two files under a directory an env var moves, holding a robot's token. Every one of
     those facts has a place it has to be findable from, or somebody loses a robot or a secret.
