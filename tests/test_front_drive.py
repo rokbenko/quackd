@@ -133,6 +133,45 @@ async def test_a_question_is_put_to_the_page_by_id_and_answered_there(tmp_path: 
     await drive.robot.close()
 
 
+async def test_a_goals_question_is_put_to_the_page_and_its_record_names_the_page(
+    tmp_path: Path,
+) -> None:
+    """A goal asks the page as the session's own lanes do, by id, with the gate's own words and
+    kind, and the goal's record names a person on the page's channel."""
+    from quackd.duckfile.parser import duck_from_goal
+
+    drive, body, records, front, out, ops, task = await _behind_the_page(tmp_path)
+    drive.robot.adopt(
+        duck_from_goal(
+            "drive", ["report_state", "observe", "search_scan", "move", "stop"], confirm=["move"]
+        )
+    )
+    ops.put_nowait({"op": "line", "text": "patrol the room"})
+    answered: set[int] = set()
+
+    def answer_each_no() -> bool:
+        # the patrol asks before each of its walks, and each is answered no in the page
+        for asked in (x for x in _lines(out) if x["ev"] == "ask"):
+            if asked["id"] not in answered:
+                assert asked["kind"] == "confirm"
+                assert asked["question"].startswith("goal 1: run walk("), asked["question"]
+                assert front.questions.answer(asked["id"], False)
+                answered.add(asked["id"])
+        return any(r["kind"] == "goal_end" for r in records)
+
+    await _until(answer_each_no, 30)
+    assert answered, "the goal put nothing to the page"
+    ops.put_nowait({"op": "quit"})
+    await asyncio.wait_for(task, 10)
+    (goal_dir,) = (tmp_path / "goals").iterdir()
+    events = _transcript(goal_dir)
+    prompts = [e for e in events if e["kind"] == "prompt"]
+    assert prompts and (prompts[0]["what"], prompts[0]["answer"]) == ("confirm", False)
+    assert prompts[0]["channel"] == CHANNEL
+    assert not [i for i in body.intents_of("move") if i.params.get("vx")], "it walked on a no"
+    await drive.robot.close()
+
+
 def test_drive_from_the_page_takes_lines_before_it_is_ready_and_ends_on_quit(
     tmp_path: Path,
 ) -> None:

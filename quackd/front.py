@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO, cast
 
 from quackd import __version__
+from quackd.answers import DID_IT, GO_AHEAD, WATCHING, QuestionWithdrawn, confirm_question
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -110,10 +111,6 @@ button's, it is no person's stop, so a fold the run began by itself goes on to i
 
 PIPE_POLL_S = 0.05
 """How often stdin is looked at on Windows, where it is never read until something is there."""
-
-
-class QuestionWithdrawn(Exception):
-    """A question the page was asked, taken back before anybody answered it."""
 
 
 def trimmed(value: Any, depth: int = 0) -> Any:
@@ -522,7 +519,8 @@ class Questions:
         try:
             await asked.future
         except asyncio.CancelledError:
-            self._withdraw(asked, "a newer line or the brake took its place")
+            # by the brake, a newer line, the goal or the session ending: whichever, nobody answered
+            self._withdraw(asked, "taken back before anybody answered it")
             with self._lock:
                 self._pending.pop(asked.id, None)
             raise
@@ -603,9 +601,7 @@ class Answerer:
 
 def _confirm_words(name: str, params: dict[str, Any]) -> tuple[str, str | None]:
     # the executor quotes the question in its record in exactly these words
-    from quackd.log import fmt_params
-
-    return f"run {name}({fmt_params(params)})?", None
+    return confirm_question(name, params), None
 
 
 def quiet_broken_pipes() -> None:
@@ -652,11 +648,9 @@ class Front:
         self.outcome: dict[str, Any] | None = None
         """What `end` reports, once known: a run's result, a refusal or an error."""
         self.confirm = Answerer(self, "confirm", _confirm_words)
-        self.decide = Answerer(self, "decide", lambda why: ("Go ahead anyway?", why))
-        self.acknowledge = Answerer(
-            self, "acknowledge", lambda why: ("Are you watching the robot right now?", why)
-        )
-        self.judge = Answerer(self, "judge", lambda why: ("Did the arm do it?", why))
+        self.decide = Answerer(self, "decide", lambda why: (GO_AHEAD, why))
+        self.acknowledge = Answerer(self, "acknowledge", lambda why: (WATCHING, why))
+        self.judge = Answerer(self, "judge", lambda why: (DID_IT, why))
 
     @classmethod
     def open(cls, command: str) -> Front:

@@ -173,13 +173,27 @@ def pilot_rule(values: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def shown_defaults() -> dict[str, Any]:
+    """The options both commands take with a default each of their own, at `run`'s: `--memory`
+    alone, on in a run and off in a chat. The page shows such an option once, at that default, so
+    a value nobody changed is that default for both commands, and a chat keeps a memory as the
+    switch on Setup says it does."""
+    drive = {option.name: option.default for option in options("drive")}
+    return {
+        option.name: option.default
+        for option in options("run")
+        if option.name in drive and drive[option.name] != option.default
+    }
+
+
 def argv_for(command: str, values: Mapping[str, Any]) -> list[str]:
     """`[command, ...]`: the task argument where there is one, then every option whose value in
     `values` differs from its default, in the command's own order. A secret never: it goes by the
     environment. An option `values` does not name is left at its default, as is one the command
-    does not have, which is how one set of choices makes both commands. What a VLA pilot refuses
-    is left out (`pilot_rule`)."""
-    values = pilot_rule(values)
+    does not have, which is how one set of choices makes both commands, but for one whose two
+    defaults differ, which is the default the page shows (`shown_defaults`). What a VLA pilot
+    refuses is left out (`pilot_rule`)."""
+    values = pilot_rule({**shown_defaults(), **values})
     argv = [command]
     for option in options(command):
         if option.secret or option.name not in values:

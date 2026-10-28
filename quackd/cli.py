@@ -30,6 +30,8 @@ from rich.text import Text
 
 from quackd import __version__, dotenv_names, ui
 from quackd.agent.decision.frames import MAX_SIDE_PX as DECISION_FRAME_PX
+from quackd.agent.decision.notices import MODE_ON_UNMEASURED as _DECISION_MODE_ON_UNMEASURED
+from quackd.agent.decision.notices import frames_notice as _frames_notice
 from quackd.agent.providers.catalogue import (
     CLOUD_NAMES,
     DEFAULT_LLM,
@@ -41,7 +43,8 @@ from quackd.agent.providers.catalogue import (
     models_for,
     vendor_of,
 )
-from quackd.command import command_text, redacted_url
+from quackd.answers import DID_IT, GO_AHEAD, WATCHING
+from quackd.command import command_text
 from quackd.preflight import DEFAULT_CONNECT_CYCLES, DEFAULT_SEEDS
 from quackd.space.room import BUILT_IN as BUILT_IN_ROOMS
 
@@ -1562,26 +1565,26 @@ def _ask(question: str) -> bool:
 def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
     # under a running status line the question is invisible: a live region redirects stdout
     # and a prompt writes without a newline, so it stays buffered until it is too late.
-    # `fmt_params` and not the raw dict, because the executor writes the same sentence into the
-    # record and the record has to quote the question in the words it was asked in.
-    from quackd.log import fmt_params
+    # `confirm_question` and not the raw dict, because the executor writes the same sentence into
+    # the record and the record has to quote the question in the words it was asked in.
+    from quackd.answers import confirm_question
 
     with ui.pause_status():
-        return _ask(f"run {name}({fmt_params(params)})?")
+        return _ask(confirm_question(name, params))
 
 
 def _decide_prompt(why: str) -> bool:
     """Asked when the pilot says it is not sure this body can do the task at all."""
     with ui.pause_status():
         ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
-        return _ask("Go ahead anyway?")
+        return _ask(GO_AHEAD)
 
 
 def _acknowledge_prompt(why: str) -> bool:
     """Asked once, before anything moves, when the human is the only safety left."""
     with ui.pause_status():
         ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
-        return _ask("Are you watching the robot right now?")
+        return _ask(WATCHING)
 
 
 def _judge_prompt(why: str) -> bool:
@@ -1589,7 +1592,7 @@ def _judge_prompt(why: str) -> bool:
     whether the task was done, so the person who watched the arm says."""
     with ui.pause_status():
         ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
-        return _ask("Did the arm do it?")
+        return _ask(DID_IT)
 
 
 def _someone_to_ask() -> bool:
@@ -1680,7 +1683,14 @@ believed: a `--controller vla` run succeeds only on a person's yes."""
 
 
 def _vla_refusal(
-    *, yes: bool, dry_run: bool, has_policy: bool, goal: str | None, ignored: Sequence[str]
+    *,
+    yes: bool,
+    dry_run: bool,
+    has_policy: bool,
+    goal: str | None,
+    ignored: Sequence[str],
+    someone: bool,
+    command: str = "run",
 ) -> tuple[str, str] | None:
     """Why `--controller vla` cannot fly this run, as a sentence and a hint, or None.
 
@@ -1688,7 +1698,9 @@ def _vla_refusal(
     first segment whether the body should try, and after the last whether it did. Every flag
     that would take that person away, or leave them nothing real to judge, is refused here,
     before anything is built, connected or written down. `ignored` are the flags given for a
-    model that this pilot would drop without a word."""
+    model that this pilot would drop without a word, and `someone` whether a person can be asked
+    at all: at the page, at the terminal, or for a drive session at its keyboard. `command` is
+    the one refused, `run` or `drive`, which the words name."""
     from quackd.duckfile.schema import instruction_line
 
     if yes:
@@ -1697,7 +1709,7 @@ def _vla_refusal(
             "and --yes answers every question without asking anybody",
             "drop --yes: a vla run asks you before its first segment and after its last",
         )
-    if not _someone_to_ask():
+    if not someone:
         return (
             "--controller vla asks a person whether the arm did the task, and there is no "
             "terminal to ask on",
@@ -1717,9 +1729,10 @@ def _vla_refusal(
         )
     if not has_policy:
         return (
-            "--controller vla hands each instruction to the arm's learned policy, and this run "
-            "names no policy server",
-            "start one with quackd policy serve, and give quackd run its address with --policy-url",
+            "--controller vla hands each instruction to the arm's learned policy, and this "
+            f"{'run' if command == 'run' else 'session'} names no policy server",
+            f"start one with quackd policy serve, and give quackd {command} its address with "
+            "--policy-url",
         )
     if goal is not None:
         try:
@@ -1928,6 +1941,7 @@ def _run_impl(
             dry_run=dry_run,
             has_policy=policy is not None,
             goal=goal,
+            someone=_someone_to_ask(),
             ignored=[
                 flag
                 for flag, given in (
@@ -3434,6 +3448,15 @@ _MEMORY = typer.Option(
     help="Carry notes and run outcomes between runs of the same robot (see `quackd memory`).",
     rich_help_panel="Memory",
 )
+_DRIVE_MEMORY = typer.Option(
+    False,
+    "--memory/--no-memory",
+    help="Let each goal the pilot flies recall what earlier runs of this robot learned, and keep "
+    "one fact for the next, as quackd run does (see `quackd memory`). Off in drive, where run "
+    "keeps it on. The places a person marks are kept either way, and those a goal marks or "
+    "forgets only with it.",
+    rich_help_panel="Memory",
+)
 _MEMORY_DIR = typer.Option(
     None,
     "--memory-dir",
@@ -3596,6 +3619,16 @@ _DRIVE_DECISION_LLM = typer.Option(
     autocompletion=_complete_decision_llm,
     rich_help_panel="Model",
 )
+_DRIVE_DECISION_MODE = typer.Option(
+    None,
+    "--decision-mode",
+    help="What the decision LLM may do with each goal's turns, as quackd run --decision-mode "
+    "says: on lets it take the ones it is confident about, shadow asks it every turn and "
+    "records what it would have chosen without changing anything, and off leaves the goals to "
+    "the pilot. Without it every goal is flown by the pilot alone, and --decision-llm is the "
+    "fast lane only. QUACKD_DECISION_MODE is not read here.",
+    rich_help_panel="Model",
+)
 _DECISION_URL = typer.Option(
     None,
     "--decision-url",
@@ -3619,24 +3652,6 @@ _DECISION_MODE = typer.Option(
     "as it has always been. QUACKD_DECISION_MODE does the same.",
     rich_help_panel="Model",
 )
-_DECISION_MODE_ON_UNMEASURED = (
-    "--decision-mode on has not been measured against a real robot: no latency, no agreement "
-    "rate, and the figures in docs/guides/decision-llms/README.md are estimates, of speed and "
-    "cost for jev at TypeSafe, of cost alone for openai at OpenAI, and of neither for a server "
-    "you run. Two of the four confidence floors are published by TypeSafe and two are quackd's "
-    "own, all four shaped around Jev. --decision-mode shadow records both and changes nothing "
-    "about the run."
-)
-"""What `--decision-mode on` says once, where the person switching it on is looking.
-
-It says what the hub's section on speed and cost says, row by row, because a sentence on the
-terminal is read by people who never open the page. It once said the hub had estimates for Jev
-and nothing at all for anything else, after the hub had begun working out what an `openai` turn
-costs: no latency, since OpenAI publish only a ratio to their own Responses API, and a rate, which
-is a cost estimate. A server you run, `jev` and `openai` at an address of your own among them, is
-costed at the self-hosted $0 and has no latency anybody has measured, so neither half applies to
-it. `tests/test_docs.py` holds the sentence to the rows that carry a published rate, so the next
-row given one fails there until this names it."""
 _DECISION_FRAMES = typer.Option(
     None,
     "--decision-frames/--no-decision-frames",
@@ -3653,35 +3668,16 @@ _DECISION_FRAMES = typer.Option(
 )
 
 
-def _frames_notice(mode: str, url: str | None, *, watch: bool = False) -> str:
-    """What `--decision-frames` says once before the robot connects: where a frame goes, and on a
-    run whose mode asks the stepper nothing, that the stepper sends none. `watch` is whether the
-    task lets the pilot call `watch` on a body that declares it, which sends a frame a look
-    whatever the mode, and then the line says so. The address is the client's own, redacted as the
-    record writes it."""
-    # Never the bare word as a fallback: a string that is exactly one of the SDK's client class
-    # names reads to `tests/test_openai_headers.py`'s guard as a way of reaching the SDK.
-    where = f" at {redacted_url(url)}" if url else ""
-    watching = (
-        f"watch, where the robot offers it, sends OpenAI{where} one such frame a look while it "
-        "runs, and the run keeps each one as sent/watch-NNNN.jpg"
-    )
-    if mode == "off" and watch:
-        return (
-            "--decision-frames: the stepper sends no camera frame, because --decision-mode off "
-            f"asks it nothing, and {watching}"
-        )
-    if mode == "off":
-        return (
-            "--decision-frames: no camera frame goes to OpenAI on this run, because "
-            "--decision-mode off asks the stepper nothing"
-        )
-    said = (
-        f"--decision-frames: the robot's primary camera goes to OpenAI{where} with every turn "
-        f"the stepper asks about, as one JPEG at most {DECISION_FRAME_PX} pixels on its longest "
-        "side, and the run keeps each one it sends as frames/NNNN-decision.jpg"
-    )
-    return f"{said}, and {watching}" if watch else said
+_DRIVE_DECISION_FRAMES = typer.Option(
+    None,
+    "--decision-frames/--no-decision-frames",
+    help="EXPERIMENTAL: show the decision LLM the robot's primary camera with each turn a "
+    "goal's stepper asks about, and offer a Microduck's goals the watch verb, as quackd run "
+    "--decision-frames does, each frame kept in that goal's own directory. Only `openai` may be "
+    "shown one, and only at OpenAI's own address, or the session stops before the robot "
+    "connects. The fast lane is never shown one. QUACKD_DECISION_FRAMES is not read here.",
+    rich_help_panel="Model",
+)
 
 
 def _frames_asked(flag: bool | None, decision_llm: str | None) -> bool:
@@ -3714,6 +3710,19 @@ _CONTROLLER = typer.Option(
     "--dry-run, --decision-llm or model flag.",
     rich_help_panel="Model",
 )
+_DRIVE_CONTROLLER = typer.Option(
+    None,
+    "--controller",
+    metavar="llm|vla",
+    help="Who flies each goal. llm, the default, is the model --llm names, and with --policy-url "
+    "it hands the arm's learned policy one short subtask at a time. vla is a scripted pilot for "
+    "a LeRobot arm with --policy-url: it tells the policy each goal word for word, as its one "
+    "instruction, for one segment, then asks you whether the arm did it, and only your yes makes "
+    "the goal a success. It needs the keyboard or the page to ask on, and takes no --yes, "
+    "--dry-run, --decision-mode, --decision-frames or model flag. --decision-llm stays the "
+    "fast lane.",
+    rich_help_panel="Model",
+)
 _ROBOT = typer.Option(
     None,
     "--robot",
@@ -3740,6 +3749,12 @@ _DRY = typer.Option(
 )
 _MAXSTEPS = typer.Option(
     None, "--max-steps", help="Override the duck's max_steps budget.", rich_help_panel="Task"
+)
+_DRIVE_MAXSTEPS = typer.Option(
+    None,
+    "--max-steps",
+    help="Each goal's max_steps budget, within what the session has left of its own.",
+    rich_help_panel="Task",
 )
 # No variable, as `--policy-url` has none: a `.env` line or a robots.json field would make every
 # run of one robot play, and the default prompt is the one this flag must never change.
@@ -3773,6 +3788,15 @@ _PLAY = typer.Option(
     "and changes no gate. --no-play turns a task file's play: true off for this run. Without "
     "either the task file decides, and a --goal run plays only with --play. No variable sets "
     "it, so a run plays only when its file or its command line says so.",
+    rich_help_panel="Task",
+)
+_DRIVE_PLAY = typer.Option(
+    None,
+    "--play/--no-play",
+    help="Let the pilot play a part a goal gives it, an animal, a person, a character or a "
+    "feeling, by acting it out with the body it has, as quackd run --goal --play does. It adds "
+    "one section to each goal's system prompt and changes no gate. A goal plays only with "
+    "--play, and no variable sets it.",
     rich_help_panel="Task",
 )
 # preflight has no --goal, and rehearses many runs rather than one
@@ -4695,13 +4719,27 @@ def drive_cmd(
     address: str | None = _ADDR,
     camera_url: list[str] = _CAMERA_URL,
     token: str | None = _TOKEN,
+    fov_deg: float | None = _FOV,
     host: str | None = _HOST,
     host_token: str | None = _HOST_TOKEN,
     detector: str | None = _DETECTOR,
+    policy_url: str | None = _POLICY_URL,
+    policy_token: str | None = _POLICY_TOKEN,
+    accept_other_frame: bool = _ACCEPT_OTHER_FRAME,
+    async_chunks: bool = _ASYNC_CHUNKS,
     seed: int | None = _SEED,
     llm: str | None = _LLM,
+    controller: str | None = _DRIVE_CONTROLLER,
+    base_url: str | None = _BASEURL,
+    api_key: str | None = _APIKEY,
+    vision: bool | None = _VISION,
+    extra_body: str | None = _EXTRA_BODY,
+    effort: str | None = _EFFORT,
+    price: str | None = _PRICE,
     decision_llm: str | None = _DRIVE_DECISION_LLM,
     decision_url: str | None = _DECISION_URL,
+    decision_mode: str | None = _DRIVE_DECISION_MODE,
+    decision_frames: bool | None = _DRIVE_DECISION_FRAMES,
     duckfile: str | None = typer.Option(
         None,
         "--duckfile",
@@ -4712,6 +4750,10 @@ def drive_cmd(
     map_address: str | None = _MAP_ADDR,
     yes: bool = _YES,
     dry_run: bool = _DRY,
+    max_steps: int | None = _DRIVE_MAXSTEPS,
+    play: bool | None = _DRIVE_PLAY,
+    memory: bool = _DRIVE_MEMORY,
+    memory_dir: str | None = _MEMORY_DIR,
     runs_dir: str = _RUNS,
     run_name: str | None = _RUN_NAME,
     front: str = _FRONT_OPTION,
@@ -4727,22 +4769,139 @@ def drive_cmd(
             address=address,
             camera_url=camera_url,
             token=token,
+            fov_deg=fov_deg,
             host=host,
             host_token=host_token,
             detector=detector,
+            policy_url=policy_url,
+            policy_token=policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
             seed=seed,
             llm=llm,
+            controller=controller,
+            base_url=base_url,
+            api_key=api_key,
+            vision=vision,
+            extra_body=extra_body,
+            effort=effort,
+            price=price,
             decision_llm=decision_llm,
             decision_url=decision_url,
+            decision_mode=decision_mode,
+            decision_frames=decision_frames,
             duckfile=duckfile,
             room=room,
             map_address=map_address,
             yes=yes,
             dry_run=dry_run,
+            max_steps=max_steps,
+            play=play,
+            memory=memory,
+            memory_dir=memory_dir,
             runs_dir=runs_dir,
             run_name=run_name,
         ),
     )
+
+
+def _drive_refusal(
+    *,
+    controller: str | None,
+    price: str | None,
+    yes: bool,
+    dry_run: bool,
+    policy_url: str | None,
+    policy_token: str | None,
+    accept_other_frame: bool,
+    async_chunks: bool,
+    registry_dir: str | None,
+    llm: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    extra_body: str | None,
+    vision: bool | None,
+    play: bool | None,
+    effort: str | None,
+    decision_llm: str | None,
+    decision_mode: str | None,
+    decision_frames: bool | None,
+    someone: bool,
+) -> tuple[str, str | None] | None:
+    """Why `quackd drive` cannot start with these flags, as a sentence and a hint, or None:
+    what `quackd run` refuses of the same flags, in its words, before anything is built.
+
+    A VLA pilot is refused as a run refuses it (`_vla_refusal`), with a goal's own line held to
+    the rule for an instruction as each one reaches the pilot instead (`DriveSession`). The
+    decision LLM is refused with it only where a goal's stepper was asked for: `--decision-llm`
+    alone is the fast lane, which takes typed lines and never a goal's turns."""
+    from quackd.adapters.base import policy_choice
+    from quackd.agent.decision.base import DecisionError
+    from quackd.agent.decision.factory import ENV_LLM, parse_decision_llm
+    from quackd.agent.providers.pricing import parse_price
+
+    if price is not None:
+        try:
+            parse_price(price, source="--price")
+        except ValueError as e:
+            return str(e), None
+    flown_by = (controller or "").strip().lower() or CONTROLLERS[0]
+    if flown_by not in CONTROLLERS:
+        return f"--controller is {' or '.join(CONTROLLERS)}, not {controller!r}", None
+    if flown_by != "vla":
+        return None
+    try:
+        policy = policy_choice(
+            policy_url,
+            policy_token,
+            accept_other_frame=accept_other_frame,
+            async_chunks=async_chunks,
+            registry_dir=registry_dir,
+        )
+    except ValueError as e:
+        return str(e), None
+    refused = _vla_refusal(
+        yes=yes,
+        dry_run=dry_run,
+        has_policy=policy is not None,
+        goal=None,
+        someone=someone,
+        command="drive",
+        ignored=[
+            flag
+            for flag, given in (
+                ("--llm", llm is not None),
+                ("--base-url", base_url is not None),
+                ("--api-key", api_key is not None),
+                ("--extra-body", extra_body is not None),
+                ("--vision", vision is not None),
+                ("--play", play is True),
+            )
+            if given
+        ],
+    )
+    if refused is not None:
+        return refused
+    if effort is not None:
+        return (
+            "--effort says how hard a model reasons, and --controller vla asks no model: the "
+            "policy server drives the arm and the scripted pilot only reads it the steps",
+            None,
+        )
+    try:
+        named = parse_decision_llm(decision_llm)
+    except DecisionError as e:
+        return str(e), None
+    mode = (decision_mode or "").strip().lower()
+    if named is not None and ((mode and mode != "off") or decision_frames):
+        return (
+            "--controller vla runs no model for a decision LLM to step in front of, and "
+            f"{'--decision-mode' if mode and mode != 'off' else '--decision-frames'} asks for "
+            f"{'--decision-llm' if decision_llm is not None else ENV_LLM} to",
+            "drop it: --decision-llm alone is the fast lane, which takes typed lines and never "
+            "a goal's turns",
+        )
+    return None
 
 
 def _drive_command(
@@ -4752,18 +4911,36 @@ def _drive_command(
     address: str | None,
     camera_url: list[str],
     token: str | None,
+    fov_deg: float | None,
     host: str | None,
     host_token: str | None,
     detector: str | None,
+    policy_url: str | None,
+    policy_token: str | None,
+    accept_other_frame: bool,
+    async_chunks: bool,
     seed: int | None,
     llm: str | None,
+    controller: str | None,
+    base_url: str | None,
+    api_key: str | None,
+    vision: bool | None,
+    extra_body: str | None,
+    effort: str | None,
+    price: str | None,
     decision_llm: str | None,
     decision_url: str | None,
+    decision_mode: str | None,
+    decision_frames: bool | None,
     duckfile: str | None,
     room: str | None,
     map_address: str | None,
     yes: bool,
     dry_run: bool,
+    max_steps: int | None,
+    play: bool | None,
+    memory: bool,
+    memory_dir: str | None,
     runs_dir: str,
     run_name: str | None,
 ) -> None:
@@ -4776,6 +4953,45 @@ def _drive_command(
     from quackd.registry import RegistryError
     from quackd.transport.base import TransportError
 
+    front = _FRONT
+
+    def say(line: str) -> None:
+        ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
+        if front is not None:
+            front.say(line)
+
+    # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
+    # keyboard opens, and what it reads is recorded as a person's, is decided as every question
+    # quackd puts to a person is. Its prompt needs a terminal to be drawn on as well.
+    at_terminal = _can_prompt()
+    keyboard = at_terminal and _can_draw_a_prompt()
+    refused = _drive_refusal(
+        controller=controller,
+        price=price,
+        yes=yes,
+        dry_run=dry_run,
+        policy_url=policy_url,
+        policy_token=policy_token,
+        accept_other_frame=accept_other_frame,
+        async_chunks=async_chunks,
+        registry_dir=registry_dir,
+        llm=llm,
+        base_url=base_url,
+        api_key=api_key,
+        extra_body=extra_body,
+        vision=vision,
+        play=play,
+        effort=effort,
+        decision_llm=decision_llm,
+        decision_mode=decision_mode,
+        decision_frames=decision_frames,
+        # a person to put a goal's questions to: at the page, or at the keyboard, where lines
+        # are not read one at a time as from a pipe
+        someone=front is not None or keyboard,
+    )
+    if refused is not None:
+        _fail(refused[0], hint=refused[1])
+        return
     args = DriveArgs(
         robot=robot,
         registry_dir=registry_dir,
@@ -4796,20 +5012,25 @@ def _drive_command(
         dry_run=dry_run,
         runs_dir=runs_dir,
         run_name=run_name,
+        max_steps=max_steps,
+        play=play,
+        controller=(controller or "").strip().lower() or CONTROLLERS[0],
+        policy_url=policy_url,
+        policy_token=policy_token,
+        accept_other_frame=accept_other_frame,
+        async_chunks=async_chunks,
+        base_url=base_url,
+        api_key=api_key,
+        vision=vision,
+        extra_body=extra_body,
+        effort=effort,
+        price=price,
+        decision_mode=decision_mode,
+        decision_frames=decision_frames,
+        memory=memory,
+        memory_dir=memory_dir,
+        fov_deg=fov_deg,
     )
-
-    front = _FRONT
-
-    def say(line: str) -> None:
-        ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
-        if front is not None:
-            front.say(line)
-
-    # `_can_prompt` and not `isatty` alone, which says yes to NUL on Windows: whether the
-    # keyboard opens, and what it reads is recorded as a person's, is decided as every question
-    # quackd puts to a person is. Its prompt needs a terminal to be drawn on as well.
-    at_terminal = _can_prompt()
-    keyboard = at_terminal and _can_draw_a_prompt()
     if at_terminal and not keyboard:
         say(
             f"{'note':<8} the prompt needs a terminal for its output too, so lines are read one at "

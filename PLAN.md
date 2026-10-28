@@ -420,14 +420,18 @@ before.
 - ⏸ **No asset shows a flock of pilots.** `flock.gif` is the coordinator: three identical ducks
   auctioning a kick. The kind of flock the README now leads with is two different bodies talking,
   and it has no recording, because a pilot flock writes no GIF (N members are N worlds).
-- ⬜ **What the page `quackd ui` does not do yet.** A chat takes `quackd drive`'s flags alone, so
-  the options Setup marks *goal only*, a VLA pilot, memory and the vendor settings among them, do
-  not reach it until drive gains run's flags, which waits for the place stores to land in drive.
-  Left out on purpose until somebody needs them: `--by-hand` and the end-of-run questions about an
-  arm, which wait for somebody at the arm; flocks; a picture with a chat line; `--live`; a lock on
-  a robot across processes, so a run started from a terminal beside the page is not seen; HTTPS on
-  a LAN, which Streamlit can serve through its own settings; and an app to install on a phone. The
-  JSON front end stays a hidden flag until a second program needs it.
+- ⬜ **What the page `quackd ui` does not do yet.** A chat flies its goals with what a goal takes
+  since `quackd drive` took run's flags for them (ADR-0072), all but a GIF, a picture and
+  `--talk`, which drive does not take. Left out on purpose until somebody needs them: `--by-hand`
+  and the end-of-run questions about an arm, which wait for somebody at the arm; flocks; a picture
+  with a chat line; `--live`; a lock on a robot across processes, so a run started from a terminal
+  beside the page is not seen; HTTPS on a LAN, which Streamlit can serve through its own settings;
+  and an app to install on a phone. The JSON front end stays a hidden flag until a second program
+  needs it.
+- ⬜ **A VLA pilot in a drive session, on the arm.** `quackd drive --controller vla` has flown its
+  lines on the LeRobot mock's scripted policy alone. Owed: a session on `lerobot:mujoco` with
+  `quackd policy serve --policy scripted:sweep`, three lines with a brake mid-segment, from the
+  keyboard and from the page, then the same on the arm with a trained checkpoint.
 
 ## Open elsewhere
 

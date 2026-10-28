@@ -333,7 +333,7 @@ async def test_a_lines_latency_leaves_out_the_time_a_person_took_to_answer(
     drive, _body, _records = await _drive(tmp_path, clock=clock)
     drive.robot.executor.registry.get("kick").safety_class = "confirm"
 
-    async def thinks(question: str) -> bool:
+    async def thinks(question: str, **_: Any) -> bool:
         clock.now += 5.0
         return True
 
@@ -504,7 +504,7 @@ async def _nested_session(tmp_path: Path, then: Verb) -> tuple[DriveSession, lis
     drive.exact = drive._exact()
     asked: list[str] = []
 
-    async def ask(question: str) -> bool:
+    async def ask(question: str, **_: Any) -> bool:
         asked.append(question)
         return True
 
@@ -630,8 +630,8 @@ async def _blind(
     asked: list[str] = []
     records: list[dict[str, Any]] = []
 
-    async def ask(question: str) -> bool:
-        asked.append(question)
+    async def ask(question: str, *, detail: str | None = None, **_: Any) -> bool:
+        asked.append(f"{detail} {question}" if detail else question)
         return says
 
     drive = DriveSession(

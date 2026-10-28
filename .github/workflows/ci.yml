@@ -172,9 +172,10 @@ jobs:
           page=$!
           for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8599/_stcore/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8599/_stcore/health
-          # said once the page answers, from a thread of its own, so it may trail the health check
+          # said once the page answers, from a thread of its own, so it may trail the health check.
+          # Looked for and never printed: the line carries the page's token, and this log is public
           for _ in $(seq 1 20); do grep -q "quackd ui: http://127.0.0.1:8599" ui.log && break; sleep 1; done
-          grep "quackd ui: http://127.0.0.1:8599" ui.log
+          grep -q "quackd ui: http://127.0.0.1:8599" ui.log || { sed -E 's/token=[^ &]+/token=(hidden)/g' ui.log; exit 1; }
           kill "$page"
 
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from

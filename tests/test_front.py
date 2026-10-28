@@ -337,7 +337,7 @@ async def test_a_drive_question_waits_as_a_coroutine_and_a_cancel_takes_it_back(
     second.cancel()
     with pytest.raises(asyncio.CancelledError):
         await second
-    withdrawn = {"ev": "asked", "id": 2, "withdrawn": "a newer line or the brake took its place"}
+    withdrawn = {"ev": "asked", "id": 2, "withdrawn": "taken back before anybody answered it"}
     await asyncio.to_thread(_until, _written(out, withdrawn))
 
 

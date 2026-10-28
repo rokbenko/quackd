@@ -33,9 +33,11 @@ def test_every_option_a_command_has_is_offered_but_the_ones_the_page_leaves_out(
 
 @pytest.mark.parametrize("command", ["run", "drive"])
 def test_nothing_chosen_makes_the_bare_command(command: str) -> None:
-    assert argv_for(command, {}) == [command]
+    """But for a chat's memory, which the page shows on, as a run keeps it."""
+    bare = [command] if command == "run" else [command, "--memory"]
+    assert argv_for(command, {}) == bare
     defaults = {o.name: o.default for o in options(command)}
-    assert argv_for(command, defaults) == [command]
+    assert argv_for(command, defaults) == [command], "the command's own defaults, said outright"
 
 
 def test_every_kind_of_option_comes_back_through_quackds_own_parser() -> None:
@@ -75,7 +77,10 @@ def test_one_set_of_choices_makes_both_commands() -> None:
     run = argv_for("run", chosen)
     drive = argv_for("drive", chosen)
     assert "--play" in run and "--no-gif" in run
-    assert drive == ["drive", "--robot", "microduck:sim2d", "--seed", "3", "--llm", "fake"]
+    assert drive == [
+        "drive",
+        *("--robot", "microduck:sim2d", "--seed", "3", "--llm", "fake", "--play", "--memory"),
+    ], "drive takes --play and a memory for its goals, and no GIF"
     parsed(drive)
 
 
@@ -111,3 +116,16 @@ def test_a_vla_pilot_takes_no_model_and_no_decision_llm_however_it_was_chosen() 
         assert flag not in argv, flag
     llm_run = argv_for("run", {**values, "controller": "llm", "goal": "x"})
     assert "--llm" in llm_run and "--decision-llm" in llm_run
+    chat = argv_for("drive", values)
+    assert "--controller" in chat and "--policy-url" in chat, "drive takes a VLA pilot too"
+    for flag in ("--llm", "--vision", "--decision-llm", "--play"):
+        assert flag not in chat, flag
+
+
+def test_one_memory_switch_for_a_goal_and_a_chat() -> None:
+    """A run keeps a memory unless told not to and a chat keeps none unless told to, and the page
+    shows one switch, on. A chat nobody changed it for keeps a memory, as the switch says."""
+    assert "--memory" in argv_for("drive", {})
+    assert not {"--memory", "--no-memory"} & set(argv_for("run", {"goal": "x"}))
+    assert not {"--memory", "--no-memory"} & set(argv_for("drive", {"memory": False}))
+    assert "--no-memory" in argv_for("run", {"goal": "x", "memory": False})

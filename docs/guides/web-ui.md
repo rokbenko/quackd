@@ -112,10 +112,12 @@ Everything a line can be is in [Driving a robot](drive.md).
 ![The Chat screen: quack, taken by the exact lane, then a goal the scripted pilot flew to success](../assets/ui-chat.png)
 
 > [!NOTE]
-> Options marked *goal only* on Setup do not reach a chat, because `quackd drive` does not take
-> them yet: memory, the effort and the other vendor settings among them. A chat's goals are flown
-> by the pilot `--llm` names, with drive's own settings. A VLA pilot cannot fly a chat at all yet,
-> so with one chosen on Setup, Chat says so and does not start.
+> A chat's goals fly with what Setup chose for a goal, the pilot's settings, memory and a VLA pilot
+> among them, and put their questions to you with the same buttons, each named after its goal:
+> whether to run a gated verb, whether to go ahead when the pilot is not sure, and whether the arm
+> did it. Under a VLA pilot each line is its one instruction to the arm's policy
+> ([Driving a robot](drive.md#a-vla-pilot-a-line-at-a-time)). The few options still marked *goal
+> only*, a GIF, a picture and talking with robots nearby, do not reach a chat.
 
 ## The pilot
 
@@ -134,7 +136,7 @@ through that run's environment. It is never written to a file, never put on a co
 never shown in the **Same as** lines, and it is gone when the page stops.
 
 The effort, vision, a base URL for a local server, an extra request body and a price are under the
-model, marked *goal only*.
+model.
 
 **A VLA policy** flies the LeRobot arm instead, through a policy server: its address, whether the
 arm keeps moving while the next chunk is on its way, and whether to accept a policy learned on an
@@ -144,15 +146,18 @@ and the decision LLM leave the command, which `quackd run` would otherwise refus
 address in. [Policies](policies.md) has the rest.
 
 **A decision LLM** is the optional stepper in front of the pilot in a goal, and the fast lane for
-a line in a chat ([Decision LLMs](decision-llms/README.md)).
+a line in a chat, whose goals have the stepper too only with a mode chosen
+([Decision LLMs](decision-llms/README.md)).
 
 ## Every other option
 
 Everything else `quackd run` and `quackd drive` take is under **Everything else**, grouped as
 `--help` groups it, each with the flag it sets and that flag's own help. An option one of the two
-commands does not take is marked *goal only* or *chat only*. An option that is on or off unless a
-task file says otherwise offers three choices: the default, on and off. Options that carry a
-secret are offered as key fields, which reach a run as keys do.
+commands does not take is marked *goal only* or *chat only*. Memory is one switch for both, on as
+a run keeps it, so a chat keeps a memory unless you turn it off, where `quackd drive` at a terminal
+keeps none unless asked. An option that is on or off unless a task file says otherwise offers three
+choices: the default, on and off. Options that carry a secret are offered as key fields, which
+reach a run as keys do.
 
 The page reads these options from the commands themselves, so a flag added to `quackd run`
 appears on the page with nothing changed in it. It leaves out the few it sets itself or cannot
@@ -348,7 +353,8 @@ the same command under **Same as** reproduces it at a terminal.
 - `--by-hand`, and the questions at the end of a run about an arm that missed its rest pose: both
   wait for somebody at the arm to press Enter, and stay at the terminal.
 - Flocks: `--flock`, `--robots` and task files with a `flock:` block.
-- The options marked *goal only* in a chat, until `quackd drive` takes them.
+- A GIF of a chat, and a chat that talks with robots nearby: `quackd drive` takes neither `--gif`
+  nor `--talk`.
 - `--live`, and a picture sent with a chat line.
 - HTTPS. Streamlit can serve it through its own settings, and quackd has no flag for it yet.
 - An app to install on the phone.

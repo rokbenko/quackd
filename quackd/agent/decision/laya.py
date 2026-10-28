@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import inspect
+import threading
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +46,7 @@ class LayaLLM:
         self._extra = spec.extra or "laya"
         self._router: Any = None
         self._broken: Exception | None = None
+        self._passes = threading.Lock()
 
     def _load(self) -> Any:
         try:
@@ -95,6 +97,11 @@ class LayaLLM:
                 raise
         # `to_thread` because `predict` is a blocking forward pass and the loop it would block
         # is the one holding the robot's deadman.
-        return await asyncio.to_thread(
-            self._router.predict, dict(state), dict(questions), model=self.model
-        )
+        return await asyncio.to_thread(self._predict, dict(state), dict(questions))
+
+    def _predict(self, state: dict[str, str], questions: dict[str, Any]) -> Any:
+        """One forward pass at a time: a drive session's fast lane and a goal's stepper ask the
+        one router, each from a thread of its own, and nothing says its weights may be run from
+        two threads at once."""
+        with self._passes:
+            return self._router.predict(state, questions, model=self.model)

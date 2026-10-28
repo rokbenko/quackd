@@ -245,14 +245,31 @@ def test_quit_at_once_is_offered_for_a_stopped_run_while_a_chat_goes_on(
         job.wait(30)
 
 
-def test_a_chat_is_not_started_under_a_vla_pilot_drive_cannot_fly() -> None:
-    """drive takes no VLA pilot yet, and a chat started under one would be flown by whatever LLM
-    the robot or the environment names, without a word."""
-    state.setup().set("controller", "vla")
+def test_a_chat_under_a_vla_pilot_is_drive_flying_it(
+    page: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """drive takes a VLA pilot, so a chat under one starts, and says which: Chat refused it while
+    a chat started under one would have been flown by whatever LLM the environment named."""
+    from tests.test_webui_jobs import _fake
+
+    table = jobs.Jobs(cwd=page, spawn=_fake(page, "listening"))
+    monkeypatch.setattr(jobs, "_TABLE", table)
+    for name, value in (
+        ("controller", "vla"),
+        ("policy_url", "http://127.0.0.1:9875"),
+        ("llm", "anthropic"),
+    ):
+        state.setup().set(name, value)
     at = _screen("chat")
     start = next(b for b in at.button if b.label == "Start a chat")
-    assert start.disabled
-    assert any("quackd drive takes no VLA pilot" in i.value for i in at.info)
+    assert not start.disabled
+    start.click().run()
+    (chat,) = [job for job in table.all() if job.kind == "chat"]
+    argv = chat.argv[chat.argv.index("drive") :]
+    assert argv[argv.index("--controller") + 1] == "vla" and "--policy-url" in argv
+    assert "--llm" not in argv, "drive refuses a model's flag beside --controller vla"
+    chat.end_input()
+    chat.wait(30)
 
 
 def test_a_goal_runs_from_the_page_to_its_outcome() -> None:

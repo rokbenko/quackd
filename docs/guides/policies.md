@@ -248,6 +248,9 @@ allows `manipulate` too, and asks you before each segment when it runs at a term
 pipe or file on stdin, answers in your place, and nobody is asked. With `--controller vla` no
 model is involved at all: a scripted pilot hands the policy each listed instruction in turn
 and then asks you whether the arm did it ([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
+A goal in `quackd drive` given `--policy-url` does the same, asking you at its keyboard or in the
+page, and under `--controller vla` each line you type is its one instruction
+([guides/drive.md](drive.md#a-vla-pilot-a-line-at-a-time)).
 
 **What only the arm can tell you** is how fast the policy loop runs on the real bus while the
 same laptop's CPU is inferring. Nothing timed on the simulator is a rate, because its clock is
