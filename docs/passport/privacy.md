@@ -53,8 +53,8 @@ Anything stable that a robot broadcasts can be used to follow it. So:
   the one it heard an hour ago ([discovery.md](discovery.md#the-beacon-id-changes-every-15-minutes)).
   Fifteen minutes is still long enough to follow a robot down a street: rotation limits tracking
   across hours, not minutes.
-- **The radio has an address of its own**, and every advert carries it, beneath the beacon. While
-  that address stays the same, rotating the beacon id alone does not stop tracking. BlueZ can rotate
+- **The radio has an address of its own**, and every advert goes out from it. While that address
+  stays the same, rotating the beacon id alone does not stop tracking. BlueZ can rotate
   the address too, with `Privacy = device` in `/etc/bluetooth/main.conf`, and the wizard offers to
   set it: it asks first, backs the file up and restarts bluetoothd. Whether the adapter then really
   changes its address cannot be seen without root, and nobody has watched one do it on a Jetson.

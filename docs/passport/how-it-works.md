@@ -1,9 +1,9 @@
 # How it works
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation. The meeting below has run on the sim board,
-> as the demo's first act, and not on a Jetson or over a real Bluetooth radio
-> ([roadmap.md](roadmap.md)).
+> Spec 1.0. quackd 0.29.0 is its first implementation. The meeting below is what the demo's first
+> act plays on the sim board ([quickstart.md](quickstart.md#the-demo)), and none of it has run on a
+> Jetson or over a real Bluetooth radio ([roadmap.md](roadmap.md)).
 
 Robot Passport is three layers, each needed by the one above it:
 
