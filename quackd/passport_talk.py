@@ -103,6 +103,8 @@ class Talker:
         on_heard: Callable[[Heard], None] | None = None,
         runtime: dict[str, Any] | None = None,
         heard: Callable[[str], bool] | None = None,
+        on_session: Callable[[Session, bool], None] | None = None,
+        on_refused: Callable[[str, int, str], None] | None = None,
     ) -> None:
         self.name = name
         #: what decides a peer's `ask`, a `quackd.passport_courtesy.Courtesy` over the run's
@@ -120,6 +122,12 @@ class Talker:
         self._heard = heard
         self._send = send
         self._on_heard = on_heard
+        #: every session that opened (True) or ended (False), whichever robot said hello: what
+        #: the radio's meeting planner keeps count by
+        self._on_session = on_session
+        #: a hello, or what claimed to be one, that this robot refused: where it came from, the
+        #: status and the reason, for a person's log
+        self._on_refused = on_refused
         self._unread: list[Heard] = []
         self._lock = threading.RLock()
         self._met = threading.Condition(self._lock)
@@ -232,7 +240,9 @@ class Talker:
         except VersionUnknown as e:
             return 200, version_answer(e, self.id, self.endpoint.key)
         except PassportError as e:
-            return (413 if "over the" in str(e) else 400), f"{e.rule}: {e}\n"
+            status, why = (413 if "over the" in str(e) else 400), f"{e.rule}: {e}"
+            self._refused(origin, status, why)
+            return status, why + "\n"
         if message.to not in (None, "*", self.id):
             return 404, "no robot here by that id\n"
         first = message.type == "hello" and message.re is None
@@ -243,7 +253,14 @@ class Talker:
         reply = self.receive(message, origin=origin)
         if reply.wire is not None:
             return reply.status, reply.wire
+        if reply.status >= 400 and message.type == "hello" and reply.status not in (429, 503):
+            self._refused(origin, reply.status, reply.reason)
         return reply.status, (reply.reason + "\n") if reply.status >= 400 else None
+
+    def _refused(self, origin: str, status: int, why: str) -> None:
+        if self._on_refused is not None:
+            with contextlib.suppress(Exception):  # a log that fails must not change the answer
+                self._on_refused(origin, status, why)
 
     def say(self, who: str, text: str) -> None:
         """`text` to a robot this one met, named by its id, its name, or the name a pilot sees."""
@@ -490,6 +507,8 @@ class Talker:
                 self._met.notify_all()
         if self._on_heard is not None:
             self._on_heard(heard)
+        if self._on_session is not None and event.kind in ("met", "left", "quiet"):
+            self._on_session(session, event.kind == "met")
 
 
 def _courtesy_words(skill: Any, args: Any) -> tuple[str, dict[str, Any]]:

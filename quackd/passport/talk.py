@@ -83,6 +83,16 @@ class VersionUnknown(PassportError):
         self.version, self.sender, self.msg = version, sender, msg
 
 
+class Answered(PassportError):
+    """A hello the other robot answered with a status rather than a hello. `status` says whether
+    to try again: 403 (it has not heard this robot by radio yet), 429 and 503 mean not now, and
+    anything else means no."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__("6.3", message)
+        self.status = status
+
+
 def new_token() -> str:
     """16 random bytes in base64url: a nonce, or a message's `msg`."""
     return jws.b64url(os.urandom(16))
@@ -688,7 +698,8 @@ def open_session(endpoint: Endpoint, peer: str | None, post: Post) -> Session:
     no session is left open on this side when the other side refused the third step."""
     status, reply = post(endpoint.hello(peer))
     if status != 200 or reply is None:
-        raise PassportError("6.3", f"the hello was answered {status}, not with a hello")
+        said = f": {reply.strip()[:200]}" if reply and status >= 400 else ""
+        raise Answered(status, f"the hello was answered {status}, not with a hello{said}")
     answer = endpoint.receive(read_message(reply))
     if answer.status != 200 or answer.wire is None or answer.event is None:
         raise PassportError("6.3", f"the hello's answer was refused: {answer.reason}")
@@ -697,7 +708,7 @@ def open_session(endpoint: Endpoint, peer: str | None, post: Post) -> Session:
     if status not in (200, 204):
         with endpoint._lock:
             endpoint.sessions.pop(session.nonces, None)
-        raise PassportError("6.3", f"the third hello was answered {status}")
+        raise Answered(status, f"the third hello was answered {status}")
     return session
 
 
@@ -705,6 +716,7 @@ __all__ = [
     "MAX_HELLO_BYTES",
     "MAX_MESSAGE_BYTES",
     "MESSAGE_TYP",
+    "Answered",
     "Endpoint",
     "Event",
     "Message",

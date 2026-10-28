@@ -24,6 +24,7 @@ from quackd.passport.talk import (
     MAX_PENDING,
     MAX_SESSIONS,
     REMEMBERED,
+    Answered,
     Endpoint,
     VersionUnknown,
     envelope,
@@ -327,6 +328,20 @@ def test_a_hello_carrying_this_robots_own_passport_is_refused() -> None:
     answer = b.receive(read_message(mirror.hello("*")))
     assert answer.status in (400, 403)
     assert b.sessions == {}
+
+
+@pytest.mark.parametrize("status", [403, 429, 503, 400])
+def test_a_hello_answered_with_a_status_says_which_so_a_caller_can_wait_or_give_up(
+    status: int,
+) -> None:
+    """403 is a robot that has not heard this one by radio yet, 429 and 503 one that is busy:
+    worth another try soon. Anything else is a no. Whoever said hello reads the difference from
+    the status, and from no word of the other robot's."""
+    a, _b = pair()
+    with pytest.raises(Answered) as answered:
+        open_session(a, None, lambda _wire: (status, "not now\n"))
+    assert answered.value.status == status and answered.value.rule == "6.3"
+    assert not a.sessions
 
 
 def test_a_hellos_runtime_rides_with_it_and_reaches_the_session() -> None:

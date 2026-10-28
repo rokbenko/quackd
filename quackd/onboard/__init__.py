@@ -11,4 +11,10 @@ side of quackd, and it grows a module at a time:
 - `facts`: the passport robot.yaml describes, and what changed in it since its owner signed.
 - `body`: the body of a robot quackd only talks for, which reports a state and stops.
 - `meeting`: the standing task an idle robot's brain runs when another robot comes near.
+- `brain`: the run slot, one run at a time: a goal from the owner, or the meeting task.
+- `radio_side`: who is near, meeting them over the LAN or a link, and the beacon id.
+- `control`: the service's connection on 127.0.0.1, behind a token only its user reads.
+- `service`: `quackd onboard serve`, every part above in one long-lived process.
+- `wizard`: what `quackd onboard` asks, and the signing.
+- `systemd`: the unit that keeps the service running on a robot.
 """
