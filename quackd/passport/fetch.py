@@ -34,6 +34,14 @@ _STATUS = re.compile(rb"^HTTP/1\.[01] ([1-5][0-9][0-9])(?: ([^\r\n]*))?$")
 _REDIRECTS = (301, 302, 303, 307, 308)
 
 
+class Unreachable(PassportError):
+    """A host that could not be reached, or did not answer within the reader's time: no answer
+    at all, which is worth trying again later, where a refusal is an answer (spec 5.7)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__("5.7", message)
+
+
 class HttpStatus(PassportError):
     """A host that answered, with a status other than 200."""
 
@@ -137,7 +145,7 @@ def _exchange(
     except PassportError:
         raise
     except OSError as e:
-        raise PassportError("5.7", f"{url} could not be reached: {e}") from e
+        raise Unreachable(f"{url} could not be reached: {e}") from e
     return _parse(answer, url)
 
 
@@ -147,14 +155,12 @@ def _read(sock: socket.socket, budget: int, deadline: float, url: str, timeout: 
     while True:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise PassportError("5.7", f"{url} took more than the {timeout:g} s a reader waits")
+            raise Unreachable(f"{url} took more than the {timeout:g} s a reader waits")
         sock.settimeout(left)
         try:
             chunk = sock.recv(min(65_536, budget - total))
         except TimeoutError as e:
-            raise PassportError(
-                "5.7", f"{url} took more than the {timeout:g} s a reader waits"
-            ) from e
+            raise Unreachable(f"{url} took more than the {timeout:g} s a reader waits") from e
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
