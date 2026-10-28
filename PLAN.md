@@ -41,8 +41,12 @@ before.
   0.27.0's `quackd drive` has driven only the mock and `microduck:sim2d`: on the duck, the
   milliseconds from a typed line to `robotd` taking its twist, an empty Enter stopping a walk,
   and how far the preset walks and the 45 degree turn really carry it are the numbers to bring
-  back. Pre-orders opened 2026-08-27, earliest arrivals estimated around Christmas 2026 and later
-  orders four to six months out.
+  back. 0.28.0 reads the duck's contact odometry as where it is, so `mark_place` and `go_to_place`
+  are offered on it, and reaches `mapd` at `--map-address` once a robotd release carries it
+  (UNVERIFIED): how close `go_to_place` brings the duck back to a place marked by odometry is the
+  number to bring back, and the checklist says how to read `mapd` off the robot and whether a head
+  turn alone is a keyframe. Pre-orders opened 2026-08-27, earliest arrivals estimated around
+  Christmas 2026 and later orders four to six months out.
 - ⏸ **A ToddlerBot** on its safety stand, running `bridge/toddlerbot/quackd_toddlerbot_bridge.py`
   through [docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md). What
   most needs a real robot: whether the safe-pose slew is safe from a crawl, what tilt really
@@ -187,8 +191,8 @@ before.
   `quackd meet HOST --as NAME --ask pause:3` at a running `nearby-hello`. Then a pause asked of a
   robot that is really walking, which has to stop and hold still for the seconds it was granted.
   Each one flips its row in the roadmap's status table, and not before.
-- ⬜ **The page `quackd ui` on a phone.** Its phone path has run only in a headless browser made to
-  behave as a phone, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
+- ⬜ **The page `quackd ui` on a phone.** Its phone path has been seen only in a headless browser at
+  a phone's width, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
   0.0.0.0`, the firewall's question on Windows, the printed QR code scanned, a goal and a chat
   line, the floating Stop, the screen locked mid-run and the run found again after, a home-screen
   shortcut that still works after the page restarts, and a wrong token that shows nothing but the

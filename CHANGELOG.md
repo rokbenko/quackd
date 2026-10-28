@@ -9,6 +9,44 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-10-28
+
+0.28.0 adds `quackd ui`, a page in the browser for what `quackd run` and `quackd drive` do, and
+places: a robot that says where it is names the spots it stood on and walks back to them, and in
+the Microduck's 2D simulator it maps a room it has never seen and looks for the ball in it. `quackd
+drive` flies its goals as `quackd run` flies one, and a goal asks the person driving.
+
+`quackd ui` sets a robot and its pilot up, then runs one goal or task file to its end, or chats
+with the robot goal after goal while it stays connected, from a browser on the computer the robot
+is connected to or from a phone on the same Wi-Fi. Each goal and chat is the CLI's own command in a
+process of its own, driven over a hidden `--front jsonl`. A stop is a message, so it reaches a run
+on Windows too, a Yes clicked in the page is recorded as a person's answer, on the web channel, and
+a question taken back is recorded as unanswered, never as a no. The page listens on `127.0.0.1`
+unless `--bind` names another address, and asks every visitor for its token.
+
+`quackd drive` takes run's flags for its goals, given once for the session: the pilot's model
+settings, `--max-steps`, `--play`, memory, `--fov-deg`, the arm's policy server, `--controller vla`
+and a goal's stepper. A goal's confirm gate and the pilot's doubt are put to the person driving, at
+the keyboard or in the page, where the gate was answered no unless `--yes` was given, and a brake
+takes the question back.
+
+Places work on a Microduck by its own odometry, in its two simulators laid out in a room with
+`--room`, on MOSS and on a rosbridge base, and on a real Microduck by `mapd`, its onboard mapper,
+which no robotd release carries yet (UNVERIFIED). `mark_place`, `map` and `forget_place` name, list
+and drop places without moving, `go_to_place` walks back to one, and `quackd map` and `quackd
+places` read and mark them from a terminal. A place belongs to the frame it was marked in, and is
+never walked to from another. In a simulator given a room, `explore` walks the duck to the floor
+its map has not seen, and `find` does it while it looks for something with its camera, which the
+starters `find-the-ball` and `favourite-spot` show.
+
+Among the fixes, a stop sent while a composite runs keeps its next move from starting, the physics
+duck walks and turns again after it has stood still, and a confirm nobody answered is recorded as
+unanswered rather than as a no.
+
+None of it has moved a real robot. The page has not been tried from a phone, and a VLA session in
+`quackd drive` has flown only the LeRobot mock's scripted policy. What that leaves owed is under
+Known limitations.
+
 ### Added
 
 - **A Microduck says where it is by its own odometry.** robotd has sent contact odometry on
@@ -45,7 +83,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   only from a stop, after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the
   start and after a bump or a fall until two stops agree. `map` draws it, the place verbs mark
   places in it, and a recorded GIF of the cartoon shades the floor it has not seen. Without `--room`
-  each simulator is what it was, to the bit
+  each simulator lays out the walled arena it always has, and keeps no map
   ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
 - **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
   camera: round what its map has seen to be solid when it keeps a map and its size is known,
@@ -116,20 +154,19 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **`quackd ui`, a page in your browser for what `quackd run` and `quackd drive` do.** Setup
   chooses the robot, with the adapter's own word on connecting it and a check that drives it
   nowhere, and the pilot: an LLM with its key's status, a VLA policy for the arm, and a decision
-  LLM, with every other option of the two commands under the panels their `--help` shows. Goal
-  runs one goal or task file to its end, and Chat gives the robot a goal, then the next, with the
-  robot kept connected and every goal flown with what a goal takes, a VLA pilot and memory among
-  them. Runs, Robots, Memory and Policies are the run folders, the registry, each
-  robot's memory and the policy servers. Each goal and chat is the CLI's own command in a process
-  of its own, driven over `--front jsonl`, and Setup shows the command to type at a terminal for
-  the same run. The page listens on `127.0.0.1` unless `--bind` names another address, and asks
-  every visitor for its token, kept in the quackd home and printed with each address and a QR
-  code for a phone on the same Wi-Fi. The settings that decide who reaches the page are set by
-  `quackd ui` itself, over any config file or `.env` a project brings. A key typed into the page
-  stays in its memory and reaches a run through its environment alone.
-  Streamlit comes with the new `ui` extra, its usage statistics off, and `quackd doctor` checks
-  for it
-  ([ADR-0070](docs/adr/0070-the-page-is-reachable-by-its-own-user-alone.md)).
+  LLM, with the two commands' other options under the panels their `--help` shows, all but a few
+  that stay at the terminal. Goal runs one goal or task file to its end, and Chat gives the robot a
+  goal, then the next, with the robot kept connected and every goal flown with what a goal takes, a
+  VLA pilot and memory among them. Runs, Robots, Memory and Policies are the run folders, the
+  registry, each robot's memory and the policy servers. Each goal and chat is the CLI's own command
+  in a process of its own, driven over `--front jsonl`, and Setup shows the command to type at a
+  terminal for the same run. The page listens on `127.0.0.1` unless `--bind` names another address,
+  and asks every visitor for its token, kept in the quackd home and printed with each address, and
+  off loopback with a QR code for a phone on the same Wi-Fi. The settings that decide who reaches
+  the page are set by `quackd ui` itself, over any config file or `.env` a project brings. A key
+  typed into the page lives in the page's process alone and reaches a run through its environment.
+  Streamlit comes with the new `ui` extra, its usage statistics off, and `quackd doctor` checks for
+  it ([ADR-0070](docs/adr/0070-the-page-is-reachable-by-its-own-user-alone.md)).
 - **`quackd robot add` and `robot edit` take `--token-env` and `--host-token-env`**, the name of a
   variable holding the robot's or the board's token, so a program, the page among them, can save
   a robot without putting a token on a command line. No refusal quotes what was typed where the
@@ -165,8 +202,8 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   arm's learned policy, and only the person driving can say the arm did it. `--decision-mode` and
   `--decision-frames` give a goal a stepper, which asks the fast lane's own decision LLM, while
   `--decision-llm` alone is still the fast lane and nothing more: drive reads neither
-  `QUACKD_DECISION_MODE` nor `QUACKD_DECISION_FRAMES`, so a session started as before flies its
-  goals as before. Each is refused in run's words where run refuses it. A session's goals read
+  `QUACKD_DECISION_MODE` nor `QUACKD_DECISION_FRAMES`, so a goal gets a stepper only when the
+  session names one. Each is refused in run's words where run refuses it. A session's goals read
   its places, keeping what they mark only under `--memory`, hold `manipulate` to its `.duck`'s
   policy section, and spend its policy seconds, an hour of them for a session without a `.duck`
   ([docs/guides/drive.md](docs/guides/drive.md#a-goal-flies-as-a-run-does),
@@ -253,8 +290,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `quackd/webui/`, and `writing-an-adapter.md` says how an adapter declares `CONNECT`.
 - `docs/guides/drive.md` says what each of run's flags does in a session, how a goal's questions
   come to you and how a VLA pilot flies a line, and drops the two limits this release lifts.
-  `docs/guides/web-ui.md` no longer marks the model's settings *goal only*, and says a chat takes
-  a VLA pilot and keeps a memory as the one switch on Setup says.
+
+### Known limitations
+
+- **Nothing in this release has moved a real robot.** Places have run in the Microduck's two
+  simulators and against its mock, `explore` and `find` in `microduck:sim2d` alone, and MOSS's and
+  a rosbridge base's poses against stand-ins for their links. quackd's `mapd` client has met a
+  stand-in alone, since `mapd` is on an upstream branch and in no robotd release (UNVERIFIED). A
+  real duck is offered neither `explore` nor `find` until somebody cites its body radius and a
+  robotd release carries `mapd`, and whether `mapd` takes a keyframe when only the head turns is a
+  step of the hardware checklist.
+- **The page has not been tried from a phone.** Its phone steps, the QR code, a shortcut on the
+  home screen and a locked screen among them, are written from the code: at a phone's width the
+  page has been seen only in a headless browser, on loopback, and its QR code read back only by a
+  test. It is plain HTTP, so a key typed into it on a phone crosses the Wi-Fi unencrypted, and it
+  holds no lock on a robot across processes: a run started at a terminal beside one the page
+  started is not seen.
+- **A VLA session in `quackd drive` has flown only the LeRobot mock's scripted policy**, never
+  `lerobot:mujoco` or the arm, and PLAN.md lists the run that is owed.
+- **The page leaves some runs to the terminal:** `--by-hand` and the questions at the end of a run
+  about an arm, which wait for somebody at the arm, flocks, `--live`, and in a chat a GIF, a
+  picture or talk with robots nearby, which `quackd drive` does not take
+  ([docs/guides/web-ui.md](docs/guides/web-ui.md#what-the-page-does-not-do-yet)).
 
 ## [0.27.0] — 2026-10-26
 
@@ -8690,7 +8747,8 @@ First release: sim-first, honest about hardware.
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
 - Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
 
-[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/rokbenko/quackd/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/rokbenko/quackd/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/rokbenko/quackd/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/rokbenko/quackd/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/rokbenko/quackd/compare/v0.24.0...v0.25.0

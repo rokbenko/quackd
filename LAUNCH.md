@@ -54,12 +54,17 @@ the arm's policy server serves Physical Intelligence's pi0, X-VLA in its `auto` 
 NVIDIA's GR00T N1.7 whose action groups are joints, beside ACT, SmolVLA and pi05, that `quackd
 policy endpoint` starts it on a GPU Hugging Face rents by the hour, and that the README and
 `docs/models/` say which pilot LLMs, decision LLMs and VLAs quackd takes, though quackd has
-created no endpoint and run no trained pi0, X-VLA or GR00T yet. **0.27's is that `quackd drive`
+created no endpoint and run no trained pi0, X-VLA or GR00T yet. 0.27's was that `quackd drive`
 drives one robot a command at a time, a line that names a call running with no model asked and an
 empty Enter braking at once, that `quackd run` waits for less, its Claude requests marked for
 Anthropic's prompt cache and an Anthropic or OpenAI pilot's client warmed while the robot
 connects, and that a `stop` asked for beside a walk or a `go_to` ends it, though drive has driven
-no real robot and none of the seconds saved has been measured on a real model yet.**
+no real robot and none of the seconds saved has been measured on a real model yet. **0.28's is
+that `quackd ui` puts `quackd run` and `quackd drive` in a page in the browser, a phone's too,
+that a robot that says where it is names the spots it stood on and walks back to them, that a
+Microduck in its 2D simulator maps a room it has never seen and looks for the ball in it, and
+that a drive session's goals take run's flags for the pilot, the arm and memory and ask the
+person driving, though none of it has moved a real robot or been tried from a phone yet.**
 
 A patch has no story of its own, so it gets no sentence here ([RELEASING.md](RELEASING.md)).
 
