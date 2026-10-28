@@ -1,116 +1,116 @@
 # How it works
 
 > [!NOTE]
-> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
-> of it is built and what has run.
+> Spec 1.0. quackd 0.29.0 is its first implementation. The meeting below has run on the sim board,
+> as the demo's first act, and not on a Jetson or over a real Bluetooth radio
+> ([roadmap.md](roadmap.md)).
 
-Robot Passport is three layers, each optional on top of the one below:
+Robot Passport is three layers, each needed by the one above it:
 
 ```
-BEACON    "I'm here, and this is where my passport is"     a QR sticker, mDNS, MQTT, a ROS 2 topic
+BEACON    "a robot is here", by Bluetooth LE            a random 8-byte id, a new one every 15
+   │      close enough is judged by signal strength     minutes, and three flags: never a name
    │
-PASSPORT  who I am, who vouches for me, what I can and     one small JSON document, optionally signed,
-          cannot do, how to stop me, how to reach me       with stamps from its owner
+PASSPORT  who I am, whose I am, what I can and          one small JSON document, signed by its
+   │      cannot do, how a person stops me              owner's key
    │
-TALK      hello · say · bye · ask · answer · share         small signed messages, never obeyed blindly
+TALK      hello · say · bye · ask · answer · share      small signed messages over the LAN or a
+          once both robots have checked each other      Bluetooth link, never obeyed blindly
 ```
-
-**Reading needs nothing; asking needs a key.** Anybody can read a passport, and a robot with
-nothing but a sticker can have one. Proving who you are, and asking another robot for anything,
-takes a key and a signature.
 
 ## One meeting, step by step
 
-`duck-01` is a Microduck driven by quackd and owned by Example lab. `cart-01` is a wheeled cart
-from another maker, on ROS 2, owned by somebody else. They have never met, and they end up in the
-same hallway on the same network.
+`courier-01` is a humanoid that delivers parcels, with quackd on its Jetson, owned by a courier
+company. `home-01` is a humanoid that lives in a flat, with quackd on its Jetson, owned by the
+household. They have never met, and they end up at the same front door, where the household's
+Wi-Fi is not the courier's.
 
 ```
- duck-01 (quackd)                                                   cart-01 (another maker)
-     │                                                                  │
-     │  1  discover: an mDNS answer for _robot-passport._tcp            │  advertises its beacon
-     │ <──────────────────────────────────────────────────────────────  │
-     │                                                                  │
-     │  2  fetch: GET /.well-known/robot-passport.jws                   │
-     │ ──────────────────────────────────────────────────────────────>  │
-     │ <──────────────────────────────────────────────────────────────  │  its signed passport
-     │                                                                  │
-     │  3  verify the signature, check the stamps, pick a tier          │
-     │  4  show the pilot what it may see, and log the rest             │
-     │  5  a person may pin it, so next time it is known                │
-     │                                                                  │
-     │  6  hello (3 messages), then say, share, ask                     │
-     │ <─────────────────────────────────────────────────────────────>  │
-     │                                                                  │
-     │  7  bye, or ten minutes of silence                               │
+ courier-01                                                        home-01
+     │                                                                │
+     │  1  hear: an advert, a beacon id and the flag LINK             │  advertises
+     │ <────────────────────────────────────────────────────────────  │
+     │  2  near: its signal holds above the threshold for a second    │
+     │  3  dial: no shared LAN, so a Bluetooth link                   │
+     │ ═══════════════════════════════════════════════════════════>   │
+     │  4  hello, three messages: both passports, both keys checked   │
+     │ <═══════════════════════════════════════════════════════════>  │
+     │  5  tier: each a stranger to the other                         │
+     │  6  meeting: each brain shown the other's closed facts         │
+     │  7  far: the signal falls away, bye, the link closes           │
 ```
 
-1. **Discover.** `cart-01` advertises `_robot-passport._tcp` on the local network, with its short id
-   and its passport's digest in the TXT record ([discovery.md](discovery.md)). duck-01's quackd host
-   hears it. It could equally have read a QR sticker on the cart, or found it on a shared MQTT broker.
-2. **Fetch.** quackd fetches the passport from the host and port that advertised it, follows no
-   redirects and reads no more than 12 KB in 5 seconds ([fetch rules](discovery.md#fetch-rules)).
-3. **Verify and place.** It checks the signature against the key in the passport's `id`, counts any
-   stamps from keys it has pinned, and decides the cart's tier: a stranger, a known robot, one with
-   the same owner, or a member of its own flock ([trust.md](trust.md#the-four-tiers)).
-4. **Show.** duck-01's pilot sees the cart in its next observation, under robots nearby. For a
-   stranger that is only what has a closed vocabulary: a wheeled cart, no manipulator, how fast it
-   goes, what it can do. Its free text goes to the log, for a person ([security.md](security.md#prompt-injection)).
-5. **Remember.** If a person decides the cart can be trusted, they pin its key, and the next meeting
-   starts at "known".
-6. **Talk.** Either robot can start a `hello`. After three messages each knows the other holds its
-   key right now, and the session is open: `say`, `share`, and an `ask` for a courtesy such as
-   "pause for five seconds while I pass" ([talk.md](talk.md)). Whether the cart pauses is the cart
-   owner's policy, never duck-01's.
-7. **Part.** `bye` ends the session, or ten minutes of silence does.
+1. **Hear.** `home-01` advertises a beacon: a random id that changes every 15 minutes and three
+   flags, and nothing that says which robot it is ([discovery.md](discovery.md)). `courier-01` hears
+   it, with its signal strength.
+2. **Near.** The median signal over the last 3 seconds holds above the threshold `meet_within_m`
+   makes, -65.6 dBm for 2 m, for a second. Near is a hint, not proof: a relay can make a far robot
+   read as near ([discovery.md](discovery.md#near-is-a-hint-not-proof)).
+3. **Dial.** The lower beacon id dials, and here that is `courier-01`. No LAN record carries
+   `home-01`'s beacon id, so it opens a Bluetooth link instead.
+4. **Check both.** Three `hello` messages. Each carries its robot's passport, signed by its owner,
+   and each signs a nonce the other made up a moment before. Each robot reads the other's passport:
+   the owner's signature, its validity, and that it names the robot key that signed the `hello`.
+   Either robot that fails any of it is refused, and nothing it said goes further
+   ([talk.md](talk.md#hello-proving-who-you-are-in-three-steps)).
+5. **Place.** Neither robot pinned the other, or its owner, so each is a stranger to the other
+   ([trust.md](trust.md#the-tiers)).
+6. **Meet.** Both robots are idle, and both owners let their robots meet strangers, so each brain
+   holds a short meeting. It is shown the other robot's closed facts, a legged humanoid, its mass and
+   height, what it can do, under a name made from its key. What the other says goes to the log, for
+   a person, and never to the brain ([security.md](security.md#prompt-injection)).
+7. **Part.** The courier walks off. Once the signal holds 6 dB below the threshold for 5 seconds,
+   `courier-01` says `bye` and closes the link.
 
-Steps 1 to 5 are the whole of version 0.1's first two layers, and they are already a complete
-exchange: each robot that reads the other's passport has learned its name, its body, its owner and
-how to stop it. Step 6 is for robots that want more.
+If the household had pinned the courier company's owner key, step 5 would say **known**, and step 6
+would carry what each said: the two brains could agree where the parcel goes. On one Wi-Fi, step 3
+would go over the LAN instead, and nothing else would change.
 
 ## What each side learns, and when
 
-| After | duck-01 knows | It does not yet know |
+| After | `courier-01` knows | It does not yet know |
 |---|---|---|
-| discovery | something at that address claims a short id and a digest | anything about it, or whether the claim is true |
-| the fetch | what the passport says | whether anybody vouches for it |
-| verification | key K wrote this passport, and whether a key it pinned stamped K | whether the robot at that address holds K right now |
-| `hello` | the robot it is talking to holds K right now | which physical body in the hallway that is |
-| `identify` | which body it is: the one that just beeped | anything the passport did not say |
+| the advert | something nearby is a robot, with this beacon id | which robot, whose, or how far it really is |
+| near | its signal is strong enough | whether a relay is making it so |
+| the `hello` | `home-01`'s passport, signed by the household's owner key, and that the robot on the link holds `home-01`'s robot key now | which body at the door that is |
+| the tier | how much of what `home-01` says its brain may hear | anything a person has not decided |
+| an `identify` | which body it is: the one that just blinked | anything the passport did not say |
 
 ## What a person sees
 
-- **Scanning a sticker**, today: the passport's JSON in the phone's browser. A page that renders any
-  passport for a person is on the [roadmap](roadmap.md).
-- **On a quackd host**: `quackd meet` shows a passport the way a reader sees it, every claim labelled
-  with where it came from, and asks before it pins anything ([quackd.md](quackd.md)).
-- **In a run's log**: each robot met, each message that passed, and every `ask` with what the
-  handler decided, the same way the log already shows everything else a run did.
+- **On the robot**, over ssh or at its own screen: `quackd onboard status` shows the robots near
+  now, with their tier and signal, and the last meetings, and `quackd onboard met` the robots met
+  and the ones refused, and why ([quackd.md](quackd.md#status-preflight-and-show)).
+- **In a meeting's record**, kept with the robot's runs: each robot met, each word that passed and
+  each `ask`, with what the handler decided, the stranger's own words included, for a person.
+- **In the service's journal**: every refusal, with the rule it broke.
 
 ## The life of a passport
 
 | Moment | What happens |
 |---|---|
-| created | quackd builds it from the robot's manifest, or somebody writes the JSON by hand |
-| signed | the robot's key signs its exact bytes, and the result is a `.jws` |
-| stamped | the owner's key adds a stamp: "this key is my robot", for a year at most |
-| published | it is served at the well-known URL, printed on a sticker, put on a broker or a topic |
-| updated | the robot changes: a new passport, a new digest, readers refetch it; the stamp still holds |
-| expired | a reader's cached copy ages out after `ttl_s`; a stamp ages out at its `exp` |
-| handed on | the robot changes owners: a new key, the new owner's stamp, the old stamp left to expire |
-| retired | it stops advertising and its passport comes down; pins of it stay until a person removes them |
+| written | the wizard writes the passport section of `robot.yaml` from your answers |
+| signed | your owner key signs it, with your passphrase, valid for 365 days unless `--days` says otherwise |
+| served | the service carries it in every `hello`, and serves it at the well-known URL on a LAN |
+| edited | the passport section changes: `quackd onboard status` names the change, and the old passport is served until `quackd onboard sign` signs the new one |
+| beacon rotated | every 15 minutes the beacon gets a new id, and the passport stays what it is |
+| renewed | within 30 days of `expires`, `quackd onboard sign` signs it again |
+| expired | every robot refuses it, and the robot itself stops talking until it is signed again |
+| handed on | a new owner sets the robot up from the start: a new robot key, their own owner's signature |
+| retired | `quackd onboard uninstall` stops the service, and nothing advertises; pins of it stay until a person removes them |
 
 ## When something goes wrong
 
-| What fails | What a reader does |
+| What fails | What happens |
 |---|---|
-| the fetch times out or the host refuses | nothing: no passport, no meeting, and it tries again on the next beacon |
-| the signature does not verify | refuses the passport, and logs that somebody served a bad one |
-| the version's MAJOR is unknown | refuses it, and says which version it saw |
-| a required extension it does not understand | shows the passport, and talks to nobody on its strength |
-| a garbled `safety` value | reads the worst case, and still shows the passport |
-| the robot's clock is wrong | nothing: freshness comes from nonces, caches count from the reader's own clock |
-| the key changed since it was pinned | trusts nothing automatically, and asks a person, the way SSH does |
-| an `ask` gets no `answer` within five seconds | treats it as refused |
-| the network drops in the middle of a `hello` | the session never opens, and the next attempt starts over |
-| two robots share a name | nothing: names are for people, and keys are what tell robots apart |
+| no Bluetooth adapter, or BlueZ is down | nothing is heard and nothing advertised, the LAN half keeps serving, and `status` says why |
+| a passport's signature fails, or its robot signed it | the `hello` is refused under 4.4, written to `met.jsonl` and the journal, and that robot is not tried again for an hour |
+| a passport has expired, or is not valid yet | refused under 4.5; a robot whose own clock reads earlier than its own passport's `issued` stops talking, and `status` says to set the time |
+| a version whose major it does not know, a 0.1 robot's for one | refused, and answered with the versions this robot reads |
+| a required extension it does not understand | shown to a person, and never talked to |
+| a garbled `safety` value | read as the worst case, and the passport still shown |
+| a pinned robot shows up with a new key | it is a stranger again until a person pins the new key, and a name that reads like a pinned one is warned about |
+| a `hello` over the LAN from a robot the radio never heard | `403`, "this robot has not heard you by radio" |
+| the link drops in the middle of a `hello` | the session never opens, and the next time the robot is near starts over |
+| an `ask` gets no `answer` within five seconds | it was not granted |
+| two robots share a name | nothing: names are for people, and keys tell robots apart |
