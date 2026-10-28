@@ -68,7 +68,10 @@ def test_the_vectors_are_what_the_script_writes() -> None:
 def test_every_vector_file_has_an_expected_result_here() -> None:
     covered = set(PASSPORTS) | set(STAMPS) | {"index.json", "keys.json", "README.md"}
     talk = {p.name for p in VECTORS.iterdir() if p.name.startswith(("hello", "say", "ask"))}
-    assert {p.name for p in VECTORS.iterdir()} == covered | talk
+    # the Bluetooth advert and link frames, whose expected results tests/test_passport_ble.py
+    # and tests/test_passport_link_frames.py hold
+    ble = {p.name for p in VECTORS.iterdir() if p.name.startswith("ble-")}
+    assert {p.name for p in VECTORS.iterdir()} == covered | talk | ble
 
 
 @pytest.mark.parametrize("name", sorted(PASSPORTS))
