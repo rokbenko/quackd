@@ -1,0 +1,80 @@
+{
+  "warning": "TEST VALUES. A real beacon id is random and a real tag is drawn per link.",
+  "uuids": {
+    "ble-service": "b68a53ea-46e1-50d4-81a3-039a0500a15d",
+    "ble-rx": "ba6288b5-e97c-51d2-a7b4-9cd04f5ad64c",
+    "ble-tx": "f5d0526f-21e9-599f-8454-cda57ec39c1b"
+  },
+  "advert": {
+    "file": "ble-advert.hex",
+    "beacon_id": "08090a0b0c0d0e0f",
+    "flags": [
+      "LAN",
+      "LINK"
+    ]
+  },
+  "tag": 1592590337,
+  "frames": [
+    {
+      "name": "open",
+      "kind": "OPEN",
+      "beacon_id": "0001020304050607",
+      "datagram_size": 182,
+      "max_message": 16384,
+      "hex": "115eed0001000102030405060700b600004000"
+    },
+    {
+      "name": "accept",
+      "kind": "ACCEPT",
+      "beacon_id": "08090a0b0c0d0e0f",
+      "datagram_size": 182,
+      "max_message": 16384,
+      "hex": "125eed000108090a0b0c0d0e0f00b600004000"
+    },
+    {
+      "name": "refuse-busy",
+      "kind": "REFUSE",
+      "reason": 1,
+      "hex": "135eed000101"
+    },
+    {
+      "name": "data-response-204",
+      "kind": "DATA",
+      "msg_id": 1,
+      "seq": 0,
+      "role": 1,
+      "status": 204,
+      "media": 0,
+      "total": 0,
+      "chunk_hex": "",
+      "hex": "145eed0001000100000100cc0000000000"
+    },
+    {
+      "name": "abort-out-of-order",
+      "kind": "ABORT",
+      "msg_id": 32770,
+      "reason": 2,
+      "hex": "155eed0001800202"
+    },
+    {
+      "name": "close-far",
+      "kind": "CLOSE",
+      "reason": 1,
+      "hex": "165eed000101"
+    }
+  ],
+  "message": {
+    "datagram_size": 20,
+    "msg_id": 1,
+    "role": 0,
+    "status": 0,
+    "media": 1,
+    "body": "a hello, split into frames",
+    "datagrams": [
+      "145eed000100010000000000010000001a612068",
+      "145eed000100010001656c6c6f2c2073706c6974",
+      "145eed00010001000220696e746f206672616d65",
+      "145eed00010001000373"
+    ]
+  }
+}

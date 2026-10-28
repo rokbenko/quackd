@@ -178,6 +178,41 @@ jobs:
           grep -q "quackd ui: http://127.0.0.1:8599" ui.log || { sed -E 's/token=[^ &]+/token=(hidden)/g' ui.log; exit 1; }
           kill "$page"
 
+  onboard:
+    name: onboard · py${{ matrix.python }} · bleak and dbus-fast
+    runs-on: ubuntu-latest
+    # `quackd onboard` runs on a robot's own computer, and its Bluetooth half is BlueZ over D-Bus,
+    # so bleak and dbus-fast install on Linux only and only with the onboard extra. Everything of
+    # the radio that is plain Python (the advert, the link frames, proximity, rotation, the sim
+    # air) runs in `test`, on all six cells, without them. What this job adds is the two packages
+    # themselves: mypy against their own types, and the radio's tests with them installed, on a
+    # private bus that dbus-run-session starts and stops.
+    #
+    # A matrix of two, as `test` is on Linux, because dbus-fast has a wheel per Python and a
+    # Jetson's JetPack 6 runs 3.10 or a uv-managed 3.12, and 3.11 is the floor quackd keeps.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - name: A D-Bus daemon, for the private bus the tests run on
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync (dev + the onboard extra, which on Linux brings bleak and dbus-fast)
+        run: uv sync --python ${{ matrix.python }} --extra dev --extra onboard
+      - name: Prove the imports before blaming the radio
+        run: uv run python -c "import bleak, dbus_fast, zeroconf; print('bleak and dbus-fast import')"
+      - name: Types, with bleak's and dbus-fast's own present
+        run: uv run mypy
+      - name: The radio, with the extra installed
+        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py
+
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which
   # the server has to build without, and both processors saved, put in a Hub cache of its own

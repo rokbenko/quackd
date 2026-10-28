@@ -35,6 +35,11 @@ HEAVY = (
     # The page `quackd ui` serves: the CLI, and every plain module the page is built on, import
     # without it, and only `quackd ui` itself asks for it, naming the extra.
     "streamlit",
+    # The Bluetooth half of `quackd onboard`, Linux only, from the onboard extra: the radio's
+    # seam, its sim and its pure parts import without them, and asking for the real radio
+    # names the extra, or the platform, before anything that needs them is imported.
+    "bleak",
+    "dbus_fast",
 )
 
 SCRIPT = f"""
@@ -191,6 +196,26 @@ else:
 quackd_lerobot.sim.faults.FaultPlan.parse(quackd_lerobot.sim.faults.EXAMPLE, seed=0)
 capped = quackd_lerobot.sim.follower.ensure_safe_goal_position({{"a": (9.0, 0.0)}}, 1.0)
 assert capped == {{"a": 1.0}}, capped
+# the radio: with no onboard extra, asking for Bluetooth says which extra, or which platform it
+# would take, and the module that talks to BlueZ is never imported to find that out. The sim air,
+# the links, proximity, meeting and the loop they run on are plain Python and import without it.
+import quackd.radio
+import quackd.radio.fake
+import quackd.radio.links
+import quackd.radio.loop
+import quackd.radio.meet
+import quackd.radio.proximity
+import quackd.radio.rotation
+import quackd.radio.sim
+import quackd.radio.transport
+try:
+    quackd.radio.open_radio("bluez")
+except quackd.radio.RadioUnavailable as e:
+    assert e.state in ("not-installed", "unsupported"), e.state
+    assert "quackd[onboard]" in (e.hint or "") or "Linux" in str(e), (str(e), e.hint)
+else:
+    raise AssertionError("a BlueZ radio was built with neither bleak nor dbus-fast")
+assert "quackd.radio.bluez.radio" not in sys.modules
 for name in {HEAVY!r}:
     assert sys.modules.get(name) is None, name
 print("OK")
