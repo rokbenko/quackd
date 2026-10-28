@@ -1,41 +1,41 @@
 # Privacy: what a robot reveals, and to whom
 
 > [!NOTE]
-> Spec draft 0.1. quackd 0.23.0 is its first implementation, and [roadmap.md](roadmap.md) says what
-> of it is built and what has run.
+> Spec 1.0. quackd 0.29.0 is its first implementation. The beacon id is designed to rotate and the
+> wizard offers BlueZ address privacy, and neither has been tested on a real radio
+> ([roadmap.md](roadmap.md)).
 
-A passport is public by design: its job is to tell strangers about a robot. That makes it worth
-being careful about what it tells them, because a robot usually belongs to a person, sits in their
-home or their workplace, and goes where they go. This page says what each layer reveals, what to
-leave out, and how to take part while revealing as little as possible.
+A robot that carries a passport announces itself by radio, which reaches through walls and needs
+nobody to see it. That makes it worth being careful about what it announces, because a robot usually
+belongs to a person, works in their home or their workplace, and goes where they go. This page says
+what each layer reveals, what to leave out, and how to take part while revealing as little as
+possible.
 
 ## What each layer reveals
 
 | Layer | Who can see it | What they learn |
 |---|---|---|
-| a QR sticker | anybody who can see the robot | where its passport is, and its short id |
-| a DNS-SD beacon | anybody on the same local network | that a robot is here, its short id, its passport's digest |
-| an MQTT beacon | anybody on the same broker | the same, and when it comes and goes |
-| a ROS 2 beacon | anybody on the same ROS graph | its passport |
-| the passport | anybody who can fetch it | whatever its owner chose to put in it |
-| talk | the robot it talks to, and anybody who can read the channel | what it says |
-| quackd's own records | whoever can read the files on that host | the robots it met, when, and what they said |
+| the Bluetooth advert | anybody within radio range, unseen | that a robot speaking Robot Passport is here, a beacon id that changes every 15 minutes, and how to reach it. Never a name, an owner or a key |
+| the radio's own address | the same | an address that stays the same unless address privacy is on in BlueZ |
+| the LAN record | anybody on the same LAN | the robot key's short id, which never changes, beside the current beacon id |
+| the passport | anybody near enough to say hello, with any passport at all, and anybody on its LAN | whatever its owner put in it, and the owner key that signed it |
+| talk | the robot it talks to, and anybody who can read the LAN or listen to the link | what it says |
+| the robot's brain | the provider of the model `brain:` names | what the brain is shown of the robots it meets |
+| quackd's own records | whoever can read the robot's folder | the robots it met, when, and what they said |
 
-A beacon never carries an owner, a name of a person, or a place. What a passport carries beyond its
-three required members is the owner's choice, member by member.
+A beacon never carries an owner, a name of a person, or a place. What the passport carries beyond
+what the wizard requires is the owner's choice, member by member.
 
 ## What to put in `owner`
 
-Something that reaches whoever looks after the robot, without saying who they are or where they
-live:
+`owner.id` is the owner key, which says nothing about who you are. The `label` and `contact` beside
+it should reach whoever looks after the robot without saying who they are or where they live:
 
-- **Good:** `{"label": "Example lab", "contact": "https://example.org/robots/duck-01"}`. A page can
-  say whatever its owner wants and change without the passport changing.
+- **Good:** `{"label": "Example lab", "contact": "https://example.org/robots"}`. A page can say
+  whatever its owner wants and change without the passport changing.
 - **Good:** a role address, `robots@example.org`, or a form.
-- **Not:** a home address, a personal phone number, a person's full name, unless that person
-  really wants strangers to have them.
-- **Also fine:** nothing at all. `owner` is optional, and a robot without one is still read. A
-  flock may still require one before it will talk to a guest.
+- **Not:** a home address, a personal phone number, a person's full name, unless that person really
+  wants strangers to have them.
 
 The point of `owner` is the point of a name tag on a dog's collar: a lost robot gets home, and a
 robot doing something wrong has somebody to tell. A contact page does both without giving a
@@ -49,55 +49,57 @@ it out.
 
 ## Tracking
 
-Anything stable that a robot announces can be used to follow it. A passport is fetched, so it is
-seen only by those who ask for it. A beacon is different: it is announced, repeatedly, to whoever
-is listening.
+Anything stable that a robot broadcasts can be used to follow it, and a radio broadcast reaches
+anybody in range, in the street and through walls. So:
 
-- **On a local network** a beacon reaches the people already on that network, the same people who
-  could see the robot's network traffic anyway.
-- **On a sticker** it reaches anybody who can see the robot, who could also simply look at it.
-- **By radio** it would reach anybody within range, in the street, through walls, without being
-  seen. That is why 0.1 has no Bluetooth binding ([discovery.md](discovery.md#bluetooth-le-later)).
-  A short id that never changes, sent a few times a second, would let anybody with a phone follow a
-  robot, and the person it belongs to. Bluetooth solved this for itself with addresses that rotate,
-  and a passport beacon over radio waits until its ids can rotate too.
-
-The `id` itself never changes, by design: it is what lets two robots recognise each other again. A
-robot that should not be recognised again by strangers should not advertise at all
-([below](#taking-part-without-being-discoverable)).
+- **The beacon id changes every 15 minutes**, and never in the middle of a meeting. It is 8 random
+  bytes tied to no key, so a listener cannot tell from the id alone that the robot it hears now is
+  the one it heard an hour ago ([discovery.md](discovery.md#the-beacon-id-changes-every-15-minutes)).
+  Fifteen minutes is still long enough to follow a robot down a street: rotation limits tracking
+  across hours, not minutes.
+- **The radio has an address of its own**, and every advert carries it, beneath the beacon. While
+  that address stays the same, rotating the beacon id alone does not stop tracking. BlueZ can rotate
+  the address too, with `Privacy = device` in `/etc/bluetooth/main.conf`, and the wizard offers to
+  set it: it asks first, backs the file up and restarts bluetoothd. Whether the adapter then really
+  changes its address cannot be seen without root, and nobody has watched one do it on a Jetson.
+  `quackd onboard status` says plainly when the address is still public.
+- **On a LAN**, the DNS-SD record puts the robot's short id, which never changes, beside its current
+  beacon id, so anybody on that LAN can tie each new beacon id to the same robot. They are the same
+  people who could see the robot's network traffic anyway.
+- **The passport itself is stable by design.** Its `id` is what lets two robots recognise each other
+  again, and every passport an owner signs names the same owner key, so anybody who reads two of
+  your robots' passports knows they are both yours.
 
 ## What quackd keeps about robots it meets
 
-On the host it runs on, and nowhere else:
+On the robot, in its folder, and nowhere else:
 
-- **Pins**, in `~/.quackd/known_robots.json`: the robots and owners a person chose to trust, with
-  the key, the name the robot gave, and when the pin was made. A pin stays until a person removes
-  it ([quackd.md](quackd.md)).
-- **Run records**: when a run meets a robot, its transcript and log say so, with the messages that
-  passed, the same way a run already records everything else it saw and did
-  ([concepts/architecture.md](../concepts/architecture.md)). They stay as long as the run directory
-  does.
-- **Nothing is sent anywhere.** quackd fetches a passport and talks to a robot only when it was
-  pointed at it, and it reports nothing about the robots it meets to anybody.
+- **Pins**, in `robot.yaml` under `trust.pins`: the robots and owners a person chose to trust, with
+  the key, the name it was met under, and when. A pin stays until a person removes it.
+- **The robots met and refused**, in `met.jsonl`, with why each refusal happened.
+- **Run records**, in `runs/`, the newest 200: each meeting and goal, with what was said, a
+  stranger's words included, because the record is for a person.
+
+Nothing is sent anywhere else, with one exception you choose: whatever the brain is shown goes to
+the model `brain:` names. With a cloud model, its provider sees the facts of the robots met and what
+known robots said. A model server you run yourself keeps all of it on your own network.
 
 quackd never sends a camera frame over talk. A `share` carries a sentence about what a robot saw,
 never the picture.
 
 ## Taking part without being discoverable
 
-Every layer is optional, so a robot can reveal exactly as much as its owner wants:
-
 | You want | Do this |
 |---|---|
-| people who can see the robot to know whose it is | a QR sticker pointing at a passport on a web page, and nothing else |
-| robots that meet it to know what it is, without announcing it | serve the passport but advertise no beacon, and give its URL to whoever should have it |
-| no owner on record | leave `owner` out |
-| as little as possible | the three required members: a version, an `id` and a name |
-| nothing at all | don't publish a passport: nothing in quackd announces a robot unless it is told to |
+| robots near it to meet it, and nobody to follow it far | the rotating beacon id, which is the default, and address privacy, which the wizard offers |
+| it to meet only the robots it hears | `radio.advertise: false` in `robot.yaml`: it dials the robots it hears and advertises nothing over the radio |
+| no person's name on record | an owner label for a role, a lab or a household, and a contact page rather than an address |
+| as little as possible in its passport | only what the wizard asks for: what other robots must know to stay safe around it |
+| nothing at all | `quackd onboard uninstall`: the service stops, and nothing advertises |
 
 ## A note on the law
 
-In many places an owner's name or a personal contact is personal data, and a robot that publishes
-it on a sticker or a network is publishing personal data. Nothing in this protocol requires any,
-which is the main thing a protocol can do about it. This page is not legal advice, and an
-organisation deploying robots in public spaces should ask somebody whose job that is.
+In many places an owner's name or a personal contact is personal data, and a robot that broadcasts
+it is publishing personal data. Nothing in this protocol requires any, which is the main thing a
+protocol can do about it. This page is not legal advice, and an organisation deploying robots in
+public spaces should ask somebody whose job that is.
