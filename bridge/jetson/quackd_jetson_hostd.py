@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """quackd's daemon for an NVIDIA Jetson: the board's camera, its GPU and its health, over HTTP.
 
-quackd never runs on the board. It runs on the laptop, `--host` names the Jetson, and this is
-what answers there. It gives quackd three things a model server cannot: a frame from a camera
+The quackd that reaches this runs on a laptop, where `--host` names the Jetson, and this is
+what answers there; the one command that runs on a board itself, `quackd onboard`, needs none
+of it. It gives quackd three things a model server cannot: a frame from a camera
 on the board, detections computed on the board's GPU, and the board's own facts (its model,
 its L4T release, its memory and swap, its power mode, one `tegrastats` line). The fourth thing
 the board offers, the language model on its GPU, is your own model server (Ollama and the

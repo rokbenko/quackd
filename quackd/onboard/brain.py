@@ -74,9 +74,15 @@ class RunSlot:
         safe_verbs: Callable[[], list[str]],
         log: Callable[[str], None] = lambda _line: None,
         clock: Callable[[], float] = time.monotonic,
+        holding: Callable[[Any], None] | None = None,
+        released: Callable[[], None] | None = None,
     ) -> None:
         self.file = file
         self._make_loop = make_loop
+        #: told on the run's own loop that a run holds the body, with its agent, and that it let
+        #: go: a peer's courtesy goes through that run's executor and no other
+        self._holding = holding
+        self._released = released
         self._safe_verbs = safe_verbs
         self._log = log
         self._clock = clock
@@ -142,7 +148,7 @@ class RunSlot:
             ):
                 self._stop(running, EVERYONE_LEFT)
 
-    def goal(self, text: str, front: Any = None) -> str | None:
+    def goal(self, text: str, front: Any = None, *, max_steps: int | None = None) -> str | None:
         """Start a goal, taking the slot from a meeting. None when it started; otherwise why not."""
         with self._lock:
             running = self.running
@@ -155,6 +161,12 @@ class RunSlot:
             duck = duck_from_goal(
                 f"{text.strip()}\n\n{NEARBY_LINE}", self._safe_verbs(), memory=True
             )
+            if max_steps is not None:
+                front_matter = duck.frontmatter
+                budgets = front_matter.budgets.model_copy(update={"max_steps": max_steps})
+                duck = duck.model_copy(
+                    update={"frontmatter": front_matter.model_copy(update={"budgets": budgets})}
+                )
             if not self._start("goal", duck, front, set()):
                 return "the goal did not start"
             return None
@@ -228,8 +240,7 @@ class RunSlot:
         outcome = getattr(result, "outcome", None) or running.error or "ended"
         self._log(f"the {running.kind} ended: {outcome}")
 
-    @staticmethod
-    async def _go(running: Running) -> Any:
+    async def _go(self, running: Running) -> Any:
         """The run, on its own loop, with the terminal that gave it bound to that loop."""
         front = running.front
         if front is not None:
@@ -237,9 +248,14 @@ class RunSlot:
             front.bind(running.agent, asyncio.get_running_loop())
         if running.stop_wanted is not None:
             _set_abort(running.agent, running.stop_wanted)
+        if self._holding is not None:
+            self._holding(running.agent)
         try:
             return await running.agent.run()
         finally:
+            if self._released is not None:
+                with contextlib.suppress(Exception):
+                    self._released()
             if front is not None:
                 front.unbind()
 

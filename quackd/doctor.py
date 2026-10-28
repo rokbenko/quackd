@@ -412,7 +412,7 @@ class PinRow:
 class JetsonReport:
     """What an NVIDIA Jetson says about itself, for whoever is putting a model on it.
 
-    Read over the network: quackd never runs on the board, and the daemon it ships for it
+    Read over the network from the laptop `--host` runs on, and the daemon it ships for it
     (`bridge/jetson/quackd_jetson_hostd.py`) sends the board's own files and command output as
     raw text for `_jetson_from_dump` to parse here. Informational, and never part of `ok`: the
     GPU belongs to the model server and the daemon's detector, and a board with no swap is a

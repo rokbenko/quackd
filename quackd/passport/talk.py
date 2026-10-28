@@ -53,7 +53,7 @@ _VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 _NONCE = re.compile(r"^[A-Za-z0-9_-]{22,64}$")
 _SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-#: The beacon id a robot's radio advertises now: eight random bytes, which rotate (spec 5.3).
+#: The beacon id a robot's radio advertises now: eight random bytes, which rotate (spec 5.6).
 _BEACON = re.compile(r"^[0-9a-f]{16}$")
 #: The runtime members a hello may carry beside its passport, which change without the owner
 #: signing anything: the software that wrote it, its beacon id and how to reach it (6.3).

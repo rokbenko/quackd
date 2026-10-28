@@ -375,3 +375,18 @@ def test_the_view_shows_the_members_a_reader_knows_and_none_it_ignored() -> None
     assert view["board"] == {"kind": "jetson"}
     assert view["owner_short_id"] == OWNER.short_id
     assert (view["issued"], view["expires"]) == (ISSUED, EXPIRES)
+
+
+def test_a_did_too_long_to_be_an_ed25519_key_is_refused_before_it_is_decoded() -> None:
+    """Decoding base58 costs the square of the length, so a kid of 16 KB in a hello would cost a
+    robot real time; one longer than any Ed25519 did:key is refused unread, in no time."""
+    import time
+
+    from quackd.passport.keys import MAX_DID
+
+    assert len(KEY.did) <= MAX_DID
+    started = time.perf_counter()
+    with pytest.raises(PassportError) as refused:
+        public_from_did("did:key:z" + "6" * 100_000)
+    assert refused.value.rule == "rule 7" and "too long" in str(refused.value)
+    assert time.perf_counter() - started < 0.5

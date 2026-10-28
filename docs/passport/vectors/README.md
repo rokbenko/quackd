@@ -80,3 +80,13 @@ session's nonces are `vfXlXvct7qw_iSDdWldDYg` and `MZtCrMC_w7RjeuBQcEBeaw`.
 | [ask-pause.jws](ask-pause.jws) | valid | `robot-a` asks `robot-b` to pause for five seconds; whether it does is `robot-b`'s policy |
 | [hello-foreign-passport.jws](hello-foreign-passport.jws) | valid message, refused as a hello | `robot-a` signed it, and it carries `robot-b`'s passport (section 6.3) |
 | [unsigned-say.json](unsigned-say.json) | refused | every message is signed by its sender's robot key (section 6.1) |
+
+## Bluetooth LE
+
+The radio's half of section 5.6, written by the same script: the advert's bytes, and the frames
+a link carries a hello in, each with the bytes a reader must produce and accept.
+
+| File | What it holds |
+|---|---|
+| [ble-advert.hex](ble-advert.hex) | the 31 bytes of a legacy advert: flags, the service UUID and its ten bytes of service data, a beacon id with the `LAN` and `LINK` flags |
+| [ble-link.json](ble-link.json) | the three UUIDs, the advert's fields, and every link frame (`OPEN`, `ACCEPT`, `REFUSE`, `DATA`, `ABORT`, `CLOSE`) with its tag and bytes |

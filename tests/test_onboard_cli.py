@@ -175,7 +175,7 @@ def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(
     found = json.loads(checked.output)
     states = {row["check"]: row["state"] for row in found["checks"]}
     assert found["ok"] is True
-    assert states["board"] == states["radio"] == states["passport"] == states["brain"] == "ok"
+    assert states["board"] == states["sim air"] == states["passport"] == states["brain"] == "ok"
     assert states["service"] == "warn"
     assert sorted(p.name for p in home.iterdir()) == before
     empty = runner.invoke(

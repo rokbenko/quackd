@@ -1,7 +1,8 @@
 """The daemon quackd ships for a Jetson, exercised with no Jetson, no camera and no GPU.
 
-quackd never runs on the board; this daemon is what `--host` reaches there. Every test loads it
-by path, the way the board runs it, and drives the real server in-process on port 0. None of
+The quackd that drives a robot from a laptop reaches the board through this daemon, with
+`--host`. Every test loads it by path, the way the board runs it, and drives the real server
+in-process on port 0. None of
 them starts it as a subprocess, because subprocess-and-sleep tests flake on this project's
 Windows machine. The one process started here is a stand-in for `tegrastats`, because killing a
 command that streams forever is exactly the thing under test.

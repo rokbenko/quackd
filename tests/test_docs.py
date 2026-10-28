@@ -2324,7 +2324,7 @@ def test_the_jetpack_table_matches_the_one_doctor_reads() -> None:
     rows = dict(re.findall(r"^\| `r(\d[\w.]*)` \| ([\w.]+) \|", page, flags=re.M))
     assert rows, "no L4T table found in docs/guides/jetson.md, or its shape changed"
     assert rows == doctor._JETPACK_FOR_L4T, (
-        "docs/guides/jetson.md and quackd/doctor.py disagree about which JetPack an L4T "
+        "docs/guides/jetson.md and quackd/boards/l4t.py disagree about which JetPack an L4T "
         "release is:\n"
         f"  page:   {sorted(rows.items())}\n"
         f"  doctor: {sorted(doctor._JETPACK_FOR_L4T.items())}"

@@ -34,6 +34,7 @@ from quackd.radio.loop import LoopThread
 from quackd.radio.meet import Meeter, MeetEvent, MeetPolicy, Planner
 from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
 from quackd.radio.rotation import ROTATE_S, BeaconRotor
+from quackd.radio.statusview import Rate, radio_snapshot
 from quackd.radio.transport import Transports, http_post
 
 #: A hello over the network is answered only from a robot whose advert the radio heard this
@@ -92,6 +93,14 @@ class DnsSdLan:
     def lookup(self, beacon_id: str) -> LanRecord | None:
         return self.browser.lookup(beacon_id) if self.browser is not None else None
 
+    def close(self) -> None:
+        """The record withdrawn and the browse stopped, at the service's end."""
+        self.withdraw()
+        close = getattr(self.browser, "close", None)
+        if close is not None:
+            with contextlib.suppress(Exception):
+                close()
+
 
 class RadioSide:
     """One robot's radio, its LAN record and its meetings. `start` once the Talker exists, `tick`
@@ -109,6 +118,7 @@ class RadioSide:
         rotate_s: float = ROTATE_S,
         log: Callable[[str], None] = lambda _line: None,
         clock: Callable[[], float] = time.monotonic,
+        advertising: bool = True,
     ) -> None:
         self.radio = radio
         self.lan = lan
@@ -129,7 +139,9 @@ class RadioSide:
             period_s=rotate_s, busy=self._busy, on_rotate=self._rotated, clock=clock
         )
         self.tracker = Tracker(policy or ProximityPolicy(), me=self.rotor.current)
-        self.planner = Planner(lambda: self.rotor.current, meet_policy or MeetPolicy())
+        self.planner = Planner(
+            lambda: self.rotor.current, meet_policy or MeetPolicy(), advertising=advertising
+        )
         self.links = LinkTable(on_change=self._link_changed)
         self.transports = Transports(http=http_post, link=LinkTransport(self.links, self.loop))
         self.talker: Talker | None = None
@@ -138,6 +150,9 @@ class RadioSide:
         self._port = 0
         self._on_lan = False
         self._accepting: set[asyncio.Task[Any]] = set()
+        #: adverts heard so far, and the rate status shows of them
+        self._sightings = 0
+        self._rate = Rate()
 
     # ── what the Talker takes ───────────────────────────────────────────────────────────
 
@@ -236,6 +251,9 @@ class RadioSide:
         self.links.shutdown()
         if self.lan is not None:
             self.lan.withdraw()
+            close = getattr(self.lan, "close", None)
+            if close is not None:
+                close()
         self.loop.stop()
 
     # ── on the radio's loop ─────────────────────────────────────────────────────────────
@@ -244,6 +262,7 @@ class RadioSide:
         return ble_service_data(self.rotor.current, lan=self._on_lan, link=True)
 
     def _sighting(self, sighting: Sighting) -> None:
+        self._sightings += 1
         for event in self.tracker.observe(sighting):
             self._proximity(event)
 
@@ -318,41 +337,40 @@ class RadioSide:
                 self.on_event(event)
 
     def status(self) -> dict[str, Any]:
-        state = self.radio.status()
-        near: list[dict[str, Any]] = []
+        """The radio's part of status.json (`quackd.radio.statusview`), taken on its loop, where
+        the tracker lives, and whether this robot has a LAN record."""
+        snapshot: dict[str, Any] | None = None
         if self.loop.running:
             with contextlib.suppress(Exception):
-                near = self.loop.call(self._near(), CALL_S)
-        return {
-            "kind": state.kind,
-            "state": state.state,
-            "ready": state.ready,
-            "adapter": state.adapter,
-            "address": state.address,
-            "address_type": state.address_type,
-            "advertising": state.advertising,
-            "scanning": state.scanning,
-            "links": len(self.links),
-            "detail": state.detail,
-            "hint": state.hint,
-            "beacon": self.rotor.current,
-            "rotations": self.rotor.rotations,
-            "rotate_in_s": round(self.rotor.due_in()),
-            "on_lan": self._on_lan,
-            "heard": near,
-        }
+                snapshot = self.loop.call(self._snapshot(), CALL_S)
+        if snapshot is None:
+            snapshot = radio_snapshot(
+                status=self.radio.status(), now=self.clock(), rotor=self.rotor
+            )
+        snapshot["on_lan"] = self._on_lan
+        return snapshot
 
-    async def _near(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "beacon": view.beacon_id,
-                "near": view.near,
-                "rssi": view.rssi,
-                "metres": view.metres,
-                "heard_s_ago": view.heard_s_ago,
-            }
-            for view in self.tracker.peers(self.clock())[:16]
-        ]
+    async def _snapshot(self) -> dict[str, Any]:
+        now = self.clock()
+        return radio_snapshot(
+            status=self.radio.status(),
+            now=now,
+            rotor=self.rotor,
+            tracker=self.tracker,
+            planner=self.planner,
+            heard_per_s=self._rate.update(self._sightings, now),
+            main_conf=_main_conf() if self.radio.kind == "bluez" else None,
+        )
+
+
+def _main_conf() -> str | None:
+    """BlueZ's main.conf, for the privacy line of a status: read, never written."""
+    from quackd.radio.bluez.privacy import MAIN_CONF
+
+    try:
+        return Path(MAIN_CONF).read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def proximity_policy(
@@ -411,12 +429,14 @@ def board_side(
     policy: ProximityPolicy | None = None,
     rotate_s: float = ROTATE_S,
     log: Callable[[str], None] = lambda _line: None,
+    advertise: bool = True,
 ) -> RadioSide:
     """The radio of a robot's own computer: BlueZ, or `off`, and DNS-SD on every interface. A
     radio it cannot have is a `NoRadio` saying why, and the robot meets others over its LAN.
     `browser` finds other robots' LAN records; without one, robots near are met over a link."""
+    options = {"advertise": advertise} if radio_kind == "bluez" else {}
     try:
-        radio: Radio = open_radio(radio_kind)  # type: ignore[arg-type]
+        radio: Radio = open_radio(radio_kind, **options)  # type: ignore[arg-type]
     except RadioUnavailable as e:
         radio = NoRadio.instead_of(e, kind=radio_kind)
     return RadioSide(
@@ -427,6 +447,7 @@ def board_side(
         policy=policy,
         rotate_s=rotate_s,
         log=log,
+        advertising=advertise or radio_kind != "bluez",
     )
 
 

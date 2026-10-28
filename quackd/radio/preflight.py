@@ -107,7 +107,10 @@ def _packages(facts: Facts) -> Row:
     missing = [p for p in wanted if not facts.packages.get(p)]
     found = ", ".join(f"{p} {facts.packages[p]}" for p in wanted if facts.packages.get(p))
     if missing:
-        return Row("onboard extra", "fail", f"{', '.join(missing)} not installed", ONBOARD_INSTALL)
+        # the sim board's LAN is a directory and its demo flies a scripted pilot, so a laptop
+        # trying it can go on without the extra; the brain's own check says what its model needs
+        level: Level = "fail" if facts.radio == "bluez" else "warn"
+        return Row("onboard extra", level, f"{', '.join(missing)} not installed", ONBOARD_INSTALL)
     return Row("onboard extra", "ok", found)
 
 

@@ -67,6 +67,8 @@ def test_the_template_the_wizard_writes_reads_back_as_a_robot_file() -> None:
     assert file.lan.port == config.Lan().port and file.radio == config.Radio()
     no_brain = config.loads(template(llm=None, base_url=None))  # its brain section all comments
     assert no_brain.brain == config.Brain()
+    # robots on one laptop share no port, so the sim board's file asks for any free one
+    assert config.loads(template(port=0)).lan.port == 0
 
 
 @pytest.mark.parametrize("name", ["g1-edu-mock", "agile-one-sn-mock"])

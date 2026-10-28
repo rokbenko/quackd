@@ -181,6 +181,8 @@ class Trust(_Strict):
 class Radio(_Strict):
     meet_within_m: float = Field(default=2.0, gt=0, le=20)
     rssi_at_1m: float = Field(default=-59.0, ge=-100, le=0)
+    #: BlueZ's: a robot that does not advertise is heard by nobody and dials every robot it
+    #: hears itself. The sim radio always advertises.
     advertise: bool = True
     rotate_min: float = Field(default=15.0, ge=1, le=1440)
 
@@ -349,9 +351,13 @@ def template(
     meet_within_m: float = 2.0,
     adapter: str | None = None,
     address: str | None = None,
+    port: int = 8790,
 ) -> str:
     """robot.yaml as the wizard first writes it, every section commented for a person who will
     edit it later. It reads back as a `RobotFile`, which the wizard checks before saving."""
+    port_note = (
+        "                  # any free port: robots on one laptop share none" if port == 0 else ""
+    )
     contact = f"\n    contact: {_yaml_text(owner_contact)}" if owner_contact else ""
     stop = f"\n    how_to_stop: {_yaml_text(how_to_stop)}" if how_to_stop else ""
     robot = (
@@ -393,7 +399,7 @@ passport:
 brain:
 {brain_lines}
 meeting:
-  with_strangers: true     # meet robots nobody pinned, which never hear your robot's words
+  with_strangers: true     # meet robots nobody pinned too; their words never reach the brain
   per_hour: 6              # at most this many meetings an hour
 
 trust:
@@ -404,7 +410,7 @@ radio:
   meet_within_m: {meet_within_m:g}       # how close counts as near, judged from the signal
 
 lan:
-  port: 8790
+  port: {port}{port_note}
 """
     loads(text)
     return text

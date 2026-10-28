@@ -54,8 +54,10 @@ from quackd.radio.meet import MeetEvent
 #: run slot. The radio's tracker wants a few looks a second.
 TICK_S = 0.25
 STATUS_EVERY_S = 2.0
-#: The newest meetings kept in met.jsonl's view for `quackd onboard met`.
+#: The newest meetings kept in met.jsonl's view for `quackd onboard met`, and the newest runs
+#: kept in runs/: a robot that meets robots all day must not fill its disk with records.
 MET_KEPT = 200
+RUNS_KEPT = 200
 
 
 @dataclass
@@ -98,6 +100,19 @@ def check_board(check: SelfCheck, facts: BoardFacts) -> SelfCheck:
             check.reading,
         )
     return check
+
+
+def prune(runs: Path, *, keep: int) -> None:
+    """The newest `keep` run records in `runs`, by when each was written; the rest go."""
+    import shutil
+
+    try:
+        records = [p for p in runs.iterdir() if p.is_dir()]
+    except OSError:
+        return
+    records.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in records[keep:]:
+        shutil.rmtree(old, ignore_errors=True)
 
 
 class AlreadyRunning(Exception):
@@ -166,6 +181,7 @@ class Service:
         self.talker: Talker | None = None
         self.slot: RunSlot | None = None
         self.control: Any = None
+        self._courtesy: Any = None
         self.radio_side.on_event = self._meet_event
 
     # ── up and down ─────────────────────────────────────────────────────────────────────
@@ -201,6 +217,8 @@ class Service:
             self._make_loop,
             safe_verbs=self._safe_verbs,
             log=self.log,
+            holding=self._holding,
+            released=self._released,
         )
         self.radio_side.busy_elsewhere = self._in_a_meeting
         if self.talker is not None and reading is not None and self.server is not None:
@@ -359,8 +377,32 @@ class Service:
         manifest = describe(parse_robot_spec(self.file.robot.adapter))
         return [v.name for v in manifest.verbs if v.safety_class == "safe"]
 
+    def _holding(self, agent: Any) -> None:
+        """A run holds the body: the robots met may ask it for a courtesy, which goes through
+        this run's executor on this run's loop, and only while it runs."""
+        import asyncio
+
+        from quackd.passport_courtesy import Courtesy
+
+        if self.talker is None:
+            return
+        if self._courtesy is None:
+            # one for the robot's whole life: its budget is every peer's together, and a new
+            # run must not hand a peer a fresh one
+            self._courtesy = Courtesy(agent.executor, asyncio.get_running_loop())
+        self._courtesy.executor = agent.executor
+        self._courtesy.loop = asyncio.get_running_loop()
+        self._courtesy.stranger_pauses = self.file.trust.strangers_may_pause
+        self.talker.courtesy = self._courtesy
+
+    def _released(self) -> None:
+        if self.talker is not None:
+            self.talker.courtesy = None
+
     def _make_loop(self, duck: Any, kind: str, front: Any) -> Any:
         from quackd.agent.loop import AgentLoop, RunConfig
+
+        prune(self.home.runs, keep=RUNS_KEPT - 1)
         from quackd.agent.providers.factory import make_provider, resolve_llm
         from quackd.memory import RobotMemory
         from quackd.safety import deny_all
@@ -422,7 +464,10 @@ class Service:
         channel.on_broken(front.on_end)
         if op.get("yes") is True:
             front.confirm.answers_as = "--yes"  # type: ignore[attr-defined]
-        why = self.slot.goal(text, front)
+        steps = op.get("max_steps")
+        why = self.slot.goal(
+            text, front, max_steps=steps if isinstance(steps, int) and steps > 0 else None
+        )
         self.log(f"a goal: {text}" + (f", refused: {why}" if why else ""))
         if why is not None:
             channel.close({"ev": "refused", "reason": why})
@@ -507,6 +552,18 @@ class Service:
             write_private(self.home.status_json, json.dumps(self.status(), default=str) + "\n")
 
 
+def _browser(log: Callable[[str], None]) -> Any:
+    """The DNS-SD browse that finds other robots' LAN records by beacon id, or None without
+    zeroconf, when robots near are met over a link."""
+    try:
+        from quackd.lan.passports import PassportBrowser
+
+        return PassportBrowser().start()
+    except Exception as e:  # no zeroconf, or no network yet
+        log(f"lan: no DNS-SD browse ({e}), so robots near are met over a link")
+        return None
+
+
 @dataclass(frozen=True)
 class SimPlace:
     """Where a robot on the sim board stands and walks, on which sim air and which sim LAN."""
@@ -563,9 +620,11 @@ def serve(
         side = board_side(
             radio_kind=radio or chosen.radio_kind,
             instance=file.passport.name,
+            browser=_browser(log),
             policy=policy,
             rotate_s=rotate_s,
             log=log,
+            advertise=file.radio.advertise,
         )
     home.ensure()
     with held(home.lock):

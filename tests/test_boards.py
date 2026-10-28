@@ -439,3 +439,12 @@ def test_doctor_reads_the_moved_l4t_table_by_its_old_names() -> None:
     """tests/test_docs.py, test_doctor.py and test_host_client.py read these off doctor."""
     assert doctor._JETPACK_FOR_L4T is l4t.JETPACK_FOR_L4T
     assert doctor._parse_l4t is l4t.parse_l4t and doctor._jetpack_for is l4t.jetpack_for
+
+
+def test_a_boards_kinds_are_the_kinds_a_passport_may_say() -> None:
+    """Two lists of the same three words, one where a board is found and one where a passport is
+    read; they are one list in two places, and this keeps them so."""
+    from quackd.boards import KINDS
+    from quackd.passport.document import BOARDS
+
+    assert KINDS == BOARDS

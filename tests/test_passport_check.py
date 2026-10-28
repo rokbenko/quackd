@@ -61,7 +61,7 @@ def test_check_shows_who_signed_a_passport_what_it_runs_on_and_until_when(signed
     assert "claim signed by its owner's key" in flat
     # the owner by the key that signed, beside the label anybody could have written
     assert f"owner Example lab, key {OWNER.short_id}" in flat
-    assert f"board {BOARD['kind']} {BOARD['model']}" in flat
+    assert f"board {BOARD['kind']}: {BOARD['model']}" in flat
     dates = document.read_jws(signed.read_text(encoding="utf-8")).document
     assert f"valid {dates['issued']} to {dates['expires']}" in flat
 

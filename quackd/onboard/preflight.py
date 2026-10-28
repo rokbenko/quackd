@@ -1,15 +1,17 @@
 """`quackd onboard preflight`: what this computer has for a robot's onboard side, check by check.
 
-Each check reads, and none changes anything: the board, its radio and the Bluetooth libraries,
-the LAN, the clock, the robot's file, keys and passport, its brain, and whether the service is
-running. A check is `ok`, `warn` (it runs, with less) or `fail` (it does not run until this is
-fixed), with the sentence that says why and, where there is one, what to do.
+Each check reads, and none changes anything: the board; the radio's own rows from
+`quackd.radio.preflight` (the packages, BlueZ, the adapter and its address, or the sim air, and
+the LAN); the clock; the robot's file, keys and passport; its brain; and whether the service is
+running. `live` is the one exception, and only when asked for: the radio's check that serves
+the advert and the GATT service for two seconds. A check is `ok`, `warn` (it runs, with less) or
+`fail` (it does not run until this is fixed), with the sentence that says why and, where there
+is one, what to do.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import platform
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +20,8 @@ from typing import Any, Literal
 from quackd.onboard.store import OnboardDir
 
 State = Literal["ok", "warn", "fail"]
+#: What installs everything a robot's onboard side may import.
+ONBOARD_INSTALL = 'uv tool install "quackd[onboard]"'
 #: A clock before this year cannot be right: every passport quackd signs is later.
 EARLIEST_YEAR = 2026
 
@@ -42,14 +46,19 @@ def preflight(
     *,
     now: datetime | None = None,
     service: Callable[[], dict[str, Any] | None] | None = None,
+    live: bool = False,
+    radio_rows: Callable[[str, str | None, bool], list[Check]] | None = None,
 ) -> list[Check]:
     """Every check, in the order a person fixes them. `service` asks the running service for
-    its status, None when none answers."""
+    its status, None when none answers; `radio_rows` stands in for the radio's own, for tests."""
     checks: list[Check] = []
     facts, radio_kind, radio = _board(board, checks)
-    if radio_kind == "bluez":
-        checks.append(_libraries())
-    checks.append(_lan())
+    if radio_kind is not None:
+        adapter = (
+            radio.detail.split(", ")[-1] if radio is not None and radio.state == "ok" else None
+        )
+        checks += (radio_rows or _radio_rows)(radio_kind, adapter, live)
+        radio = None  # the radio's own rows say it, and more
     checks.append(_clock(now or datetime.now(UTC)))
     file = _file(home, checks)
     if file is not None:
@@ -95,31 +104,28 @@ def _board(name: str | None, checks: list[Check]) -> tuple[Any, str | None, Chec
     return facts, chosen.radio_kind, radio
 
 
-def _libraries() -> Check:
-    from quackd.radio import BLUEZ_PACKAGES, ONBOARD_INSTALL
+def _radio_rows(radio_kind: str, adapter: str | None, live: bool) -> list[Check]:
+    """The radio's half, as `quackd.radio.preflight` checks it, in this module's terms."""
+    import asyncio
 
-    if platform.system() != "Linux":
-        return Check("bluetooth", "fail", "BlueZ runs on Linux, and this is not Linux")
-    missing = [name for name in BLUEZ_PACKAGES if importlib.util.find_spec(name) is None]
-    if missing:
-        return Check("bluetooth", "fail", f"{' and '.join(missing)} missing", ONBOARD_INSTALL)
-    return Check("bluetooth", "ok", "bleak and dbus-fast installed")
-
-
-def _lan() -> Check:
-    if importlib.util.find_spec("zeroconf") is None:
-        return Check(
-            "lan",
-            "warn",
-            "zeroconf missing, so no LAN record: robots are met over the link only",
-            'uv tool install "quackd[onboard]"',
-        )
     from quackd.lan.announce import local_ip
+    from quackd.radio.preflight import collect, rows
+    from quackd.radio.sim import default_air_dir
 
-    address = local_ip()
-    if address.startswith("127."):
-        return Check("lan", "warn", "no network, so robots are met over the link only")
-    return Check("lan", "ok", f"on a network as {address}")
+    kind: Any = radio_kind if radio_kind in ("bluez", "sim") else "off"
+    facts = asyncio.run(
+        collect(
+            radio=kind,
+            adapter=adapter if adapter and adapter.startswith("hci") else "hci0",
+            air=default_air_dir() if kind == "sim" else None,
+            lan_address=local_ip(),
+            live=live,
+        )
+    )
+    return [
+        Check(row.name, "ok" if row.level == "info" else row.level, row.detail, row.hint)
+        for row in rows(facts)
+    ]
 
 
 def _clock(now: datetime) -> Check:
@@ -186,6 +192,11 @@ def _brain(home: OnboardDir, file: Any) -> Check:
     if not llm:
         return Check("brain", "warn", "none, so robots are met and nobody talks", "brain.llm")
     where = f" at {file.brain.base_url}" if file.brain.base_url else ""
+    sdk = sdk_for(llm)
+    if sdk is not None and importlib.util.find_spec(sdk) is None:
+        return Check(
+            "brain", "fail", f"{llm}{where}, and its {sdk} SDK is not installed", ONBOARD_INSTALL
+        )
     variable = key_variable(llm)
     if variable is not None and not _env_has(home, variable):
         return Check(
@@ -195,6 +206,12 @@ def _brain(home: OnboardDir, file: Any) -> Check:
             f"put {variable}=... in {home.robot_env}, readable by this user alone",
         )
     return Check("brain", "ok", f"{llm}{where}")
+
+
+def sdk_for(llm: str) -> str | None:
+    """The SDK a brain's provider imports, or None for one quackd has without an extra."""
+    vendor = llm.split(":", 1)[0].strip().lower()
+    return {"local": "openai", "openai": "openai", "anthropic": "anthropic"}.get(vendor)
 
 
 def key_variable(llm: str) -> str | None:

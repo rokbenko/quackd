@@ -119,7 +119,7 @@ other. `tests/test_jetson_host_contract.py` runs the real daemon against the rea
 the real `quackd doctor`, which is what catches the two drifting apart, and the rest of the
 suite talks to `tests/fake_jetson_hostd.py`. The board in all of them is files written by
 `tests/jetson_fixtures.py`, and `tests/test_docs.py` holds the JetPack table in
-[docs/guides/jetson.md](docs/guides/jetson.md) against `_JETPACK_FOR_L4T` in `quackd/doctor.py`, so
+[docs/guides/jetson.md](docs/guides/jetson.md) against `JETPACK_FOR_L4T` in `quackd/boards/l4t.py`, so
 editing one of those two and not the other fails locally. Nothing here has been run on a
 Jetson by this project, so what you change is checked against the contract and a board made
 of files, and never against the board it is named after

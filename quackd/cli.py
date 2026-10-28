@@ -8878,7 +8878,11 @@ def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
     board = view["board"]
     if board:
         rows.append(
-            ("board", " ".join(str(board[k]) for k in ("kind", "model", "soc") if k in board))
+            (
+                "board",
+                f"{board.get('kind')}: "
+                + ", ".join(str(board[k]) for k in ("model", "soc") if k in board),
+            )
         )
     body = view["body"]
     if body:
@@ -9163,7 +9167,11 @@ def onboard(
         robot = _onboard_file(home)
     else:
         default_name = facts.kind if facts.kind != "sim" else "robot-01"
-        text = wizard.ask_for_file(ask, default_name=f"{default_name}-01".replace("-01-01", "-01"))
+        text = wizard.ask_for_file(
+            ask,
+            default_name=f"{default_name}-01".replace("-01-01", "-01"),
+            port=0 if facts.kind == "sim" else 8790,
+        )
         try:
             robot = config.loads(text)
         except config.FileError as e:
@@ -9209,6 +9217,9 @@ def onboard(
     on_a_robot = chosen.radio_kind == "bluez" and sys.platform.startswith("linux")
     if on_a_robot and not no_service:
         try:
+            wizard.offer_privacy(
+                say=lambda line: ui.console.print(line), ask=ask, run=wizard.run_command
+            )
             installed = wizard.install_service(
                 home, say=lambda line: ui.console.print(line), ask=ask, run=wizard.run_command
             )
@@ -9309,6 +9320,24 @@ def onboard_status(
     ui.console.print(ui.run_header(f"onboard {reply.get('robot')}", _status_rows(home, reply)))
 
 
+def _radio_rows(radio: dict[str, Any]) -> list[tuple[str, Any]]:
+    """The radio's lines, as `quackd.radio.statusview` words them, as this panel's rows; the
+    privacy line in the warning's colour while the address is not private."""
+    from quackd.radio.statusview import render_radio
+
+    rows: list[tuple[str, Any]] = []
+    for line in render_radio(radio):
+        key, value = line[:10].strip(), line[10:].strip()
+        if key == "privacy" and not (radio.get("privacy") or {}).get("private"):
+            rows.append((key, Text(value, style=ui.STYLES["warn"])))
+        elif key:
+            rows.append((key, value))
+        elif rows:
+            rows.append(("", value))
+    rows.append(("lan", "on the LAN, with a record" if radio.get("on_lan") else "no LAN record"))
+    return rows
+
+
 def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
     """The service's status as a person reads it: the passport and what is not signed yet, the
     board and brain, the radio and every robot it hears, the sessions, the run, the last
@@ -9333,29 +9362,7 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
             rows.append(("unsigned", Text(f"{why}: quackd onboard sign", style=ui.STYLES["warn"])))
     rows.append(("board", " ".join(str(v) for v in (reply.get("board") or {}).values())))
     rows.append(("brain", str((reply.get("brain") or {}).get("llm") or "none: no meetings")))
-    state = f"{radio.get('kind', '?')} {radio.get('state', 'unknown')}"
-    if radio.get("ready"):
-        lan = ", on the LAN" if radio.get("on_lan") else ", on no LAN"
-        state += f", beacon {radio.get('beacon')} for {radio.get('rotate_in_s', 0) // 60} min{lan}"
-    else:
-        state += f": {radio.get('detail', '')}"
-    rows.append(("radio", state))
-    if radio.get("address_type") == "public":
-        rows.append(
-            (
-                "address",
-                Text(
-                    f"{radio.get('address')} is public, so rotating the beacon id alone does not "
-                    "stop tracking: quackd onboard offers BlueZ's address privacy",
-                    style=ui.STYLES["warn"],
-                ),
-            )
-        )
-    for heard in radio.get("heard") or []:
-        near = "near" if heard.get("near") else "heard"
-        rssi = f"{heard['rssi']:.0f} dBm" if heard.get("rssi") is not None else "no signal"
-        metres = f", about {heard['metres']:g} m" if heard.get("metres") is not None else ""
-        rows.append((near, f"{heard.get('beacon')} at {rssi}{metres}"))
+    rows += _radio_rows(radio)
     for robot in reply.get("nearby") or []:
         rows.append(("talking", f"{robot.get('name')} ({robot.get('tier')})"))
     title = f", {run['title']}" if run.get("title") else ""
@@ -9527,15 +9534,21 @@ def onboard_goal(
     text: str = typer.Argument(..., help="The goal, in a sentence."),
     directory: str | None = _ONBOARD_DIR,
     yes: bool = typer.Option(False, "--yes", help="Answer go to every question the run asks."),
+    max_steps: int | None = typer.Option(
+        None, "--max-steps", min=1, max=500, help="At most this many steps for the goal."
+    ),
 ) -> None:
     """Give this robot a goal. Its run is shown here, its questions are asked here, Ctrl-C stops
     it, and robots that come close meanwhile appear in it."""
     from quackd.onboard.control import ControlError, connect
 
     home = _onboard_home(directory)
+    op: dict[str, Any] = {"op": "goal", "text": text, "yes": yes}
+    if max_steps is not None:
+        op["max_steps"] = max_steps
     try:
         with connect(home.control_json) as conn:
-            conn.send({"op": "goal", "text": text, "yes": yes})
+            conn.send(op)
             code = _follow_goal(conn, yes=yes)
     except ControlError as e:
         _fail(str(e), hint="sudo systemctl start quackd-onboard, or quackd onboard serve")
@@ -9597,6 +9610,15 @@ def onboard_uninstall(
     if typer.confirm("run them now?", default=True):
         for command in commands:
             wizard.run_command(command)
+    if sys.platform.startswith("linux"):
+        try:
+            wizard.restore_privacy(
+                say=lambda line: ui.console.print(line),
+                ask=_Prompts(False),
+                run=wizard.run_command,
+            )
+        except wizard.WizardError as e:
+            _fail(str(e))
     if purge and typer.confirm(f"delete {home.root}, with the owner key in it?", default=False):
         shutil.rmtree(home.root, ignore_errors=True)
         ui.console.print(_ok_line(f"deleted {home.root}"))
@@ -9669,14 +9691,21 @@ def onboard_preflight(
     board: str | None = _ONBOARD_BOARD,
     directory: str | None = _ONBOARD_DIR,
     as_json: bool = typer.Option(False, "--json", help="Every check, as one line of JSON."),
+    live: bool = typer.Option(
+        False,
+        "--live",
+        help="Also serve the advert and the link's service for two seconds, then take them down.",
+    ),
 ) -> None:
     """Check this computer for a robot's onboard side: the board, its radio and Bluetooth, the
     network, the clock, the robot's file, keys and passport, its brain, and the service. It
-    changes nothing, and exits 1 when something must be fixed first."""
+    changes nothing but with --live, and exits 1 when something must be fixed first."""
     from quackd.onboard.preflight import preflight
 
     home = _onboard_home(directory)
-    checks = preflight(home, board, service=lambda: _tell_service(home, {"op": "status"}))
+    checks = preflight(
+        home, board, service=lambda: _tell_service(home, {"op": "status"}), live=live
+    )
     failed = any(check.state == "fail" for check in checks)
     if as_json:
         print(json.dumps({"ok": not failed, "checks": [check.row() for check in checks]}))

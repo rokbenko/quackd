@@ -78,6 +78,8 @@ def test_a_missing_package_fails_naming_the_extra_but_the_sim_needs_no_bluetooth
     assert row.level == "fail" and "bleak, dbus-fast" in row.detail and row.hint == ONBOARD_INSTALL
     sim = Facts(system="Windows", radio="sim", packages=lacking, air="C:/air", air_writable=True)
     assert by_name(rows(sim))["onboard extra"].level == "ok"
+    bare = replace(sim, packages={**lacking, "zeroconf": None, "openai": None})
+    assert by_name(rows(bare))["onboard extra"].level == "warn"  # the sim goes on without them
 
 
 @pytest.mark.parametrize(

@@ -125,7 +125,7 @@ def needs_signing(
     return None
 
 
-def ask_for_file(ask: Asker, *, default_name: str) -> str:
+def ask_for_file(ask: Asker, *, default_name: str, port: int = 8790) -> str:
     """robot.yaml's text from a person's answers: the few things only an owner knows."""
     name = ask.text("this robot's name (lower case, digits, - and _)", default_name)
     embodiment = ask.text("what it is: humanoid, quadruped, biped, wheeled or tracked", "humanoid")
@@ -154,6 +154,7 @@ def ask_for_file(ask: Asker, *, default_name: str) -> str:
         llm=llm or None,
         base_url=base_url or None,
         meet_within_m=within,
+        port=port,
     )
 
 
@@ -208,6 +209,77 @@ def install_service(
         say(f"  {systemd.shown(command)}")
     if not ask.yes("run them now?", default=True):
         say("not installed: run those yourself, or quackd onboard serve in a terminal")
+        return False
+    for command in commands:
+        if run(command) != 0:
+            raise WizardError(f"this failed: {systemd.shown(command)}")
+    return True
+
+
+def offer_privacy(
+    *, say: Callable[[str], None], ask: Asker, run: Callable[[list[str]], int]
+) -> bool:
+    """Offer BlueZ's address privacy: main.conf with `Privacy = device`, a backup of the old
+    one, and bluetoothd restarted, every sudo command shown before it runs. True when it was
+    set here; False when it was on already, or the person said no."""
+    from quackd.onboard import systemd
+    from quackd.radio.bluez.privacy import (
+        BACKUP,
+        MAIN_CONF,
+        PRIVATE,
+        install_commands,
+        privacy_setting,
+        with_privacy,
+    )
+
+    try:
+        current = Path(MAIN_CONF).read_text(encoding="utf-8")
+    except OSError as e:
+        say(f"address privacy is left as it is: {MAIN_CONF} could not be read ({e.strerror})")
+        return False
+    if privacy_setting(current) in PRIVATE:
+        say(f"BlueZ's address privacy is asked for already in {MAIN_CONF}")
+        return False
+    staged = Path(tempfile.mkdtemp()) / "main.conf"
+    staged.write_text(with_privacy(current), encoding="utf-8", newline="")
+    commands = install_commands(str(staged), backup_exists=Path(BACKUP).exists())
+    say(
+        "the radio's address goes out with every advert, and while it is public anybody can "
+        "follow this robot by it; quackd onboard can ask BlueZ to rotate it, with sudo:"
+    )
+    for command in commands:
+        say(f"  {systemd.shown(command)}")
+    say("restarting bluetoothd drops a Bluetooth remote or e-stop for a moment")
+    if not ask.yes("run them now?", default=True):
+        say("left as it is: quackd onboard status says so while the address is public")
+        return False
+    for command in commands:
+        if run(command) != 0:
+            raise WizardError(f"this failed: {systemd.shown(command)}")
+    return True
+
+
+def restore_privacy(
+    *, say: Callable[[str], None], ask: Asker, run: Callable[[list[str]], int]
+) -> bool:
+    """Put back the main.conf quackd onboard replaced, when it is still what quackd made of
+    it; a file somebody edited since is theirs, and is left."""
+    from quackd.onboard import systemd
+    from quackd.radio.bluez.privacy import BACKUP, MAIN_CONF, restore_commands, should_restore
+
+    try:
+        backup = Path(BACKUP).read_text(encoding="utf-8")
+        current = Path(MAIN_CONF).read_text(encoding="utf-8")
+    except OSError:
+        return False  # no backup: quackd never touched main.conf here
+    if not should_restore(current, backup):
+        say(f"{MAIN_CONF} was edited since quackd onboard set its privacy, so it is left")
+        return False
+    commands = restore_commands()
+    say(f"to put back the {MAIN_CONF} quackd onboard replaced, with sudo:")
+    for command in commands:
+        say(f"  {systemd.shown(command)}")
+    if not ask.yes("run them now?", default=True):
         return False
     for command in commands:
         if run(command) != 0:

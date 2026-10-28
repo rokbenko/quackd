@@ -118,7 +118,7 @@ The L4T column is off NVIDIA's JetPack archive and the Ubuntu column off each re
 download page, both read on 2026-09-22. **NVIDIA publishes no Python version at all**: that
 column is Ubuntu's own default `python3` for the release beside it. All of it is version
 sensitive by nature, so check it against the board in front of you. `quackd doctor --host`
-names your board's JetPack out of this same table in `quackd/doctor.py`, and
+names your board's JetPack out of this same table in `quackd/boards/l4t.py`, and
 `tests/test_docs.py` holds the two copies to each other so the page and the command cannot
 drift apart. The releases are spelled in three parts here, which is the form the parser
 normalises to, so JetPack 6.1 appears as `36.4.0` where NVIDIA's own table writes `36.4`.
