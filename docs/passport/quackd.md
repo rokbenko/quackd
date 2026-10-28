@@ -127,10 +127,9 @@ the robot's folder as the only place it may write:
 | `RestrictAddressFamilies=` with `AF_BLUETOOTH` | the socket families it needs, Bluetooth's among them, and no others |
 
 Nobody has measured what a Bluetooth scanner and a brain's requests cost a robot's own control loop
-on a Jetson, and [guides/jetson.md](../guides/jetson.md) says what to watch.
-`quackd onboard uninstall` stops and removes the service, and puts BlueZ's settings back if the wizard
-changed them and nobody changed them since. `--purge` removes the robot's folder as well, keys
-included.
+on a Jetson, and [guides/jetson.md](../guides/jetson.md) says what to watch. `quackd onboard
+uninstall` stops and removes the service, and puts BlueZ's settings back if the wizard changed them
+and nobody changed them since. `--purge` removes the robot's folder as well, keys included.
 
 ## Status, preflight and show
 
@@ -195,13 +194,13 @@ like a pinned one's under another key is warned about, and only a key decides a 
 ## Talking
 
 A robot's brain hears the robots near it in every observation, under `Robots nearby`, one line of
-JSON each. A robot nobody pinned appears as its closed facts, its body, figures, core skills and its
-board's kind, so a brain knows a robot is simulated, under a name made from its key. That it spoke
-reaches the brain, and what it said does not. A known robot, or one of the same owner, appears by its
-own name, with its skills, what it cannot do, its safety and its words, JSON-quoted. The block is held
-to 1,500 characters a turn, the oldest words dropped first, and `tell NAME` speaks to one of them as a
-`say`. The log, which is for a person, shows all of it. From the demo's first act, the household
-robot's log and what its brain was shown:
+JSON each. A robot nobody pinned appears as its closed facts, its body, figures, core skills and
+its board's kind, so a brain knows a robot is simulated, under a name made from its key. That it
+spoke reaches the brain, and what it said does not. A known robot, or one of the same owner, appears
+by its own name, with its skills, what it cannot do, its safety and its words, JSON-quoted. The block
+is held to 1,500 characters a turn, the oldest words dropped first, and `tell NAME` speaks to one of
+them as a `say`. The log, which is for a person, shows all of it. From the demo's first act, the
+household robot's log and what its brain was shown:
 
 <!-- capture: the Robots nearby block and the matching nearby log lines from quackd onboard demo --offline, the strangers act, sim board -->
 
@@ -293,7 +292,8 @@ that is in [roadmap.md](roadmap.md#status).
 
 ## Where quackd keeps what
 
-One folder per robot: `--dir`, then `QUACKD_ONBOARD_DIR`, then `~/.quackd/onboard/`.
+One folder per robot: `--dir`, then `QUACKD_ONBOARD_DIR` from the environment, never from a `.env`
+file, then `~/.quackd/onboard/`.
 
 | What | Where |
 |---|---|
