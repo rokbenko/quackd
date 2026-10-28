@@ -35,6 +35,7 @@ from quackd.onboard.keys import (
     read_robot_key,
     read_sealed,
     seal,
+    sync_folder,
     unseal,
     write_robot_key,
     write_secret,
@@ -132,7 +133,8 @@ class OnboardDir:
     def ensure(self) -> None:
         """Make the directory and its folders, each one this user alone can enter where the OS
         has modes. A folder already there keeps the mode it has: whoever chose it chose that
-        too, and every secret in it is a file of mode 0600 regardless."""
+        too, and every secret in it is a file of mode 0600 regardless. Each folder made is synced
+        into the one above it, so the keys written next do not vanish with a power cut."""
         for folder in (self.root, self.keys, self.runs, self.memory, self.cache):
             if folder.is_dir():
                 continue
@@ -143,34 +145,39 @@ class OnboardDir:
             if os.name != "nt":
                 with contextlib.suppress(OSError):
                     folder.chmod(0o700)  # mkdir's mode passes through the umask
+            sync_folder(folder.parent)
 
     def owner_key_or_new(self, passphrase: str) -> tuple[SigningKey, bool]:
         """The owner key, opened with `passphrase`, or a new one sealed with it the first time.
         The flag says which. A passphrase too short to seal with is refused before anything is
-        written, and a wrong one is `WrongPassphrase`, with the file left as it was."""
+        written, and a wrong one is `WrongPassphrase`, with the file left as it was. The new key
+        is written only where nothing is: an owner key another command made meanwhile, or a link
+        where the file should be, is left as it is, and that is `KeyExists`."""
         if self.owner_key.exists():
             return unseal(read_sealed(self.owner_key), passphrase), False
         key = SigningKey.generate()
         blob = seal(key, passphrase)
         self.ensure()
-        write_secret(self.owner_key, blob)
+        write_secret(self.owner_key, blob, replace=False)
         return key, True
 
     def robot_key_or_new(self) -> tuple[SigningKey, bool]:
         """The robot key, or a new one the first time. The flag says which. Only the wizard makes
         one: a new robot key is a new robot to everyone that met the old one, so the service reads
-        `robot_key` with `keys.read_robot_key` and never comes here."""
+        `robot_key` with `keys.read_robot_key` and never comes here. As with the owner key, the
+        new one is written only where nothing is."""
         if self.robot_key.exists():
             return read_robot_key(self.robot_key), False
         key = SigningKey.generate()
         self.ensure()
-        write_robot_key(self.robot_key, key)
+        write_robot_key(self.robot_key, key, replace=False)
         return key, True
 
     def adopt_owner_key(self, source: str | Path, passphrase: str) -> SigningKey:
         """The owner key sealed in `source`, another robot's `keys/owner.json`, made this robot's
         owner key as well: how one owner signs a second robot. `passphrase` has to open it first,
-        so a file nobody here can unlock is never copied, and it is copied sealed, as it was.
+        so a file nobody here can unlock is never copied, and the same sealed blob is written
+        here, never the key in the clear.
 
         An owner key this robot already has is never replaced: every robot that pinned that owner
         would stop knowing this one. The same key again is nothing to do."""
@@ -186,5 +193,5 @@ class OnboardDir:
                 "first if this robot really changes hands"
             )
         self.ensure()
-        write_secret(self.owner_key, blob)
+        write_secret(self.owner_key, blob, replace=False)
         return key

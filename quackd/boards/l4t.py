@@ -3,7 +3,7 @@
 Text in, versions out, and no file read here. `quackd doctor` parses the board files a host
 daemon sends it over the network, since doctor never reads the machine it runs on (ADR-0046),
 and `quackd onboard` parses the same files on the board itself (`boards/jetson.py`). One table
-and one parser serve both, so the two cannot disagree about a board.
+and one parser serve both, so the two cannot name a different JetPack for the same release file.
 """
 
 from __future__ import annotations

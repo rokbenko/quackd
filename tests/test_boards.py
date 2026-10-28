@@ -32,7 +32,7 @@ SUFFIX = (
     "). To try it here as a simulation, which its passport will say, "
     "run quackd onboard --board sim."
 )
-"""The plan's sentence, around what was looked for: the docs quote it."""
+"""The plan's sentence, around what was looked for, which the docs are to quote."""
 
 
 def _release(major: int, revision: str) -> str:
@@ -68,6 +68,12 @@ XAVIER = _files(
     release=_release(35, "4.1"),
 )
 ORIN_ON_JETPACK_5 = _files(model=ORIN_NANO, compatible=COMPATIBLE, release=_release(35, "4.1"))
+THOR_ON_JETPACK_7_2 = {**THOR, jetson.RELEASE: _release(39, "2.0")}
+ORIN_ON_JETPACK_7_2 = {**ORIN, jetson.RELEASE: _release(39, "2.0")}
+THOR_READING_AS_JETPACK_6 = {**THOR, jetson.RELEASE: RELEASE_36_4_3}
+"""A Thor whose release file says JetPack 6, which no Thor runs: a container's, privileged."""
+LOOKALIKE = {jetson.COMPATIBLE: "acme,nvidia,tegra234-shim" + NUL}
+"""A compatible entry with a Tegra's name inside it, which is not a Tegra."""
 RASPBERRY_PI = {
     jetson.MODEL: "Raspberry Pi 5 Model B Rev 1.0" + NUL,
     jetson.COMPATIBLE: NUL.join(("raspberrypi,5-model-b", "brcm,bcm2712")) + NUL,
@@ -102,11 +108,13 @@ def test_an_orin_on_jetpack_6_finds_itself() -> None:
         soc=_chip(ORIN),
         release=f"L4T {release} (JetPack {l4t.jetpack_for(release)})",
     )
+    assert found.release == "L4T 36.4.3 (JetPack 6.2)", "the design's own example"
 
 
-def test_a_thor_on_jetpack_7_finds_itself() -> None:
-    board, found = boards.detect(among=_among(files=THOR))
-    release = l4t.parse_l4t(THOR[jetson.RELEASE])
+@pytest.mark.parametrize("files", [THOR, THOR_ON_JETPACK_7_2], ids=["l4t-38", "l4t-39"])
+def test_a_thor_on_jetpack_7_finds_itself(files: Mapping[str, str]) -> None:
+    board, found = boards.detect(among=_among(files=files))
+    release = l4t.parse_l4t(files[jetson.RELEASE])
     assert board.name == "jetson" and release is not None
     assert (found.kind, found.model, found.soc) == ("jetson", THOR_MODEL, _chip(THOR))
     assert found.release == f"L4T {release} (JetPack {l4t.jetpack_for(release)})"
@@ -135,6 +143,19 @@ def test_an_orin_still_on_jetpack_5_is_refused_for_its_release() -> None:
 
 
 @pytest.mark.parametrize(
+    "files", [ORIN_ON_JETPACK_7_2, THOR_READING_AS_JETPACK_6], ids=["orin-on-7", "thor-on-6"]
+)
+def test_a_release_is_taken_only_on_the_chip_it_is_supported_on(files: Mapping[str, str]) -> None:
+    """Orin with JetPack 6 and Thor with JetPack 7, as the sentence says, and not the other two
+    pairs: NVIDIA's JetPack 7.2 runs on Orin, which quackd onboard does not take, and a Thor that
+    reads as JetPack 6 is reading a container's release file."""
+    release = l4t.parse_l4t(files[jetson.RELEASE])
+    with pytest.raises(boards.Unsupported, match=f"on L4T {release}") as caught:
+        _jetson(files).detect()
+    assert str(caught.value).endswith(jetson.SUPPORTS)
+
+
+@pytest.mark.parametrize(
     ("files", "said"),
     [
         ({jetson.RELEASE: RELEASE_36_4_3}, "names no NVIDIA Tegra chip"),
@@ -155,8 +176,8 @@ def test_a_jetson_quackd_cannot_read_or_run_on_is_refused_saying_why(
     files: Mapping[str, str], said: str
 ) -> None:
     """Half a Jetson is a Jetson something hides (a container masks the device tree), and is
-    refused rather than taken for a laptop; a release or a chip quackd has not met is refused
-    rather than guessed at."""
+    refused rather than taken for a laptop; a major release or a chip quackd has not met is
+    refused rather than guessed at."""
     with pytest.raises(boards.Unsupported, match=re.escape(said)):
         _jetson(files).detect()
 
@@ -166,9 +187,12 @@ def test_a_jetson_whose_model_cannot_be_read_is_named_by_its_chip() -> None:
     assert found is not None and found.model == f"NVIDIA Jetson {jetson.CHIPS[_chip(ORIN)]}"
 
 
-def test_the_supported_releases_are_jetpack_6_and_7() -> None:
-    assert {l4t.JETPACK_MAJOR[major] for major in jetson.SUPPORTED_L4T} == {"6.x", "7.x"}
-    assert {jetson.CHIPS[chip] for chip in jetson.SUPPORTED_CHIPS} == {"Orin", "Thor"}
+def test_the_supported_pairs_are_orin_with_jetpack_6_and_thor_with_jetpack_7() -> None:
+    taken = {
+        jetson.CHIPS[chip]: {l4t.JETPACK_MAJOR[major] for major in majors}
+        for chip, majors in jetson.SUPPORTED.items()
+    }
+    assert taken == {"Orin": {"6.x"}, "Thor": {"7.x"}}
 
 
 # ── no Jetson, and sim ──────────────────────────────────────────────────────────────────
@@ -176,8 +200,8 @@ def test_the_supported_releases_are_jetpack_6_and_7() -> None:
 
 @pytest.mark.parametrize(
     ("system", "files"),
-    [("Linux", {}), ("Linux", RASPBERRY_PI), ("Windows", {}), ("Darwin", {})],
-    ids=["linux", "raspberry-pi", "windows", "macos"],
+    [("Linux", {}), ("Linux", RASPBERRY_PI), ("Linux", LOOKALIKE), ("Windows", {}), ("Darwin", {})],
+    ids=["linux", "raspberry-pi", "lookalike", "windows", "macos"],
 )
 def test_a_computer_with_no_jetson_is_not_a_robot_in_the_plans_sentence(
     monkeypatch: pytest.MonkeyPatch, system: str, files: Mapping[str, str]
@@ -240,6 +264,42 @@ class _Zeta(_Acme):
         return None
 
 
+class _Hidden(_Zeta):
+    """A plugin's board that is only ever asked for by name, as sim is."""
+
+    name = "hidden"
+    explicit_only = True
+
+
+class _Crashing(_Acme):
+    """A plugin's board that fails whenever it looks."""
+
+    def detect(self) -> boards.BoardFacts | None:
+        raise PermissionError("no access to the bus")
+
+
+class _Impostor(_Acme):
+    """A plugin's board that says it is a Jetson, which only quackd's own may."""
+
+    def detect(self) -> boards.BoardFacts | None:
+        return boards.BoardFacts(kind="jetson", model="NVIDIA Jetson AGX Thor", soc="tegra264")
+
+
+class _Sloppy(_Acme):
+    """A plugin's board that answers with something that is not a `BoardFacts`."""
+
+    def detect(self) -> Any:
+        return {"kind": "other", "model": "a dict"}
+
+
+class _Unnamable(_Acme):
+    """A plugin's board whose name cannot even be asked."""
+
+    @property
+    def name(self) -> str:  # type: ignore[override]
+        raise RuntimeError("no name yet")
+
+
 def _installed(monkeypatch: pytest.MonkeyPatch, plugins: Mapping[str, object]) -> None:
     """Plugins in the `quackd.boards` group: each name to a module whose `make()` returns the
     value given, or raises it."""
@@ -289,6 +349,34 @@ def test_a_plugin_that_fails_to_load_is_named_and_breaks_nothing_else(
         boards.named("nothing")
 
 
+def test_a_plugin_is_what_it_is_installed_as_or_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A board that calls itself by another name than its entry point, or one whose name cannot
+    be asked, is not installed, and says why when it is asked for."""
+    _installed(monkeypatch, {"acme": _Zeta(), "ghost": _Unnamable()})
+    assert list(boards.boards()) == [*boards.OFFICIAL, boards.SIM]
+    with pytest.raises(boards.UnknownBoard, match="calls itself 'zeta'"):
+        boards.named("acme")
+    with pytest.raises(boards.UnknownBoard, match="no name yet"):
+        boards.named("ghost")
+
+
+@pytest.mark.parametrize(
+    "plugin", [_Crashing(), _Impostor(), _Sloppy()], ids=["crashing", "impostor", "sloppy"]
+)
+def test_a_plugin_that_fails_or_answers_as_only_quackds_own_may_takes_no_sentence_away(
+    plugin: Any,
+) -> None:
+    """Found by itself, it is a board that does not know this computer, so a laptop still gets
+    the sentence and a Xavier still gets its refusal; asked for by name, its failure is said."""
+    with pytest.raises(boards.NotARobot) as caught:
+        boards.detect(among=_among(plugin, files={}))
+    assert str(caught.value).startswith(PREFIX) and str(caught.value).endswith(SUFFIX)
+    with pytest.raises(boards.Unsupported, match="Xavier"):
+        boards.detect(among=_among(plugin, files=XAVIER))
+    with pytest.raises(boards.Unsupported, match=f"the {plugin.name} board"):
+        boards.detect(plugin.name, among=_among(plugin, files={}))
+
+
 def test_a_plugin_may_run_where_quackd_refuses_and_the_refusal_stands_without_one() -> None:
     board, found = boards.detect(among=_among(_Acme(), files=XAVIER))
     assert board.name == "acme" and found.kind == "other"
@@ -303,6 +391,9 @@ def test_a_plugin_that_knows_no_computer_is_named_in_the_sentence() -> None:
     assert said.startswith(PREFIX) and said.endswith(SUFFIX) and "zeta" in said
     with pytest.raises(boards.NotARobot, match="it found no zeta board here"):
         boards.detect("zeta", among=_among(_Zeta(), files={}))
+    with pytest.raises(boards.NotARobot) as hidden:
+        boards.detect(among=_among(_Hidden(), files={}))
+    assert "hidden" not in str(hidden.value), "a board only asked for by name was never asked"
 
 
 # ── what a board gives the passport, and its radio ──────────────────────────────────────
@@ -324,14 +415,21 @@ def test_a_passport_cuts_a_long_model_and_has_no_kind_it_lacks_a_word_for() -> N
     )
     cut = long.passport()
     assert (len(cut["model"]), len(cut["soc"])) == (boards.MODEL_LIMIT, boards.SOC_LIMIT)
+    words = "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super"
+    assert len(words) > boards.MODEL_LIMIT
+    at_a_word = boards.BoardFacts(kind="jetson", model=words).passport()["model"]
+    assert len(at_a_word) <= boards.MODEL_LIMIT and words.startswith(at_a_word + " ")
     with pytest.raises(ValueError, match="kind"):
         boards.BoardFacts(kind="raspberry-pi", model="Raspberry Pi 5")
+    with pytest.raises(ValueError, match="model"):
+        boards.BoardFacts(kind="other", model="  ")
 
 
 def test_the_radio_is_the_first_hci_adapter_and_none_is_said_plainly() -> None:
     check = _jetson(ORIN, {jetson.BLUETOOTH: ["hci1", "hci0"]}).radio()
     assert check == boards.RadioCheck(ok=True, adapter="hci0")
-    for folders in ({jetson.BLUETOOTH: []}, {}):
+    nothing: list[Mapping[str, list[str]]] = [{jetson.BLUETOOTH: []}, {}, {jetson.BLUETOOTH: ["x"]}]
+    for folders in nothing:
         none = _jetson(ORIN, folders).radio()
         assert not none.ok and none.adapter is None and jetson.BLUETOOTH in (none.why or "")
     assert (JetsonBoard.radio_kind, SimBoard.radio_kind) == ("bluez", "sim")
