@@ -2370,8 +2370,9 @@ _JETSON_IMAGE_SPELLINGS = (
 
 
 def test_no_living_document_still_describes_the_jetson_image() -> None:
-    """quackd no longer runs on a Jetson, so nothing a reader follows today may still build the
-    image or start quackd inside it.
+    """The quackd that drives a robot no longer runs on a Jetson, and the one command that does,
+    `quackd onboard`, is installed with uv and needs no image, so nothing a reader follows today
+    may still build the image or start quackd inside it.
 
     The whole text is read, fenced blocks included, which is where every one of these lived: a
     reader copies a command out of a fence before reading the paragraph around it. The history
@@ -2386,7 +2387,8 @@ def test_no_living_document_still_describes_the_jetson_image() -> None:
         for spelling in _JETSON_IMAGE_SPELLINGS:
             assert spelling not in text, (
                 f"{path.relative_to(REPO).as_posix()} still describes the Jetson image "
-                f"({spelling!r}), which went when quackd stopped running on the board (ADR-0046)"
+                f"({spelling!r}), which went when the quackd that drives a robot left the board "
+                "(ADR-0046)"
             )
 
 
