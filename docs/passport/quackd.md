@@ -42,13 +42,12 @@ The flags, as `quackd onboard --help` prints them:
 
 <!-- capture: quackd onboard --help -->
 
-The ones a person reaches for: `--board` names the computer, `jetson` (found by itself) or `sim`.
-`--dir` is the robot's folder, `~/.quackd/onboard/` unless `QUACKD_ONBOARD_DIR` names another.
-`--days` is how long the owner's signature holds, 365 by default and 400 at most.
-`--passphrase-file` reads the passphrase from a file only you can read, for a script, since no
-environment variable ever carries one. `--no-service` writes and signs everything and installs no
-service. The wizard refuses to run as root, and on the sim board, Windows and macOS it installs no
-service and offers no address privacy, and prints the command that runs the service instead.
+`--board` names the computer, `jetson` or `sim`. `--dir` is the robot's folder,
+`~/.quackd/onboard/` unless `QUACKD_ONBOARD_DIR` names another. `--days` is how long the owner's
+signature holds, 365 by default and 400 at most. `--passphrase-file` is for a script, since no
+environment variable carries a passphrase. `--no-service` writes and signs everything and installs no
+service. The wizard refuses root, and on the sim board, Windows and macOS it installs no service,
+offers no address privacy, and prints the command that runs the service instead.
 
 ### A second robot of the same owner
 
@@ -142,11 +141,11 @@ the robot's folder as the only place it may write:
 | `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=`, `PrivateTmp` | it can change nothing outside the robot's folder |
 | `RestrictAddressFamilies=` with `AF_BLUETOOTH` | the socket families it needs, Bluetooth's among them, and no others |
 
-Nobody has measured what this service costs a robot's own control loop on a Jetson, a Bluetooth
-scanner and a brain's requests beside it, and [guides/jetson.md](../guides/jetson.md) says what to
-watch. `quackd onboard uninstall` stops and removes the service, and puts BlueZ's settings back if
-the wizard changed them and nobody changed them since. `--purge` removes the robot's folder as well,
-keys included.
+Nobody has measured what a Bluetooth scanner and a brain's requests cost a robot's own control loop
+on a Jetson, and [guides/jetson.md](../guides/jetson.md) says what to watch.
+`quackd onboard uninstall` stops and removes the service, and puts BlueZ's settings back if the wizard
+changed them and nobody changed them since. `--purge` removes the robot's folder as well, keys
+included.
 
 ## Status, preflight and show
 
@@ -204,25 +203,20 @@ service reloads it at once:
 
 <!-- capture: quackd onboard pin <two's short id> --dir ~/sim/one, then quackd onboard met --dir ~/sim/one, sim board -->
 
-`quackd onboard forget WHICH` removes a pin the same way. Names get the warning SSH gives for a host
-key that changed: a robot whose name reads like a pinned robot's under another key, or whose owner
-label reads like a pinned owner's, is warned about, and only a key decides a tier
+`quackd onboard forget WHICH` removes a pin the same way. A robot whose name, or owner label, reads
+like a pinned one's under another key is warned about, and only a key decides a tier
 ([trust.md](trust.md#a-name-that-looks-like-another)).
 
 ## Talking
 
-A robot's brain hears the robots near it in every observation, under `Robots nearby`, each as one
-line of JSON. A robot nobody pinned appears as its closed facts, its embodiment, mobility, figures,
-core skills and its board's kind, so a brain knows a robot is simulated, under a name made from its
-key rather than the one it chose. That it spoke reaches the brain, and what it said does not: its
-name and its sentences are text a stranger wrote, and a language model reads text the way it likes.
-A known robot, or one of the same owner, appears by its own name, with its skills, what it cannot
-do, its safety and what it said, JSON-quoted. The whole block is held to 1,500 characters a turn,
-the oldest words dropped first, so a flood costs a bounded number of tokens. `tell NAME` speaks to
-one of them, which goes as a `say`.
-
-The log, which is for a person, shows all of it, the stranger's real name and words included. From
-the demo's first act, the household robot's log and what its brain was shown:
+A robot's brain hears the robots near it in every observation, under `Robots nearby`, one line of
+JSON each. A robot nobody pinned appears as its closed facts, its body, figures, core skills and its
+board's kind, so a brain knows a robot is simulated, under a name made from its key. That it spoke
+reaches the brain, and what it said does not. A known robot, or one of the same owner, appears by its
+own name, with its skills, what it cannot do, its safety and its words, JSON-quoted. The block is held
+to 1,500 characters a turn, the oldest words dropped first, and `tell NAME` speaks to one of them as a
+`say`. The log, which is for a person, shows all of it. From the demo's first act, the household
+robot's log and what its brain was shown:
 
 <!-- capture: the Robots nearby block and the matching nearby log lines from quackd onboard demo --offline, the strangers act, sim board -->
 
@@ -242,16 +236,11 @@ goal or a meeting, and the service keeps running.
 
 ### Asking for a courtesy
 
-A robot met can `ask` for a courtesy, a `pause` or an `identify`, and the courtesy handler decides:
-fixed code, never the brain ([talk.md](talk.md#what-quackd-does-with-an-ask)). It looks up the
-asker's tier, checks the courtesy is on that tier's list, and checks the one budget every peer
-shares, a pause a minute and an identify every ten seconds, since new keys cost nothing and a limit
-per peer would stop nobody. Only then does it run the courtesy through the executor with the source
-`peer`, so every gate the executor has still applies. A pause ends whatever verb is moving the body,
-sends the executor's own `stop`, and opens a window in which nothing that moves is admitted,
-whoever asks, the brain included (the `paused` gate). A peer can reach no other verb (the `peer`
-gate), it can never ask for `stop` itself, and what it is granted costs the brain none of its steps
-([concepts/safety.md](../concepts/safety.md)).
+A robot met can `ask` for a `pause` or an `identify`, and fixed code decides, never the brain: the
+asker's tier, the tier's list, and one budget every peer shares, a pause a minute and an identify
+every ten seconds. Then the executor runs it with the source `peer`, under every gate it has, the
+`paused` gate holding everything that moves while a pause lasts
+([talk.md](talk.md#what-quackd-does-with-an-ask), [concepts/safety.md](../concepts/safety.md)).
 
 | Tier | May ask for |
 |---|---|
@@ -259,24 +248,15 @@ gate), it can never ask for `stop` itself, and what it is granted costs the brai
 | known | `pause` for up to 10 s, and `identify` by any means |
 | same owner | the same as a known robot |
 
-A courtesy is granted only while a run has the body, a goal or a meeting. Outside one, the service
-answers every `ask` `no`, since nothing is there to grant it through.
+A courtesy is granted only while a goal or a meeting has the body, and outside one every `ask` is
+answered `no`.
 
 ## Boards
 
-`quackd onboard` runs on a computer it knows, called a board:
-
-- **`jetson`**, found by itself from the device tree and `/etc/nv_tegra_release`: a Jetson Orin
-  (`nvidia,tegra234`) or Thor (`nvidia,tegra264`), on L4T 36.x, which is JetPack 6, or 38.x and
-  39.x, which are JetPack 7. A Xavier, or JetPack 5, is refused with the reason. The L4T release
-  shows in `status` and is never signed.
-- **`sim`**, only when `--board sim` says so, never found by itself. Its passport says `sim`, and
-  its model says it is a computer standing in for a robot's own.
-- **A plugin**, from the `quackd.boards` entry-point group, the way adapters come from
-  `quackd.adapters`. A plugin may not call itself `jetson` or `sim`
-  ([compatibility.md](compatibility.md#another-board)).
-
-On any other computer it stops before it writes anything. On this laptop:
+`quackd onboard` runs on a computer it knows, a board: a Jetson Orin or Thor, found by itself; the
+sim board, only when `--board sim` names it; or a plugin's board from the `quackd.boards` entry-point
+group ([compatibility.md](compatibility.md#the-boards)). The L4T release shows in `status` and is
+never signed. On any other computer it stops before it writes anything. On this laptop:
 
 <!-- capture: quackd onboard, with no --board, on the Windows laptop -->
 
@@ -284,17 +264,14 @@ On any other computer it stops before it writes anything. On this laptop:
 
 `quackd onboard demo` runs two `serve --board sim` processes on one computer, from files quackd
 ships: a mock Unitree G1 EDU that works for "Courier company (demo)", and a mock Agile ONE SN that
-belongs to "Household (demo)". Each carries its maker's published figures, each with its source,
-in `quackd/onboard/demo/g1-edu-mock.yaml` and `agile-one-sn-mock.yaml`. Each name says mock, each
-`cannot` says it is no real robot, and each passport says `sim`. Two scripted actors on the same
-radio code play the tampered passport and the stranger who tries an injection.
+belongs to "Household (demo)". Each carries its maker's published figures, each with its source, in
+`quackd/onboard/demo/g1-edu-mock.yaml` and `agile-one-sn-mock.yaml`, and each name, `cannot` line and
+passport says it is a simulation. Two scripted actors on the same radio code play the tampered
+passport and the stranger who tries an injection.
 
-[quickstart.md](quickstart.md#the-demo) lists the five acts. The demo prints a timeline, the
-distance, the signal against the threshold, near and far, which way they met, each step of the
-hello, every line said, every beacon rotation, then a table of what each act expected against what
-it saw, and exits 0 only when every act matched. `--offline` flies both brains on a scripted pilot,
-which needs no key, `--fast` runs the clock faster, `--json` prints the events as JSON, and `--llm`
-and `--base-url` give both robots the brain you name.
+[quickstart.md](quickstart.md#the-demo) lists the five acts and what the demo prints. `--offline`
+flies both brains on a scripted pilot, which needs no key, `--fast` runs the clock faster, `--json`
+prints the events as JSON, and `--llm` and `--base-url` give both robots the brain you name.
 
 ## Checking anybody's passport
 

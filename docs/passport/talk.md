@@ -41,10 +41,9 @@ Every message has the same envelope:
 | `body` | what the type carries |
 
 Every message is a compact JWS of that object, signed by the sender's robot key, with `typ`
-`robot-passport-msg+jws` in its header, and an unsigned message is refused whatever it says. The
-`typ` matters: an owner key signs passports and a robot key signs messages, and the two `typ`s mean
-a signature made for one can never pass as the other. A message is at most 4,096 bytes, except a
-`hello`, which carries a whole passport and may be up to 16,384.
+`robot-passport-msg+jws`, and an unsigned one is refused whatever it says. An owner key signs
+passports and a robot key signs messages, and their two `typ`s keep either signature from passing as
+the other. A message is at most 4,096 bytes, and a `hello`, which carries a passport, 16,384.
 
 ## Channels
 
@@ -61,12 +60,11 @@ the robot's DNS-SD record names, and reads the reply in the response:
 | `429` | a budget is spent |
 
 **A Bluetooth link.** The same message goes as one request over the link, in frames, and the reply
-comes back over the same link with the same status. Either robot can send on a link, whichever
-dialled.
+comes back over the link with the same status. Either robot can send, whichever dialled.
 
-Wherever a message came from is where its reply goes: back on the HTTP response, to the address a
-`hello` came from at the port it named, or over the same link. A robot never contacts an address a
-message merely mentions ([discovery.md](discovery.md#fetch-rules)).
+A reply goes back the way its message came: on the HTTP response, to the address a `hello` came from
+at the port it named, or over the same link, and never to an address a message merely mentions
+([discovery.md](discovery.md#fetch-rules)).
 
 ## hello: proving who you are, in three steps
 
@@ -89,16 +87,15 @@ messages, and both robots check each other before either says anything else:
  |        session (A, B, nA, nB): say, ask, share        |
 ```
 
-Each passport is the JWS its owner signed, carried unchanged. Each robot reads the other's under
-rules 4.4 and 4.5: its owner's signature, and its validity. Then it checks that the passport's `id`
-is the key that signed the `hello`, that the passport is not its own, and that it carries no
-required extension this robot cannot read. A robot that fails any check is refused there, and the
-refusal is written down for a person.
+Each passport is the JWS its owner signed, carried unchanged, and each robot reads the other's
+under rules 4.4 and 4.5, its owner's signature and its validity. Then it checks that the passport's
+`id` is the key that signed the `hello`, that the passport is not its own, and that it carries no
+required extension it cannot read. A robot that fails is refused there, and the refusal is written
+down for a person.
 
-A nonce is 16 random bytes. After step 2, A knows B holds B's robot key now, because B signed a
-nonce A made up a moment ago. After step 3, B knows the same of A. Each signature covers both ids
-and both nonces, and the message's `typ` and `type` say exactly what it is, so neither signature can
-be replayed into another session or passed off as anything else.
+A nonce is 16 random bytes. After step 2, A knows B holds B's robot key now, because B signed a nonce
+A made up a moment ago, and after step 3 B knows the same of A. Each signature covers both ids and
+both nonces, so neither can be replayed into another session.
 
 ### What a hello carries beside the passport
 
@@ -118,21 +115,17 @@ Bluetooth link was heard by being there.
 ### After the hello
 
 Every later message carries `nonces: [nA, nB]`, and a receiver refuses one whose nonces match no
-session of its own. Freshness comes from that and needs no clock. A passport's validity does need
-one, which is why a robot whose clock reads earlier than its own passport's `issued` stops talking
-until the time is set. quackd ends a session after ten minutes without a message, forgets a `hello`
-not finished in thirty seconds, and holds at most 64 sessions and 64 half-finished hellos, so a
-flood of hellos from fresh keys is a flood of `429`s and not of memory.
+session of its own, so freshness needs no clock. A passport's validity does, which is why a robot
+whose clock reads earlier than its own passport's `issued` stops talking. quackd ends a session after
+ten quiet minutes, forgets a `hello` not finished in thirty seconds, and holds at most 64 sessions and
+64 half-finished hellos, so a flood of hellos from fresh keys is a flood of `429`s, not of memory.
 
 ## say and bye
 
-`say` carries 1 to 400 characters, the same cap quackd's flock messages have always had. It is for
-the people watching and for a robot's brain, and it is never an instruction: a stranger's `say`
-never reaches a brain at all, and a known robot's reaches it as words somebody said, in quotes,
-never as part of its task ([security.md](security.md#prompt-injection)).
-
-`bye` ends the session. A robot that walks off without one simply times out, and one whose signal
-falls away says `bye` before it closes the link.
+`say` carries 1 to 400 characters, the cap quackd's flock messages have always had. It is never an
+instruction: a stranger's `say` never reaches a brain, and a known robot's reaches it in quotes, as
+words somebody said ([security.md](security.md#prompt-injection)). `bye` ends the session, and a
+robot whose signal falls away says it before it closes the link.
 
 ## ask and answer
 
@@ -163,24 +156,19 @@ specification puts four duties on every receiver, whoever made it:
 ### What quackd does with an ask
 
 quackd's handler is fixed code, not the brain. It looks up the asker's tier
-([trust.md](trust.md#the-tiers)), checks the skill is on that tier's list and that the global
-budget allows it, and only then runs it through the executor, with the source `peer`, so every gate
-the executor already has still applies. `pause` ends whatever verb is moving the body, then becomes
-the executor's own stop, followed by a short window in which nothing that moves is admitted.
-`identify` becomes the body's sound when it has one. The executor holds a peer to two gates of its
-own: `peer`, which admits no verb a peer started but the `stop` and `say` a courtesy runs, and
-`paused`, which admits nothing that moves any part of the body while a granted pause holds
+([trust.md](trust.md#the-tiers)), checks the skill is on that tier's list and that the global budget
+allows it, and only then runs it through the executor with the source `peer`, so every gate the
+executor has still applies. `pause` ends whatever verb is moving the body, becomes the executor's own
+stop, and opens a short window in which nothing that moves is admitted. `identify` becomes the body's
+sound when it has one. Two gates hold a peer: `peer`, which admits no verb a peer started but the
+`stop` and `say` a courtesy runs, and `paused`, which admits nothing that moves while a pause holds
 ([concepts/safety.md](../concepts/safety.md)).
 
-A courtesy needs a run that has the body, a goal or a meeting, so outside one every `ask` is
-answered `no`. A peer never calls `stop`, and nothing a peer asks can outlast or override the
-robot's own stop. The handler answers within the five seconds the specification allows, `later`
-when the executor has not finished in four.
-
-A brain hears of an `ask` as information only. A stranger's reaches it in the words a courtesy is
-asked in and no others, `pause` and its whole seconds, `identify` and how, `stop`, or something
-else, so a skill name or an argument it made up never does, and neither does its `why`. A known
-robot's `ask`, `share` and `answer` reach the brain as they were sent, JSON-quoted.
+A courtesy needs a goal or a meeting that has the body, so outside one every `ask` is answered `no`.
+A peer never calls `stop`, and nothing it asks can outlast the robot's own stop. The handler answers
+within the five seconds the specification allows, `later` when the executor has not finished in
+four. A brain hears of an `ask` as information only: a stranger's in the words a courtesy is asked
+in and no others, never its `why`, and a known robot's as it was sent, JSON-quoted.
 
 ## share
 
@@ -190,20 +178,17 @@ robot's `ask`, `share` and `answer` reach the brain as they were sent, JSON-quot
 {"about": "parcel", "fact": "left by the blue door", "place": "the front door", "age_s": 12, "confidence": "estimate"}
 ```
 
-It names a place, never a coordinate. Two robots that have just met share no frame of reference,
-so "x 1.2, y 0.4" in one robot's frame means nothing in the other's, which quackd learned building
-its own flocks ([ADR-0020](../adr/0020-heterogeneous-flocks.md)). "The front door" means the same
-to both, and to the people listening. A stranger's `share` is withheld from a brain whole, as its
+It names a place, never a coordinate: two robots that have just met share no frame of reference,
+which quackd learned building its own flocks ([ADR-0020](../adr/0020-heterogeneous-flocks.md)), and
+"the front door" means the same to both. A stranger's `share` is withheld from a brain whole, as its
 `say` is.
 
 ## Meetings, and a robot that is busy
 
-What a robot says is up to its brain, and quackd gives the brain two ways to say it. A robot with
-nothing to do holds a **meeting** with a robot that came close: a short run of its own, on the
-standing task in `robot.yaml`, which can only report the robot's state, stop it, and speak with
-`tell`. A robot already on a goal does not stop for a newcomer: the robot appears in that run's
-`Robots nearby`, and the brain is told that robots nearby may speak to it and that it never moves
-because one asked. Either way the messages on the wire are the same six
+What a robot says is up to its brain. A robot with nothing to do holds a **meeting** with a robot
+that came close: a short run on the standing task in `robot.yaml`, which can only report the robot's
+state, stop it, and speak with `tell`. A robot already on a goal does not stop for a newcomer, which
+appears in that run's `Robots nearby` instead. Either way the messages are the same six
 ([quackd.md](quackd.md#meeting-another-robot)).
 
 ## Versions
