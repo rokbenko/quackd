@@ -287,3 +287,17 @@ def test_one_service_holds_a_robots_directory_at_a_time(tmp_path: Path) -> None:
             pass
     with held(lock):  # and it is free again once the first let go
         pass
+
+
+def test_a_robot_file_edited_by_hand_is_read_again_with_no_command(tmp_path: Path) -> None:
+    """A pin written into robot.yaml by an editor, not by `quackd onboard pin`, still reaches
+    the running service: it looks at the file's time every few seconds."""
+    from tests.passport_helpers import B
+
+    air = air_for(tmp_path)
+    household = robot(tmp_path, HOUSEHOLD)
+    with running(household, SimPlace(air, STANDS, "none", speed=SPEED)) as service:
+        assert service.file.trust.pins == []
+        pin = config.Pin(kind="robot", id=B.did, name="cart-01", pinned=date.today().isoformat())
+        config.add_pin(household.robot_yaml, pin)
+        assert wait_for(lambda: len(service.file.trust.pins) == 1, 20)

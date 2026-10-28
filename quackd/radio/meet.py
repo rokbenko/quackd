@@ -236,6 +236,8 @@ class Planner:
                     return
                 plan.state, plan.did, plan.attempts = "met", did, 0
                 plan.route = route or plan.route
+                if route and plan.via is None:
+                    plan.via = "lan" if route.startswith("http") else "link"
                 self._did_of[plan.beacon_id] = did
                 return
             if plan is None or plan.did != did or plan.state not in ("met", "parting"):

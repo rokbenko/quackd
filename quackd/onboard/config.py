@@ -383,15 +383,15 @@ passport:
   owner:
     label: {_yaml_text(owner_label)}{contact}
   body:
-    embodiment: {embodiment}        # humanoid, quadruped, biped, wheeled or tracked
-    mobility: {mobility}           # legged, wheeled or tracked
-    manipulator: {manipulator}       # none, gripper, arms or other
+    {f"embodiment: {embodiment}":<26}# humanoid, quadruped, biped, wheeled or tracked
+    {f"mobility: {mobility}":<26}# legged, wheeled or tracked
+    {f"manipulator: {manipulator}":<26}# none, gripper, arms or other
     # every figure is [value, official|estimate|measured, "where it comes from"]:
     # mass_kg: [35, official, "the maker's product page"]
   skills: [report_state, stop]
   cannot: []
   safety:
-    estop: {estop}               # button, remote, power or none{stop}
+    {f"estop: {estop}":<26}# button, remote, power or none{stop}
 
 # Everything below changes without a new signature.
 {robot}
@@ -407,7 +407,7 @@ trust:
   pins: []                 # `quackd onboard pin` adds the robots and owners you trust
 
 radio:
-  meet_within_m: {meet_within_m:g}       # how close counts as near, judged from the signal
+  {f"meet_within_m: {meet_within_m:g}":<25}# how close counts as near, judged from the signal
 
 lan:
   port: {port}{port_note}

@@ -177,6 +177,9 @@ class Service:
         self.check = check_board(check_own_passport(self.token, self.robot_key.did), facts)
         self._stop = threading.Event()
         self._last_status = 0.0
+        #: when robot.yaml and passport.jws last changed, as the service last read them: a file
+        #: a person edited is read again on the next look, with no command needed
+        self._seen = self._stamps()
         self.server: PassportServer | None = None
         self.talker: Talker | None = None
         self.slot: RunSlot | None = None
@@ -254,7 +257,25 @@ class Service:
         now = time.monotonic()
         if now - self._last_status >= STATUS_EVERY_S:
             self._last_status = now
+            stamps = self._stamps()
+            if stamps != self._seen:
+                self._seen = stamps
+                done = self._reload()
+                self.log(
+                    "robot.yaml or passport.jws changed: read again"
+                    if done.get("ok")
+                    else f"robot.yaml changed and does not read: {done.get('reason')}"
+                )
             self._write_status()
+
+    def _stamps(self) -> tuple[float | None, float | None]:
+        def stamp(path: Path) -> float | None:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return None
+
+        return stamp(self.home.robot_yaml), stamp(self.home.passport_jws)
 
     def stop(self) -> None:
         self._stop.set()
@@ -444,6 +465,7 @@ class Service:
         if name == "met":
             return {"ev": "met", "rows": self._met_rows(int(op.get("limit") or 20))}
         if name == "reload":
+            self._seen = self._stamps()
             return {"ev": "reloaded", **self._reload()}
         if name == "shutdown":
             self.stop()

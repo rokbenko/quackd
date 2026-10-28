@@ -9152,7 +9152,10 @@ def onboard(
     home = _onboard_home(directory)
     chosen, facts = _onboard_board(board)
     release = f", {facts.release}" if facts.release else ""
-    ui.console.print(_ok_line(f"this computer is {facts.model} ({facts.kind}{release})"))
+    if facts.kind == "sim":
+        ui.console.print(_ok_line("the sim board: this computer stands in for a robot's own"))
+    else:
+        ui.console.print(_ok_line(f"this computer is {facts.model} ({facts.kind}{release})"))
     ask = _Prompts(yes)
     home.ensure()
     if file is not None:
@@ -9359,15 +9362,25 @@ def _status_rows(home: Any, reply: dict[str, Any]) -> list[tuple[str, Any]]:
     with contextlib.suppress(config.FileError, OSError, ValueError):
         why = wizard.needs_signing(home, config.load(home.robot_yaml), board)
         if why is not None and passport.get("ok"):
-            rows.append(("unsigned", Text(f"{why}: quackd onboard sign", style=ui.STYLES["warn"])))
-    rows.append(("board", " ".join(str(v) for v in (reply.get("board") or {}).values())))
+            said = f"{why}, so other robots still see what was signed: quackd onboard sign"
+            rows.append(("unsigned", Text(said, style=ui.STYLES["warn"])))
+    shown_board = reply.get("board") or {}
+    rows.append(
+        (
+            "board",
+            f"{shown_board.get('kind')}: "
+            + ", ".join(
+                str(shown_board[k]) for k in ("model", "soc", "release") if k in shown_board
+            ),
+        )
+    )
     rows.append(("brain", str((reply.get("brain") or {}).get("llm") or "none: no meetings")))
     rows += _radio_rows(radio)
     for robot in reply.get("nearby") or []:
-        rows.append(("talking", f"{robot.get('name')} ({robot.get('tier')})"))
+        rows.append(("talking", f"{robot.get('shown')} ({robot.get('tier')})"))
     title = f", {run['title']}" if run.get("title") else ""
     rows.append(("run", f"{run.get('run', 'idle')}{title}"))
-    for row in _met_rows(home, 3):
+    for row in _met_rows(home, 5):
         if "refused" in row:
             rows.append(("refused", f"{row.get('at', '')} {ui.printable(str(row.get('why')))}"))
         else:
@@ -9401,18 +9414,20 @@ def onboard_met(
     for column in ("when", "robot", "short id", "tier or refusal"):
         t.add_column(column)
     for row in rows:
+        # a minute is what a person matches a meeting by, and 8 of a short id what pin takes
+        when = str(row.get("at", "")).replace("T", " ")[:16]
         if "refused" in row:
             t.add_row(
-                row.get("at", ""),
+                when,
                 Text(ui.printable(str(row["refused"]))),
                 "",
-                Text(str(row.get("why", "")), style=ui.STYLES["warn"]),
+                Text(ui.printable(str(row.get("why", ""))), style=ui.STYLES["warn"]),
             )
         else:
             t.add_row(
-                row.get("at", ""),
+                when,
                 Text(ui.printable(str(row.get("name", "")))),
-                str(row.get("short_id", "")),
+                str(row.get("short_id", ""))[:8],
                 str(row.get("tier", "")),
             )
     ui.console.print(t)

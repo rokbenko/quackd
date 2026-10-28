@@ -181,7 +181,7 @@ def _peer_line(peer: Mapping[str, Any]) -> str:
         parts.append(f"(the sim puts it at {peer['true_m']:g} m)")
     plan, via = peer.get("plan"), peer.get("via")
     if plan == "met":
-        parts.append(f"met over {'the LAN' if via == 'lan' else 'a link'}")
+        parts.append({"lan": "met over the LAN", "link": "met over a link"}.get(str(via), "met"))
     elif plan:
         reason = peer.get("reason")
         parts.append(f"{plan}: {reason}" if reason and plan != "meeting" else str(plan))
@@ -195,10 +195,10 @@ def _peer_line(peer: Mapping[str, Any]) -> str:
 def render_radio(radio: Mapping[str, Any]) -> list[str]:
     """The radio's part of status.json as lines a person reads."""
     state = radio.get("state", "unknown")
-    where = radio.get("adapter") or radio.get("kind") or "radio"
-    lines = [
-        f"radio     {radio.get('kind', '?')} {where}, {state}: {radio.get('detail') or ''}".rstrip()
-    ]
+    kind = radio.get("kind") or "radio"
+    adapter = radio.get("adapter")
+    where = f"{kind} {adapter}" if adapter and adapter != kind else kind
+    lines = [f"radio     {where}, {state}: {radio.get('detail') or ''}".rstrip()]
     if radio.get("hint") and state != "ready":
         lines.append(f"          -> {radio['hint']}")
     lines.append(f"          {_what_it_does(radio)}")

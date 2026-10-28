@@ -85,7 +85,7 @@ def test_the_lines_say_what_the_radio_does_and_what_each_robot_is_to_this_one() 
         )
     )
     text = "\n".join(lines)
-    assert lines[0] == f"radio     sim sim, ready: {READY.detail}"
+    assert lines[0] == f"radio     sim, ready: {READY.detail}"
     assert "advertising, scanning (5 passport adverts a second), taking links; 1 link open" in text
     due = duration(rotor.period_s - 2.0)
     assert f"beacon    {rotor.current} (next rotation in {due}; rotated 0 times)" in text
