@@ -6,21 +6,20 @@
 > board. Nothing here has run on a Jetson, over a real Bluetooth radio or between two
 > machines, and [roadmap.md](roadmap.md) says exactly what has.
 
-quackd is the first implementation of Robot Passport. `quackd onboard` does four things with it:
+quackd is the first implementation of Robot Passport, and `quackd onboard` does four things:
 
-- **It sets a robot up, once.** A wizard writes one file, `robot.yaml`, makes the robot's key, seals
-  your owner key, signs the passport and installs a service ([onboarding](#onboarding)).
-- **It finds the robots that come close**, by Bluetooth LE signal strength, and reaches them over the
-  LAN when they share one and over a Bluetooth link when not ([discovery.md](discovery.md)).
-- **It checks every one before a word**, its owner's signature and its key, and places it in a tier
-  ([trust.md](trust.md)).
-- **It lets the robot's brain talk** to the robots it may: in a standing meeting task when the robot
-  is idle, and in the run it is in when it is busy. Every `ask` a robot sends is decided by fixed
-  code, never by the brain ([talk.md](talk.md#what-quackd-does-with-an-ask)).
+- **It sets a robot up, once**: one file, `robot.yaml`, two keys, the owner's signature and a service
+  ([onboarding](#onboarding)).
+- **It finds the robots that come close**, by Bluetooth LE, and reaches them over the LAN or a
+  Bluetooth link ([discovery.md](discovery.md)).
+- **It checks every one before a word**, and places it in a tier ([trust.md](trust.md)).
+- **It lets the robot's brain talk** to the robots it may, in a meeting when it is idle and in its
+  run when it is busy, while fixed code decides every `ask`
+  ([talk.md](talk.md#what-quackd-does-with-an-ask)).
 
 Everything else in quackd still runs on a laptop and reaches a Jetson with `--host`
-([guides/jetson.md](../guides/jetson.md)). `quackd onboard` is the one part of quackd that runs on a
-robot's own computer.
+([guides/jetson.md](../guides/jetson.md)): `quackd onboard` is the one part that runs on a robot's own
+computer.
 
 ## Onboarding
 
@@ -57,16 +56,15 @@ Copy the sealed `keys/owner.json` from a robot you already set up, and give it t
 quackd onboard --owner-key ~/owner.json
 ```
 
-The wizard asks for the passphrase once, which proves the key opens, and signs the new robot's
-passport with it. Both robots then know each other as the same owner's the moment they meet, with no
-pin ([trust.md](trust.md#two-robots-of-the-same-owner)).
+The wizard asks for its passphrase, which proves the key opens, and signs with it. The two robots
+then know each other as the same owner's, with no pin
+([trust.md](trust.md#two-robots-of-the-same-owner)).
 
 ## robot.yaml, the one file
 
-The wizard writes `robot.yaml` from a commented template, and a person edits it as text from then
-on. It is read strictly: a key quackd does not know is refused rather than ignored, and an error
-names the place in the file, `meeting.per_hour` say, so a typo never silently does nothing. Here is
-the one the wizard wrote for the sim robot above:
+The wizard writes `robot.yaml` from a commented template, and a person edits it as text after. It
+is read strictly: an unknown key is refused, and an error names its place in the file,
+`meeting.per_hour` say, so a typo never silently does nothing. The one the wizard wrote above:
 
 <!-- capture: cat ~/sim/one/robot.yaml, as the wizard wrote it, sim board -->
 
@@ -81,43 +79,30 @@ the one the wizard wrote for the sim robot above:
 | `radio` | `meet_within_m`, 2.0 by default; `rssi_at_1m`, -59; `advertise`; `rotate_min`, 15 | no |
 | `lan` | `port`: 8790, or 0 for any free port, which is the sim board's default | no |
 
-The passport section is what other robots read, so it is the only part the owner signs. The member
-that says which computer the robot is, `board`, is not in the file at all: quackd writes it from the
-board it found, so a file can never claim a Jetson on a laptop. An `arm` embodiment is refused,
-because an arm carries no passport ([compatibility.md](compatibility.md)). When `robot.adapter` names
-a body quackd drives, its verbs become the passport's skills.
-
-`robot.env` sits beside the file and holds the brain's key, `LOCAL_API_KEY=...` or the variable its
-provider reads. Both files are readable by the robot's own user alone, and systemd reads `robot.env`
-into the service's environment.
+Only the passport section, what other robots read, is signed. `board` is not in the file at all:
+quackd writes it from the board it found, so a file can never claim a Jetson on a laptop. An `arm`
+embodiment is refused ([compatibility.md](compatibility.md)), and when `robot.adapter` names a body,
+its verbs become the passport's skills. `robot.env` beside it holds the brain's key,
+`LOCAL_API_KEY=...` or whatever its provider reads, and systemd reads it into the service's
+environment. Both files are readable by the robot's own user alone.
 
 ## Signing, and signing again
 
-The owner signs the passport section on the first `quackd onboard`. After that, an edit to it waits
-for `quackd onboard sign`: the service keeps serving the passport the owner last signed, and
-`quackd onboard status` names every change that is not signed yet. `sign` asks for the passphrase,
-signs, and the service picks the new passport up. It signs again with nothing changed only within 30
-days of the passport's `expires`.
+The first `quackd onboard` signs the passport section. After that, an edit waits for
+`quackd onboard sign`, which asks for the passphrase: meanwhile the service serves the passport last
+signed, and `status` names every unsigned change. With nothing changed, `sign` signs again only
+within 30 days of `expires`.
 
 <!-- capture: an edit to passport.cannot in ~/sim/one/robot.yaml, then quackd onboard status --dir ~/sim/one, then quackd onboard sign --dir ~/sim/one, sim board -->
 
 ## The service
 
-`quackd onboard serve` is the service, and systemd runs it as `quackd-onboard.service`. It is one
-long-lived process:
-
-- **the radio**, which advertises the beacon and listens for others, and replaces the beacon's id
-  every 15 minutes unless a link, a session or a meeting is open;
-- **near and far**, judged from each robot's signal strength against the threshold `robot.yaml`
-  sets, and the decision of who says hello first;
-- **talk**, over the LAN or a Bluetooth link: the passport at the well-known URL, the inbox, the
-  `hello` that checks both robots, and the tiers;
-- **runs**, one at a time: a meeting, or a goal a person gave;
-- **a control port** on 127.0.0.1 for `status`, `goal`, `stop` and `met`, and for the reload after
-  `pin` and `forget`, guarded by a token in `control.json`.
-
-It reloads `robot.yaml` and `passport.jws` when they change, and writes `status.json` every 2
-seconds. On a stop it ends the run in hand, says bye to every robot it is talking to, and goes.
+`quackd onboard serve` is the service, which systemd runs as `quackd-onboard.service`: one process
+holding the radio and its rotating beacon, near and far, talk over the LAN or a Bluetooth link, one
+run at a time, a meeting or a goal, and a control port on 127.0.0.1 for the other subcommands,
+guarded by a token in `control.json`. It reloads `robot.yaml` and `passport.jws` when they change,
+writes `status.json` every 2 seconds, and on a stop ends the run in hand, says bye to every robot
+it is talking to, and goes.
 
 Three things turn its talk off until they are fixed, and `status` names each: no valid
 `passport.jws`, its own passport expired, and a clock earlier than the passport's `issued`, which a
