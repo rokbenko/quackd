@@ -216,8 +216,8 @@ jobs:
         run: uv run python -c "import bleak, dbus_fast, zeroconf; print('bleak and dbus-fast import')"
       - name: Types, with bleak's and dbus-fast's own present
         run: uv run mypy
-      - name: The radio with the extra installed, and the BlueZ half against a fake BlueZ
-        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py
+      - name: The radio with the extra installed, the BlueZ half against a fake BlueZ, and the LAN browse on loopback
+        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py
 
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which
