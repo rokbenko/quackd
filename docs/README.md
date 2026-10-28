@@ -35,7 +35,7 @@ How to do one thing with quackd.
 | [Playing a part](guides/play.md) | a task that gives the pilot a part to play, an animal, a person or a character, acted out with the body it has |
 | [Flock mode](guides/flock.md) | several robots on one task, as pilots or under a coordinator |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
-| [An NVIDIA Jetson](guides/jetson.md) | a board quackd reaches with `--host` and never runs on |
+| [An NVIDIA Jetson](guides/jetson.md) | a board the quackd driving a robot reaches with `--host`, and the one `quackd onboard`, Robot Passport's service, runs on |
 
 ## Models
 
@@ -102,36 +102,38 @@ to try a real one in.
 ## Robot Passport
 
 A small open protocol for two robots that have never met, from any maker, to say who they are, who
-vouches for them, what they can and cannot do, how a person stops them and how to reach them. It
-has a folder of its own, [passport/](passport/README.md), because it is written to leave quackd
-one day, whole.
+owns them, what they can and cannot do and how a person stops them, before their brains say a
+word. Since 0.29.0 it runs on the robot it introduces, as `quackd onboard` on the robot's own
+computer. It has a folder of its own, [passport/](passport/README.md), because it is written to
+leave quackd one day, whole.
 
 | Page | What it covers |
 |---|---|
-| [Robot Passport](passport/README.md) | the hub: the three layers, the status, and every page in reading order |
-| [Why](passport/why.md) | the problem, five meetings it is for, the principles, and why not something that exists |
-| [How it works](passport/how-it-works.md) | one meeting step by step, a passport's life, and what happens when something fails |
-| [Quickstart](passport/quickstart.md) | a passport for any robot in five minutes, and for a robot quackd drives |
-| [The passport](passport/passport.md) | the document, member by member |
-| [Discovery](passport/discovery.md) | the beacon: the well-known URL, QR, DNS-SD, MQTT, ROS 2, and Bluetooth later |
-| [Trust](passport/trust.md) | keys, signatures, stamps, pinning and the four tiers |
-| [Talk](passport/talk.md) | the six messages, the three-step `hello`, and courtesies |
+| [Robot Passport](passport/README.md) | the hub: the three layers (a Bluetooth beacon judged by signal strength, a passport its owner signs, talk over the LAN or a Bluetooth link), the status, and every page in reading order |
+| [Why](passport/why.md) | the problem, the meetings it is for, why a robot carries its own passport, the principles, and why not something that exists |
+| [How it works](passport/how-it-works.md) | one meeting step by step, what each side learns, a passport's life from the wizard to its expiry, and what happens when something fails |
+| [Quickstart](passport/quickstart.md) | the three commands on a robot's own computer, and the demo on a laptop |
+| [The passport](passport/passport.md) | the document, member by member, as 1.0 has it |
+| [Discovery](passport/discovery.md) | the Bluetooth advert, its rotating beacon id and signal strength, the LAN when two robots share one, a Bluetooth link when they do not, and the fetch rules |
+| [Trust](passport/trust.md) | the owner's signature, the owner key sealed on the robot, pinning and the tiers |
+| [Talk](passport/talk.md) | the six messages, the three-step `hello` and its runtime block, courtesies, and the meeting task |
 | [Security](passport/security.md) | the threat model |
-| [Privacy](passport/privacy.md) | what each layer reveals, and taking part without being discoverable |
-| [Compatibility](passport/compatibility.md) | the ladder from a sticker to a talking robot, recipes and translators |
-| [In quackd](passport/quackd.md) | what quackd does with it: commands, files, what a pilot sees |
-| [Specification](passport/spec.md) | the normative text, version 0.1, with its [schemas](passport/schema/passport.schema.json) |
+| [Privacy](passport/privacy.md) | what each layer reveals, tracking and the radio's address, and what quackd keeps on the robot |
+| [Which robots carry one](passport/compatibility.md) | the robot's own computer, a Jetson first, the board plugins and the `sim` board, and why arms and toys carry none |
+| [In quackd](passport/quackd.md) | `quackd onboard`: the robot's file, the service, meetings, pins, the demo, and what has run |
+| [Specification](passport/spec.md) | the normative text, version 1.0, with its [schemas](passport/schema/passport.schema.json) |
 | [Test vectors](passport/vectors/README.md) | the conformance suite, each vector with its expected result |
-| [Naming](passport/naming.md) | what the name means, and every identifier |
+| [Naming](passport/naming.md) | what the name means, and every identifier, the Bluetooth UUIDs among them |
 | [Prior art](passport/prior-art.md) | what it borrowed and what it avoided |
 | [Glossary](passport/glossary.md) | every term |
 | [FAQ](passport/faq.md) | the questions people ask |
-| [Roadmap](passport/roadmap.md) | the status, the phases and the decisions taken |
+| [Roadmap](passport/roadmap.md) | the status, part by part: built, run on the `sim` board, run on a Jetson and run over a real radio, the phases and the decisions taken |
 
 ## History
 
 - [adr/](adr/): one record per decision, numbered, each with what was decided and why.
-- [design/](design/): the design notes of 0.4, 0.5 and 0.6.
+- [design/](design/): the design notes of 0.4, 0.5 and 0.6, and Robot Passport's phase 7 plan,
+  which 0.29.0 dropped with nothing of it built.
 
 Both say what was true when they were written. A later decision amends an ADR with a note rather
 than rewriting it.
