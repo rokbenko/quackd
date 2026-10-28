@@ -38,7 +38,7 @@ from quackd.passport.errors import PassportError
 from quackd.passport.fetch import Unreachable
 from quackd.passport.link import CloseReason
 from quackd.radio import Radio
-from quackd.radio.links import LinkDown, LinkInbox, LinkPolicy, LinkRefused, LinkTable
+from quackd.radio.links import Link, LinkDown, LinkInbox, LinkPolicy, LinkRefused, LinkTable
 from quackd.radio.loop import LoopThread
 from quackd.radio.proximity import ProximityEvent
 
@@ -455,7 +455,10 @@ class Meeter:
     def _over_a_link(self, action: Meet, why: list[str]) -> Outcome:
         wait = self.connect_s + LinkPolicy().accept_s + 2.0
         try:
-            link = self.loop.call(
+            # a link to this robot already open, from an earlier meeting either robot began,
+            # carries this one too: a pair of robots that stays near and meets again every few
+            # minutes would otherwise open a link each time and fill the four a robot may hold
+            link = self.loop.call(self._open_link_to(action.beacon_id), 5.0) or self.loop.call(
                 self.links.dial(
                     self.radio,
                     action.address,
@@ -479,6 +482,9 @@ class Meeter:
             self._close(link.peer_beacon)
             return self._refused_or_busy(e, link.route, "link")
         return Outcome("met", did, link.route, "link")
+
+    async def _open_link_to(self, beacon_id: str) -> Link | None:
+        return next((link for link in self.links.by_beacon(beacon_id) if link.closed is None), None)
 
     def _refused_or_busy(
         self, error: PassportError, route: str, via: Literal["lan", "link"]
