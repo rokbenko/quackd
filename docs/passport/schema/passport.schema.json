@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/rokbenko/quackd/blob/main/docs/passport/schema/passport.schema.json",
-  "title": "Robot Passport v0.1",
-  "description": "One robot's passport: who it is, who vouches for it, what it can and cannot do, how to stop it and how to reach it. The normative text is docs/passport/spec.md; where this schema and the spec disagree, the spec wins. Unknown members are allowed because readers must ignore them, and the known vocabularies are strings rather than enums for the same reason. A reader also refuses what no schema can see: a document over 8192 bytes, and duplicate member names.",
+  "title": "Robot Passport v1.0",
+  "description": "One robot's passport, signed by its owner's key: who it is, who owns it, the computer it runs on, what it can and cannot do, how to stop it, and the dates its owner's signature holds between. The normative text is docs/passport/spec.md; where this schema and the spec disagree, the spec wins. Unknown members are allowed because readers must ignore them, and the known vocabularies are strings rather than enums for the same reason. A reader also refuses what no schema can see: a document over 8192 bytes, and duplicate member names.",
   "type": "object",
-  "required": ["passport", "id", "name"],
+  "required": ["passport", "id", "name", "owner", "issued", "expires"],
   "properties": {
     "passport": {
-      "description": "The protocol version, MAJOR.MINOR. A v0.1 reader reads any 0.x document and ignores what it does not know.",
+      "description": "The protocol version, MAJOR.MINOR. A v1.0 reader reads any 1.x document and ignores what it does not know.",
       "type": "string",
-      "pattern": "^0\\.(0|[1-9][0-9]*)$"
+      "pattern": "^1\\.(0|[1-9][0-9]*)$"
     },
     "id": { "$ref": "#/$defs/id" },
     "name": {
@@ -26,22 +26,33 @@
         "serial": { "$ref": "#/$defs/text64" }
       }
     },
-    "software": {
-      "type": "object",
-      "properties": {
-        "name": { "$ref": "#/$defs/text64" },
-        "version": { "$ref": "#/$defs/text64" }
-      }
-    },
     "owner": {
       "type": "object",
+      "required": ["id"],
       "properties": {
+        "id": {
+          "description": "The owner's key, which signs this passport. Never the robot's own.",
+          "$ref": "#/$defs/id"
+        },
         "label": { "$ref": "#/$defs/text64" },
         "contact": {
           "description": "A URL, a mailto: address or a role address. Never needs personal data.",
           "type": "string",
           "maxLength": 200
         }
+      }
+    },
+    "board": {
+      "description": "The computer the robot runs its passport on, as the software wrote it, never its owner.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "jetson, sim or other. sim is a computer standing in for a robot's own. Unknown values read as other.",
+          "type": "string",
+          "maxLength": 32
+        },
+        "model": { "$ref": "#/$defs/text64" },
+        "soc": { "type": "string", "maxLength": 32 }
       }
     },
     "body": {
@@ -120,26 +131,6 @@
         }
       }
     },
-    "talk": {
-      "description": "Channels this robot listens on. Unknown via values are ignored.",
-      "type": "array",
-      "maxItems": 8,
-      "items": {
-        "type": "object",
-        "required": ["via", "url"],
-        "properties": {
-          "via": { "type": "string", "maxLength": 16 },
-          "url": { "type": "string", "maxLength": 200 },
-          "max_bytes": { "type": "integer", "minimum": 1024 }
-        }
-      }
-    },
-    "stamps": {
-      "description": "Compact JWS stamps (stamp.schema.json describes their claims).",
-      "type": "array",
-      "maxItems": 4,
-      "items": { "$ref": "#/$defs/compact_jws" }
-    },
     "ext": {
       "description": "Extensions, keyed by reverse DNS. An extension marked required that a reader does not understand stops it talking on the strength of this passport.",
       "type": "object",
@@ -150,34 +141,23 @@
       }
     },
     "issued": {
-      "description": "RFC 3339. Advisory, because many robots have no real-time clock.",
+      "description": "RFC 3339: when the owner signed it. A reader refuses one issued more than five minutes ahead of its own clock.",
       "type": "string",
       "format": "date-time"
     },
-    "ttl_s": {
-      "description": "How long a reader may cache this, counted from when it fetched it. Default 3600.",
-      "type": "integer",
-      "minimum": 60,
-      "maximum": 86400
+    "expires": {
+      "description": "RFC 3339: after issued, and at most 400 days after it. A reader refuses a passport past it.",
+      "type": "string",
+      "format": "date-time"
     }
   },
   "$defs": {
     "id": {
-      "description": "A did:key holding an Ed25519 public key, or for an unsigned passport a urn:uuid.",
+      "description": "A did:key holding an Ed25519 public key: the robot's own, or its owner's.",
       "type": "string",
-      "anyOf": [
-        { "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$" },
-        {
-          "pattern": "^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        }
-      ]
+      "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$"
     },
     "text64": { "type": "string", "maxLength": 64 },
-    "compact_jws": {
-      "type": "string",
-      "maxLength": 1024,
-      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
-    },
     "figure": {
       "description": "A number, or [number, confidence], or [number, confidence, source]. Confidence is official, estimate or measured; anything else reads as estimate. A figure that is absent is not published, never zero.",
       "oneOf": [

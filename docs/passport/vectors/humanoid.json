@@ -1,0 +1,56 @@
+{
+  "passport": "1.0",
+  "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+  "name": "g1-edu-mock",
+  "maker": {
+    "vendor": "unitree",
+    "model": "g1-edu"
+  },
+  "owner": {
+    "id": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2",
+    "label": "Example lab",
+    "contact": "https://example.org/robots/g1-edu-mock"
+  },
+  "board": {
+    "kind": "sim",
+    "model": "a computer standing in for a robot's own"
+  },
+  "body": {
+    "embodiment": "humanoid",
+    "mobility": "legged",
+    "manipulator": "arms",
+    "terrain": "indoor",
+    "tethered": false,
+    "mass_kg": [
+      35,
+      "official",
+      "unitree.com/g1, read 2026-10-28"
+    ],
+    "height_m": [
+      1.32,
+      "official",
+      "unitree.com/g1, read 2026-10-28"
+    ],
+    "sensors": [
+      "camera",
+      "lidar",
+      "microphone",
+      "battery"
+    ]
+  },
+  "skills": [
+    "report_state",
+    "stop"
+  ],
+  "courtesy": [],
+  "cannot": [
+    "move: a mock on a laptop, and no G1 is here"
+  ],
+  "safety": {
+    "stops_on_silence": false,
+    "estop": "none",
+    "how_to_stop": "Simulated: stop the process."
+  },
+  "issued": "2026-10-28T00:00:00Z",
+  "expires": "2027-10-28T00:00:00Z"
+}

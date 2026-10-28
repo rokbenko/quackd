@@ -1,10 +1,10 @@
 """Write the Robot Passport test vectors in `docs/passport/vectors/`, or check they are current.
 
-The vectors are the spec's conformance suite: passports, signed passports, stamps and talk
-messages, each with the result a reader must reach. This script makes them from four published
-test keys, and it signs with `cryptography` directly rather than through `quackd.passport`, so
-the module is checked against a second implementation of the same rules rather than against
-itself. Ed25519 signatures are deterministic, so the same keys always write the same files.
+The vectors are the spec's conformance suite: passports, signed passports and talk messages,
+each with the result a reader must reach. This script makes them from five published test keys,
+and it signs with `cryptography` directly rather than through `quackd.passport`, so the module is
+checked against a second implementation of the same rules rather than against itself. Ed25519
+signatures are deterministic, so the same keys always write the same files.
 
     uv run python scripts/passport_vectors.py          # write them
     uv run python scripts/passport_vectors.py --check  # exit 1 if any file would change
@@ -27,9 +27,11 @@ REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "docs" / "passport" / "vectors"
 
 #: The instant every time-dependent vector is judged at.
-REFERENCE = datetime(2026, 10, 21, tzinfo=UTC)
+REFERENCE = datetime(2026, 10, 29, tzinfo=UTC)
 NOW = int(REFERENCE.timestamp())
-DAY = 86_400
+#: When the good passports were signed and until when their owners' signatures hold.
+ISSUED = "2026-10-28T00:00:00Z"
+EXPIRES = "2027-10-28T00:00:00Z"
 
 #: Test keys. Published, so never a real robot's or a real owner's.
 SEEDS = {
@@ -37,10 +39,11 @@ SEEDS = {
     "owner": bytes(range(32, 64)),
     "robot-b": bytes(range(64, 96)),
     "intruder": bytes(range(96, 128)),
+    "owner-b": bytes(range(128, 160)),
 }
 
+VERSION = "1.0"
 PASSPORT_TYP = "robot-passport+jws"
-STAMP_TYP = "robot-passport-stamp+jwt"
 MESSAGE_TYP = "robot-passport-msg+jws"
 
 _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -78,7 +81,12 @@ class Key:
 
 
 KEYS = {name: Key(seed) for name, seed in SEEDS.items()}
-A, OWNER, B, INTRUDER = KEYS["robot-a"], KEYS["owner"], KEYS["robot-b"], KEYS["intruder"]
+A, OWNER, B = KEYS["robot-a"], KEYS["owner"], KEYS["robot-b"]
+INTRUDER, OWNER_B = KEYS["intruder"], KEYS["owner-b"]
+
+#: What each robot's hellos say beside its passport: no owner signs these (spec 6.3).
+RUNTIME_A = {"software": "example/1.0", "beacon": "a1a1a1a1a1a1a1a1", "reach": {"http_port": 8790}}
+RUNTIME_B = {"software": "example/1.0", "beacon": "b2b2b2b2b2b2b2b2", "reach": {"http_port": 8790}}
 
 
 def nonce(label: str) -> str:
@@ -86,69 +94,53 @@ def nonce(label: str) -> str:
     return b64url(hashlib.sha256(label.encode()).digest()[:16])
 
 
-def stamp(subject: Key, *, iat: int, exp: int, signer: Key = OWNER, rel: str = "owner") -> str:
-    claims = {"iss": signer.did, "sub": subject.did, "rel": rel, "iat": iat, "exp": exp}
-    return signer.jws(compact(claims), STAMP_TYP)
-
-
-def microduck(key: Key) -> dict[str, Any]:
-    """The full example from passport.md, for robot A."""
-    # Exactly what quackd's own passport_from_manifest builds for a Microduck with this owner,
-    # this e-stop and this inbox: tests/test_passport_from_manifest.py holds the two equal, so
-    # the example the docs show is the real thing rather than a sketch of it.
-    duck_source = "the Pollen Robotics README"
+def minimal(key: Key, name: str, owner: Key = OWNER) -> dict[str, Any]:
     return {
-        "passport": "0.1",
+        "passport": VERSION,
         "id": key.did,
-        "name": "duck-01",
-        "maker": {"vendor": "pollen-robotics", "model": "microduck"},
-        "software": {"name": "quackd", "version": "0.23.0"},
-        "owner": {"label": "Example lab", "contact": "https://example.org/robots/duck-01"},
-        "body": {
-            "embodiment": "biped",
-            "mobility": "legged",
-            "manipulator": "beak",
-            "terrain": "indoor_flat",
-            "tethered": False,
-            "mass_kg": [0.8, "official", duck_source],
-            "height_m": [0.25, "official", duck_source],
-            "max_speed_mps": 0.3,
-            "sensors": ["camera", "battery", "odometry", "imu", "tof"],
-        },
-        "skills": [
-            "report_state",
-            "stop",
-            "say",
-            "move",
-            "observe",
-            "go_to",
-            "search_scan",
-            "approach_and",
-            "sit",
-            "stand",
-            "kick",
-            "grab",
-            "stand_up",
-            "quack",
-            "gaze",
-            "watch",
-        ],
-        "courtesy": ["pause", "identify"],
-        "cannot": [
-            "carry, hold or push anything: the beak scoops at the floor and nothing else",
-            "climb or descend a step",
-            "hold a heading for long without a landmark: the IMU has no magnetometer, so "
-            "heading drifts",
-        ],
-        "safety": {"stops_on_silence": True, "estop": "power", "how_to_stop": "the power switch"},
-        "talk": [{"via": "http", "url": "http://192.0.2.10:8790/robot-passport/inbox"}],
-        "ext": {"org.quackd": {"sha": "dc5ab18e68dd6ca5"}},
-        "issued": "2026-10-21T00:00:00Z",
+        "name": name,
+        "owner": {"id": owner.did},
+        "issued": ISSUED,
+        "expires": EXPIRES,
     }
 
 
-def minimal(key: Key, name: str) -> dict[str, Any]:
-    return {"passport": "0.1", "id": key.did, "name": name}
+def humanoid(key: Key) -> dict[str, Any]:
+    """The full example from passport.md, for robot A: a humanoid as a simulation portrays it,
+    with the figures its maker published and the board saying it is a stand-in."""
+    source = "unitree.com/g1, read 2026-10-28"
+    return {
+        "passport": VERSION,
+        "id": key.did,
+        "name": "g1-edu-mock",
+        "maker": {"vendor": "unitree", "model": "g1-edu"},
+        "owner": {
+            "id": OWNER.did,
+            "label": "Example lab",
+            "contact": "https://example.org/robots/g1-edu-mock",
+        },
+        "board": {"kind": "sim", "model": "a computer standing in for a robot's own"},
+        "body": {
+            "embodiment": "humanoid",
+            "mobility": "legged",
+            "manipulator": "arms",
+            "terrain": "indoor",
+            "tethered": False,
+            "mass_kg": [35, "official", source],
+            "height_m": [1.32, "official", source],
+            "sensors": ["camera", "lidar", "microphone", "battery"],
+        },
+        "skills": ["report_state", "stop"],
+        "courtesy": [],
+        "cannot": ["move: a mock on a laptop, and no G1 is here"],
+        "safety": {
+            "stops_on_silence": False,
+            "estop": "none",
+            "how_to_stop": "Simulated: stop the process.",
+        },
+        "issued": ISSUED,
+        "expires": EXPIRES,
+    }
 
 
 def vectors() -> dict[str, str]:
@@ -159,90 +151,78 @@ def vectors() -> dict[str, str]:
         files[name] = json.dumps(value, indent=2, ensure_ascii=False) + "\n"
 
     # ── documents ────────────────────────────────────────────────────────────────────────
-    doc("minimal.json", minimal(A, "duck-01"))
-    doc("microduck.json", microduck(A))
-    doc("unknown-member.json", {**minimal(A, "duck-01"), "battery_swap": {"slots": 2}})
-    unknown_enum = microduck(A)
+    doc("minimal.json", minimal(A, "g1-edu-01"))
+    doc("humanoid.json", humanoid(A))
+    doc("unknown-member.json", {**minimal(A, "g1-edu-01"), "battery_swap": {"slots": 2}})
+    unknown_enum = humanoid(A)
     unknown_enum["body"] = {"embodiment": "hexapod", "mobility": "legged", "sensors": ["sonar"]}
+    unknown_enum["board"] = {"kind": "fpga-cluster", "model": "an unknown computer"}
     doc("unknown-enum.json", unknown_enum)
     doc(
         "unknown-safety.json",
-        {**minimal(A, "duck-01"), "safety": {"stops_on_silence": "yes", "estop": "teleport"}},
+        {**minimal(A, "g1-edu-01"), "safety": {"stops_on_silence": "yes", "estop": "teleport"}},
     )
     doc(
         "required-extension.json",
-        {**minimal(A, "duck-01"), "ext": {"org.example.lift": {"required": True, "floors": 3}}},
+        {**minimal(A, "g1-edu-01"), "ext": {"org.example.lift": {"required": True, "floors": 3}}},
     )
-    doc("missing-name.json", {"passport": "0.1", "id": A.did})
-    doc("major-version.json", {**minimal(A, "duck-01"), "passport": "1.0"})
-    doc("minor-version.json", {**minimal(A, "duck-01"), "passport": "0.9", "aura": "calm"})
+    missing_name = minimal(A, "g1-edu-01")
+    del missing_name["name"]
+    doc("missing-name.json", missing_name)
+    missing_owner = minimal(A, "g1-edu-01")
+    del missing_owner["owner"]
+    doc("missing-owner.json", missing_owner)
+    missing_expires = minimal(A, "g1-edu-01")
+    del missing_expires["expires"]
+    doc("missing-expires.json", missing_expires)
+    doc("major-version.json", {**minimal(A, "g1-edu-01"), "passport": "2.0"})
+    doc("old-version.json", {"passport": "0.1", "id": A.did, "name": "g1-edu-01"})
+    doc("minor-version.json", {**minimal(A, "g1-edu-01"), "passport": "1.9", "aura": "calm"})
     # A duplicate member cannot be built from a dict, so this one is written by hand.
     files["duplicate-member.json"] = (
-        '{\n  "passport": "0.1",\n  "id": "' + A.did + '",\n  "name": "duck-01",\n'
-        '  "name": "somebody-else"\n}\n'
+        '{\n  "passport": "1.0",\n  "id": "' + A.did + '",\n  "name": "g1-edu-01",\n'
+        '  "name": "somebody-else",\n  "owner": {"id": "' + OWNER.did + '"},\n'
+        f'  "issued": "{ISSUED}",\n  "expires": "{EXPIRES}"\n}}\n'
     )
-    doc("long-name.json", minimal(A, "d" * 65))
+    doc("long-name.json", minimal(A, "g" * 65))
     # Valid in every way but its size: the padding is an unknown member a reader would ignore.
-    doc("oversized.json", {**minimal(A, "duck-01"), "padding": "x" * 8200})
-    doc("bad-id.json", {"passport": "0.1", "id": "did:web:example.org", "name": "duck-01"})
+    doc("oversized.json", {**minimal(A, "g1-edu-01"), "padding": "x" * 8200})
     doc(
-        "index.json",
-        {
-            "passport": "0.1",
-            "robots": [
-                {"name": "duck-01", "id": A.did, "url": "/robots/duck-01/robot-passport.json"},
-                {"name": "cart-01", "id": B.did, "url": "/robots/cart-01/robot-passport.json"},
-            ],
-        },
+        "bad-id.json",
+        {**minimal(A, "g1-edu-01"), "id": "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10"},
     )
+    doc("too-long-validity.json", {**minimal(A, "g1-edu-01"), "expires": "2027-12-28T00:00:00Z"})
 
     # ── signed passports ──────────────────────────────────────────────────────────────────
-    owner_stamp = stamp(A, iat=NOW - DAY, exp=NOW + 365 * DAY)
-    signed = {**microduck(A), "stamps": [owner_stamp]}
-    files["microduck.jws"] = A.jws(compact(signed), PASSPORT_TYP) + "\n"
+    files["humanoid.jws"] = OWNER.jws(compact(humanoid(A)), PASSPORT_TYP) + "\n"
     files["eddsa-label.jws"] = (
-        A.jws(compact(minimal(A, "duck-01")), PASSPORT_TYP, alg="EdDSA") + "\n"
+        OWNER.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP, alg="EdDSA") + "\n"
     )
-    good = A.jws(compact(minimal(A, "duck-01")), PASSPORT_TYP)
+    good = OWNER.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP)
     head, _body, sig = good.split(".")
-    forged = b64url(compact(minimal(A, "duck-02")))
+    forged = b64url(compact({**minimal(A, "g1-edu-01"), "name": "g1-edu-02"}))
     files["tampered.jws"] = f"{head}.{forged}.{sig}\n"
     files["wrong-key.jws"] = (
-        INTRUDER.jws(compact(minimal(A, "duck-01")), PASSPORT_TYP, kid=A.did) + "\n"
+        INTRUDER.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP, kid=OWNER.did) + "\n"
     )
-    files["kid-mismatch.jws"] = A.jws(compact(minimal(B, "cart-01")), PASSPORT_TYP) + "\n"
-    uuid_passport = {
-        "passport": "0.1",
-        "id": "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10",
-        "name": "duck-01",
-    }
-    files["uuid-signed.jws"] = A.jws(compact(uuid_passport), PASSPORT_TYP, kid=A.did) + "\n"
-
-    # ── stamps, judged against robot A's passport ─────────────────────────────────────────
-    files["stamp-owner.jwt"] = owner_stamp + "\n"
-    files["stamp-expired.jwt"] = stamp(A, iat=NOW - 400 * DAY, exp=NOW - 35 * DAY) + "\n"
-    files["stamp-wrong-subject.jwt"] = stamp(B, iat=NOW - DAY, exp=NOW + 365 * DAY) + "\n"
-    s_head, _s_body, s_sig = stamp(A, iat=NOW - DAY, exp=NOW + 365 * DAY).split(".")
-    bent = b64url(
-        compact(
-            {
-                "iss": OWNER.did,
-                "sub": A.did,
-                "rel": "owner",
-                "iat": NOW - DAY,
-                "exp": NOW + 3650 * DAY,
-            }
-        )
-    )
-    files["stamp-bad-signature.jwt"] = f"{s_head}.{bent}.{s_sig}\n"
+    files["kid-mismatch.jws"] = OWNER_B.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP) + "\n"
+    # how 0.1 signed: the robot's own key, which a 1.x reader refuses whatever owner.id says
+    files["robot-signed.jws"] = A.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP) + "\n"
+    files["same-key.jws"] = A.jws(compact(minimal(A, "g1-edu-01", owner=A)), PASSPORT_TYP) + "\n"
+    expired = {**minimal(A, "g1-edu-01"), "issued": "2025-01-01T00:00:00Z"}
+    expired["expires"] = "2026-01-01T00:00:00Z"
+    files["expired.jws"] = OWNER.jws(compact(expired), PASSPORT_TYP) + "\n"
+    early = {**minimal(A, "g1-edu-01"), "issued": "2026-11-01T00:00:00Z"}
+    early["expires"] = "2027-11-01T00:00:00Z"
+    files["not-yet-valid.jws"] = OWNER.jws(compact(early), PASSPORT_TYP) + "\n"
 
     # ── talk: one hello between A and B, then a session ───────────────────────────────────
     n_a, n_b = nonce("robot-a/session-1"), nonce("robot-b/session-1")
-    passport_a = A.jws(compact(minimal(A, "duck-01")), PASSPORT_TYP)
-    passport_b = B.jws(compact(minimal(B, "cart-01")), PASSPORT_TYP)
+    passport_a = OWNER.jws(compact(minimal(A, "g1-edu-01")), PASSPORT_TYP)
+    passport_b = OWNER_B.jws(compact(minimal(B, "agile-one-sn-01", owner=OWNER_B)), PASSPORT_TYP)
 
     def msg(sender: Key, value: dict[str, Any]) -> str:
-        return sender.jws(compact({"passport": "0.1", **value}), MESSAGE_TYP) + "\n"
+        return sender.jws(compact({"passport": VERSION, **value}), MESSAGE_TYP) + "\n"
 
     files["hello-1.jws"] = msg(
         A,
@@ -251,7 +231,7 @@ def vectors() -> dict[str, str]:
             "from": A.did,
             "to": B.did,
             "msg": nonce("msg-1"),
-            "body": {"passport": passport_a, "nonce": n_a},
+            "body": {"passport": passport_a, "nonce": n_a, **RUNTIME_A},
         },
     )
     files["hello-2.jws"] = msg(
@@ -263,7 +243,7 @@ def vectors() -> dict[str, str]:
             "msg": nonce("msg-2"),
             "re": nonce("msg-1"),
             "nonces": [n_a, n_b],
-            "body": {"passport": passport_b},
+            "body": {"passport": passport_b, **RUNTIME_B},
         },
     )
     files["hello-3.jws"] = msg(
@@ -286,7 +266,7 @@ def vectors() -> dict[str, str]:
             "to": A.did,
             "msg": nonce("msg-4"),
             "nonces": [n_a, n_b],
-            "body": {"text": "cart-01 here, heading for the kitchen door"},
+            "body": {"text": "agile-one-sn-01 here, holding the door for you"},
         },
     )
     other_a, other_b = nonce("robot-a/session-0"), nonce("robot-b/session-0")
@@ -313,14 +293,25 @@ def vectors() -> dict[str, str]:
         },
     )
     doc(
-        "ask-unsigned.json",
+        "unsigned-say.json",
         {
-            "passport": "0.1",
-            "type": "ask",
-            "from": "urn:uuid:4f1c2a1e-9d4b-4c8e-8f3a-2b6d5e7a9c10",
-            "to": B.did,
+            "passport": VERSION,
+            "type": "say",
+            "from": B.did,
+            "to": A.did,
             "msg": nonce("msg-6"),
-            "body": {"skill": "pause", "args": {"seconds": 5}},
+            "nonces": [n_a, n_b],
+            "body": {"text": "anybody can write this, so a robot believes none of it"},
+        },
+    )
+    files["hello-foreign-passport.jws"] = msg(
+        A,
+        {
+            "type": "hello",
+            "from": A.did,
+            "to": B.did,
+            "msg": nonce("msg-7"),
+            "body": {"passport": passport_b, "nonce": n_a, **RUNTIME_A},
         },
     )
 
@@ -340,6 +331,7 @@ def vectors() -> dict[str, str]:
                 for name, key in KEYS.items()
             },
             "session": {"nonce_a": n_a, "nonce_b": n_b},
+            "runtime": {"robot-a": RUNTIME_A, "robot-b": RUNTIME_B},
         },
     )
     return files

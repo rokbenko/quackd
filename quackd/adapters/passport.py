@@ -1,20 +1,20 @@
-"""A robot's passport, built from its manifest, so no robot quackd drives needs one written.
+"""A robot's passport, built from its manifest, so a robot quackd drives needs little written.
 
 `docs/passport/passport.md` has the mapping as a table. What a manifest cannot know, because it
-belongs to one robot rather than to its model, comes from the owner: who owns it, and how a
-person stops it. Left out, those read as the worst case, which is what the protocol asks a
-reader to assume when nobody said."""
+belongs to one robot rather than to its model, comes from the owner: who owns it and which key
+signs for them, how a person stops it, and how long the signature holds. Left out, the stopping
+reads as the worst case, which is what the protocol asks a reader to assume when nobody said."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 from quackd.adapters.manifest import Figure, RobotManifest
 from quackd.passport import strict
-from quackd.passport.document import ESTOPS, MAX_STAMPS, VERSION, validate
+from quackd.passport.document import ESTOPS, VERSION, validate
 
 #: A `cannot` line is at most this long in a passport (spec 2.2).
 CANNOT_CHARS = 120
@@ -32,29 +32,31 @@ def passport_from_manifest(
     *,
     robot_id: str,
     name: str,
-    software_version: str,
-    owner: Mapping[str, str] | None = None,
+    owner: Mapping[str, str],
+    board: Mapping[str, str],
+    issued: datetime,
+    expires: datetime,
     estop: str | None = None,
     how_to_stop: str | None = None,
-    talk: Sequence[Mapping[str, Any]] | None = None,
-    issued: datetime | None = None,
+    courtesies: list[str] | None = None,
 ) -> dict[str, Any]:
-    """The passport for one robot with this manifest, as the dict quackd serializes.
+    """The 1.0 passport for one robot with this manifest, as the dict its owner signs.
 
-    `robot_id` is the robot's own key as a `did:key`, `name` its registered name, and the rest
-    is what its owner said. Members with nothing honest to put in them are left out."""
+    `robot_id` is the robot's own key as a `did:key`, `owner` the owner's `id` (the key that
+    signs), `label` and `contact`, `board` what the robot runs on, and `issued` and `expires`
+    the dates the signature holds between (spec 4.5). `courtesies` overrides what the manifest
+    offers a peer, for a body that cannot pause. Members with nothing honest in them are left
+    out."""
     if estop is not None and estop not in ESTOPS:
         raise ValueError(f"estop {estop!r} is not one of {', '.join(ESTOPS)}")
     doc: dict[str, Any] = {"passport": VERSION, "id": robot_id, "name": name}
     doc["maker"] = {"vendor": manifest.vendor, "model": manifest.model}
-    doc["software"] = {"name": "quackd", "version": software_version}
-    if owner:
-        kept = {k: owner[k] for k in ("label", "contact") if owner.get(k)}
-        if kept:
-            doc["owner"] = kept
+    kept = {k: owner[k] for k in ("label", "contact") if owner.get(k)}
+    doc["owner"] = {"id": owner["id"], **kept}
+    doc["board"] = dict(board)
     doc["body"] = _body(manifest)
     doc["skills"] = skill_names(manifest)
-    doc["courtesy"] = courtesy(manifest)
+    doc["courtesy"] = courtesy(manifest) if courtesies is None else list(courtesies)
     cannot = [
         cannot_line(line) for line in (manifest.datasheet.cannot if manifest.datasheet else [])
     ]
@@ -66,47 +68,16 @@ def passport_from_manifest(
     if how_to_stop:
         safety["how_to_stop"] = how_to_stop
     doc["safety"] = safety
-    if talk:
-        doc["talk"] = [dict(channel) for channel in talk]
-    doc["ext"] = {"org.quackd": {"sha": manifest.digest()}}
-    # no `issued` unless asked: stamping the build time would give the same passport a new
-    # digest every time it is built, and a reader caches by digest (spec 5.8)
-    if issued is not None:
-        doc["issued"] = issued.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # read back the way any reader would, so quackd never serves a passport a reader refuses:
+    doc["issued"] = _moment(issued)
+    doc["expires"] = _moment(expires)
+    # read back the way any reader would, so quackd never signs a passport a reader refuses:
     # a manifest's names are freer than a passport's, and this is where that would show
     validate(strict.loads(strict.dumps(doc), limit=len(strict.dumps(doc))))
     return doc
 
 
-def built_passport(
-    manifest: RobotManifest,
-    store: Any,
-    name: str,
-    *,
-    software_version: str,
-    talk: Sequence[Mapping[str, Any]] | None = None,
-) -> tuple[dict[str, Any], Any, bool]:
-    """The passport quackd serves for the robot it keeps under `name` in `store` (a
-    `quackd.passport_store.PassportStore`): its key, made the first time anything asks, what its
-    owner said, and its newest stamps. Returns the passport, the robot's key record, and whether
-    the key was made just now. The one builder `quackd passport`, `quackd run --talk` and
-    `quackd serve-mcp --talk` share, so all three serve the same bytes for one robot."""
-    record, created = store.robot_or_new(name)
-    owner = store.owner()
-    doc = passport_from_manifest(
-        manifest,
-        robot_id=record.key.did,
-        name=name,
-        software_version=software_version,
-        owner={"label": owner.label or "", "contact": owner.contact or ""},
-        estop=record.estop,
-        how_to_stop=record.how_to_stop,
-        talk=talk,
-    )
-    if record.stamps:
-        doc["stamps"] = list(record.stamps)[-MAX_STAMPS:]
-    return doc, record, created
+def _moment(when: datetime) -> str:
+    return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def skill_names(manifest: RobotManifest) -> list[str]:

@@ -4,7 +4,7 @@ Robot Passport may have one of quackd's robots do, decided by fixed code and nev
 Two courtesies exist, `pause` and `identify`. Each tier gets a short list of them with a limit,
 drawn from one budget every peer shares: at most one pause a minute and one identify every ten
 seconds, across all of them together, because new keys cost nothing and a limit per peer would
-stop nobody (docs/passport/trust.md#the-four-tiers). A peer can never have the robot `stop`: it
+stop nobody (docs/passport/trust.md#the-tiers). A peer can never have the robot `stop`: it
 asks for a pause, which is bounded and ends on its own.
 
 What is granted runs through the executor with the source `peer`, so every gate the executor has
@@ -15,7 +15,7 @@ and an identify is the body's voice. Neither costs the pilot a step. Courtesies 
 while the executor is open to them (`Executor.open_to_peers`), never while a run parks its arm or
 hands it to a person, and a pause is never granted over an arm in a person's hands.
 
-The handler runs on whatever thread a message arrived on, an HTTP server's or a broker's, and
+The handler runs on whatever thread a message arrived on, an HTTP server's or a link's, and
 hands the verb to the run's event loop, answering within the five seconds the specification
 allows (spec 6.5), or saying it could not.
 """
@@ -32,13 +32,12 @@ from dataclasses import dataclass
 from typing import Any
 
 #: The longest pause each tier may ask for, in seconds, and how each may ask to be identified.
-#: `same owner` and `flock` take the owner's own list, at a known robot's limits.
-PAUSE_S = {"stranger": 5, "known": 10, "same owner": 10, "flock": 10}
+#: `same owner` takes the owner's own list, at a known robot's limits.
+PAUSE_S = {"stranger": 5, "known": 10, "same owner": 10}
 IDENTIFY_BY = {
     "stranger": ("light", "sound"),
     "known": ("light", "sound", "motion"),
     "same owner": ("light", "sound", "motion"),
-    "flock": ("light", "sound", "motion"),
 }
 #: The one budget every peer draws from.
 PAUSE_EVERY_S = 60.0

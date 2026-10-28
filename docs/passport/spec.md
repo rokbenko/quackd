@@ -1,6 +1,11 @@
 # Robot Passport v0.1: the specification
 
 > [!NOTE]
+> Version 1.0 (quackd 0.29.0) adds three members: `owner` gains `id`, the key that signs the
+> passport; `board` says the computer the robot runs it on, as `jetson`, `sim` or `other`; and
+> `expires` says until when the owner's signature holds, at most 400 days after `issued`.
+
+> [!NOTE]
 > Draft 0.1, written 2026-10-21. This page is normative: the other pages in this folder explain,
 > this one decides, and where one of them disagrees with it, that page is the bug. quackd is the
 > first implementation; [quackd.md](quackd.md) says what of it quackd does today, and
@@ -226,8 +231,7 @@ travels unchanged.
 ### 4.5 Stamps
 
 A stamp is a compact JWS whose protected header has `alg` as section 4.4 gives it, `kid` equal to
-`iss`, and `typ` `"robot-passport-stamp+jwt"`, and whose payload is a JSON object
-([schema/stamp.schema.json](schema/stamp.schema.json)):
+`iss`, and `typ` `"robot-passport-stamp+jwt"`, and whose payload is a JSON object:
 
 | Claim | Meaning |
 |---|---|

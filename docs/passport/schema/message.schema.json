@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/rokbenko/quackd/blob/main/docs/passport/schema/message.schema.json",
-  "title": "Robot Passport v0.1 talk message",
-  "description": "One talk message: the JSON object an unsigned message is, or the payload of a signed one, a compact JWS whose protected header carries alg Ed25519 (or the older EdDSA), kid equal to from, and typ robot-passport-msg+jws. An ask is always signed. The normative text is docs/passport/spec.md.",
+  "title": "Robot Passport v1.0 talk message",
+  "description": "One talk message: the payload of a compact JWS whose protected header carries alg Ed25519 (or the older EdDSA), kid equal to from, and typ robot-passport-msg+jws. Every message is signed by its sender's robot key. The normative text is docs/passport/spec.md.",
   "type": "object",
   "required": ["passport", "type", "from", "msg", "body"],
   "properties": {
-    "passport": { "type": "string", "pattern": "^0\\.(0|[1-9][0-9]*)$" },
+    "passport": { "type": "string", "pattern": "^1\\.(0|[1-9][0-9]*)$" },
     "type": {
       "description": "hello, say, bye, ask, answer or share. A receiver ignores a message of any other type.",
       "type": "string",
@@ -38,10 +38,30 @@
           "body": {
             "properties": {
               "passport": {
-                "description": "The sender's passport, carried in the hello itself: a compact JWS, or the JSON text of an unsigned passport from a robot that holds no key. Its id is the hello's from.",
+                "description": "The sender's passport, carried in the hello itself: a compact JWS signed by its owner's key. Its id is the hello's from.",
                 "type": "string"
               },
-              "nonce": { "$ref": "#/$defs/nonce" }
+              "nonce": { "$ref": "#/$defs/nonce" },
+              "software": {
+                "description": "What wrote the hello, for a person reading a log. Nobody signs it but the robot.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "beacon": {
+                "description": "The beacon id the sender's radio advertises now: eight random bytes in lower-case hex, which rotate.",
+                "type": "string",
+                "pattern": "^[0-9a-f]{16}$"
+              },
+              "reach": {
+                "description": "How to reach the sender: a few short scalars, http_port the port of its talk inbox on the address the hello came from.",
+                "type": "object",
+                "maxProperties": 4,
+                "properties": { "http_port": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                "additionalProperties": {
+                  "anyOf": [{ "type": "integer" }, { "type": "boolean" }, { "type": "string", "maxLength": 64 }]
+                }
+              }
             }
           }
         }
@@ -113,15 +133,7 @@
     }
   ],
   "$defs": {
-    "id": {
-      "type": "string",
-      "anyOf": [
-        { "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$" },
-        {
-          "pattern": "^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        }
-      ]
-    },
+    "id": { "type": "string", "pattern": "^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$" },
     "token": { "type": "string", "pattern": "^[A-Za-z0-9_-]{16,64}$" },
     "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22,64}$" }
   }

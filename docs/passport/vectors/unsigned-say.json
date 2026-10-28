@@ -1,0 +1,14 @@
+{
+  "passport": "1.0",
+  "type": "say",
+  "from": "did:key:z6Mkgxj2R3HLtQRpPnvfvpuKEceSqf3tZHBjdmZ3fFz3JHGG",
+  "to": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+  "msg": "Ouw8LbUJmEHoRr4-Wx8qPg",
+  "nonces": [
+    "vfXlXvct7qw_iSDdWldDYg",
+    "MZtCrMC_w7RjeuBQcEBeaw"
+  ],
+  "body": {
+    "text": "anybody can write this, so a robot believes none of it"
+  }
+}
