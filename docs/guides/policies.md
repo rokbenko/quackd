@@ -357,7 +357,7 @@ state    initializing at 1 s
 state    running at 2 s
 url      http://127.0.0.1:51814
 token    kept in ~/.quackd/endpoints.json, for hf:arm-smolvla
-serving  scripted:sweep (quackd-policy 1, quackd 0.27.0), gpu yes
+serving  scripted:sweep (quackd-policy 1, quackd 0.28.0), gpu yes
   Run with --policy-url hf:arm-smolvla. quackd policy endpoint pause arm-smolvla stops the bill.
 ```
 

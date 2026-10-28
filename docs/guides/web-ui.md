@@ -207,6 +207,11 @@ line. [Registered robots and flocks](registry.md) has the rest.
 
 ## On your phone
 
+> [!NOTE]
+> Nobody has tried these steps on a phone yet. They are written from the code, and at a phone's
+> width the page has been seen only in a headless browser, on loopback, so they change with what
+> the first run on a phone finds.
+
 The page runs on the computer the robot is connected to, and a phone opens it in its browser.
 Nothing is installed on the phone.
 
@@ -258,7 +263,7 @@ and the page finds the run again, its questions and its Stop with it.
 
 **Away from home**, a private network that reaches both, such as Tailscale, works the same way:
 start the page on that network's address, `quackd ui --bind 100.x.y.z`, rather than on every
-network. This has not been tried on a phone yet.
+network.
 
 > [!WARNING]
 > Never put the page on the open internet, through a public tunnel or a forwarded port. The token
