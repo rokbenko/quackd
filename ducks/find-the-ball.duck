@@ -1,0 +1,49 @@
+# Find a ball somewhere in a room the duck has not seen, walk up to it, say where it was, and come
+# back. It needs a duck that keeps a map and has a camera: its simulator given a room, as in
+# `quackd run find-the-ball --room two-rooms --yes`, where the ball hides in the other room.
+---
+duck: 1
+name: find-the-ball
+description: Find the ball in a room you have not seen yet, walk up to it, say where it was, and come back to where you began.
+author: rok
+requires: [find, go_to, go_to_place, say]
+verbs:
+  allow: [find, go_to, go_to_place, say, map, report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 20
+  max_minutes: 12
+  max_llm_calls: 20
+success:
+  - find saw the ball, faced it and saw it again.
+  - go_to reached the ball.
+  - You said where the ball was.
+  - go_to_place start brought you back to where you began.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 3 times in a row
+persona: A curious little duck. One short sentence at a time.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are a small biped duck robot in a room you have not seen. Somewhere in it is a ball. Find
+it, walk up to it, say where it was, and come back to where you began.
+
+## Strategy
+
+1. `find` the ball. It explores the room for you, looking with its camera at every stop, and
+   once it has faced the ball and seen it again it marks where it stood as the place `ball`,
+   facing it. It marks where it began as `start`.
+2. `go_to` the ball. It walks up to it on what the camera sees.
+3. `say` where the ball was, in one short sentence.
+4. `go_to_place start` to come back to where you began.
+
+## Notes
+
+- `find` asks first, because it walks a room nobody has looked at yet. It ends on its own,
+  saying what it found or why it did not.
+- If `find` did not see the ball, declare failure with its words rather than walking about.
+- `map` draws what the duck has seen so far, with its places on it.

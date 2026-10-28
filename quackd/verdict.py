@@ -91,6 +91,7 @@ MOVES_THE_BODY = frozenset(
         "perform",
         "drive_to",
         "explore",
+        "find",
         "collect_litter",
         "pick_and_drop",
         "stow_arm",

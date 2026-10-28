@@ -404,6 +404,10 @@ class RunConfig:
     log: Any = lambda _m: None
     on_frame: Any = None
     """Optional callback (img, caption) for a recorder (M2). Called on every captured frame."""
+    on_caption: Callable[[str], None] | None = None
+    """Optional callback for a recorder: the verb starting now, said as it starts. A frame's
+    caption names the verb before it, so a verb that runs for minutes, as `find` does, would be
+    drawn all along under the name of the one that ran before it."""
     keep_images_for_last_n: int = 2
     hand_off: HandOff | None = None
     """Somebody at the robot, ready to place it by hand (`quackd run --by-hand`).
@@ -3036,6 +3040,8 @@ class AgentLoop:
                     break
 
                 last_verb = call.name
+                if cfg.on_caption is not None:
+                    cfg.on_caption(f"step {self.budget.steps}: {call.name}")
                 try:
                     last_result = await self.executor.run_verb(
                         call.name,

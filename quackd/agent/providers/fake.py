@@ -641,6 +641,74 @@ def lerobot_lookout_strategy(obs: Observation, step: int, history: list[Exchange
     )
 
 
+def _result_of(history: list[Exchange], verb: str) -> dict[str, Any]:
+    """The newest result of `verb` the pilot was shown, or an empty one."""
+    for exchange in reversed(history):
+        last = _last(exchange.observation)
+        if last.get("verb") == verb:
+            return last
+    return {}
+
+
+def _failed(obs: Observation) -> ToolCall | None:
+    """Give up on a verb that failed, saying which and why, or None after one that did not."""
+    last = _last(obs)
+    if last.get("verb") is not None and not last.get("ok"):
+        why = " ".join(str(last.get("summary") or "no reason given").split())[:200]
+        return ToolCall(name="declare_failure", arguments={"reason": why})
+    return None
+
+
+BALL_STOP_M = 0.3
+"""How far from the ball `find-the-ball`'s pilot asks `go_to` to stop: as `open-duck-scout`'s."""
+
+
+def find_the_ball_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Find the ball by exploring, walk up to it, say where it was, and come back to where it
+    began, each on the result of the one before, as `find-the-ball` asks."""
+    if (failed := _failed(obs)) is not None:
+        return failed
+    verb = _last(obs).get("verb")
+    if verb == "find":
+        return ToolCall(name="go_to", arguments={"target": "ball", "stop_distance": BALL_STOP_M})
+    if verb == "go_to":
+        found = _result_of(history, "find").get("data") or {}
+        far = (found.get("detection") or {}).get("est_distance_m")
+        how_far = f"about {far:.1f} m from " if isinstance(far, int | float) else "seen from "
+        mark = found.get("place") or "where I stood"
+        return ToolCall(
+            name="say", arguments={"text": f"The ball was {how_far}the spot I marked {mark}."}
+        )
+    if verb == "say":
+        return ToolCall(name="go_to_place", arguments={"name": "start"})
+    if verb == "go_to_place":
+        return ToolCall(
+            name="declare_success",
+            arguments={"reason": "found the ball, walked up to it, said where, and came back"},
+        )
+    return ToolCall(name="find", arguments={"target": "ball", "minutes": 4.0})
+
+
+def favourite_spot_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """Mark where it stands as its favourite spot, explore, walk back to the spot and say so, as
+    `favourite-spot` asks."""
+    if (failed := _failed(obs)) is not None:
+        return failed
+    verb = _last(obs).get("verb")
+    if verb == "mark_place":
+        return ToolCall(name="explore", arguments={"minutes": 2.0})
+    if verb == "explore":
+        return ToolCall(name="go_to_place", arguments={"name": "favourite"})
+    if verb == "go_to_place":
+        return ToolCall(name="say", arguments={"text": "Back at my favourite spot."})
+    if verb == "say":
+        return ToolCall(
+            name="declare_success",
+            arguments={"reason": "marked the spot, explored the room and walked back to it"},
+        )
+    return ToolCall(name="mark_place", arguments={"name": "favourite"})
+
+
 STRATEGIES: dict[str, Strategy] = {
     "flock-hello": flock_hello_strategy,
     "nearby-hello": nearby_hello_strategy,
@@ -656,6 +724,8 @@ STRATEGIES: dict[str, Strategy] = {
     "toddlerbot-lookout": toddlerbot_lookout_strategy,
     "lerobot-lookout": lerobot_lookout_strategy,
     "moss-lookout": moss_lookout_strategy,
+    "find-the-ball": find_the_ball_strategy,
+    "favourite-spot": favourite_spot_strategy,
 }
 
 PAUSES: dict[Strategy, Callable[[ToolCall, list[Exchange]], float]] = {

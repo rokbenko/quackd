@@ -97,7 +97,8 @@ def validate_duck(
                     problems.append(
                         Problem(
                             "requires",
-                            f"requires {verb}, but {m.id} ({m.model}) does not provide it",
+                            f"requires {verb}, but {m.id} ({m.model}) does not provide it"
+                            f"{_why_not(m, verb)}",
                             robot=m.id,
                             verb=verb,
                         )
@@ -139,10 +140,16 @@ def validate_duck(
     for verb in fm.verbs.allow:
         if verb in reported or any(m.provides(verb) for m in manifests):
             continue
-        who = (
-            manifests[0].id
-            if len(manifests) == 1
-            else "any of " + ", ".join(m.id for m in manifests)
-        )
+        if len(manifests) == 1:
+            who = f"{manifests[0].id}{_why_not(manifests[0], verb)}"
+        else:
+            who = "any of " + ", ".join(m.id for m in manifests)
         problems.append(Problem("verbs.allow", f"{verb} is not provided by {who}", verb=verb))
     return problems
+
+
+def _why_not(manifest: RobotManifest, verb: str) -> str:
+    """Why `manifest` leaves `verb` out, in the body's own words, as a refusal ends with: a duck
+    whose reading keeps no map says why it does not explore (`RobotManifest.not_offered`)."""
+    why = manifest.not_offered().get(verb)
+    return f" ({why})" if why else ""

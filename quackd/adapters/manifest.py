@@ -365,6 +365,15 @@ class RobotManifest(BaseModel):
     def provides(self, name: str) -> bool:
         return self.verb(name) is not None
 
+    def not_offered(self) -> dict[str, str]:
+        """The verbs this body leaves out here, each with why, as it says in `extras.not_offered`:
+        what it lacks on this backend or connection, beside what the body cannot do anywhere (a
+        Microduck whose reading keeps no map says why it does not explore)."""
+        said = self.extras.get("not_offered")
+        if not isinstance(said, dict):
+            return {}
+        return {str(verb): why for verb, why in said.items() if isinstance(why, str)}
+
     def digest(self) -> str:
         """A capability fingerprint: the same robot over sim2d and mock hashes the same.
 

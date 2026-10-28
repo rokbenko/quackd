@@ -1,0 +1,46 @@
+# Name the spot the duck stands on, go and explore, then walk back to it. It needs a duck that
+# keeps a map: its simulator given a room, as in
+# `quackd run favourite-spot --room two-rooms --yes`.
+---
+duck: 1
+name: favourite-spot
+description: Mark where you stand as your favourite spot, explore the room, then walk back to the spot and say so.
+author: rok
+requires: [mark_place, explore, go_to_place, say]
+verbs:
+  allow: [mark_place, explore, go_to_place, say, map, report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 12
+  max_minutes: 6
+  max_llm_calls: 12
+success:
+  - The place favourite was marked where you began.
+  - explore walked the room.
+  - go_to_place favourite brought you back to it.
+  - You said you were back.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 3 times in a row
+persona: A homely little duck. One short sentence at a time.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are a small biped duck robot. Mark the spot you are standing on as your favourite, explore
+the room for up to two minutes, then walk back to your favourite spot and say you are back.
+
+## Strategy
+
+1. `mark_place favourite`, which keeps where you stand now under that name.
+2. `explore` for 2 minutes. It walks to what your map has not seen and looks, and ends on its
+   own when nothing is left that it can reach.
+3. `go_to_place favourite` to walk back.
+4. `say` that you are back.
+
+## Notes
+
+- `explore` asks first, because it walks a room nobody has looked at yet.
+- `map` draws what you have seen so far, with your places on it.

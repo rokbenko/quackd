@@ -55,7 +55,7 @@ from PIL import Image
 
 from quackd.host import HostClient, HostError, confidence_floor
 from quackd.perception.base import Detection
-from quackd.perception.yolo import detections_from_boxes
+from quackd.perception.yolo import LABELS, detections_from_boxes
 
 logger = logging.getLogger("quackd.perception")
 
@@ -110,6 +110,8 @@ class HostDetector:
     It is what `observe` and the loop read to say why nothing was seen."""
 
     name = "yolo@host"
+    labels = LABELS
+    """The board's boxes become a local model's labels (`detections_from_boxes`)."""
     blocking = True
     """`detect` waits on the network, so `detect_off_loop` runs it in a worker thread."""
     lens_at_connect = False

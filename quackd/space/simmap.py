@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 
+from quackd.space.frontier import fan
 from quackd.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
 from quackd.space.pose import Fix, FrameRef, Pose2D
 from quackd.space.room import Room
@@ -199,8 +200,7 @@ class SimulatedMap(SpatialSourceBase):
     def _reveal(self, now: BodyNow) -> None:
         p = self.params
         heading = now.theta + now.head_yaw
-        # enough rays that two neighbours are no more than a cell apart at the far end of the range
-        rays = max(1, math.ceil(p.tof_fov_rad * p.tof_range_m / p.res_m))
+        rays = fan(p.tof_fov_rad, p.tof_range_m, p.res_m)
         step = p.res_m / 2
         for k in range(rays):
             angle = heading - p.tof_fov_rad / 2 + p.tof_fov_rad * (k + 0.5) / rays

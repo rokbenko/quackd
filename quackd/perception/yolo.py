@@ -23,6 +23,8 @@ from quackd.perception.base import Detection
 logger = logging.getLogger("quackd.perception")
 
 COCO_TO_LABEL = {"sports ball": "ball", "person": "person", "cat": "pet", "dog": "pet"}
+LABELS = frozenset(COCO_TO_LABEL.values())
+"""The labels a YOLO detector gives, wherever its model runs (`labels_of`)."""
 HEIGHT_M = {"ball": 0.10, "person": 1.6, "pet": 0.35}
 GUESSED_FOV_DEG = 62.0
 """The lens assumed when nobody said which one this is: a Pi Camera Module 2's."""
@@ -75,6 +77,7 @@ def detections_from_boxes(
 
 class YoloDetector:
     name = "yolo"
+    labels = LABELS
     lens_at_connect = False
     """True on one `explicit_detector` built before the body connected, whose lens the loop and
     the MCP server set again from what the body reported. One built anywhere else, such as a

@@ -1036,9 +1036,10 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
 
 def test_the_room_is_documented_where_it_is_configured() -> None:
     """`--room` lays out a room for the duck's simulator on `run`, `record`, `drive` and
-    `serve-mcp`, and a flag nobody can find is a room nobody maps. The front page names it in all
-    four commands' rows, and the places page names every room quackd ships, says what a room file
-    holds, and quotes `two-rooms` as it ships, so the example is one a person can copy."""
+    `serve-mcp`, and `validate` checks a task against one, and a flag nobody can find is a room
+    nobody maps. The front page names it in all five commands' rows, and the places page names
+    every room quackd ships, says what a room file holds, and quotes `two-rooms` as it ships, so
+    the example is one a person can copy."""
     from quackd.cli import app
     from quackd.space.room import BUILT_IN
 
@@ -1047,7 +1048,7 @@ def test_the_room_is_documented_where_it_is_configured() -> None:
         for c in app.registered_commands
         if c.callback is not None
     }
-    commands = ("run", "record", "drive", "serve-mcp")
+    commands = ("run", "record", "drive", "serve-mcp", "validate")
     for name in commands:
         assert "room" in callbacks[name].__code__.co_varnames, name
     rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]

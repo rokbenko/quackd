@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from quackd.memory import memory_dir, robot_slug
-from quackd.space.pose import Fix, FrameRef, LocalizationKind
+from quackd.space.pose import Fix, FrameRef, LocalizationKind, wrap_angle
 from quackd.space.source import SpatialSource
 
 PLACE_NAME_MAX = 32
@@ -367,11 +367,18 @@ class PlaceBook:
         return [v for v in self.views() if v.status == "here"][:n]
 
     def mark(
-        self, name: str, note: str | None = None, *, reserved_ok: bool = False
+        self,
+        name: str,
+        note: str | None = None,
+        *,
+        reserved_ok: bool = False,
+        turned: float = 0.0,
     ) -> tuple[Place, Place | None]:
         """Mark where the robot stands now as `name`, from its own reading and never from
         coordinates anybody gives, and return the place with the one it replaced. Refused while
-        the robot does not know where it is."""
+        the robot does not know where it is. `turned` is how far from the way its body faces the
+        place faces, for a robot that saw something through a head it had turned: quackd's own
+        angle, never a pilot's."""
         frame = self.frame()
         fix = self.source.fix()
         if frame is None and fix.lost is None:
@@ -388,7 +395,7 @@ class PlaceBook:
             name=name,
             x=fix.pose.x,
             y=fix.pose.y,
-            yaw=fix.pose.yaw,
+            yaw=wrap_angle(fix.pose.yaw + turned),
             frame=frame.id,
             kind=fix.kind,
             ts=time.time(),
