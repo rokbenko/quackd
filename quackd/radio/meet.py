@@ -10,8 +10,10 @@ dials at once and the other gives it `grace_s` before it dials too; a robot that
 advertise cannot be heard, so it always dials. A robot that could not be reached is tried again
 after 2, 4, 8, 16, 32 and then every 60 seconds, each a little later at random so two robots that
 failed together do not retry together; one that is busy after 30; one that refused, not for an
-hour. What a robot remembers of another, a refusal or a meeting just ended, is kept by its `did`,
-which a hello reveals, and never by its beacon id, which rotates.
+hour. What a robot remembers of another, a refusal or a meeting just ended, is kept by its `did`
+once a hello has revealed it, and until then by the beacon id it was heard by, which a rotation
+retires. Each try is numbered, and what a try that was given up on reports late is heard only if
+it met the robot: nothing a try reports undoes a meeting already made.
 
 The way is chosen per meeting. A robot whose advert says it has a LAN record, and whose record
 this robot finds by the advert's beacon id, is met over HTTP, which is faster and leaves the
@@ -24,6 +26,7 @@ this robot heard.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import random
 import threading
 import time
@@ -88,20 +91,23 @@ class MeetPolicy:
     on_far: Literal["bye", "keep"] = "bye"
     #: meetings being set up at once
     max_meetings: int = 2
-    #: how long one try may take before the planner stops waiting for it
-    attempt_s: float = 60.0
+    #: how long one try may take before the planner counts it failed: longer than the slowest
+    #: a try can be, two LAN posts of 5 s, a dial of up to 17 s and two link posts of up to 21 s
+    attempt_s: float = 120.0
     #: how many robots and dids it remembers, at most
     remember: int = 1024
 
 
 @dataclass(frozen=True)
 class Meet:
-    """Meet the robot that advertised `beacon_id` from `address`, now."""
+    """Meet the robot that advertised `beacon_id` from `address`, now. `token` names this try,
+    for its outcome to say which try it was."""
 
     beacon_id: str
     address: str
     flags: int
     attempt: int
+    token: int = 0
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,8 @@ class PeerPlan:
     #: links it dialled to this robot and still holds: it is meeting this robot, so wait
     inbound: int = 0
     reason: str = ""
+    #: the try under way, or the last one: an outcome naming another is late
+    token: int = 0
 
 
 class Planner:
@@ -171,6 +179,7 @@ class Planner:
         self._cooldown: dict[str, float] = {}
         #: parts owed for meetings that finished after their robot had gone
         self._owed: list[Part] = []
+        self._tokens = itertools.count(1)
         self._lock = threading.RLock()
 
     # ── what happens ─────────────────────────────────────────────────────────────────────
@@ -250,8 +259,12 @@ class Planner:
             else:
                 del self._plans[plan.beacon_id]
 
-    def on_outcome(self, beacon_id: str, outcome: Outcome, now: float) -> None:
-        """How a try the planner asked for went."""
+    def on_outcome(
+        self, beacon_id: str, outcome: Outcome, now: float, *, token: int | None = None
+    ) -> None:
+        """How a try the planner asked for went. `token` is the try's (`Meet.token`): a try that
+        is not the one under way, or one that reports after the robot was met some other way,
+        is heard only if it met the robot, since that session is real either way."""
         with self._lock:
             plan = self._plans.get(beacon_id)
             if outcome.did:
@@ -259,6 +272,15 @@ class Planner:
             if plan is None:
                 if outcome.kind == "met":  # it went far while being met: part at once
                     self._owed.append(Part(beacon_id, outcome.did, outcome.route))
+                return
+            if plan.state in ("met", "parting"):
+                # met already, by the other robot's hello: a failure now changes nothing
+                if outcome.kind == "met":
+                    plan.did = plan.did or outcome.did
+                    plan.route, plan.via = plan.route or outcome.route, plan.via or outcome.via
+                return
+            late = plan.state != "meeting" or (token is not None and token != plan.token)
+            if late and outcome.kind != "met":
                 return
             plan.reason = outcome.reason or outcome.kind
             if outcome.kind == "met":
@@ -269,17 +291,21 @@ class Planner:
                 return
             if outcome.kind == "refused":
                 until = now + self.policy.refused_s
-                self._refused[outcome.did or beacon_id] = until
+                did = outcome.did or plan.did or self._did_of.get(beacon_id)
+                self._refused[did or beacon_id] = until
                 plan.state, plan.next_at = "refused", until
                 return
             if outcome.kind == "busy":
                 plan.state, plan.next_at = "waiting", now + self.policy.busy_s
             else:
-                plan.attempts += 1
-                step = self.policy.backoff_s[min(plan.attempts, len(self.policy.backoff_s)) - 1]
-                plan.state, plan.next_at = "waiting", now + step * self.rng.uniform(1.0, 1.25)
+                self._back_off(plan, now)
             if not plan.near and not plan.inbound:
                 del self._plans[beacon_id]
+
+    def _back_off(self, plan: PeerPlan, now: float) -> None:
+        plan.attempts += 1
+        step = self.policy.backoff_s[min(plan.attempts, len(self.policy.backoff_s)) - 1]
+        plan.state, plan.next_at = "waiting", now + step * self.rng.uniform(1.0, 1.25)
 
     # ── what to do now ───────────────────────────────────────────────────────────────────
 
@@ -297,7 +323,9 @@ class Planner:
                         self._cooldown[plan.did] = now + self.policy.remeet_s
                     del self._plans[plan.beacon_id]
                 elif plan.state == "meeting" and now - plan.started_at > self.policy.attempt_s:
-                    plan.state, plan.next_at = "waiting", now  # a try that never came back
+                    # a try that never came back counts as failed, and the next waits its turn;
+                    # what it reports late is heard only if it met the robot
+                    self._back_off(plan, now)
                     plan.reason = "the last try never finished"
                     meeting -= 1
                 elif plan.state in ("refused", "cooldown") and now >= plan.next_at:
@@ -310,9 +338,11 @@ class Planner:
                     and now >= plan.next_at
                     and meeting < self.policy.max_meetings
                 ):
-                    plan.state, plan.started_at = "meeting", now
+                    plan.state, plan.started_at, plan.token = "meeting", now, next(self._tokens)
                     meeting += 1
-                    actions.append(Meet(plan.beacon_id, plan.address, plan.flags, plan.attempts))
+                    actions.append(
+                        Meet(plan.beacon_id, plan.address, plan.flags, plan.attempts, plan.token)
+                    )
             self._forget(now)
             return actions
 
@@ -413,7 +443,7 @@ class Meeter:
             outcome = self.attempt(action)
         except Exception as e:  # a bug here must not leave the robot "meeting" for a minute
             outcome = Outcome("unreachable", reason=f"the try failed: {e}")
-        self.planner.on_outcome(action.beacon_id, outcome, self.clock())
+        self.planner.on_outcome(action.beacon_id, outcome, self.clock(), token=action.token)
         self._tell(
             MeetEvent(
                 outcome.kind,
