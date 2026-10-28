@@ -35,7 +35,7 @@ How to do one thing with quackd.
 | [Playing a part](guides/play.md) | a task that gives the pilot a part to play, an animal, a person or a character, acted out with the body it has |
 | [Flock mode](guides/flock.md) | several robots on one task, as pilots or under a coordinator |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
-| [An NVIDIA Jetson](guides/jetson.md) | a board the quackd driving a robot reaches with `--host`, and the one `quackd onboard`, Robot Passport's service, runs on |
+| [An NVIDIA Jetson](guides/jetson.md) | a board quackd reaches with `--host`, and the one `quackd onboard`, Robot Passport's service, runs on |
 
 ## Models
 

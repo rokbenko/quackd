@@ -107,8 +107,8 @@ machinery, because it owns that robot's control loop rather than feeding one.
 
 Touching `bridge/jetson/`? That is the daemon at the far end of `--host`, and the one under
 `bridge/` that is not a robot side: it serves a Jetson's camera, a YOLO detector on its GPU
-and the board's own files and command output, and it has no control path at all. The quackd
-that drives a robot never runs on the board. The daemon runs there under JetPack's own
+and the board's own files and command output, and it has no control path at all. Every quackd
+command but `quackd onboard` stays off the board. The daemon runs there under JetPack's own
 Python 3.10, so it is written to 3.10 and imports only the standard library until a camera
 or a detector needs more, and it never imports quackd. `tests/test_jetson_hostd.py` holds
 all of that in the ordinary suite with nothing extra installed: it drives the real server in
@@ -128,15 +128,15 @@ of files, and never against the board it is named after
 Touching `quackd/onboard/`, `quackd/boards/` or `quackd/radio/`? That is Robot Passport on a
 robot's own computer, the one part of quackd that runs there, and the suite runs all of it on the
 `sim` board: a laptop standing in for the robot's computer, a simulated air between processes on
-one machine for the radio, and fakes for BlueZ, so nothing you change needs a board or a
-Bluetooth adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with
-`quackd[onboard]`, and its object tests run in CI's `onboard` job under a private system bus, so
-sync `--extra onboard` on Linux to run them yourself. A board other than a Jetson comes in as a
-plugin through the `quackd.boards` entry point group, the way an adapter comes in through
-`quackd.adapters`, and may not take the names `jetson` or `sim`. Nothing in these folders has run
-on a Jetson or over a real radio, so a change is checked against the sim board and the fakes, and
-a page or a help string that claims more than that of a board or a radio is a bug
-([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
+one machine for the radio, and fakes for BlueZ, so nothing you change needs a board or a Bluetooth
+adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with `quackd[onboard]`,
+and the radio's tests run with both installed in CI's `onboard` job, on a private bus
+`dbus-run-session` starts, so sync `--extra onboard` on Linux to run them yourself. A board other
+than a Jetson comes in as a plugin through the `quackd.boards` entry point group, the way an
+adapter comes in through `quackd.adapters`, and may not take the names `jetson` or `sim`. Nothing
+in these folders has run on a Jetson or over a real radio, so a change is checked against the sim
+board and the fakes, and a page or a help string that claims more than that of a board or a radio
+is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
 Touching `web/`? That is the browser demo, and the only quackd code that is not Python: plain
 JavaScript modules, no build step, nothing to install. Run it with the server in the directory

@@ -190,11 +190,10 @@ before.
   other and write down the signal strength at which they meet, once on one Wi-Fi and once with
   it off, so the handshake goes over the LAN once and over the Bluetooth link once. On the way:
   a stranger's words kept from the pilot, a pin with `quackd onboard pin` and free talk after
-  it, a pause asked for and granted, a passport changed after it was signed refused by the other
-  robot, an edit to `robot.yaml` served as last signed until `quackd onboard sign`, the beacon
-  id rotating, and whether BlueZ's address privacy took effect. Bring back both services'
-  journals, the transcripts, `quackd onboard status --json` from each, a `tegrastats` line while
-  they talk, and the signal strength at 1, 3 and 10 m. Each part flips its row in the roadmap's
+  it, an edit to `robot.yaml` served as last signed until `quackd onboard sign`, the beacon id
+  rotating, and whether BlueZ's address privacy took effect. Bring back both services' journals,
+  the transcripts, `quackd onboard status --json` from each, a `tegrastats` line while they
+  talk, and the signal strength at 1, 3 and 10 m. Each part flips its row in the roadmap's
   status table, and not before.
 - ⬜ **The page `quackd ui` on a phone.** Its phone path has been seen only in a headless browser at
   a phone's width, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
@@ -251,8 +250,8 @@ before.
   pipe's lines, which nobody is asked about, are written declined too, and only their `command`
   row tells them apart.
 
-- ⬜ **Nobody has run the host daemon on a Jetson.** The quackd that drives a robot does not run
-  on the board. It reaches one from the laptop with `--host`, through
+- ⬜ **Nobody has run the host daemon on a Jetson.** Every quackd command but `quackd onboard`
+  stays off the board, and reaches one from the laptop with `--host`, through
   `bridge/jetson/quackd_jetson_hostd.py` ([docs/jetson.md](docs/guides/jetson.md)). The daemon,
   the client, `quackd doctor --host`, the board's camera and its detector were all exercised
   in-process against fakes: a board made of files, a fake ultralytics and torch, and a fake of

@@ -51,8 +51,8 @@ run on a robot lives in `bridge/` (see Modules below): the Open Duck Mini's pair
 bridge and a camera server; a host wrapper for the AlohaMini; and a daemon for the
 ToddlerBot. None of those carries model or perception code of its own.
 
-quackd itself, the deciding half, never runs there to drive a robot. It stays on the laptop,
-and when a robot's own computer is an NVIDIA Jetson, or one sits on the bench beside a robot,
+quackd itself, the deciding half, stays on the laptop in every command but one, and when a
+robot's own computer is an NVIDIA Jetson, or one sits on the bench beside a robot,
 `--host` reaches it over the network: the model server on its GPU, frames from a camera on it,
 detections computed on its GPU and the board's own health. The last three come from the one
 other daemon in `bridge/`, `bridge/jetson/`, which moves nothing and is no robot's side, and
@@ -62,8 +62,9 @@ the model server is your own install. Nothing on the board becomes the robot's c
 
 The one exception is Robot Passport. `quackd onboard` runs on a robot's own computer, an NVIDIA
 Jetson first, because a robot's identity belongs to its body: it keeps the robot's passport and
-keys, listens for robots that come close, and runs the robot's brain when they talk, one run at a
-time ([passport/quackd.md](../passport/quackd.md),
+keys, listens for robots that come close, and runs the robot's brain when they talk, one run at
+a time, driving the robot's body from there when its file names an adapter
+([passport/quackd.md](../passport/quackd.md),
 [ADR-0073](../adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
 Since 0.4 the robot side is an **adapter** that declares a **manifest**: what body it has,
@@ -126,7 +127,7 @@ with a deterministic referee on one lockstep clock ([guides/flock.md](../guides/
 
 | Path | Why it exists |
 |---|---|
-| `quackd/cli.py` | The front door: `run · drive · preflight · validate · doctor · serve-mcp · ui · policy · list-verbs · list-adapters · list-models · record · log · memory · robot · flock · onboard · passport · discover · announce`. `--robot <adapter>:<backend>` or a registered name everywhere, with `--address`, `--camera-url` and `--token` for a real robot. `--camera-url` repeats for a body that reads several cameras, which today is the LeRobot arm and nothing else. On `run`, `serve-mcp`, `doctor`, `robot add` and `robot edit`, `--host` with `--host-token` names a board quackd uses and never runs on, and `--detector` on `run` and `serve-mcp` says what reads the frames. `policy serve` and `policy check` are the LeRobot arm's policy server and a look at one, imported from the adapter only when one of them runs (`quackd_lerobot/policy/server.py`, which loads a LeRobot checkpoint through `policy/pipeline.py`). |
+| `quackd/cli.py` | The front door: `run · drive · preflight · validate · doctor · serve-mcp · ui · policy · list-verbs · list-adapters · list-models · record · log · memory · robot · flock · onboard · passport · discover · announce`. `--robot <adapter>:<backend>` or a registered name everywhere, with `--address`, `--camera-url` and `--token` for a real robot. `--camera-url` repeats for a body that reads several cameras, which today is the LeRobot arm and nothing else. On `run`, `serve-mcp`, `doctor`, `robot add` and `robot edit`, `--host` with `--host-token` names a board the command uses and does not run on, and `--detector` on `run` and `serve-mcp` says what reads the frames. `policy serve` and `policy check` are the LeRobot arm's policy server and a look at one, imported from the adapter only when one of them runs (`quackd_lerobot/policy/server.py`, which loads a LeRobot checkpoint through `policy/pipeline.py`). |
 | `quackd/preflight.py` | `quackd preflight`: task files rehearsed on a simulator of the arm, never the arm, which is refused before it is built. Each file is validated, connected and closed a few times, run once per seed through the agent loop with memory off, and judged against a `<task>.sim.yaml` sidecar beside it: the scene to lay out, and checks read from the transcript and from the simulator's latched truth. The sidecar is never the frontmatter, which an MCP pilot is handed whole. |
 | `quackd/duckfile/` | The `.duck` contract (v0 to v4): strict pydantic frontmatter, parser, generated `schema.json`, `validate.py` (a task against one or more manifests), and `narrow.py`, which rebuilds `manipulate` from a task's `policy:` section wherever the verbs a run offers become final. |
 | `quackd/adapters/` | The robot-shaped part of the core, which contains no robot: `RobotManifest` (data: what a robot is and can do), the `RobotAdapter` protocol, `catalogue.py` (the nine bodies quackd publishes, as strings, importing none of them, each with a `Connect` block per real backend saying what `--address` is, the default its transport uses, the variable its token is read from, its camera, what runs on the robot and what to do first, which the page `quackd ui` shows and a test holds to the transport's own constants), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, with why, as strings, held by a test to the types the server reads, so `quackd list-models --kind policy` and the models pages print them with no LeRobot installed), and `factory.py`, the factory behind `--robot`, which finds an installed adapter through the `quackd.adapters` entry point group, imports it lazily, and refuses an adapter that is not installed with the extra to type. |

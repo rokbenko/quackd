@@ -555,16 +555,16 @@ publishes is found exactly the same way, through the `quackd.adapters` entry poi
 no pull request to this repository. Writing one:
 [adapters/writing-an-adapter.md](adapters/writing-an-adapter.md).
 
-**Is a Jetson one of the nine?** No, and it is not a tenth. A Jetson is a computer, not a
-body: it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
+**Is a Jetson one of the nine?** No, and it is not a tenth. A Jetson is a computer, not a body:
+it has no manifest and no verbs, `quackd list-adapters` will never show it, there is no
 `--robot jetson:...`, and there is no adapter to install for it
-([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). The quackd that drives a robot does not
-run on it either. It names the board with `--host` from the laptop, and uses the model server on
+([ADR-0044](adr/0044-a-jetson-is-a-host-not-a-body.md)). Every quackd command but one stays off
+it as well: quackd names the board with `--host` from the laptop, and uses the model server on
 its GPU, its camera, its detector and its health from there, which is the arrangement *Does the
 robot need a powerful onboard computer?* above describes ([guides/jetson.md](guides/jetson.md),
 [ADR-0046](adr/0046-the-jetson-is-reached-not-run-on.md)). The one command that does run on a
-Jetson is `quackd onboard`, Robot Passport's service, on a robot that carries the board, and it
-calls the Jetson a board, never a robot
+Jetson is `quackd onboard`, Robot Passport's service, on a robot that carries the board, which
+it can drive from there, and it calls the Jetson a board, never a robot
 ([ADR-0073](adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
 **Why do an SO-101 and a Microduck carry no Robot Passport?** Because an arm is fixed in place

@@ -1,15 +1,15 @@
 # quackd and an NVIDIA Jetson
 
 A Jetson is small enough to ride on a robot and has a GPU, and on its own it is already a
-robot's computer. quackd meets one in two ways. Everything that drives a robot stays on your
-laptop, and `--host` names the board, which gives the quackd there four things: the model on
-the board's GPU, the board's health, frames from a camera on the board, and detections computed
-on its GPU. The first is your own model server, installed on the board. The other three come
-from one small daemon quackd ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
+robot's computer. quackd meets one in two ways. Every quackd command but one stays on your
+laptop, and `--host` names the board, which gives the quackd there four things: the model on the
+board's GPU, the board's health, frames from a camera on the board, and detections computed on
+its GPU. The first is your own model server, installed on the board. The other three come from
+one small daemon quackd ships for the board, [`bridge/jetson/`](../../bridge/jetson/README.md),
 the way it ships a camera daemon for the Open Duck Mini's Pi. The other way is the one part of
 quackd that runs on the board itself, `quackd onboard`, which a robot that carries a Jetson runs
-so that it can introduce itself to robots it meets
-([Robot Passport on the board](#robot-passport-on-the-board)).
+so that it can introduce itself to robots it meets, and which drives the robot from there when
+the robot's file names an adapter ([Robot Passport on the board](#robot-passport-on-the-board)).
 
 Nothing on this page has been run on a Jetson by this project. It is written from NVIDIA's own
 documentation, and quackd's side of it, the daemon, the client, the detector, the camera and
@@ -559,24 +559,26 @@ What the board needs for them:
   tool. JetPack's own `python3` is left to the host daemon.
 - **A Bluetooth adapter BlueZ can drive,** advertising and accepting a link at once.
   `quackd onboard preflight` says what the adapter, `bluetoothd` and your permissions allow
-  before anything is installed.
+  before the wizard installs the service.
 - **systemd.** The wizard installs `quackd-onboard.service`, a system unit that runs the service
   as your user in the `bluetooth` group, at `Nice=10`, under `MemoryMax=1G` and with
   `OOMScoreAdjust=300`, and it prints the sudo lines before it runs them. It refuses to run as
   root.
 
-The wizard asks about six questions, writes `robot.yaml` and `robot.env` under
+The wizard asks what only the owner knows, writes `robot.yaml` and `robot.env` under
 `~/.quackd/onboard/`, makes the robot's key and the owner's, sealed with a passphrase, signs the
 passport, and offers to switch on BlueZ's address privacy, `Privacy = device` in
-`/etc/bluetooth/main.conf` with the old file kept as a backup, which is meant to keep the radio's
-own address from following the robot. [passport/quickstart.md](../passport/quickstart.md) has
-the steps, and [passport/quackd.md](../passport/quackd.md) the file, the service and every
-command.
+`/etc/bluetooth/main.conf` with the old file kept as a backup, which is meant to keep the
+radio's own address from following the robot. Switching it on restarts bluetoothd, which drops
+every Bluetooth connection the robot has for a moment, a remote or an e-stop among them, so the
+wizard asks first. [passport/quickstart.md](../passport/quickstart.md) has the steps, and
+[passport/quackd.md](../passport/quackd.md) the file, the service and every command.
 
 On a robot whose board already holds a control daemon, the service is one process more beside
-the three [above](#beside-a-robots-own-daemon): a Bluetooth scanner and, during a meeting or a
-goal, a pilot's requests. Nobody has measured what that costs a robot's control loop, and the
-unit's limits are a precaution, not a measurement.
+the three [above](#beside-a-robots-own-daemon): a Bluetooth scanner, during a meeting or a goal
+a pilot's requests, and when the robot's file names an adapter, the run that drives the body.
+Nobody has measured what that costs a robot's control loop, and the unit's limits are a
+precaution, not a measurement.
 
 > [!WARNING]
 > `quackd onboard` has run on the `sim` board, a laptop standing in for a robot's computer, and
@@ -683,8 +685,8 @@ your own board.
 - Every block of quackd output on this page was printed on Windows. Where a board answered, it
   was that fake daemon, and the Ollama in the servers table was a stub.
 - `quackd onboard` has run on the `sim` board alone: the wizard, the service and two simulated
-  robots meeting on one laptop, over a simulated air, with the Bluetooth half against fakes and
-  a fake system bus.
+  robots meeting on one laptop, over a simulated air, with the radio's code against fakes, and
+  its BlueZ half has never met bluetoothd.
 - The JetPack table and the model download sizes were read from NVIDIA's and Ollama's own
   pages on 2026-09-22. Everything version sensitive here goes stale on somebody else's
   release schedule, so check it against the board rather than trusting the date.
