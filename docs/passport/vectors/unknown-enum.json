@@ -1,18 +1,19 @@
 {
-  "passport": "0.1",
+  "passport": "1.0",
   "id": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
-  "name": "duck-01",
+  "name": "g1-edu-mock",
   "maker": {
-    "vendor": "pollen-robotics",
-    "model": "microduck"
-  },
-  "software": {
-    "name": "quackd",
-    "version": "0.23.0"
+    "vendor": "unitree",
+    "model": "g1-edu"
   },
   "owner": {
+    "id": "did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2",
     "label": "Example lab",
-    "contact": "https://example.org/robots/duck-01"
+    "contact": "https://example.org/robots/g1-edu-mock"
+  },
+  "board": {
+    "kind": "fpga-cluster",
+    "model": "an unknown computer"
   },
   "body": {
     "embodiment": "hexapod",
@@ -23,46 +24,17 @@
   },
   "skills": [
     "report_state",
-    "stop",
-    "say",
-    "move",
-    "observe",
-    "go_to",
-    "search_scan",
-    "approach_and",
-    "sit",
-    "stand",
-    "kick",
-    "grab",
-    "stand_up",
-    "quack",
-    "gaze",
-    "watch"
+    "stop"
   ],
-  "courtesy": [
-    "pause",
-    "identify"
-  ],
+  "courtesy": [],
   "cannot": [
-    "carry, hold or push anything: the beak scoops at the floor and nothing else",
-    "climb or descend a step",
-    "hold a heading for long without a landmark: the IMU has no magnetometer, so heading drifts"
+    "move: a mock on a laptop, and no G1 is here"
   ],
   "safety": {
-    "stops_on_silence": true,
-    "estop": "power",
-    "how_to_stop": "the power switch"
+    "stops_on_silence": false,
+    "estop": "none",
+    "how_to_stop": "Simulated: stop the process."
   },
-  "talk": [
-    {
-      "via": "http",
-      "url": "http://192.0.2.10:8790/robot-passport/inbox"
-    }
-  ],
-  "ext": {
-    "org.quackd": {
-      "sha": "dc5ab18e68dd6ca5"
-    }
-  },
-  "issued": "2026-10-21T00:00:00Z"
+  "issued": "2026-10-28T00:00:00Z",
+  "expires": "2027-10-28T00:00:00Z"
 }

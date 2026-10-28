@@ -49,7 +49,6 @@ def test_bundled_list() -> None:
         "fetch",
         "flock-kick",
         "flock-hello",
-        "nearby-hello",
         "open-duck-scout",
         "open-duck-lookout",
         "microduck-lookout",
