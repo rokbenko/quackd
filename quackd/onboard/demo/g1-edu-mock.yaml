@@ -1,0 +1,48 @@
+# robot.yaml for the demo's courier: a mock of a Unitree G1 EDU humanoid, with the figures
+# Unitree publishes for it. Nothing here drives a G1: `quackd onboard demo` runs this file on a
+# laptop's sim board, and its passport says so. Unitree's page names the EDU's compute only as
+# "such as Orin"; resellers list a Jetson Orin NX, which is why this robot stands for a Jetson
+# one, but no figure below comes from a reseller.
+onboard: 1
+
+passport:
+  name: g1-edu-mock
+  maker:
+    vendor: "unitree"
+    model: "g1-edu"
+  owner:
+    label: "Courier company (demo)"
+    contact: "https://example.org/courier"
+  body:
+    embodiment: humanoid
+    mobility: legged
+    manipulator: arms
+    sensors: [camera, lidar, microphone, battery]
+    mass_kg: [35, official, "unitree.com/g1, G1 EDU column: about 35 kg+, read 2026-10-28"]
+    height_m: [1.32, official, "unitree.com/g1: 1320 mm standing, read 2026-10-28"]
+    payload_kg: [3, official, "unitree.com/g1, G1 EDU column: about 3 kg an arm, read 2026-10-28"]
+    endurance_min: [120, official, "unitree.com/g1: about 2 h a charge, read 2026-10-28"]
+  skills: [report_state, stop]
+  cannot: ["move: this is a mock on a laptop, and no G1 is here"]
+  safety:
+    estop: none
+    how_to_stop: "Simulated: stop the process."
+
+meeting:
+  task: |
+    You are a courier robot standing at a household's front door with parcel 4417 for them. It
+    weighs 2 kg. Introduce yourself to the robot that came close, say what you carry and ask
+    whether it can take the parcel. Agree with it where you will leave the parcel, in one or
+    two sentences each way. You move nothing yourself here: say what you would do.
+  with_strangers: true
+  per_hour: 6
+
+trust:
+  strangers_may_pause: true
+  pins: []
+
+radio:
+  meet_within_m: 2
+
+lan:
+  port: 0
