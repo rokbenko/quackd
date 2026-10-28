@@ -181,16 +181,21 @@ before.
 - ⏸ **Any rosbridge base.** `rosbridge:ws` against a bridge. It is the one hardware backend
   with neither a lookout task nor a checklist. A coordinator flock across two machines needs a
   distributed clock first; a pilot flock needs none and has simply never been tried across two.
-- ⬜ **Robot Passport across two machines, and then on a robot.** No part 0.23.0 ships has run
-  between two machines or on a robot. Most has run between processes on one machine, and
-  `meet ros://` only against fakes ([docs/passport/roadmap.md](docs/passport/roadmap.md)). On two
-  machines on one network: `quackd passport serve --announce --talk` on one, and from the other
-  `quackd discover`, then `quackd meet HOST --pin --as NAME --say TEXT`, the same through a real
-  broker with `--mqtt`, and two `quackd run nearby-hello --talk` runs, one with `--meet`. A courtesy
-  is asked of a run, since `passport serve` drives no robot and answers every ask no:
-  `quackd meet HOST --as NAME --ask pause:3` at a running `nearby-hello`. Then a pause asked of a
-  robot that is really walking, which has to stop and hold still for the seconds it was granted.
-  Each one flips its row in the roadmap's status table, and not before.
+- ⬜ **Robot Passport on two Jetsons with Bluetooth.** 0.29.0's `quackd onboard` has run on the
+  `sim` board alone, two simulated robots on one laptop, and nothing of it on a Jetson, over a
+  real Bluetooth radio or between two machines
+  ([docs/passport/roadmap.md](docs/passport/roadmap.md)). On two boards, each an Orin or a Thor
+  with an adapter BlueZ can drive: the three commands on each, the wizard's `robot.yaml`, the
+  passphrase, the unit, and a reboot that brings the service back. Then carry one toward the
+  other and write down the signal strength at which they meet, once on one Wi-Fi and once with
+  it off, so the handshake goes over the LAN once and over the Bluetooth link once. On the way:
+  a stranger's words kept from the pilot, a pin with `quackd onboard pin` and free talk after
+  it, a pause asked for and granted, a passport changed after it was signed refused by the other
+  robot, an edit to `robot.yaml` served as last signed until `quackd onboard sign`, the beacon
+  id rotating, and whether BlueZ's address privacy took effect. Bring back both services'
+  journals, the transcripts, `quackd onboard status --json` from each, a `tegrastats` line while
+  they talk, and the signal strength at 1, 3 and 10 m. Each part flips its row in the roadmap's
+  status table, and not before.
 - ⬜ **The page `quackd ui` on a phone.** Its phone path has been seen only in a headless browser at
   a phone's width, against the page on loopback. On one Wi-Fi network: `quackd ui --bind
   0.0.0.0`, the firewall's question on Windows, the printed QR code scanned, a goal and a chat
@@ -204,20 +209,27 @@ before.
 
 ## Open here
 
-- ⬜ **Robot Passport, phase 7: reaching robots that do not run quackd.** Six pieces, in this order:
-  the four translators (a URDF through rosbridge, a VDA 5050 factsheet, a MassRobotics identity
-  report and an A2A Agent Card) and a passport inside an A2A Agent Card, which need no hardware,
-  then a single-file server for any Linux robot with a page that shows a scanned passport to a
-  person, a ROS 2 node that publishes `robot_passport`, and an ESP32 library, HTTP first. The second
-  implementation then moves the spec, its schemas, its vectors and `quackd/passport/` to a
-  repository of their own. What is decided, what is left to decide, where each piece's code goes and
-  what done means for it are in
-  [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md), which a session
-  that knows nothing else can start from. Nothing of it is built.
-- ⬜ **Robot Passport's smaller open items.** Talk over a broker in `run` and `serve-mcp`, `--talk`
-  in a flock run, a pilot that can ask for a courtesy or share what it saw, maker stamps, a list of
-  revoked keys, and guests in a flock, which need a decision record of their own first. The same
-  note says what each needs.
+- ⏸ **The hackathon page comes out after judging ends on 15 December 2026.** quackd is an entry
+  in the Nebius x NVIDIA Global AI Hackathon, and the entry's links point at the `v0.29.0` tag.
+  For it, 0.29.0 added one page, docs/guides/nemotron-on-token-factory/README.md, on how Robot
+  Passport's two simulated robots were flown on NVIDIA Nemotron through Nebius Token Factory,
+  the live-run records in the folder beside it, the README line at the end of Pilot LLMs that
+  links it, its row in docs/README.md's Guides table, and this item. It is better taken out
+  after the winners are announced, about 11 January 2027. quackd depends on none of it: those
+  runs reached Token Factory through `--llm local:MODEL --base-url URL` and `LOCAL_API_KEY`,
+  which stay, and CHANGELOG.md never named the page. To take it out, in one commit:
+  `git rm -r docs/guides/nemotron-on-token-factory`, delete the README line, the row in
+  docs/README.md and this item, then `git grep -n -i -E 'nebius|token ?factory'` must print
+  nothing. The `v0.29.0` tag keeps all of it for anybody who follows a link from the entry.
+- ⬜ **Robot Passport after 0.29.0.** Boards beyond the Jetson, through the `quackd.boards`
+  plugin interface. A pilot that asks a robot it met for a courtesy, or shares what it saw.
+  Maker signatures beside the owner's. Revocation, so a stolen robot's key stops speaking before
+  its passport expires. Guests, which need a decision record of their own first. Talk that is
+  encrypted as well as signed. And the signal strength at one metre measured on real adapters,
+  so `rssi_at_1m` and the 2 m a robot meets at stop being starting values. Phase 7 is dropped
+  ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)), and
+  its note, [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md), is
+  kept as the record of what was planned.
 - ⬜ **Nobody has run the discrete stepper against a real decision LLM.** Not TypeSafe's hosted
   API, not OpenAI's Decisions API, not a `kev`, `von`, `openjev` or `opendecision` server, not
   `laya` in this process, and not on hardware in any of those shapes. `--decision-llm` ships off
@@ -239,21 +251,23 @@ before.
   pipe's lines, which nobody is asked about, are written declined too, and only their `command`
   row tells them apart.
 
-- ⬜ **Nobody has run the host daemon on a Jetson.** quackd no longer runs on the board. It
-  reaches one from the laptop with `--host`, through `bridge/jetson/quackd_jetson_hostd.py`
-  ([docs/jetson.md](docs/guides/jetson.md)). The daemon, the client, `quackd doctor --host`, the
-  board's camera and its detector were all exercised in-process against fakes: a board made of
-  files, a fake ultralytics and torch, and a fake of the protocol on loopback. That proves
-  quackd reads the protocol as written, and says nothing about a board. Unmeasured is everything
-  that makes a Jetson one: whether the CSI camera opens through its GStreamer pipeline, whether
-  ultralytics on JetPack detects on CUDA, how long a snapshot and a detection take over a
-  robot's Wi-Fi inside `go_to`'s steering loop, which re-sends its last twist for 0.3 s while it
-  waits and no longer, what the doctor section reads off a real board's files, and the one that
-  matters near a robot, whether a model server and the detector on a robot's own board leave its
-  fifty hertz control loop alone, which on a humanoid is a fall if they do not. A ToddlerBot
-  carries a Jetson, and so does a MOSS rover built on its Jetson option, so that is where the
-  last one gets answered. What to send back from a board is listed at the end of
-  [docs/jetson.md](docs/guides/jetson.md#status).
+- ⬜ **Nobody has run the host daemon on a Jetson.** The quackd that drives a robot does not run
+  on the board. It reaches one from the laptop with `--host`, through
+  `bridge/jetson/quackd_jetson_hostd.py` ([docs/jetson.md](docs/guides/jetson.md)). The daemon,
+  the client, `quackd doctor --host`, the board's camera and its detector were all exercised
+  in-process against fakes: a board made of files, a fake ultralytics and torch, and a fake of
+  the protocol on loopback. That proves quackd reads the protocol as written, and says nothing
+  about a board. Unmeasured is everything that makes a Jetson one: whether the CSI camera opens
+  through its GStreamer pipeline, whether ultralytics on JetPack detects on CUDA, how long a
+  snapshot and a detection take over a robot's Wi-Fi inside `go_to`'s steering loop, which
+  re-sends its last twist for 0.3 s while it waits and no longer, what the doctor section reads
+  off a real board's files, and the one that matters near a robot, whether a model server and
+  the detector on a robot's own board leave its fifty hertz control loop alone, which on a
+  humanoid is a fall if they do not. A ToddlerBot carries a Jetson, and so does a MOSS rover
+  built on its Jetson option, so that is where the last one gets answered. What to send back
+  from a board is listed at the end of [docs/jetson.md](docs/guides/jetson.md#status).
+  `quackd onboard`, the one part of quackd that does run on a robot's own Jetson, is the item on
+  two Jetsons with Bluetooth under Only a human can.
 
 - ⏸ **FLUX 3 Action has not run anywhere, and quackd does not serve it.** It needs a rented
   Linux machine with an NVIDIA GPU, about 32 GB of it in BF16 by Black Forest Labs' own report,
