@@ -1,8 +1,8 @@
 """The owner key sealed with a passphrase, the robot key in the clear, and the robot's directory.
 
 Every test but one seals at a cost a test can afford (`cheap`): scrypt at quackd's real cost asks
-128 MiB and a second or more for every derivation, and the changed-blob cases alone derive a
-dozen times. `test_the_real_cost_seals_and_opens` proves the real cost once.
+128 MiB and a second or more for every derivation, and the changed-blob cases alone seal or open
+dozens of times. `test_the_real_cost_seals_and_opens` proves the real cost once, and pins it.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import copy
 import json
 import os
 import stat
+import sys
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -80,9 +81,13 @@ def test_a_sealed_key_opens_with_its_passphrase_and_holds_no_seed_in_the_clear(
 
 
 def test_the_real_cost_seals_and_opens() -> None:
-    """The cost quackd seals with, which the oldest `cryptography` it allows (42.0.0) derives as
-    well, and inside the most a sealed key may ask, so a key this quackd seals it can open."""
+    """The cost the plan gives, pinned, since a cheaper one would pass every other test here, and
+    inside the most a sealed key may ask, so a key this quackd seals it can open. This runs the
+    `cryptography` the lock file pins; the floor pyproject allows, 42.0.0, was checked by hand to
+    derive at this cost as well."""
+    assert (keys.SCRYPT_N, keys.SCRYPT_R, keys.SCRYPT_P) == (2**17, 8, 1)
     assert keys.SCRYPT_N * keys.SCRYPT_R * keys.SCRYPT_P <= keys.MAX_SCRYPT_COST
+    assert keys.scrypt_memory(keys.SCRYPT_N, keys.SCRYPT_R, keys.SCRYPT_P) <= keys.MAX_SCRYPT_MEMORY
     key = SigningKey.generate()
     blob = keys.seal(key, PASSPHRASE)
     kdf = blob["kdf"]
@@ -134,7 +139,7 @@ def test_a_passphrase_a_file_could_not_carry_is_refused(passphrase: str) -> None
 
 
 def test_the_same_words_in_either_unicode_form_open_the_same_key(cheap: None) -> None:
-    composed = "čebelica in medved"
+    composed = "\u010debelica in medved"
     decomposed = unicodedata.normalize("NFD", composed)
     assert composed != decomposed
     key = SigningKey.generate()
@@ -170,11 +175,13 @@ _CHANGES: list[tuple[tuple[str, ...], Any, type[Exception]]] = [
     (("kdf", "r"), 0, keys.KeysError),
     (("kdf", "p"), lambda p: p + 1, keys.WrongPassphrase),
     (("kdf", "p"), str, keys.KeysError),
+    (("kdf", "p"), True, keys.KeysError),
     (("kdf", "salt"), _flipped, keys.WrongPassphrase),
     (("kdf", "salt"), lambda s: b64url(_unb64(s)[:-1]), keys.KeysError),
     (("cipher", "name"), "chacha20-poly1305", keys.KeysError),
     (("cipher", "nonce"), _flipped, keys.WrongPassphrase),
     (("cipher", "nonce"), "not base64url!", keys.KeysError),
+    (("cipher", "nonce"), lambda s: b64url(_unb64(s)[:8]), keys.KeysError),
     (("sealed",), _flipped, keys.WrongPassphrase),
     (("sealed",), lambda s: b64url(_unb64(s)[:-1]), keys.KeysError),
     *(
@@ -237,12 +244,75 @@ def test_a_blob_whose_seed_makes_another_did_is_refused(cheap: None) -> None:
         keys.unseal(blob, PASSPHRASE)
 
 
+def _never(*args: Any, **kwargs: Any) -> Any:
+    raise AssertionError("reached, where the blob should have been refused before it")
+
+
+@pytest.mark.parametrize(
+    ("n", "r", "p"),
+    [(1 << 16, 1, 1), (2, keys.MAX_SCRYPT_COST // 2, 1), (2, 1, keys.MAX_SCRYPT_COST)],
+    ids=["an-n-scrypt-refuses-at-r-1", "the-memory-within-the-work", "the-work"],
+)
+def test_a_cost_scrypt_refuses_or_too_heavy_to_try_is_refused_before_scrypt_runs(
+    cheap: None, monkeypatch: pytest.MonkeyPatch, n: int, r: int, p: int
+) -> None:
+    """OpenSSL refuses an n at or above 2 ** (16 r) with a `MemoryError`, and a damaged file
+    chooses r as freely as n, so the work and the memory are each bounded. None of it reaches
+    scrypt."""
+    blob = keys.seal(SigningKey.generate(), PASSPHRASE)
+    blob["kdf"].update(n=n, r=r, p=p)
+    monkeypatch.setattr(keys, "_derived", _never)
+    with pytest.raises(keys.KeysError):
+        keys.unseal(blob, PASSPHRASE)
+
+
+def test_a_did_too_long_to_be_one_is_refused_before_it_is_decoded(
+    cheap: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """base58 decodes in time that grows with the square of its length, so a megabyte of did
+    would hold the robot for minutes."""
+    assert len(SigningKey.generate().did) <= keys.MAX_DID
+    blob = keys.seal(SigningKey.generate(), PASSPHRASE)
+    blob["did"] += "1" * keys.MAX_DID
+    monkeypatch.setattr(keys, "public_from_did", _never)
+    with pytest.raises(keys.KeysError, match="characters long"):
+        keys.unseal(blob, PASSPHRASE)
+
+
+_DUCK = "\U0001f986"
+_HALVES = "".join(
+    chr(int.from_bytes(_DUCK.encode("utf-16-le")[i : i + 2], "little")) for i in (0, 2)
+)
+"""The duck as Windows' hidden prompt hands it over: its two UTF-16 halves, as two characters."""
+
+
+def test_a_passphrase_with_an_emoji_typed_on_windows_opens_on_the_robot(cheap: None) -> None:
+    assert len(_HALVES) == 2 and _HALVES != _DUCK
+    key = SigningKey.generate()
+    on_windows, on_the_robot = PASSPHRASE + _HALVES, PASSPHRASE + _DUCK
+    assert keys.unseal(keys.seal(key, on_windows), on_the_robot).did == key.did
+    half = PASSPHRASE + _HALVES[0]
+    with pytest.raises(keys.PassphraseRefused, match="half a character"):
+        keys.seal(key, half)
+    with pytest.raises(keys.WrongPassphrase):
+        keys.unseal(keys.seal(key, PASSPHRASE), half)
+
+
+def test_the_minimum_counts_characters_after_nfc() -> None:
+    """Eleven accented letters typed decomposed are twenty-two code points, and still eleven
+    characters."""
+    short = unicodedata.normalize("NFD", "\u010d" * (keys.MIN_PASSPHRASE - 1))
+    assert len(short) >= keys.MIN_PASSPHRASE
+    with pytest.raises(keys.PassphraseRefused, match="at least"):
+        keys.check_passphrase(short)
+
+
 # ── the passphrase file ─────────────────────────────────────────────────────────────────
 
 
 def test_a_passphrase_file_gives_its_first_line_stripped(tmp_path: Path) -> None:
     path = tmp_path / "passphrase"
-    path.write_bytes(("﻿  " + PASSPHRASE + "  \r\nnot this line\r\n").encode("utf-8"))
+    path.write_bytes(("\ufeff  " + PASSPHRASE + "  \r\nnot this line\r\n").encode("utf-8"))
     path.chmod(0o600)
     assert keys.read_passphrase_file(path) == PASSPHRASE
 
@@ -294,6 +364,8 @@ def _robot_file(key: SigningKey, **changed: Any) -> str:
 
 
 _KEY = SigningKey.generate()
+_DIGITS = SigningKey(bytes.fromhex("1" * 2 * SEED_BYTES))
+"""A key whose seed in hex is all digits, so a JSON number of the same digits once made it too."""
 
 
 @pytest.mark.parametrize(
@@ -303,6 +375,11 @@ _KEY = SigningKey.generate()
         (_robot_file(_KEY, did=DROP), "its did is not the key its seed"),
         (_robot_file(_KEY, seed=_KEY.seed.hex()[:-2]), "no readable seed"),
         (_robot_file(_KEY, seed=DROP), "no readable seed"),
+        (_robot_file(_DIGITS, seed=int("1" * 2 * SEED_BYTES)), "no readable seed"),
+        (
+            _robot_file(_KEY, seed=" ".join(_KEY.seed.hex()[i : i + 2] for i in range(0, 64, 2))),
+            "no readable seed",
+        ),
         (_robot_file(_KEY, version=keys.VERSION + 1), "newer than this quackd"),
         (_robot_file(_KEY, version=DROP), "no version"),
         ("[]", "expected an object"),
@@ -313,6 +390,8 @@ _KEY = SigningKey.generate()
         "no-did",
         "short-seed",
         "no-seed",
+        "seed-a-number",
+        "seed-with-spaces",
         "newer",
         "no-version",
         "not-an-object",
@@ -326,6 +405,23 @@ def test_a_robot_key_file_quackd_cannot_trust_is_refused(
     path.write_bytes(content.encode("utf-8"))
     with pytest.raises(keys.KeysError, match=said):
         keys.read_robot_key(path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[" * (keys.MAX_FILE_BYTES // 2),
+        '{"version": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
+        " " * (keys.MAX_FILE_BYTES + 1),
+    ],
+    ids=["nested", "a-number-past-the-digit-limit", "too-large"],
+)
+def test_a_key_file_no_reader_should_parse_is_a_keys_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "owner.json"
+    path.write_bytes(content.encode("utf-8"))
+    for read in (keys.read_robot_key, keys.read_sealed):
+        with pytest.raises(keys.KeysError):
+            read(path)
 
 
 def test_a_secret_replaces_the_file_whole_and_leaves_no_temporary_file(tmp_path: Path) -> None:
@@ -349,6 +445,39 @@ def test_a_secret_that_cannot_be_written_is_a_keys_error_and_leaves_nothing(
     with pytest.raises(keys.KeysError, match="could not write"):
         keys.write_secret(taken, {"seed": "never on disk"})
     assert [p.name for p in tmp_path.iterdir()] == [taken.name]
+
+
+def test_a_secret_interrupted_mid_write_leaves_nothing_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C after the secret is in the file and before it is in place: no temporary file holding
+    it is left, and no half-written key either."""
+
+    def interrupted(fd: int) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(keys.os, "fsync", interrupted)
+    for replace in (True, False):
+        with pytest.raises(KeyboardInterrupt):
+            keys.write_secret(tmp_path / "robot.env", "LOCAL_API_KEY=x\n", replace=replace)
+        assert list(tmp_path.iterdir()) == []
+    with pytest.raises(keys.KeysError, match="UTF-8"):
+        keys.write_secret(tmp_path / "robot.env", "LOCAL_API_KEY=" + chr(0xDC80))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_an_exclusive_write_never_writes_over_a_file_or_a_link(tmp_path: Path) -> None:
+    path = tmp_path / "owner.json"
+    path.write_bytes(b"kept")
+    with pytest.raises(keys.KeyExists):
+        keys.write_secret(path, {"seed": "new"}, replace=False)
+    assert path.read_bytes() == b"kept"
+    if os.name != "nt":  # Windows makes links only with a privilege
+        link = tmp_path / "robot.json"
+        link.symlink_to(tmp_path / "nowhere")
+        with pytest.raises(keys.KeyExists):
+            keys.write_secret(link, {"seed": "new"}, replace=False)
+        assert link.is_symlink() and not (tmp_path / "nowhere").exists()
 
 
 # ── the robot's directory ───────────────────────────────────────────────────────────────
@@ -451,6 +580,25 @@ def test_the_owner_key_is_made_sealed_once_and_opened_after(tmp_path: Path, chea
         assert _mode(robot.owner_key) == 0o600 and _mode(robot.keys) == 0o700
 
 
+def test_an_owner_key_another_command_made_meanwhile_is_never_written_over(
+    tmp_path: Path, cheap: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sealing takes a second or more at the real cost, and a second wizard can finish in it."""
+    robot = store.OnboardDir(tmp_path / "robot")
+    theirs = keys.seal(SigningKey.generate(), PASSPHRASE)
+    sealing = store.seal
+
+    def seal_while_another_finishes(key: SigningKey, passphrase: str) -> dict[str, Any]:
+        mine = sealing(key, passphrase)
+        keys.write_secret(robot.owner_key, theirs)
+        return mine
+
+    monkeypatch.setattr(store, "seal", seal_while_another_finishes)
+    with pytest.raises(keys.KeyExists):
+        robot.owner_key_or_new(PASSPHRASE)
+    assert keys.read_sealed(robot.owner_key)["did"] == theirs["did"]
+
+
 def test_a_passphrase_too_short_writes_nothing_at_all(tmp_path: Path, cheap: None) -> None:
     robot = store.OnboardDir(tmp_path / "robot")
     with pytest.raises(keys.PassphraseRefused):
@@ -476,7 +624,7 @@ def test_a_second_robot_takes_the_owner_key_only_with_its_passphrase(
         second.adopt_owner_key(first.owner_key, PASSPHRASE + "?")
     assert not second.owner_key.exists()
     assert second.adopt_owner_key(first.owner_key, PASSPHRASE).did == owner.did
-    assert second.owner_key.read_bytes() == first.owner_key.read_bytes(), "copied sealed, as it was"
+    assert second.owner_key.read_bytes() == first.owner_key.read_bytes(), "the same sealed blob"
     assert second.adopt_owner_key(first.owner_key, PASSPHRASE).did == owner.did
     third.owner_key_or_new(PASSPHRASE)  # a robot of another owner
     held = third.owner_key.read_bytes()
