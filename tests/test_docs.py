@@ -2117,7 +2117,10 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
     # the help a user actually sees, top level and every sub-app, which is where three of the
     # stale ones were: a source grep would have been satisfied by `fleet_from_flags`
     runner = CliRunner()
-    for argv in ([], ["robot"], ["flock"], ["memory"], ["run"], ["serve-mcp"], ["validate"]):
+    argvs: tuple[list[str], ...] = ([], ["robot"], ["flock"], ["memory"], ["run"], ["serve-mcp"])
+    # Robot Passport's two groups since 0.29.0: `onboard` on a robot's own computer and
+    # `passport`, down to `check`
+    for argv in (*argvs, ["validate"], ["passport"], ["onboard"]):
         result = runner.invoke(app, [*argv, "--help"])
         # exit code first: a renamed sub-app makes Click print a "No such command" usage page,
         # which contains no "fleet" either, and the assertion below would pass on nothing
@@ -2384,6 +2387,204 @@ def test_no_living_document_still_describes_the_jetson_image() -> None:
             assert spelling not in text, (
                 f"{path.relative_to(REPO).as_posix()} still describes the Jetson image "
                 f"({spelling!r}), which went when quackd stopped running on the board (ADR-0046)"
+            )
+
+
+#: What the pages said about quackd and a Jetson while nothing of quackd ran on one. Since 0.29.0
+#: one command does, `quackd onboard`, so a sentence that says quackd never runs on the board
+#: without saying which quackd is false the day it is read (ADR-0073). "The quackd that drives a
+#: robot never runs on the board" is the true spelling, and none of these is inside it.
+_RETIRED_JETSON_CLAIMS = (
+    "quackd never runs on an nvidia jetson",
+    "quackd never runs on the jetson",
+    "quackd never runs on the board",
+    "quackd never runs on this board",
+    "quackd never runs on it",
+    "quackd no longer runs on the board",
+    "quackd does not run on it either",
+)
+
+
+def test_no_living_document_says_quackd_never_runs_on_a_jetson() -> None:
+    """ADR-0046 kept quackd off the board, and ADR-0073 put one command back on it, Robot
+    Passport's service, on the robot's own Jetson. Every page that said quackd never runs there
+    says which quackd now, the one that drives a robot, and this keeps the old sentence from
+    coming back unqualified. The bridge READMEs are read too, since the person on the board reads
+    those. The history files keep the old sentence, dated, as they keep every other."""
+    for path in [*_living_docs(), *sorted((REPO / "bridge").rglob("README.md"))]:
+        text = " ".join(_prose(path.read_text(encoding="utf-8")).split()).lower()
+        for claim in _RETIRED_JETSON_CLAIMS:
+            assert claim not in text, (
+                f"{path.relative_to(REPO).as_posix()} says {claim!r}: since 0.29.0 quackd onboard "
+                "runs on a robot's own Jetson, so say which quackd never runs there (ADR-0073)"
+            )
+
+
+# ── Robot Passport on the robot's own computer (0.29.0) ─────────────────────────────────
+
+#: What 0.29.0 removed from Robot Passport, spelled the way the pages and the help offered it.
+#: Narrow on purpose: the page `quackd ui` still prints a QR code for a phone, the flock's MQTT bus
+#: stays, and a robot's sealed owner key lives at `keys/owner.json` under its own directory, so
+#: none of `qr`, `mqtt` or `owner.json` alone is a needle. The old key directory was
+#: `~/.quackd/keys/`, which is what the last two catch.
+_RETIRED_PASSPORT_SPELLINGS = (
+    "quackd passport serve",
+    "quackd passport qr",
+    "quackd passport stamp",
+    "--pin-owner",
+    "meet ros://",
+    "meet mqtt://",
+    "run --talk",
+    "serve-mcp --talk",
+    "robot_nearby",
+    "nearby-hello",
+    "#rp=",
+    "robot-passport-stamp+jwt",
+    ".quackd/keys/owner.json",
+    "keys/robots/",
+)
+
+#: A block that dates what it describes to the release that removed it or to the releases that
+#: had it, or says outright that it went, is history kept on a living page, the way a "removed
+#: in 0.29.0" note keeps an anchor older files link and the specification's changes from 0.1 list
+#: what 1.0 dropped. It may name what went.
+_DATED_REMOVAL = re.compile(
+    r"0\.29\.0|v0\.28|\b0\.2[3-8]\b|changes from 0\.1|\bremoved\b|\bwent\b|\bgone\b", re.I
+)
+
+
+def _undated_blocks(text: str) -> list[str]:
+    """The blocks of a page that describe it as it is: paragraphs, list items and tables, split
+    on blank lines, leaving out every block under a heading that names a removal or 0.29.0 and
+    every block that dates itself as `_DATED_REMOVAL` reads."""
+    kept: list[str] = []
+    dated_section = False
+    for block in re.split(r"\n\s*\n", _prose(text)):
+        heading = re.match(r"\s*#{1,6}\s+(.*)", block)
+        if heading:
+            dated_section = bool(_DATED_REMOVAL.search(heading.group(1)))
+        if dated_section or _DATED_REMOVAL.search(block):
+            continue
+        kept.append(block)
+    return kept
+
+
+def _rendered_help() -> dict[str, str]:
+    """`--help` for the top level, every command group and every command in one, and the commands
+    a retired spelling used to be offered on, rendered wide so a needle is not wrapped apart."""
+    from typer.testing import CliRunner
+
+    from quackd.cli import app
+
+    runner = CliRunner()
+    argvs: list[list[str]] = [[], ["run"], ["serve-mcp"], ["discover"]]
+    for group in app.registered_groups:
+        argvs.append([group.name or ""])
+        assert group.typer_instance is not None, f"quackd {group.name} has no Typer behind it"
+        for command in group.typer_instance.registered_commands:
+            name = command.name or (command.callback.__name__ if command.callback else "")
+            argvs.append([group.name or "", name.replace("_", "-")])
+    rendered: dict[str, str] = {}
+    for argv in argvs:
+        result = runner.invoke(
+            app, [*argv, "--help"], env={"COLUMNS": "240", "TERMINAL_WIDTH": "240"}
+        )
+        assert result.exit_code == 0, f"`quackd {' '.join(argv)} --help` did not render"
+        rendered[" ".join(argv)] = " ".join(result.output.split())
+    return rendered
+
+
+def test_nothing_a_reader_follows_still_offers_what_robot_passport_removed() -> None:
+    """0.29.0 moved Robot Passport onto the robot it introduces and removed what a laptop served
+    for its robots: `passport serve`, `qr` and `stamp`, `meet` with its ROS 2 and MQTT sources and
+    `--pin-owner`, talk in `run` and `serve-mcp` with the `robot_nearby` tool, the `nearby-hello`
+    starter, the sticker's `#rp=` short id, the stamp's JWS type and the keys under
+    `~/.quackd/keys/`. A living page, `.env.example` and the CLI's own help may not offer any of
+    them again. A block that dates itself to the removal keeps what it names, which is how the
+    passport pages keep an anchor older files link."""
+    for path in [*_living_docs(), REPO / ".env.example"]:
+        for block in _undated_blocks(path.read_text(encoding="utf-8")):
+            flat = " ".join(block.split())
+            for spelling in _RETIRED_PASSPORT_SPELLINGS:
+                assert spelling not in flat, (
+                    f"{path.relative_to(REPO).as_posix()} still offers {spelling!r}, which 0.29.0 "
+                    f"removed: {flat[:160]}"
+                )
+    for argv, text in _rendered_help().items():
+        for spelling in (*_RETIRED_PASSPORT_SPELLINGS, "--talk", "passport qr", "passport stamp"):
+            assert spelling not in text, f"`quackd {argv} --help` still offers {spelling!r}"
+
+
+def test_every_subcommand_of_a_group_is_named_in_its_readme_row() -> None:
+    """A group's README row names what `--help` lists under it, and nothing it does not. The row
+    for `quackd passport` named nine subcommands after eight of them were gone, and nothing
+    compared the row with the group. Read from the row's first cell, where each code span that
+    starts `quackd GROUP ` names its subcommands, several at once as `a\\|b\\|c`."""
+    from quackd.cli import app
+
+    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    for group in app.registered_groups:
+        name = group.name or ""
+        instance = group.typer_instance
+        assert instance is not None, f"quackd {name} has no Typer behind it"
+        offered = {
+            (c.name or (c.callback.__name__ if c.callback else "")).replace("_", "-")
+            for c in instance.registered_commands
+            if not c.hidden
+        } | {g.name or "" for g in instance.registered_groups}
+        cells = [row[2:].split(" | ", 1)[0] for row in rows if row.startswith(f"| `quackd {name}")]
+        assert cells, f"the README's command table has no row for quackd {name}"
+        named: set[str] = set()
+        for cell in cells:
+            for span in re.findall(r"`quackd " + re.escape(name) + r" ([^`]+)`", cell):
+                named |= {part for part in span.split()[0].split("\\|") if part}
+        assert named == offered, (
+            f"the README's quackd {name} row names {sorted(named)}, and `quackd {name} --help` "
+            f"lists {sorted(offered)}"
+        )
+
+
+#: The sentence the passport folder turns on, said where a reader starts and where a reader
+#: decides whether to trust the rest.
+_PASSPORT_HONESTY = "Nothing in this folder has run on a Jetson or over a real Bluetooth radio."
+
+
+def test_robot_passport_says_nothing_of_it_has_met_a_jetson_or_a_radio() -> None:
+    """0.29.0 built Robot Passport for an NVIDIA Jetson and Bluetooth LE and ran it on the `sim`
+    board alone. The folder's hub and its roadmap say so in one sentence, held whole because its
+    negation is in its first word, and the README's section says the same of itself. A sentence
+    reworded on a day somebody runs it on two Jetsons is the day this test should change."""
+    for name in ("README.md", "roadmap.md"):
+        page = (REPO / "docs" / "passport" / name).read_text(encoding="utf-8")
+        assert _PASSPORT_HONESTY in " ".join(page.split()), (
+            f"docs/passport/{name} no longer says: {_PASSPORT_HONESTY}"
+        )
+    start = README.index("\n## Robot Passport\n")
+    section = README[start : README.index("\n## ", start + 5)]
+    assert "Nothing of it has run on a Jetson or over a real Bluetooth radio" in section, (
+        "the README's Robot Passport section no longer says nothing of it has run on a Jetson or "
+        "over a real Bluetooth radio"
+    )
+
+
+def test_the_readme_counts_the_passport_schemas_the_folder_holds() -> None:
+    """The README's Robot Passport section says how many JSON Schemas sit beside the
+    specification, and 0.29.0 took two of them away with stamps and the index. The count is read
+    from the folder, so a schema added or removed fails here until the sentence follows."""
+    schemas = sorted((REPO / "docs" / "passport" / "schema").glob("*.schema.json"))
+    start = README.index("\n## Robot Passport\n")
+    section = README[start : README.index("\n## ", start + 5)].lower()
+    right = _NUMBER_WORDS[len(schemas)]
+    assert f"{right} json schemas" in section, (
+        f"docs/passport/schema/ holds {len(schemas)} schemas "
+        f"({', '.join(p.name for p in schemas)}), and the README's Robot Passport section does "
+        f"not say {right} JSON Schemas"
+    )
+    for count, word in _NUMBER_WORDS.items():
+        if count != len(schemas):
+            assert f"{word} json schemas" not in section, (
+                f"the README's Robot Passport section says {word} JSON Schemas, and "
+                f"docs/passport/schema/ holds {len(schemas)}"
             )
 
 

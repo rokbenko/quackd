@@ -92,8 +92,8 @@ upstream installed, which is what CI does. `--once` sets up, reports what it fou
 gitignored upstream so a fresh clone has none). Without it every commanded angle is offset by
 however that particular robot was assembled. Run upstream's `calibrate_zero` first.
 
-**quackd's host daemon can run beside this one, and quackd stays on the laptop.** quackd
-never runs on this board. `bridge/jetson/quackd_jetson_hostd.py` can, and it gives the laptop
+**quackd's host daemon can run beside this one, and quackd stays on the laptop.** The quackd
+that drives the robot never runs on this board. `bridge/jetson/quackd_jetson_hostd.py` can, and it gives the laptop
 the board's health and YOLO on its GPU, which `quackd run --host` reaches on port 9874 while
 this daemon keeps 9873 ([`bridge/jetson/`](../jetson/README.md)). Start it with `--camera none`,
 because this daemon owns the robot's cameras and two processes cannot own one camera. It runs
