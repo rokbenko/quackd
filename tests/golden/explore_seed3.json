@@ -1,0 +1,35 @@
+{
+ "seed": 3,
+ "outcome": "success",
+ "verbs": [
+  [
+   "find",
+   true,
+   "find: found the ball: ball dead ahead ~0.87 m; marked 'ball' where it stands, facing it: 2 stops, 29 looks, walked 1.4 m, 5.5 m\u00b2 of floor seen; 'start' is where it began"
+  ],
+  [
+   "go_to",
+   true,
+   "reached the ball: ~0.30 m away, bearing +0\u00b0"
+  ],
+  [
+   "say",
+   true,
+   "said 'The ball was about 0.9 m from the spot I marked ball.' as [chirp]"
+  ],
+  [
+   "go_to_place",
+   true,
+   "go_to_place: 0.07 m from 'start' by its map, facing within 20\u00b0 of the way it faced there; walked 1.5 m in 16 s, 1 stop, 0 re-plans"
+  ]
+ ],
+ "duck": [
+  -0.93,
+  0.01,
+  -0.34
+ ],
+ "ball": [
+  0.54,
+  -0.59
+ ]
+}

@@ -36,15 +36,16 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
 - **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
   `--room` on `run`, `record`, `drive` and `serve-mcp` lays out walls and furniture in
-  `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, or a file of your own. A
-  wall holds a walking duck where it is and counts the bump, the ball rolls back off it, and the
-  duck's camera sees the walls and nothing behind them. On `mujoco` they are solid, and the
-  walking duck meets them with its own feet. The duck keeps a map of the room, a stand-in for
-  `mapd`, its own mapper, kept to the numbers quackd read of that: it looks only from a stop,
-  after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the start and after
-  a bump or a fall until two stops agree. `map` draws it, the place verbs mark places in it, and a
-  recorded GIF of the cartoon shades the floor it has not seen. Without `--room` each simulator is
-  what it was, to the bit
+  `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, `sofa-gap`, or a file of
+  your own. A room may hide the ball where the duck cannot see it from where it starts, as
+  `two-rooms` and `sofa-gap` do. A wall holds a walking duck where it is and counts the bump, the
+  ball rolls back off it, and the duck's camera sees the walls and nothing behind them. On `mujoco`
+  they are solid, and the walking duck meets them with its own feet. The duck keeps a map of the
+  room, a stand-in for `mapd`, its own mapper, kept to the numbers quackd read of that: it looks
+  only from a stop, after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the
+  start and after a bump or a fall until two stops agree. `map` draws it, the place verbs mark
+  places in it, and a recorded GIF of the cartoon shades the floor it has not seen. Without `--room`
+  each simulator is what it was, to the bit
   ([docs/concepts/places.md](docs/concepts/places.md#a-room-for-the-simulator)).
 - **`go_to_place` walks back to a place.** On the robot's own reading of where it is, never its
   camera: round what its map has seen to be solid when it keeps a map and its size is known,
@@ -74,6 +75,37 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   planner's gates again before each goal. A rosbridge base reads `/odom`, every message as it
   arrives, and since it has no deadman, a walk whose reading stops moving on holds the base still
   with a zero Twist and then ends ([docs/concepts/places.md](docs/concepts/places.md)).
+- **`explore`: a Microduck walks to what its own map has not seen.** In a simulator given
+  `--room`, `explore(minutes)` walks to the nearest floor its map has seen beside floor it has
+  not, stops so the map can look, and goes again, until nothing is left it can reach or its
+  minutes run out, at most 8. The first stop looks all the way round and every later one only
+  where a look would see floor nobody has seen, each look a keyframe of the map's, with the head
+  where the map takes its keyframes from the head and the body where it does not. What it looked
+  at and could not see past it gives up, what it could not get to it tries twice in a call, it
+  marks `start` where it began, and it asks first. A real duck is not offered it yet, and says
+  why: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body radius.
+  The pilot reads why beside the body, and a task that needs `explore` is refused in those words
+  by `quackd run`, `quackd validate` and MCP alike
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
+  [ADR-0071](docs/adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
+- **`find`: a Microduck explores until it sees what it was asked for.** `find(target,
+  minutes)` explores as `explore` does, with a camera frame at every look and a whole turn of
+  looks at every stop, faces what the detector takes for the target and sees it again before it
+  believes it, and marks the place named after it where it then stands, facing it. A frame the
+  detector misreads once is passed by, and a search that ends before it has faced what it took
+  for the target says so rather than that it saw none. A label the detector never gives is
+  refused before anything moves, now that detectors say which labels they give. It is offered
+  where `explore` is and the duck has a camera, and asks first
+  ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#find-looking-for-something-by-exploring)).
+- **Two starters that explore: `find-the-ball` and `favourite-spot`.** `find-the-ball` finds the
+  ball hidden in the room the duck does not start in, walks up to it, says where it was and walks
+  back to `start`. `favourite-spot` marks where the duck stands, explores, and walks back to it.
+  Both run in the duck's simulator given a room, `quackd run find-the-ball --room two-rooms --yes`,
+  and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
+  ([docs/guides/explore.md](docs/guides/explore.md)).
+- **`quackd validate --room`.** Checks a task against the robot's simulator laid out in a room,
+  which offers the place verbs, `explore` and `find`. A task that names no robot is checked
+  against every verb something installed here offers, now a simulator in a room among them.
 - **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
   every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`
@@ -138,7 +170,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   its places, keeping what they mark only under `--memory`, hold `manipulate` to its `.duck`'s
   policy section, and spend its policy seconds, an hour of them for a session without a `.duck`
   ([docs/guides/drive.md](docs/guides/drive.md#a-goal-flies-as-a-run-does),
-  [ADR-0071](docs/adr/0071-a-drive-sessions-goals-fly-as-a-run-does-and-ask-the-person-driving.md)).
+  [ADR-0072](docs/adr/0072-a-drive-sessions-goals-fly-as-a-run-does-and-ask-the-person-driving.md)).
 - **`python -m quackd` runs the same command as `quackd`.**
 
 ### Changed
@@ -158,6 +190,14 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 ### Fixed
 
+- **A recording names the verb that is running.** A frame's caption named the verb that ran
+  before it, so a verb that runs for most of a minute, as `find` does, was drawn all along under
+  the name of the one before. The run now tells the recorder each verb as it starts
+  (`RunConfig.on_caption`), and `docs/assets/explore.gif` is `find-the-ball` recorded with it.
+- **The prompt names every verb that asks first.** The line "Verbs marked confirm (...) ask a
+  human" named only the task's own `confirm` list, and said `none` for a task that allows a verb
+  whose class asks whatever the task says, as MOSS's `pick_and_drop` has since 0.22.0, and as
+  `explore` and `find` do. It now names those too.
 - **A stop sent while a composite runs keeps its next move from starting.** Each call a
   composite made took its own count of stops when it was admitted, so a stop sent between two of
   them was already counted when the second began, and the second walked or kicked as if nobody
@@ -198,9 +238,9 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 - **The Microduck's page says what quackd read of `mapd`, the duck's own map.** `mapd` is on the
   upstream branch `maploc-v2`, read at `7e0be18`, and in no robotd release, so its socket, its
   five calls and the numbers it keeps to are listed as assumptions, in their own file
-  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. Nothing in quackd speaks
-  to it yet. One of them differs from Pollen's post: a keyframe is taken after 0.4 s of
-  stillness in the code, where the post says half a second
+  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. One of them differs from
+  Pollen's post: a keyframe is taken after 0.4 s of stillness in the code, where the post says half
+  a second
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
 - `docs/concepts/architecture.md` describes `quackd/front.py`, and its `prompt` and `run_start`
   rows say what the page adds to them: `channel` and `front`.

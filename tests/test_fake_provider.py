@@ -209,3 +209,11 @@ def test_the_scripted_pilot_takes_vision_without_teaching_it_to_every_other_one(
     assert seeing.supports_vision is True
     assert FakeProvider.supports_vision is False, "the class default is untouched"
     assert FakeProvider().supports_vision is False, "and so is the next one built"
+
+
+def test_the_exploring_starters_have_scripted_pilots_of_their_own() -> None:
+    """A goal run allows safe verbs alone, and `explore` and `find` ask first, so exploring is a
+    task file's to allow: the two starters that do have a pilot each, and no goal word does."""
+    assert FakeProvider.for_duck("find-the-ball").model == "scripted:find-the-ball"
+    assert FakeProvider.for_duck("favourite-spot").model == "scripted:favourite-spot"
+    assert FakeProvider.for_duck("x", "explore the room").model == "scripted:x"

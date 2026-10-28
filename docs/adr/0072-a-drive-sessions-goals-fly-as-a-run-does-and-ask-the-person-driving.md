@@ -1,4 +1,4 @@
-# ADR-0071: A drive session's goals fly as a run does, and ask the person driving
+# ADR-0072: A drive session's goals fly as a run does, and ask the person driving
 
 **Status:** accepted · **Date:** 2026-10-27 · Amends [ADR-0065](0065-a-person-drives-one-robot-a-command-at-a-time.md) (a goal's questions reach the person driving, and drive takes run's flags for its goals) and [ADR-0069](0069-a-page-drives-quackds-own-commands-over-json-lines.md) (a chat in the page takes a VLA pilot) · Implemented in `quackd/answers.py`, `quackd/safety.py` (`ConfirmFn`), `quackd/agent/loop.py` (`RunConfig.places`), `quackd/drive/session.py` (`GoalSettings`, `GoalAsker`, `_goal_answerers`, `_vla_refusal`, `_charge`), `quackd/drive/run.py` (`DriveArgs`, `SESSION_POLICY_S`, `_given_lens`), `quackd/drive/terminal.py` (`Asker`, `PageAsker`), `quackd/drive/attached.py` (`lens_given`), `quackd/cli.py` (`_drive_refusal`, `_vla_refusal`), `quackd/mcp_server.py` (`fleet_from_flags`) and `quackd/agent/decision/laya.py` (`_predict`) · Documented in [docs/guides/drive.md](../guides/drive.md)
 

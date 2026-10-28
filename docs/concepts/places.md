@@ -132,11 +132,24 @@ is what `go_to` steers by.
 It says how close it got and by what, `0.07 m from 'far' by its map`, and on odometry that the
 reading drifts. It never says the robot is at a place.
 
+## Exploring
+
+A Microduck in a simulator given a room can `explore`: walk to the nearest floor its map has seen
+beside floor it has not, stop so the map can look, and go again, until nothing is left it can
+reach or its minutes run out. It walks by the walk above and marks `start` where it begins, so
+`go_to_place start` is the way back. `find` explores the same way with a camera frame at every
+look, and marks where it saw what it was looking for as a place named after it. A real duck can
+do neither yet: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body
+radius, which a way round a room is planned by.
+Its rules are on [the Microduck's page](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
+why it stops to look is [ADR-0071](../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md),
+and [guides/explore.md](../guides/explore.md) runs both with two starter tasks.
+
 ## A room for the simulator
 
 `--room` lays a room out in either of the Microduck's simulators, `sim2d` and `mujoco`, on `run`,
-`record`, `drive` and `serve-mcp`, for one duck: `arena`, `two-rooms`, `hall`, or a `.yaml` file
-of your own. This is `two-rooms`:
+`record`, `drive` and `serve-mcp`, for one duck: `arena`, `two-rooms`, `hall`, `sofa-gap`, or a
+`.yaml` file of your own. This is `two-rooms`:
 
 ```yaml
 name: two-rooms
@@ -147,14 +160,19 @@ walls:
 boxes:
   - [1.0, 0.6, 0.4, 0.3]
 start: [-1.0, 0.0, 0.0]
-ball: {region: [0.3, -0.8, 1.4, 0.3]}
+ball: {region: [0.3, -0.8, 1.4, 0.3], hidden: true}
 person: [-1.2, 0.7]
 ```
 
 `size` is the outer walls, in metres across and centred on the origin. Each wall runs from `x0, y0`
 to `x1, y1`, 4 cm thick unless a fifth number says, and each box is a centre and a size, `cx, cy,
 width, depth`. `start` is where the duck stands and which way it faces, and `ball` a spot or a
-region the seed draws it in. A mistake in a file is refused with the file and the key named.
+region the seed draws it in, with `hidden: true` only where something solid stands in each of
+three straight lines from the start, to the ball's middle and to its two sides, so the duck,
+turned whichever way it likes where it starts, cannot see it and has to go and look. `two-rooms`
+hides it in the far room, and `sofa-gap` behind an armchair. `sofa-gap` has a sofa against its
+far wall too, with a gap behind it narrower than the duck, which a map sees into only from its
+ends. A mistake in a file is refused with the file and the key named.
 
 In a room, a wall holds a walking duck where it is and counts a bump, and the ball rolls back off
 it. The duck's camera sees the walls and the furniture, in greys no detector takes for anything,

@@ -22,6 +22,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from quackd.perception.base import Detection, detect_off_loop, summarize_detections
+from quackd.space.frontier import views_round
 from quackd.transport.base import (
     Intent,
     camera_names_of,
@@ -539,11 +540,11 @@ def scan_steps(p: SearchScanParams, lens_deg: float | None) -> tuple[float, int]
     caller gave is kept as given."""
     if lens_deg is None or "step_deg" in p.model_fields_set:
         return p.step_deg, p.max_steps
-    per_turn = math.floor(360.0 / lens_deg) + 1
-    if 360.0 / per_turn >= p.step_deg:
+    step, per_turn = views_round(lens_deg)
+    if step >= p.step_deg:
         return p.step_deg, p.max_steps
     steps = p.max_steps if "max_steps" in p.model_fields_set else min(MAX_SCAN_STEPS, per_turn)
-    return 360.0 / per_turn, steps
+    return step, steps
 
 
 async def _gaze_sweep(

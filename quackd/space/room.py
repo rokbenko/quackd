@@ -19,7 +19,9 @@ A room is YAML, a built-in by name (`quackd/space/rooms/*.yaml`) or a file:
     boxes:                      # furniture, each a centre and a size: cx, cy, width, depth
       - [1.0, 0.6, 0.4, 0.3]
     start: [-1.0, 0.0, 0.0]     # where the duck stands and which way it faces, or left out
-    ball: {region: [0.3, -0.8, 1.4, 0.3]}   # a spot, [x, y], or a region it is drawn in
+    ball: {region: [0.3, -0.8, 1.4, 0.3], hidden: true}   # a spot, [x, y], or a region it is
+                                # drawn in, and with hidden only where the duck cannot see it
+                                # from where it starts, whichever way it turns
     person: [-1.2, 0.7]         # the cartoon's person, sim2d only
 
 Errors name the file and the key, since a room is something people write by hand.
@@ -50,7 +52,7 @@ ROOM_STREAM = 7_003
 is drawn from it and never from a world's, so a room changes nothing a world draws for anything
 else, the duck's motion noise above all."""
 
-BUILT_IN = ("arena", "two-rooms", "hall")
+BUILT_IN = ("arena", "two-rooms", "hall", "sofa-gap")
 """The rooms quackd ships, by name."""
 
 
@@ -99,6 +101,9 @@ class Room:
     start: tuple[float, float, float] | None = None
     ball: tuple[float, float] | None = None
     ball_region: tuple[float, float, float, float] | None = None
+    ball_hidden: bool = False
+    """Whether the ball is drawn only where no straight line from where the duck starts reaches
+    it (`hides`), so a robot sent to find it has to go and look."""
     person: tuple[float, float] | None = None
     source: str = field(default="", compare=False)
     """Where it was read from, for error messages."""
@@ -136,6 +141,21 @@ class Room:
     def blocked(self, x: float, y: float, radius: float = 0.0) -> bool:
         """Whether a disc of `radius` at (x, y) touches something solid."""
         return self.clearance(x, y) < radius
+
+    def hides(self, x0: float, y0: float, x: float, y: float, r: float) -> bool:
+        """Whether something solid stands between (x0, y0) and every part of a disc of `r` at
+        (x, y): the lines to its middle and to its two sides, square to the way it lies, each
+        meet a wall or a box first. Then no camera at (x0, y0), turned whichever way, sees it."""
+        d = math.hypot(x - x0, y - y0)
+        if d <= r:
+            return False
+        ux, uy = (x - x0) / d, (y - y0) / d
+        for side in (0.0, r, -r):
+            tx, ty = x - uy * side, y + ux * side
+            reach = math.hypot(tx - x0, ty - y0)
+            if self.raycast(x0, y0, math.atan2(ty - y0, tx - x0), reach) is None:
+                return False
+        return True
 
     def raycast(self, x: float, y: float, heading: float, max_range: float) -> float | None:
         """How far along `heading` from (x, y) the first solid thing is, within `max_range`, or
@@ -251,7 +271,12 @@ def spawn(
         ball = room.ball
     else:
         ball = free_spot(
-            room, draw, ball_r, region=room.ball_region, avoid=[(duck[0], duck[1], 0.5)]
+            room,
+            draw,
+            ball_r,
+            region=room.ball_region,
+            avoid=[(duck[0], duck[1], 0.5)],
+            hidden_from=(duck[0], duck[1]) if room.ball_hidden else None,
         )
     return Spawn(duck, ball), draw
 
@@ -263,18 +288,22 @@ def free_spot(
     *,
     region: tuple[float, float, float, float] | None = None,
     avoid: list[tuple[float, float, float]] | tuple[()] = (),
+    hidden_from: tuple[float, float] | None = None,
 ) -> tuple[float, float]:
-    """A spot a disc of `r` stands on in `room`, inside `region` when one is given, and at least
-    each `avoid` entry's distance from its point, drawn from `draw`."""
+    """A spot a disc of `r` stands on in `room`, inside `region` when one is given, at least
+    each `avoid` entry's distance from its point, and hidden from `hidden_from` when one is given
+    (`Room.hides`), drawn from `draw`."""
     xmin, ymin, xmax, ymax = region or room.bounds
     for _ in range(10_000):
         x = float(draw.uniform(xmin + r, xmax - r))
         y = float(draw.uniform(ymin + r, ymax - r))
         clear = all(math.hypot(x - ax, y - ay) >= sep for ax, ay, sep in avoid)
-        if clear and not room.blocked(x, y, r):
+        unseen = hidden_from is None or room.hides(*hidden_from, x, y, r)
+        if clear and not room.blocked(x, y, r) and unseen:
             return x, y
+    hidden = " out of sight of where the duck starts" if hidden_from is not None else ""
     raise RoomError(
-        f"{room.source or room.name}: no free floor for something {2 * r:.2f} m wide there"
+        f"{room.source or room.name}: no free floor{hidden} for something {2 * r:.2f} m wide there"
     )
 
 
@@ -380,6 +409,13 @@ def _room(data: dict[str, Any], where: str) -> Room:
     start, ball, person = data.get("start"), data.get("ball"), data.get("person")
     if ball is not None and not isinstance(ball, list | dict):
         raise RoomError(f"{where}: ball is a spot, [x, y], or {{region: [xmin, ymin, xmax, ymax]}}")
+    hidden = False
+    if isinstance(ball, dict):
+        if extra := set(ball) - {"region", "hidden"}:
+            raise RoomError(f"{where}: ball has unknown keys {sorted(extra)}")
+        hidden = ball.get("hidden", False)
+        if not isinstance(hidden, bool):
+            raise RoomError(f"{where}: ball.hidden is true or false, not {hidden!r}")
     room = Room(
         name=name,
         half_w=w / 2,
@@ -391,6 +427,7 @@ def _room(data: dict[str, Any], where: str) -> Room:
         ball_region=(
             _quad(where, "ball.region", ball.get("region")) if isinstance(ball, dict) else None
         ),
+        ball_hidden=hidden,
         person=_pair(where, "person", person) if person is not None else None,
         source=where,
     )

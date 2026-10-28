@@ -735,10 +735,23 @@ def body_lines(manifest: RobotManifest) -> list[str]:
     if ds.cannot:
         lines.append("Whatever the task says, this body cannot:")
         lines += [f"- {s}" for s in ds.cannot]
+    if lacks := _not_offered(manifest):
+        # what it lacks here, beside what the body cannot do anywhere
+        lines.append("Here, on this connection, it does not offer:")
+        lines += [f"- {', '.join(verbs)}: {why}" for verbs, why in lacks]
     if ds.notes:
         lines.append("Worth knowing:")
         lines += [f"- {s}" for s in ds.notes]
     return lines
+
+
+def _not_offered(manifest: RobotManifest) -> list[tuple[list[str], str]]:
+    """The verbs this body leaves out here (`RobotManifest.not_offered`), those left out for one
+    reason together, so a reason is said once."""
+    together: dict[str, list[str]] = {}
+    for verb, why in manifest.not_offered().items():
+        together.setdefault(why, []).append(verb)
+    return [(verbs, why) for why, verbs in together.items()]
 
 
 def body_section(manifest: RobotManifest) -> str:
@@ -765,6 +778,12 @@ def body_summary(manifest: RobotManifest) -> str:
         text += f" Not published: {', '.join(unknown)}."
     if ds.cannot:
         text += " Cannot: " + "; ".join(ds.cannot) + "."
+    if lacks := _not_offered(manifest):
+        text += (
+            " Not offered here: "
+            + "; ".join(f"{' and '.join(verbs)}, {why}" for verbs, why in lacks)
+            + "."
+        )
     if clamps := _clamp_words(manifest.limits):
         text += f" Clamps: {clamps}."
     return text
@@ -970,6 +989,12 @@ above.
         if play
         else ""
     )
+    # the task's own, and every allowed verb whose class asks a human whatever the task says, as
+    # `explore` and `find` do: the executor gates both (`Executor.needs_confirm`)
+    asks = [*fm.verbs.confirm]
+    asks += [
+        v.name for v in verbs if v.safety_class in ("confirm", "dangerous") and v.name not in asks
+    ]
     return f"""You are the brain of {blurb}. You are a high-level pilot:
 you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 
@@ -977,7 +1002,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 - Call exactly one tool per turn. Never zero, never two.
 - Only these verbs are allowed: {", ".join(fm.verbs.allow)}. Anything else is refused.
 - Budgets: {fm.budgets.max_steps} steps, {fm.budgets.max_minutes:g} minutes, {fm.budgets.max_llm_calls} LLM calls. The run stops when any is hit.
-- Verbs marked confirm ({", ".join(fm.verbs.confirm) or "none"}) ask a human before running.
+- Verbs marked confirm ({", ".join(asks) or "none"}) ask a human before running.
 - Before the first verb that moves the body, call `assess_task` with your verdict on whether this body can do this task at all, judged against its datasheet below: `feasible`, `infeasible` (the run ends, nothing moves) or `uncertain` (a human is asked). The verdict is about the body, not the view: not having found the target yet is not by itself a reason for `uncertain`. It is one when a limit turns on that unseen thing's mass or size, or on a figure the datasheet does not publish. Until then {before_verdict}. Assess again later if what you see changes your mind.
 - When a success criterion is met, call `declare_success`. If the task turns out impossible while doing it, call `declare_failure`.
 

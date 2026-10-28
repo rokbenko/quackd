@@ -73,6 +73,11 @@ class ColorBlobDetector:
     as one handed to a run from Python, keeps the lens it was built with."""
     _told_lens: str | None = field(default=None, init=False, repr=False, compare=False)
 
+    @property
+    def labels(self) -> frozenset[str]:
+        """The labels its targets give (`labels_of`)."""
+        return frozenset(target.label for target in self.targets)
+
     def calibrate(
         self, fov_deg: float | None, *, backend: str | None, assumed: str | None = None
     ) -> None:

@@ -281,6 +281,20 @@ def test_validate_starter_ducks() -> None:
     assert f"{len(files)} files valid" in result.output
 
 
+def test_validate_checks_a_task_against_a_simulator_laid_out_in_a_room() -> None:
+    """A task that needs a room's verbs is valid for the duck's simulator in a room, refused for
+    the same simulator in none, and `--room` with no robot to lay it out for is refused."""
+    duck = str(DUCKS / "find-the-ball.duck")
+    roomy = runner.invoke(
+        app, ["validate", duck, "--robot", "microduck:sim2d", "--room", "two-rooms"]
+    )
+    assert roomy.exit_code == 0, roomy.output
+    bare = runner.invoke(app, ["validate", duck, "--robot", "microduck:sim2d"])
+    assert bare.exit_code == 1 and "requires find, but microduck" in bare.output, bare.output
+    nobody = runner.invoke(app, ["validate", duck, "--room", "two-rooms"])
+    assert nobody.exit_code == 1 and "this file names no robot" in nobody.output, nobody.output
+
+
 def test_validate_expands_globs_itself() -> None:
     result = runner.invoke(app, ["validate", str(DUCKS / "*.duck")])
     assert result.exit_code == 0, result.output

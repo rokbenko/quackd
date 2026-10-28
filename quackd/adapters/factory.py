@@ -557,7 +557,13 @@ def installed_vocabulary() -> VerbRegistry:
     `duck: 3` task file is coherent here whichever of the arm's backends is described first.
     Each backend is asked through the factory's own `policy` parameter, which refuses a body
     that runs no policy, with an address nothing is ever sent to: a description is static, so
-    this reaches no server and imports no torch."""
+    this reaches no server and imports no torch.
+
+    So are the verbs a simulator offers in a room it lays out (`--room`), the place verbs,
+    `explore` and `find` among them, by the same rule through the factory's `room` parameter,
+    which refuses a body that lays out no room: a description of a room loads none."""
+    from quackd.space.room import BUILT_IN as ROOMS
+
     registry = core_registry()
     offered = PolicyChoice("http://127.0.0.1")
     for name in adapter_names():
@@ -573,6 +579,8 @@ def installed_vocabulary() -> VerbRegistry:
             spec = RobotSpec(name, backend)
             with contextlib.suppress(AdapterError, ImportError):
                 _union(registry, registry_for(spec, describe(spec, policy=offered)))
+            with contextlib.suppress(AdapterError, ImportError):
+                _union(registry, registry_for(spec, describe(spec, room=ROOMS[0])))
     return registry
 
 

@@ -1,5 +1,6 @@
-# Two rooms with a doorway between them, a box in the far one, and the ball somewhere in it:
-# what a walk has to plan through and a map has to be taken of from more than one stop.
+# Two rooms with a doorway between them, a box in the far one, and the ball somewhere in it the
+# duck cannot see from where it starts: what a walk has to plan through, a map has to be taken
+# of from more than one stop, and a robot sent to find the ball has to go and look for.
 name: two-rooms
 size: [3.0, 2.0]
 walls:
@@ -8,5 +9,5 @@ walls:
 boxes:
   - [1.0, 0.6, 0.4, 0.3]
 start: [-1.0, 0.0, 0.0]
-ball: {region: [0.3, -0.8, 1.4, 0.3]}
+ball: {region: [0.3, -0.8, 1.4, 0.3], hidden: true}
 person: [-1.2, 0.7]

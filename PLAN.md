@@ -421,7 +421,7 @@ before.
   auctioning a kick. The kind of flock the README now leads with is two different bodies talking,
   and it has no recording, because a pilot flock writes no GIF (N members are N worlds).
 - ⬜ **What the page `quackd ui` does not do yet.** A chat flies its goals with what a goal takes
-  since `quackd drive` took run's flags for them (ADR-0071), all but a GIF, a picture and
+  since `quackd drive` took run's flags for them (ADR-0072), all but a GIF, a picture and
   `--talk`, which drive does not take. Left out on purpose until somebody needs them: `--by-hand`
   and the end-of-run questions about an arm, which wait for somebody at the arm; flocks; a picture
   with a chat line; `--live`; a lock on a robot across processes, so a run started from a terminal

@@ -162,7 +162,8 @@ What quackd does with it, beside the rows:
   answers at an address you named.
 
 The real duck's body radius is published nowhere, so a walk by `mapd`'s map still goes straight,
-capped as a blind one, until somebody cites one.
+capped as a blind one, and `explore` and `find`, which plan by it, are not offered, until somebody
+cites one.
 
 | Thing | What upstream says | What quackd takes from it |
 |---|---|---|
@@ -371,6 +372,72 @@ both simulators through quackd's own client for OpenAI's Decisions API, on a fak
 finds the ball in each JPEG it is handed. How long a look takes over a tunnel, what it costs, the
 head's real reach and settle, and whether robotd takes a look while somebody holds the duck are
 owed to the bench.
+
+## `explore`: walking to what its map has not seen
+
+`explore(minutes=1)` walks the duck to what its own map has not seen and stops so the map can look,
+again and again, until nothing is left that it can reach or its minutes run out, at most 8. It plans
+its way round a room by a map and by the duck's body radius, and only a simulator given `--room`
+has both. A real duck is not offered it yet: on odometry alone it keeps no map, and beside `mapd`
+(UNVERIFIED, above) its radius is published nowhere. It says why beside its body, where the pilot
+judges a task, and a run that requires it is refused in those words
+([ADR-0071](../../adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
+
+- **Where it goes.** To the floor the map has seen beside floor it has not, the stretch of it
+  nearest by the way over floor the map has seen, and only a stretch whose opening is as wide as
+  the duck: a gap it cannot pass, it cannot see past either. It walks there by `go_to_place`'s
+  walk, which stops to look before its front reaches floor nobody has seen.
+- **How it looks.** A look is the map's keyframe, 45° across as the head's ToF sees (`TOF_FOV`)
+  and out to the 2 m `mapd` places returns at. The first stop looks all the way round, in views
+  40° apart, the step `search_scan` turns a camera by for a lens that wide, and every later stop
+  only the ways a look would see as many cells nobody has seen as the duck is wide. Each look
+  waits for the map's keyframe, and the head is straightened before the first, wherever another
+  verb left it. The simulators' stand-in takes its keyframe from where the head looks, so there
+  the head turns, 45° either way as `watch` holds it, and the body past that. Whether `mapd`
+  does is UNVERIFIED, so a real duck would turn its body for every view.
+- **What it gives up.** A stretch it walked to and looked at without seeing past, under a sofa or
+  behind glass, is not walked to again in that map while the duck stays connected. A spot it
+  could not get to, lost, stalled or refused on the way, it tries once more after the rest, and
+  then leaves the floor within a body's width of it for the rest of the call: a person in a
+  doorway moves, a pane it walks into does not, and the next `explore` tries it again.
+- **Where it begins.** It marks the place `start` where it begins, so `go_to_place start` brings
+  it back. Its words say so only when it did: its minutes can run out before it knows where it
+  stands, and a duck keeps 100 places at most.
+- **How it ends.** `done`, when nothing is left that it can reach, and `minutes` succeed, saying
+  what it could not get to, or that the nearest floor it has not seen is further than its time
+  left would walk. A stop, the run's budget, a map it cannot find itself in after a whole turn of
+  looks, a twist refused, and a duck held, fallen, sitting or one nothing says is upright fail,
+  each saying so, and every way stops the duck. The run's rules, the battery's among them, are
+  read at every stop.
+
+It asks first (`confirm`): it walks into rooms nobody has looked at, and the ToF faces forward and
+cannot see a step down, so keep it to one flat floor.
+
+## `find`: looking for something by exploring
+
+`find(target="ball", minutes=1)` explores as `explore` does, with a camera frame at every look,
+the stop's own view among them, and every stop looks all the way round, since what it seeks may
+stand on floor the map has already seen from elsewhere, in views no further apart than the
+narrower of a look of the map's and the camera's lens. A frame's way is the body's heading and
+the head's yaw it was taken through, as the body reports it. What the detector takes for the
+target, once in frames that overlap, is faced once the stop's looks are done, the head finishing
+the turn, and seen again in the middle half of the view, or it is passed by, as a frame the
+detector misread is. Seen again, it marks the place named after the target where the duck
+stands, facing it, which is floor it stood on where the thing's own spot is not, and it ends
+there. It marks `start` where it begins, as `explore` does.
+
+- **What it looks for.** A label the detector gives. The simulators' colour detector gives
+  `ball`, `person`, `pet` and `duck`, and a YOLO model `ball`, `person` and `pet`. Any other is
+  refused before anything moves, and so is a run with no detector.
+- **How it ends.** `found` succeeds. Nothing seen anywhere it can reach, its minutes running out,
+  a camera that gives no frame and a detector that cannot read one fail, each saying so, as do the
+  ways `explore` fails, and every way stops the duck. A search that ends before it has faced
+  something it took for the target says so, and from where and which way, rather than that the
+  target was not seen.
+- **What it leaves to the pilot.** It does not walk up to what it found, which `go_to` does, and
+  writes no memory: `remember`, said where the duck stands, keeps a note with where that is.
+
+It is offered where `explore` is and the duck has a camera, and it asks first (`confirm`).
 
 ## The duck's physics upstreams
 

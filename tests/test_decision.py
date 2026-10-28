@@ -82,6 +82,9 @@ TABLE: dict[str, dict[str, tuple[int | None, str]]] = {
         "watch": (None, "motion"),
     },
     "microduck": {
+        # they walk into floor the map has not seen, so the pilot is asked, as for MOSS's own
+        "explore": (None, "confirm"),
+        "find": (None, "confirm"),
         "gaze": (5, "motion"),
         "grab": (1, "motion"),
         "kick": (2, "motion"),
