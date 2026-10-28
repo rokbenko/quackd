@@ -15,6 +15,14 @@ the model server and now the daemon's detector, and quackd reaches them over the
 it used to reach the model server over loopback. Everything below is left as the record of what
 0.13.0 shipped.
 
+**Read on 2026-10-29:** [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)
+puts one quackd command on a robot's own Jetson, `quackd onboard`, which serves the robot's Robot
+Passport and runs its brain when robots near it talk. With it comes part of this decision: a
+robot's own Jetson may again hold quackd beside the robot's control loop, the arrangement this
+record called the interesting one and ADR-0046 the risky one, now with a Bluetooth scanner in it.
+It comes back for one command, with no image and no compose file, and every other command stays on
+the laptop as ADR-0046 says.
+
 ## Context
 
 The question arrives as "add a Jetson adapter", and the shape of that request is the reason

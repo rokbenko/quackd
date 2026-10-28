@@ -374,6 +374,10 @@ def test_no_flag_that_could_carry_a_credential_is_missing_from_the_two_lists() -
         # board's token is in and never holds the value, and a value that is not a variable's
         # name is refused without being quoted
         "--host-token-env",
+        # `quackd onboard`'s: the path of an owner key file from the owner's first robot, sealed
+        # with their passphrase, and never a key itself; the passphrase is asked for, or read from
+        # the file `--passphrase-file` names, and is on no command line
+        "--owner-key",
     }
     secret_words = ("key", "token", "secret", "password", "passwd", "credential")
     url_words = ("url", "address", "endpoint", "host", "broker")
