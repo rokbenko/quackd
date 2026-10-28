@@ -37,10 +37,12 @@ quackd also ships code that runs **on a robot**, or on the board beside one, whi
 different kind of surface from everything above. Everything under `bridge/` is in scope in
 its own right: two daemons for an Open Duck Mini v2's Raspberry Pi, a host wrapper for an
 AlohaMini, a daemon that walks a ToddlerBot, a bridge beside MOSS's cockpit that drives its tracks
-and plays its arm's cycle, and a daemon for an NVIDIA Jetson that quackd
-reaches with `--host` and never runs on. So is `quackd policy serve`, which is not under
+and plays its arm's cycle, and a daemon for an NVIDIA Jetson that the quackd driving a robot
+reaches with `--host`. So is `quackd policy serve`, which is not under
 `bridge/` and is the first network service whose answers move an arm: it serves a learned
-policy's goals to a LeRobot arm, from a checkpoint that is code.
+policy's goals to a LeRobot arm, from a checkpoint that is code. And so is `quackd onboard`, the
+one part of quackd that runs on a robot's own computer, Robot Passport's service, which listens
+over Bluetooth and on the LAN for robots it has never met (below).
 
 Also in scope:
 
@@ -293,38 +295,51 @@ Also in scope:
   with no authentication of its own. Both are off by default and neither has a threat model
   yet, so treat them as trusted-network only.
 - **Robot Passport** ([docs/passport/security.md](docs/passport/security.md) is its whole threat
-  model). `quackd passport serve` listens on every interface on port 8790 unless told otherwise,
-  because a passport is a public document meant to be read, and it serves passports and nothing
-  else: no other path answers and it fetches nothing. What any client can make it hold is
-  bounded: 32 connections at once, five seconds a read and ten a connection, and a POST must say
-  how long it is. A passport never holds a token or a key. Each robot's private key, and the owner
-  key that stamps them, the one to guard most, are plain files under `~/.quackd/keys/`, on the same
-  footing as the tokens in `robots.json`: readable by their owner alone on Linux and macOS, and on
-  Windows by whoever can read the folder they are in. Reading a passport fetches only the URL it
-  was given, follows no redirects, reads no more than 12 KB in five seconds however slowly a host
-  sends, and prints whatever a passport says as text, so a passport cannot drive the terminal.
-  `quackd meet ros://` opens a bridge, reads one message and closes it without publishing
-  anything to that robot. With `--talk`, `quackd passport serve`, `quackd run` and
-  `quackd serve-mcp` also take talk messages at `/robot-passport/inbox`, and `serve --mqtt
-  --talk` on each robot's inbox topic on that broker: a three-step `hello`,
-  `say` and `bye`, each signed by the robot that sends it, at most 16 KB, with at most 64
-  sessions and 64 half-finished hellos at once. Nothing a robot says moves anything. An `ask` is
-  decided by the courtesy handler, never the pilot: a pause of 5 s at most for a stranger and 10 s
-  for a known robot, an identify by sound, one pause a minute and one identify every ten seconds
-  across every peer together, run through the executor with the source `peer`, where the `peer` gate
-  admits only `stop` and `say`. A pause ends any verb already moving the body, and the `paused` gate
-  admits nothing that moves while it holds. A run takes courtesies only while its pilot has the
-  body, never over an arm in a person's hands, and they cost the pilot no steps. A peer can never
-  ask for `stop`, and a reply goes only to the host the other robot's passport or hello came from. A
-  stranger's words reach the terminal and the transcript, for a person, and never a pilot or an MCP
-  client. What would be a security issue: a key, the owner key above all, reaching any output, log,
-  transcript or passport, a passport's text acting on the terminal it is shown on, a fetch to any
-  host but the one named, a robot placed in a tier above stranger without the pin or the stamp that
-  tier needs, a stranger's words reaching a pilot or an MCP client, a peer reaching any verb but
-  `stop` and `say`, or a body moving while a granted pause holds.
+  model). It runs in `quackd onboard`, a service on a robot's own computer, and in nothing else,
+  since `quackd passport check` only reads a passport. A read follows no redirects, reads no more
+  than 12 KB in five seconds however slowly a host sends, and prints whatever a passport says as
+  text, so a passport cannot drive the terminal. The service has four surfaces.
+  Its Bluetooth advert is 31 bytes with no name and no key in it, under a random beacon id that
+  changes every 15 minutes, and the radio's own address follows the robot until BlueZ's address
+  privacy is on, which the wizard offers (`Privacy = device` in `/etc/bluetooth/main.conf`, the
+  old file kept as a backup) and nobody has seen take effect. Its Bluetooth link takes four
+  robots at once at most, closes on one that sends no hello in 30 seconds, takes no more than 20
+  requests every ten seconds from each and refuses a message past 16,384 bytes. Its port on the
+  LAN serves the robot's passport at the well-known URL and takes talk at
+  `/robot-passport/inbox`, and a first hello there is refused unless its sender was heard by radio
+  in the last eight seconds. Its control connection listens on `127.0.0.1` alone, with a token in
+  `control.json` compared in constant time. Every talk message is signed by its sender's robot
+  key, at most 16 KB for a hello and 4 KB for anything else, and both robots verify each other's
+  owner-signed passport before a word passes. The owner key, the one to guard most, lives in the
+  robot's directory sealed with a passphrase by scrypt and AES-256-GCM, and is opened only while
+  the owner signs. The passphrase is typed hidden, or read from `--passphrase-file`, which is
+  refused when anybody but its owner can read it, and no environment variable carries one. The
+  robot's own key is a plain file readable by its owner alone, because the service reads it when
+  the robot boots, on the same footing as the tokens in `robots.json`: whoever holds it can speak
+  as the robot until its passport expires, and cannot change what its owner signed. The brain's
+  key is in `robot.env`, readable by its owner alone and handed to the service by systemd, and
+  never in `robot.yaml`. The unit runs as the user who installed it and never as root, which the
+  wizard refuses, in the `bluetooth` group, with `NoNewPrivileges`, `ProtectSystem=strict`,
+  `ProtectHome=read-only`, a private `/tmp` and write access to the robot's directory alone, and
+  the sudo lines that install it are printed before they run. Nothing a robot says moves
+  anything. An `ask` is decided by the courtesy handler, never the pilot, and only while a run
+  holds the body: a pause of 5 s at most for a stranger and 10 s for a known robot, an identify,
+  one pause a minute and one identify every ten seconds across every peer together, run through
+  the executor with the source `peer`, where the `peer` gate admits only `stop` and `say`. A
+  pause ends any verb already moving the body, and the `paused` gate admits nothing that moves
+  while it holds. A peer can never ask for `stop`, and a reply goes back only the way the message
+  came. A stranger's words reach the log and what `quackd onboard met` lists, for a person, and
+  never a pilot. What would be a security issue: talk before both robots verified each other, a
+  passport accepted without its owner's signature or signed by its own robot, a stranger's words
+  reaching a pilot, the passphrase or either key reaching any output, log, transcript, status or
+  passport, the control connection answering anything off loopback or without its token, a
+  robot placed in a tier above stranger without the pin that tier needs, a peer reaching any verb
+  but `stop` and `say`, a body moving while a granted pause holds, a reply sent anywhere but
+  back the way its message came, a fetch to any host but the one named, or a passport's text
+  acting on the terminal it is shown on.
 - **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
-  quackd reaches with `--host` and never runs on. It serves a live view from a camera on the board,
+  the quackd driving a robot reaches with `--host`. It serves a live view from a camera on the board,
   runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
   `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default and warns when it is
   bound wider with no token. A token, once one is configured, is required on every path, read
