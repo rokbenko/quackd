@@ -8856,15 +8856,6 @@ def _shown(value: Any) -> Any:
     return value
 
 
-def _stamp_text(stamp: dict[str, Any]) -> str:
-    """One stamp: the key that vouches, what this quackd knows that key as, and until when."""
-    if not stamp["counts"]:
-        return f"does not count: {stamp['reason']}"
-    until = datetime.fromtimestamp(stamp["exp"], UTC).strftime("%Y-%m-%d")
-    known = stamp.get("known_as") or "a key nobody here pinned"
-    return f"{stamp['rel']} {stamp['iss_short_id']}, {known}, until {until}"
-
-
 def _figure_text(figure: dict[str, Any], unit: str) -> str:
     text = f"{figure['value']:g} {unit}"
     return f"{text} ({figure['confidence']})" if figure.get("confidence") else text
@@ -8876,20 +8867,19 @@ def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
     short = view["short_id"] or "none: it holds no key"
     rows.append(("id", Text(f"{view['id']}  (short id {short})", style=ui.STYLES["muted"])))
     rows.append(("claim", view["provenance"]))
-    # each stamp by the key that made it: a count alone hid that any key can stamp any robot
-    rows.extend(("stamp", _stamp_text(stamp)) for stamp in view["stamps"])
     if "tier" in view:
         rows.append(("tier", f"{view['tier']}: {view['tier_why']}"))
     maker = view["maker"]
     if maker:
         rows.append(("maker", " ".join(str(maker[k]) for k in ("vendor", "model") if k in maker)))
-    software = view["software"]
-    if software:
-        named = (str(software[k]) for k in ("name", "version") if k in software)
-        rows.append(("software", " ".join(named)))
     owner = view["owner"]
-    if owner:
-        rows.append(("owner", ", ".join(str(owner[k]) for k in ("label", "contact") if k in owner)))
+    named = [str(owner[k]) for k in ("label", "contact") if k in owner]
+    rows.append(("owner", ", ".join([*named, f"key {view['owner_short_id']}"])))
+    board = view["board"]
+    if board:
+        rows.append(
+            ("board", " ".join(str(board[k]) for k in ("kind", "model", "soc") if k in board))
+        )
     body = view["body"]
     if body:
         worded = {"mobility": "fixed in place", "manipulator": "nothing to hold with"}
@@ -8919,8 +8909,7 @@ def _passport_rows(view: dict[str, Any]) -> list[tuple[str, Any]]:
     stops = "stops on silence" if safety["stops_on_silence"] else "does not stop on silence"
     said = f", {safety['how_to_stop']}" if safety["how_to_stop"] else ""
     rows.append(("safety", f"{stops}, e-stop: {safety['estop']}{said}"))
-    for channel in view["talk"]:
-        rows.append(("talk", f"{channel['via']} {channel['url']}"))
+    rows.append(("valid", f"{view['issued']} to {view['expires']}"))
     rows.append(("digest", Text(view["digest"][:16], style=ui.STYLES["muted"])))
     return rows
 
@@ -8969,9 +8958,6 @@ def passport_check(
             f"refused under {e.rule}: {ui.printable(str(e))}",
             hint="docs/passport/spec.md says what each rule asks",
         )
-        return
-    if isinstance(reading, list):
-        _fail(f"an index of {len(reading)} passports: check one robot's passport at a time")
         return
     view = reading.view()
     if as_json:
@@ -9042,7 +9028,7 @@ def discover(
                 Text(ui.printable(beacon.url())),
                 Text(ui.printable(beacon.digest), style=ui.STYLES["muted"]),
             )
-        p.caption = Text("quackd meet <url> reads one", style=ui.STYLES["muted"])
+        p.caption = Text("quackd passport check <url> reads one", style=ui.STYLES["muted"])
         p.caption_justify = "left"
         ui.console.print(p)
     if not robots:

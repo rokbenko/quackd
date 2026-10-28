@@ -55,6 +55,7 @@ from quackd.agent.providers.factory import (
     resolve_model,
 )
 from quackd.agent.providers.local import PRESETS, on_host
+from quackd.boards import l4t as _l4t
 from quackd.command import redacted_url
 from quackd.duckfile.parser import list_bundled_ducks
 from quackd.host import (
@@ -1133,51 +1134,17 @@ _host_client = HostClient
 a test replaces it. It must never become a default argument, which would bind at import and
 ignore the monkeypatch."""
 
-_L4T_LINE = re.compile(r"R(\d+)\s*\(release\),\s*REVISION:\s*(\d+(?:\.\d+)*)")
-"""`# R36 (release), REVISION: 4.3, GCID: ...` is the first line of `/etc/nv_tegra_release`."""
-
 _GPU_BUSY = re.compile(r"GR3D_FREQ\s+(\d+)%")
 """The GPU's load in a `tegrastats` line. Orin prints `GR3D_FREQ 0%@[305]`, the clock after the
 `@`, and older boards `GR3D_FREQ 0%@1300`; the percentage comes first in both."""
 
-_JETPACK_FOR_L4T = {
-    "36.5.2": "6.2.3",
-    "36.5.0": "6.2.2",
-    "36.4.4": "6.2.1",
-    "36.4.3": "6.2",
-    "36.4.0": "6.1",
-    "36.3.0": "6.0",
-    "39.2.1": "7.2.1",
-    "39.2.0": "7.2",
-    "38.4.0": "7.1",
-    "38.2.1": "7.0",
-    "38.2.0": "7.0",
-}
-"""Exact releases only, read off NVIDIA's JetPack archive on 2026-09-22.
-
-`docs/guides/jetson.md` prints this same table and `tests/test_docs.py` holds the two to each other,
-so a board whose JetPack shipped after this was written cannot read as one version in the
-documentation and another on the screen."""
-
-_JETPACK_MAJOR = {"32": "4.x", "35": "5.x", "36": "6.x", "38": "7.x", "39": "7.x"}
-"""What to say about a revision the table above has not heard of. The major version only, on
-purpose: L4T 35.1 was JetPack 5.0.2 and 35.2.1 was 5.1, so a guessed minor here would be wrong
-about a board somebody owns."""
-
-
-def _parse_l4t(text: str) -> str | None:
-    match = _L4T_LINE.search(text)
-    return f"{match.group(1)}.{match.group(2)}" if match else None
-
-
-def _jetpack_for(l4t: str) -> str | None:
-    parts = [p for p in l4t.split(".") if p]
-    if not parts:
-        return None
-    # padded to three, because NVIDIA writes JetPack 6.1's as "36.4" and the archive's own
-    # table spells the same release "36.4.0"
-    exact = ".".join([*parts, "0", "0"][:3])
-    return _JETPACK_FOR_L4T.get(exact) or _JETPACK_MAJOR.get(parts[0])
+# The L4T table and its parser live in quackd/boards/l4t.py, which `quackd onboard` reads on
+# the board itself. doctor reads them through the names it always had, and so does every test
+# that holds doctor to them: tests/test_docs.py holds the Jetson page's table to
+# `_JETPACK_FOR_L4T`.
+_JETPACK_FOR_L4T = _l4t.JETPACK_FOR_L4T
+_parse_l4t = _l4t.parse_l4t
+_jetpack_for = _l4t.jetpack_for
 
 
 def _kb_fields(text: str, wanted: Sequence[str]) -> dict[str, int]:

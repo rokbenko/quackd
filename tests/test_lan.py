@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -29,6 +30,8 @@ from quackd.lan.txt import (
     robot_from_txt,
     txt_record,
 )
+from quackd.passport.beacon import TXT_VERSION, WELL_KNOWN_JSON
+from tests.passport_helpers import RUNTIME, A, B
 
 DUCK = describe(RobotSpec("microduck", "mock", "duck-01"))
 # A hand-rolled, deliberately different-capability manifest: LAN identity/discovery is
@@ -210,6 +213,38 @@ def test_cli_discover_prints_a_table_or_json(fake_lan: FakeZeroconf) -> None:
     assert len(rows) == 1 and rows[0]["manifest_id"] == "head-01"
     assert rows[0]["adapter"] == "head" and rows[0]["embodiment"] == "arm"
     assert rows[0]["addresses"] == ["10.0.0.2"] and rows[0]["digest"] == HEAD.digest()
+
+
+def test_cli_discover_lists_the_robot_passports_that_speak_txt_v2_and_no_older_ones(
+    fake_lan: FakeZeroconf,
+) -> None:
+    beacon = RUNTIME["robot-a"]["beacon"]
+    robot = lan_passports.passport_record(
+        instance="g1-edu-01",
+        port=8790,
+        short_id=A.short_id,
+        digest="ef" * 32,
+        beacon=beacon,
+        host="g1-edu-01",
+        addresses=("10.0.0.5",),
+    )
+    assert robot.properties["v"] == TXT_VERSION
+    laptop = lan_passports.passport_record(
+        instance="duck-01", port=8790, short_id=B.short_id, digest="12" * 32, host="lab-pc"
+    )
+    # what quackd 0.23 to 0.28 announced for the robots a laptop fronted: a 1.0 reader skips it
+    fake_lan.register_service(replace(laptop, properties={**laptop.properties, "v": "1"}))
+    fake_lan.register_service(robot)
+    runner = CliRunner()
+    as_json = runner.invoke(app, ["discover", "--timeout", "0", "--json"])
+    assert as_json.exit_code == 0, as_json.output
+    rows = [json.loads(line) for line in as_json.output.splitlines() if line.startswith("{")]
+    assert [(r["kind"], r["short_id"], r["beacon_id"], r["url"]) for r in rows] == [
+        ("passport", A.short_id, beacon, f"http://10.0.0.5:8790{WELL_KNOWN_JSON}")
+    ]
+    table = runner.invoke(app, ["discover", "--timeout", "0"])
+    assert table.exit_code == 0, table.output
+    assert "robot passports on the LAN (1)" in table.output and A.short_id in table.output
 
 
 def test_cli_announce_advertises_a_static_manifest_then_withdraws(fake_lan: FakeZeroconf) -> None:

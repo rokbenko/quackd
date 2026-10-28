@@ -55,7 +55,7 @@ eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGlkOmtleTp6Nk1rZWhS...   the protected header, 
 .V0johtXIxX-ix0awrTWNyg7vRYtV_MBcazEhU8pcpCrhBTYIGtvP...  the 64-byte Ed25519 signature, base64url
 ```
 
-That is the start of each part of [vectors/microduck.jws](vectors/microduck.jws).
+That was the start of each part of a 0.1 passport; a 1.0 one is [vectors/humanoid.jws](vectors/humanoid.jws).
 
 The header says `alg` `Ed25519`, `kid` the passport's own `id`, and `typ` `robot-passport+jws`.
 A reader checks all three, checks the signature with the key the `id` holds, and then uses the

@@ -21,12 +21,12 @@ import pytest
 from typer.testing import CliRunner
 
 from quackd.cli import app
-from quackd.passport import PassportError, SigningKey, fetch, serve, strict
+from quackd.passport import PassportError, document, fetch, serve, strict
 from quackd.passport.serve import INBOX_PATH, PassportServer, Served
+from tests.passport_helpers import OWNER, A, doc
 
 runner = CliRunner()
-KEY = SigningKey(bytes(range(32)))
-PASSPORT = strict.dumps({"passport": "0.1", "id": KEY.did, "name": "duck-01"})
+PASSPORT = strict.dumps(doc(A, OWNER, "duck-01"))
 
 
 @contextlib.contextmanager
@@ -139,11 +139,10 @@ def test_a_signed_passport_as_large_as_a_passport_may_be_is_read_from_a_url_and_
 ) -> None:
     """The cap on the wire is the JWS of the largest passport, not the passport's own 8,192
     bytes, which a signed one of that size exceeds by a third."""
-    from quackd.passport import document
-
-    doc = {"passport": "0.1", "id": KEY.did, "name": "duck-01", "padding": ""}
-    doc["padding"] = "x" * (document.MAX_BYTES - len(strict.dumps(doc)))
-    token = document.sign(doc, KEY)
+    padded = doc(A, OWNER, "duck-01", padding="")
+    padded["padding"] = "x" * (document.MAX_BYTES - len(strict.dumps(padded)))
+    assert len(strict.dumps(padded)) == document.MAX_BYTES
+    token = document.sign(padded, OWNER)
     assert len(token) > document.MAX_BYTES
     answer = f"HTTP/1.0 200 OK\r\nContent-Length: {len(token)}\r\n\r\n{token}".encode()
     with host(lambda conn: conn.sendall(answer)) as url:
@@ -168,7 +167,7 @@ def _exchange(port: int, data: bytes) -> bytes:
 @pytest.fixture
 def with_inbox() -> Iterator[PassportServer]:
     server = PassportServer(
-        [Served("duck-01", PASSPORT)],
+        Served("duck-01", PASSPORT),
         host="127.0.0.1",
         inbox=lambda body, kind, address: (204, None, "text/plain"),
     ).start()
@@ -200,7 +199,7 @@ def test_the_server_names_itself_and_not_the_python_under_it(with_inbox: Passpor
 def test_a_client_that_holds_a_connection_open_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(serve, "READ_S", 0.5)
     monkeypatch.setattr(serve, "CONNECTION_S", 1.0)
-    server = PassportServer([Served("duck-01", PASSPORT)], host="127.0.0.1").start()
+    server = PassportServer(Served("duck-01", PASSPORT), host="127.0.0.1").start()
     try:
         # silent: the read timeout ends it
         started = time.monotonic()
@@ -236,7 +235,7 @@ def test_past_its_limit_the_server_closes_a_client_at_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(serve, "CONNECTIONS", 2)
-    server = PassportServer([Served("duck-01", PASSPORT)], host="127.0.0.1").start()
+    server = PassportServer(Served("duck-01", PASSPORT), host="127.0.0.1").start()
     held = [socket.create_connection(("127.0.0.1", server.port), timeout=5) for _ in range(2)]
     try:
         time.sleep(0.3)  # both are being served, each waiting on a request it never gets
@@ -255,13 +254,9 @@ def test_past_its_limit_the_server_closes_a_client_at_once(
 
 
 def test_what_a_passport_says_cannot_move_the_cursor_or_redraw_a_line(tmp_path: Path) -> None:
-    forged = "\x1b[1A\x1b[2K| claim   signed by its own key"
+    forged = "\x1b[1A\x1b[2K| claim   signed by its owner's key"
     path = tmp_path / "forged.json"
-    path.write_text(
-        json.dumps(
-            {"passport": "0.1", "id": KEY.did, "name": "duck-01", "maker": {"vendor": forged}}
-        )
-    )
+    path.write_text(json.dumps(doc(A, OWNER, "duck-01", maker={"vendor": forged})), "utf-8")
     checked = runner.invoke(app, ["passport", "check", str(path)])
     assert checked.exit_code == 0, checked.output
     assert "\x1b[1A" not in checked.output
@@ -270,7 +265,7 @@ def test_what_a_passport_says_cannot_move_the_cursor_or_redraw_a_line(tmp_path: 
 
 def test_markup_in_a_name_is_shown_as_the_text_it_is(tmp_path: Path) -> None:
     path = tmp_path / "passport.json"
-    path.write_text(json.dumps({"passport": "0.1", "id": KEY.did, "name": "[/]"}))
+    path.write_text(json.dumps(doc(A, OWNER, "[/]")), "utf-8")
     checked = runner.invoke(app, ["passport", "check", str(path)])
     assert checked.exit_code == 0, checked.output
     assert "[/]" in checked.output

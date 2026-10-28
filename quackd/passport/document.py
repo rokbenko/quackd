@@ -4,7 +4,12 @@ A document breaks rules 1 to 7 and it is refused with a `PassportError` naming t
 survives them and the rest are readings rather than refusals: an unknown member is ignored, an
 unknown value reads as `other`, `safety` reads as the worst case, and a required extension the
 reader does not understand stops it talking. Each of those leaves a note, so what a reader did
-with a passport is as visible as what the passport said."""
+with a passport is as visible as what the passport said.
+
+A passport is signed by its owner's key, which `owner.id` names (spec 4.4), never by the
+robot's own: the robot proves it holds the key its `id` names in the hello instead (6.3). So
+nobody but the owner can change a word of it, the robot included, and a signature holds only
+from `issued` to `expires` (4.5)."""
 
 from __future__ import annotations
 
@@ -16,21 +21,24 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, TypeGuard
 
-from quackd.passport import jws, stamps, strict
+from quackd.passport import jws, strict
 from quackd.passport.errors import PassportError
-from quackd.passport.keys import DID_PREFIX, public_from_did, short_id_of
-from quackd.passport.stamps import Stamp
+from quackd.passport.keys import public_from_did, short_id_of
 
-VERSION = "0.1"
-MAJOR = 0
+VERSION = "1.0"
+MAJOR = 1
 #: What a reader must accept, and what a writer should stay under (spec 2.1).
 MAX_BYTES = 8192
 WRITER_BYTES = 2048
-#: The most stamps a passport carries (spec 2.2).
-MAX_STAMPS = 4
 PASSPORT_TYP = "robot-passport+jws"
-DEFAULT_TTL_S = 3600
-MAX_TTL_S = 86_400
+#: How long an owner's signature holds at most, and how long quackd makes it hold unless told
+#: (spec 4.5): a passport that never ended would vouch for a robot long after it was sold.
+MAX_VALIDITY_S = 400 * 86_400
+DEFAULT_VALIDITY_DAYS = 365
+#: How far ahead of a reader's clock `issued` may be, for two clocks that disagree a little.
+CLOCK_SKEW_S = 300
+#: The members a passport cannot do without (spec 2.2).
+REQUIRED = ("passport", "id", "name", "owner", "issued", "expires")
 
 EMBODIMENTS = ("biped", "quadruped", "humanoid", "wheeled", "tracked", "arm", "aerial", "other")
 MOBILITIES = ("none", "legged", "wheeled", "tracked", "flying", "other")
@@ -58,6 +66,8 @@ CORE_SKILLS = (
 )
 COURTESIES = ("pause", "identify")
 ESTOPS = ("button", "remote", "power", "none")
+#: The computer a robot runs its passport on (spec 2.2): sim is a stand-in, and says so.
+BOARDS = ("jetson", "sim", "other")
 CONFIDENCES = ("official", "estimate", "measured")
 FIGURES = (
     "mass_kg",
@@ -69,21 +79,14 @@ FIGURES = (
     "endurance_min",
     "max_speed_mps",
 )
-VIAS = ("http", "mqtt")
-#: Why a stamp that checks out still does not count on an unsigned passport (spec 4.5).
-UNSIGNED_STAMP = "the passport is unsigned, so nothing shows the key it stamps wrote it"
 #: The extensions quackd understands, so a required one of these does not stop it talking.
 KNOWN_EXTENSIONS = frozenset({"org.quackd"})
 
 #: A version has at most nine digits a part, so reading one never converts a huge number.
 _VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$")
 _DID = re.compile(r"^did:key:z6Mk[1-9A-HJ-NP-Za-km-z]{44}$")
-_UUID = re.compile(
-    r"^urn:uuid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
 _SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _EXT = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
-_JWS = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 _DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$")
 
 _MEMBERS = {
@@ -92,22 +95,20 @@ _MEMBERS = {
         "id",
         "name",
         "maker",
-        "software",
         "owner",
+        "board",
         "body",
         "skills",
         "courtesy",
         "cannot",
         "safety",
-        "talk",
-        "stamps",
         "ext",
         "issued",
-        "ttl_s",
+        "expires",
     ),
     "maker": ("vendor", "model", "serial"),
-    "software": ("name", "version"),
-    "owner": ("label", "contact"),
+    "owner": ("id", "label", "contact"),
+    "board": ("kind", "model", "soc"),
     "body": ("embodiment", "mobility", "manipulator", "terrain", "tethered", "sensors", *FIGURES),
     "safety": ("stops_on_silence", "estop", "how_to_stop"),
 }
@@ -161,22 +162,26 @@ def check_version(value: object) -> str:
     if not isinstance(value, str) or not _VERSION.match(value):
         raise _refuse("rule 3", f"passport is {value!r}, not a MAJOR.MINOR version")
     if int(value.split(".")[0]) != MAJOR:
-        raise _refuse("rule 4", f"version {value} has a MAJOR this reader does not know")
+        before = (
+            ": 0.x is Robot Passport before owners signed passports (quackd 0.23 to 0.28)"
+            if value.startswith("0.")
+            else ""
+        )
+        raise _refuse("rule 4", f"version {value} has a MAJOR this reader does not know{before}")
     return value
 
 
 def check_id(value: object, where: str = "id") -> str:
-    """Rule 3 for an id, and rule 7 for a `did:key` that holds anything but Ed25519."""
+    """Rule 3 for an id, a robot's or an owner's `did:key`, and rule 7 for one that holds
+    anything but Ed25519. Ids name keys, since a robot proves its own in every hello (6.3)."""
     if not isinstance(value, str):
         raise _refuse("rule 3", f"{where} is not a string")
-    if value.startswith("did:key:"):
-        public_from_did(value)  # raises under rule 7
-        if not _DID.match(value):
-            raise _refuse("rule 7", f"{where} is not an Ed25519 did:key")
-        return value
-    if _UUID.match(value):
-        return value
-    raise _refuse("rule 3", f"{where} {value!r} is neither a did:key nor a urn:uuid")
+    if not value.startswith("did:key:"):
+        raise _refuse("rule 3", f"{where} {value!r:.80} is not a did:key")
+    public_from_did(value)  # raises under rule 7
+    if not _DID.match(value):
+        raise _refuse("rule 7", f"{where} is not an Ed25519 did:key")
+    return value
 
 
 def check_figure(value: object, where: str) -> None:
@@ -200,27 +205,32 @@ def validate(doc: object) -> dict[str, Any]:
     """Rules 3, 4, 5 and 7 on a parsed passport, which is returned when it passes."""
     if not isinstance(doc, dict):
         raise _refuse("rule 2", "it is not a JSON object")
-    for required in ("passport", "id", "name"):
+    if "passport" not in doc:
+        raise _refuse("rule 3", "it has no passport, the version it is written in")
+    check_version(doc["passport"])
+    for required in REQUIRED:
         if required not in doc:
             raise _refuse("rule 3", f"it has no {required}")
-    check_version(doc["passport"])
     check_id(doc["id"])
     _text(doc["name"], "name", 64, rule="rule 3", empty=False)
-    for member, fields in (
-        ("maker", ("vendor", "model", "serial")),
-        ("software", ("name", "version")),
-    ):
-        if member in doc:
-            obj = _object(doc[member], member)
-            for name in fields:
-                if name in obj:
-                    _text(obj[name], f"{member}.{name}", 64)
-    if "owner" in doc:
-        owner = _object(doc["owner"], "owner")
-        if "label" in owner:
-            _text(owner["label"], "owner.label", 64)
-        if "contact" in owner:
-            _text(owner["contact"], "owner.contact", 200)
+    owner = _object(doc["owner"], "owner")
+    if "id" not in owner:
+        raise _refuse("rule 3", "its owner has no id, the key that signs it")
+    check_id(owner["id"], "owner.id")
+    if "label" in owner:
+        _text(owner["label"], "owner.label", 64)
+    if "contact" in owner:
+        _text(owner["contact"], "owner.contact", 200)
+    if "maker" in doc:
+        maker = _object(doc["maker"], "maker")
+        for name in ("vendor", "model", "serial"):
+            if name in maker:
+                _text(maker[name], f"maker.{name}", 64)
+    if "board" in doc:
+        board = _object(doc["board"], "board")
+        for name, limit in (("kind", 32), ("model", 64), ("soc", 32)):
+            if name in board:
+                _text(board[name], f"board.{name}", limit)
     if "body" in doc:
         _validate_body(_object(doc["body"], "body"))
     if "skills" in doc:
@@ -233,23 +243,18 @@ def validate(doc: object) -> dict[str, Any]:
     if "cannot" in doc:
         for i, line in enumerate(_array(doc["cannot"], "cannot", 8)):
             _text(line, f"cannot[{i}]", 120, empty=False)
-    if "talk" in doc:
-        for i, channel in enumerate(_array(doc["talk"], "talk", 8)):
-            _validate_channel(_object(channel, f"talk[{i}]"), f"talk[{i}]")
-    if "stamps" in doc:
-        for i, token in enumerate(_array(doc["stamps"], "stamps", MAX_STAMPS)):
-            _text(token, f"stamps[{i}]", 1024)
-            if not _JWS.match(token):
-                raise _refuse("rule 5", f"stamps[{i}] is not a compact JWS")
     if "ext" in doc:
         for key, value in _object(doc["ext"], "ext").items():
             if not _EXT.match(key):
                 raise _refuse("rule 5", f"ext key {key!r} is not a reverse-DNS name")
             _object(value, f"ext[{key!r}]")
-    if "issued" in doc:
-        _check_datetime(doc["issued"])
-    if "ttl_s" in doc and (not _is_int(doc["ttl_s"]) or not 60 <= doc["ttl_s"] <= MAX_TTL_S):
-        raise _refuse("rule 5", f"ttl_s is {doc['ttl_s']!r}, not an integer from 60 to 86400")
+    issued = epoch(doc["issued"], "issued")
+    expires = epoch(doc["expires"], "expires")
+    if expires <= issued:
+        raise _refuse("rule 5", "expires is not after issued")
+    if expires - issued > MAX_VALIDITY_S:
+        days = MAX_VALIDITY_S // 86_400
+        raise _refuse("rule 5", f"it holds for {(expires - issued) // 86_400} days, over {days}")
     return doc
 
 
@@ -267,62 +272,22 @@ def _validate_body(body: dict[str, Any]) -> None:
             check_figure(body[name], f"body.{name}")
 
 
-def _validate_channel(channel: dict[str, Any], where: str) -> None:
-    for required in ("via", "url"):
-        if required not in channel:
-            raise _refuse("rule 5", f"{where} has no {required}")
-    _text(channel["via"], f"{where}.via", 16)
-    _text(channel["url"], f"{where}.url", 200)
-    if "max_bytes" in channel and (
-        not _is_int(channel["max_bytes"]) or channel["max_bytes"] < 1024
-    ):
-        raise _refuse("rule 5", f"{where}.max_bytes is not an integer of at least 1024")
-
-
-def _check_datetime(value: object) -> None:
+def epoch(value: object, where: str) -> int:
+    """`issued` or `expires` as seconds since 1970, from the RFC 3339 date-time it must be."""
     match = _DATETIME.match(value) if isinstance(value, str) else None
     if match is None:
-        raise _refuse("rule 5", f"issued is {value!r}, not an RFC 3339 date-time")
+        raise _refuse("rule 5", f"{where} is {value!r:.40}, not an RFC 3339 date-time")
     # RFC 3339 allows a lowercase t and z, and a leap second, and Python's datetime neither
     plain = str(value).upper().replace("Z", "+00:00")
     if match.group(1) == "60":
         plain = plain[:17] + "59" + plain[19:]
     try:
-        datetime.fromisoformat(plain)
+        moment = datetime.fromisoformat(plain)
     except ValueError as e:
-        raise _refuse("rule 5", f"issued is {value!r}, not a real date-time") from e
-
-
-# ── the index ───────────────────────────────────────────────────────────────────────────
-
-
-def is_index(doc: object) -> bool:
-    """An index has `robots` and no `id` (spec 2.7)."""
-    return isinstance(doc, dict) and "robots" in doc and "id" not in doc
-
-
-@dataclass(frozen=True)
-class Entry:
-    url: str
-    name: str | None = None
-    id: str | None = None
-
-
-def validate_index(doc: dict[str, Any]) -> list[Entry]:
-    check_version(doc.get("passport"))
-    robots = _array(doc["robots"], "robots", 32)
-    if not robots:
-        raise _refuse("rule 5", "robots is empty")
-    entries: list[Entry] = []
-    for i, item in enumerate(robots):
-        entry = _object(item, f"robots[{i}]")
-        if "url" not in entry:
-            raise _refuse("rule 5", f"robots[{i}] has no url")
-        url = _text(entry["url"], f"robots[{i}].url", 200)
-        name = _text(entry["name"], f"robots[{i}].name", 64) if "name" in entry else None
-        robot_id = check_id(entry["id"], f"robots[{i}].id") if "id" in entry else None
-        entries.append(Entry(url, name, robot_id))
-    return entries
+        raise _refuse("rule 5", f"{where} is {value!r:.40}, not a real date-time") from e
+    if moment.tzinfo is None:
+        raise _refuse("rule 5", f"{where} is {value!r:.40}, which names no time zone")
+    return int(moment.timestamp())
 
 
 # ── a reading ───────────────────────────────────────────────────────────────────────────
@@ -351,7 +316,6 @@ class Reading:
     document: dict[str, Any]
     raw: bytes
     signed: bool
-    stamps: tuple[Stamp, ...]
     notes: tuple[str, ...]
     talk_allowed: bool
 
@@ -373,18 +337,37 @@ class Reading:
         return hashlib.sha256(self.raw).hexdigest()
 
     @property
-    def short_id(self) -> str | None:
-        return short_id_of(self.id)
+    def short_id(self) -> str:
+        return str(short_id_of(self.id))
+
+    @property
+    def owner_id(self) -> str:
+        """The key that signs this passport, and the one a pin on an owner names (spec 4.4)."""
+        return str(self.document["owner"]["id"])
+
+    @property
+    def owner_short_id(self) -> str:
+        return str(short_id_of(self.owner_id))
+
+    @property
+    def issued(self) -> int:
+        return epoch(self.document["issued"], "issued")
+
+    @property
+    def expires(self) -> int:
+        return epoch(self.document["expires"], "expires")
 
     @property
     def provenance(self) -> str:
-        """Which step a reader reached (spec rule 11), before any stamp or pin is counted."""
-        return "signed by its own key" if self.signed else "unsigned: a claim"
+        """Which step a reader reached (spec rule 11), before any pin is counted."""
+        return "signed by its owner's key" if self.signed else "unsigned: a claim"
 
-    @property
-    def ttl_s(self) -> int:
-        value = self.document.get("ttl_s")
-        return value if _is_int(value) else DEFAULT_TTL_S
+    def board(self) -> dict[str, Any]:
+        """`board` as a reader takes it: a kind it does not know reads as other (rule 8)."""
+        board = _known(self.document, "board")
+        if "kind" in board and board["kind"] not in BOARDS:
+            board["kind"] = "other"
+        return board
 
     def body(self) -> dict[str, Any]:
         return _body_view(self.document.get("body"), [])
@@ -397,12 +380,6 @@ class Reading:
 
     def courtesy(self) -> list[str]:
         return [c for c in self.document.get("courtesy", []) if c in COURTESIES]
-
-    def channels(self) -> list[dict[str, Any]]:
-        return [dict(c) for c in self.document.get("talk", []) if c.get("via") in VIAS]
-
-    def counted_stamps(self) -> list[Stamp]:
-        return [s for s in self.stamps if s.counts]
 
     def view(self) -> dict[str, Any]:
         """Everything a reader shows, normalised, as plain JSON."""
@@ -418,8 +395,9 @@ class Reading:
             "provenance": self.provenance,
             # the members a reader knows, and nothing it ignored (rule 8) next to a note saying so
             "maker": _known(doc, "maker"),
-            "software": _known(doc, "software"),
             "owner": _known(doc, "owner"),
+            "owner_short_id": self.owner_short_id,
+            "board": self.board(),
             "body": self.body(),
             "skills": self.skills(),
             "core_skills": [s for s in self.skills() if s in CORE_SKILLS],
@@ -430,21 +408,9 @@ class Reading:
                 "estop": safety.estop,
                 "how_to_stop": safety.how_to_stop,
             },
-            "talk": self.channels(),
             "talk_allowed": self.talk_allowed,
-            "stamps": [
-                {
-                    "iss": s.iss,
-                    "iss_short_id": _short_id_or_none(s.iss),
-                    "rel": s.rel,
-                    "exp": s.exp,
-                    "counts": s.counts,
-                    "reason": s.reason,
-                }
-                for s in self.stamps
-            ],
-            "issued": doc.get("issued"),
-            "ttl_s": self.ttl_s,
+            "issued": doc["issued"],
+            "expires": doc["expires"],
             "notes": list(self.notes),
         }
 
@@ -454,16 +420,6 @@ def _known(doc: dict[str, Any], member: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
     return {k: v for k, v in value.items() if k in _MEMBERS[member]}
-
-
-def _short_id_or_none(robot_id: str | None) -> str | None:
-    """A stamp's issuer's short id, or None for one that names no key a reader can use."""
-    if robot_id is None:
-        return None
-    try:
-        return short_id_of(robot_id)
-    except PassportError:
-        return None
 
 
 def _figure(value: Any) -> Figure:
@@ -541,9 +497,9 @@ def _readings(doc: dict[str, Any]) -> tuple[list[str], bool]:
     for i, name in enumerate(doc.get("courtesy", [])):
         if name not in COURTESIES:
             notes.append(f"courtesy[{i}] {name!r} is not one this reader knows, so it was ignored")
-    for i, channel in enumerate(doc.get("talk", [])):
-        if channel["via"] not in VIAS:
-            notes.append(f"talk[{i}] via {channel['via']!r} is unknown, so it was skipped")
+    board = doc.get("board")
+    if isinstance(board, dict) and "kind" in board and board["kind"] not in BOARDS:
+        notes.append(f"board.kind {board['kind']!r} read as other (rule 8)")
     talk_allowed = True
     for key, extension in doc.get("ext", {}).items():
         if extension.get("required") is True and key not in KNOWN_EXTENSIONS:
@@ -554,53 +510,70 @@ def _readings(doc: dict[str, Any]) -> tuple[list[str], bool]:
     return notes, talk_allowed
 
 
-def _reading(doc: dict[str, Any], raw: bytes, *, signed: bool, now: int | None) -> Reading:
+def _reading(doc: dict[str, Any], raw: bytes, *, signed: bool) -> Reading:
     notes, talk_allowed = _readings(doc)
-    moment = int(time.time()) if now is None else now
-    judged: list[Stamp] = []
-    for token in doc.get("stamps", []):
-        stamp = stamps.check(token, subject=doc["id"], now=moment)
-        if stamp.counts and not signed:
-            # a stamp vouches for a key, and nothing shows that key wrote an unsigned passport:
-            # anybody can copy an id and a stamp into one (spec 4.5)
-            stamp = replace(stamp, counts=False, reason=UNSIGNED_STAMP)
-        judged.append(stamp)
-    return Reading(doc, raw, signed, tuple(judged), tuple(notes), talk_allowed)
+    return Reading(doc, raw, signed, tuple(notes), talk_allowed)
+
+
+def valid_at(doc: dict[str, Any], now: int) -> None:
+    """Spec 4.5: an owner's signature holds from `issued` to `expires`, and a passport issued in
+    the future, past a few minutes two clocks may disagree by, holds nothing yet."""
+    issued = epoch(doc["issued"], "issued")
+    expires = epoch(doc["expires"], "expires")
+    if issued > now + CLOCK_SKEW_S:
+        raise _refuse(
+            "4.5",
+            f"it was issued at {doc['issued']}, which is still ahead of this clock: check the "
+            "time on both robots",
+        )
+    if now >= expires:
+        raise _refuse("4.5", f"it expired at {doc['expires']}: its owner signs it again")
 
 
 def read_json(raw: bytes, *, now: int | None = None) -> Reading:
-    """An unsigned passport, from its exact bytes."""
-    doc = strict.loads(raw, limit=MAX_BYTES)
-    if is_index(doc):
-        raise _refuse("2.7", "it is an index of passports, not a passport")
-    return _reading(validate(doc), raw, signed=False, now=now)
+    """An unsigned passport, from its exact bytes: a claim anybody could have written, read for
+    a person to look at. Talk never takes one (spec 6.3), and one outside its dates says so."""
+    doc = validate(strict.loads(raw, limit=MAX_BYTES))
+    reading = _reading(doc, raw, signed=False)
+    try:
+        valid_at(doc, int(time.time()) if now is None else now)
+    except PassportError as e:
+        reading = replace(reading, notes=(*reading.notes, str(e)))
+    return reading
 
 
 def read_jws(token: str, *, now: int | None = None) -> Reading:
-    """A signed passport, from its compact JWS (spec 4.4)."""
+    """A signed passport, from its compact JWS (spec 4.4 and 4.5): signed by the key its
+    `owner.id` names, never by the robot's own, and inside its dates."""
     verified = jws.verify_compact(token, PASSPORT_TYP, rule="4.4", payload_limit=MAX_BYTES)
     doc = validate(strict.loads(verified.payload, limit=MAX_BYTES))
-    if not str(doc["id"]).startswith(DID_PREFIX):
-        raise _refuse("4.4", "a passport whose id is a urn:uuid cannot be signed")
-    if doc["id"] != verified.kid:
-        raise _refuse("4.4", "it was signed by a key other than the one its id holds")
-    return _reading(doc, verified.payload, signed=True, now=now)
+    if verified.kid == doc["id"]:
+        raise _refuse(
+            "4.4", "it is signed by its robot's own key, and a 1.x passport is signed by its owner"
+        )
+    if verified.kid != doc["owner"]["id"]:
+        raise _refuse("4.4", "it was signed by a key other than the one its owner.id names")
+    if doc["owner"]["id"] == doc["id"]:
+        raise _refuse("4.4", "its owner key is its robot key, so nothing but the robot vouches")
+    valid_at(doc, int(time.time()) if now is None else now)
+    return _reading(doc, verified.payload, signed=True)
 
 
-def read(data: bytes | str, *, now: int | None = None) -> Reading | list[Entry]:
-    """Whatever a well-known URL served: a signed passport, an unsigned one, or an index."""
+def read(data: bytes | str, *, now: int | None = None) -> Reading:
+    """Whatever a well-known URL served: a signed passport, or an unsigned one for a person."""
     raw = data.encode("utf-8") if isinstance(data, str) else data
     text = raw.decode("utf-8", errors="replace")
     if jws.looks_like_jws(text):
         return read_jws(text, now=now)
-    doc = strict.loads(raw, limit=MAX_BYTES)
-    if is_index(doc):
-        return validate_index(doc)
-    return _reading(validate(doc), raw, signed=False, now=now)
+    return read_json(raw, now=now)
 
 
-def sign(doc: dict[str, Any], key: Any) -> str:
-    """`doc` as a signed passport: the compact bytes quackd writes, signed by `key`."""
-    if doc.get("id") != key.did:
-        raise ValueError("a passport is signed by the key its id holds")
-    return jws.sign(strict.dumps(doc), key, PASSPORT_TYP)
+def sign(doc: dict[str, Any], owner_key: Any) -> str:
+    """`doc` as a signed passport: the compact bytes quackd writes, signed by its owner's key,
+    which `owner.id` names and which is never the robot's own (spec 4.4)."""
+    owner = doc.get("owner")
+    if not isinstance(owner, dict) or owner.get("id") != owner_key.did:
+        raise ValueError("a passport is signed by the key its owner.id names")
+    if owner_key.did == doc.get("id"):
+        raise ValueError("a robot's own key cannot vouch for it: its owner's key signs")
+    return jws.sign(strict.dumps(doc), owner_key, PASSPORT_TYP)
