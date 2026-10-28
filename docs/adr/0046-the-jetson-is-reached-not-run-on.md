@@ -4,11 +4,12 @@
 
 **Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
 one quackd command runs on a robot's own Jetson now, `quackd onboard`, Robot Passport's service,
-installed with `uv tool install "quackd[onboard]"` and run by systemd. Everything below still
-holds for every other command: `run`, `serve-mcp` and `doctor` stay on the laptop and reach the
-board with `--host`, `bridge/jetson/` is unchanged, and doctor reads nothing of the machine it
-runs on. The contention caveat now covers quackd's own service as well, a Bluetooth scanner and
-a pilot's requests beside a robot's control loop, which nobody here has measured.
+which drives the robot from there when the robot's file names an adapter, installed with
+`uv tool install "quackd[onboard]"` and run by systemd. Everything below still holds for every
+other command: `run`, `serve-mcp` and `doctor` stay on the laptop and reach the board with
+`--host`, `bridge/jetson/` is unchanged, and doctor reads nothing of the machine it runs on. The
+contention caveat now covers quackd's own service as well, a Bluetooth scanner, a pilot's requests
+and a run driving the body, beside a robot's control loop, which nobody here has measured.
 
 ## Context
 

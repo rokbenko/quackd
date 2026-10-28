@@ -45,13 +45,14 @@ thing that is there when two robots meet.
 
 **A passport lives on the robot it describes.** `quackd onboard` runs on the robot's own computer,
 and on a laptop only as a stand-in for one. It sets the robot up once, serves its passport, listens
-for robots that come close, checks theirs, and runs the robot's brain when they talk. An NVIDIA
-Jetson is the first computer it supports, an Orin or a Thor on JetPack 6 or 7, recognised from its
-device tree and its release file, and a Xavier or JetPack 5 is refused with the reason. A `sim`
-board stands in for one on a laptop and in the test suite, only when it is named, and the passport
-it signs says `"kind": "sim"` under `board`, so no reader takes a simulation for a robot. Other
-boards come in through a plugin interface, the `quackd.boards` entry point group, the way adapters
-come in through `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
+for robots that come close, checks theirs, and runs the robot's brain when they talk, driving the
+robot's body from there when the robot's file names an adapter. An NVIDIA Jetson is the first
+computer it supports, an Orin or a Thor on JetPack 6 or 7, recognised from its device tree and its
+release file, and a Xavier or JetPack 5 is refused with the reason. A `sim` board stands in for one
+on a laptop and in the test suite, only when it is named, and the passport it signs says
+`"kind": "sim"` under `board`, so no reader takes a simulation for a robot. Other boards come in
+through a plugin interface, the `quackd.boards` entry point group, the way adapters come in through
+`quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
 
 **Arms and toys carry none.** An arm is fixed in place and will rarely meet another robot, and a
 toy-sized robot has no computer on board that can run quackd. The robot's file refuses an `arm`
@@ -78,13 +79,13 @@ that the passport passes every reading rule, that the passport is the sender's a
 this robot's own, in that order, and refuses at the first that fails. A reply goes back only the
 way the hello came.
 
-**Near is Bluetooth LE, judged by signal strength.** Each robot advertises 31 bytes: 10 bytes of
-service data under a 128-bit UUID minted from the specification's URL, holding a version, three
+**Near is Bluetooth LE, judged by signal strength.** The advert quackd builds is 31 bytes: 10 bytes
+of service data under a 128-bit UUID minted from the specification's URL, holding a version, three
 flags and an 8-byte beacon id drawn at random and derived from no key. The beacon id is replaced
-every 15 minutes, never while a link, a session or a meeting is open, and the robot's DNS-SD
-record and its hello change with it. The advert carries no name and no transmit power. A robot is
-near when the median of what was heard of it over three seconds stays at or above a threshold for
-a second: 2 m by default, which -59 dBm at one metre and a path loss exponent of 2.2 put at about
+every 15 minutes, never while a link, a session or a meeting is open, and the robot's DNS-SD record
+and its hello change with it. The advert carries no name and no transmit power. A robot is near
+when the median of what was heard of it over three seconds stays at or above a threshold for a
+second: 2 m by default, which -59 dBm at one metre and a path loss exponent of 2.2 put at about
 -65.6 dBm, none of it measured. A rotating beacon id does not stop tracking while the radio's own
 address stays the same, so the wizard offers to switch on BlueZ's address privacy. That is the
 condition ADR-0057 set for Bluetooth, met in the design, and nobody has seen either half work on a
@@ -114,10 +115,10 @@ questions.
 
 **One file, written by a wizard, and a systemd unit.** `robot.yaml` holds what the passport says,
 the body quackd drives if there is one, the brain, the meeting task, the pins and the radio's
-settings, and `robot.env` holds the brain's key. The wizard asks about six questions, writes both,
-makes the keys, signs, offers address privacy, and prints the sudo lines that install and start
-`quackd-onboard.service` before it runs them. Onboarding is three commands: install `uv`, then
-`uv tool install "quackd[onboard]"`, then `quackd onboard`.
+settings, and `robot.env` holds the brain's key. The wizard asks what only the owner knows, writes
+both, makes the keys, signs, offers address privacy, which restarts bluetoothd, and prints the sudo
+lines that install and start `quackd-onboard.service` before it runs them. Onboarding is three
+commands: install `uv`, then `uv tool install "quackd[onboard]"`, then `quackd onboard`.
 
 **What goes.** Passports served from a laptop, QR stickers, the MQTT and ROS 2 bindings, owner
 stamps, the multi-robot index, `quackd meet`, talk in `quackd run` and `quackd serve-mcp` with the
@@ -165,17 +166,18 @@ refused and why Bluetooth waited.
 ## Consequences
 
 - **Nothing in this decision has been run on a Jetson or over a real Bluetooth radio by this
-  project.** It runs on the `sim` board, where two robots on one computer share a simulated air
-  and a simulated network, and the radio's code runs against fakes, its BlueZ half against a fake
-  system bus. Everything a board and a radio would say is unmeasured: the advert's length and
-  interval on BlueZ, the GATT tree, the negotiated MTU, both roles at once on an Orin's or a
-  Thor's controller, RSSI at any distance, and whether address privacy takes effect.
-- **ADR-0046 holds for every command but one.** `quackd run`, `serve-mcp` and `doctor` stay on
-  the laptop and reach a board with `--host`, `bridge/jetson/` is unchanged, and doctor reads
-  nothing of the machine it runs on. `quackd onboard` is the exception, and the contention caveat
-  now covers it: a Bluetooth scanner and a pilot's requests beside a robot's fifty hertz control
-  loop, which nobody here has measured. The unit runs the service at `Nice=10`, under
-  `MemoryMax=1G` and with `OOMScoreAdjust=300`, which is a precaution and not a measurement.
+  project.** It runs on the `sim` board, where two robots on one computer share a simulated air and
+  a simulated network, and the radio's code runs against fakes, while its BlueZ half has never met
+  bluetoothd. Everything a board and a radio would say is unmeasured: the advert's length and
+  interval on BlueZ, the GATT tree, the negotiated MTU, both roles at once on an Orin's or a Thor's
+  controller, RSSI at any distance, and whether address privacy takes effect.
+- **ADR-0046 holds for every command but one.** `quackd run`, `serve-mcp` and `doctor` stay on the
+  laptop and reach a board with `--host`, `bridge/jetson/` is unchanged, and doctor reads nothing
+  of the machine it runs on. `quackd onboard` is the exception, and the contention caveat now
+  covers it: a Bluetooth scanner, a pilot's requests and, when the robot's file names an adapter, a
+  run driving the body, all beside a robot's fifty hertz control loop, which nobody here has
+  measured. The unit runs the service at `Nice=10`, under `MemoryMax=1G` and with
+  `OOMScoreAdjust=300`, which is a precaution and not a measurement.
 - **What 0.23 to 0.28 kept is left on disk and read by nothing:** the robot keys and the owner key
   under `~/.quackd/keys/`, and the pins in `~/.quackd/known_robots.json`. The changelog says how to
   delete them.

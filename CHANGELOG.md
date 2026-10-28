@@ -38,21 +38,22 @@ their makers' published figures, are what has run.
 ### Added
 
 - **`quackd onboard`, Robot Passport on the robot itself.** Run bare, it is the wizard: it checks
-  the board and what the robot can reach, asks for the robot's name, what it is, who owns it and
-  how to reach them, how a person stops it, its brain, and how close another robot must come to
-  meet it, then writes `robot.yaml` and `robot.env`, makes the keys, asks for the owner's
-  passphrase twice and signs. On a Jetson it then offers to switch on BlueZ's address privacy and
-  prints the sudo lines that install and start `quackd-onboard.service` before it runs them.
-  `--board jetson|sim`, `--dir`, `--file`, `--owner-key`, `--passphrase-file`, `--days`,
-  `--no-service` and `--yes` shape it, and it refuses to run as root. Its subcommands: `sign`
-  signs the passport section again after an edit or before it expires, `status` and `preflight`
-  say what the service and the radio are doing and what this computer has, `show` prints the
-  passport the way another robot reads it, `goal TEXT` gives the robot a goal whose run is shown
-  and whose questions are asked in that terminal, `stop` ends the run in hand, `met` lists the
-  robots it met and the ones it refused and why, `pin WHICH` and `forget WHICH` trust a robot or
-  stop trusting it (`--owner` trusts every robot its owner signed), `serve` runs the service in
-  the terminal the way systemd runs it, `demo` runs two simulated robots, and `uninstall` takes
-  the service away ([docs/passport/quackd.md](docs/passport/quackd.md),
+  the board and what the robot can reach, asks what only the owner knows (the robot's name, what it
+  is and who made it, who owns it and how to reach them, how a person stops it, and its brain),
+  then writes `robot.yaml` and `robot.env`, makes the keys, asks for the owner's passphrase twice
+  and signs. On a Jetson it then offers to switch on BlueZ's address privacy, which restarts
+  bluetoothd, and prints the sudo lines that install and start `quackd-onboard.service` before it
+  runs them. `--board jetson|sim`, `--dir`, `--file` (a robot file that answers the questions),
+  `--owner-key`, `--passphrase-file`, `--days`, `--no-service` and `--yes` shape it, and it refuses
+  to run as root. Its subcommands: `sign` signs the passport section again after an edit or before
+  it expires, `status` and `preflight` say what the service and the radio are doing and what this
+  computer has, `show` prints the passport the way another robot reads it, `goal TEXT` gives the
+  robot a goal whose run is shown and whose questions are asked in that terminal, `stop` ends the
+  run in hand, `met` lists the robots it met and the ones it refused and why, `pin WHICH` and
+  `forget WHICH` trust a robot or stop trusting it (`--owner` trusts every robot its owner signed),
+  `serve` runs the service in the terminal the way systemd runs it, `demo` runs two simulated
+  robots, and `uninstall` takes the service away
+  ([docs/passport/quackd.md](docs/passport/quackd.md),
   [ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 - **`quackd[onboard]`, the extra that goes on the robot:** `uv tool install "quackd[onboard]"`.
   It brings zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and
@@ -72,20 +73,21 @@ their makers' published figures, are what has run.
   sit in the robot's directory, `--dir`, then `QUACKD_ONBOARD_DIR`, then `~/.quackd/onboard/`,
   beside the keys, the signed `passport.jws`, what it met, its status, its runs (the newest 200),
   its memory and its cache.
-- **The owner key, sealed on the robot.** It is sealed with a passphrase of at least 12
-  characters, by scrypt and AES-256-GCM, typed twice where it is made and hidden every time, and
-  `--passphrase-file` gives it to a script, refused when anybody but its owner can read the file.
-  No environment variable carries a passphrase, and the service never needs one. A second robot of
-  the same owner is signed by the same key, given with `--owner-key`. The robot's own key is a
-  plain file readable by its owner alone, because the service reads it when the robot boots and
-  nobody is there to type.
-- **Bluetooth LE, judged by signal strength.** Each robot advertises 31 bytes and no name: a
-  version, three flags and an 8-byte beacon id drawn at random, derived from no key, and replaced
-  every 15 minutes, never while a link, a session or a meeting is open. A robot is near when the
-  median of what was heard of it over three seconds stays at or above the threshold for a second,
-  and far when it stays 6 dB under it for five seconds or is not heard for eight. The threshold is
-  `meet_within_m` in the robot's file, 2 m by default, from `rssi_at_1m`, -59 dBm, and a path
-  loss exponent of 2.2: about -65.6 dBm, none of it measured.
+- **The owner key, sealed on the robot.** It is sealed with a passphrase of at least 12 characters,
+  by scrypt and AES-256-GCM, typed twice where it is made and hidden every time, and
+  `--passphrase-file` gives it to a script, refused on Linux and macOS when anybody but its owner
+  can read the file. No environment variable carries a passphrase, and the service never needs one.
+  A second robot of the same owner is signed by the same key, given with `--owner-key`. The robot's
+  own key is a plain file readable by its owner alone, because the service reads it when the robot
+  boots and nobody is there to type.
+- **Bluetooth LE, judged by signal strength.** The advert quackd builds is 31 bytes with no name in
+  it: a version, three flags and an 8-byte beacon id drawn at random, derived from no key, and
+  replaced every 15 minutes, never while a link, a session or a meeting is open, which is designed
+  and untested on a radio. A robot is near when the median of what was heard of it over three
+  seconds stays at or above the threshold for a second, and far when it stays 6 dB under it for
+  five seconds or is not heard for eight. The threshold is `meet_within_m` in the robot's file, 2 m
+  by default, from `rssi_at_1m`, -59 dBm, and a path loss exponent of 2.2: about -65.6 dBm, none of
+  it measured.
 - **Talk over the LAN or over a Bluetooth link.** A robot's DNS-SD record now carries its current
   beacon id beside its short id, so a robot heard by radio is found on the network when the two
   share one. When they do not, the robot with the lower beacon id opens a link to the other and
@@ -100,13 +102,13 @@ their makers' published figures, are what has run.
   speak to it and that it never moves because one asked.
 - **`quackd onboard demo`.** Two simulated robots on this computer, a mock Unitree G1 EDU with a
   courier company's passport and a mock Agile ONE SN with a household's, each its own service on
-  the `sim` board, walk paths toward each other through five acts: strangers that meet over the
-  Bluetooth link, an appointment where the household pinned the courier company and a pause is
-  asked and granted, an office where both share a network, a passport changed after it was signed,
-  and a stranger telling a robot to ignore its instructions. It prints what happened, act by act,
-  against what was expected, and exits 0 only when every act matched. `--offline` flies both with
-  the scripted pilot, which is how CI runs it, `--fast` speeds it up, `--json` prints it for a
-  script, and `--llm` and `--base-url` give both robots a real brain.
+  the `sim` board. The courier walks up to the household's robot as a stranger with no network in
+  common, so they meet over the Bluetooth link and each brain is told only the other's closed
+  facts, by appointment, each having pinned the other's owner, so their words reach each other's
+  brain, and in an office on one network, so the hello goes over the LAN. A third simulated robot,
+  whose passport had one byte changed after its owner signed it, is refused. The demo prints what
+  each act expected beside what happened, and exits 0 only when every one matched. `--offline`
+  flies both with the scripted pilot, which is how CI runs it, and needs no key.
 - **Robot Passport 1.0.** The specification, its two schemas and its vectors are rewritten for the
   owner's signature, with vectors for the refusals it adds and for the Bluetooth advert and the
   link's frames, still written by a script that signs with `cryptography` directly.
@@ -135,8 +137,9 @@ their makers' published figures, are what has run.
   or pinned an owner who signed it, and the same owner when this robot's own owner key signed it.
   The flock tier is gone, since one quackd is one robot here. What a pilot is shown of a robot
   nearby names its board's kind, so a brain knows when the robot it meets is simulated.
-- **`quackd passport check` also takes a robot's `HOST[:PORT]`,** as `quackd meet` did, beside a
-  passport file, `-` for stdin and a URL, and reads what it finds the way a robot does.
+- **`quackd passport check` also takes a robot's address,** as `HOST:PORT` or an IP address, as
+  `quackd meet` did, beside a passport file, `-` for stdin and a URL, and reads what it finds the
+  way a robot does.
 - **`quackd discover` reads the new DNS-SD record,** `v=2`, and passes over the `v=1` ones.
 - **`robot_list` no longer carries a `passport` field**, since `quackd serve-mcp` keeps no robot's
   passport.
@@ -191,8 +194,8 @@ their makers' published figures, are what has run.
 - **Nothing of it has run on a Jetson, over a real Bluetooth radio, between two machines or on a
   robot.** It ran on the `sim` board, two simulated robots on one computer sharing a simulated air
   and a simulated network, portraying a Unitree G1 EDU and an Agile ONE SN from their makers'
-  published figures. The radio's code ran against fakes, and its BlueZ half against a fake system
-  bus, never against bluetoothd. The roadmap's status table keeps it part by part
+  published figures. The radio's code ran against fakes and a simulated air, and its BlueZ half has
+  never met bluetoothd. The roadmap's status table keeps it part by part
   ([docs/passport/roadmap.md](docs/passport/roadmap.md)).
 - **The distance to meet at is unmeasured.** -59 dBm at one metre and a path loss exponent of 2.2
   are starting values, RSSI is weak evidence, and an advert relayed from elsewhere reads as near.

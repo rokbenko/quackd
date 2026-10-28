@@ -4,13 +4,13 @@
 
 **Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
 a passport now lives on the robot it describes. `quackd onboard` serves it from the robot's own
-computer, an NVIDIA Jetson first, and the owner's key, kept on the robot under a passphrase,
-signs its content, where 0.23 signed it with the robot's key and let an owner stamp that key.
-Stamps, QR stickers, the MQTT and ROS 2 bindings, passports served from a laptop and phase 7
-are gone, and the specification is 1.0. Proximity is Bluetooth LE, which this decision
-reserved until beacon ids could rotate: they rotate every 15 minutes now, and ADR-0073 says
-what the beacon carries. The document, the `did:key` id, the six messages, the idea of tiers
-and the courtesy handler stand.
+computer, an NVIDIA Jetson first, and the owner's key, kept on the robot under a passphrase, signs
+its content, where 0.23 signed it with the robot's key and let an owner stamp that key. Stamps, QR
+stickers, the MQTT and ROS 2 bindings and passports served from a laptop are gone, phase 7 is
+dropped, and the specification is 1.0. Proximity is Bluetooth LE, which this decision reserved
+until beacon ids could rotate: quackd now changes them every 15 minutes, which nobody has tested on
+a radio, and ADR-0073 says what the beacon carries. One small document read by fixed rules, the
+`did:key` id, the six messages, the idea of tiers and the courtesy handler stand.
 
 ## Context
 
