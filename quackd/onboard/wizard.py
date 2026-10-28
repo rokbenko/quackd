@@ -139,6 +139,7 @@ def ask_for_file(ask: Asker, *, default_name: str) -> str:
     how_to_stop = ask.text("how a person standing next to it stops it, in one sentence", "")
     llm = ask.text("its brain, as --llm spells it (e.g. local:MODEL, anthropic)", "")
     base_url = ask.text("the brain's address, for an OpenAI-compatible server (or nothing)", "")
+    within = _metres(ask.text("how close, in metres, another robot comes before they meet", "2"))
     return config.template(
         name=name,
         vendor=vendor,
@@ -152,7 +153,27 @@ def ask_for_file(ask: Asker, *, default_name: str) -> str:
         how_to_stop=how_to_stop or None,
         llm=llm or None,
         base_url=base_url or None,
+        meet_within_m=within,
     )
+
+
+def _metres(answer: str) -> float:
+    """A distance as a person types it, 2 or 1.5 or 3 m, held to what robot.yaml takes."""
+    try:
+        metres = float(answer.strip().removesuffix("m").strip().replace(",", "."))
+    except ValueError:
+        raise WizardError(f"{answer!r} is no distance: a number of metres, such as 2") from None
+    if not 0 < metres <= 20:
+        raise WizardError(f"{metres:g} m is not a distance the radio judges: above 0, up to 20")
+    return metres
+
+
+def refuse_root() -> None:
+    """quackd onboard runs as the robot's own user: as root, its files would be root's, and
+    the service, which runs as that user, could not read them."""
+    euid = getattr(os, "geteuid", None)  # POSIX only: Windows has no root to refuse
+    if euid is not None and euid() == 0:
+        raise WizardError("run quackd onboard as the robot's own user, not as root")
 
 
 def write_key_file(path: Path, variable: str, value: str) -> None:
@@ -170,9 +191,7 @@ def install_service(
     """Write the unit, show every sudo command, and run them when the person says yes."""
     from quackd.onboard import systemd
 
-    euid = getattr(os, "geteuid", None)  # POSIX only: Windows has no root to refuse
-    if euid is not None and euid() == 0:
-        raise WizardError("run quackd onboard as the robot's own user, not as root")
+    refuse_root()
     quackd = shutil.which("quackd") or sys.argv[0]
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or "root"
     with_group = systemd.group_exists(systemd.BLUETOOTH_GROUP)

@@ -17,4 +17,6 @@ side of quackd, and it grows a module at a time:
 - `service`: `quackd onboard serve`, every part above in one long-lived process.
 - `wizard`: what `quackd onboard` asks, and the signing.
 - `systemd`: the unit that keeps the service running on a robot.
+- `preflight`: what this computer has for all of it, check by check.
+- `demo`: two simulated robots on one laptop, meeting act by act.
 """
