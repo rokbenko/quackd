@@ -294,7 +294,7 @@ class RadioSide:
         if change.opened:
             self.tracker.hold(change.beacon_id, now)
         else:
-            lost = change.reason.startswith("lost")
+            lost = change.lost
             for event in self.tracker.release(change.beacon_id, now, lost=lost):
                 self._proximity(event)
         self.planner.on_link(

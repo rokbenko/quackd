@@ -102,6 +102,26 @@ def check_board(check: SelfCheck, facts: BoardFacts) -> SelfCheck:
     return check
 
 
+def load_env(path: Path) -> list[str]:
+    """robot.env's variables into this process's environment, as systemd's `EnvironmentFile=`
+    puts them into the unit's, so a service started in a terminal finds its brain's key too. A
+    variable already set wins, as one set on the command line would. The names it set, never a
+    value."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    names = []
+    for line in lines:
+        name, sep, value = line.strip().partition("=")
+        name = name.strip()
+        if not sep or not name.isidentifier() or name.startswith("#") or os.environ.get(name):
+            continue
+        os.environ[name] = value.strip()
+        names.append(name)
+    return names
+
+
 def prune(runs: Path, *, keep: int) -> None:
     """The newest `keep` run records in `runs`, by when each was written; the rest go."""
     import shutil
@@ -618,6 +638,8 @@ def serve(
 
     chosen, facts = detect(board)
     file = config.load(home.robot_yaml)
+    for name in load_env(home.robot_env):
+        log(f"the brain's {name} is read from robot.env")
     speed = sim.speed if sim is not None and sim.speed else 1.0
     policy = proximity_policy(
         meet_within_m=meet_within_m or file.radio.meet_within_m,

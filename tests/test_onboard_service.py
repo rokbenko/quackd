@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -301,3 +302,18 @@ def test_a_robot_file_edited_by_hand_is_read_again_with_no_command(tmp_path: Pat
         pin = config.Pin(kind="robot", id=B.did, name="cart-01", pinned=date.today().isoformat())
         config.add_pin(household.robot_yaml, pin)
         assert wait_for(lambda: len(service.file.trust.pins) == 1, 20)
+
+
+def test_robot_env_reaches_a_service_started_in_a_terminal_and_a_set_variable_wins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from quackd.onboard.service import load_env
+
+    env = tmp_path / "robot.env"
+    env.write_text("LOCAL_API_KEY=from-the-file\nQUACKD_TEST_SET=from-the-file\n# a note\n")
+    monkeypatch.setenv("LOCAL_API_KEY", "")  # recorded, so the test leaves it as it found it
+    monkeypatch.setenv("QUACKD_TEST_SET", "from-the-shell")
+    assert load_env(env) == ["LOCAL_API_KEY"]
+    assert os.environ["LOCAL_API_KEY"] == "from-the-file"
+    assert os.environ["QUACKD_TEST_SET"] == "from-the-shell"
+    assert load_env(tmp_path / "missing.env") == []

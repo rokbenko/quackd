@@ -60,7 +60,8 @@ their makers' published figures, are what has run.
   dbus-fast for Bluetooth, which install on Linux alone. It is in neither `dev` nor `all`, and CI
   runs it in a job of its own.
 - **Boards.** `quackd onboard` recognises an NVIDIA Jetson from its device tree and its release
-  file, an Orin or a Thor on JetPack 6 or 7, and refuses a Xavier and JetPack 5 with the reason.
+  file, an Orin on JetPack 6 or 7.2 or a Thor on JetPack 7, and refuses a Xavier and JetPack 5
+  with the reason.
   On any other computer it refuses and names `--board sim`, which stands in for a robot's computer
   on a laptop, and a passport signed there says so in its new `board` member. Other boards come in
   through the `quackd.boards` entry point group, the way adapters come in through

@@ -993,7 +993,7 @@ It is deliberately not remote control: a peer can ask for a pause or for a robot
 
 A robot carries a passport when it has a computer of its own that can run quackd and moves among robots it does not know. That rules two kinds out. **An arm is fixed in place and will rarely meet another robot, and a toy-sized robot has no computer on board that can run quackd**, so neither carries a passport, and quackd drives an SO-101 or a Microduck exactly as before without one. The robots that will meet strangers are bigger mobile ones, humanoids and robots on four legs, and nearly all of them carry an NVIDIA Jetson that can run quackd itself.
 
-So a Jetson is the first board `quackd onboard` supports: an Orin or a Thor, on JetPack 6 or JetPack 7, recognised from the board's device tree and its release file. A Xavier and JetPack 5 are refused with the reason, and so is a computer that is not a robot's:
+So a Jetson is the first board `quackd onboard` supports: an Orin on JetPack 6 or 7.2, or a Thor on JetPack 7, recognised from the board's device tree and its release file. A Xavier and JetPack 5 are refused with the reason, and so is a computer that is not a robot's:
 
 ```
 $ quackd onboard

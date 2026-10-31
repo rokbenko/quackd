@@ -125,7 +125,8 @@ def test_a_xavier_is_refused_for_its_chip_in_the_plans_words() -> None:
     with pytest.raises(boards.Unsupported) as caught:
         boards.detect(among=_among(files=XAVIER))
     assert str(caught.value) == (
-        "a Xavier (tegra194): quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7"
+        "a Xavier (tegra194): quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with "
+        "JetPack 7"
     )
 
 
@@ -142,13 +143,15 @@ def test_an_orin_still_on_jetpack_5_is_refused_for_its_release() -> None:
     assert "JetPack 5" in said
 
 
-@pytest.mark.parametrize(
-    "files", [ORIN_ON_JETPACK_7_2, THOR_READING_AS_JETPACK_6], ids=["orin-on-7", "thor-on-6"]
-)
-def test_a_release_is_taken_only_on_the_chip_it_is_supported_on(files: Mapping[str, str]) -> None:
-    """Orin with JetPack 6 and Thor with JetPack 7, as the sentence says, and not the other two
-    pairs: NVIDIA's JetPack 7.2 runs on Orin, which quackd onboard does not take, and a Thor that
-    reads as JetPack 6 is reading a container's release file."""
+def test_an_orin_on_jetpack_7_2_finds_itself() -> None:
+    """NVIDIA's JetPack 7.2, L4T 39.2, added Orin to JetPack 7."""
+    found = _jetson(ORIN_ON_JETPACK_7_2).detect()
+    assert found is not None and found.soc == "tegra234" and "JetPack 7.2" in str(found.release)
+
+
+def test_a_thor_that_reads_as_jetpack_6_is_refused_since_no_thor_runs_it() -> None:
+    """A Thor whose release file says JetPack 6 is reading a container's release file."""
+    files = THOR_READING_AS_JETPACK_6
     release = l4t.parse_l4t(files[jetson.RELEASE])
     with pytest.raises(boards.Unsupported, match=f"on L4T {release}") as caught:
         _jetson(files).detect()
@@ -187,12 +190,14 @@ def test_a_jetson_whose_model_cannot_be_read_is_named_by_its_chip() -> None:
     assert found is not None and found.model == f"NVIDIA Jetson {jetson.CHIPS[_chip(ORIN)]}"
 
 
-def test_the_supported_pairs_are_orin_with_jetpack_6_and_thor_with_jetpack_7() -> None:
+def test_the_supported_pairs_are_orin_with_jetpack_6_or_7_and_thor_with_jetpack_7() -> None:
+    """Orin on JetPack 6 and on 7.2, the first 7 to carry it (L4T 39), and Thor on 7."""
     taken = {
         jetson.CHIPS[chip]: {l4t.JETPACK_MAJOR[major] for major in majors}
         for chip, majors in jetson.SUPPORTED.items()
     }
-    assert taken == {"Orin": {"6.x"}, "Thor": {"7.x"}}
+    assert taken == {"Orin": {"6.x", "7.x"}, "Thor": {"7.x"}}
+    assert jetson.SUPPORTED["tegra234"] == ("36", "39")  # never 38: JetPack 7.0 and 7.1 are Thor's
 
 
 # ── no Jetson, and sim ──────────────────────────────────────────────────────────────────

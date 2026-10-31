@@ -7,7 +7,8 @@ names the L4T release, which names the JetPack (`l4t.py`). `facts` is pure, over
 reads a path, so every case is a test that needs no board; `JetsonBoard` hands it the real files
 by default, and nothing else in this module reads one.
 
-quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7, and nothing else (`SUPPORTED`).
+quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with JetPack 7, and nothing else
+(`SUPPORTED`).
 The chip is asked first, so a Xavier is refused for its chip whatever it runs, and then the release
 on that chip: an Orin on JetPack 5 is refused for a release it can be upgraded from, and a Thor
 that reads as JetPack 6, which no Thor runs, is refused as well, its release file a container's
@@ -45,11 +46,11 @@ CHIPS = {
 }
 """The chip a Jetson's device tree names, by the name of the modules NVIDIA builds on it."""
 
-SUPPORTED = {"tegra234": ("36",), "tegra264": ("38", "39")}
-"""The L4T majors quackd onboard takes on each chip: 36, JetPack 6, on Orin, and 38 and 39,
-JetPack 7, on Thor (`l4t.JETPACK_MAJOR`). NVIDIA's JetPack 7.2 page says 7.2 (L4T 39.2) runs on
-Orin as well; quackd onboard does not take that pair, and the sentence below says what it takes."""
-SUPPORTS = "quackd onboard supports Orin with JetPack 6 and Thor with JetPack 7"
+SUPPORTED = {"tegra234": ("36", "39"), "tegra264": ("38", "39")}
+"""The L4T majors quackd onboard takes on each chip: 36, JetPack 6, and 39, JetPack 7.2, which
+NVIDIA's JetPack 7.2 page says added Orin to JetPack 7, on Orin; and 38 and 39, JetPack 7, on Thor
+(`l4t.JETPACK_MAJOR`). JetPack 7.0 and 7.1, L4T 38, are Thor's alone."""
+SUPPORTS = "quackd onboard supports Orin with JetPack 6 or 7.2 and Thor with JetPack 7"
 
 _CHIP = re.compile(r"nvidia,(tegra\d+)")
 _NUL = "\x00"
