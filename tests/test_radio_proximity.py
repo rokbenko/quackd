@@ -190,3 +190,29 @@ def test_a_fast_scene_scales_every_clock_and_no_threshold() -> None:
     assert fast.near_dbm == POLICY.near_dbm and fast.far_dbm == POLICY.far_dbm
     with pytest.raises(ValueError):
         POLICY.scaled(0)
+
+
+def test_an_advert_heard_while_the_tracker_was_paused_keeps_the_time_it_was_heard() -> None:
+    """The scanner can start again after a connect, and an advert arrive, before the service
+    tells the tracker to resume: that advert is not moved on by the length of the pause."""
+    tracker = Tracker(POLICY)
+    feed(tracker, 0.0, 2.0, POLICY.near_dbm + 2)
+    tracker.suspend(10.0)
+    tracker.observe(heard(11.0, POLICY.near_dbm + 2))
+    tracker.resume(12.0)
+    # unheard since 11.0: far once the stale time has passed from then, not from later
+    assert tracker.tick(11.0 + POLICY.stale_s - STEP) == []
+    assert kinds(tracker.tick(11.0 + POLICY.stale_s + STEP)) == ["far"]
+
+
+def test_a_link_that_opened_before_its_robot_was_heard_still_holds_it() -> None:
+    tracker = Tracker(POLICY)
+    tracker.hold(PEER, 0.0)  # a link, before any advert of it was heard
+    feed(tracker, 0.0, 2.0, POLICY.near_dbm + 2)
+    tracker.hold(PEER, 2.0)  # a second link
+    tracker.release(PEER, 2.1, lost=False)  # the first closes
+    assert tracker.peers(2.2)[0].held
+    assert tracker.tick(2.0 + POLICY.stale_s * 3) == [] and tracker.is_near(PEER)
+    assert tracker.heard(PEER, within_s=1, now=2.0 + POLICY.stale_s * 3)
+    tracker.release(PEER, 50.0, lost=False)
+    assert kinds(tracker.tick(50.1)) == ["far"]

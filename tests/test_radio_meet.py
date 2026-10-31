@@ -154,12 +154,67 @@ def test_a_session_that_ends_near_waits_the_remeet_time_and_far_forgets() -> Non
     p.on_session(None, opened=False, route=None, did="did:key:z6MkNobody", now=7.0)
 
 
-def test_a_try_that_never_reports_back_is_given_up_after_the_attempt_time() -> None:
+def test_a_try_that_never_reports_back_counts_as_failed_and_its_late_word_is_ignored() -> None:
     p = planner(MID)
     p.on_proximity(ev("near", HIGH, 0.0))
-    assert meets(p.due(0.0)) == [HIGH]
+    [first] = p.due(0.0)
+    assert isinstance(first, Meet)
     assert meets(p.due(POLICY.attempt_s - 1)) == []
-    assert meets(p.due(POLICY.attempt_s + 1)) == [HIGH]
+    # given up on: not dialled again in the same breath, but after the first backoff
+    assert meets(p.due(POLICY.attempt_s + 1)) == []
+    plan = p.peers()[0]
+    assert plan.state == "waiting" and plan.attempts == 1
+    later = plan.next_at
+    assert POLICY.backoff_s[0] <= later - (POLICY.attempt_s + 1) <= POLICY.backoff_s[0] * 1.25
+    [second] = p.due(later)
+    assert isinstance(second, Meet) and second.token != first.token
+    # the first try's late failure changes nothing: the second is the one under way
+    p.on_outcome(HIGH, Outcome("unreachable", reason="late"), later + 1, token=first.token)
+    assert p.peers()[0].state == "meeting"
+    # and the second's own word is heard
+    p.on_outcome(HIGH, Outcome("met", DID_B, "ble://5", "link"), later + 2, token=second.token)
+    assert p.peers()[0].state == "met"
+
+
+def test_a_late_try_that_met_the_robot_is_heard_since_that_session_is_real() -> None:
+    p = planner(MID)
+    p.on_proximity(ev("near", HIGH, 0.0))
+    [first] = p.due(0.0)
+    assert isinstance(first, Meet)
+    p.due(POLICY.attempt_s + 1)  # given up on
+    p.on_outcome(
+        HIGH, Outcome("met", DID_B, "ble://6", "link"), POLICY.attempt_s + 2, token=first.token
+    )
+    assert p.peers()[0].state == "met" and p.did_of(HIGH) == DID_B
+
+
+def test_a_meeting_the_other_robot_began_is_never_undone_by_this_ones_failed_try() -> None:
+    p = planner(MID)
+    p.on_proximity(ev("near", HIGH, 0.0))
+    [mine] = p.due(0.0)
+    assert isinstance(mine, Meet)
+    # its hello opened a session while this robot's own try was still under way
+    p.on_session(HIGH, opened=True, route="http://10.0.0.2", did=DID_B, now=1.0)
+    for kind in ("unreachable", "busy", "refused"):
+        p.on_outcome(HIGH, Outcome(kind, reason="late"), 2.0, token=mine.token)  # type: ignore[arg-type]
+        assert p.peers()[0].state == "met"
+    assert meets(p.due(POLICY.grace_s * 3)) == []  # never dialled again while met
+    # it walks away: parted from, bye and all, and the session's end then holds it back
+    p.on_proximity(ev("far", HIGH, 60.0))
+    assert p.due(60.0) == [Part(HIGH, DID_B, "http://10.0.0.2")]
+    assert not p._refused
+
+
+def test_a_refusal_is_kept_by_the_did_whenever_one_is_known() -> None:
+    p = planner(MID)
+    p.on_proximity(ev("near", HIGH, 0.0))
+    [first] = p.due(0.0)
+    p.on_outcome(HIGH, Outcome("met", DID_B, "ble://7", "link"), 1.0, token=first.token)  # type: ignore[union-attr]
+    p.on_session(HIGH, opened=False, route=None, did=DID_B, now=2.0)
+    [again] = p.due(2.0 + POLICY.remeet_s)
+    # refused this time, with no did in the refusal: the one the first meeting revealed is used
+    p.on_outcome(HIGH, Outcome("refused", reason="no"), 3.0 + POLICY.remeet_s, token=again.token)  # type: ignore[union-attr]
+    assert set(p._refused) == {DID_B}
 
 
 def test_a_meeting_that_finishes_after_its_robot_went_far_is_parted_from() -> None:

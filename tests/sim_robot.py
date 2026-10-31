@@ -42,8 +42,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
     closed = asyncio.Event()
-    table = LinkTable(on_change=lambda change: None if change.opened else closed.set())
-    accepting: set[asyncio.Task[object]] = set()
+    table = LinkTable()
+    accepting: set[asyncio.Task[None]] = set()
     heard: dict[str, list[float]] = {}
     answered: list[str] = []
     found: asyncio.Future[Sighting] = loop.create_future()
@@ -60,8 +60,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         if sighting.beacon_id == args.expect and not found.done():
             found.set_result(sighting)
 
+    async def accept(pipe: Pipe) -> None:
+        # what this helper asks over the link is no talk hello, so the table never reports the
+        # link; the link itself says when it closes
+        link = await table.accept(pipe, me=args.beacon, inbox_for=inbox_for)
+        if link is not None:
+            link.on_closed(lambda _link: closed.set())
+
     def on_link(pipe: Pipe, address: str) -> None:
-        task = loop.create_task(table.accept(pipe, me=args.beacon, inbox_for=inbox_for))
+        task = loop.create_task(accept(pipe))
         accepting.add(task)
         task.add_done_callback(accepting.discard)
 

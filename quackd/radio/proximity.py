@@ -119,7 +119,6 @@ class _Peer:
     near: bool = False
     above_since: float | None = None
     below_since: float | None = None
-    held: int = 0
     true_m: float | None = None
 
 
@@ -135,6 +134,9 @@ class Tracker:
         self.me = me
         self.max_peers = max_peers
         self._peers: dict[str, _Peer] = {}
+        #: links open to each robot, by beacon id, whether or not an advert of it was heard yet:
+        #: a link can open before the first advert this end hears
+        self._holds: dict[str, int] = {}
         self._paused_since: float | None = None
 
     # ── what arrives ─────────────────────────────────────────────────────────────────────
@@ -177,7 +179,8 @@ class Tracker:
         events: list[ProximityEvent] = []
         for peer in list(self._peers.values()):
             events += self._judge(peer, now)
-            if not peer.near and not peer.held and now - peer.last_heard > 2 * self.policy.stale_s:
+            gone = now - peer.last_heard > 2 * self.policy.stale_s
+            if gone and not peer.near and not self._held(peer.beacon_id):
                 del self._peers[peer.beacon_id]
         return events
 
@@ -187,17 +190,19 @@ class Tracker:
         """A link to `beacon_id` opened: while it is open the robot is not far for want of
         adverts, since a robot busy on a link may advertise less, or a controller scan less.
         Quiet adverts still make it far."""
-        peer = self._peers.get(beacon_id)
-        if peer is not None:
-            peer.held += 1
+        self._holds[beacon_id] = self._holds.get(beacon_id, 0) + 1
 
     def release(self, beacon_id: str, now: float, *, lost: bool) -> list[ProximityEvent]:
         """A link to `beacon_id` closed. One that was lost, rather than closed, means the robot
         went out of range: it is far at once."""
+        held = self._holds.get(beacon_id, 0)
+        if held > 1:
+            self._holds[beacon_id] = held - 1
+        else:
+            self._holds.pop(beacon_id, None)
         peer = self._peers.get(beacon_id)
         if peer is None:
             return []
-        peer.held = max(0, peer.held - 1)
         if lost and peer.near:
             return [self._far(peer, now, "link lost")]
         return []
@@ -211,21 +216,28 @@ class Tracker:
             self._paused_since = now
 
     def resume(self, now: float) -> None:
-        """Start the clock again, as if no time had passed while it was stopped."""
-        if self._paused_since is None:
+        """Start the clock again, as if no time had passed while it was stopped: everything
+        from before the pause moves on by its length, and an advert heard during it, when the
+        radio came back before the tracker was told, keeps the time it was heard."""
+        since = self._paused_since
+        if since is None:
             return
-        gap = max(0.0, now - self._paused_since)
+        gap = max(0.0, now - since)
         self._paused_since = None
+
+        def moved(t: float) -> float:
+            return t + gap if t <= since else t
+
         for peer in self._peers.values():
-            peer.last_heard += gap
-            peer.last_seen_event += gap
+            peer.last_heard = moved(peer.last_heard)
+            peer.last_seen_event = moved(peer.last_seen_event)
             peer.samples = deque(
-                ((t + gap, r) for t, r in peer.samples), maxlen=peer.samples.maxlen
+                ((moved(t), r) for t, r in peer.samples), maxlen=peer.samples.maxlen
             )
             if peer.above_since is not None:
-                peer.above_since += gap
+                peer.above_since = moved(peer.above_since)
             if peer.below_since is not None:
-                peer.below_since += gap
+                peer.below_since = moved(peer.below_since)
 
     @property
     def suspended(self) -> bool:
@@ -237,10 +249,10 @@ class Tracker:
         """Whether an advert with `beacon_id` was heard in the last `within_s` seconds, or a
         link to it is open: what a robot asks before it answers a hello that came over its LAN
         claiming that beacon id, since a robot it has not heard by radio is not one nearby."""
+        if self._held(beacon_id):
+            return True
         peer = self._peers.get(beacon_id)
-        if peer is None:
-            return False
-        return peer.held > 0 or now - peer.last_heard <= within_s
+        return peer is not None and now - peer.last_heard <= within_s
 
     def is_near(self, beacon_id: str) -> bool:
         peer = self._peers.get(beacon_id)
@@ -260,7 +272,7 @@ class Tracker:
                     rssi,
                     None if rssi is None else round(self.policy.metres(rssi), 2),
                     round(max(0.0, now - peer.last_heard), 2),
-                    peer.held > 0,
+                    self._held(peer.beacon_id),
                     peer.true_m,
                 )
             )
@@ -281,7 +293,7 @@ class Tracker:
     def _judge(self, peer: _Peer, now: float) -> list[ProximityEvent]:
         policy = self.policy
         unheard = now - peer.last_heard
-        if peer.near and unheard > policy.stale_s and not peer.held:
+        if peer.near and unheard > policy.stale_s and not self._held(peer.beacon_id):
             return [self._far(peer, now, f"stale: unheard for {unheard:.1f} s")]
         median = self._median(peer, now)
         if median is None:
@@ -315,6 +327,9 @@ class Tracker:
             peer.below_since = None
         return []
 
+    def _held(self, beacon_id: str) -> bool:
+        return self._holds.get(beacon_id, 0) > 0
+
     def _far(self, peer: _Peer, now: float, reason: str) -> ProximityEvent:
         peer.near, peer.above_since, peer.below_since = False, None, None
         return self._event("far", peer, now, reason)
@@ -330,11 +345,13 @@ class Tracker:
 
     def _make_room(self) -> bool:
         """Room for one more robot: when the table is full, the one heard longest ago is
-        forgotten, never one near or held, so a radio that floods the air with made-up beacon
-        ids pushes out only its own. False when every robot in it is near or held."""
+        forgotten, never one near or held: a radio that floods the air with made-up beacon ids
+        quietly pushes out only its own. One loud enough to be near, which any sender can be,
+        fills the table with robots near, and a robot heard after that is not tracked until
+        they go. False when every robot in it is near or held."""
         if len(self._peers) < self.max_peers:
             return True
-        idle = [p for p in self._peers.values() if not p.near and not p.held]
+        idle = [p for p in self._peers.values() if not p.near and not self._held(p.beacon_id)]
         if not idle:
             return False
         del self._peers[min(idle, key=lambda p: p.last_heard).beacon_id]

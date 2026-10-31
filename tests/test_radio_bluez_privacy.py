@@ -76,11 +76,15 @@ def test_crlf_line_endings_and_a_missing_final_newline_are_kept() -> None:
     assert with_privacy("[General]\nPrivacy = off") == "[General]\nPrivacy = device"
 
 
-def test_only_a_private_setting_is_ever_written() -> None:
+def test_only_a_setting_that_keeps_an_advert_private_is_ever_written() -> None:
     assert "off" not in PRIVATE
-    with pytest.raises(ValueError):
-        with_privacy(STOCK, "off")
-    assert privacy_setting(with_privacy(STOCK, "limited-device")) == "limited-device"
+    # the limited modes show the identity address while discoverable, and a passport's advert
+    # always is
+    for kept_out in ("off", "limited-device", "limited-network"):
+        with pytest.raises(ValueError):
+            with_privacy(STOCK, kept_out)
+        assert privacy_words(kept_out, "public")[0] is False
+    assert privacy_setting(with_privacy(STOCK, "network")) == "network"
 
 
 def test_installing_backs_up_once_installs_as_root_and_restarts_bluetoothd() -> None:

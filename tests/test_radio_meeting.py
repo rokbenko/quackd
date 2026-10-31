@@ -2,10 +2,11 @@
 dialling, a hello over a link or the LAN, and a bye when one walks away.
 
 Everything below talk is the real code: the tracker, the planner, the meeter, links, transports,
-on a `FakeAir` whose clock the test turns and a loop thread as the service has. Talk itself is a
-stand-in (`StandInTalker`), a hello of one line each way, because what is tested here is that the
-right robot is said hello to over the right way at the right time; lane C's Talker, which checks
-passports, plugs into the same `TalkerPort`. `Robot` is the wiring a robot's service does."""
+on a `FakeAir` whose clock the test turns and a loop thread as the service has. In most tests talk
+itself is a stand-in (`StandInTalker`), a hello of one line each way, because what is tested is
+that the right robot is said hello to over the right way at the right time; the last runs the
+real Talker with owner-signed passports through the same `TalkerPort`. `Robot` is the wiring a
+robot's service does."""
 
 from __future__ import annotations
 
@@ -41,6 +42,7 @@ class StandInTalker:
     def __init__(self, did: str, beacon: Callable[[], str], transports: Transports) -> None:
         self.did, self.beacon, self.transports = did, beacon, transports
         self.sessions: dict[str, str] = {}
+        self.beacons: dict[str, str] = {}
         self.left: list[str] = []
         self.answer_with: int = 200
         self.on_session: Callable[[str, bool, str, str], None] | None = None
@@ -57,6 +59,9 @@ class StandInTalker:
             raise PassportError("6.3", "the robot that answered advertises another beacon id")
         with self._lock:
             self.sessions[answer["did"]] = route
+            self.beacons[answer["did"]] = answer["bt"]
+        if self.on_session:
+            self.on_session(answer["bt"], True, route, answer["did"])
         return str(answer["did"])
 
     def inbox(self, wire: str, origin: str) -> tuple[int, str | None]:
@@ -71,6 +76,7 @@ class StandInTalker:
             return self.answer_with, "not you, not now"
         with self._lock:
             self.sessions[doc["hello"]] = origin
+            self.beacons[doc["hello"]] = doc["bt"]
         if self.on_session:
             self.on_session(doc["bt"], True, origin, doc["hello"])
         return 200, json.dumps({"did": self.did, "bt": self.beacon()})
@@ -81,6 +87,8 @@ class StandInTalker:
             self.left.append(peer_did)
         if route is not None:
             self.transports.post(route, json.dumps({"bye": self.did, "bt": self.beacon()}))
+        if self.on_session:
+            self.on_session(self.beacons.get(peer_did, ""), False, route or "", peer_did)
 
     def peers_open(self) -> set[str]:
         with self._lock:
@@ -122,12 +130,15 @@ class Robot:
         network: str | None = None,
         lan: FakeLan | None = None,
         ip: str = "10.0.0.1",
+        meet_policy: MeetPolicy | None = None,
     ) -> None:
         self.air, self.loop, self.beacon, self.ip = air, loop, beacon, ip
         self.did = f"did:key:z6Mk{name}"
         self.radio = air.radio(name, at)
         self.tracker = Tracker(ProximityPolicy(), me=beacon)
-        self.planner = Planner(lambda: self.beacon, MeetPolicy(), rng=random.Random(0))
+        self.planner = Planner(
+            lambda: self.beacon, meet_policy or MeetPolicy(), rng=random.Random(0)
+        )
         self.links = LinkTable(on_change=self._link_changed)
         self.transports = Transports(
             http=net.http_for(network, ip), link=LinkTransport(self.links, loop)
@@ -279,6 +290,35 @@ def test_two_strangers_with_no_shared_network_meet_over_a_link_and_part(loop: Lo
         teardown(loop, robots)
 
 
+def test_robots_that_stay_near_meet_again_over_the_link_they_already_hold(
+    loop: LoopThread,
+) -> None:
+    """A meeting ends and the two robots stay where they are: after the re-meet time they meet
+    again, over the link that carried the first meeting, and neither ends up holding two."""
+    air = FakeAir(QUIET_AIR)
+    net = Network()
+    low, high = pair()
+    policy = MeetPolicy(remeet_s=3.0)
+    a = Robot(air, "a", (0.0, 0.0), loop, net, beacon=low, meet_policy=policy)
+    b = Robot(air, "b", (1.0, 0.0), loop, net, beacon=high, meet_policy=policy)
+    robots = [a, b]
+    for robot in robots:
+        loop.call(robot.start(), 5)
+
+    def met() -> int:
+        return sum(1 for e in a.events if e.kind == "met")
+
+    try:
+        run(air, loop, robots, lambda: met() == 1, fake_s=10)
+        first = a.talker.sessions[b.did]
+        a.talker.leave(b.did)  # the meeting is over, and both stay put
+        run(air, loop, robots, lambda: met() == 2, fake_s=policy.remeet_s + 5)
+        assert a.talker.sessions[b.did] == first
+        assert len(a.links) == 1 and len(b.links) == 1
+    finally:
+        teardown(loop, robots)
+
+
 def test_two_robots_on_one_network_meet_over_the_lan_and_hold_no_link(loop: LoopThread) -> None:
     air = FakeAir(QUIET_AIR)
     net, lan = Network(), FakeLan()
@@ -368,3 +408,148 @@ def test_a_fake_radio_is_off_until_started_and_the_stand_in_is_a_talker(loop: Lo
     )
     assert radio.status().ready
     loop.call(radio.stop(), 5)
+
+
+# ── with talk itself: lane C's Talker, owner-signed passports, the smallest link there is ──
+
+
+def test_two_robots_with_real_passports_meet_over_the_smallest_link_say_a_word_and_part(
+    loop: LoopThread,
+) -> None:
+    """The whole of it but the radio's own hardware: two robots with 1.0 passports their owners
+    signed, each robot's real Talker, a hello of a few kilobytes carried in 20-byte datagrams,
+    both verifications done, a word said in the session, and a bye when one walks away."""
+    from quackd.passport.link import MIN_DATAGRAM
+    from quackd.passport_talk import Talker
+    from quackd.passport_trust import Judgement
+    from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
+
+    air = FakeAir(QUIET_AIR)
+    low, high = pair()
+
+    class Robot2:
+        def __init__(self, name: str, at: tuple[float, float], key: Any, owner: Any, beacon: str):
+            self.beacon = beacon
+            self.events: list[MeetEvent] = []
+            self.changes: list[LinkChange] = []
+            self.radio = air.radio(name, at, datagram_size=MIN_DATAGRAM)
+            self.tracker = Tracker(ProximityPolicy(), me=beacon)
+            self.planner = Planner(lambda: self.beacon, MeetPolicy(), rng=random.Random(0))
+            self.links = LinkTable(on_change=self._link_changed)
+            self.transports = Transports(
+                http=lambda r, w: (503, None), link=LinkTransport(self.links, loop)
+            )
+            self.talker = Talker(
+                name,
+                key,
+                # padded so a hello is several kilobytes: hundreds of 20-byte datagrams
+                passport(key, owner, name, notes="x" * 3000),
+                judge=lambda reading: Judgement("stranger", "a test's", ()),
+                send=self.transports.post,
+                heard=lambda b: self.tracker.heard(b, within_s=8, now=air.clock),
+                on_session=self._session,
+                runtime={"software": "quackd/test", "beacon": beacon, "reach": {"http_port": 8790}},
+            )
+            self.meeter = Meeter(
+                planner=self.planner,
+                talker=self.talker,
+                links=self.links,
+                radio=self.radio,
+                loop=loop,
+                me=lambda: self.beacon,
+                inbox_for=lambda route: talk_inbox(self.talker.inbox, route),
+                clock=lambda: air.clock,
+                on_event=self.events.append,
+            )
+            self.accepting: set[Any] = set()
+
+        async def start(self) -> None:
+            await self.radio.start(
+                advert=ble_service_data(self.beacon, lan=False, link=True),
+                on_sighting=lambda s: [
+                    self.planner.on_proximity(e) for e in self.tracker.observe(s)
+                ],
+                on_link=self._linked,
+            )
+
+        def _linked(self, pipe: Pipe, address: str) -> None:
+            task = loop.loop.create_task(
+                self.links.accept(
+                    pipe, me=self.beacon, inbox_for=lambda r: talk_inbox(self.talker.inbox, r)
+                )
+            )
+            self.accepting.add(task)
+
+        def _link_changed(self, change: LinkChange) -> None:
+            self.changes.append(change)
+            if change.opened:
+                self.tracker.hold(change.beacon_id, air.clock)
+            else:
+                for e in self.tracker.release(
+                    change.beacon_id, air.clock, lost=change.reason.startswith("lost")
+                ):
+                    self.planner.on_proximity(e)
+            self.planner.on_link(
+                change.beacon_id, opened=change.opened, inbound=change.inbound, now=air.clock
+            )
+
+        def _session(self, session: Any, opened: bool) -> None:
+            beacon = session.runtime.get("beacon")
+            self.planner.on_session(
+                beacon if isinstance(beacon, str) else None,
+                opened=opened,
+                route=session.route,
+                did=session.peer,
+                now=air.clock,
+            )
+
+        def tick(self) -> None:
+            for event in loop.call(_tick(self.tracker, air.clock), 5):
+                self.planner.on_proximity(event)
+            self.meeter.step(air.clock)
+
+    a = Robot2("courier", (0.0, 0.0), A, OWNER, low)
+    b = Robot2("household", (1.0, 0.0), B, OWNER_B, high)
+    robots = [a, b]
+    for robot in robots:
+        loop.call(robot.start(), 5)
+
+    def run2(done: Callable[[], bool], fake_s: float) -> None:
+        deadline, end = time.monotonic() + 60.0, air.clock + fake_s
+        while not done():
+            if air.clock >= end or time.monotonic() > deadline:
+                said = [(r.beacon[:4], e.kind, e.via, e.reason) for r in robots for e in r.events]
+                plans = [
+                    (r.beacon[:4], p.state, p.reason) for r in robots for p in r.planner.peers()
+                ]
+                raise AssertionError(f"not done after {fake_s:g} s of air: {said} {plans}")
+            loop.call(air.step(0.2), 5)
+            for robot in robots:
+                robot.tick()
+            time.sleep(0.01)
+
+    try:
+        # met once the meeter says so: the Talker that dialled lists the session as soon as the
+        # second hello arrives, and has its route only once the third step has come back
+        run2(
+            lambda: any(e.kind == "met" for e in a.events) and a.talker.id in b.talker.peers_open(),
+            20,
+        )
+        [link] = a.links.links()
+        assert link.send_size == MIN_DATAGRAM
+        # the link the courier opened is the household's to report once the courier's hello,
+        # signed and naming the beacon id its OPEN claimed, has been accepted over it
+        assert [(c.opened, c.inbound, c.beacon_id) for c in b.changes] == [(True, True, low)]
+        # the two hellos with a passport in each, a few kilobytes cut into 20-byte datagrams
+        assert link.pipe.sent > 2 * 3000 // MIN_DATAGRAM  # type: ignore[attr-defined]
+        # a word in the session, over the same link, read on the other side
+        a.talker.say(b.talker.id, "parcel for the kitchen door")
+        said = [h for h in b.talker.drain() if h.kind == "said"]
+        assert said and said[-1].text == "parcel for the kitchen door"
+        # the household robot walks off: far, a bye, the link closed, the sessions over
+        air.move("household", (30.0, 0.0))
+        policy = ProximityPolicy()
+        run2(lambda: not a.talker.peers_open(), policy.window_s + policy.far_hold_s + 10)
+        run2(lambda: len(a.links) == 0 and not b.talker.peers_open(), 10)
+    finally:
+        teardown(loop, robots)  # type: ignore[arg-type]

@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import threading
 import time
 from dataclasses import replace
 
 import pytest
 
+from quackd.passport.jws import b64url
 from quackd.passport.link import (
     MAX_LINKS,
     Accept,
@@ -32,6 +34,7 @@ from quackd.passport.link import (
     split,
 )
 from quackd.passport.talk import MAX_HELLO_BYTES
+from quackd.radio import PipeClosed
 from quackd.radio.fake import MemoryPipe
 from quackd.radio.links import (
     Link,
@@ -42,6 +45,7 @@ from quackd.radio.links import (
     LinkRefused,
     LinkTable,
     LinkTransport,
+    hello_beacon,
     post_timeout,
     talk_inbox,
 )
@@ -260,16 +264,23 @@ async def test_a_quiet_link_is_closed_after_the_idle_time() -> None:
     assert "idle" in (central.closed or "")
 
 
-async def test_no_answer_in_time_is_a_link_down_and_the_late_answer_is_dropped() -> None:
+async def test_no_answer_in_time_is_a_link_down_and_the_late_answer_is_never_sent() -> None:
+    gate = threading.Event()
+
     def late(body: bytes, media: Media) -> tuple[int, bytes | None, Media]:
-        time.sleep(0.4)
+        gate.wait(5)
         return 200, b"too late", Media.TEXT
 
-    central, *_ = await linked(inbox_p=late)
+    central, peripheral, _, _ = await linked(inbox_p=late)
     with pytest.raises(LinkDown, match="no answer"):
         await central.request(b"hello", Media.JOSE, timeout=0.1)
-    await until(lambda: central._reassembler.dropped > 0, 2.0)
-    assert central.closed is None
+    # the ABORT reaches the other end while its inbox is still at work on the request
+    await until(lambda: peripheral._aborted)
+    gate.set()
+    await until(lambda: peripheral._inflight == 0)
+    await asyncio.sleep(0.05)
+    assert central._reassembler.dropped == 0  # no answer came after it was given up on
+    assert central.closed is None and peripheral.closed is None
 
 
 async def test_an_answer_from_another_beacon_id_than_the_advert_is_refused() -> None:
@@ -307,29 +318,31 @@ async def test_a_central_in_another_framing_version_is_told_so() -> None:
     assert decode(heard[0]) == Refuse(tag, Refusal.VERSION)
 
 
-async def test_a_table_holds_at_most_its_links_and_says_when_they_change() -> None:
+async def test_a_table_holds_at_most_its_links_and_reports_only_those_borne_out() -> None:
     changes: list[LinkChange] = []
     table = LinkTable(policy=FAST, on_change=changes.append)
     assert table.max_links == MAX_LINKS
-    centrals = []
     for i in range(MAX_LINKS + 1):
         c_pipe, p_pipe = MemoryPipe.pair(182)
         accepting = asyncio.create_task(table.accept(p_pipe, me=B, inbox_for=lambda route: echo))
-        me = f"{i:016x}"
         try:
-            centrals.append(await Link.open(c_pipe, me=me, expect=B, inbox=None, policy=FAST))
+            await Link.open(c_pipe, me=f"{i:016x}", expect=B, inbox=None, policy=FAST)
         except LinkRefused as e:
             assert i == MAX_LINKS and e.busy
         await accepting
     assert len(table) == MAX_LINKS and table.full
-    assert [c.opened for c in changes] == [True] * MAX_LINKS
-    assert all(c.inbound for c in changes)
-    assert len(table.by_beacon(f"{0:016x}")) == 1
+    # none has said hello, so none says anything about which robot it is yet
+    assert changes == []
+    first = table.by_beacon(f"{0:016x}")[0]
+    table.confirm(first.id)
+    assert changes == [LinkChange(True, first.id, f"{0:016x}", True)]
     assert await table.close_beacon(f"{0:016x}") == 1
     await until(lambda: len(table) == MAX_LINKS - 1)
     assert changes[-1].opened is False and changes[-1].beacon_id == f"{0:016x}"
+    assert changes[-1].lost is False
     await table.close_all()
     await until(lambda: len(table) == 0)
+    assert len(changes) == 2  # the links never borne out leave without a word
     table.shutdown()
 
 
@@ -488,3 +501,229 @@ async def test_a_request_sent_the_moment_accept_arrives_finds_the_link_ready(
     assert answer.head.status == 200 and answer.chunk == b"echo:hello"
     assert in_table == [True]
     table.shutdown()
+
+
+def first_hello(beacon: str) -> bytes:
+    """What a first hello looks like to the link: a compact JWS whose body names its robot's
+    beacon id. Unsigned here: what checks a hello is talk's inbox, which these tests stand in
+    for."""
+    payload = {
+        "passport": "1.0",
+        "type": "hello",
+        "from": "did:key:z6MkStandIn",
+        "msg": "m" * 22,
+        "body": {"nonce": "n" * 22, "beacon": beacon},
+    }
+    return f"eyJhbGciOiJFZERTQSJ9.{b64url(json.dumps(payload).encode())}.c2ln".encode()
+
+
+def accepting_hellos(body: bytes, media: Media) -> tuple[int, bytes | None, Media]:
+    """Talk's inbox as far as a link sees it: a first hello answered 200, anything else 204."""
+    return (200, b"a second hello", Media.JOSE) if hello_beacon(body) else (204, None, Media.NONE)
+
+
+async def test_a_link_the_other_robot_opened_counts_for_nothing_until_a_hello_bears_it_out() -> (
+    None
+):
+    """A stranger in radio range hears a robot's beacon id, opens a link claiming it and drops
+    it: that must make nobody gone, near or met. Only a hello the inbox accepts, naming the
+    beacon id the OPEN claimed, makes the link stand for that robot."""
+    changes: list[LinkChange] = []
+    table = LinkTable(policy=FAST, on_change=changes.append)
+
+    async def central(claim: str) -> tuple[Link, MemoryPipe]:
+        c_pipe, p_pipe = MemoryPipe.pair(182)
+        accepting = asyncio.create_task(
+            table.accept(p_pipe, me=B, inbox_for=lambda route: accepting_hellos)
+        )
+        link = await Link.open(c_pipe, me=claim, expect=B, inbox=None, policy=FAST)
+        await accepting
+        return link, c_pipe
+
+    # opened in another robot's name, and dropped: not a word
+    _spoof, pipe = await central("1" * 16)
+    pipe.cut()
+    await until(lambda: len(table) == 0)
+    # a hello that names another beacon id than the OPEN claimed: still not a word
+    other, pipe = await central("2" * 16)
+    assert (await other.request(first_hello("3" * 16), Media.JOSE, timeout=1))[0] == 200
+    pipe.cut()
+    await until(lambda: len(table) == 0)
+    assert changes == []
+    # a hello that bears the claim out: reported, and its drop says dropped, never lost
+    real, pipe = await central(A)
+    assert (await real.request(first_hello(A), Media.JOSE, timeout=1))[0] == 200
+    await until(lambda: changes)
+    assert changes == [LinkChange(True, real.id, A, True)]
+    pipe.cut()
+    await until(lambda: len(changes) == 2)
+    gone = changes[1]
+    assert (gone.opened, gone.inbound, gone.lost) == (False, True, False)
+    assert gone.reason.startswith("dropped")
+    table.shutdown()
+
+
+async def test_a_link_this_robot_dialled_is_reported_at_once_and_its_drop_is_lost() -> None:
+    from quackd.radio.fake import FakeAir
+
+    air = FakeAir()
+    changes: list[LinkChange] = []
+    table = LinkTable(policy=FAST, on_change=changes.append)
+    them = air.radio("b", (1.0, 0.0))
+    accepted: list[Link | None] = []
+
+    def on_link(pipe: object, address: str) -> None:
+        async def take() -> None:
+            accepted.append(await Link.accept(pipe, me=B, inbox=echo, policy=FAST))  # type: ignore[arg-type]
+
+        asyncio.get_running_loop().create_task(take())
+
+    await them.start(advert=bytes(10), on_sighting=lambda s: None, on_link=on_link)
+    us = air.radio("a")
+    await us.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
+    link = await table.dial(us, them.address, me=A, expect=B, inbox_for=lambda route: echo)
+    assert changes == [LinkChange(True, link.id, B, False)]
+    air.cut("a", "b")
+    await until(lambda: len(changes) == 2)
+    assert changes[1].lost is True and changes[1].reason.startswith("lost")
+    table.shutdown()
+
+
+async def test_a_dial_under_way_holds_its_slot_so_the_table_never_overfills() -> None:
+    table = LinkTable(max_links=2, policy=FAST)
+    gate = asyncio.Event()
+
+    class SlowRadio:
+        kind = "slow"
+
+        async def connect(self, address: str, *, timeout: float) -> object:  # noqa: ASYNC109
+            await gate.wait()
+            raise ConnectionError("nobody there")
+
+    dialling = asyncio.create_task(
+        table.dial(SlowRadio(), "x", me=A, expect=B, inbox_for=lambda route: echo)  # type: ignore[arg-type]
+    )
+    await asyncio.sleep(0.01)
+    results = []
+    for i in range(2):
+        c_pipe, p_pipe = MemoryPipe.pair(182)
+        accepting = asyncio.create_task(table.accept(p_pipe, me=B, inbox_for=lambda route: echo))
+        try:
+            await Link.open(c_pipe, me=f"{i:016x}", expect=B, inbox=None, policy=FAST)
+            results.append("open")
+        except LinkRefused as e:
+            results.append("busy" if e.busy else "refused")
+        await accepting
+    assert results == ["open", "busy"]
+    gate.set()
+    with pytest.raises(LinkDown):
+        await dialling
+    assert not table.full  # the dial gave its slot back
+    table.shutdown()
+
+
+async def test_an_open_cancelled_while_it_waits_for_accept_closes_its_pipe() -> None:
+    silent, _never = MemoryPipe.pair(182)
+    opening = asyncio.create_task(
+        Link.open(silent, me=A, expect=B, inbox=None, policy=LinkPolicy(accept_s=5.0))
+    )
+    await asyncio.sleep(0.05)
+    opening.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await opening
+    await until(lambda: silent.closed is not None)
+
+
+async def test_a_request_right_behind_the_accept_is_answered_by_the_central(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A peripheral's notifications are never acknowledged, so its ACCEPT and a request it
+    sends straight after can reach the central together, before the central's own open has
+    resumed: the link is open from the moment the ACCEPT is read."""
+    c_pipe, p_pipe = MemoryPipe.pair(182)
+    send = p_pipe.send
+
+    async def unacknowledged(datagram: bytes, *, barrier: bool = True) -> None:
+        await send(datagram, barrier=False)
+
+    monkeypatch.setattr(p_pipe, "send", unacknowledged)
+
+    async def peripheral() -> tuple[int, bytes, Media]:
+        link = await Link.accept(p_pipe, me=B, inbox=echo, policy=FAST)
+        assert link is not None
+        return await link.request(b"ping", Media.JOSE, timeout=2)
+
+    asking = asyncio.create_task(peripheral())
+    central = await Link.open(c_pipe, me=A, expect=B, inbox=echo, policy=FAST)
+    assert (await asking)[:2] == (200, b"echo:ping")
+    await central.close()
+
+
+async def test_a_flood_of_requests_costs_a_bounded_queue_of_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = replace(FAST, rate=2)
+    raw, heard, task = await raw_peripheral(policy=policy)
+    tag = new_tag()
+    await raw.send(encode(Open(tag, A, 182, Limits().max_message)))
+    await until(lambda: heard)
+    link = await task
+    assert link is not None
+    # the peripheral's notifications drain slowly, as a radio's do: nothing goes until let
+    gate = asyncio.Event()
+    send = link.pipe.send
+
+    async def slow(datagram: bytes, *, barrier: bool = True) -> None:
+        await gate.wait()
+        await send(datagram, barrier=barrier)
+
+    monkeypatch.setattr(link.pipe, "send", slow)
+    flood = 200
+    for msg_id in range(1, flood + 1):
+        head = Head(Role.REQUEST, 0, Media.JOSE, 2)
+        await raw.send(encode(Data(tag, msg_id, 0, b"hi", head)), barrier=False)
+    await until(lambda: link.requests_in == flood)
+    assert link._queued == policy.queued
+    assert link.dropped == flood - policy.rate - policy.queued
+    assert len(link._tasks) <= policy.rate + policy.queued
+    gate.set()
+
+
+async def test_a_central_whose_requests_are_never_answered_well_is_closed_all_the_same() -> None:
+    policy = replace(FAST, first_request_s=0.3)
+
+    def refusing(body: bytes, media: Media) -> tuple[int, bytes | None, Media]:
+        return 400, b"no\n", Media.TEXT
+
+    central, peripheral, _, _ = await linked(inbox_p=refusing, policy=policy)
+    assert (await central.request(b"junk", Media.JOSE, timeout=1))[0] == 400
+    await until(lambda: peripheral.closed is not None, within_s=2.0)
+    assert "idle" in (peripheral.closed or "")
+
+
+async def test_frames_for_no_message_keep_no_link_alive() -> None:
+    policy = replace(FAST, idle_s=0.4)
+    raw, heard, task = await raw_peripheral(policy=policy, inbox=accepting_hellos)
+    tag = new_tag()
+    await raw.send(encode(Open(tag, A, 182, Limits().max_message)))
+    await until(lambda: heard)
+    link = await task
+    assert link is not None
+    for datagram in split(
+        first_hello(A),
+        tag=tag,
+        msg_id=1,
+        role=Role.REQUEST,
+        status=0,
+        media=Media.JOSE,
+        datagram_size=182,
+    ):
+        await raw.send(datagram)
+    await until(lambda: link.answered)
+    started = time.monotonic()
+    with pytest.raises(PipeClosed):  # the link closes under the trickle, and the pipe with it
+        for _ in range(40):
+            await raw.send(encode(Data(tag, 99, 5, b"x")))  # a chunk of no message in hand
+            await asyncio.sleep(0.05)
+    assert link.closed is not None and "idle" in link.closed
+    assert time.monotonic() - started < 40 * 0.05

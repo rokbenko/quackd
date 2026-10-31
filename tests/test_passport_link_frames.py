@@ -344,3 +344,25 @@ def test_a_tag_is_never_zero_and_media_types_map_both_ways() -> None:
         assert link.media_of(name) is media
     assert link.media_of("application/jose; charset=utf-8") is Media.JOSE
     assert link.media_of("text/html") is Media.TEXT
+
+
+def test_a_message_half_received_costs_about_its_size_however_small_its_chunks() -> None:
+    """A peer may send a message a byte a chunk; what the reassembler holds of it is one buffer,
+    not one object per chunk, which cost forty times the message."""
+    import tracemalloc
+
+    size = 4000
+    side = peripheral_side()
+    head = Head(Role.REQUEST, 0, Media.JOSE, size + 1)
+    tracemalloc.start()
+    try:
+        before = tracemalloc.take_snapshot()
+        side.feed(Data(TAG, 1, 0, b"x", head), 0.0)
+        for seq in range(1, size):
+            assert side.feed(Data(TAG, 1, seq, b"x"), 0.0) is None
+        after = tracemalloc.take_snapshot()
+    finally:
+        tracemalloc.stop()
+    held = sum(stat.size_diff for stat in after.compare_to(before, "filename"))
+    assert side.pending == 1
+    assert held < 4 * size, held

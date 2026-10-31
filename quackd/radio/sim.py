@@ -516,6 +516,11 @@ class SimRadio:
                 writer.write(_OP.pack(OP_SUBSCRIBE, len(hello)) + hello)
                 await writer.drain()
                 op, payload = await _read_op(reader)
+            except (asyncio.IncompleteReadError, ValueError, struct.error) as e:
+                # a radio that hung up, as one at its limit does, or said what no link says:
+                # no link, which is what a caller of connect is told by a ConnectionError
+                writer.close()
+                raise ConnectionError(f"{address} hung up before the link opened") from e
             except BaseException:
                 writer.close()
                 raise

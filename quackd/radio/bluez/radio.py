@@ -87,6 +87,13 @@ class BlueZRadio:
         self._on_link: Callable[[Pipe, str], None] | None = None
         self._pipes: set[ClientPipe] = set()
         self._problems: list[str] = []
+        #: dials under way: the first pauses the scanner and the last starts it again
+        self._connecting = 0
+        self._scan_paused = False
+        #: bringing the radio up and taking it down, one at a time, whoever asks: the watchdog,
+        #: bluetoothd coming back, or start and stop
+        self._lifecycle = asyncio.Lock()
+        self._tasks: set[asyncio.Task[None]] = set()
         self._stopped = False
         self._status = RadioStatus("off", "bluez", adapter=adapter, detail="not started")
 
@@ -102,7 +109,8 @@ class BlueZRadio:
         self._advert, self._advert_at = advert, time.monotonic()
         self._on_sighting, self._on_link = on_sighting, on_link
         self._stopped = False
-        await self._bring_up()
+        async with self._lifecycle:
+            await self._bring_up()
         self._watchdog = asyncio.get_running_loop().create_task(self._watch())
         return self.status()
 
@@ -114,26 +122,30 @@ class BlueZRadio:
             self._advert_task = asyncio.get_running_loop().create_task(self._readvertise())
 
     async def _readvertise(self) -> None:
-        wait = self._advert_at + ADVERT_EVERY_S - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        advert, self._pending = self._pending, None
-        if advert is None:
-            return
-        self._advert, self._advert_at = advert, time.monotonic()
-        if self._peripheral is not None and self.advertise:
-            try:
-                await self._peripheral.advertise(advert)
-            except BlueZError as e:
-                self._problem(f"the new advert was refused: {e}")
+        # one task takes every advert handed in while it runs, the newest last: one handed in
+        # while BlueZ was registering the one before is not left waiting for nobody
+        while self._pending is not None:
+            wait = self._advert_at + ADVERT_EVERY_S - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            advert, self._pending = self._pending, None
+            if advert is None:
+                return
+            self._advert, self._advert_at = advert, time.monotonic()
+            if self._peripheral is not None and self.advertise:
+                try:
+                    await self._peripheral.advertise(advert)
+                except BlueZError as e:
+                    self._problem(f"the new advert was refused: {e}")
 
     async def connect(self, address: str, *, timeout: float) -> Pipe:  # noqa: ASYNC109
         if self._status.state not in ("ready", "degraded") or self._bus is None:
             raise RadioUnavailable(self._status.state, self._status.detail, self._status.hint)
         scanner = self._scanner
         target: Any = (scanner.devices.get(address) if scanner else None) or address
-        paused = scanner is not None and scanner.running
-        if paused and scanner is not None:
+        self._connecting += 1
+        if self._connecting == 1 and scanner is not None and scanner.running:
+            self._scan_paused = True
             await scanner.stop()
             self._scanning(False)
         try:
@@ -143,10 +155,13 @@ class BlueZRadio:
         except Exception as e:  # bleak's errors, D-Bus's and the connect's own timeout
             raise ConnectionError(f"could not connect to {address}: {e}") from e
         finally:
-            if paused and scanner is not None and not self._stopped:
-                with contextlib.suppress(Exception):
-                    await scanner.start()
-                self._scanning(True)
+            self._connecting -= 1
+            if self._connecting == 0 and self._scan_paused:
+                self._scan_paused = False
+                if self._scanner is not None and not self._stopped:
+                    with contextlib.suppress(Exception):
+                        await self._scanner.start()
+                    self._scanning(True)
         self._pipes.add(pipe)
         pipe.on_close(lambda _reason: self._pipes.discard(pipe))
         return pipe
@@ -156,7 +171,8 @@ class BlueZRadio:
         for task in (self._watchdog, self._advert_task):
             if task is not None:
                 task.cancel()
-        await self._take_down("the radio stopped")
+        async with self._lifecycle:
+            await self._take_down("the radio stopped")
         if self._bus is not None:
             self._bus.disconnect()
             self._bus = None
@@ -267,8 +283,10 @@ class BlueZRadio:
                 continue
             await asyncio.sleep(RETRY_S[min(tries, len(RETRY_S) - 1)])
             tries += 1
-            await self._take_down("the radio is starting again")
-            await self._bring_up()
+            async with self._lifecycle:
+                if self._status.state not in ("ready", "degraded"):
+                    await self._take_down("the radio is starting again")
+                    await self._bring_up()
 
     # ── what BlueZ says ──────────────────────────────────────────────────────────────────
 
@@ -313,15 +331,26 @@ class BlueZRadio:
                 self._lost("missing", "bluetoothd stopped", "sudo systemctl start bluetooth")
             elif not self._stopped:
                 # bluetoothd is back, and remembers nothing this robot registered with it
-                asyncio.get_running_loop().create_task(self._restart())
+                self._spawn(self._restart())
         return False
+
+    def _dialled(self, device: str) -> list[ClientPipe]:
+        """The links this robot dialled to the device at `device`, by its address, and never
+        by an empty one."""
+        found = []
+        for pipe in self._pipes:
+            address = str(getattr(pipe.client, "address", "") or "").upper()
+            if address and device.endswith("/dev_" + address.replace(":", "_")):
+                found.append(pipe)
+        return found
 
     def _device_gone(self, device: str) -> None:
         if self._core is not None:
             self._core.device_gone(device)
-        for pipe in list(self._pipes):
-            if device.endswith(str(getattr(pipe.client, "address", "")).replace(":", "_")):
-                pipe.lost()
+        # bleak's own disconnect callback closes a link this robot dialled too; this catches the
+        # one it might miss
+        for pipe in self._dialled(device):
+            pipe.lost()
 
     def _lost(self, state: RadioState, detail: str, hint: str | None) -> None:
         self._set(state, detail, hint)
@@ -331,8 +360,16 @@ class BlueZRadio:
             self._core.close_all(f"link lost: {detail}")
 
     async def _restart(self) -> None:
-        await self._take_down("bluetoothd restarted")
-        await self._bring_up()
+        async with self._lifecycle:
+            if self._stopped:
+                return
+            await self._take_down("bluetoothd restarted")
+            await self._bring_up()
+
+    def _spawn(self, coro: Any) -> None:
+        task = asyncio.get_running_loop().create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     # ── the peripheral's callbacks ───────────────────────────────────────────────────────
 
@@ -345,8 +382,10 @@ class BlueZRadio:
             self._on_link(pipe, address)
 
     def _disconnect(self, device: str) -> None:
-        if self._peripheral is not None:
-            asyncio.get_running_loop().create_task(self._peripheral.disconnect(device))
+        # one LE connection joins two devices, and a link this robot dialled to the same robot
+        # may ride it: the connection stays while that link does
+        if self._peripheral is not None and not self._dialled(device):
+            self._spawn(self._peripheral.disconnect(device))
 
     def _sighted(self, sighting: Sighting) -> None:
         if self._on_sighting is not None:
