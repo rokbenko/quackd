@@ -40,8 +40,8 @@ DEFAULT_MTU = 23
 #: again still opening one, past which a write from a new central is refused.
 MAX_CENTRALS = 2 * MAX_LINKS
 #: The pause after each notification. BlueZ queues what it is told to notify, and a hello of
-#: 16 KB is 90 notifications at the usual MTU, so they are spread out rather than dumped; the
-#: figure is a guess at what a controller drains in a connection interval, not a measurement.
+#: 16 KB is about 95 notifications at an MTU of 185, so they are spread out rather than dumped;
+#: the figure is a guess at what a controller drains in a connection interval, not a measurement.
 NOTIFY_PACE_S = 0.005
 #: How long a central waits for BlueZ to settle the write size above the default it starts
 #: from: until the MTU exchange has finished, bleak reports 20.

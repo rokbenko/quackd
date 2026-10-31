@@ -20,9 +20,11 @@ import re
 MAIN_CONF = "/etc/bluetooth/main.conf"
 BACKUP = "/etc/bluetooth/main.conf.quackd-backup"
 WANTED = "device"
-#: The values main.conf's Privacy takes, from BlueZ's own main.conf comments: anything but off
-#: has the controller use a resolvable private address that it rotates.
-PRIVATE = ("device", "network", "on", "limited-network", "limited-device")
+#: The Privacy values that keep the address private while a robot advertises, from BlueZ's own
+#: main.conf comments: device, network and its alias on. The limited modes are left out on
+#: purpose: they show the identity address while the adapter is discoverable, which a
+#: passport's advert always is, so they would rotate nothing a listener hears.
+PRIVATE = ("device", "network", "on")
 _GROUP = re.compile(r"^\s*\[([^\]]*)\]\s*$")
 _PRIVACY = re.compile(r"^(\s*)Privacy(\s*)=(\s*)([^\r\n]*?)(\s*)$")
 

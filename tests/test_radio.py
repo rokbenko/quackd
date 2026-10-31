@@ -8,6 +8,7 @@ import dataclasses
 import importlib.util
 import platform
 import sys
+from typing import Any
 
 import pytest
 
@@ -132,3 +133,98 @@ def test_a_central_gone_closes_only_the_links_this_robot_dialled_to_it() -> None
     built._pipes = {to_it, elsewhere, nameless}
     built._device_gone("/org/bluez/hci0/dev_11_22_33_44_55_66")
     assert to_it.closed and not elsewhere.closed and not nameless.closed
+
+
+def _bluez_radio() -> object:
+    for name in radio.BLUEZ_PACKAGES:
+        pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
+    from quackd.radio.bluez.radio import BlueZRadio
+
+    return BlueZRadio(bus="session")
+
+
+async def test_every_advert_handed_in_while_one_registers_goes_out_the_newest_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built: Any = _bluez_radio()
+    import quackd.radio.bluez.radio as bluez_radio
+
+    monkeypatch.setattr(bluez_radio, "ADVERT_EVERY_S", 0.0)
+    gate, registered = asyncio.Event(), []
+
+    class Peripheral:
+        async def advertise(self, advert: bytes) -> None:
+            registered.append(advert)
+            await gate.wait()
+
+    built._peripheral = Peripheral()
+    await built.set_advert(b"first")
+    await asyncio.sleep(0.01)  # the first is with BlueZ now
+    await built.set_advert(b"second")
+    await built.set_advert(b"third")
+    gate.set()
+    await asyncio.wait_for(built._advert_task, 2)
+    assert registered == [b"first", b"third"]
+
+
+async def test_dials_at_once_pause_the_scanner_once_and_the_last_starts_it_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built: Any = _bluez_radio()
+    import quackd.radio.bluez.radio as bluez_radio
+
+    calls: list[str] = []
+    gates = [asyncio.Event(), asyncio.Event()]
+
+    class Scanner:
+        running = True
+        devices: dict[str, object] = {}
+
+        async def stop(self) -> None:
+            calls.append("stop")
+            self.running = False
+
+        async def start(self) -> None:
+            calls.append("start")
+            self.running = True
+
+    async def open_pipe(target: str, *, adapter: str, timeout: float) -> object:  # noqa: ASYNC109
+        await gates[int(target)].wait()
+        calls.append(f"open {target}")
+        raise OSError("no one there")
+
+    monkeypatch.setattr(bluez_radio, "open_pipe", open_pipe)
+    built._scanner, built._bus = Scanner(), object()
+    built._status = radio.RadioStatus("ready", "bluez")
+    first = asyncio.create_task(built.connect("0", timeout=1))
+    second = asyncio.create_task(built.connect("1", timeout=1))
+    await asyncio.sleep(0.01)
+    gates[0].set()
+    with pytest.raises(ConnectionError):
+        await first
+    assert calls == ["stop", "open 0"]  # the second dial is still under way: still paused
+    gates[1].set()
+    with pytest.raises(ConnectionError):
+        await second
+    assert calls == ["stop", "open 0", "open 1", "start"]
+
+
+async def test_closing_a_link_a_robot_opened_never_drops_one_this_robot_dialled_to_it() -> None:
+    from quackd.radio.bluez.core import ClientPipe
+
+    built: Any = _bluez_radio()
+    asked: list[str] = []
+
+    class Peripheral:
+        async def disconnect(self, device: str) -> None:
+            asked.append(device)
+
+    class Client:
+        address = "11:22:33:44:55:66"
+
+    built._peripheral = Peripheral()
+    built._pipes = {ClientPipe(Client(), "rx", "tx", 20)}  # type: ignore[arg-type]
+    built._disconnect("/org/bluez/hci0/dev_11_22_33_44_55_66")
+    built._disconnect("/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF")
+    await asyncio.sleep(0)
+    assert asked == ["/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"]

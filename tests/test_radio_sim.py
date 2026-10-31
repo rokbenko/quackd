@@ -354,3 +354,27 @@ def test_the_sim_lan_finds_a_robot_by_the_beacon_id_it_advertises(tmp_path: File
         home.publish({"id": "../escape"}, host="127.0.0.1", port=1)
     with pytest.raises(ValueError):
         SimLan(tmp_path, "../elsewhere")
+
+
+async def test_a_radio_that_hangs_up_before_the_link_opens_is_a_connection_error(
+    tmp_path: FilePath,
+) -> None:
+    """What `LinkTable.dial` is told when a robot cannot be had is a ConnectionError, whatever
+    way the other radio said no: one at its limit simply hangs up."""
+
+    async def hang_up(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(64)  # hears the subscribe out, then hangs up without an answer
+        writer.close()
+
+    server = await asyncio.start_server(hang_up, "127.0.0.1", 0)
+    port = int(server.sockets[0].getsockname()[1])
+    radio_file(tmp_path, "rude", link=port, x=0.5)
+    me = SimRadio(SimOptions(air=tmp_path, t0=time.time()))
+    await me.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
+    try:
+        with pytest.raises(ConnectionError, match="hung up"):
+            await me.connect("sim:rude", timeout=5)
+    finally:
+        await me.stop()
+        server.close()
+        await server.wait_closed()

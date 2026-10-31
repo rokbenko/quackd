@@ -15,9 +15,10 @@ the frames with its own tag.
 
 What it guards against is a peer that sends anything at all. `decode` raises `FrameError` and
 nothing else, whatever a datagram holds. The reassembler holds at most four messages half
-received, each at most the largest hello, and refuses one whose stated size is over that before
-it holds a byte of it. It wants every chunk in order and on time, and drops a response nobody
-asked for without keeping a byte of it, as talk drops a repeat (spec 6.1).
+received, each at most the largest hello in one buffer, however small the chunks it came in,
+and refuses one whose stated size is over that before it holds a byte of it. It wants every
+chunk in order and on time, and drops a response nobody asked for without keeping a byte of it,
+as talk drops a repeat (spec 6.1).
 """
 
 from __future__ import annotations
@@ -378,8 +379,9 @@ class _Partial:
     status: int
     media: Media
     total: int
-    chunks: list[bytes]
-    received: int
+    #: the bytes so far, in one buffer: 16,384 chunks of a byte each kept as 16,384 objects
+    #: would cost forty times the message they make
+    body: bytearray
     seq: int
     started: float
     last: float
@@ -418,16 +420,15 @@ class Reassembler:
         if frame.seq != partial.seq + 1:
             del self._partial[frame.msg_id]
             return Given(frame.msg_id, partial.role, AbortReason.OUT_OF_ORDER)
-        if partial.received + len(frame.chunk) > partial.total:
+        if len(partial.body) + len(frame.chunk) > partial.total:
             del self._partial[frame.msg_id]
             return Given(frame.msg_id, partial.role, AbortReason.OVERFLOW)
-        partial.chunks.append(frame.chunk)
-        partial.received += len(frame.chunk)
+        partial.body += frame.chunk
         partial.seq, partial.last = frame.seq, now
-        if partial.received < partial.total:
+        if len(partial.body) < partial.total:
             return None
         del self._partial[frame.msg_id]
-        body = b"".join(partial.chunks)
+        body = bytes(partial.body)
         return Message(frame.msg_id, partial.role, partial.status, partial.media, body)
 
     def _first(self, frame: Data, now: float) -> Message | Given | None:
@@ -452,7 +453,7 @@ class Reassembler:
         if len(self._partial) >= self.limits.max_partial:
             return Given(msg_id, role, AbortReason.TOO_MANY)
         self._partial[msg_id] = _Partial(
-            role, head.status, head.media, head.total, [frame.chunk], len(frame.chunk), 0, now, now
+            role, head.status, head.media, head.total, bytearray(frame.chunk), 0, now, now
         )
         return None
 

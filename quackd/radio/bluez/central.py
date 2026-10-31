@@ -1,9 +1,13 @@
 """The robot as a central: bleak's scanner hearing adverts, and bleak's client dialling a link.
 
-The scanner runs BlueZ's active discovery on LE only, with duplicate filtering off, so that every
-advert of a robot nearby is reported rather than its first, which is what proximity needs: a
-strength several times a second. Adverts are filtered here by the passport's service data rather
-than by BlueZ, whose discovery filter matches advertised service UUIDs and not service data keys.
+The scanner runs BlueZ's active discovery on LE only, and asks BlueZ not to drop repeated adverts
+(its DuplicateData filter), since proximity needs a robot's strength several times a second, not
+once. That is BlueZ's own filter only: whether the controller under it filters duplicates too,
+which bleak says the setting does not change, and which would leave proximity one advert of each
+robot, too few for its median, has not been seen on a Jetson. If it does, passive scanning
+through an advertisement monitor is the way round it. Adverts are filtered here by the
+passport's service data rather than by BlueZ, whose discovery filter matches advertised service
+UUIDs and not service data keys.
 
 Dialling a link is bleak's `BleakClient` on the device the scanner last saw at that address, with
 only the passport's service resolved: rx and tx found, the write size settled once the MTU
