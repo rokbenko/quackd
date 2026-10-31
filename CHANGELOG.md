@@ -93,7 +93,9 @@ their makers' published figures, are what has run.
   beacon id beside its short id, so a robot heard by radio is found on the network when the two
   share one. When they do not, the robot with the lower beacon id opens a link to the other and
   the same signed messages travel over it in frames, at most four links a robot. A first hello
-  over the LAN is answered `403` unless its sender was heard by radio in the last eight seconds.
+  over the LAN is answered `403` unless its sender was heard by radio in the last eight seconds,
+  from an address its LAN record names when it has one, and a second hello is taken only as the
+  reply to the first. A session ends when the passport it was opened on expires.
 - **Meetings.** A verified robot near an idle one starts a run of the meeting task in the robot's
   file, at most twelve steps, with `report_state` and `stop` allowed and `tell` to speak to the
   robots nearby. It starts only with a brain configured, under `per_hour`, not with a robot met in
@@ -137,7 +139,8 @@ their makers' published figures, are what has run.
   the first that fails, keeping why among what `quackd onboard met` lists. A reply goes back only
   the way the hello came.
 - **Three tiers: a stranger, known and the same owner.** A robot is known when a person pinned it,
-  or pinned an owner who signed it, and the same owner when this robot's own owner key signed it.
+  as the owner it had then signed it, or pinned an owner who signed it, and the same owner when
+  this robot's own owner key signed it. A change to the pins reaches every open session.
   The flock tier is gone, since one quackd is one robot here. What a pilot is shown of a robot
   nearby names its board's kind, so a brain knows when the robot it meets is simulated.
 - **`quackd passport check` also takes a robot's address,** as `HOST:PORT` or an IP address, as
