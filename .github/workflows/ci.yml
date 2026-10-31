@@ -14,14 +14,16 @@ jobs:
     name: py${{ matrix.python }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     # Without a limit a hung test ran to GitHub's six hour limit, three times on macOS, and
-    # the log named nothing. With it the job fails in 45 minutes at most, and the two
+    # the log named nothing. With it the job fails in 60 minutes at most, and the two
     # faulthandler timers in pyproject.toml and tests/conftest.py have already dumped every
     # thread's stack by then. The limit was 20 minutes while the slowest job, Windows on 3.12,
     # took 14, and the Microduck re-read added minutes of wall-clock tests to every job, so 20
     # would have cancelled healthy runs on a slow day. It was 30 until 0.23.0's Robot Passport
     # tests took both Windows jobs to 26 and 29 minutes, and a slow runner was cancelled at 30
-    # with its tests at 91% and none failed or hung.
-    timeout-minutes: 45
+    # with its tests at 91% and none failed or hung. It was 45 until 0.29.0's onboard tests took
+    # Windows on 3.12 to 44 and a half minutes of tests, and that job was cancelled at 45 seconds
+    # after every one of them had passed.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
