@@ -208,18 +208,6 @@ before.
 
 ## Open here
 
-- ⏸ **The hackathon page comes out after judging ends on 15 December 2026.** quackd is an entry
-  in the Nebius x NVIDIA Global AI Hackathon, and the entry's links point at the `v0.29.0` tag.
-  For it, 0.29.0 added one page, docs/guides/nemotron-on-token-factory/README.md, on how Robot
-  Passport's two simulated robots were flown on NVIDIA Nemotron through Nebius Token Factory,
-  the live-run records in the folder beside it, the README line at the end of Pilot LLMs that
-  links it, its row in docs/README.md's Guides table, and this item. It is better taken out
-  after the winners are announced, about 11 January 2027. quackd depends on none of it: those
-  runs reached Token Factory through `--llm local:MODEL --base-url URL` and `LOCAL_API_KEY`,
-  which stay, and CHANGELOG.md never named the page. To take it out, in one commit:
-  `git rm -r docs/guides/nemotron-on-token-factory`, delete the README line, the row in
-  docs/README.md and this item, then `git grep -n -i -E 'nebius|token ?factory'` must print
-  nothing. The `v0.29.0` tag keeps all of it for anybody who follows a link from the entry.
 - ⬜ **Robot Passport after 0.29.0.** Boards beyond the Jetson, through the `quackd.boards`
   plugin interface. A pilot that asks a robot it met for a courtesy, or shares what it saw.
   Maker signatures beside the owner's. Revocation, so a stolen robot's key stops speaking before
